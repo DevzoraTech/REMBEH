@@ -1,5 +1,6 @@
 import {
   DeleteObjectCommand,
+  GetObjectCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -12,6 +13,13 @@ export type PresignPutResult = {
   uploadUrl: string;
   storageKey: string;
   expiresInSeconds: number;
+};
+
+export type SignatureObjectKeys = {
+  assetId: string;
+  signaturePngKey: string;
+  strokesJsonKey: string;
+  metadataJsonKey: string;
 };
 
 @Injectable()
@@ -35,7 +43,7 @@ export class ObjectStorageService implements OnModuleInit {
       emptyToUndefined(this.configService.get<string>('S3_PUBLIC_ENDPOINT')) ||
       endpoint;
     const region =
-      this.configService.get<string>('S3_REGION')?.trim() || 'us-east-1';
+      this.configService.get<string>('S3_REGION')?.trim() || 'eu-north-1';
     const accessKeyId =
       this.configService.get<string>('S3_ACCESS_KEY')?.trim() ?? '';
     const secretAccessKey =
@@ -43,10 +51,15 @@ export class ObjectStorageService implements OnModuleInit {
     this.bucket =
       this.configService.get<string>('S3_BUCKET')?.trim() || 'rembeh-local';
 
+    // Explicit keys (local/dev) OR omit credentials so the default provider
+    // chain is used (EC2 instance role / ECS task role / env AWS_*).
     const credentials =
       accessKeyId && secretAccessKey
         ? { accessKeyId, secretAccessKey }
         : undefined;
+    const authMode = credentials
+      ? 'static-keys'
+      : 'default-provider-chain (EC2 IAM role)';
 
     // Path-style only for custom endpoints (MinIO). AWS S3 uses virtual-hosted.
     const usePathStyle = Boolean(endpoint);
@@ -55,29 +68,75 @@ export class ObjectStorageService implements OnModuleInit {
       region,
       endpoint,
       forcePathStyle: usePathStyle,
-      credentials,
+      ...(credentials ? { credentials } : {}),
     });
 
     this.presignClient = new S3Client({
       region,
       endpoint: publicEndpoint,
       forcePathStyle: Boolean(publicEndpoint),
-      credentials,
+      ...(credentials ? { credentials } : {}),
     });
 
     this.logger.log(
-      `Object storage ready (bucket=${this.bucket}, region=${region}, mode=${endpoint ? 'custom-endpoint' : 'aws-s3'})`,
+      `Object storage ready (bucket=${this.bucket}, region=${region}, mode=${endpoint ? 'custom-endpoint' : 'aws-s3'}, auth=${authMode})`,
     );
   }
 
+  /**
+   * Hierarchical loan media key:
+   * tenants/{tenantId}/loans/{loanApplicationId}/media/{mediaType}/{uuid}.{ext}
+   */
   buildObjectKey(input: {
     tenantId: string;
     applicationId: string;
     mediaType: string;
     extension?: string;
   }) {
-    const ext = input.extension?.replace(/^\./, '') || 'bin';
-    return `tenants/${input.tenantId}/loan-applications/${input.applicationId}/${input.mediaType.toLowerCase()}-${randomUUID()}.${ext}`;
+    return this.buildMediaObjectKey(input);
+  }
+
+  buildMediaObjectKey(input: {
+    tenantId: string;
+    applicationId: string;
+    mediaType: string;
+    extension?: string;
+  }) {
+    const ext = sanitizeExtension(input.extension) || 'bin';
+    const mediaType = sanitizePathSegment(input.mediaType.toLowerCase());
+    return `tenants/${input.tenantId}/loans/${input.applicationId}/media/${mediaType}/${randomUUID()}.${ext}`;
+  }
+
+  /**
+   * Signature asset folder:
+   * tenants/{tenantId}/loans/{loanApplicationId}/signatures/{signerRole}/{uuid}/
+   *   signature.png | strokes.json | metadata.json
+   */
+  buildSignatureObjectKeys(input: {
+    tenantId: string;
+    applicationId: string;
+    signerRole: string;
+  }): SignatureObjectKeys {
+    const role = sanitizePathSegment(input.signerRole.toLowerCase());
+    const assetId = randomUUID();
+    const base = `tenants/${input.tenantId}/loans/${input.applicationId}/signatures/${role}/${assetId}`;
+    return {
+      assetId,
+      signaturePngKey: `${base}/signature.png`,
+      strokesJsonKey: `${base}/strokes.json`,
+      metadataJsonKey: `${base}/metadata.json`,
+    };
+  }
+
+  /**
+   * tenants/{tenantId}/loans/{loanApplicationId}/documents/SignedLoanAgreement-{version}.pdf
+   */
+  buildSignedAgreementKey(input: {
+    tenantId: string;
+    applicationId: string;
+    version: number;
+  }) {
+    return `tenants/${input.tenantId}/loans/${input.applicationId}/documents/SignedLoanAgreement-${input.version}.pdf`;
   }
 
   async presignPut(input: {
@@ -121,6 +180,25 @@ export class ObjectStorageService implements OnModuleInit {
     return { storageKey: input.storageKey };
   }
 
+  async getObjectBytes(storageKey: string): Promise<Buffer | null> {
+    try {
+      const result = await this.client.send(
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: storageKey,
+        }),
+      );
+      if (!result.Body) return null;
+      const bytes = await result.Body.transformToByteArray();
+      return Buffer.from(bytes);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to read object ${storageKey}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return null;
+    }
+  }
+
   async delete(storageKey: string) {
     await this.client.send(
       new DeleteObjectCommand({
@@ -134,4 +212,13 @@ export class ObjectStorageService implements OnModuleInit {
 function emptyToUndefined(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function sanitizeExtension(extension?: string) {
+  if (!extension) return undefined;
+  return extension.replace(/^\./, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function sanitizePathSegment(value: string) {
+  return value.replace(/[^a-z0-9_-]/gi, '_');
 }

@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   LoanApplicationMediaType,
+  LoanApplicationSignerRole,
   LoanApplicationStatus,
   Prisma,
 } from '@prisma/client';
@@ -26,17 +27,22 @@ import {
   LoanApplicationListResponseContract,
   LoanApplicationResponseContract,
   MediaPresignResponseContract,
+  SignaturePresignResponseContract,
 } from './loan-applications.contracts';
 import {
   LOAN_APPLICATION_EVENTS,
   LoanApplicationEventPayload,
 } from './loan-applications.events';
-import { LOAN_APPLICATION_PERMISSIONS } from './loan-applications.permissions';
 import {
   LoanApplicationRecord,
   LoanApplicationsRepository,
 } from './loan-applications.repository';
+import { buildSignedLoanAgreementPdf } from './loan-agreement-pdf.builder';
 import { MediaConfirmDto, MediaPresignDto } from './dto/media-presign.dto';
+import {
+  SignatureConfirmDto,
+  SignaturePresignDto,
+} from './dto/signature.dto';
 import { UpdateLoanApplicationDto } from './dto/update-loan-application.dto';
 import { VerifyApplicantDto } from './dto/verify-applicant.dto';
 
@@ -50,6 +56,30 @@ const REQUIRED_MEDIA_ON_SUBMIT: LoanApplicationMediaType[] = [
   LoanApplicationMediaType.SIGNATURE_GUARANTOR,
   LoanApplicationMediaType.SIGNATURE_OFFICER,
 ];
+
+const REQUIRED_SIGNATURE_ROLES: LoanApplicationSignerRole[] = [
+  LoanApplicationSignerRole.APPLICANT,
+  LoanApplicationSignerRole.GUARANTOR,
+  LoanApplicationSignerRole.OFFICER,
+];
+
+const SIGNATURE_MEDIA_TYPES = new Set<LoanApplicationMediaType>([
+  LoanApplicationMediaType.SIGNATURE_APPLICANT,
+  LoanApplicationMediaType.SIGNATURE_GUARANTOR,
+  LoanApplicationMediaType.SIGNATURE_OFFICER,
+]);
+
+const SIGNER_ROLE_TO_MEDIA: Record<
+  LoanApplicationSignerRole,
+  LoanApplicationMediaType
+> = {
+  [LoanApplicationSignerRole.APPLICANT]:
+    LoanApplicationMediaType.SIGNATURE_APPLICANT,
+  [LoanApplicationSignerRole.GUARANTOR]:
+    LoanApplicationMediaType.SIGNATURE_GUARANTOR,
+  [LoanApplicationSignerRole.OFFICER]:
+    LoanApplicationMediaType.SIGNATURE_OFFICER,
+};
 
 @Injectable()
 export class LoanApplicationsService {
@@ -256,6 +286,13 @@ export class LoanApplicationsService {
     dto: MediaPresignDto,
   ): Promise<MediaPresignResponseContract> {
     const application = await this.requireWritableDraft(user, id);
+
+    if (SIGNATURE_MEDIA_TYPES.has(dto.mediaType)) {
+      throw new BadRequestException(
+        'Use /signatures/presign for electronic signatures.',
+      );
+    }
+
     const extension =
       dto.extension ||
       this.extensionFromMime(dto.mimeType) ||
@@ -287,6 +324,12 @@ export class LoanApplicationsService {
   ): Promise<LoanApplicationResponseContract> {
     const application = await this.requireWritableDraft(user, id);
 
+    if (SIGNATURE_MEDIA_TYPES.has(dto.mediaType)) {
+      throw new BadRequestException(
+        'Use /signatures/presign and /signatures/confirm for electronic signatures.',
+      );
+    }
+
     if (!dto.storageKey.includes(application.id)) {
       throw new BadRequestException('storageKey does not match this application.');
     }
@@ -308,6 +351,166 @@ export class LoanApplicationsService {
 
     if (!fresh) {
       throw new NotFoundException('Loan application not found.');
+    }
+
+    const payload = this.toEventPayload(fresh);
+    await this.repository.writeOutbox({
+      tenantId: user.tenantId,
+      topic: LOAN_APPLICATION_EVENTS.mediaUploaded,
+      applicationId: fresh.id,
+      payload,
+    });
+    this.realtimeGateway.broadcastLoanApplication(
+      REALTIME_EVENTS.loanApplicationMediaUploaded,
+      { ...payload, tenantId: user.tenantId },
+    );
+
+    return { application: this.toContract(fresh) };
+  }
+
+  async presignSignature(
+    user: AuthenticatedUser,
+    id: string,
+    dto: SignaturePresignDto,
+  ): Promise<SignaturePresignResponseContract> {
+    const application = await this.requireWritableDraft(user, id);
+    const latest = await this.repository.findLatestSignature({
+      applicationId: application.id,
+      signerRole: dto.signerRole,
+    });
+
+    let nextVersion = 1;
+    if (latest) {
+      if (latest.locked && !dto.createNewVersion) {
+        throw new ConflictException(
+          'This signature is locked. Pass createNewVersion=true to capture a new version.',
+        );
+      }
+      nextVersion = latest.locked ? latest.version + 1 : latest.version;
+    }
+
+    const keys = this.objectStorage.buildSignatureObjectKeys({
+      tenantId: user.tenantId,
+      applicationId: application.id,
+      signerRole: dto.signerRole,
+    });
+
+    const [signature, strokes, metadata] = await Promise.all([
+      this.objectStorage.presignPut({
+        storageKey: keys.signaturePngKey,
+        mimeType: 'image/png',
+      }),
+      this.objectStorage.presignPut({
+        storageKey: keys.strokesJsonKey,
+        mimeType: 'application/json',
+      }),
+      this.objectStorage.presignPut({
+        storageKey: keys.metadataJsonKey,
+        mimeType: 'application/json',
+      }),
+    ]);
+
+    return {
+      assetId: keys.assetId,
+      signerRole: dto.signerRole,
+      version: nextVersion,
+      expiresInSeconds: signature.expiresInSeconds,
+      signature: {
+        uploadUrl: signature.uploadUrl,
+        storageKey: signature.storageKey,
+        mimeType: 'image/png',
+      },
+      strokes: {
+        uploadUrl: strokes.uploadUrl,
+        storageKey: strokes.storageKey,
+        mimeType: 'application/json',
+      },
+      metadata: {
+        uploadUrl: metadata.uploadUrl,
+        storageKey: metadata.storageKey,
+        mimeType: 'application/json',
+      },
+    };
+  }
+
+  async confirmSignature(
+    user: AuthenticatedUser,
+    id: string,
+    dto: SignatureConfirmDto,
+  ): Promise<LoanApplicationResponseContract> {
+    const application = await this.requireWritableDraft(user, id);
+    this.assertSignatureKeysBelongToApplication(application.id, dto);
+
+    const latest = await this.repository.findLatestSignature({
+      applicationId: application.id,
+      signerRole: dto.signerRole,
+    });
+
+    let version = 1;
+    if (latest?.locked) {
+      if (!dto.createNewVersion) {
+        throw new ConflictException(
+          'This signature is locked and cannot be replaced. Pass createNewVersion=true for a new version.',
+        );
+      }
+      version = latest.version + 1;
+    } else if (latest && !latest.locked) {
+      throw new ConflictException(
+        'An unlocked signature draft already exists for this role. Contact support.',
+      );
+    }
+
+    const signedAt = new Date(dto.signedAt);
+    if (Number.isNaN(signedAt.getTime())) {
+      throw new BadRequestException('signedAt must be a valid ISO timestamp.');
+    }
+
+    const metadata = {
+      ...dto.metadata,
+      signerName: dto.signerName.trim(),
+      signedAt: signedAt.toISOString(),
+      signerRole: dto.signerRole,
+      loanApplicationId: application.id,
+      signatureStorageKey: dto.signatureStorageKey,
+      version,
+    };
+
+    await this.repository.createSignature({
+      applicationId: application.id,
+      signerRole: dto.signerRole,
+      version,
+      locked: true,
+      signerName: dto.signerName.trim(),
+      signedAt,
+      signatureStorageKey: dto.signatureStorageKey,
+      strokesStorageKey: dto.strokesStorageKey,
+      metadataStorageKey: dto.metadataStorageKey,
+      pngContentHash: dto.pngContentHash.toLowerCase(),
+      strokesContentHash: dto.strokesContentHash.toLowerCase(),
+      metadata: metadata as Prisma.InputJsonValue,
+    });
+
+    await this.repository.upsertMedia({
+      applicationId: application.id,
+      type: SIGNER_ROLE_TO_MEDIA[dto.signerRole],
+      storageKey: dto.signatureStorageKey,
+      mimeType: 'image/png',
+      byteSize: dto.signatureByteSize,
+      checksum: dto.pngContentHash.toLowerCase(),
+      fileName: `${dto.signerRole.toLowerCase()}-signature-v${version}.png`,
+    });
+
+    let fresh = await this.repository.findById({
+      tenantId: user.tenantId,
+      id: application.id,
+    });
+
+    if (!fresh) {
+      throw new NotFoundException('Loan application not found.');
+    }
+
+    if (this.hasAllLockedSignatures(fresh)) {
+      fresh = await this.generateAndStoreSignedAgreement(fresh);
     }
 
     const payload = this.toEventPayload(fresh);
@@ -391,11 +594,125 @@ export class LoanApplicationsService {
       }
     }
 
+    for (const role of REQUIRED_SIGNATURE_ROLES) {
+      const latest = application.signatures
+        .filter((item) => item.signerRole === role)
+        .sort((a, b) => b.version - a.version)[0];
+      if (!latest?.locked) {
+        missing.push(`${role.toLowerCase()} electronic signature`);
+      }
+    }
+
     if (missing.length > 0) {
       throw new BadRequestException(
         `Application is incomplete. Missing: ${missing.join(', ')}.`,
       );
     }
+  }
+
+  private assertSignatureKeysBelongToApplication(
+    applicationId: string,
+    dto: SignatureConfirmDto,
+  ) {
+    const keys = [
+      dto.signatureStorageKey,
+      dto.strokesStorageKey,
+      dto.metadataStorageKey,
+    ];
+    for (const key of keys) {
+      if (!key.includes(applicationId) || !key.includes('/signatures/')) {
+        throw new BadRequestException(
+          'Signature storage keys do not match this application.',
+        );
+      }
+    }
+
+    const folder = dto.signatureStorageKey.replace(/\/signature\.png$/, '');
+    if (
+      !dto.strokesStorageKey.startsWith(`${folder}/`) ||
+      !dto.metadataStorageKey.startsWith(`${folder}/`)
+    ) {
+      throw new BadRequestException(
+        'Signature PNG, strokes, and metadata must share the same asset folder.',
+      );
+    }
+  }
+
+  private hasAllLockedSignatures(application: LoanApplicationRecord) {
+    return REQUIRED_SIGNATURE_ROLES.every((role) => {
+      const latest = application.signatures
+        .filter((item) => item.signerRole === role)
+        .sort((a, b) => b.version - a.version)[0];
+      return Boolean(latest?.locked);
+    });
+  }
+
+  private async generateAndStoreSignedAgreement(
+    application: LoanApplicationRecord,
+  ): Promise<LoanApplicationRecord> {
+    const latestByRole = REQUIRED_SIGNATURE_ROLES.map((role) => {
+      const latest = application.signatures
+        .filter((item) => item.signerRole === role)
+        .sort((a, b) => b.version - a.version)[0];
+      return latest!;
+    });
+
+    const agreementVersion =
+      (application.signedAgreementVersion ?? 0) + 1;
+
+    const parties = await Promise.all(
+      latestByRole.map(async (sig) => {
+        const signaturePng = await this.objectStorage.getObjectBytes(
+          sig.signatureStorageKey,
+        );
+        return {
+          role: sig.signerRole,
+          signerName: sig.signerName,
+          signedAt: sig.signedAt.toISOString(),
+          signaturePng,
+        };
+      }),
+    );
+
+    const { pdfBytes, contentHash } = await buildSignedLoanAgreementPdf({
+      applicationId: application.id,
+      clientName: this.clientName(application),
+      phone: application.phone,
+      nationalId: application.nationalId,
+      principalAmount: this.decimalToNumber(application.principalAmount),
+      interestRatePercent: this.decimalToNumber(
+        application.interestRatePercent,
+      ),
+      durationDays: application.durationDays,
+      processingFee: this.decimalToNumber(application.processingFee),
+      collateralType: application.collateralType,
+      district: application.district,
+      subCounty: application.subCounty,
+      parish: application.parish,
+      village: application.village,
+      guarantorName: application.guarantor?.fullName ?? null,
+      version: agreementVersion,
+      parties,
+    });
+
+    const storageKey = this.objectStorage.buildSignedAgreementKey({
+      tenantId: application.tenantId,
+      applicationId: application.id,
+      version: agreementVersion,
+    });
+
+    await this.objectStorage.upload({
+      storageKey,
+      body: Buffer.from(pdfBytes),
+      mimeType: 'application/pdf',
+    });
+
+    return this.repository.updateSignedAgreement({
+      applicationId: application.id,
+      storageKey,
+      contentHash,
+      version: agreementVersion,
+    });
   }
 
   private async requireAccessibleApplication(
@@ -562,6 +879,27 @@ export class LoanApplicationsService {
         fileName: item.fileName,
         createdAt: item.createdAt.toISOString(),
       })),
+      signatures: application.signatures.map((item) => ({
+        id: item.id,
+        signerRole: item.signerRole,
+        version: item.version,
+        locked: item.locked,
+        signerName: item.signerName,
+        signedAt: item.signedAt.toISOString(),
+        signatureStorageKey: item.signatureStorageKey,
+        strokesStorageKey: item.strokesStorageKey,
+        metadataStorageKey: item.metadataStorageKey,
+        pngContentHash: item.pngContentHash,
+        strokesContentHash: item.strokesContentHash,
+        metadata:
+          item.metadata && typeof item.metadata === 'object'
+            ? (item.metadata as Record<string, unknown>)
+            : {},
+        createdAt: item.createdAt.toISOString(),
+      })),
+      signedAgreementKey: application.signedAgreementKey,
+      signedAgreementHash: application.signedAgreementHash,
+      signedAgreementVersion: application.signedAgreementVersion,
     };
   }
 

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   LoanApplicationMediaType,
+  LoanApplicationSignerRole,
   LoanApplicationStatus,
   LoanStatus,
   Prisma,
@@ -15,6 +16,7 @@ import { LOAN_APPLICATION_PERMISSIONS } from './loan-applications.permissions';
 export const loanApplicationInclude = {
   guarantor: true,
   media: { orderBy: { createdAt: 'asc' as const } },
+  signatures: { orderBy: [{ signerRole: 'asc' as const }, { version: 'desc' as const }] },
 } satisfies Prisma.LoanApplicationInclude;
 
 export type LoanApplicationRecord = Prisma.LoanApplicationGetPayload<{
@@ -175,6 +177,68 @@ export class LoanApplicationsRepository {
         checksum: input.checksum ?? null,
         fileName: input.fileName ?? null,
       },
+    });
+  }
+
+  findLatestSignature(input: {
+    applicationId: string;
+    signerRole: LoanApplicationSignerRole;
+  }) {
+    return this.prisma.loanApplicationSignature.findFirst({
+      where: {
+        loanApplicationId: input.applicationId,
+        signerRole: input.signerRole,
+      },
+      orderBy: { version: 'desc' },
+    });
+  }
+
+  createSignature(input: {
+    applicationId: string;
+    signerRole: LoanApplicationSignerRole;
+    version: number;
+    locked: boolean;
+    signerName: string;
+    signedAt: Date;
+    signatureStorageKey: string;
+    strokesStorageKey: string;
+    metadataStorageKey: string;
+    pngContentHash: string;
+    strokesContentHash: string;
+    metadata: Prisma.InputJsonValue;
+  }) {
+    return this.prisma.loanApplicationSignature.create({
+      data: {
+        loanApplicationId: input.applicationId,
+        signerRole: input.signerRole,
+        version: input.version,
+        locked: input.locked,
+        signerName: input.signerName,
+        signedAt: input.signedAt,
+        signatureStorageKey: input.signatureStorageKey,
+        strokesStorageKey: input.strokesStorageKey,
+        metadataStorageKey: input.metadataStorageKey,
+        pngContentHash: input.pngContentHash,
+        strokesContentHash: input.strokesContentHash,
+        metadata: input.metadata,
+      },
+    });
+  }
+
+  updateSignedAgreement(input: {
+    applicationId: string;
+    storageKey: string;
+    contentHash: string;
+    version: number;
+  }) {
+    return this.prisma.loanApplication.update({
+      where: { id: input.applicationId },
+      data: {
+        signedAgreementKey: input.storageKey,
+        signedAgreementHash: input.contentHash,
+        signedAgreementVersion: input.version,
+      },
+      include: loanApplicationInclude,
     });
   }
 

@@ -55,6 +55,12 @@ enum LoanApplicationMediaType {
   SIGNATURE_OFFICER
 }
 
+enum LoanApplicationSignerRole {
+  APPLICANT
+  GUARANTOR
+  OFFICER
+}
+
 enum ModuleStatus {
   ENABLED
   TRIAL
@@ -313,6 +319,10 @@ model LoanApplication {
   loan                 Loan?                 @relation(fields: [loanId], references: [id])
   guarantor            LoanApplicationGuarantor?
   media                LoanApplicationMedia[]
+  signatures           LoanApplicationSignature[]
+  signedAgreementKey   String?               @map("signed_agreement_key")
+  signedAgreementHash  String?               @map("signed_agreement_hash")
+  signedAgreementVersion Int?                @map("signed_agreement_version")
 
   @@index([tenantId, status])
   @@index([tenantId, branchId])
@@ -349,6 +359,31 @@ model LoanApplicationMedia {
   @@unique([loanApplicationId, type])
   @@index([loanApplicationId])
   @@map("loan_application_media")
+}
+
+/// Versioned electronic signature capture (PNG + strokes + metadata).
+/// Once locked, a role cannot be overwritten — only a new version may be created.
+model LoanApplicationSignature {
+  id                   String                     @id @default(uuid()) @db.Uuid
+  loanApplicationId    String                     @map("loan_application_id") @db.Uuid
+  signerRole           LoanApplicationSignerRole  @map("signer_role")
+  version              Int                        @default(1)
+  locked               Boolean                    @default(true)
+  signerName           String                     @map("signer_name")
+  signedAt             DateTime                   @map("signed_at")
+  signatureStorageKey  String                     @map("signature_storage_key")
+  strokesStorageKey    String                     @map("strokes_storage_key")
+  metadataStorageKey   String                     @map("metadata_storage_key")
+  pngContentHash       String                     @map("png_content_hash")
+  strokesContentHash   String                     @map("strokes_content_hash")
+  metadata             Json
+  createdAt            DateTime                   @default(now()) @map("created_at")
+  updatedAt            DateTime                   @updatedAt @map("updated_at")
+  application          LoanApplication            @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+
+  @@unique([loanApplicationId, signerRole, version])
+  @@index([loanApplicationId, signerRole])
+  @@map("loan_application_signatures")
 }
 
 model AuditLog {

@@ -7,7 +7,8 @@ import '../../features/loan_application/domain/failures.dart';
 import '../../services/session_store.dart';
 import '../../shared/camera_capture/camera_capture.dart';
 import '../../shared/permissions/rembeh_permission_gate.dart';
-import '../../shared/signature_pad/signature_capture_sheet.dart';
+import '../../features/loan_application/domain/entities/loan_application.dart';
+import '../../shared/signature_pad/electronic_signature_screen.dart';
 import '../../theme.dart';
 import '../../utils/money.dart';
 import 'loan_application_draft.dart';
@@ -380,34 +381,32 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   }
 
   Future<void> _captureSignature({
-    required String mediaType,
+    required String signerRole,
     required String title,
     required String signerName,
-    required void Function(bool) setSigned,
   }) async {
     final id = _applicationId;
     if (id == null) return;
 
-    final bytes = await showSignatureCaptureSheet(
+    final capture = await openElectronicSignatureScreen(
       context,
       title: title,
       signerName: signerName,
+      signerRole: signerRole,
+      loanApplicationId: id,
     );
-    if (bytes == null) return;
+    if (capture == null) return;
 
     setState(() => _busy = true);
     try {
-      final application = await _locator.uploadMedia(
+      final application = await _locator.uploadSignature(
         id: id,
-        mediaType: mediaType,
-        bytes: bytes,
-        mimeType: 'image/png',
-        fileName: '${mediaType.toLowerCase()}.png',
+        signerRole: signerRole,
+        capture: capture,
       );
       if (!mounted) return;
       setState(() {
-        _applyMediaFlags(application.mediaTypes);
-        setSigned(true);
+        _applyApplicationFlags(application);
       });
     } catch (error) {
       if (!mounted) return;
@@ -432,6 +431,27 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       ..applicantSigned = mediaTypes.contains('SIGNATURE_APPLICANT')
       ..guarantorSigned = mediaTypes.contains('SIGNATURE_GUARANTOR')
       ..officerSigned = mediaTypes.contains('SIGNATURE_OFFICER');
+  }
+
+  void _applyApplicationFlags(LoanApplication application) {
+    _applyMediaFlags(application.mediaTypes);
+    final latest = <String, LoanApplicationSignatureSummary>{};
+    for (final sig in application.signatures) {
+      final existing = latest[sig.signerRole];
+      if (existing == null || sig.version >= existing.version) {
+        latest[sig.signerRole] = sig;
+      }
+    }
+    final applicant = latest['APPLICANT'];
+    final guarantor = latest['GUARANTOR'];
+    final officer = latest['OFFICER'];
+    _draft
+      ..applicantSigned = applicant?.locked == true
+      ..guarantorSigned = guarantor?.locked == true
+      ..officerSigned = officer?.locked == true
+      ..applicantSignatureVersion = applicant?.version
+      ..guarantorSignatureVersion = guarantor?.version
+      ..officerSignatureVersion = officer?.version;
   }
 
   bool _canContinue() {
@@ -1167,13 +1187,13 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         name: _draft.fullName.isEmpty ? 'Applicant' : _draft.fullName,
         icon: Icons.person_outline,
         signed: _draft.applicantSigned,
+        locked: _draft.applicantSigned,
+        version: _draft.applicantSignatureVersion,
         onSign: () => _captureSignature(
-          mediaType: 'SIGNATURE_APPLICANT',
+          signerRole: 'APPLICANT',
           title: 'Loan Applicant Signature',
           signerName: _draft.fullName.isEmpty ? 'Applicant' : _draft.fullName,
-          setSigned: (value) => _draft.applicantSigned = value,
         ),
-        onClear: () => setState(() => _draft.applicantSigned = false),
       ),
       const SizedBox(height: 10),
       LoanSignaturePad(
@@ -1183,15 +1203,15 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
             : _guarantorName.text.trim(),
         icon: Icons.groups_outlined,
         signed: _draft.guarantorSigned,
+        locked: _draft.guarantorSigned,
+        version: _draft.guarantorSignatureVersion,
         onSign: () => _captureSignature(
-          mediaType: 'SIGNATURE_GUARANTOR',
+          signerRole: 'GUARANTOR',
           title: 'Guarantor Signature',
           signerName: _guarantorName.text.trim().isEmpty
               ? 'Guarantor'
               : _guarantorName.text.trim(),
-          setSigned: (value) => _draft.guarantorSigned = value,
         ),
-        onClear: () => setState(() => _draft.guarantorSigned = false),
       ),
       const SizedBox(height: 10),
       LoanSignaturePad(
@@ -1199,13 +1219,13 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         name: '$officer (You)',
         icon: Icons.badge_outlined,
         signed: _draft.officerSigned,
+        locked: _draft.officerSigned,
+        version: _draft.officerSignatureVersion,
         onSign: () => _captureSignature(
-          mediaType: 'SIGNATURE_OFFICER',
+          signerRole: 'OFFICER',
           title: 'Loan Officer Signature',
-          signerName: '$officer (You)',
-          setSigned: (value) => _draft.officerSigned = value,
+          signerName: officer,
         ),
-        onClear: () => setState(() => _draft.officerSigned = false),
       ),
       const SizedBox(height: 12),
       Material(

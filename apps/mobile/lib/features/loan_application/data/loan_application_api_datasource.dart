@@ -106,6 +106,38 @@ class LoanApplicationApiDatasource {
     return _decodeOk(response);
   }
 
+  Future<Map<String, dynamic>> presignSignature(
+    String id,
+    Map<String, dynamic> body,
+  ) async {
+    final session = await _requireSession();
+    final response = await http.post(
+      Uri.parse('$rembehApiBaseUrl/loan-applications/$id/signatures/presign'),
+      headers: {
+        ..._headers(session),
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(body),
+    );
+    return _decodeOk(response);
+  }
+
+  Future<Map<String, dynamic>> confirmSignature(
+    String id,
+    Map<String, dynamic> body,
+  ) async {
+    final session = await _requireSession();
+    final response = await http.post(
+      Uri.parse('$rembehApiBaseUrl/loan-applications/$id/signatures/confirm'),
+      headers: {
+        ..._headers(session),
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(body),
+    );
+    return _decodeOk(response);
+  }
+
   Future<Map<String, dynamic>> submit(String id) async {
     final session = await _requireSession();
     final response = await http.post(

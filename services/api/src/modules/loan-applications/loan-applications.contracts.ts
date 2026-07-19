@@ -8,6 +8,22 @@ export type LoanApplicationMediaContract = {
   createdAt: string;
 };
 
+export type LoanApplicationSignatureContract = {
+  id: string;
+  signerRole: string;
+  version: number;
+  locked: boolean;
+  signerName: string;
+  signedAt: string;
+  signatureStorageKey: string;
+  strokesStorageKey: string;
+  metadataStorageKey: string;
+  pngContentHash: string;
+  strokesContentHash: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
 export type LoanApplicationGuarantorContract = {
   fullName: string | null;
   phone: string | null;
@@ -42,6 +58,10 @@ export type LoanApplicationContract = {
   synced: boolean;
   guarantor: LoanApplicationGuarantorContract | null;
   media: LoanApplicationMediaContract[];
+  signatures: LoanApplicationSignatureContract[];
+  signedAgreementKey: string | null;
+  signedAgreementHash: string | null;
+  signedAgreementVersion: number | null;
 };
 
 export type LoanApplicationListItemContract = {
@@ -69,4 +89,20 @@ export type MediaPresignResponseContract = {
   storageKey: string;
   expiresInSeconds: number;
   mediaType: string;
+};
+
+export type SignaturePresignPartContract = {
+  uploadUrl: string;
+  storageKey: string;
+  mimeType: string;
+};
+
+export type SignaturePresignResponseContract = {
+  assetId: string;
+  signerRole: string;
+  version: number;
+  expiresInSeconds: number;
+  signature: SignaturePresignPartContract;
+  strokes: SignaturePresignPartContract;
+  metadata: SignaturePresignPartContract;
 };

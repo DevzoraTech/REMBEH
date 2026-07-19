@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Writes dart_defines.dev.json + lib/config_dev_host.dart (and patches root .env)
-# so a physical device can reach the API + MinIO on this machine's LAN IP.
+# Syncs LAN IP into lib/config_dev_host.dart (+ optional MinIO public URL in .env).
+# Debug builds auto-use that host; release builds use EC2 (see lib/config.dart).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
@@ -20,13 +20,11 @@ if [[ -z "$HOST" ]]; then
   exit 1
 fi
 
-API_URL="http://${HOST}:4000/api/v1"
 S3_PUBLIC="http://${HOST}:9000"
 
+# Empty dart-defines so debug auto-detect is not overridden.
 cat >"$MOBILE/dart_defines.dev.json" <<EOF
-{
-  "REMBEH_API_URL": "${API_URL}"
-}
+{}
 EOF
 
 cat >"$MOBILE/lib/config_dev_host.dart" <<EOF
@@ -35,9 +33,10 @@ cat >"$MOBILE/lib/config_dev_host.dart" <<EOF
 const String rembehDevApiHost = '${HOST}';
 EOF
 
-echo "Wrote $MOBILE/dart_defines.dev.json"
+echo "Wrote $MOBILE/dart_defines.dev.json (no forced REMBEH_API_URL)"
 echo "Wrote $MOBILE/lib/config_dev_host.dart"
-echo "  REMBEH_API_URL=${API_URL}"
+echo "  debug API → http://${HOST}:4000/api/v1"
+echo "  release API → EC2 (see lib/config.dart)"
 
 if [[ -f "$ENV_FILE" ]]; then
   if grep -q '^S3_PUBLIC_ENDPOINT=' "$ENV_FILE"; then
@@ -58,4 +57,4 @@ fi
 
 echo
 echo "Cold-start the app (hot reload will NOT pick up host changes):"
-echo "  cd apps/mobile && flutter run --dart-define-from-file=dart_defines.dev.json"
+echo "  cd apps/mobile && flutter run"

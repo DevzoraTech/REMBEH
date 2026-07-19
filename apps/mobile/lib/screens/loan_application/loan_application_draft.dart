@@ -40,10 +40,13 @@ class LoanApplicationDraft {
   String supportingDocName = '';
   String otherDocName = '';
 
-  // Step 6 — signatures
+  // Step 6 — signatures (locked once confirmed by API)
   bool applicantSigned = false;
   bool guarantorSigned = false;
   bool officerSigned = false;
+  int? applicantSignatureVersion;
+  int? guarantorSignatureVersion;
+  int? officerSignatureVersion;
   bool termsConfirmed = false;
 
   String get fullName {

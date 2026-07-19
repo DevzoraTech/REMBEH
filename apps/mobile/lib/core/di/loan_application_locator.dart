@@ -24,6 +24,8 @@ class LoanApplicationLocator {
   late final SaveLoanStepUseCase saveStep = SaveLoanStepUseCase(repository);
   late final UploadLoanMediaUseCase uploadMedia =
       UploadLoanMediaUseCase(repository);
+  late final UploadLoanSignatureUseCase uploadSignature =
+      UploadLoanSignatureUseCase(repository);
   late final SubmitLoanApplicationUseCase submit =
       SubmitLoanApplicationUseCase(repository);
   late final ListLoanApplicationsUseCase listApplications =

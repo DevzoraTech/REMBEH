@@ -1,6 +1,10 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
+
 import '../domain/entities/loan_application.dart';
+import '../domain/entities/signature_capture.dart';
 import '../domain/failures.dart';
 import '../domain/repositories/loan_application_repository.dart';
 import 'loan_application_api_datasource.dart';
@@ -109,6 +113,69 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
   }
 
   @override
+  Future<LoanApplication> uploadSignature({
+    required String id,
+    required String signerRole,
+    required SignatureCaptureResult capture,
+    bool createNewVersion = false,
+  }) async {
+    try {
+      final presign = await _api.presignSignature(id, {
+        'signerRole': signerRole,
+        if (createNewVersion) 'createNewVersion': true,
+      });
+
+      final signature = presign['signature'] as Map<String, dynamic>;
+      final strokes = presign['strokes'] as Map<String, dynamic>;
+      final metadata = presign['metadata'] as Map<String, dynamic>;
+
+      final strokesJson = utf8.encode(jsonEncode(capture.strokesPayload()));
+      final metadataJson = utf8.encode(jsonEncode(capture.metadataPayload()));
+      final pngBytes = capture.pngBytes;
+
+      await Future.wait([
+        _api.uploadToPresignedUrl(
+          uploadUrl: signature['uploadUrl'] as String,
+          bytes: pngBytes,
+          mimeType: signature['mimeType'] as String? ?? 'image/png',
+        ),
+        _api.uploadToPresignedUrl(
+          uploadUrl: strokes['uploadUrl'] as String,
+          bytes: Uint8List.fromList(strokesJson),
+          mimeType: strokes['mimeType'] as String? ?? 'application/json',
+        ),
+        _api.uploadToPresignedUrl(
+          uploadUrl: metadata['uploadUrl'] as String,
+          bytes: Uint8List.fromList(metadataJson),
+          mimeType: metadata['mimeType'] as String? ?? 'application/json',
+        ),
+      ]);
+
+      final confirmed = await _api.confirmSignature(id, {
+        'signerRole': signerRole,
+        'signatureStorageKey': signature['storageKey'],
+        'strokesStorageKey': strokes['storageKey'],
+        'metadataStorageKey': metadata['storageKey'],
+        'signatureByteSize': pngBytes.length,
+        'strokesByteSize': strokesJson.length,
+        'metadataByteSize': metadataJson.length,
+        'pngContentHash': sha256.convert(pngBytes).toString(),
+        'strokesContentHash': sha256.convert(strokesJson).toString(),
+        'signerName': capture.metadata['signerName'] as String? ?? '',
+        'signedAt':
+            capture.metadata['timestamp'] as String? ??
+            DateTime.now().toUtc().toIso8601String(),
+        'metadata': capture.metadataPayload(),
+        if (createNewVersion) 'createNewVersion': true,
+      });
+
+      return _mapApplication(confirmed['application'] as Map<String, dynamic>);
+    } catch (error) {
+      throw LoanApplicationFailure(error.toString());
+    }
+  }
+
+  @override
   Future<LoanApplication> submit(String id) async {
     try {
       final body = await _api.submit(id);
@@ -135,6 +202,8 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
   LoanApplication _mapApplication(Map<String, dynamic> json) {
     final media = (json['media'] as List<dynamic>? ?? const [])
         .cast<Map<String, dynamic>>();
+    final signatures = (json['signatures'] as List<dynamic>? ?? const [])
+        .cast<Map<String, dynamic>>();
     final guarantor = json['guarantor'] as Map<String, dynamic>?;
 
     return LoanApplication(
@@ -142,6 +211,16 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
       status: json['status'] as String? ?? 'DRAFT',
       synced: json['synced'] as bool? ?? false,
       mediaTypes: media.map((item) => item['type'] as String).toSet(),
+      signatures: signatures
+          .map(
+            (item) => LoanApplicationSignatureSummary(
+              signerRole: item['signerRole'] as String? ?? '',
+              version: (item['version'] as num?)?.toInt() ?? 1,
+              locked: item['locked'] as bool? ?? false,
+              signerName: item['signerName'] as String? ?? '',
+            ),
+          )
+          .toList(growable: false),
       surname: json['surname'] as String?,
       givenNames: json['givenNames'] as String?,
       phone: json['phone'] as String?,

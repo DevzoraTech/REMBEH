@@ -353,7 +353,8 @@ class LoanSignaturePad extends StatelessWidget {
     required this.icon,
     required this.signed,
     required this.onSign,
-    required this.onClear,
+    this.locked = false,
+    this.version,
   });
 
   final String title;
@@ -361,10 +362,12 @@ class LoanSignaturePad extends StatelessWidget {
   final IconData icon;
   final bool signed;
   final VoidCallback onSign;
-  final VoidCallback onClear;
+  final bool locked;
+  final int? version;
 
   @override
   Widget build(BuildContext context) {
+    final readOnly = signed && locked;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -406,13 +409,15 @@ class LoanSignaturePad extends StatelessWidget {
                   ],
                 ),
               ),
+              if (readOnly)
+                const Icon(Icons.lock_outline, size: 16, color: forestEmerald),
             ],
           ),
           const SizedBox(height: 10),
           Material(
             color: softIvory,
             child: InkWell(
-              onTap: onSign,
+              onTap: readOnly ? null : onSign,
               child: Container(
                 width: double.infinity,
                 height: 96,
@@ -421,14 +426,27 @@ class LoanSignaturePad extends StatelessWidget {
                   border: Border.all(color: line),
                 ),
                 child: signed
-                    ? Text(
-                        name,
-                        style: const TextStyle(
-                          color: forestEmerald,
-                          fontWeight: FontWeight.w800,
-                          fontStyle: FontStyle.italic,
-                          fontSize: 22,
-                        ),
+                    ? Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            name,
+                            style: const TextStyle(
+                              color: forestEmerald,
+                              fontWeight: FontWeight.w800,
+                              fontStyle: FontStyle.italic,
+                              fontSize: 20,
+                            ),
+                          ),
+                          if (version != null)
+                            Text(
+                              'Signed · v$version · locked',
+                              style: const TextStyle(
+                                color: slateText,
+                                fontSize: 11,
+                              ),
+                            ),
+                        ],
                       )
                     : const Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -439,15 +457,6 @@ class LoanSignaturePad extends StatelessWidget {
                         ],
                       ),
               ),
-            ),
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton.icon(
-              onPressed: signed ? onClear : null,
-              icon: const Icon(Icons.refresh, size: 16),
-              label: const Text('Clear'),
-              style: TextButton.styleFrom(foregroundColor: forestEmerald),
             ),
           ),
         ],

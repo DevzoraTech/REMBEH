@@ -11,13 +11,18 @@ Agents use this app after invitation + activation.
 
 Customer data is branch-scoped. Manager/owner consoles read what agents capture.
 
-## Run
+## API environment (automatic)
 
-API (and MinIO for media) must be running on your machine first.
+| Build | API |
+| --- | --- |
+| **Debug** (`flutter run`) | Local Mac on LAN (`config_dev_host.dart`) |
+| **Release** (`flutter build` / store) | `https://rembeh-api.antikra.com/api/v1` |
 
-### Local run (simulator, emulator, or physical device)
+Override anytime: `--dart-define=REMBEH_API_URL=...`
 
-1. Sync your Mac’s LAN IP (needed for phones + media uploads):
+## Run (local development)
+
+1. Sync your Mac’s LAN IP (phones need this):
 
 ```bash
 cd apps/mobile
@@ -25,20 +30,32 @@ chmod +x tool/sync_dev_host.sh
 ./tool/sync_dev_host.sh
 ```
 
-2. Restart the API if `S3_PUBLIC_ENDPOINT` changed.
+2. Start the API on your Mac (`HOST=0.0.0.0`).
 
-3. Cold-start the app (hot reload does **not** update the API host):
-
-```bash
-flutter run --dart-define-from-file=dart_defines.dev.json
-```
-
-`tool/sync_dev_host.sh` also writes `lib/config_dev_host.dart`, so even a plain `flutter run` uses your LAN IP after a full restart.
-
-Phone and Mac must be on the same Wi‑Fi. Allow macOS firewall prompts for Node if shown.
-
-### Override manually
+3. Cold-start the app:
 
 ```bash
-flutter run --dart-define=REMBEH_API_URL=http://192.168.x.x:4000/api/v1
+flutter run
 ```
+
+Phone and Mac must be on the same Wi‑Fi.
+
+## Production builds
+
+```bash
+flutter build apk   # or ipa — uses production HTTPS API automatically
+```
+
+Optional explicit prod defines: `dart_defines.prod.json.example`.
+
+## Force a URL (debug against production, etc.)
+
+```bash
+flutter run --dart-define=REMBEH_API_URL=https://rembeh-api.antikra.com/api/v1
+```
+
+## Electronic signatures (Syncfusion)
+
+Loan step 6 uses `syncfusion_flutter_signaturepad` for on-device signing (stylus + finger), high-res PNG export, stroke JSON, and audit metadata.
+
+**License note:** Syncfusion Flutter controls require a community or commercial license for production distribution. Register at [Syncfusion licensing](https://www.syncfusion.com/products/communitylicense) (community license is free for qualifying organizations) and follow their Flutter license registration steps before store release. Development/evaluation can proceed without registering a key, but production builds should include a valid license.

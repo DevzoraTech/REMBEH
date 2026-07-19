@@ -16,12 +16,27 @@ class LoanApplicationMedia {
   final String? fileName;
 }
 
+class LoanApplicationSignatureSummary {
+  const LoanApplicationSignatureSummary({
+    required this.signerRole,
+    required this.version,
+    required this.locked,
+    required this.signerName,
+  });
+
+  final String signerRole;
+  final int version;
+  final bool locked;
+  final String signerName;
+}
+
 class LoanApplication {
   const LoanApplication({
     required this.id,
     required this.status,
     required this.synced,
     required this.mediaTypes,
+    this.signatures = const [],
     this.surname,
     this.givenNames,
     this.phone,
@@ -46,6 +61,7 @@ class LoanApplication {
   final String status;
   final bool synced;
   final Set<String> mediaTypes;
+  final List<LoanApplicationSignatureSummary> signatures;
   final String? surname;
   final String? givenNames;
   final String? phone;
@@ -69,6 +85,12 @@ class LoanApplication {
       status == 'VERIFIED' || status == 'SUBMITTED' || verifiedAt != null;
 
   bool hasMedia(String type) => mediaTypes.contains(type);
+
+  bool hasLockedSignature(String signerRole) {
+    return signatures.any(
+      (item) => item.signerRole == signerRole && item.locked,
+    );
+  }
 
   String get fullName {
     final parts = [givenNames, surname]

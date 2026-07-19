@@ -35,4 +35,17 @@ docker compose up -d
 The local service stack provides PostgreSQL, Redis, MinIO, and Mailpit for development.
 
 If login/register returns database errors (`ECONNREFUSED`), Postgres is not running — start it with `npm run dev:deps` first.
-# REMBEH
+
+## Electronic signatures & S3 layout
+
+Loan applications store media and signatures under hierarchical keys:
+
+```
+tenants/{tenantId}/loans/{loanApplicationId}/
+  media/{mediaType}/{uuid}.{ext}
+  signatures/{signerRole}/{uuid}/signature.png|strokes.json|metadata.json
+  documents/SignedLoanAgreement-{version}.pdf
+```
+
+Mobile agents capture signatures with Syncfusion SignaturePad (see `apps/mobile/README.md` for license notes). API endpoints: `POST /loan-applications/:id/signatures/presign` and `.../confirm`. Deploy migration `20260719120000_loan_application_signatures` before using the feature in an environment.
+

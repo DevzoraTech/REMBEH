@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import '../domain/entities/loan_application.dart';
+import '../domain/entities/signature_capture.dart';
 import '../domain/repositories/loan_application_repository.dart';
 
 class CreateLoanDraftUseCase {
@@ -59,6 +60,25 @@ class UploadLoanMediaUseCase {
       bytes: bytes,
       mimeType: mimeType,
       fileName: fileName,
+    );
+  }
+}
+
+class UploadLoanSignatureUseCase {
+  UploadLoanSignatureUseCase(this._repository);
+  final LoanApplicationRepository _repository;
+
+  Future<LoanApplication> call({
+    required String id,
+    required String signerRole,
+    required SignatureCaptureResult capture,
+    bool createNewVersion = false,
+  }) {
+    return _repository.uploadSignature(
+      id: id,
+      signerRole: signerRole,
+      capture: capture,
+      createNewVersion: createNewVersion,
     );
   }
 }
