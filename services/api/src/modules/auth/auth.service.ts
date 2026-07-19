@@ -46,6 +46,7 @@ import {
   WorkspaceRegistrationResponse,
 } from './auth.contracts';
 import { LoginDto } from './dto/login.dto';
+import { RefreshSessionDto } from './dto/refresh-session.dto';
 import { RegisterWorkspaceDto } from './dto/register-workspace.dto';
 import { ResendWorkspaceEmailOtpDto } from './dto/resend-workspace-email-otp.dto';
 import { VerifyWorkspaceEmailDto } from './dto/verify-workspace-email.dto';
@@ -790,7 +791,7 @@ export class AuthService {
   }
 
   private async buildSession(userId: string, tenantId: string) {
-    const token = this.jwtTokenService.issueAccessToken({ userId, tenantId });
+    const tokens = this.jwtTokenService.issueTokenPair({ userId, tenantId });
     const permissions = await this.prisma.userRole.findMany({
       where: { userId },
       include: {
@@ -807,7 +808,10 @@ export class AuthService {
     });
 
     return {
-      ...token,
+      accessToken: tokens.accessToken,
+      expiresAt: tokens.expiresAt,
+      refreshToken: tokens.refreshToken,
+      refreshExpiresAt: tokens.refreshExpiresAt,
       tokenType: 'Bearer' as const,
       permissions: [
         ...new Set(
@@ -818,6 +822,27 @@ export class AuthService {
           ),
         ),
       ],
+    };
+  }
+
+  async refreshSession(dto: RefreshSessionDto) {
+    const payload = this.jwtTokenService.verifyRefreshToken(dto.refreshToken);
+    const user = await this.prisma.user.findUnique({
+      where: { id: payload.sub },
+      include: { tenant: true },
+    });
+
+    if (
+      !user ||
+      user.tenantId !== payload.tenantId ||
+      user.status !== UserStatus.ACTIVE ||
+      user.tenant.status !== TenantStatus.ACTIVE
+    ) {
+      throw new UnauthorizedException('Unable to refresh session.');
+    }
+
+    return {
+      session: await this.buildSession(user.id, user.tenantId),
     };
   }
 }

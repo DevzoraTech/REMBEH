@@ -1,6 +1,8 @@
 class ClientDetail {
   const ClientDetail({
     required this.id,
+    required this.loanId,
+    required this.customerId,
     required this.fullName,
     required this.phone,
     required this.registeredBy,
@@ -20,16 +22,21 @@ class ClientDetail {
     required this.interestRatePercent,
     required this.loanStartDate,
     required this.maturityDate,
+    this.interestAmount = 0,
+    this.processingFee = 0,
+    this.status = '',
   });
 
   final String id;
+  final String loanId;
+  final String customerId;
   final String fullName;
   final String phone;
   final String registeredBy;
   final int outstanding;
   final int lastPaymentAmount;
-  final DateTime lastPaymentAt;
-  final String lastPaymentBy;
+  final DateTime? lastPaymentAt;
+  final String? lastPaymentBy;
   final int expectedToday;
   final int carriedForward;
   final int dailyInstalment;
@@ -39,9 +46,12 @@ class ClientDetail {
   final bool nextDueIsToday;
   final int paidAmount;
   final int loanAmount;
-  final int interestRatePercent;
+  final double interestRatePercent;
   final DateTime loanStartDate;
   final DateTime maturityDate;
+  final int interestAmount;
+  final int processingFee;
+  final String status;
 
   String get initials {
     final parts = fullName
@@ -64,4 +74,42 @@ class ClientDetail {
   }
 
   int get progressPercent => (progressRatio * 100).round();
+
+  factory ClientDetail.fromApi(Map<String, dynamic> json) {
+    DateTime parseDate(String? raw, {DateTime? fallback}) {
+      final parsed = DateTime.tryParse(raw ?? '');
+      return parsed ?? fallback ?? DateTime.now();
+    }
+
+    return ClientDetail(
+      id: json['id'] as String? ?? json['loanId'] as String? ?? '',
+      loanId: json['loanId'] as String? ?? json['id'] as String? ?? '',
+      customerId: json['customerId'] as String? ?? '',
+      fullName: json['fullName'] as String? ?? '',
+      phone: json['phone'] as String? ?? '',
+      registeredBy: json['registeredBy'] as String? ?? '',
+      outstanding: ((json['outstanding'] as num?) ?? 0).round(),
+      lastPaymentAmount: ((json['lastPaymentAmount'] as num?) ?? 0).round(),
+      lastPaymentAt: json['lastPaymentAt'] != null
+          ? DateTime.tryParse(json['lastPaymentAt'] as String)
+          : null,
+      lastPaymentBy: json['lastPaymentBy'] as String?,
+      expectedToday: ((json['expectedToday'] as num?) ?? 0).round(),
+      carriedForward: ((json['carriedForward'] as num?) ?? 0).round(),
+      dailyInstalment: ((json['dailyInstalment'] as num?) ?? 0).round(),
+      loanPeriodDays: ((json['loanPeriodDays'] as num?) ?? 0).round(),
+      daysLeft: ((json['daysLeft'] as num?) ?? 0).round(),
+      nextDueLabel: json['nextDueLabel'] as String? ?? '',
+      nextDueIsToday: json['nextDueIsToday'] as bool? ?? false,
+      paidAmount: ((json['paidAmount'] as num?) ?? 0).round(),
+      loanAmount: ((json['loanAmount'] as num?) ?? 0).round(),
+      interestRatePercent:
+          (json['interestRatePercent'] as num?)?.toDouble() ?? 0,
+      loanStartDate: parseDate(json['loanStartDate'] as String?),
+      maturityDate: parseDate(json['maturityDate'] as String?),
+      interestAmount: ((json['interestAmount'] as num?) ?? 0).round(),
+      processingFee: ((json['processingFee'] as num?) ?? 0).round(),
+      status: json['status'] as String? ?? '',
+    );
+  }
 }

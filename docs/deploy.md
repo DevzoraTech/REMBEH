@@ -17,18 +17,21 @@ Optional:
 |------|------|-------|
 | `www.rembeh.antikra.com` | CNAME | `rembeh.antikra.com` |
 
-### TLS / HTTP
+### TLS / HTTPS
 
 | Site | Scheme | Notes |
 |------|--------|--------|
-| API | **HTTPS** | `https://rembeh-api.antikra.com` — Let's Encrypt already configured on the host |
-| Web | **HTTP** | `http://rembeh.antikra.com` — no dedicated web cert yet; nginx proxies `:80` → Next.js `:3000` |
+| API | **HTTPS** | `https://rembeh-api.antikra.com` — Let's Encrypt on the host |
+| Web | **HTTPS** | `https://rembeh.antikra.com` — Let's Encrypt via `certbot --nginx`; HTTP → HTTPS redirect |
+
+Renewal is handled by certbot's timer. Optional `www.rembeh.antikra.com` needs a DNS CNAME before it can be added to the web cert.
 
 Health check:
 
 ```bash
 curl https://rembeh-api.antikra.com/api/v1/platform/health
-curl -I http://rembeh.antikra.com/
+curl -sI https://rembeh.antikra.com | head -20
+curl -sI http://rembeh.antikra.com | head -10   # expect 301 → https
 ```
 
 ---

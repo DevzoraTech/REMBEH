@@ -12,9 +12,11 @@ import {
   RembehSession,
   RembehUser,
   RembehWorkspace,
+  canRefreshSession,
   clearAuthState,
   isSessionExpired,
   readAuthState,
+  refreshAuthSession,
 } from "../../lib/auth-session";
 import { resolveOperatorRole } from "../../lib/roles";
 
@@ -55,68 +57,85 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const boot = window.setTimeout(() => {
-      const auth = readAuthState();
+      void (async () => {
+        const auth = readAuthState();
+        let activeSession = auth.session;
 
-      if (!auth.session || isSessionExpired(auth.session)) {
-        clearSessionAndRedirect();
-        return;
-      }
+        if (!activeSession) {
+          clearSessionAndRedirect();
+          return;
+        }
 
-      setSession(auth.session);
-      setWorkspace(auth.workspace);
-      setUser(auth.user);
-      setBranch(auth.branch);
+        if (isSessionExpired(activeSession)) {
+          if (canRefreshSession(activeSession)) {
+            activeSession =
+              (await refreshAuthSession(activeSession, apiBaseUrl)) ?? null;
+          } else {
+            activeSession = null;
+          }
+        }
 
-      const role = resolveOperatorRole(auth.session, auth.user);
+        if (!activeSession) {
+          clearSessionAndRedirect();
+          return;
+        }
 
-      // Agents / field staff: no console data.
-      if (role === "staff") {
-        setIsLoading(false);
-        return;
-      }
+        setSession(activeSession);
+        setWorkspace(auth.workspace);
+        setUser(auth.user);
+        setBranch(auth.branch);
 
-      void Promise.all([
-        auth.session.permissions.includes("branch.read")
-          ? fetch(`${apiBaseUrl}/branches`, {
-              headers: {
-                Authorization: `${auth.session.tokenType} ${auth.session.accessToken}`,
-              },
-            }).then(async (response) => {
-              const payload = await readApiJson<{
-                branches?: Branch[];
-                message?: string | string[];
-              }>(response);
-              if (!response.ok) {
-                throw new Error(formatApiError(payload.message));
-              }
-              setBranches(payload.branches ?? []);
-            })
-          : Promise.resolve(),
-        auth.session.permissions.includes("customer.read")
-          ? fetch(`${apiBaseUrl}/customers`, {
-              headers: {
-                Authorization: `${auth.session.tokenType} ${auth.session.accessToken}`,
-              },
-            }).then(async (response) => {
-              const payload = await readApiJson<{
-                customers?: unknown[];
-              }>(response);
-              if (response.ok) {
-                setCustomerCount(payload.customers?.length ?? 0);
-              }
-            })
-          : Promise.resolve(),
-      ])
-        .catch((caughtError: unknown) => {
-          setError(
-            caughtError instanceof Error
-              ? caughtError.message
-              : "Could not load console.",
-          );
-        })
-        .finally(() => {
+        const role = resolveOperatorRole(activeSession, auth.user);
+
+        // Agents / field staff: no console data.
+        if (role === "staff") {
           setIsLoading(false);
-        });
+          return;
+        }
+
+        void Promise.all([
+          activeSession.permissions.includes("branch.read")
+            ? fetch(`${apiBaseUrl}/branches`, {
+                headers: {
+                  Authorization: `${activeSession.tokenType} ${activeSession.accessToken}`,
+                },
+              }).then(async (response) => {
+                const payload = await readApiJson<{
+                  branches?: Branch[];
+                  message?: string | string[];
+                }>(response);
+                if (!response.ok) {
+                  throw new Error(formatApiError(payload.message));
+                }
+                setBranches(payload.branches ?? []);
+              })
+            : Promise.resolve(),
+          activeSession.permissions.includes("customer.read")
+            ? fetch(`${apiBaseUrl}/customers`, {
+                headers: {
+                  Authorization: `${activeSession.tokenType} ${activeSession.accessToken}`,
+                },
+              }).then(async (response) => {
+                const payload = await readApiJson<{
+                  customers?: unknown[];
+                }>(response);
+                if (response.ok) {
+                  setCustomerCount(payload.customers?.length ?? 0);
+                }
+              })
+            : Promise.resolve(),
+        ])
+          .catch((caughtError: unknown) => {
+            setError(
+              caughtError instanceof Error
+                ? caughtError.message
+                : "Could not load console.",
+            );
+          })
+          .finally(() => {
+            setIsLoading(false);
+          });
+      })();
     }, 0);
 
     return () => window.clearTimeout(boot);

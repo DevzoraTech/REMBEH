@@ -1,6 +1,7 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { RefreshSessionDto } from './dto/refresh-session.dto';
 import { RegisterWorkspaceDto } from './dto/register-workspace.dto';
 import { ResendWorkspaceEmailOtpDto } from './dto/resend-workspace-email-otp.dto';
 import { VerifyWorkspaceEmailDto } from './dto/verify-workspace-email.dto';
@@ -27,5 +28,10 @@ export class AuthController {
   @Post('login')
   login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @Post('refresh')
+  refresh(@Body() dto: RefreshSessionDto) {
+    return this.authService.refreshSession(dto);
   }
 }

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../features/applications_list/data/applications_live_store.dart';
+import '../../features/repayment/data/repayments_live_store.dart';
 import '../../models/field_records.dart';
-import '../../services/field_records_store.dart';
 import '../../services/session_store.dart';
 import '../../theme.dart';
 import '../../utils/money.dart';
@@ -32,22 +32,26 @@ class RecordsTab extends StatefulWidget {
 class _RecordsTabState extends State<RecordsTab> {
   final _filterKey = GlobalKey();
   final _appsStore = ApplicationsLiveStore.instance;
+  final _repayStore = RepaymentsLiveStore.instance;
   bool _menuOpen = false;
 
   @override
   void initState() {
     super.initState();
-    _appsStore.addListener(_onAppsChanged);
+    _appsStore.addListener(_onChanged);
+    _repayStore.addListener(_onChanged);
     _appsStore.start(widget.session);
+    _repayStore.start(widget.session);
   }
 
   @override
   void dispose() {
-    _appsStore.removeListener(_onAppsChanged);
+    _appsStore.removeListener(_onChanged);
+    _repayStore.removeListener(_onChanged);
     super.dispose();
   }
 
-  void _onAppsChanged() {
+  void _onChanged() {
     if (mounted) setState(() {});
   }
 
@@ -119,7 +123,7 @@ class _RecordsTabState extends State<RecordsTab> {
         context: context,
         firstDate: DateTime(2020),
         lastDate: DateTime.now().add(const Duration(days: 1)),
-        initialDateRange: FieldRecordsStore.instance.customRange ??
+        initialDateRange: _repayStore.customRange ??
             DateTimeRange(
               start: DateTime.now().subtract(const Duration(days: 7)),
               end: DateTime.now(),
@@ -139,7 +143,7 @@ class _RecordsTabState extends State<RecordsTab> {
         },
       );
       if (range != null) {
-        FieldRecordsStore.instance.customRange = range;
+        _repayStore.customRange = range;
         widget.onFilterChanged(RecordsFilter.custom);
       }
       return;
@@ -175,7 +179,6 @@ class _RecordsTabState extends State<RecordsTab> {
 
   @override
   Widget build(BuildContext context) {
-    final store = FieldRecordsStore.instance;
     final active = _activeFilter;
 
     return SafeArea(
@@ -279,11 +282,19 @@ class _RecordsTabState extends State<RecordsTab> {
           ),
           Expanded(
             child: widget.section == RecordsSection.repayments
-                ? _RepaymentsList(items: store.repayments(filter: active))
+                ? _RepaymentsList(
+                    items: _repayStore.filtered(
+                      filter: active,
+                      customRange: _repayStore.customRange,
+                    ),
+                    loading: _repayStore.loading,
+                    error: _repayStore.error,
+                    onRetry: () => _repayStore.refresh(),
+                  )
                 : _ApplicationsList(
                     items: _appsStore.filtered(
                       filter: active,
-                      customRange: FieldRecordsStore.instance.customRange,
+                      customRange: _repayStore.customRange,
                     ),
                     loading: _appsStore.loading,
                     error: _appsStore.error,
@@ -352,12 +363,44 @@ class _SegmentTab extends StatelessWidget {
 }
 
 class _RepaymentsList extends StatelessWidget {
-  const _RepaymentsList({required this.items});
+  const _RepaymentsList({
+    required this.items,
+    required this.loading,
+    required this.error,
+    required this.onRetry,
+  });
 
   final List<FieldRepayment> items;
+  final bool loading;
+  final String? error;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
+    if (loading && items.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (error != null && items.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                error!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Color(0xFFC62828), fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton(onPressed: onRetry, child: const Text('Retry')),
+            ],
+          ),
+        ),
+      );
+    }
+
     if (items.isEmpty) {
       return const _EmptyState(message: 'No repayments for this filter.');
     }
@@ -386,6 +429,7 @@ class _RepaymentsList extends StatelessWidget {
                 pendingLabel: 'Pending',
                 onTap: () => showClientDetailsSheet(
                   context,
+                  id: item.loanId.isNotEmpty ? item.loanId : item.id,
                   phone: item.phone,
                   fullName: item.clientName,
                 ),

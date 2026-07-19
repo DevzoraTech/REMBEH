@@ -62,6 +62,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'loan.read',
     'loan.update',
     'loan.product.manage',
+    'collection.create',
     'collection.read',
     'report.read',
   ],
@@ -73,6 +74,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'customer.update',
     'loan.create',
     'loan.read',
+    'collection.create',
     'collection.read',
   ],
   'Loan Officer': [
@@ -82,6 +84,8 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'customer.update',
     'loan.create',
     'loan.read',
+    'collection.create',
+    'collection.read',
   ],
   Agent: [
     'branch.read',
@@ -89,6 +93,8 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'customer.read',
     'loan.create',
     'loan.read',
+    'collection.create',
+    'collection.read',
   ],
   Cashier: [
     'branch.read',

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../features/applications_list/data/applications_live_store.dart';
+import '../../features/repayment/data/repayments_live_store.dart';
 import '../../models/field_records.dart';
-import '../../services/field_records_store.dart';
 import '../../services/session_store.dart';
 import '../../theme.dart';
 import '../../utils/greeting.dart';
@@ -32,31 +32,35 @@ class HomeTab extends StatefulWidget {
 }
 
 class _HomeTabState extends State<HomeTab> {
-  final _store = FieldRecordsStore.instance;
+  final _store = RepaymentsLiveStore.instance;
   late HomeSummary _summary;
 
   @override
   void initState() {
     super.initState();
     _summary = _buildSummary();
+    _store
+      ..addListener(_onChanged)
+      ..start(widget.session);
     ApplicationsLiveStore.instance
-      ..addListener(_onAppsChanged)
+      ..addListener(_onChanged)
       ..start(widget.session);
   }
 
   @override
   void dispose() {
-    ApplicationsLiveStore.instance.removeListener(_onAppsChanged);
+    _store.removeListener(_onChanged);
+    ApplicationsLiveStore.instance.removeListener(_onChanged);
     super.dispose();
   }
 
-  void _onAppsChanged() {
+  void _onChanged() {
     if (!mounted) return;
     setState(() => _summary = _buildSummary());
   }
 
   HomeSummary _buildSummary() {
-    final base = _store.summary();
+    final base = _store.summary;
     final now = DateTime.now();
     final appsToday = ApplicationsLiveStore.instance.applications
         .where(
@@ -77,8 +81,10 @@ class _HomeTabState extends State<HomeTab> {
   }
 
   Future<void> _refresh() async {
-    _store.refreshSeed();
-    await ApplicationsLiveStore.instance.refresh();
+    await Future.wait([
+      _store.refresh(),
+      ApplicationsLiveStore.instance.refresh(),
+    ]);
     if (!mounted) return;
     setState(() => _summary = _buildSummary());
   }

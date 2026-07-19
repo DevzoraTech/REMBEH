@@ -12,7 +12,10 @@ import { TenantStatus, UserStatus } from '@prisma/client';
 import { Server, Socket } from 'socket.io';
 import { JwtTokenService } from '../../common/auth/jwt-token.service';
 import { PrismaService } from '../../database/prisma.service';
-import type { LoanApplicationRealtimePayload } from './realtime.events';
+import type {
+  LoanApplicationRealtimePayload,
+  PaymentRealtimePayload,
+} from './realtime.events';
 
 type SocketUser = {
   userId: string;
@@ -150,6 +153,11 @@ export class RealtimeGateway
     event: string,
     payload: LoanApplicationRealtimePayload,
   ) {
+    this.emitToTenant(payload.tenantId, event, payload);
+    this.emitToBranch(payload.branchId, event, payload);
+  }
+
+  broadcastPayment(event: string, payload: PaymentRealtimePayload) {
     this.emitToTenant(payload.tenantId, event, payload);
     this.emitToBranch(payload.branchId, event, payload);
   }

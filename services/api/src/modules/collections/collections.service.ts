@@ -1,0 +1,446 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { LoanStatus, Prisma, RepaymentMethod } from '@prisma/client';
+import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
+import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
+import { computeLoanPricing } from '../loan-products/loan-pricing';
+import { REALTIME_EVENTS } from '../realtime/realtime.events';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
+import {
+  allocateRepayment,
+  computeCollectionSchedule,
+} from './collection-schedule';
+import {
+  ClientLoanDetailContract,
+  CollectionSummaryContract,
+  DueClientContract,
+  RecordRepaymentResponseContract,
+  RepaymentListItemContract,
+} from './collections.contracts';
+import {
+  CollectionsRepository,
+  LoanWithCollections,
+  activeLoanStatuses,
+} from './collections.repository';
+import { RecordRepaymentDto } from './dto/record-repayment.dto';
+
+@Injectable()
+export class CollectionsService {
+  constructor(
+    private readonly repository: CollectionsRepository,
+    private readonly realtime: RealtimeGateway,
+  ) {}
+
+  async getSummary(
+    user: AuthenticatedUser,
+  ): Promise<{ summary: CollectionSummaryContract }> {
+    this.assertBranchAccess(user);
+    const scope = this.scope(user);
+    const now = new Date();
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    dayEnd.setMilliseconds(dayEnd.getMilliseconds() - 1);
+
+    const [loans, todayAgg] = await Promise.all([
+      this.repository.listActiveLoans(scope),
+      this.repository.sumRepaymentsToday({
+        ...scope,
+        dayStart,
+        dayEnd,
+      }),
+    ]);
+
+    const clientsDueToday = loans
+      .map((loan) => this.toDueClient(loan, now))
+      .filter((item): item is DueClientContract => item != null && item.amountDue > 0);
+
+    return {
+      summary: {
+        amountCollectedToday: this.decimalToNumber(todayAgg._sum.amount) ?? 0,
+        repaymentsTodayCount: todayAgg._count._all,
+        dueTodayCount: clientsDueToday.length,
+        pendingSyncCount: 0,
+        clientsDueToday,
+      },
+    };
+  }
+
+  async listDueToday(
+    user: AuthenticatedUser,
+  ): Promise<{ clients: DueClientContract[] }> {
+    const { summary } = await this.getSummary(user);
+    return { clients: summary.clientsDueToday };
+  }
+
+  async listRepayments(
+    user: AuthenticatedUser,
+    filter?: string,
+  ): Promise<{ repayments: RepaymentListItemContract[] }> {
+    this.assertBranchAccess(user);
+    const scope = this.scope(user);
+    const range = this.filterToRange(filter);
+    const rows = await this.repository.listRepayments({
+      ...scope,
+      from: range?.from,
+      to: range?.to,
+    });
+
+    const repayments = rows.map((row) => {
+      const loan = row.loan as LoanWithCollections;
+      const detail = this.buildDetail(loan);
+      return {
+        id: row.id,
+        loanId: row.loanId,
+        customerId: loan.customerId,
+        clientName: loan.customer.fullName,
+        phone: loan.customer.phone,
+        amount: this.decimalToNumber(row.amount) ?? 0,
+        amountPaid: detail.paidAmount,
+        loanAmount: detail.loanAmount,
+        recordedAt: row.paidAt.toISOString(),
+        synced: true,
+        dueToday: detail.nextDueIsToday,
+        note: row.note,
+        method: row.method,
+        recordedByName: row.recordedBy.displayName,
+      } satisfies RepaymentListItemContract;
+    });
+
+    if (filter === 'dueToday') {
+      return {
+        repayments: repayments.filter((item) => item.dueToday),
+      };
+    }
+    if (filter === 'collectedToday') {
+      const now = new Date();
+      return {
+        repayments: repayments.filter((item) =>
+          this.sameDay(new Date(item.recordedAt), now),
+        ),
+      };
+    }
+
+    return { repayments };
+  }
+
+  async searchClients(
+    user: AuthenticatedUser,
+    query: string,
+  ): Promise<{ clients: ClientLoanDetailContract[] }> {
+    this.assertBranchAccess(user);
+    const q = query.trim();
+    if (q.length < 1) {
+      return { clients: [] };
+    }
+    const loans = await this.repository.searchLoans({
+      ...this.scope(user),
+      query: q,
+    });
+    return {
+      clients: loans.map((loan) => this.buildDetail(loan)),
+    };
+  }
+
+  async getLoanDetail(
+    user: AuthenticatedUser,
+    loanId: string,
+  ): Promise<{ detail: ClientLoanDetailContract }> {
+    this.assertBranchAccess(user);
+    const loan = await this.repository.findLoanById({
+      ...this.scope(user),
+      loanId,
+    });
+    if (!loan) {
+      throw new NotFoundException('Loan not found.');
+    }
+    return { detail: this.buildDetail(loan) };
+  }
+
+  async recordRepayment(
+    user: AuthenticatedUser,
+    dto: RecordRepaymentDto,
+  ): Promise<RecordRepaymentResponseContract> {
+    this.assertBranchAccess(user);
+    if (!user.branchId) {
+      throw new ForbiddenException(
+        'A branch assignment is required to record repayments.',
+      );
+    }
+
+    const loan = await this.repository.findLoanById({
+      ...this.scope(user),
+      loanId: dto.loanId,
+    });
+    if (!loan) {
+      throw new NotFoundException('Loan not found.');
+    }
+    if (!activeLoanStatuses.includes(loan.status)) {
+      throw new BadRequestException('This loan cannot accept repayments.');
+    }
+
+    const amount = this.roundMoney(dto.amount);
+    const balance = this.decimalToNumber(loan.balance) ?? 0;
+    if (amount <= 0) {
+      throw new BadRequestException('Amount must be greater than zero.');
+    }
+    if (amount > balance + 0.001) {
+      throw new BadRequestException(
+        `Amount exceeds outstanding balance of ${balance}.`,
+      );
+    }
+
+    const pricing = this.loanPricing(loan);
+    const totals = loan.repayments.reduce(
+      (acc, item) => ({
+        fees: acc.fees + (this.decimalToNumber(item.feesAllocated) ?? 0),
+        interest:
+          acc.interest + (this.decimalToNumber(item.interestAllocated) ?? 0),
+        principal:
+          acc.principal + (this.decimalToNumber(item.principalAllocated) ?? 0),
+      }),
+      { fees: 0, interest: 0, principal: 0 },
+    );
+
+    const allocation = allocateRepayment({
+      amount,
+      remainingFees: Math.max(0, pricing.processingFee - totals.fees),
+      remainingInterest: Math.max(0, pricing.interestAmount - totals.interest),
+      remainingPrincipal: Math.max(0, pricing.principalAmount - totals.principal),
+    });
+
+    const nextBalance = this.roundMoney(Math.max(0, balance - amount));
+    const nextStatus =
+      nextBalance <= 0
+        ? LoanStatus.CLOSED
+        : loan.status === LoanStatus.SUBMITTED ||
+            loan.status === LoanStatus.APPROVED
+          ? LoanStatus.CURRENT
+          : loan.status;
+
+    const paidAt = dto.paidAt ? new Date(dto.paidAt) : new Date();
+    if (Number.isNaN(paidAt.getTime())) {
+      throw new BadRequestException('Invalid paidAt timestamp.');
+    }
+
+    const { repayment, loan: updatedLoan } =
+      await this.repository.recordRepayment({
+        tenantId: user.tenantId,
+        branchId: loan.branchId,
+        loanId: loan.id,
+        recordedByUserId: user.userId,
+        amount: new Prisma.Decimal(amount.toFixed(2)),
+        principalAllocated: new Prisma.Decimal(
+          allocation.principalAllocated.toFixed(2),
+        ),
+        interestAllocated: new Prisma.Decimal(
+          allocation.interestAllocated.toFixed(2),
+        ),
+        feesAllocated: new Prisma.Decimal(allocation.feesAllocated.toFixed(2)),
+        method: dto.method ?? RepaymentMethod.CASH,
+        paidAt,
+        note: dto.note?.trim() || null,
+        receiptNumber: `RCP-${Date.now().toString(36).toUpperCase()}`,
+        nextBalance: new Prisma.Decimal(nextBalance.toFixed(2)),
+        nextStatus,
+      });
+
+    const detail = this.buildDetail(updatedLoan);
+    const item: RepaymentListItemContract = {
+      id: repayment.id,
+      loanId: repayment.loanId,
+      customerId: updatedLoan.customerId,
+      clientName: updatedLoan.customer.fullName,
+      phone: updatedLoan.customer.phone,
+      amount,
+      amountPaid: detail.paidAmount,
+      loanAmount: detail.loanAmount,
+      recordedAt: repayment.paidAt.toISOString(),
+      synced: true,
+      dueToday: detail.nextDueIsToday,
+      note: repayment.note,
+      method: repayment.method,
+      recordedByName: repayment.recordedBy.displayName,
+    };
+
+    this.realtime.broadcastPayment(REALTIME_EVENTS.paymentMade, {
+      repaymentId: item.id,
+      loanId: item.loanId,
+      customerId: item.customerId,
+      tenantId: user.tenantId,
+      branchId: loan.branchId,
+      clientName: item.clientName,
+      phone: item.phone,
+      amount: item.amount,
+      amountPaid: item.amountPaid,
+      loanAmount: item.loanAmount,
+      outstanding: detail.outstanding,
+      recordedAt: item.recordedAt,
+      synced: true,
+      recordedByUserId: user.userId,
+    });
+
+    return { repayment: item, detail };
+  }
+
+  private scope(user: AuthenticatedUser) {
+    const canAllBranches = user.permissions.includes(
+      BRANCH_PERMISSIONS.create,
+    );
+    return {
+      tenantId: user.tenantId,
+      branchId: canAllBranches ? null : user.branchId,
+    };
+  }
+
+  private assertBranchAccess(user: AuthenticatedUser) {
+    const canAllBranches = user.permissions.includes(
+      BRANCH_PERMISSIONS.create,
+    );
+    if (!canAllBranches && !user.branchId) {
+      throw new ForbiddenException('Branch scope is required.');
+    }
+  }
+
+  private buildDetail(loan: LoanWithCollections): ClientLoanDetailContract {
+    const pricing = this.loanPricing(loan);
+    const startDate =
+      loan.disbursedAt ??
+      loan.application?.submittedAt ??
+      loan.createdAt;
+    const schedule = computeCollectionSchedule({
+      principalAmount: pricing.principalAmount,
+      interestRatePercent: pricing.interestRatePercent,
+      durationDays: pricing.durationDays,
+      processingFee: pricing.processingFee,
+      balance: this.decimalToNumber(loan.balance) ?? 0,
+      startDate,
+    });
+    const last = loan.repayments[0] ?? null;
+
+    return {
+      id: loan.id,
+      loanId: loan.id,
+      customerId: loan.customerId,
+      fullName: loan.customer.fullName,
+      phone: loan.customer.phone,
+      registeredBy:
+        loan.application?.officer?.displayName ?? 'Branch officer',
+      outstanding: schedule.outstanding,
+      lastPaymentAmount: last
+        ? (this.decimalToNumber(last.amount) ?? 0)
+        : 0,
+      lastPaymentAt: last?.paidAt.toISOString() ?? null,
+      lastPaymentBy: last?.recordedBy.displayName ?? null,
+      expectedToday: schedule.expectedToday,
+      carriedForward: schedule.carriedForward,
+      dailyInstalment: schedule.dailyInstalment,
+      loanPeriodDays: schedule.loanPeriodDays,
+      daysLeft: schedule.daysLeft,
+      nextDueLabel: schedule.nextDueLabel,
+      nextDueIsToday: schedule.nextDueIsToday,
+      paidAmount: schedule.paidAmount,
+      loanAmount: schedule.totalRepayable,
+      interestRatePercent: pricing.interestRatePercent,
+      interestAmount: schedule.interestAmount,
+      processingFee: schedule.processingFee,
+      loanStartDate: schedule.loanStartDate,
+      maturityDate: schedule.maturityDate,
+      status: loan.status,
+    };
+  }
+
+  private toDueClient(
+    loan: LoanWithCollections,
+    asOf: Date,
+  ): DueClientContract | null {
+    const detail = this.buildDetail(loan);
+    if (detail.outstanding <= 0) return null;
+    const last = loan.repayments[0];
+    return {
+      id: loan.id,
+      loanId: loan.id,
+      customerId: loan.customerId,
+      fullName: detail.fullName,
+      phone: detail.phone,
+      amountPaid: detail.paidAmount,
+      loanAmount: detail.loanAmount,
+      amountDue: detail.expectedToday,
+      lastActivityAt: (
+        last?.paidAt ??
+        loan.updatedAt ??
+        asOf
+      ).toISOString(),
+      synced: true,
+    };
+  }
+
+  private loanPricing(loan: LoanWithCollections) {
+    const app = loan.application;
+    const principal =
+      this.decimalToNumber(app?.principalAmount) ??
+      this.decimalToNumber(loan.principal) ??
+      0;
+    const rate = this.decimalToNumber(app?.interestRatePercent) ?? 0;
+    const days = app?.durationDays ?? 30;
+    const fee = this.decimalToNumber(app?.processingFee) ?? 0;
+    return computeLoanPricing({
+      principalAmount: principal,
+      interestRatePercent: rate,
+      durationDays: days,
+      processingFee: fee,
+    });
+  }
+
+  private filterToRange(filter?: string) {
+    if (!filter || filter === 'all' || filter === 'dueToday') return null;
+    const now = new Date();
+    const startOfToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
+    if (filter === 'collectedToday' || filter === 'today') {
+      return { from: startOfToday, to: now };
+    }
+    if (filter === 'yesterday') {
+      const from = new Date(startOfToday);
+      from.setDate(from.getDate() - 1);
+      const to = new Date(startOfToday);
+      to.setMilliseconds(to.getMilliseconds() - 1);
+      return { from, to };
+    }
+    if (filter === 'thisWeek') {
+      const from = new Date(startOfToday);
+      from.setDate(from.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1));
+      return { from, to: now };
+    }
+    if (filter === 'thisMonth') {
+      const from = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { from, to: now };
+    }
+    return null;
+  }
+
+  private sameDay(a: Date, b: Date) {
+    return (
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate()
+    );
+  }
+
+  private decimalToNumber(value: Prisma.Decimal | number | null | undefined) {
+    if (value == null) return null;
+    if (typeof value === 'number') return value;
+    return Number(value.toString());
+  }
+
+  private roundMoney(value: number) {
+    return Math.round((value + Number.EPSILON) * 100) / 100;
+  }
+}

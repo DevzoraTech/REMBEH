@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../features/repayment/data/repayments_live_store.dart';
 import '../models/client_detail.dart';
 import '../theme.dart';
 import '../utils/money.dart';
@@ -30,6 +31,16 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
   late final TextEditingController _amount;
   late final TextEditingController _note;
   static const _noteMax = 120;
+  bool _saving = false;
+  String _method = 'CASH';
+  DateTime _paidAt = DateTime.now();
+
+  static const _methods = <(String, String)>[
+    ('CASH', 'Cash'),
+    ('MOBILE_MONEY', 'Mobile money'),
+    ('BANK_TRANSFER', 'Bank transfer'),
+    ('OTHER', 'Other'),
+  ];
 
   @override
   void initState() {
@@ -59,22 +70,68 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
     return next < 0 ? 0 : next;
   }
 
-  void _save() {
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _paidAt,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+    if (picked == null) return;
+    setState(() {
+      _paidAt = DateTime(
+        picked.year,
+        picked.month,
+        picked.day,
+        _paidAt.hour,
+        _paidAt.minute,
+      );
+    });
+  }
+
+  Future<void> _save() async {
+    if (_saving) return;
     if (_paidAmount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Enter a repayment amount.')),
       );
       return;
     }
+    if (_paidAmount > widget.detail.outstanding) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Amount exceeds outstanding balance.')),
+      );
+      return;
+    }
 
-    Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Repayment of ${formatCompactMoney(_paidAmount)} saved for ${widget.detail.fullName}.',
+    setState(() => _saving = true);
+    try {
+      await RepaymentsLiveStore.instance.recordRepayment(
+        loanId: widget.detail.loanId.isNotEmpty
+            ? widget.detail.loanId
+            : widget.detail.id,
+        amount: _paidAmount,
+        method: _method,
+        note: _note.text.trim().isEmpty ? null : _note.text.trim(),
+        paidAt: _paidAt,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Repayment of ${formatCompactMoney(_paidAmount)} saved for ${widget.detail.fullName}.',
+          ),
         ),
-      ),
-    );
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -263,6 +320,46 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
                 ),
               ),
               const SizedBox(height: 14),
+              DropdownButtonFormField<String>(
+                // ignore: deprecated_member_use — controlled value updates with setState
+                value: _method,
+                decoration: const InputDecoration(
+                  labelText: 'Payment method',
+                  floatingLabelBehavior: FloatingLabelBehavior.always,
+                ),
+                items: [
+                  for (final method in _methods)
+                    DropdownMenuItem(
+                      value: method.$1,
+                      child: Text(method.$2),
+                    ),
+                ],
+                onChanged: _saving
+                    ? null
+                    : (value) {
+                        if (value == null) return;
+                        setState(() => _method = value);
+                      },
+              ),
+              const SizedBox(height: 10),
+              InkWell(
+                onTap: _saving ? null : _pickDate,
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Payment date',
+                    floatingLabelBehavior: FloatingLabelBehavior.always,
+                    suffixIcon: Icon(Icons.calendar_today_outlined, size: 18),
+                  ),
+                  child: Text(
+                    _shortDate(_paidAt),
+                    style: const TextStyle(
+                      color: midnightNavy,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
               const Text(
                 'Note (optional)',
                 style: TextStyle(
@@ -292,9 +389,18 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
               SizedBox(
                 height: 50,
                 child: ElevatedButton.icon(
-                  onPressed: _save,
-                  icon: const Icon(Icons.save_outlined),
-                  label: const Text('Save Repayment'),
+                  onPressed: _saving ? null : _save,
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.save_outlined),
+                  label: Text(_saving ? 'Saving…' : 'Save Repayment'),
                 ),
               ),
             ],

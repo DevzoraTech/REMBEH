@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../features/repayment/data/repayment_repository_impl.dart';
+import '../features/repayment/data/repayments_live_store.dart';
 import '../models/client_detail.dart';
-import '../services/field_records_store.dart';
 import '../theme.dart';
 import '../utils/money.dart';
 import 'record_repayment_sheet.dart';
@@ -13,32 +14,51 @@ Future<void> showClientDetailsSheet(
   String? phone,
   String? fullName,
 }) async {
-  final detail = FieldRecordsStore.instance.clientDetail(
-    id: id,
-    phone: phone,
-    fullName: fullName,
-  );
-
-  if (detail == null) {
+  if (id == null || id.isEmpty) {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Client details not found.')),
+      const SnackBar(content: Text('Client loan id is required.')),
     );
     return;
   }
 
-  FieldRecordsStore.instance.markClientRecent(detail.id);
-
-  final action = await showModalBottomSheet<String>(
+  showDialog<void>(
     context: context,
-    isScrollControlled: true,
-    backgroundColor: Colors.white,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
-    builder: (context) => ClientDetailsSheet(detail: detail),
+    barrierDismissible: false,
+    builder: (_) => const Center(
+      child: CircularProgressIndicator(color: forestEmerald),
+    ),
   );
 
-  if (action == 'record_repayment' && context.mounted) {
-    await showRecordRepaymentSheet(context, detail: detail);
+  try {
+    final domain = await RepaymentsLiveStore.instance.getLoanDetail(id);
+    final detail = toUiClientDetail(domain);
+    if (!context.mounted) return;
+    Navigator.of(context).pop();
+
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      builder: (context) => ClientDetailsSheet(detail: detail),
+    );
+
+    if (action == 'record_repayment' && context.mounted) {
+      await showRecordRepaymentSheet(context, detail: detail);
+    }
+  } catch (_) {
+    if (!context.mounted) return;
+    Navigator.of(context).pop();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Could not load client details'
+          '${fullName != null && fullName.isNotEmpty ? ' for $fullName' : ''}'
+          '${phone != null && phone.isNotEmpty ? ' ($phone)' : ''}.',
+        ),
+      ),
+    );
   }
 }
 
@@ -180,30 +200,34 @@ class ClientDetailsSheet extends StatelessWidget {
                             ),
                             const SizedBox(height: 2),
                             Text(
-                              '${_shortDate(detail.lastPaymentAt)} (${_relativeDays(detail.lastPaymentAt, now)})',
+                              detail.lastPaymentAt == null
+                                  ? 'No payments yet'
+                                  : '${_shortDate(detail.lastPaymentAt!)} (${_relativeDays(detail.lastPaymentAt!, now)})',
                               style: const TextStyle(
                                 color: slateText,
                                 fontSize: 11,
                               ),
                             ),
-                            Text.rich(
-                              TextSpan(
-                                style: const TextStyle(
-                                  color: slateText,
-                                  fontSize: 11,
-                                ),
-                                children: [
-                                  const TextSpan(text: 'By: '),
-                                  TextSpan(
-                                    text: detail.lastPaymentBy,
-                                    style: const TextStyle(
-                                      color: forestEmerald,
-                                      fontWeight: FontWeight.w800,
-                                    ),
+                            if (detail.lastPaymentBy != null &&
+                                detail.lastPaymentBy!.isNotEmpty)
+                              Text.rich(
+                                TextSpan(
+                                  style: const TextStyle(
+                                    color: slateText,
+                                    fontSize: 11,
                                   ),
-                                ],
+                                  children: [
+                                    const TextSpan(text: 'By: '),
+                                    TextSpan(
+                                      text: detail.lastPaymentBy,
+                                      style: const TextStyle(
+                                        color: forestEmerald,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ),
@@ -315,7 +339,10 @@ class ClientDetailsSheet extends StatelessWidget {
                             child: _DetailItem(
                               icon: Icons.percent,
                               label: 'Interest Rate',
-                              value: '${detail.interestRatePercent}%',
+                              value: detail.interestRatePercent ==
+                                      detail.interestRatePercent.roundToDouble()
+                                  ? '${detail.interestRatePercent.round()}%'
+                                  : '${detail.interestRatePercent}%',
                             ),
                           ),
                         ],

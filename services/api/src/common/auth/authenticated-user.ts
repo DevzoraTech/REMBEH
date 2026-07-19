@@ -14,3 +14,11 @@ export type AccessTokenPayload = {
   iat: number;
   exp: number;
 };
+
+export type RefreshTokenPayload = {
+  typ: 'refresh';
+  sub: string;
+  tenantId: string;
+  iat: number;
+  exp: number;
+};

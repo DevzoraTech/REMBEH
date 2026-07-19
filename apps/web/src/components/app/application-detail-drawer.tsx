@@ -69,6 +69,9 @@ export function ApplicationDetailDrawer({
   const [detail, setDetail] = useState<ApplicationDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ src: string; alt: string } | null>(
+    null,
+  );
 
   useEffect(() => {
     if (!applicationId) {
@@ -248,12 +251,33 @@ export function ApplicationDetailDrawer({
                           {sig.locked ? " · Locked" : ""}
                         </p>
                         {sig.signatureDownloadUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={sig.signatureDownloadUrl}
-                            alt={`${sig.signerRole} signature`}
-                            className="mt-2 h-16 w-full object-contain bg-slate-50"
-                          />
+                          <button
+                            type="button"
+                            className="mt-2 block w-full cursor-zoom-in bg-slate-50"
+                            onClick={() =>
+                              setPreview({
+                                src: sig.signatureDownloadUrl!,
+                                alt: `${sig.signerRole} signature`,
+                              })
+                            }
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={sig.signatureDownloadUrl}
+                              alt={`${sig.signerRole} signature`}
+                              className="h-16 w-full object-contain"
+                              onError={(event) => {
+                                event.currentTarget.style.display = "none";
+                                const fallback = event.currentTarget.nextElementSibling;
+                                if (fallback instanceof HTMLElement) {
+                                  fallback.style.display = "block";
+                                }
+                              }}
+                            />
+                            <p className="mt-2 hidden text-xs text-slate-400">
+                              Preview unavailable
+                            </p>
+                          </button>
                         ) : (
                           <p className="mt-2 text-xs text-slate-400">
                             Preview unavailable
@@ -282,12 +306,23 @@ export function ApplicationDetailDrawer({
                           {item.fileName || item.mimeType}
                         </p>
                         {item.downloadUrl && item.mimeType.startsWith("image/") ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={item.downloadUrl}
-                            alt={item.type}
-                            className="mt-2 h-28 w-full object-cover bg-slate-50"
-                          />
+                          <button
+                            type="button"
+                            className="mt-2 block w-full cursor-zoom-in bg-slate-50"
+                            onClick={() =>
+                              setPreview({
+                                src: item.downloadUrl!,
+                                alt: item.type,
+                              })
+                            }
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={item.downloadUrl}
+                              alt={item.type}
+                              className="h-28 w-full object-cover"
+                            />
+                          </button>
                         ) : item.downloadUrl ? (
                           <a
                             href={item.downloadUrl}
@@ -324,6 +359,33 @@ export function ApplicationDetailDrawer({
           ) : null}
         </div>
       </aside>
+
+      {preview ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4">
+          <button
+            type="button"
+            className="absolute inset-0 cursor-default"
+            aria-label="Close preview"
+            onClick={() => setPreview(null)}
+          />
+          <div className="relative z-10 max-h-[90vh] max-w-[92vw]">
+            <button
+              type="button"
+              className="absolute -right-2 -top-2 rounded-full bg-white p-2 shadow"
+              onClick={() => setPreview(null)}
+              aria-label="Close"
+            >
+              <X className="size-4" />
+            </button>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={preview.src}
+              alt={preview.alt}
+              className="max-h-[85vh] max-w-[90vw] object-contain bg-white"
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

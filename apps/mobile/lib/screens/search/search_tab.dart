@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../features/repayment/data/repayment_repository_impl.dart';
+import '../../features/repayment/data/repayments_live_store.dart';
 import '../../models/client_detail.dart';
-import '../../services/field_records_store.dart';
 import '../../theme.dart';
 import '../../utils/money.dart';
 import '../../widgets/client_details_sheet.dart';
@@ -23,8 +26,14 @@ class SearchTab extends StatefulWidget {
 class _SearchTabState extends State<SearchTab> {
   final _controller = TextEditingController();
   final _focusNode = FocusNode();
+  final _store = RepaymentsLiveStore.instance;
   int _lastFocusToken = -1;
   bool _focused = false;
+  bool _searching = false;
+  String? _searchError;
+  List<ClientDetail> _results = const [];
+  List<ClientDetail> _recent = const [];
+  Timer? _debounce;
 
   @override
   void initState() {
@@ -39,6 +48,7 @@ class _SearchTabState extends State<SearchTab> {
         _focusNode.requestFocus();
       });
     }
+    _loadRecent();
   }
 
   @override
@@ -55,6 +65,7 @@ class _SearchTabState extends State<SearchTab> {
 
   @override
   void dispose() {
+    _debounce?.cancel();
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -62,12 +73,54 @@ class _SearchTabState extends State<SearchTab> {
 
   bool get _hasQuery => _controller.text.trim().isNotEmpty;
 
+  Future<void> _loadRecent() async {
+    final recent = await _store.recentClients();
+    if (!mounted) return;
+    setState(() {
+      _recent = recent.map(toUiClientDetail).toList();
+    });
+  }
+
+  void _onQueryChanged(String value) {
+    setState(() {});
+    _debounce?.cancel();
+    if (value.trim().isEmpty) {
+      setState(() {
+        _results = const [];
+        _searchError = null;
+        _searching = false;
+      });
+      return;
+    }
+    _debounce = Timer(const Duration(milliseconds: 350), () {
+      _runSearch(value.trim());
+    });
+  }
+
+  Future<void> _runSearch(String query) async {
+    setState(() {
+      _searching = true;
+      _searchError = null;
+    });
+    try {
+      final clients = await _store.searchClients(query);
+      if (!mounted || _controller.text.trim() != query) return;
+      setState(() {
+        _results = clients.map(toUiClientDetail).toList();
+        _searching = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _searching = false;
+        _searchError = error.toString();
+        _results = const [];
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final store = FieldRecordsStore.instance;
-    final recent = store.recentClients();
-    final results = _hasQuery ? store.searchClientDetails(_controller.text) : const <ClientDetail>[];
-
     return SafeArea(
       child: Column(
         children: [
@@ -99,13 +152,34 @@ class _SearchTabState extends State<SearchTab> {
                         ),
                       ),
                       Text(
-                        '${results.length} result${results.length == 1 ? '' : 's'}',
+                        _searching
+                            ? 'Searching…'
+                            : '${_results.length} result${_results.length == 1 ? '' : 's'}',
                         style: const TextStyle(color: slateText, fontSize: 12),
                       ),
                     ],
                   ),
                   const SizedBox(height: 10),
-                  if (results.isEmpty)
+                  if (_searchError != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Text(
+                        _searchError!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Color(0xFFC62828),
+                          fontSize: 13,
+                        ),
+                      ),
+                    )
+                  else if (_searching && _results.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 40),
+                      child: Center(
+                        child: CircularProgressIndicator(color: forestEmerald),
+                      ),
+                    )
+                  else if (_results.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 40),
                       child: Center(
@@ -117,13 +191,16 @@ class _SearchTabState extends State<SearchTab> {
                     )
                   else
                     _ClientList(
-                      clients: results,
-                      onTap: (client) => showClientDetailsSheet(
-                        context,
-                        id: client.id,
-                        phone: client.phone,
-                        fullName: client.fullName,
-                      ),
+                      clients: _results,
+                      onTap: (client) async {
+                        await showClientDetailsSheet(
+                          context,
+                          id: client.id,
+                          phone: client.phone,
+                          fullName: client.fullName,
+                        );
+                        if (mounted) await _loadRecent();
+                      },
                     ),
                 ] else ...[
                   Row(
@@ -139,11 +216,11 @@ class _SearchTabState extends State<SearchTab> {
                         ),
                       ),
                       TextButton.icon(
-                        onPressed: recent.isEmpty
+                        onPressed: _recent.isEmpty
                             ? null
-                            : () {
-                                store.clearRecentClients();
-                                setState(() {});
+                            : () async {
+                                await _store.clearRecentClients();
+                                if (mounted) await _loadRecent();
                               },
                         icon: const Icon(Icons.delete_outline, size: 16),
                         label: const Text('Clear all'),
@@ -155,7 +232,7 @@ class _SearchTabState extends State<SearchTab> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  if (recent.isEmpty)
+                  if (_recent.isEmpty)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
@@ -170,7 +247,7 @@ class _SearchTabState extends State<SearchTab> {
                     )
                   else
                     _ClientList(
-                      clients: recent,
+                      clients: _recent,
                       onTap: (client) async {
                         await showClientDetailsSheet(
                           context,
@@ -178,7 +255,7 @@ class _SearchTabState extends State<SearchTab> {
                           phone: client.phone,
                           fullName: client.fullName,
                         );
-                        if (mounted) setState(() {});
+                        if (mounted) await _loadRecent();
                       },
                     ),
                   const SizedBox(height: 14),
@@ -196,7 +273,8 @@ class _SearchTabState extends State<SearchTab> {
                         Expanded(
                           child: Text.rich(
                             TextSpan(
-                              style: TextStyle(color: midnightNavy, fontSize: 12),
+                              style:
+                                  TextStyle(color: midnightNavy, fontSize: 12),
                               children: [
                                 TextSpan(
                                   text:
@@ -204,7 +282,8 @@ class _SearchTabState extends State<SearchTab> {
                                 ),
                                 TextSpan(
                                   text: 'Search to find any client.',
-                                  style: TextStyle(fontWeight: FontWeight.w800),
+                                  style:
+                                      TextStyle(fontWeight: FontWeight.w800),
                                 ),
                               ],
                             ),
@@ -222,7 +301,7 @@ class _SearchTabState extends State<SearchTab> {
             child: TextField(
               controller: _controller,
               focusNode: _focusNode,
-              onChanged: (_) => setState(() {}),
+              onChanged: _onQueryChanged,
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
                 hintText: 'Search by name or phone number...',
@@ -231,7 +310,7 @@ class _SearchTabState extends State<SearchTab> {
                     ? IconButton(
                         onPressed: () {
                           _controller.clear();
-                          setState(() {});
+                          _onQueryChanged('');
                         },
                         icon: const Icon(Icons.cancel, color: slateText),
                       )
@@ -353,8 +432,7 @@ class _ClientList extends StatelessWidget {
                 ),
               ),
             ),
-            if (i < clients.length - 1)
-              const Divider(height: 1, color: line),
+            if (i < clients.length - 1) const Divider(height: 1, color: line),
           ],
         ],
       ),

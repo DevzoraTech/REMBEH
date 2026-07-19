@@ -1,9 +1,10 @@
-String formatMoney(int amount) {
+String formatMoney(num amount) {
   return formatCompactMoney(amount);
 }
 
-String formatCompactMoney(int amount) {
-  final digits = amount.abs().toString();
+String formatCompactMoney(num amount) {
+  final rounded = amount.round();
+  final digits = rounded.abs().toString();
   final buffer = StringBuffer();
   for (var i = 0; i < digits.length; i++) {
     final reverseIndex = digits.length - i;
@@ -12,7 +13,7 @@ String formatCompactMoney(int amount) {
       buffer.write(',');
     }
   }
-  return amount < 0 ? '-$buffer' : buffer.toString();
+  return rounded < 0 ? '-$buffer' : buffer.toString();
 }
 
 String formatActivityTime(DateTime value, DateTime now) {

@@ -2,20 +2,37 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
-import { isSessionExpired, readAuthState } from "../lib/auth-session";
+import { apiBaseUrl } from "../lib/api";
+import {
+  canRefreshSession,
+  isSessionExpired,
+  readAuthState,
+  refreshAuthSession,
+} from "../lib/auth-session";
 
 export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
-    const { session } = readAuthState();
-
-    if (!session || isSessionExpired(session)) {
+    void (async () => {
+      const { session } = readAuthState();
+      if (!session) {
+        router.replace("/login");
+        return;
+      }
+      if (!isSessionExpired(session)) {
+        router.replace("/dashboard");
+        return;
+      }
+      if (canRefreshSession(session)) {
+        const next = await refreshAuthSession(session, apiBaseUrl);
+        if (next) {
+          router.replace("/dashboard");
+          return;
+        }
+      }
       router.replace("/login");
-      return;
-    }
-
-    router.replace("/dashboard");
+    })();
   }, [router]);
 
   return (

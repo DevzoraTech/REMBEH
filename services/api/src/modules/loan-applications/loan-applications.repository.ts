@@ -7,6 +7,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { computeLoanPricing } from '../loan-products/loan-pricing';
 import {
   LOAN_APPLICATION_EVENTS,
   LoanApplicationEventPayload,
@@ -296,15 +297,25 @@ export class LoanApplicationsRepository {
       }
 
       const principal = input.application.principalAmount ?? new Prisma.Decimal(0);
+      const rate = Number(input.application.interestRatePercent ?? 0);
+      const days = input.application.durationDays ?? 0;
+      const fee = Number(input.application.processingFee ?? 0);
+      const pricing = computeLoanPricing({
+        principalAmount: Number(principal),
+        interestRatePercent: rate,
+        durationDays: days,
+        processingFee: fee,
+      });
+      const balance = new Prisma.Decimal(pricing.totalRepayable);
       const loan = await tx.loan.create({
         data: {
           tenantId: input.application.tenantId,
           branchId: input.application.branchId,
           customerId,
           principal,
-          balance: principal,
+          balance,
           currency: input.currency,
-          status: LoanStatus.SUBMITTED,
+          status: LoanStatus.CURRENT,
         },
       });
 

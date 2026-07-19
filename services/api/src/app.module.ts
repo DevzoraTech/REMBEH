@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { BranchesModule } from './modules/branches/branches.module';
+import { CollectionsModule } from './modules/collections/collections.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { IdentityVerificationModule } from './modules/identity-verification/identity-verification.module';
 import { LoanApplicationsModule } from './modules/loan-applications/loan-applications.module';
@@ -25,6 +26,7 @@ import { StorageModule } from './modules/storage/storage.module';
     AuthModule,
     BranchesModule,
     CustomersModule,
+    CollectionsModule,
     IdentityVerificationModule,
     LoanApplicationsModule,
     LoanProductsModule,

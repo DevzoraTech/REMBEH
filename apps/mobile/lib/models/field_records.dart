@@ -114,6 +114,7 @@ class DueClient {
 class FieldRepayment {
   const FieldRepayment({
     required this.id,
+    this.loanId = '',
     required this.clientName,
     required this.phone,
     required this.amount,
@@ -125,6 +126,8 @@ class FieldRepayment {
   });
 
   final String id;
+  /// Active loan this repayment was recorded against.
+  final String loanId;
   final String clientName;
   final String phone;
   /// This repayment entry amount.

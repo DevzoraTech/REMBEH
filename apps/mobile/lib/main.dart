@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'screens/agent_shell.dart';
 import 'screens/login_screen.dart';
+import 'services/api_client.dart';
 import 'services/session_store.dart';
 import 'theme.dart';
 
@@ -40,20 +41,36 @@ class _BootScreenState extends State<_BootScreen> {
 
   Future<void> _boot() async {
     final store = SessionStore();
-    final session = await store.read();
+    var session = await store.read();
     if (!mounted) return;
 
-    if (session != null && !session.isExpired) {
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => AgentShell(session: session)),
-      );
-      return;
+    if (session != null) {
+      if (!session.isAccessExpired) {
+        _goShell(session);
+        return;
+      }
+
+      // Access expired — try refresh before forcing login.
+      if (session.canRefresh) {
+        final refreshed = await ApiClient(store).refreshSession(session);
+        if (!mounted) return;
+        if (refreshed != null) {
+          _goShell(refreshed);
+          return;
+        }
+      }
     }
 
     await store.clear();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
+    );
+  }
+
+  void _goShell(RembehSession session) {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => AgentShell(session: session)),
     );
   }
 

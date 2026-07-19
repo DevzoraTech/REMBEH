@@ -52,6 +52,7 @@ class RealtimeClient {
             'loan_application.media_uploaded',
             data,
           ))
+      ..on('payment.made', (data) => _dispatch('payment.made', data))
       ..connect();
   }
 

@@ -85,6 +85,13 @@ enum OtpPurpose {
   PASSWORD_RESET
 }
 
+enum RepaymentMethod {
+  CASH
+  MOBILE_MONEY
+  BANK_TRANSFER
+  OTHER
+}
+
 model Tenant {
   id                 String         @id @default(uuid()) @db.Uuid
   name               String
@@ -103,6 +110,7 @@ model Tenant {
   permissions        Permission[]
   customers          Customer[]
   loans              Loan[]
+  repayments         Repayment[]
   loanApplications   LoanApplication[]
   loanRateOptions    LoanRateOption[]
   loanPeriodOptions  LoanPeriodOption[]
@@ -129,6 +137,7 @@ model Branch {
   users              User[]
   customers          Customer[]
   loans              Loan[]
+  repayments         Repayment[]
   loanApplications   LoanApplication[]
   loanRateOptions    LoanRateOption[]
   loanPeriodOptions  LoanPeriodOption[]
@@ -211,6 +220,7 @@ model User {
   auditLogs          AuditLog[]
   otpChallenges      OtpChallenge[]
   loanApplications   LoanApplication[] @relation("LoanApplicationOfficer")
+  repaymentsRecorded Repayment[]       @relation("RepaymentRecorder")
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
@@ -320,11 +330,41 @@ model Loan {
   branch      Branch     @relation(fields: [branchId], references: [id])
   customer    Customer   @relation(fields: [customerId], references: [id])
   application LoanApplication?
+  repayments  Repayment[]
 
   @@index([tenantId, status])
   @@index([tenantId, branchId])
   @@index([tenantId, customerId])
   @@map("loans")
+}
+
+/// Field collection / repayment against a loan. Allocates fees → interest → principal.
+model Repayment {
+  id                 String          @id @default(uuid()) @db.Uuid
+  tenantId           String          @map("tenant_id") @db.Uuid
+  branchId           String          @map("branch_id") @db.Uuid
+  loanId             String          @map("loan_id") @db.Uuid
+  recordedByUserId   String          @map("recorded_by_user_id") @db.Uuid
+  amount             Decimal         @db.Decimal(18, 2)
+  principalAllocated Decimal         @map("principal_allocated") @db.Decimal(18, 2)
+  interestAllocated  Decimal         @map("interest_allocated") @db.Decimal(18, 2)
+  feesAllocated      Decimal         @map("fees_allocated") @db.Decimal(18, 2)
+  method             RepaymentMethod @default(CASH)
+  paidAt             DateTime        @map("paid_at")
+  note               String?
+  receiptNumber      String?         @map("receipt_number")
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
+  tenant             Tenant          @relation(fields: [tenantId], references: [id])
+  branch             Branch          @relation(fields: [branchId], references: [id])
+  loan               Loan            @relation(fields: [loanId], references: [id])
+  recordedBy         User            @relation("RepaymentRecorder", fields: [recordedByUserId], references: [id])
+
+  @@index([tenantId, paidAt])
+  @@index([tenantId, branchId, paidAt])
+  @@index([tenantId, loanId])
+  @@index([tenantId, recordedByUserId])
+  @@map("repayments")
 }
 
 model LoanApplication {

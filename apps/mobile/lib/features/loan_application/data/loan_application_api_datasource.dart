@@ -166,9 +166,16 @@ class LoanApplicationApiDatasource {
   }
 
   Future<RembehSession> _requireSession() async {
-    final session = await _sessionStore.read();
+    var session = await _sessionStore.read();
     if (session == null) {
       throw ApiException('You are not signed in.');
+    }
+    if (session.isAccessExpired && session.canRefresh) {
+      final refreshed = await ApiClient(_sessionStore).refreshSession(session);
+      if (refreshed != null) return refreshed;
+    }
+    if (session.isAccessExpired) {
+      throw ApiException('Session expired. Please sign in again.');
     }
     return session;
   }

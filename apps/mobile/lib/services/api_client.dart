@@ -26,29 +26,44 @@ class ApiClient {
       throw ApiException(_failureMessage(body, response.statusCode, uri));
     }
 
-    final sessionPayload = body['session'] as Map<String, dynamic>;
-    final user = body['user'] as Map<String, dynamic>;
-    final workspace = body['workspace'] as Map<String, dynamic>;
-    final branch = body['branch'] as Map<String, dynamic>?;
-
-    final session = RembehSession(
-      accessToken: sessionPayload['accessToken'] as String,
-      expiresAt: sessionPayload['expiresAt'] as String,
-      tokenType: sessionPayload['tokenType'] as String? ?? 'Bearer',
-      permissions: (sessionPayload['permissions'] as List<dynamic>? ?? const [])
-          .map((item) => item.toString())
-          .toList(),
-      userName: user['name'] as String? ?? '',
-      userEmail: user['email'] as String? ?? email,
-      roleName: user['roleName'] as String?,
-      workspaceName: workspace['name'] as String? ?? '',
-      branchId: branch?['id'] as String? ?? user['branchId'] as String?,
-      branchName: branch?['name'] as String?,
-      branchAddress: branch?['address'] as String?,
-    );
-
+    final session = _sessionFromLoginBody(body, email);
     await _sessionStore.save(session);
     return body;
+  }
+
+  /// Refresh access token using the stored refresh token.
+  /// Returns the updated session, or null if refresh is impossible.
+  Future<RembehSession?> refreshSession(RembehSession current) async {
+    if (!current.canRefresh) return null;
+
+    final uri = Uri.parse('$rembehApiBaseUrl/auth/refresh');
+    final response = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'refreshToken': current.refreshToken}),
+    );
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      return null;
+    }
+
+    final sessionPayload = body['session'] as Map<String, dynamic>?;
+    if (sessionPayload == null) return null;
+
+    final updated = current.copyWith(
+      accessToken: sessionPayload['accessToken'] as String,
+      expiresAt: sessionPayload['expiresAt'] as String,
+      refreshToken: sessionPayload['refreshToken'] as String? ?? current.refreshToken,
+      refreshExpiresAt: sessionPayload['refreshExpiresAt'] as String? ??
+          current.refreshExpiresAt,
+      tokenType: sessionPayload['tokenType'] as String? ?? current.tokenType,
+      permissions: (sessionPayload['permissions'] as List<dynamic>?)
+              ?.map((item) => item.toString())
+              .toList() ??
+          current.permissions,
+    );
+    await _sessionStore.save(updated);
+    return updated;
   }
 
   Future<List<Map<String, dynamic>>> listCustomers(RembehSession session) async {
@@ -90,6 +105,34 @@ class ApiClient {
     return body;
   }
 
+  RembehSession _sessionFromLoginBody(
+    Map<String, dynamic> body,
+    String emailFallback,
+  ) {
+    final sessionPayload = body['session'] as Map<String, dynamic>;
+    final user = body['user'] as Map<String, dynamic>;
+    final workspace = body['workspace'] as Map<String, dynamic>;
+    final branch = body['branch'] as Map<String, dynamic>?;
+
+    return RembehSession(
+      accessToken: sessionPayload['accessToken'] as String,
+      expiresAt: sessionPayload['expiresAt'] as String,
+      tokenType: sessionPayload['tokenType'] as String? ?? 'Bearer',
+      permissions: (sessionPayload['permissions'] as List<dynamic>? ?? const [])
+          .map((item) => item.toString())
+          .toList(),
+      userName: user['name'] as String? ?? '',
+      userEmail: user['email'] as String? ?? emailFallback,
+      roleName: user['roleName'] as String?,
+      workspaceName: workspace['name'] as String? ?? '',
+      refreshToken: sessionPayload['refreshToken'] as String?,
+      refreshExpiresAt: sessionPayload['refreshExpiresAt'] as String?,
+      branchId: branch?['id'] as String? ?? user['branchId'] as String?,
+      branchName: branch?['name'] as String?,
+      branchAddress: branch?['address'] as String?,
+    );
+  }
+
   Map<String, String> _authHeaders(RembehSession session) => {
         'Authorization': '${session.tokenType} ${session.accessToken}',
       };
@@ -114,7 +157,6 @@ class ApiClient {
     Uri uri,
   ) {
     final message = _message(body);
-    // Surface the full URL on Nest Express 404s so a missing `/api/v1` is obvious.
     if (statusCode == 404 || message.startsWith('Cannot POST')) {
       return '$message → $uri';
     }
