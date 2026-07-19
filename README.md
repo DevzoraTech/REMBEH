@@ -35,3 +35,4 @@ docker compose up -d
 The local service stack provides PostgreSQL, Redis, MinIO, and Mailpit for development.
 
 If login/register returns database errors (`ECONNREFUSED`), Postgres is not running — start it with `npm run dev:deps` first.
+# REMBEH
