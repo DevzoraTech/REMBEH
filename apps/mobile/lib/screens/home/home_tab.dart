@@ -177,6 +177,7 @@ class _HomeTabState extends State<HomeTab> {
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
                   decoration: BoxDecoration(
                     border: Border.all(color: line),
+                    borderRadius: rembehBorderRadius(rembehRadiusLg),
                   ),
                   child: const Row(
                     children: [
@@ -206,7 +207,9 @@ class _HomeTabState extends State<HomeTab> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 border: Border.all(color: line),
+                borderRadius: rembehBorderRadius(rembehRadiusLg),
               ),
+              clipBehavior: Clip.antiAlias,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -337,6 +340,7 @@ class _HomeTabState extends State<HomeTab> {
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     border: Border.all(color: line),
+                    borderRadius: rembehBorderRadius(rembehRadiusLg),
                   ),
                   child: Row(
                     children: [
@@ -347,6 +351,7 @@ class _HomeTabState extends State<HomeTab> {
                         decoration: BoxDecoration(
                           color: sage,
                           border: Border.all(color: line),
+                          borderRadius: rembehBorderRadius(rembehRadiusMd),
                         ),
                         child: const Icon(
                           Icons.note_add_outlined,
@@ -428,6 +433,7 @@ class _HomeTabState extends State<HomeTab> {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   border: Border.all(color: line),
+                  borderRadius: rembehBorderRadius(rembehRadiusLg),
                 ),
                 child: const Text(
                   'No clients due today.',
@@ -556,12 +562,16 @@ class _DueClientCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: Colors.white,
+      borderRadius: rembehBorderRadius(rembehRadiusLg),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
+        borderRadius: rembehBorderRadius(rembehRadiusLg),
         child: Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         border: Border.all(color: line),
+        borderRadius: rembehBorderRadius(rembehRadiusLg),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,

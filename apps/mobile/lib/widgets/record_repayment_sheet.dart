@@ -13,7 +13,7 @@ Future<void> showRecordRepaymentSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.white,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+    shape: RoundedRectangleBorder(borderRadius: rembehSheetRadius()),
     builder: (context) => RecordRepaymentSheet(detail: detail),
   );
 }
@@ -278,13 +278,13 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
                           onPressed: () => _amount.clear(),
                           icon: const Icon(Icons.cancel, color: slateText),
                         ),
-                  enabledBorder: const OutlineInputBorder(
-                    borderRadius: BorderRadius.zero,
-                    borderSide: BorderSide(color: forestEmerald, width: 1.4),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: rembehBorderRadius(rembehRadiusMd),
+                    borderSide: const BorderSide(color: forestEmerald, width: 1.4),
                   ),
-                  focusedBorder: const OutlineInputBorder(
-                    borderRadius: BorderRadius.zero,
-                    borderSide: BorderSide(color: forestEmerald, width: 1.6),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: rembehBorderRadius(rembehRadiusMd),
+                    borderSide: const BorderSide(color: forestEmerald, width: 1.6),
                   ),
                 ),
               ),
@@ -295,6 +295,7 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
                 decoration: BoxDecoration(
                   color: sage,
                   border: Border.all(color: line),
+                  borderRadius: rembehBorderRadius(rembehRadiusMd),
                 ),
                 child: Row(
                   children: [

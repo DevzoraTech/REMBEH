@@ -41,7 +41,7 @@ Future<void> showClientDetailsSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: RoundedRectangleBorder(borderRadius: rembehSheetRadius()),
       builder: (context) => ClientDetailsSheet(detail: detail),
     );
 
@@ -301,7 +301,7 @@ class ClientDetailsSheet extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 ClipRRect(
-                  borderRadius: BorderRadius.zero,
+                  borderRadius: rembehBorderRadius(rembehRadiusSm),
                   child: LinearProgressIndicator(
                     value: detail.progressRatio,
                     minHeight: 8,

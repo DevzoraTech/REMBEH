@@ -354,8 +354,8 @@ class LoanCaptureRow extends StatelessWidget {
             style: TextButton.styleFrom(
               foregroundColor: forestEmerald,
               backgroundColor: sage,
-              shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.zero,
+              shape: RoundedRectangleBorder(
+                borderRadius: rembehBorderRadius(rembehRadiusMd),
               ),
             ),
             icon: Icon(captured ? Icons.refresh : Icons.photo_camera_outlined, size: 16),

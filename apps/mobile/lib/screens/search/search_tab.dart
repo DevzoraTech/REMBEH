@@ -247,6 +247,7 @@ class _SearchTabState extends State<SearchTab> {
                       decoration: BoxDecoration(
                         color: Colors.white,
                         border: Border.all(color: line),
+                        borderRadius: rembehBorderRadius(rembehRadiusLg),
                       ),
                       child: const Text(
                         'No recent clients yet. Search to find a client.',
@@ -273,6 +274,7 @@ class _SearchTabState extends State<SearchTab> {
                     decoration: BoxDecoration(
                       color: sage,
                       border: Border.all(color: line),
+                      borderRadius: rembehBorderRadius(rembehRadiusMd),
                     ),
                     child: const Row(
                       children: [
@@ -326,15 +328,15 @@ class _SearchTabState extends State<SearchTab> {
                 filled: true,
                 fillColor: Colors.white,
                 enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.zero,
+                  borderRadius: rembehBorderRadius(rembehRadiusMd),
                   borderSide: BorderSide(
                     color: _focused ? forestEmerald : line,
                     width: _focused ? 1.5 : 1,
                   ),
                 ),
-                focusedBorder: const OutlineInputBorder(
-                  borderRadius: BorderRadius.zero,
-                  borderSide: BorderSide(color: forestEmerald, width: 1.6),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: rembehBorderRadius(rembehRadiusMd),
+                  borderSide: const BorderSide(color: forestEmerald, width: 1.6),
                 ),
               ),
             ),
@@ -360,7 +362,9 @@ class _ClientList extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border.all(color: line),
+        borderRadius: rembehBorderRadius(rembehRadiusLg),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
           for (var i = 0; i < clients.length; i++) ...[

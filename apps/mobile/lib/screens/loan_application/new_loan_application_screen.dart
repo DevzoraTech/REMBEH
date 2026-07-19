@@ -112,7 +112,9 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       builder: (context) {
         return AlertDialog(
           backgroundColor: Colors.white,
-          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+          shape: RoundedRectangleBorder(
+            borderRadius: rembehBorderRadius(rembehRadiusLg),
+          ),
           contentPadding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -124,6 +126,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
                 decoration: BoxDecoration(
                   color: const Color(0xFFFFEBEE),
                   border: Border.all(color: const Color(0xFFFFCDD2)),
+                  borderRadius: rembehBorderRadius(rembehRadiusMd),
                 ),
                 child: const Icon(
                   Icons.warning_amber_rounded,
@@ -703,7 +706,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
               child: Column(
                 children: [
                   ClipRRect(
-                    borderRadius: BorderRadius.zero,
+                    borderRadius: rembehBorderRadius(rembehRadiusSm),
                     child: LinearProgressIndicator(
                       value: _step / _totalSteps,
                       minHeight: 6,

@@ -19,7 +19,7 @@ Future<void> showApplicationDetailsSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.white,
-    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+    shape: RoundedRectangleBorder(borderRadius: rembehSheetRadius()),
     builder: (context) => ApplicationDetailsSheet(
       applicationId: applicationId,
       fallbackName: fallbackName,

@@ -58,6 +58,20 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: assets/rembeh-app-icon.png
+  adaptive_icon_background: "#065B24"
+  adaptive_icon_foreground: assets/rembeh-app-icon.png
+  web:
+    generate: true
+    image_path: assets/rembeh-app-icon.png
+    background_color: "#065B24"
+    theme_color: "#065B24"
+  remove_alpha_ios: true
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -70,10 +84,10 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
-  # To add assets to your application, add an assets section, like this:
-  # assets:
-  #   - images/a_dot_burr.jpeg
-  #   - images/a_dot_ham.jpeg
+  assets:
+    - assets/rembeh-icon.png
+    - assets/rembeh-app-icon.png
+    - assets/rembeh-mark.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

@@ -39,7 +39,9 @@ Future<bool> ensureRembehPermission(
     builder: (dialogContext) {
       return AlertDialog(
         backgroundColor: Colors.white,
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+        shape: RoundedRectangleBorder(
+          borderRadius: rembehBorderRadius(rembehRadiusLg),
+        ),
         title: Text(
           meta.title,
           style: const TextStyle(
@@ -79,7 +81,9 @@ Future<bool> ensureRembehPermission(
       builder: (context) {
         return AlertDialog(
           backgroundColor: Colors.white,
-          shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+          shape: RoundedRectangleBorder(
+            borderRadius: rembehBorderRadius(rembehRadiusLg),
+          ),
           title: const Text(
             'Permission required',
             style: TextStyle(

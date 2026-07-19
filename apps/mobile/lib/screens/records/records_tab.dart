@@ -86,7 +86,9 @@ class _RecordsTabState extends State<RecordsTab> {
       ),
       color: Colors.white,
       elevation: 8,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      shape: RoundedRectangleBorder(
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
       items: _filters.map((filter) {
         final selected = filter == _activeFilter;
         return PopupMenuItem<RecordsFilter>(
@@ -246,6 +248,7 @@ class _RecordsTabState extends State<RecordsTab> {
               decoration: BoxDecoration(
                 color: sage.withValues(alpha: 0.28),
                 border: Border.all(color: line),
+                borderRadius: rembehBorderRadius(rembehRadiusMd),
               ),
               child: Row(
                 children: [
@@ -604,6 +607,7 @@ class _RecordCard extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 11),
       decoration: BoxDecoration(
         border: Border.all(color: line),
+        borderRadius: rembehBorderRadius(rembehRadiusLg),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
