@@ -7,7 +7,9 @@ on:
       - "services/api/**"
       - "package.json"
       - "package-lock.json"
+      - "deploy/nginx/**"
       - "scripts/deploy-api-ec2.sh"
+      - "scripts/ensure-nginx-web.sh"
       - "scripts/lib/ec2-ssh.sh"
       - ".github/workflows/deploy-api.yml"
   workflow_dispatch:
