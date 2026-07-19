@@ -85,6 +85,7 @@ class LoanSelectField extends StatelessWidget {
     required this.icon,
     required this.options,
     required this.onChanged,
+    this.enabled = true,
   });
 
   final String? value;
@@ -92,6 +93,7 @@ class LoanSelectField extends StatelessWidget {
   final IconData icon;
   final List<String> options;
   final ValueChanged<String?> onChanged;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
@@ -109,7 +111,55 @@ class LoanSelectField extends StatelessWidget {
       items: options
           .map((option) => DropdownMenuItem(value: option, child: Text(option)))
           .toList(),
-      onChanged: onChanged,
+      onChanged: enabled ? onChanged : null,
+    );
+  }
+}
+
+class LoanDateField extends StatelessWidget {
+  const LoanDateField({
+    super.key,
+    required this.value,
+    required this.hint,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  final DateTime? value;
+  final String hint;
+  final VoidCallback onTap;
+  final bool enabled;
+
+  String _label(DateTime date) {
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    return '$day/$month/${date.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: enabled ? onTap : null,
+      child: InputDecorator(
+        decoration: InputDecoration(
+          hintText: hint,
+          prefixIcon: const Icon(
+            Icons.calendar_today_outlined,
+            color: forestEmerald,
+            size: 20,
+          ),
+          filled: true,
+          fillColor: Colors.white,
+        ),
+        child: Text(
+          value != null ? _label(value!) : hint,
+          style: TextStyle(
+            color: value != null ? midnightNavy : slateText,
+            fontWeight: value != null ? FontWeight.w600 : FontWeight.w400,
+            fontSize: 14,
+          ),
+        ),
+      ),
     );
   }
 }

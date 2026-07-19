@@ -61,6 +61,13 @@ enum LoanApplicationSignerRole {
   OFFICER
 }
 
+/// Applicant gender for KYC / Smile ID (mapped to M/F on verify).
+enum ApplicantGender {
+  MALE
+  FEMALE
+  OTHER
+}
+
 enum ModuleStatus {
   ENABLED
   TRIAL
@@ -449,6 +456,8 @@ model LoanApplication {
   givenNames           String?               @map("given_names")
   phone                String?
   nationalId           String?               @map("national_id")
+  gender               ApplicantGender?
+  dateOfBirth          DateTime?             @map("date_of_birth") @db.Date
   district             String?
   subCounty            String?               @map("sub_county")
   parish               String?

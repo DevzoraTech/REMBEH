@@ -6,6 +6,9 @@ class LoanApplicationDraft {
   String givenNames = '';
   String phone = '';
   String nationalId = '';
+  /// API enum: MALE | FEMALE | OTHER
+  String? gender;
+  DateTime? dateOfBirth;
   bool verified = false;
   String? verificationCode;
   DateTime? verifiedAt;
@@ -65,5 +68,7 @@ class LoanApplicationDraft {
       givenNames.isNotEmpty ||
       phone.isNotEmpty ||
       nationalId.isNotEmpty ||
+      gender != null ||
+      dateOfBirth != null ||
       verified;
 }

@@ -4,6 +4,10 @@ export type VerifyNationalIdInput = {
   firstName?: string;
   lastName?: string;
   phoneNumber?: string;
+  /** Smile ID gender: M or F. Omit when unknown / OTHER. */
+  gender?: 'M' | 'F';
+  /** Smile ID dob: YYYY-MM-DD. */
+  dob?: string;
 };
 
 export type VerifyNationalIdResult = {

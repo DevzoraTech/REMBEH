@@ -44,6 +44,8 @@ export class SmileIdProvider implements IdentityVerificationProvider {
       first_name: input.firstName?.trim() || undefined,
       last_name: input.lastName?.trim() || undefined,
       phone_number: input.phoneNumber?.trim() || undefined,
+      dob: input.dob?.trim() || undefined,
+      gender: input.gender || undefined,
       partner_params: {
         job_id: `nin-${randomBytes(8).toString('hex')}`,
         user_id: input.nationalId.trim(),

@@ -54,6 +54,8 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
     required String givenNames,
     required String phone,
     required String nationalId,
+    required String gender,
+    required String dateOfBirth,
   }) async {
     try {
       final body = await _api.verifyApplicant(id, {
@@ -61,6 +63,8 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
         'givenNames': givenNames,
         'phone': phone,
         'nationalId': nationalId,
+        'gender': gender,
+        'dateOfBirth': dateOfBirth,
         'country': 'UG',
       });
       return _mapApplication(body['application'] as Map<String, dynamic>);
@@ -225,6 +229,10 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
       givenNames: json['givenNames'] as String?,
       phone: json['phone'] as String?,
       nationalId: json['nationalId'] as String?,
+      gender: json['gender'] as String?,
+      dateOfBirth: json['dateOfBirth'] != null
+          ? DateTime.tryParse(json['dateOfBirth'] as String)
+          : null,
       district: json['district'] as String?,
       subCounty: json['subCounty'] as String?,
       parish: json['parish'] as String?,

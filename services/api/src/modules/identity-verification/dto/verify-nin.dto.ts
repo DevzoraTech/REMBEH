@@ -1,4 +1,4 @@
-import { IsOptional, IsString, MinLength } from 'class-validator';
+import { IsDateString, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class VerifyNinDto {
   @IsString()
@@ -20,4 +20,12 @@ export class VerifyNinDto {
   @IsOptional()
   @IsString()
   phoneNumber?: string;
+
+  @IsOptional()
+  @IsIn(['M', 'F'])
+  gender?: 'M' | 'F';
+
+  @IsOptional()
+  @IsDateString()
+  dob?: string;
 }

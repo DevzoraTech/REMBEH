@@ -41,6 +41,8 @@ class LoanApplication {
     this.givenNames,
     this.phone,
     this.nationalId,
+    this.gender,
+    this.dateOfBirth,
     this.district,
     this.subCounty,
     this.parish,
@@ -66,6 +68,8 @@ class LoanApplication {
   final String? givenNames;
   final String? phone;
   final String? nationalId;
+  final String? gender;
+  final DateTime? dateOfBirth;
   final String? district;
   final String? subCounty;
   final String? parish;

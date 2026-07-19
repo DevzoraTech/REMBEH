@@ -31,6 +31,8 @@ type ApplicationDetail = {
   givenNames: string | null;
   phone: string | null;
   nationalId: string | null;
+  gender: "MALE" | "FEMALE" | "OTHER" | null;
+  dateOfBirth: string | null;
   district: string | null;
   subCounty: string | null;
   parish: string | null;
@@ -175,6 +177,11 @@ export function ApplicationDetailDrawer({
                 <Row label="Name" value={detail.clientName || "—"} />
                 <Row label="Phone" value={detail.phone || "—"} />
                 <Row label="National ID" value={detail.nationalId || "—"} />
+                <Row label="Gender" value={formatGender(detail.gender)} />
+                <Row
+                  label="Date of birth"
+                  value={formatDateOfBirth(detail.dateOfBirth)}
+                />
                 <Row
                   label="Location"
                   value={
@@ -444,4 +451,18 @@ function Row({ label, value }: { label: string; value: string }) {
 function formatAmount(value: number | null | undefined) {
   if (value == null) return "—";
   return new Intl.NumberFormat("en-UG").format(value);
+}
+
+function formatGender(value: ApplicationDetail["gender"]) {
+  if (value === "MALE") return "Male";
+  if (value === "FEMALE") return "Female";
+  if (value === "OTHER") return "Other";
+  return "—";
+}
+
+function formatDateOfBirth(value: string | null | undefined) {
+  if (!value) return "—";
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (!match) return value;
+  return `${match[3]}/${match[2]}/${match[1]}`;
 }

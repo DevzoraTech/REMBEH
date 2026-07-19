@@ -1,7 +1,9 @@
+import { ApplicantGender } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
   IsDateString,
+  IsEnum,
   IsInt,
   IsNumber,
   IsOptional,
@@ -40,6 +42,14 @@ export class UpdateLoanApplicationDto {
   @IsOptional()
   @IsString()
   nationalId?: string;
+
+  @IsOptional()
+  @IsEnum(ApplicantGender)
+  gender?: ApplicantGender;
+
+  @IsOptional()
+  @IsDateString()
+  dateOfBirth?: string;
 
   @IsOptional()
   @IsString()

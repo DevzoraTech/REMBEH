@@ -6,6 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  ApplicantGender,
   LoanApplicationMediaType,
   LoanApplicationSignerRole,
   LoanApplicationStatus,
@@ -169,6 +170,11 @@ export class LoanApplicationsService {
       givenNames: dto.givenNames?.trim(),
       phone: dto.phone,
       nationalId: dto.nationalId?.trim().toUpperCase(),
+      gender: dto.gender,
+      dateOfBirth:
+        dto.dateOfBirth !== undefined
+          ? this.parseDateOnly(dto.dateOfBirth)
+          : undefined,
       district: dto.district?.trim(),
       subCounty: dto.subCounty?.trim(),
       parish: dto.parish?.trim(),
@@ -267,12 +273,17 @@ export class LoanApplicationsService {
       );
     }
 
+    const dateOfBirth = this.parseDateOnly(dto.dateOfBirth);
+    const smileGender = this.toSmileGender(dto.gender);
+
     const verification = await this.identityVerification.verifyNationalId({
       nationalId,
       country: dto.country ?? 'UG',
       firstName: dto.givenNames,
       lastName: dto.surname,
       phoneNumber: phone,
+      gender: smileGender,
+      dob: this.formatDateOnly(dateOfBirth),
     });
 
     if (!verification.valid) {
@@ -287,6 +298,8 @@ export class LoanApplicationsService {
       givenNames: dto.givenNames.trim(),
       phone,
       nationalId,
+      gender: dto.gender,
+      dateOfBirth,
       status: LoanApplicationStatus.VERIFIED,
       smileJobId: verification.jobId,
       smileResult: verification.raw as Prisma.InputJsonValue,
@@ -894,6 +907,10 @@ export class LoanApplicationsService {
       givenNames: application.givenNames,
       phone: application.phone,
       nationalId: application.nationalId,
+      gender: application.gender,
+      dateOfBirth: application.dateOfBirth
+        ? this.formatDateOnly(application.dateOfBirth)
+        : null,
       district: application.district,
       subCounty: application.subCounty,
       parish: application.parish,
@@ -1040,6 +1057,49 @@ export class LoanApplicationsService {
       anchorDate: new Date(),
       agentPickedDate: picked,
     });
+  }
+
+  private parseDateOnly(raw: string): Date {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw.trim());
+    if (!match) {
+      throw new BadRequestException('dateOfBirth must be YYYY-MM-DD.');
+    }
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (
+      Number.isNaN(date.getTime()) ||
+      date.getUTCFullYear() !== year ||
+      date.getUTCMonth() !== month - 1 ||
+      date.getUTCDate() !== day
+    ) {
+      throw new BadRequestException('dateOfBirth must be a valid calendar date.');
+    }
+    const today = new Date();
+    const todayUtc = Date.UTC(
+      today.getUTCFullYear(),
+      today.getUTCMonth(),
+      today.getUTCDate(),
+    );
+    if (date.getTime() > todayUtc) {
+      throw new BadRequestException('dateOfBirth cannot be in the future.');
+    }
+    return date;
+  }
+
+  private formatDateOnly(value: Date): string {
+    const year = value.getUTCFullYear();
+    const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(value.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  /** Smile ID accepts M/F only; OTHER is omitted from the verify payload. */
+  private toSmileGender(gender: ApplicantGender): 'M' | 'F' | undefined {
+    if (gender === ApplicantGender.MALE) return 'M';
+    if (gender === ApplicantGender.FEMALE) return 'F';
+    return undefined;
   }
 
   private clientName(application: LoanApplicationRecord) {

@@ -21,6 +21,8 @@ export class IdentityVerificationController {
       firstName: dto.firstName,
       lastName: dto.lastName,
       phoneNumber: dto.phoneNumber,
+      gender: dto.gender,
+      dob: dto.dob,
     });
 
     return { verification: result };

@@ -1,4 +1,5 @@
-import { IsOptional, IsString, MinLength } from 'class-validator';
+import { ApplicantGender } from '@prisma/client';
+import { IsDateString, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class VerifyApplicantDto {
   @IsString()
@@ -16,6 +17,13 @@ export class VerifyApplicantDto {
   @IsString()
   @MinLength(5)
   nationalId!: string;
+
+  @IsEnum(ApplicantGender)
+  gender!: ApplicantGender;
+
+  /** YYYY-MM-DD — required for Smile ID / KYC matching. */
+  @IsDateString()
+  dateOfBirth!: string;
 
   @IsOptional()
   @IsString()

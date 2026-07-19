@@ -19,6 +19,8 @@ abstract class LoanApplicationRepository {
     required String givenNames,
     required String phone,
     required String nationalId,
+    required String gender,
+    required String dateOfBirth,
   });
 
   Future<LoanApplication> uploadMedia({

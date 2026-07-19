@@ -20,6 +20,8 @@ class VerifyApplicantUseCase {
     required String givenNames,
     required String phone,
     required String nationalId,
+    required String gender,
+    required String dateOfBirth,
   }) {
     return _repository.verifyApplicant(
       id: id,
@@ -27,6 +29,8 @@ class VerifyApplicantUseCase {
       givenNames: givenNames,
       phone: phone,
       nationalId: nationalId,
+      gender: gender,
+      dateOfBirth: dateOfBirth,
     );
   }
 }

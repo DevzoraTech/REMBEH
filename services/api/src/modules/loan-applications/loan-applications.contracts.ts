@@ -57,6 +57,9 @@ export type LoanApplicationContract = {
   givenNames: string | null;
   phone: string | null;
   nationalId: string | null;
+  gender: 'MALE' | 'FEMALE' | 'OTHER' | null;
+  /** YYYY-MM-DD when set. */
+  dateOfBirth: string | null;
   district: string | null;
   subCounty: string | null;
   parish: string | null;

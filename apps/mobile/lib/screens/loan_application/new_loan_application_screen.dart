@@ -188,11 +188,60 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     }
   }
 
+  String _formatDateOfBirth(DateTime date) {
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
+  }
+
+  String? _genderLabel(String? code) {
+    switch (code) {
+      case 'MALE':
+        return 'Male';
+      case 'FEMALE':
+        return 'Female';
+      case 'OTHER':
+        return 'Other';
+      default:
+        return null;
+    }
+  }
+
+  String? _genderCode(String? label) {
+    switch (label) {
+      case 'Male':
+        return 'MALE';
+      case 'Female':
+        return 'FEMALE';
+      case 'Other':
+        return 'OTHER';
+      default:
+        return null;
+    }
+  }
+
+  Future<void> _pickDateOfBirth() async {
+    if (_draft.verified) return;
+    final now = DateTime.now();
+    final initial =
+        _draft.dateOfBirth ?? DateTime(now.year - 25, now.month, now.day);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1920),
+      lastDate: now,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _draft.dateOfBirth = picked);
+  }
+
   Future<void> _verifyApplicant() async {
     final surname = _surname.text.trim();
     final given = _givenNames.text.trim();
     final phone = normalizePhoneForApi(_phone.text);
     final nin = _nationalId.text.trim();
+    final gender = _draft.gender;
+    final dob = _draft.dateOfBirth;
     final id = _applicationId;
 
     if (id == null) {
@@ -200,7 +249,12 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       return;
     }
 
-    if (surname.isEmpty || given.isEmpty || phone.isEmpty || nin.isEmpty) {
+    if (surname.isEmpty ||
+        given.isEmpty ||
+        phone.isEmpty ||
+        nin.isEmpty ||
+        gender == null ||
+        dob == null) {
       setState(() => _draft.verifyError = 'Fill all required fields to verify.');
       return;
     }
@@ -217,6 +271,8 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         givenNames: given,
         phone: phone,
         nationalId: nin,
+        gender: gender,
+        dateOfBirth: _formatDateOfBirth(dob),
       );
       if (!mounted) return;
       setState(() {
@@ -226,6 +282,8 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
           ..givenNames = given
           ..phone = phone
           ..nationalId = nin
+          ..gender = gender
+          ..dateOfBirth = dob
           ..verified = application.isVerified
           ..verificationCode = application.verificationCode
           ..verifiedAt = application.verifiedAt ?? DateTime.now()
@@ -251,6 +309,9 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       await _locator.saveStep(
         id: id,
         payload: {
+          if (_draft.gender != null) 'gender': _draft.gender,
+          if (_draft.dateOfBirth != null)
+            'dateOfBirth': _formatDateOfBirth(_draft.dateOfBirth!),
           'district': _draft.district,
           'subCounty': _draft.subCounty,
           'parish': _draft.parish,
@@ -865,10 +926,6 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         enabled: !_draft.verified,
         onChanged: (value) => _draft.surname = value,
       ),
-      const LoanHint(
-        text: 'Enter the name as it appears on the National ID.',
-        warning: true,
-      ),
       const SizedBox(height: 14),
       const LoanFieldLabel(label: 'Given name(s)', showInfo: true),
       const SizedBox(height: 6),
@@ -879,9 +936,26 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         enabled: !_draft.verified,
         onChanged: (value) => _draft.givenNames = value,
       ),
-      const LoanHint(
-        text: 'Enter the name as it appears on the National ID.',
-        warning: true,
+      const SizedBox(height: 14),
+      const LoanFieldLabel(label: 'Gender'),
+      const SizedBox(height: 6),
+      LoanSelectField(
+        value: _genderLabel(_draft.gender),
+        hint: 'Select gender',
+        icon: Icons.wc_outlined,
+        enabled: !_draft.verified,
+        options: const ['Male', 'Female', 'Other'],
+        onChanged: (value) =>
+            setState(() => _draft.gender = _genderCode(value)),
+      ),
+      const SizedBox(height: 14),
+      const LoanFieldLabel(label: 'Date of birth'),
+      const SizedBox(height: 6),
+      LoanDateField(
+        value: _draft.dateOfBirth,
+        hint: 'Select date of birth',
+        enabled: !_draft.verified,
+        onTap: _pickDateOfBirth,
       ),
       const SizedBox(height: 14),
       const LoanFieldLabel(label: 'Phone number'),
@@ -894,7 +968,6 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         enabled: !_draft.verified,
         onChanged: (value) => _draft.phone = value,
       ),
-      const LoanHint(text: "Enter the client's active phone number."),
       const SizedBox(height: 14),
       const LoanFieldLabel(label: 'National ID number', showInfo: true),
       const SizedBox(height: 6),
@@ -904,10 +977,6 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         icon: Icons.badge_outlined,
         enabled: !_draft.verified,
         onChanged: (value) => _draft.nationalId = value,
-      ),
-      const LoanHint(
-        text: 'Incorrect NIN will cause failure to process the loan.',
-        warning: true,
       ),
       if (_draft.verifyError != null) ...[
         const SizedBox(height: 12),
