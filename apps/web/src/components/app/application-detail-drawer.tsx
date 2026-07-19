@@ -3,6 +3,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Loader2, X } from "lucide-react";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
+import { AgentPhoto } from "./agent-photo";
 
 type MediaItem = {
   id: string;
@@ -191,18 +192,12 @@ export function ApplicationDetailDrawer({
 
               <Section title="Field agent">
                 <div className="flex items-center gap-3">
-                  {detail.agentPhotoUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={detail.agentPhotoUrl}
-                      alt={detail.officerName || "Agent"}
-                      className="size-12 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex size-12 items-center justify-center rounded-full bg-[var(--soft-mist)] text-xs font-bold text-[var(--forest-emerald)]">
-                      AG
-                    </div>
-                  )}
+                  <AgentPhoto
+                    src={detail.agentPhotoUrl}
+                    name={detail.officerName || "Branch officer"}
+                    publicId={detail.officerPublicId}
+                    size="md"
+                  />
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
                       {detail.officerName || "Branch officer"}

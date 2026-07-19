@@ -11,6 +11,7 @@ import { OtpChannel, OtpPurpose, UserStatus } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { JwtTokenService } from '../../common/auth/jwt-token.service';
+import { buildStaffInvitationAcceptUrl } from '../../common/config/web-app-url';
 import {
   getPrismaUniqueConstraintTargets,
   isPrismaUniqueConstraintError,
@@ -514,12 +515,7 @@ export class BranchesService {
   }
 
   private buildInvitationAcceptUrl(token: string) {
-    const baseUrl =
-      this.configService.get<string>('WEB_APP_URL')?.trim() ||
-      'http://localhost:3000';
-    const url = new URL('/staff-invitations/accept', baseUrl);
-    url.searchParams.set('token', token);
-    return url.toString();
+    return buildStaffInvitationAcceptUrl(this.configService, token);
   }
 
   private toStaffUserContract(user: StaffUserRecord): BranchStaffUserContract {

@@ -101,6 +101,19 @@ Optional on the server `.env` (see root `.env.example`):
 
 If keys are missing, SMS stays in stub/log mode even when `SMS_PROVIDER` is set.
 
+### Email / invitation links
+
+Set on the server `.env` (never in Git):
+
+| Variable | Production value |
+|----------|------------------|
+| `WEB_APP_URL` | `https://rembeh.antikra.com` |
+| `EMAIL_FROM` / `OTP_EMAIL_FROM` | Verified Resend sender (e.g. `auth@antikra.com`) |
+| `EMAIL_FROM_NAME` | `REMBEH` |
+| `RESEND_API_KEY` | Resend API key |
+
+Full SPF/DKIM/DMARC guidance: [`email-deliverability.md`](./email-deliverability.md).
+
 ### How auto-deploy works
 
 1. Push lands on `main` and matches a workflow path filter.

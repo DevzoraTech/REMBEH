@@ -22,8 +22,12 @@ import {
 import {
   ClientLoanDetailContract,
   CollectionSummaryContract,
+  DailyAgentDetailContract,
+  DailyAgentSummaryContract,
+  DailyCollectionsSummaryContract,
   DueClientContract,
   RecordRepaymentResponseContract,
+  RepaymentDetailContract,
   RepaymentListItemContract,
 } from './collections.contracts';
 import {
@@ -187,6 +191,310 @@ export class CollectionsService {
       throw new NotFoundException('Loan not found.');
     }
     return { detail: await this.buildDetail(loan) };
+  }
+
+  async getRepaymentDetail(
+    user: AuthenticatedUser,
+    repaymentId: string,
+  ): Promise<{ repayment: RepaymentDetailContract }> {
+    this.assertBranchAccess(user);
+    const row = await this.repository.findRepaymentById({
+      ...this.scope(user),
+      repaymentId,
+    });
+    if (!row) {
+      throw new NotFoundException('Payment not found.');
+    }
+
+    const loan = row.loan as LoanWithCollections;
+    const detail = await this.buildDetail(loan);
+    const agentPhotoStorageKey =
+      row.recordedBy.profilePhotoStorageKey ?? null;
+
+    return {
+      repayment: {
+        id: row.id,
+        loanId: row.loanId,
+        customerId: loan.customerId,
+        clientName: loan.customer.fullName,
+        phone: loan.customer.phone,
+        amount: this.decimalToNumber(row.amount) ?? 0,
+        amountPaid: detail.paidAmount,
+        loanAmount: detail.loanAmount,
+        recordedAt: row.paidAt.toISOString(),
+        synced: true,
+        dueToday: detail.nextDueIsToday,
+        note: row.note,
+        method: row.method,
+        recordedByName: row.recordedBy.displayName,
+        recordedByPublicId: row.recordedBy.publicId ?? null,
+        agentPhotoUrl: await this.presignPhotoUrl(agentPhotoStorageKey),
+        agentPhotoStorageKey,
+        companyName: row.tenant.name,
+        branchName: row.branch?.name ?? null,
+        branchId: row.branchId,
+        currency: loan.currency,
+        loanOutstanding: detail.outstanding,
+        loanStatus: detail.status,
+      },
+    };
+  }
+
+  async getDailySummary(
+    user: AuthenticatedUser,
+    date?: string,
+  ): Promise<{ summary: DailyCollectionsSummaryContract }> {
+    this.assertBranchAccess(user);
+    const scope = this.scope(user);
+    const { dayStart, dayEnd, dateLabel } = this.parseDayBounds(date);
+
+    const [agents, applications, repayments] = await Promise.all([
+      this.repository.listFieldAgents(scope),
+      this.repository.listApplicationsSubmittedForDay({
+        ...scope,
+        dayStart,
+        dayEnd,
+      }),
+      this.repository.listRepaymentsForDay({
+        ...scope,
+        dayStart,
+        dayEnd,
+      }),
+    ]);
+
+    const agentMap = new Map<
+      string,
+      {
+        agentId: string;
+        agentName: string;
+        agentPublicId: string | null;
+        photoKey: string | null;
+        roleName: string | null;
+        branchId: string | null;
+        branchName: string | null;
+        applicationsCount: number;
+        principalLent: number;
+        paymentsCount: number;
+        amountCollected: number;
+      }
+    >();
+
+    for (const agent of agents) {
+      agentMap.set(agent.id, {
+        agentId: agent.id,
+        agentName: agent.displayName,
+        agentPublicId: agent.publicId ?? null,
+        photoKey: agent.profilePhotoStorageKey ?? null,
+        roleName: agent.roles[0]?.role.name ?? null,
+        branchId: agent.branchId,
+        branchName: agent.branch?.name ?? null,
+        applicationsCount: 0,
+        principalLent: 0,
+        paymentsCount: 0,
+        amountCollected: 0,
+      });
+    }
+
+    for (const app of applications) {
+      const existing = agentMap.get(app.officerUserId);
+      const principal = this.decimalToNumber(app.principalAmount) ?? 0;
+      if (existing) {
+        existing.applicationsCount += 1;
+        existing.principalLent = this.roundMoney(
+          existing.principalLent + principal,
+        );
+      } else {
+        agentMap.set(app.officerUserId, {
+          agentId: app.officerUserId,
+          agentName: app.officer.displayName,
+          agentPublicId: app.officer.publicId ?? null,
+          photoKey: app.officer.profilePhotoStorageKey ?? null,
+          roleName: null,
+          branchId: app.branchId,
+          branchName: app.branch?.name ?? null,
+          applicationsCount: 1,
+          principalLent: principal,
+          paymentsCount: 0,
+          amountCollected: 0,
+        });
+      }
+    }
+
+    for (const payment of repayments) {
+      const amount = this.decimalToNumber(payment.amount) ?? 0;
+      const existing = agentMap.get(payment.recordedByUserId);
+      if (existing) {
+        existing.paymentsCount += 1;
+        existing.amountCollected = this.roundMoney(
+          existing.amountCollected + amount,
+        );
+      } else {
+        agentMap.set(payment.recordedByUserId, {
+          agentId: payment.recordedByUserId,
+          agentName: payment.recordedBy.displayName,
+          agentPublicId: payment.recordedBy.publicId ?? null,
+          photoKey: payment.recordedBy.profilePhotoStorageKey ?? null,
+          roleName: null,
+          branchId: payment.branchId,
+          branchName: null,
+          applicationsCount: 0,
+          principalLent: 0,
+          paymentsCount: 1,
+          amountCollected: amount,
+        });
+      }
+    }
+
+    const summaries = await Promise.all(
+      [...agentMap.values()].map(async (row) => {
+        const agentPhotoUrl = await this.presignPhotoUrl(row.photoKey);
+        return {
+          agentId: row.agentId,
+          agentName: row.agentName,
+          agentPublicId: row.agentPublicId,
+          agentPhotoUrl,
+          roleName: row.roleName,
+          branchId: row.branchId,
+          branchName: row.branchName,
+          applicationsCount: row.applicationsCount,
+          principalLent: row.principalLent,
+          paymentsCount: row.paymentsCount,
+          amountCollected: row.amountCollected,
+          netCash: this.roundMoney(row.amountCollected - row.principalLent),
+        } satisfies DailyAgentSummaryContract;
+      }),
+    );
+
+    summaries.sort((a, b) => {
+      const activity =
+        b.paymentsCount +
+        b.applicationsCount -
+        (a.paymentsCount + a.applicationsCount);
+      if (activity !== 0) return activity;
+      return a.agentName.localeCompare(b.agentName);
+    });
+
+    const totals = summaries.reduce(
+      (acc, row) => ({
+        applicationsCount: acc.applicationsCount + row.applicationsCount,
+        principalLent: this.roundMoney(acc.principalLent + row.principalLent),
+        paymentsCount: acc.paymentsCount + row.paymentsCount,
+        amountCollected: this.roundMoney(
+          acc.amountCollected + row.amountCollected,
+        ),
+        netCash: 0,
+      }),
+      {
+        applicationsCount: 0,
+        principalLent: 0,
+        paymentsCount: 0,
+        amountCollected: 0,
+        netCash: 0,
+      },
+    );
+    totals.netCash = this.roundMoney(
+      totals.amountCollected - totals.principalLent,
+    );
+
+    return {
+      summary: {
+        date: dateLabel,
+        timezoneNote: 'Day bounds use the API server local calendar.',
+        agents: summaries,
+        totals,
+      },
+    };
+  }
+
+  async getDailyAgentDetail(
+    user: AuthenticatedUser,
+    agentId: string,
+    date?: string,
+  ): Promise<{ detail: DailyAgentDetailContract }> {
+    this.assertBranchAccess(user);
+    const scope = this.scope(user);
+    const { dayStart, dayEnd, dateLabel } = this.parseDayBounds(date);
+
+    const agent = await this.repository.findFieldAgentById({
+      ...scope,
+      agentId,
+    });
+    if (!agent) {
+      throw new NotFoundException('Agent not found.');
+    }
+
+    const [applications, repayments] = await Promise.all([
+      this.repository.listApplicationsSubmittedForDay({
+        ...scope,
+        dayStart,
+        dayEnd,
+        officerUserId: agentId,
+      }),
+      this.repository.listRepaymentsForDay({
+        ...scope,
+        dayStart,
+        dayEnd,
+        recordedByUserId: agentId,
+      }),
+    ]);
+
+    const principalLent = this.roundMoney(
+      applications.reduce(
+        (sum, app) => sum + (this.decimalToNumber(app.principalAmount) ?? 0),
+        0,
+      ),
+    );
+    const amountCollected = this.roundMoney(
+      repayments.reduce(
+        (sum, row) => sum + (this.decimalToNumber(row.amount) ?? 0),
+        0,
+      ),
+    );
+
+    const summary: DailyAgentSummaryContract = {
+      agentId: agent.id,
+      agentName: agent.displayName,
+      agentPublicId: agent.publicId ?? null,
+      agentPhotoUrl: await this.presignPhotoUrl(
+        agent.profilePhotoStorageKey ?? null,
+      ),
+      roleName: agent.roles[0]?.role.name ?? null,
+      branchId: agent.branchId,
+      branchName: agent.branch?.name ?? null,
+      applicationsCount: applications.length,
+      principalLent,
+      paymentsCount: repayments.length,
+      amountCollected,
+      netCash: this.roundMoney(amountCollected - principalLent),
+    };
+
+    return {
+      detail: {
+        date: dateLabel,
+        agent: summary,
+        applications: applications.map((app) => ({
+          id: app.id,
+          clientName:
+            [app.surname, app.givenNames].filter(Boolean).join(' ') ||
+            'Client',
+          phone: app.phone,
+          principalAmount: this.decimalToNumber(app.principalAmount) ?? 0,
+          status: app.status,
+          submittedAt: (app.submittedAt ?? app.createdAt).toISOString(),
+          loanId: app.loanId,
+        })),
+        payments: repayments.map((row) => ({
+          id: row.id,
+          loanId: row.loanId,
+          clientName: row.loan.customer.fullName,
+          phone: row.loan.customer.phone,
+          amount: this.decimalToNumber(row.amount) ?? 0,
+          method: row.method,
+          note: row.note,
+          paidAt: row.paidAt.toISOString(),
+        })),
+      },
+    };
   }
 
   async recordRepayment(
@@ -560,6 +868,40 @@ export class CollectionsService {
     } catch {
       return null;
     }
+  }
+
+  private parseDayBounds(date?: string): {
+    dayStart: Date;
+    dayEnd: Date;
+    dateLabel: string;
+  } {
+    const trimmed = date?.trim();
+    let year: number;
+    let month: number;
+    let day: number;
+
+    if (trimmed && /^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      const [y, m, d] = trimmed.split('-').map((part) => Number(part));
+      year = y;
+      month = m;
+      day = d;
+    } else if (trimmed) {
+      throw new BadRequestException('date must be YYYY-MM-DD.');
+    } else {
+      const now = new Date();
+      year = now.getFullYear();
+      month = now.getMonth() + 1;
+      day = now.getDate();
+    }
+
+    const dayStart = new Date(year, month - 1, day, 0, 0, 0, 0);
+    const dayEnd = new Date(year, month - 1, day, 23, 59, 59, 999);
+    if (Number.isNaN(dayStart.getTime()) || Number.isNaN(dayEnd.getTime())) {
+      throw new BadRequestException('Invalid date.');
+    }
+
+    const dateLabel = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return { dayStart, dayEnd, dateLabel };
   }
 
   private filterToRange(filter?: string) {

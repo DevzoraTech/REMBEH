@@ -5,7 +5,9 @@ import type { Socket } from "socket.io-client";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import { formatClock, groupByLocalDate } from "../../lib/date-groups";
 import { connectRealtime, type PaymentMadeEvent } from "../../lib/realtime";
+import { AgentPhoto } from "./agent-photo";
 import { DateGroupHeader } from "./date-group-header";
+import { PaymentDetailDrawer } from "./payment-detail-drawer";
 
 type PaymentRow = {
   id: string;
@@ -16,6 +18,7 @@ type PaymentRow = {
   recordedAt: string;
   method: string;
   recordedByName: string;
+  recordedByPublicId?: string | null;
   agentPhotoUrl?: string | null;
   note: string | null;
 };
@@ -34,6 +37,7 @@ export function LivePaymentsPanel({
   const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!canRead) {
@@ -90,6 +94,7 @@ export function LivePaymentsPanel({
         recordedAt: event.recordedAt,
         method: event.method ?? "CASH",
         recordedByName: event.recordedByName ?? "Agent",
+        recordedByPublicId: null,
         agentPhotoUrl: event.agentPhotoUrl ?? null,
         note: event.note ?? null,
       };
@@ -116,72 +121,78 @@ export function LivePaymentsPanel({
   if (!canRead) return null;
 
   return (
-    <section id="payments" className="panel overflow-hidden scroll-mt-20">
-      <div className="flex items-center justify-between border-b border-[var(--line)] px-3 py-2">
-        <div>
-          <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
-            Payments
-          </h2>
-          <p className="text-[11px] text-slate-500">
-            Field repayments · newest first by date
-          </p>
-        </div>
-        <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--forest-emerald)]">
-          Live
-        </span>
-      </div>
-
-      {loading ? (
-        <p className="px-3 py-4 text-sm text-slate-500">Loading…</p>
-      ) : error ? (
-        <p className="px-3 py-4 text-sm text-red-600">{error}</p>
-      ) : payments.length === 0 ? (
-        <p className="px-3 py-4 text-sm text-slate-500">
-          No payments recorded yet.
-        </p>
-      ) : (
-        groups.map((group) => (
-          <div key={group.key} className="relative">
-            <DateGroupHeader label={group.label} count={group.items.length} />
-            <ul className="divide-y divide-[var(--line)]">
-              {group.items.map((item) => (
-                <li
-                  key={item.id}
-                  className="flex items-center justify-between gap-3 px-3 py-2.5"
-                >
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    {item.agentPhotoUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={item.agentPhotoUrl}
-                        alt={item.recordedByName}
-                        className="size-8 shrink-0 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--soft-mist)] text-[10px] font-bold text-[var(--forest-emerald)]">
-                        AG
-                      </div>
-                    )}
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
-                        {item.clientName || "Client"}
-                      </p>
-                      <p className="truncate text-xs text-slate-500">
-                        {item.recordedByName} · {methodLabel(item.method)} ·{" "}
-                        {formatClock(item.recordedAt)}
-                      </p>
-                    </div>
-                  </div>
-                  <p className="shrink-0 text-sm font-bold tabular-nums text-[var(--forest-emerald)]">
-                    {formatAmount(item.amount)}
-                  </p>
-                </li>
-              ))}
-            </ul>
+    <>
+      <section id="payments" className="panel overflow-hidden scroll-mt-20">
+        <div className="flex items-center justify-between border-b border-[var(--line)] px-3 py-2">
+          <div>
+            <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
+              Payments
+            </h2>
+            <p className="text-[11px] text-slate-500">
+              Field repayments · newest first by date
+            </p>
           </div>
-        ))
-      )}
-    </section>
+          <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--forest-emerald)]">
+            Live
+          </span>
+        </div>
+
+        {loading ? (
+          <p className="px-3 py-4 text-sm text-slate-500">Loading…</p>
+        ) : error ? (
+          <p className="px-3 py-4 text-sm text-red-600">{error}</p>
+        ) : payments.length === 0 ? (
+          <p className="px-3 py-4 text-sm text-slate-500">
+            No payments recorded yet.
+          </p>
+        ) : (
+          groups.map((group) => (
+            <div key={group.key} className="relative">
+              <DateGroupHeader label={group.label} count={group.items.length} />
+              <ul className="divide-y divide-[var(--line)]">
+                {group.items.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left transition hover:bg-[var(--soft-mist)]"
+                      onClick={() => setSelectedId(item.id)}
+                    >
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <AgentPhoto
+                          src={item.agentPhotoUrl}
+                          name={item.recordedByName}
+                          publicId={item.recordedByPublicId}
+                          size="sm"
+                        />
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
+                            {item.clientName || "Client"}
+                          </p>
+                          <p className="truncate text-xs text-slate-500">
+                            {item.recordedByName} · {methodLabel(item.method)} ·{" "}
+                            {formatClock(item.recordedAt)}
+                          </p>
+                        </div>
+                      </div>
+                      <p className="shrink-0 text-sm font-bold tabular-nums text-[var(--forest-emerald)]">
+                        {formatAmount(item.amount)}
+                      </p>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
+        )}
+      </section>
+
+      <PaymentDetailDrawer
+        repaymentId={selectedId}
+        accessToken={accessToken}
+        tokenType={tokenType}
+        onClose={() => setSelectedId(null)}
+      />
+    </>
   );
 }
 

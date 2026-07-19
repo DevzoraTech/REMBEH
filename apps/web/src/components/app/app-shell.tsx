@@ -2,6 +2,7 @@
 
 import {
   Building2,
+  CalendarDays,
   ChevronDown,
   LayoutDashboard,
   LogOut,
@@ -74,6 +75,14 @@ export function AppShell({
         href: "/dashboard#payments",
         label: "Payments",
         icon: Wallet,
+        enabled:
+          operatorRole !== "staff" &&
+          Boolean(session.permissions.includes("collection.read")),
+      },
+      {
+        href: "/collections/daily",
+        label: "Close the day",
+        icon: CalendarDays,
         enabled:
           operatorRole !== "staff" &&
           Boolean(session.permissions.includes("collection.read")),

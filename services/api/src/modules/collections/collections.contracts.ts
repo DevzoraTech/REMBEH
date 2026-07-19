@@ -94,3 +94,69 @@ export type RecordRepaymentResponseContract = {
   repayment: RepaymentListItemContract;
   detail: ClientLoanDetailContract;
 };
+
+export type RepaymentDetailContract = RepaymentListItemContract & {
+  companyName: string;
+  branchName: string | null;
+  branchId: string;
+  currency: string;
+  loanOutstanding: number | null;
+  loanStatus: string | null;
+};
+
+export type DailyAgentApplicationItemContract = {
+  id: string;
+  clientName: string;
+  phone: string | null;
+  principalAmount: number;
+  status: string;
+  submittedAt: string;
+  loanId: string | null;
+};
+
+export type DailyAgentPaymentItemContract = {
+  id: string;
+  loanId: string;
+  clientName: string;
+  phone: string | null;
+  amount: number;
+  method: string;
+  note: string | null;
+  paidAt: string;
+};
+
+export type DailyAgentSummaryContract = {
+  agentId: string;
+  agentName: string;
+  agentPublicId: string | null;
+  agentPhotoUrl: string | null;
+  roleName: string | null;
+  branchId: string | null;
+  branchName: string | null;
+  applicationsCount: number;
+  principalLent: number;
+  paymentsCount: number;
+  amountCollected: number;
+  /** amountCollected − principalLent (positive = more cash in than lent). */
+  netCash: number;
+};
+
+export type DailyCollectionsSummaryContract = {
+  date: string;
+  timezoneNote: string;
+  agents: DailyAgentSummaryContract[];
+  totals: {
+    applicationsCount: number;
+    principalLent: number;
+    paymentsCount: number;
+    amountCollected: number;
+    netCash: number;
+  };
+};
+
+export type DailyAgentDetailContract = {
+  date: string;
+  agent: DailyAgentSummaryContract;
+  applications: DailyAgentApplicationItemContract[];
+  payments: DailyAgentPaymentItemContract[];
+};

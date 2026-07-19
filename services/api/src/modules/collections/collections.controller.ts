@@ -34,6 +34,25 @@ export class CollectionsController {
     return this.collectionsService.listDueToday(user);
   }
 
+  @Get('daily-summary')
+  @RequirePermissions(COLLECTION_PERMISSIONS.read)
+  getDailySummary(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('date') date?: string,
+  ) {
+    return this.collectionsService.getDailySummary(user, date);
+  }
+
+  @Get('daily-summary/:agentId')
+  @RequirePermissions(COLLECTION_PERMISSIONS.read)
+  getDailyAgentDetail(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('agentId', ParseUUIDPipe) agentId: string,
+    @Query('date') date?: string,
+  ) {
+    return this.collectionsService.getDailyAgentDetail(user, agentId, date);
+  }
+
   @Get('repayments')
   @RequirePermissions(COLLECTION_PERMISSIONS.read)
   listRepayments(
@@ -41,6 +60,15 @@ export class CollectionsController {
     @Query('filter') filter?: string,
   ) {
     return this.collectionsService.listRepayments(user, filter);
+  }
+
+  @Get('repayments/:repaymentId')
+  @RequirePermissions(COLLECTION_PERMISSIONS.read)
+  getRepaymentDetail(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('repaymentId', ParseUUIDPipe) repaymentId: string,
+  ) {
+    return this.collectionsService.getRepaymentDetail(user, repaymentId);
   }
 
   @Get('clients/search')

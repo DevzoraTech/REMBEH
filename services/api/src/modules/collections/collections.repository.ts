@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import {
+  LoanApplicationStatus,
   LoanStatus,
   Prisma,
   RepaymentMethod,
+  UserStatus,
 } from '@prisma/client';
 import {
   looksLikePhoneQuery,
@@ -209,6 +211,135 @@ export class CollectionsRepository {
       },
       _sum: { amount: true },
       _count: { _all: true },
+    });
+  }
+
+  findRepaymentById(input: {
+    tenantId: string;
+    branchId: string | null;
+    repaymentId: string;
+  }) {
+    return this.prisma.repayment.findFirst({
+      where: {
+        id: input.repaymentId,
+        ...this.branchScope(input),
+      },
+      include: {
+        recordedBy: true,
+        branch: true,
+        loan: {
+          include: loanWithRelations,
+        },
+        tenant: true,
+      },
+    });
+  }
+
+  listRepaymentsForDay(input: {
+    tenantId: string;
+    branchId: string | null;
+    dayStart: Date;
+    dayEnd: Date;
+    recordedByUserId?: string;
+  }) {
+    return this.prisma.repayment.findMany({
+      where: {
+        ...this.branchScope(input),
+        paidAt: { gte: input.dayStart, lte: input.dayEnd },
+        ...(input.recordedByUserId
+          ? { recordedByUserId: input.recordedByUserId }
+          : {}),
+      },
+      include: {
+        recordedBy: true,
+        loan: {
+          include: {
+            customer: true,
+          },
+        },
+      },
+      orderBy: { paidAt: 'desc' },
+    });
+  }
+
+  listApplicationsSubmittedForDay(input: {
+    tenantId: string;
+    branchId: string | null;
+    dayStart: Date;
+    dayEnd: Date;
+    officerUserId?: string;
+  }) {
+    return this.prisma.loanApplication.findMany({
+      where: {
+        ...this.branchScope(input),
+        status: { not: LoanApplicationStatus.DRAFT },
+        submittedAt: { gte: input.dayStart, lte: input.dayEnd },
+        ...(input.officerUserId
+          ? { officerUserId: input.officerUserId }
+          : {}),
+      },
+      include: {
+        officer: true,
+        branch: true,
+      },
+      orderBy: { submittedAt: 'desc' },
+    });
+  }
+
+  listFieldAgents(input: {
+    tenantId: string;
+    branchId: string | null;
+  }) {
+    const fieldRoles = [
+      'Agent',
+      'Loan Officer',
+      'Supervisor',
+      'Recovery Officer',
+      'Branch Manager',
+    ];
+
+    return this.prisma.user.findMany({
+      where: {
+        tenantId: input.tenantId,
+        ...(input.branchId ? { branchId: input.branchId } : {}),
+        status: {
+          in: [
+            UserStatus.ACTIVE,
+            UserStatus.INVITED,
+            UserStatus.PENDING_VERIFICATION,
+          ],
+        },
+        roles: {
+          some: {
+            role: {
+              name: { in: fieldRoles },
+            },
+          },
+        },
+      },
+      include: {
+        roles: { include: { role: true } },
+        branch: true,
+      },
+      orderBy: { displayName: 'asc' },
+    });
+  }
+
+  findFieldAgentById(input: {
+    tenantId: string;
+    branchId: string | null;
+    agentId: string;
+  }) {
+    return this.prisma.user.findFirst({
+      where: {
+        id: input.agentId,
+        tenantId: input.tenantId,
+        ...(input.branchId ? { branchId: input.branchId } : {}),
+      },
+      include: {
+        roles: { include: { role: true } },
+        branch: true,
+      },
     });
   }
 
