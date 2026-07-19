@@ -12,6 +12,7 @@ import { TenantStatus, UserStatus } from '@prisma/client';
 import { Server, Socket } from 'socket.io';
 import { JwtTokenService } from '../../common/auth/jwt-token.service';
 import { PrismaService } from '../../database/prisma.service';
+import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import type {
   LoanApplicationRealtimePayload,
   PaymentRealtimePayload,
@@ -95,10 +96,7 @@ export class RealtimeGateway
       };
 
       client.data.user = socketUser;
-      await client.join(this.tenantRoom(socketUser.tenantId));
-      if (socketUser.branchId) {
-        await client.join(this.branchRoom(socketUser.branchId));
-      }
+      await this.joinScopedRooms(client, socketUser);
 
       this.logger.debug(
         `Socket connected user=${socketUser.userId} tenant=${socketUser.tenantId}`,
@@ -128,15 +126,20 @@ export class RealtimeGateway
       return { ok: false };
     }
 
+    // Only allow re-joining the caller's own branch room (tenant-prefixed).
     if (body?.branchId && user.branchId === body.branchId) {
-      await client.join(this.branchRoom(body.branchId));
+      await client.join(this.branchRoom(user.tenantId, body.branchId));
     }
 
     return {
       ok: true,
       rooms: {
-        tenant: this.tenantRoom(user.tenantId),
-        branch: user.branchId ? this.branchRoom(user.branchId) : null,
+        tenant: this.canSeeAllBranches(user)
+          ? this.tenantRoom(user.tenantId)
+          : null,
+        branch: user.branchId
+          ? this.branchRoom(user.tenantId, user.branchId)
+          : null,
       },
     };
   }
@@ -145,8 +148,8 @@ export class RealtimeGateway
     this.server.to(this.tenantRoom(tenantId)).emit(event, payload);
   }
 
-  emitToBranch(branchId: string, event: string, payload: unknown) {
-    this.server.to(this.branchRoom(branchId)).emit(event, payload);
+  emitToBranch(tenantId: string, branchId: string, event: string, payload: unknown) {
+    this.server.to(this.branchRoom(tenantId, branchId)).emit(event, payload);
   }
 
   broadcastLoanApplication(
@@ -154,20 +157,36 @@ export class RealtimeGateway
     payload: LoanApplicationRealtimePayload,
   ) {
     this.emitToTenant(payload.tenantId, event, payload);
-    this.emitToBranch(payload.branchId, event, payload);
+    this.emitToBranch(payload.tenantId, payload.branchId, event, payload);
   }
 
   broadcastPayment(event: string, payload: PaymentRealtimePayload) {
     this.emitToTenant(payload.tenantId, event, payload);
-    this.emitToBranch(payload.branchId, event, payload);
+    this.emitToBranch(payload.tenantId, payload.branchId, event, payload);
+  }
+
+  private async joinScopedRooms(client: Socket, user: SocketUser) {
+    // Owners (branch.create) hear tenant-wide events.
+    // Agents / branch managers only join their tenant+branch room.
+    if (this.canSeeAllBranches(user)) {
+      await client.join(this.tenantRoom(user.tenantId));
+    }
+    if (user.branchId) {
+      await client.join(this.branchRoom(user.tenantId, user.branchId));
+    }
+  }
+
+  private canSeeAllBranches(user: SocketUser) {
+    return user.permissions.includes(BRANCH_PERMISSIONS.create);
   }
 
   private tenantRoom(tenantId: string) {
     return `tenant:${tenantId}`;
   }
 
-  private branchRoom(branchId: string) {
-    return `branch:${branchId}`;
+  /** Branch rooms are tenant-prefixed to prevent any cross-tenant join. */
+  private branchRoom(tenantId: string, branchId: string) {
+    return `tenant:${tenantId}:branch:${branchId}`;
   }
 
   private extractToken(client: Socket): string | null {

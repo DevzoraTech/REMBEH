@@ -11,6 +11,8 @@ class RealtimeClient {
   static final RealtimeClient instance = RealtimeClient._();
 
   io.Socket? _socket;
+  String? _connectedTenantId;
+  String? _connectedToken;
   final Map<String, List<RealtimeHandler>> _handlers = {};
 
   String get _socketBase {
@@ -22,15 +24,23 @@ class RealtimeClient {
   }
 
   Future<void> connect(RembehSession session) async {
-    if (_socket?.connected == true) return;
+    final tenantId = session.tenantId ?? '';
+    final token = session.accessToken;
+    if (_socket?.connected == true &&
+        _connectedTenantId == tenantId &&
+        _connectedToken == token) {
+      return;
+    }
 
-    _socket?.dispose();
+    disconnect();
+    _connectedTenantId = tenantId;
+    _connectedToken = token;
     _socket = io.io(
       '$_socketBase/realtime',
       io.OptionBuilder()
           .setTransports(['websocket'])
           .disableAutoConnect()
-          .setAuth({'token': session.accessToken})
+          .setAuth({'token': token})
           .build(),
     );
 
@@ -67,6 +77,8 @@ class RealtimeClient {
   void disconnect() {
     _socket?.dispose();
     _socket = null;
+    _connectedTenantId = null;
+    _connectedToken = null;
   }
 
   void _dispatch(String event, dynamic data) {

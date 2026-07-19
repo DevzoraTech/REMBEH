@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../services/session_cleanup.dart';
 import '../../services/session_store.dart';
 import '../../theme.dart';
 import '../login_screen.dart';
@@ -10,6 +11,7 @@ class AgentProfileScreen extends StatelessWidget {
   final RembehSession session;
 
   Future<void> _logout(BuildContext context) async {
+    await clearTenantScopedClientState();
     await SessionStore().clear();
     if (!context.mounted) return;
     Navigator.of(context).pushAndRemoveUntil(

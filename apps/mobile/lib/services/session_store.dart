@@ -13,6 +13,7 @@ class RembehSession {
     required this.userEmail,
     required this.roleName,
     required this.workspaceName,
+    this.tenantId,
     this.refreshToken,
     this.refreshExpiresAt,
     this.branchId,
@@ -32,6 +33,8 @@ class RembehSession {
   final String userEmail;
   final String? roleName;
   final String workspaceName;
+  /// Organisation / tenant id from auth (workspace.id).
+  final String? tenantId;
   final String? refreshToken;
   final String? refreshExpiresAt;
   final String? branchId;
@@ -75,6 +78,7 @@ class RembehSession {
     String? userEmail,
     String? roleName,
     String? workspaceName,
+    String? tenantId,
     String? refreshToken,
     String? refreshExpiresAt,
     String? branchId,
@@ -94,6 +98,7 @@ class RembehSession {
       userEmail: userEmail ?? this.userEmail,
       roleName: roleName ?? this.roleName,
       workspaceName: workspaceName ?? this.workspaceName,
+      tenantId: tenantId ?? this.tenantId,
       refreshToken: refreshToken ?? this.refreshToken,
       refreshExpiresAt: refreshExpiresAt ?? this.refreshExpiresAt,
       branchId: branchId ?? this.branchId,
@@ -116,6 +121,7 @@ class RembehSession {
         'userEmail': userEmail,
         'roleName': roleName,
         'workspaceName': workspaceName,
+        'tenantId': tenantId,
         'refreshToken': refreshToken,
         'refreshExpiresAt': refreshExpiresAt,
         'branchId': branchId,
@@ -136,6 +142,7 @@ class RembehSession {
         'userEmail': userEmail,
         'roleName': roleName,
         'workspaceName': workspaceName,
+        'tenantId': tenantId,
         'refreshExpiresAt': refreshExpiresAt,
         'branchId': branchId,
         'branchName': branchName,
@@ -158,6 +165,7 @@ class RembehSession {
       userEmail: json['userEmail'] as String? ?? '',
       roleName: json['roleName'] as String?,
       workspaceName: json['workspaceName'] as String? ?? '',
+      tenantId: json['tenantId'] as String?,
       refreshToken: json['refreshToken'] as String?,
       refreshExpiresAt: json['refreshExpiresAt'] as String?,
       branchId: json['branchId'] as String?,

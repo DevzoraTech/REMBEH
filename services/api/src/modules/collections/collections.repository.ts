@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   LoanApplicationStatus,
   LoanStatus,
@@ -41,13 +41,22 @@ export type LoanWithCollections = Prisma.LoanGetPayload<{
   include: typeof loanWithRelations;
 }>;
 
+/** Tenant id must come from auth context — never optional on scoped queries. */
+export function requireTenantId(tenantId: string | null | undefined): string {
+  if (typeof tenantId !== 'string' || !tenantId.trim()) {
+    throw new BadRequestException('tenantId is required for tenant-scoped queries.');
+  }
+  return tenantId.trim();
+}
+
 @Injectable()
 export class CollectionsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   branchScope(user: { tenantId: string; branchId: string | null }) {
+    const tenantId = requireTenantId(user.tenantId);
     return {
-      tenantId: user.tenantId,
+      tenantId,
       ...(user.branchId ? { branchId: user.branchId } : {}),
     };
   }
@@ -73,24 +82,47 @@ export class CollectionsRepository {
     query: string;
     take?: number;
   }) {
+    const tenantId = requireTenantId(input.tenantId);
     const q = input.query.trim();
     const take = input.take ?? 40;
     const scope = {
-      ...this.branchScope(input),
+      ...this.branchScope({ tenantId, branchId: input.branchId }),
       status: { in: activeLoanStatuses },
     };
     const variants = phoneSearchVariants(q);
+    // Nested relations also carry tenantId so OR matches cannot widen scope.
     const phoneOr: Prisma.LoanWhereInput[] = variants.flatMap((variant) => [
-      { customer: { phone: { contains: variant } } },
-      { application: { phone: { contains: variant } } },
+      { customer: { tenantId, phone: { contains: variant } } },
+      { application: { tenantId, phone: { contains: variant } } },
     ]);
     const nameOr: Prisma.LoanWhereInput[] = [
-      { customer: { fullName: { contains: q, mode: 'insensitive' } } },
-      { customer: { nationalId: { contains: q, mode: 'insensitive' } } },
-      { application: { surname: { contains: q, mode: 'insensitive' } } },
-      { application: { givenNames: { contains: q, mode: 'insensitive' } } },
+      {
+        customer: {
+          tenantId,
+          fullName: { contains: q, mode: 'insensitive' },
+        },
+      },
+      {
+        customer: {
+          tenantId,
+          nationalId: { contains: q, mode: 'insensitive' },
+        },
+      },
       {
         application: {
+          tenantId,
+          surname: { contains: q, mode: 'insensitive' },
+        },
+      },
+      {
+        application: {
+          tenantId,
+          givenNames: { contains: q, mode: 'insensitive' },
+        },
+      },
+      {
+        application: {
+          tenantId,
           nationalId: { contains: q, mode: 'insensitive' },
         },
       },

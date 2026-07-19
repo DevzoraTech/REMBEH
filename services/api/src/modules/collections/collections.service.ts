@@ -160,12 +160,16 @@ export class CollectionsService {
     query: string,
   ): Promise<{ clients: ClientLoanDetailContract[] }> {
     this.assertBranchAccess(user);
+    if (!user.tenantId?.trim()) {
+      throw new ForbiddenException('Tenant scope is required.');
+    }
     const q = query.trim();
     if (q.length < 1) {
       return { clients: [] };
     }
+    const scope = this.scope(user);
     const loans = await this.repository.searchLoans({
-      ...this.scope(user),
+      ...scope,
       query: q,
     });
     const clients = (
@@ -699,6 +703,11 @@ export class CollectionsService {
   }
 
   private scope(user: AuthenticatedUser) {
+    if (!user.tenantId?.trim()) {
+      throw new ForbiddenException('Tenant scope is required.');
+    }
+    // Only workspace owners (branch.create) may query across branches.
+    // Branch managers and agents stay on their assigned branch.
     const canAllBranches = user.permissions.includes(
       BRANCH_PERMISSIONS.create,
     );
@@ -709,6 +718,9 @@ export class CollectionsService {
   }
 
   private assertBranchAccess(user: AuthenticatedUser) {
+    if (!user.tenantId?.trim()) {
+      throw new ForbiddenException('Tenant scope is required.');
+    }
     const canAllBranches = user.permissions.includes(
       BRANCH_PERMISSIONS.create,
     );

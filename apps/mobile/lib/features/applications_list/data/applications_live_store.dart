@@ -16,12 +16,18 @@ class ApplicationsLiveStore extends ChangeNotifier {
   bool _loading = false;
   String? _error;
   bool _listening = false;
+  String? _tenantId;
 
   List<FieldApplication> get applications => List.unmodifiable(_applications);
   bool get loading => _loading;
   String? get error => _error;
 
   Future<void> start(RembehSession session) async {
+    final tenantChanged = _tenantId != null && _tenantId != session.tenantId;
+    if (tenantChanged) {
+      clearSessionState();
+    }
+    _tenantId = session.tenantId;
     await refresh();
     if (_listening) return;
     _listening = true;
@@ -31,6 +37,18 @@ class ApplicationsLiveStore extends ChangeNotifier {
 
     client.on('loan_application.submitted', _onRealtime);
     client.on('loan_application.updated', _onRealtime);
+  }
+
+  void clearSessionState() {
+    _applications.clear();
+    _error = null;
+    _loading = false;
+    _listening = false;
+    _tenantId = null;
+    final client = RealtimeClient.instance;
+    client.off('loan_application.submitted', _onRealtime);
+    client.off('loan_application.updated', _onRealtime);
+    notifyListeners();
   }
 
   Future<void> refresh() async {
@@ -106,6 +124,13 @@ class ApplicationsLiveStore extends ChangeNotifier {
   }
 
   void _onRealtime(Map<String, dynamic> payload) {
+    final payloadTenant = payload['tenantId'] as String?;
+    if (_tenantId != null &&
+        payloadTenant != null &&
+        payloadTenant != _tenantId) {
+      return;
+    }
+
     final id = payload['applicationId'] as String? ?? payload['id'] as String?;
     if (id == null) return;
 

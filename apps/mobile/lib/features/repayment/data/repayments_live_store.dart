@@ -13,7 +13,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
 
   static final RepaymentsLiveStore instance = RepaymentsLiveStore._();
 
-  static const _recentKey = 'rembeh_recent_loan_ids';
+  static const _recentKeyPrefix = 'rembeh_recent_loan_ids';
 
   final _locator = RepaymentLocator.instance;
   HomeSummary _summary = const HomeSummary(
@@ -31,6 +31,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
   bool _loading = false;
   String? _error;
   bool _listening = false;
+  String? _tenantId;
+  String? _recentKey;
 
   HomeSummary get summary => _summary;
   List<FieldRepayment> get repayments => List.unmodifiable(_repayments);
@@ -38,6 +40,12 @@ class RepaymentsLiveStore extends ChangeNotifier {
   String? get error => _error;
 
   Future<void> start(RembehSession session) async {
+    final tenantChanged = _tenantId != null && _tenantId != session.tenantId;
+    if (tenantChanged) {
+      await clearSessionState();
+    }
+    _tenantId = session.tenantId;
+    _recentKey = _recentPrefsKey(session.tenantId);
     await _loadRecentIds();
     await refresh();
     if (_listening) return;
@@ -46,6 +54,27 @@ class RepaymentsLiveStore extends ChangeNotifier {
     final client = RealtimeClient.instance;
     await client.connect(session);
     client.on('payment.made', _onPaymentRealtime);
+  }
+
+  Future<void> clearSessionState() async {
+    _summary = const HomeSummary(
+      amountCollectedToday: 0,
+      repaymentsTodayCount: 0,
+      dueTodayCount: 0,
+      newApplicationsTodayCount: 0,
+      pendingSyncCount: 0,
+      clientsDueToday: [],
+    );
+    _repayments.clear();
+    _detailCache.clear();
+    _recentLoanIds.clear();
+    _error = null;
+    _loading = false;
+    _listening = false;
+    _tenantId = null;
+    _recentKey = null;
+    RealtimeClient.instance.off('payment.made', _onPaymentRealtime);
+    notifyListeners();
   }
 
   Future<void> refresh() async {
@@ -157,22 +186,31 @@ class RepaymentsLiveStore extends ChangeNotifier {
     if (_recentLoanIds.length > 12) {
       _recentLoanIds.removeRange(12, _recentLoanIds.length);
     }
+    final key = _recentKey;
+    if (key == null) return;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_recentKey, _recentLoanIds);
+    await prefs.setStringList(key, _recentLoanIds);
   }
 
   Future<List<ClientLoanDetail>> recentClients() async {
     final details = <ClientLoanDetail>[];
-    for (final id in _recentLoanIds) {
-      final cached = _detailCache[id];
-      if (cached != null) {
-        details.add(cached);
-        continue;
-      }
+    final stale = <String>[];
+    for (final id in List<String>.from(_recentLoanIds)) {
       try {
-        details.add(await getLoanDetail(id));
+        // Always re-fetch so a prior tenant's in-memory cache cannot leak.
+        final detail = await _locator.getLoanDetail(id);
+        _detailCache[id] = detail;
+        details.add(detail);
       } catch (_) {
-        // Drop stale recent ids quietly.
+        stale.add(id);
+      }
+    }
+    if (stale.isNotEmpty) {
+      _recentLoanIds.removeWhere(stale.contains);
+      final key = _recentKey;
+      if (key != null) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setStringList(key, _recentLoanIds);
       }
     }
     return details;
@@ -180,19 +218,35 @@ class RepaymentsLiveStore extends ChangeNotifier {
 
   Future<void> clearRecentClients() async {
     _recentLoanIds.clear();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_recentKey);
+    final key = _recentKey;
+    if (key != null) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(key);
+    }
     notifyListeners();
   }
 
   Future<void> _loadRecentIds() async {
+    final key = _recentKey;
+    _recentLoanIds.clear();
+    if (key == null) return;
     final prefs = await SharedPreferences.getInstance();
-    _recentLoanIds
-      ..clear()
-      ..addAll(prefs.getStringList(_recentKey) ?? const []);
+    _recentLoanIds.addAll(prefs.getStringList(key) ?? const []);
+  }
+
+  String _recentPrefsKey(String? tenantId) {
+    final scope = (tenantId != null && tenantId.isNotEmpty) ? tenantId : 'unknown';
+    return '${_recentKeyPrefix}_$scope';
   }
 
   void _onPaymentRealtime(Map<String, dynamic> payload) {
+    final payloadTenant = payload['tenantId'] as String?;
+    if (_tenantId != null &&
+        payloadTenant != null &&
+        payloadTenant != _tenantId) {
+      return;
+    }
+
     final id = payload['repaymentId'] as String? ?? '';
     if (id.isEmpty) {
       refresh();

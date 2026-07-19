@@ -4,6 +4,7 @@ import 'screens/agent_shell.dart';
 import 'screens/login_screen.dart';
 import 'screens/profile/agent_selfie_capture_screen.dart';
 import 'services/api_client.dart';
+import 'services/session_cleanup.dart';
 import 'services/session_store.dart';
 import 'theme.dart';
 
@@ -48,6 +49,7 @@ class _BootScreenState extends State<_BootScreen> {
     if (session != null) {
       // Idle timeout survives process death via last-activity timestamp.
       if (await store.isIdleTimedOut()) {
+        await clearTenantScopedClientState();
         await store.clear();
         if (!mounted) return;
         _goLogin();
@@ -70,6 +72,7 @@ class _BootScreenState extends State<_BootScreen> {
       }
     }
 
+    await clearTenantScopedClientState();
     await store.clear();
     if (!mounted) return;
     _goLogin();

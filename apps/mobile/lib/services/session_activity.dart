@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 
 import 'api_client.dart';
+import 'session_cleanup.dart';
 import 'session_store.dart';
 
 /// Idle logout after [idleTimeout] with no taps / scrolls / navigation.
@@ -97,6 +98,7 @@ class SessionActivityController with WidgetsBindingObserver {
     if (_loggingOut) return;
     _loggingOut = true;
     _timer?.cancel();
+    await clearTenantScopedClientState();
     await sessionStore.clear();
     await onIdleLogout();
   }

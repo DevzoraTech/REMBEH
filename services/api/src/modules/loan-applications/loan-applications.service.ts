@@ -108,6 +108,10 @@ export class LoanApplicationsService {
   async listApplications(
     user: AuthenticatedUser,
   ): Promise<LoanApplicationListResponseContract> {
+    if (!user.tenantId?.trim()) {
+      throw new ForbiddenException('Tenant scope is required.');
+    }
+
     const canSeeAllBranches = user.permissions.includes(
       BRANCH_PERMISSIONS.create,
     );

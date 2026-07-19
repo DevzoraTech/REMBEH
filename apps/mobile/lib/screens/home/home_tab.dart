@@ -146,24 +146,7 @@ class _HomeTabState extends State<HomeTab> {
                 const SizedBox(width: 10),
                 InkWell(
                   onTap: widget.onOpenProfile,
-                  child: Container(
-                    width: 44,
-                    height: 44,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: sage,
-                      border: Border.all(color: line),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Text(
-                      _initials(widget.session.userName),
-                      style: const TextStyle(
-                        color: forestEmerald,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
+                  child: _HomeProfileAvatar(session: widget.session),
                 ),
               ],
             ),
@@ -271,7 +254,7 @@ class _HomeTabState extends State<HomeTab> {
                           child: _SummaryMetric(
                             icon: Icons.note_add_outlined,
                             iconColor: midnightNavy,
-                            label: 'New Applications',
+                            label: 'Applications',
                             value: '${_summary.newApplicationsTodayCount}',
                             valueColor: midnightNavy,
                             onTap: () => widget.onOpenRecords(
@@ -365,7 +348,7 @@ class _HomeTabState extends State<HomeTab> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'New',
+                              'New Loan Application',
                               style: TextStyle(
                                 color: midnightNavy,
                                 fontWeight: FontWeight.w800,
@@ -459,6 +442,53 @@ class _HomeTabState extends State<HomeTab> {
           ],
         ),
       ),
+    );
+  }
+
+}
+
+class _HomeProfileAvatar extends StatelessWidget {
+  const _HomeProfileAvatar({required this.session});
+
+  final RembehSession session;
+
+  @override
+  Widget build(BuildContext context) {
+    final initials = _initials(session.userName);
+    final photoUrl = session.profilePhotoUrl;
+    return Container(
+      width: 44,
+      height: 44,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: sage,
+        border: Border.all(color: line),
+        shape: BoxShape.circle,
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: photoUrl != null && photoUrl.isNotEmpty
+          ? Image.network(
+              photoUrl,
+              width: 44,
+              height: 44,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => Text(
+                initials,
+                style: const TextStyle(
+                  color: forestEmerald,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                ),
+              ),
+            )
+          : Text(
+              initials,
+              style: const TextStyle(
+                color: forestEmerald,
+                fontWeight: FontWeight.w800,
+                fontSize: 14,
+              ),
+            ),
     );
   }
 
