@@ -458,7 +458,7 @@ class _RepaymentsList extends StatelessWidget {
                 initials: item.initials,
                 name: item.clientName,
                 phone: item.phone,
-                primaryAmount: formatCompactMoney(item.amountPaid),
+                primaryAmount: formatCompactMoney(item.amount),
                 secondaryValue: formatCompactMoney(item.loanAmount),
                 secondaryColor: warmGold,
                 timestamp: formatActivityTime(item.recordedAt, now),

@@ -978,7 +978,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   List<Widget> _stepIdentity() {
     return [
       const Text(
-        'Identity Photos',
+        'Applicant & Identity Photos',
         style: TextStyle(
           color: midnightNavy,
           fontWeight: FontWeight.w800,
@@ -987,13 +987,14 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       ),
       const SizedBox(height: 6),
       const Text(
-        'Capture clear identity photos for this applicant.',
+        'An applicant photo is required on every new loan. Capture clear photos — submit is blocked without them.',
         style: TextStyle(color: slateText, fontSize: 13),
       ),
       const SizedBox(height: 16),
       LoanCaptureRow(
-        title: 'Passport Photo',
-        subtitle: 'Capture a clear passport size photo.',
+        title: 'Applicant Photo',
+        subtitle:
+            'Passport-style selfie of the applicant — face centered, good light. Required to submit.',
         icon: Icons.person_outline,
         captured: _draft.passportCaptured,
         previewBytes: _draft.mediaPreviews['PASSPORT'],

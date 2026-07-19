@@ -36,4 +36,40 @@ describe('collection-schedule', () => {
     expect(result.principalAllocated).toBe(60);
     expect(result.applied).toBe(150);
   });
+
+  it('keeps paid at 0 when no repayments even if balance drifts from pricing', () => {
+    const start = new Date(2026, 6, 1);
+    const schedule = computeCollectionSchedule({
+      principalAmount: 1_000_000,
+      interestRatePercent: 20,
+      durationDays: 30,
+      processingFee: 50_000,
+      // Balance equal to principal only (legacy / mis-mapped) would otherwise
+      // show interest+fee as "paid".
+      balance: 1_000_000,
+      recordedPaidAmount: 0,
+      startDate: start,
+      asOf: start,
+    });
+
+    expect(schedule.paidAmount).toBe(0);
+    expect(schedule.outstanding).toBe(1_000_000);
+  });
+
+  it('uses recorded repayment sum as paidAmount', () => {
+    const start = new Date(2026, 6, 1);
+    const schedule = computeCollectionSchedule({
+      principalAmount: 1_000_000,
+      interestRatePercent: 0,
+      durationDays: 10,
+      processingFee: 0,
+      balance: 900_000,
+      recordedPaidAmount: 100_000,
+      startDate: start,
+      asOf: start,
+    });
+
+    expect(schedule.paidAmount).toBe(100_000);
+    expect(schedule.outstanding).toBe(900_000);
+  });
 });

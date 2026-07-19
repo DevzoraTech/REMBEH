@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'screens/agent_shell.dart';
 import 'screens/login_screen.dart';
+import 'screens/profile/agent_selfie_capture_screen.dart';
 import 'services/api_client.dart';
 import 'services/session_store.dart';
 import 'theme.dart';
@@ -81,8 +82,11 @@ class _BootScreenState extends State<_BootScreen> {
   }
 
   void _goShell(RembehSession session) {
+    final next = session.isAgent && !session.hasProfilePhoto
+        ? AgentSelfieCaptureScreen(session: session)
+        : AgentShell(session: session);
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => AgentShell(session: session)),
+      MaterialPageRoute(builder: (_) => next),
     );
   }
 

@@ -130,6 +130,7 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
       fullName: json['fullName'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
       registeredBy: json['registeredBy'] as String? ?? '',
+      agentPhotoUrl: json['agentPhotoUrl'] as String?,
       outstanding: _money(json['outstanding']),
       lastPaymentAmount: _money(json['lastPaymentAmount']),
       lastPaymentAt:
@@ -163,6 +164,7 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
               paidAt: DateTime.tryParse(row['paidAt'] as String? ?? '') ??
                   DateTime.now(),
               recordedByName: row['recordedByName'] as String? ?? '',
+              agentPhotoUrl: row['agentPhotoUrl'] as String?,
               note: row['note'] as String?,
             ),
           )
@@ -193,6 +195,7 @@ ClientDetail toUiClientDetail(ClientLoanDetail detail) {
     fullName: detail.fullName,
     phone: detail.phone,
     registeredBy: detail.registeredBy,
+    agentPhotoUrl: detail.agentPhotoUrl,
     outstanding: detail.outstanding,
     lastPaymentAmount: detail.lastPaymentAmount,
     lastPaymentAt: detail.lastPaymentAt,
@@ -218,6 +221,7 @@ ClientDetail toUiClientDetail(ClientLoanDetail detail) {
             method: item.method,
             paidAt: item.paidAt,
             recordedByName: item.recordedByName,
+            agentPhotoUrl: item.agentPhotoUrl,
             note: item.note,
           ),
         )

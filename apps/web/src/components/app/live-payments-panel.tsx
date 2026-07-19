@@ -16,6 +16,7 @@ type PaymentRow = {
   recordedAt: string;
   method: string;
   recordedByName: string;
+  agentPhotoUrl?: string | null;
   note: string | null;
 };
 
@@ -89,6 +90,7 @@ export function LivePaymentsPanel({
         recordedAt: event.recordedAt,
         method: event.method ?? "CASH",
         recordedByName: event.recordedByName ?? "Agent",
+        agentPhotoUrl: event.agentPhotoUrl ?? null,
         note: event.note ?? null,
       };
       setPayments((current) => {
@@ -147,14 +149,28 @@ export function LivePaymentsPanel({
                   key={item.id}
                   className="flex items-center justify-between gap-3 px-3 py-2.5"
                 >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
-                      {item.clientName || "Client"}
-                    </p>
-                    <p className="truncate text-xs text-slate-500">
-                      {item.recordedByName} · {methodLabel(item.method)} ·{" "}
-                      {formatClock(item.recordedAt)}
-                    </p>
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    {item.agentPhotoUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={item.agentPhotoUrl}
+                        alt={item.recordedByName}
+                        className="size-8 shrink-0 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[var(--soft-mist)] text-[10px] font-bold text-[var(--forest-emerald)]">
+                        AG
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
+                        {item.clientName || "Client"}
+                      </p>
+                      <p className="truncate text-xs text-slate-500">
+                        {item.recordedByName} · {methodLabel(item.method)} ·{" "}
+                        {formatClock(item.recordedAt)}
+                      </p>
+                    </div>
                   </div>
                   <p className="shrink-0 text-sm font-bold tabular-nums text-[var(--forest-emerald)]">
                     {formatAmount(item.amount)}

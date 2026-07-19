@@ -37,4 +37,5 @@ export type PaymentRealtimePayload = {
   synced: boolean;
   recordedByUserId: string;
   recordedByName?: string;
+  agentPhotoUrl?: string | null;
 };

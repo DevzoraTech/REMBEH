@@ -5,6 +5,7 @@ class PaymentHistoryItem {
     required this.method,
     required this.paidAt,
     required this.recordedByName,
+    this.agentPhotoUrl,
     this.note,
   });
 
@@ -13,6 +14,7 @@ class PaymentHistoryItem {
   final String method;
   final DateTime paidAt;
   final String recordedByName;
+  final String? agentPhotoUrl;
   final String? note;
 }
 
@@ -41,6 +43,7 @@ class ClientLoanDetail {
     required this.loanStartDate,
     required this.maturityDate,
     this.paymentStartDate,
+    this.agentPhotoUrl,
     this.paymentHistory = const [],
   });
 
@@ -50,6 +53,7 @@ class ClientLoanDetail {
   final String fullName;
   final String phone;
   final String registeredBy;
+  final String? agentPhotoUrl;
   final int outstanding;
   final int lastPaymentAmount;
   final DateTime? lastPaymentAt;

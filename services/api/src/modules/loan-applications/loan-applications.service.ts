@@ -881,6 +881,10 @@ export class LoanApplicationsService {
       id: application.id,
       branchId: application.branchId,
       officerUserId: application.officerUserId,
+      officerName: application.officer?.displayName ?? null,
+      officerPublicId: application.officer?.publicId ?? null,
+      agentPhotoUrl: null,
+      agentPhotoStorageKey: application.officer?.profilePhotoStorageKey ?? null,
       status: application.status,
       surname: application.surname,
       givenNames: application.givenNames,
@@ -988,11 +992,24 @@ export class LoanApplicationsService {
       }
     }
 
+    let agentPhotoUrl: string | null = null;
+    if (base.agentPhotoStorageKey) {
+      try {
+        const signed = await this.objectStorage.presignGet({
+          storageKey: base.agentPhotoStorageKey,
+        });
+        agentPhotoUrl = signed.downloadUrl;
+      } catch {
+        agentPhotoUrl = null;
+      }
+    }
+
     return {
       ...base,
       media,
       signatures,
       signedAgreementDownloadUrl,
+      agentPhotoUrl,
     };
   }
 

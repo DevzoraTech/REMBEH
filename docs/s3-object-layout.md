@@ -8,8 +8,10 @@ prefix when the workspace is registered.
 ```
 tenants/{tenantId}/
   meta/company.json
+  agents/{userId}/
+    profile/{uuid}.{ext}     # agent professional selfie (once per agent)
   loans/{loanApplicationId}/
-    media/{mediaType}/{uuid}.{ext}
+    media/{mediaType}/{uuid}.{ext}   # includes PASSPORT (applicant photo)
     signatures/{signerRole}/{uuid}/
       signature.png
       strokes.json

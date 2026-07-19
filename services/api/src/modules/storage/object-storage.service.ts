@@ -175,6 +175,19 @@ export class ObjectStorageService implements OnModuleInit {
   }
 
   /**
+   * Agent profile selfie:
+   * tenants/{tenantId}/agents/{userId}/profile/{uuid}.{ext}
+   */
+  buildAgentProfilePhotoKey(input: {
+    tenantId: string;
+    userId: string;
+    extension?: string;
+  }) {
+    const ext = sanitizeExtension(input.extension) || 'jpg';
+    return `tenants/${input.tenantId}/agents/${input.userId}/profile/${randomUUID()}.${ext}`;
+  }
+
+  /**
    * Signature asset folder:
    * tenants/{tenantId}/loans/{loanApplicationId}/signatures/{signerRole}/{uuid}/
    *   signature.png | strokes.json | metadata.json

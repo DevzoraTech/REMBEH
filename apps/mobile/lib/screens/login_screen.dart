@@ -4,6 +4,7 @@ import '../services/api_client.dart';
 import '../services/session_store.dart';
 import '../theme.dart';
 import 'agent_shell.dart';
+import 'profile/agent_selfie_capture_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, this.idleSignedOutMessage});
@@ -71,8 +72,11 @@ class _LoginScreenState extends State<LoginScreen>
       await _api.login(email: _email.text, password: _password.text);
       final session = await _store.read();
       if (!mounted || session == null) return;
+      final next = session.isAgent && !session.hasProfilePhoto
+          ? AgentSelfieCaptureScreen(session: session)
+          : AgentShell(session: session);
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => AgentShell(session: session)),
+        MaterialPageRoute(builder: (_) => next),
       );
     } catch (error) {
       setState(() => _error = error.toString());

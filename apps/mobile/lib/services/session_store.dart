@@ -19,6 +19,9 @@ class RembehSession {
     this.branchName,
     this.branchAddress,
     this.publicId,
+    this.hasProfilePhoto = false,
+    this.profilePhotoUrl,
+    this.profilePhotoStorageKey,
   });
 
   final String accessToken;
@@ -36,6 +39,9 @@ class RembehSession {
   final String? branchAddress;
   /// Human-reportable agent id (e.g. A-48291).
   final String? publicId;
+  final bool hasProfilePhoto;
+  final String? profilePhotoUrl;
+  final String? profilePhotoStorageKey;
 
   bool get isAgent =>
       (roleName ?? '').toLowerCase().contains('agent') ||
@@ -75,6 +81,9 @@ class RembehSession {
     String? branchName,
     String? branchAddress,
     String? publicId,
+    bool? hasProfilePhoto,
+    String? profilePhotoUrl,
+    String? profilePhotoStorageKey,
   }) {
     return RembehSession(
       accessToken: accessToken ?? this.accessToken,
@@ -91,6 +100,10 @@ class RembehSession {
       branchName: branchName ?? this.branchName,
       branchAddress: branchAddress ?? this.branchAddress,
       publicId: publicId ?? this.publicId,
+      hasProfilePhoto: hasProfilePhoto ?? this.hasProfilePhoto,
+      profilePhotoUrl: profilePhotoUrl ?? this.profilePhotoUrl,
+      profilePhotoStorageKey:
+          profilePhotoStorageKey ?? this.profilePhotoStorageKey,
     );
   }
 
@@ -109,6 +122,9 @@ class RembehSession {
         'branchName': branchName,
         'branchAddress': branchAddress,
         'publicId': publicId,
+        'hasProfilePhoto': hasProfilePhoto,
+        'profilePhotoUrl': profilePhotoUrl,
+        'profilePhotoStorageKey': profilePhotoStorageKey,
       };
 
   /// Non-secret profile fields kept in SharedPreferences.
@@ -125,6 +141,9 @@ class RembehSession {
         'branchName': branchName,
         'branchAddress': branchAddress,
         'publicId': publicId,
+        'hasProfilePhoto': hasProfilePhoto,
+        'profilePhotoUrl': profilePhotoUrl,
+        'profilePhotoStorageKey': profilePhotoStorageKey,
       };
 
   factory RembehSession.fromJson(Map<String, dynamic> json) {
@@ -145,6 +164,9 @@ class RembehSession {
       branchName: json['branchName'] as String?,
       branchAddress: json['branchAddress'] as String?,
       publicId: json['publicId'] as String?,
+      hasProfilePhoto: json['hasProfilePhoto'] as bool? ?? false,
+      profilePhotoUrl: json['profilePhotoUrl'] as String?,
+      profilePhotoStorageKey: json['profilePhotoStorageKey'] as String?,
     );
   }
 }

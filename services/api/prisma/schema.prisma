@@ -246,6 +246,10 @@ model User {
   publicId      String?    @unique @map("public_id")
   displayName   String     @map("display_name")
   passwordHash  String?    @map("password_hash")
+  /// Agent professional selfie (S3 key under tenants/{tenantId}/agents/...).
+  profilePhotoStorageKey String?   @map("profile_photo_storage_key")
+  profilePhotoMimeType   String?   @map("profile_photo_mime_type")
+  profilePhotoUpdatedAt  DateTime? @map("profile_photo_updated_at")
   emailVerified Boolean    @default(false) @map("email_verified")
   phoneVerified Boolean    @default(false) @map("phone_verified")
   status        UserStatus @default(INVITED)

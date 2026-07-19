@@ -34,6 +34,10 @@ export type RepaymentListItemContract = {
   note: string | null;
   method: string;
   recordedByName: string;
+  recordedByPublicId: string | null;
+  /** Presigned GET for the recording agent's profile selfie. */
+  agentPhotoUrl: string | null;
+  agentPhotoStorageKey: string | null;
 };
 
 export type PaymentHistoryItemContract = {
@@ -42,6 +46,8 @@ export type PaymentHistoryItemContract = {
   method: string;
   paidAt: string;
   recordedByName: string;
+  recordedByPublicId: string | null;
+  agentPhotoUrl: string | null;
   note: string | null;
 };
 
@@ -54,10 +60,15 @@ export type ClientLoanDetailContract = {
   fullName: string;
   phone: string;
   registeredBy: string;
+  registeredByPublicId: string | null;
+  /** Presigned GET for the registering agent's profile selfie. */
+  agentPhotoUrl: string | null;
+  agentPhotoStorageKey: string | null;
   outstanding: number;
   lastPaymentAmount: number;
   lastPaymentAt: string | null;
   lastPaymentBy: string | null;
+  lastPaymentByPhotoUrl: string | null;
   expectedToday: number;
   carriedForward: number;
   dailyInstalment: number;

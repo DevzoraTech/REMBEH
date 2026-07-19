@@ -7,6 +7,13 @@ export type CollectionScheduleInput = {
   processingFee: number;
   /** Remaining balance on the loan (total repayable − paid). */
   balance: number;
+  /**
+   * Sum of recorded repayment amounts. When provided, this is the source of
+   * truth for paidAmount (0 until POST /collections/repayments). Prefer this
+   * over deriving paid from totalRepayable − balance, which can mis-count fees
+   * / interest when pricing inputs drift.
+   */
+  recordedPaidAmount?: number;
   /** Loan start used for daily schedule (disbursed/submitted/created). */
   startDate: Date;
   asOf?: Date;
@@ -56,7 +63,10 @@ export function computeCollectionSchedule(
 
   const totalRepayable = pricing.totalRepayable;
   const outstanding = roundMoney(Math.max(0, input.balance));
-  const paidAmount = roundMoney(Math.max(0, totalRepayable - outstanding));
+  const paidAmount =
+    input.recordedPaidAmount != null
+      ? roundMoney(Math.max(0, input.recordedPaidAmount))
+      : roundMoney(Math.max(0, totalRepayable - outstanding));
   const periodDays = Math.max(1, pricing.durationDays);
   const dailyInstalment = roundMoney(totalRepayable / periodDays);
 

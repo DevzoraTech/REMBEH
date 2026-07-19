@@ -160,6 +160,42 @@ class ClientDetailsSheet extends StatelessWidget {
                               ],
                             ),
                           ),
+                          if (detail.agentPhotoUrl != null &&
+                              detail.agentPhotoUrl!.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                ClipOval(
+                                  child: Image.network(
+                                    detail.agentPhotoUrl!,
+                                    width: 28,
+                                    height: 28,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, _, _) => Container(
+                                      width: 28,
+                                      height: 28,
+                                      color: sage,
+                                      alignment: Alignment.center,
+                                      child: const Icon(
+                                        Icons.person_outline,
+                                        size: 16,
+                                        color: forestEmerald,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Agent photo on file',
+                                  style: TextStyle(
+                                    color: slateText,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -421,6 +457,29 @@ class ClientDetailsSheet extends StatelessWidget {
                         ),
                         child: Row(
                           children: [
+                            if (payment.agentPhotoUrl != null &&
+                                payment.agentPhotoUrl!.isNotEmpty) ...[
+                              ClipOval(
+                                child: Image.network(
+                                  payment.agentPhotoUrl!,
+                                  width: 32,
+                                  height: 32,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => Container(
+                                    width: 32,
+                                    height: 32,
+                                    color: sage,
+                                    alignment: Alignment.center,
+                                    child: const Icon(
+                                      Icons.person_outline,
+                                      size: 16,
+                                      color: forestEmerald,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,

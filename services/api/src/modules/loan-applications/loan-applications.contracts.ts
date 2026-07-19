@@ -46,6 +46,12 @@ export type LoanApplicationContract = {
   id: string;
   branchId: string;
   officerUserId: string;
+  /** Registering field agent display name. */
+  officerName: string | null;
+  officerPublicId: string | null;
+  /** Presigned GET for the registering agent's profile selfie. */
+  agentPhotoUrl: string | null;
+  agentPhotoStorageKey: string | null;
   status: string;
   surname: string | null;
   givenNames: string | null;

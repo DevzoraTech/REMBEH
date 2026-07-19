@@ -5,6 +5,7 @@ class ClientPaymentHistoryItem {
     required this.method,
     required this.paidAt,
     required this.recordedByName,
+    this.agentPhotoUrl,
     this.note,
   });
 
@@ -13,6 +14,7 @@ class ClientPaymentHistoryItem {
   final String method;
   final DateTime paidAt;
   final String recordedByName;
+  final String? agentPhotoUrl;
   final String? note;
 }
 
@@ -41,6 +43,7 @@ class ClientDetail {
     required this.loanStartDate,
     required this.maturityDate,
     this.paymentStartDate,
+    this.agentPhotoUrl,
     this.interestAmount = 0,
     this.processingFee = 0,
     this.status = '',
@@ -53,6 +56,7 @@ class ClientDetail {
   final String fullName;
   final String phone;
   final String registeredBy;
+  final String? agentPhotoUrl;
   final int outstanding;
   final int lastPaymentAmount;
   final DateTime? lastPaymentAt;
@@ -110,6 +114,7 @@ class ClientDetail {
       fullName: json['fullName'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
       registeredBy: json['registeredBy'] as String? ?? '',
+      agentPhotoUrl: json['agentPhotoUrl'] as String?,
       outstanding: ((json['outstanding'] as num?) ?? 0).round(),
       lastPaymentAmount: ((json['lastPaymentAmount'] as num?) ?? 0).round(),
       lastPaymentAt: json['lastPaymentAt'] != null
@@ -145,6 +150,7 @@ class ClientDetail {
               paidAt: DateTime.tryParse(row['paidAt'] as String? ?? '') ??
                   DateTime.now(),
               recordedByName: row['recordedByName'] as String? ?? '',
+              agentPhotoUrl: row['agentPhotoUrl'] as String?,
               note: row['note'] as String?,
             ),
           )

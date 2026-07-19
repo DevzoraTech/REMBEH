@@ -14,6 +14,7 @@ import { computeLoanPricing } from '../loan-products/loan-pricing';
 import { SmsService } from '../notifications/sms.service';
 import { REALTIME_EVENTS } from '../realtime/realtime.events';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { ObjectStorageService } from '../storage/object-storage.service';
 import {
   allocateRepayment,
   computeCollectionSchedule,
@@ -41,6 +42,7 @@ export class CollectionsService {
     private readonly realtime: RealtimeGateway,
     private readonly smsService: SmsService,
     private readonly prisma: PrismaService,
+    private readonly objectStorage: ObjectStorageService,
   ) {}
 
   async getSummary(
@@ -63,8 +65,10 @@ export class CollectionsService {
       }),
     ]);
 
-    const clientsDueToday = loans
-      .map((loan) => this.toDueClient(loan, now))
+    const dueCandidates = await Promise.all(
+      loans.map((loan) => this.toDueClient(loan, now)),
+    );
+    const clientsDueToday = dueCandidates
       .filter((item): item is DueClientContract => item != null && item.amountDue > 0)
       .sort(
         (a, b) =>
@@ -102,26 +106,33 @@ export class CollectionsService {
       to: range?.to,
     });
 
-    const repayments = rows.map((row) => {
-      const loan = row.loan as LoanWithCollections;
-      const detail = this.buildDetail(loan);
-      return {
-        id: row.id,
-        loanId: row.loanId,
-        customerId: loan.customerId,
-        clientName: loan.customer.fullName,
-        phone: loan.customer.phone,
-        amount: this.decimalToNumber(row.amount) ?? 0,
-        amountPaid: detail.paidAmount,
-        loanAmount: detail.loanAmount,
-        recordedAt: row.paidAt.toISOString(),
-        synced: true,
-        dueToday: detail.nextDueIsToday,
-        note: row.note,
-        method: row.method,
-        recordedByName: row.recordedBy.displayName,
-      } satisfies RepaymentListItemContract;
-    });
+    const repayments = await Promise.all(
+      rows.map(async (row) => {
+        const loan = row.loan as LoanWithCollections;
+        const detail = await this.buildDetail(loan);
+        const agentPhotoStorageKey =
+          row.recordedBy.profilePhotoStorageKey ?? null;
+        return {
+          id: row.id,
+          loanId: row.loanId,
+          customerId: loan.customerId,
+          clientName: loan.customer.fullName,
+          phone: loan.customer.phone,
+          amount: this.decimalToNumber(row.amount) ?? 0,
+          amountPaid: detail.paidAmount,
+          loanAmount: detail.loanAmount,
+          recordedAt: row.paidAt.toISOString(),
+          synced: true,
+          dueToday: detail.nextDueIsToday,
+          note: row.note,
+          method: row.method,
+          recordedByName: row.recordedBy.displayName,
+          recordedByPublicId: row.recordedBy.publicId ?? null,
+          agentPhotoUrl: await this.presignPhotoUrl(agentPhotoStorageKey),
+          agentPhotoStorageKey,
+        } satisfies RepaymentListItemContract;
+      }),
+    );
 
     if (filter === 'dueToday') {
       return {
@@ -153,13 +164,13 @@ export class CollectionsService {
       ...this.scope(user),
       query: q,
     });
-    const clients = loans
-      .map((loan) => this.buildDetail(loan))
-      .sort((a, b) => {
-        const aAt = a.lastPaymentAt ?? a.paymentStartDate ?? a.loanStartDate;
-        const bAt = b.lastPaymentAt ?? b.paymentStartDate ?? b.loanStartDate;
-        return new Date(bAt).getTime() - new Date(aAt).getTime();
-      });
+    const clients = (
+      await Promise.all(loans.map((loan) => this.buildDetail(loan)))
+    ).sort((a, b) => {
+      const aAt = a.lastPaymentAt ?? a.paymentStartDate ?? a.loanStartDate;
+      const bAt = b.lastPaymentAt ?? b.paymentStartDate ?? b.loanStartDate;
+      return new Date(bAt).getTime() - new Date(aAt).getTime();
+    });
     return { clients };
   }
 
@@ -175,7 +186,7 @@ export class CollectionsService {
     if (!loan) {
       throw new NotFoundException('Loan not found.');
     }
-    return { detail: this.buildDetail(loan) };
+    return { detail: await this.buildDetail(loan) };
   }
 
   async recordRepayment(
@@ -266,7 +277,9 @@ export class CollectionsService {
         nextStatus,
       });
 
-    const detail = this.buildDetail(updatedLoan);
+    const detail = await this.buildDetail(updatedLoan);
+    const agentPhotoStorageKey =
+      repayment.recordedBy.profilePhotoStorageKey ?? null;
     const item: RepaymentListItemContract = {
       id: repayment.id,
       loanId: repayment.loanId,
@@ -282,6 +295,9 @@ export class CollectionsService {
       note: repayment.note,
       method: repayment.method,
       recordedByName: repayment.recordedBy.displayName,
+      recordedByPublicId: repayment.recordedBy.publicId ?? null,
+      agentPhotoUrl: await this.presignPhotoUrl(agentPhotoStorageKey),
+      agentPhotoStorageKey,
     };
 
     this.realtime.broadcastPayment(REALTIME_EVENTS.paymentMade, {
@@ -302,6 +318,7 @@ export class CollectionsService {
       synced: true,
       recordedByUserId: user.userId,
       recordedByName: item.recordedByName,
+      agentPhotoUrl: item.agentPhotoUrl,
     });
 
     void this.sendPaymentSms({
@@ -392,7 +409,9 @@ export class CollectionsService {
     }
   }
 
-  private buildDetail(loan: LoanWithCollections): ClientLoanDetailContract {
+  private async buildDetail(
+    loan: LoanWithCollections,
+  ): Promise<ClientLoanDetailContract> {
     const pricing = this.loanPricing(loan);
     // Prefer stored paymentStartDate (manager policy); fall back for legacy loans.
     const startDate =
@@ -406,24 +425,47 @@ export class CollectionsService {
         `Loan ${loan.id} is missing a payment/loan start date.`,
       );
     }
+    const repayments = (loan.repayments ?? []).filter(
+      (row) => row.paidAt instanceof Date && !Number.isNaN(row.paidAt.getTime()),
+    );
+    // Paid is strictly the sum of recorded repayments — never fees/interest
+    // inferred from totalRepayable − balance (that caused spurious "paid" on new loans).
+    const recordedPaidAmount = this.roundMoney(
+      repayments.reduce(
+        (sum, row) => sum + (this.decimalToNumber(row.amount) ?? 0),
+        0,
+      ),
+    );
+    const openingBalance = this.decimalToNumber(loan.wallet?.openingBalance);
     const schedule = computeCollectionSchedule({
       principalAmount: pricing.principalAmount,
       interestRatePercent: pricing.interestRatePercent,
       durationDays: pricing.durationDays,
       processingFee: pricing.processingFee,
       balance: this.decimalToNumber(loan.balance) ?? 0,
+      recordedPaidAmount,
       startDate,
     });
-    const repayments = (loan.repayments ?? []).filter(
-      (row) => row.paidAt instanceof Date && !Number.isNaN(row.paidAt.getTime()),
-    );
     const last = repayments[0] ?? null;
-    const paymentHistory = repayments.map((row) => ({
+    const officer = loan.application?.officer;
+    const agentPhotoStorageKey = officer?.profilePhotoStorageKey ?? null;
+    const lastPaymentKey = last?.recordedBy?.profilePhotoStorageKey ?? null;
+    const [agentPhotoUrl, lastPaymentByPhotoUrl, ...historyPhotos] =
+      await Promise.all([
+        this.presignPhotoUrl(agentPhotoStorageKey),
+        this.presignPhotoUrl(lastPaymentKey),
+        ...repayments.map((row) =>
+          this.presignPhotoUrl(row.recordedBy?.profilePhotoStorageKey ?? null),
+        ),
+      ]);
+    const paymentHistory = repayments.map((row, index) => ({
       id: row.id,
       amount: this.decimalToNumber(row.amount) ?? 0,
       method: row.method,
       paidAt: row.paidAt.toISOString(),
       recordedByName: row.recordedBy?.displayName ?? 'Agent',
+      recordedByPublicId: row.recordedBy?.publicId ?? null,
+      agentPhotoUrl: historyPhotos[index] ?? null,
       note: row.note,
     }));
 
@@ -434,14 +476,17 @@ export class CollectionsService {
       customerId: loan.customerId,
       fullName: loan.customer.fullName,
       phone: loan.customer.phone,
-      registeredBy:
-        loan.application?.officer?.displayName ?? 'Branch officer',
+      registeredBy: officer?.displayName ?? 'Branch officer',
+      registeredByPublicId: officer?.publicId ?? null,
+      agentPhotoUrl,
+      agentPhotoStorageKey,
       outstanding: schedule.outstanding,
       lastPaymentAmount: last
         ? (this.decimalToNumber(last.amount) ?? 0)
         : 0,
       lastPaymentAt: last?.paidAt.toISOString() ?? null,
       lastPaymentBy: last?.recordedBy?.displayName ?? null,
+      lastPaymentByPhotoUrl,
       expectedToday: schedule.expectedToday,
       carriedForward: schedule.carriedForward,
       dailyInstalment: schedule.dailyInstalment,
@@ -450,7 +495,8 @@ export class CollectionsService {
       nextDueLabel: schedule.nextDueLabel,
       nextDueIsToday: schedule.nextDueIsToday,
       paidAmount: schedule.paidAmount,
-      loanAmount: schedule.totalRepayable,
+      // Prefer wallet opening (set at submit to total repayable) when present.
+      loanAmount: openingBalance ?? schedule.totalRepayable,
       interestRatePercent: pricing.interestRatePercent,
       interestAmount: schedule.interestAmount,
       processingFee: schedule.processingFee,
@@ -462,11 +508,11 @@ export class CollectionsService {
     };
   }
 
-  private toDueClient(
+  private async toDueClient(
     loan: LoanWithCollections,
     asOf: Date,
-  ): DueClientContract | null {
-    const detail = this.buildDetail(loan);
+  ): Promise<DueClientContract | null> {
+    const detail = await this.buildDetail(loan);
     if (detail.outstanding <= 0) return null;
     const last = loan.repayments[0];
     return {
@@ -494,7 +540,9 @@ export class CollectionsService {
       this.decimalToNumber(loan.principal) ??
       0;
     const rate = this.decimalToNumber(app?.interestRatePercent) ?? 0;
-    const days = app?.durationDays ?? 30;
+    // Match submit-time pricing: missing duration must not invent a 30-day term
+    // (that inflated totalRepayable and made interest look like "paid").
+    const days = app?.durationDays ?? 0;
     const fee = this.decimalToNumber(app?.processingFee) ?? 0;
     return computeLoanPricing({
       principalAmount: principal,
@@ -502,6 +550,16 @@ export class CollectionsService {
       durationDays: days,
       processingFee: fee,
     });
+  }
+
+  private async presignPhotoUrl(storageKey: string | null | undefined) {
+    if (!storageKey) return null;
+    try {
+      const signed = await this.objectStorage.presignGet({ storageKey });
+      return signed.downloadUrl;
+    } catch {
+      return null;
+    }
   }
 
   private filterToRange(filter?: string) {

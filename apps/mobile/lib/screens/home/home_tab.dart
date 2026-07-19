@@ -632,14 +632,14 @@ class _DueClientCard extends StatelessWidget {
                         style: const TextStyle(color: slateText),
                       ),
                       TextSpan(
-                        text: formatCompactMoney(client.amountPaid),
+                        text: 'Paid ${formatCompactMoney(client.amountPaid)}',
                         style: const TextStyle(
                           color: forestEmerald,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
                       TextSpan(
-                        text: ' | ${formatCompactMoney(client.loanAmount)}',
+                        text: ' · ${formatCompactMoney(client.loanAmount)}',
                         style: const TextStyle(
                           color: warmGold,
                           fontWeight: FontWeight.w800,

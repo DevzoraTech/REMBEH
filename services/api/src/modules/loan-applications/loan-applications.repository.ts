@@ -18,6 +18,14 @@ export const loanApplicationInclude = {
   guarantor: true,
   media: { orderBy: { createdAt: 'asc' as const } },
   signatures: { orderBy: [{ signerRole: 'asc' as const }, { version: 'desc' as const }] },
+  officer: {
+    select: {
+      id: true,
+      displayName: true,
+      publicId: true,
+      profilePhotoStorageKey: true,
+    },
+  },
 } satisfies Prisma.LoanApplicationInclude;
 
 export type LoanApplicationRecord = Prisma.LoanApplicationGetPayload<{

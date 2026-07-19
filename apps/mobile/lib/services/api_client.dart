@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -29,6 +30,87 @@ class ApiClient {
     final session = _sessionFromLoginBody(body, email);
     await _sessionStore.save(session);
     return body;
+  }
+
+  Future<RembehSession> uploadProfilePhoto({
+    required RembehSession session,
+    required Uint8List bytes,
+    required String mimeType,
+    String? fileName,
+  }) async {
+    final extension = mimeType.contains('png')
+        ? 'png'
+        : mimeType.contains('webp')
+            ? 'webp'
+            : 'jpg';
+    final presignUri = Uri.parse('$rembehApiBaseUrl/auth/profile-photo/presign');
+    final presignResponse = await http.post(
+      presignUri,
+      headers: {
+        ..._authHeaders(session),
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'mimeType': mimeType,
+        'extension': extension,
+        'fileName': ?fileName,
+      }),
+    );
+    final presignBody = _decode(presignResponse);
+    if (presignResponse.statusCode < 200 ||
+        presignResponse.statusCode >= 300) {
+      throw ApiException(
+        _failureMessage(presignBody, presignResponse.statusCode, presignUri),
+      );
+    }
+
+    final uploadUrl = presignBody['uploadUrl'] as String?;
+    final storageKey = presignBody['storageKey'] as String?;
+    if (uploadUrl == null || storageKey == null) {
+      throw ApiException('Profile photo upload could not be prepared.');
+    }
+
+    final putResponse = await http.put(
+      Uri.parse(uploadUrl),
+      headers: {'Content-Type': mimeType},
+      body: bytes,
+    );
+    if (putResponse.statusCode < 200 || putResponse.statusCode >= 300) {
+      throw ApiException(
+        'Profile photo upload failed (${putResponse.statusCode}).',
+      );
+    }
+
+    final confirmUri =
+        Uri.parse('$rembehApiBaseUrl/auth/profile-photo/confirm');
+    final confirmResponse = await http.post(
+      confirmUri,
+      headers: {
+        ..._authHeaders(session),
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'storageKey': storageKey,
+        'mimeType': mimeType,
+        'byteSize': bytes.length,
+      }),
+    );
+    final confirmBody = _decode(confirmResponse);
+    if (confirmResponse.statusCode < 200 ||
+        confirmResponse.statusCode >= 300) {
+      throw ApiException(
+        _failureMessage(confirmBody, confirmResponse.statusCode, confirmUri),
+      );
+    }
+
+    final user = confirmBody['user'] as Map<String, dynamic>? ?? const {};
+    final updated = session.copyWith(
+      hasProfilePhoto: user['hasProfilePhoto'] as bool? ?? true,
+      profilePhotoUrl: user['profilePhotoUrl'] as String?,
+      profilePhotoStorageKey: user['profilePhotoStorageKey'] as String?,
+    );
+    await _sessionStore.save(updated);
+    return updated;
   }
 
   /// Refresh access token using the stored refresh token.
@@ -131,6 +213,10 @@ class ApiClient {
       branchName: branch?['name'] as String?,
       branchAddress: branch?['address'] as String?,
       publicId: user['publicId'] as String?,
+      hasProfilePhoto: user['hasProfilePhoto'] as bool? ??
+          (user['profilePhotoStorageKey'] as String?)?.isNotEmpty == true,
+      profilePhotoUrl: user['profilePhotoUrl'] as String?,
+      profilePhotoStorageKey: user['profilePhotoStorageKey'] as String?,
     );
   }
 

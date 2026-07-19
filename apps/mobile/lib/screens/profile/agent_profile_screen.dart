@@ -38,23 +38,19 @@ class AgentProfileScreen extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Container(
-                  width: 56,
-                  height: 56,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: sage,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: line),
-                  ),
-                  child: Text(
-                    initials,
-                    style: const TextStyle(
-                      color: forestEmerald,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 18,
-                    ),
-                  ),
+                ClipOval(
+                  child: session.profilePhotoUrl != null &&
+                          session.profilePhotoUrl!.isNotEmpty
+                      ? Image.network(
+                          session.profilePhotoUrl!,
+                          width: 56,
+                          height: 56,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, _, _) => _InitialsAvatar(
+                            initials: initials,
+                          ),
+                        )
+                      : _InitialsAvatar(initials: initials),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -142,6 +138,34 @@ class AgentProfileScreen extends StatelessWidget {
       return parts.first.substring(0, parts.first.length.clamp(0, 2)).toUpperCase();
     }
     return ('${parts.first[0]}${parts.last[0]}').toUpperCase();
+  }
+}
+
+class _InitialsAvatar extends StatelessWidget {
+  const _InitialsAvatar({required this.initials});
+
+  final String initials;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 56,
+      height: 56,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: sage,
+        shape: BoxShape.circle,
+        border: Border.all(color: line),
+      ),
+      child: Text(
+        initials,
+        style: const TextStyle(
+          color: forestEmerald,
+          fontWeight: FontWeight.w800,
+          fontSize: 18,
+        ),
+      ),
+    );
   }
 }
 

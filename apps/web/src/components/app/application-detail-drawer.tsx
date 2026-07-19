@@ -42,6 +42,9 @@ type ApplicationDetail = {
   submittedAt: string | null;
   verifiedAt: string | null;
   synced: boolean;
+  officerName?: string | null;
+  officerPublicId?: string | null;
+  agentPhotoUrl?: string | null;
   guarantor: { fullName: string | null; phone: string | null } | null;
   media: MediaItem[];
   signatures: SignatureItem[];
@@ -186,6 +189,31 @@ export function ApplicationDetailDrawer({
                 />
               </Section>
 
+              <Section title="Field agent">
+                <div className="flex items-center gap-3">
+                  {detail.agentPhotoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={detail.agentPhotoUrl}
+                      alt={detail.officerName || "Agent"}
+                      className="size-12 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex size-12 items-center justify-center rounded-full bg-[var(--soft-mist)] text-xs font-bold text-[var(--forest-emerald)]">
+                      AG
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
+                      {detail.officerName || "Branch officer"}
+                    </p>
+                    <p className="truncate text-xs text-slate-500">
+                      {detail.officerPublicId || "Agent photo pending"}
+                    </p>
+                  </div>
+                </div>
+              </Section>
+
               <Section title="Loan terms">
                 <Row
                   label="Principal"
@@ -300,7 +328,7 @@ export function ApplicationDetailDrawer({
                         className="rounded border border-[var(--line)] bg-white p-2"
                       >
                         <p className="truncate text-xs font-semibold text-[var(--midnight-navy)]">
-                          {item.type}
+                          {item.type === "PASSPORT" ? "Applicant Photo" : item.type}
                         </p>
                         <p className="truncate text-[11px] text-slate-500">
                           {item.fileName || item.mimeType}

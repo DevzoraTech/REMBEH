@@ -18,6 +18,17 @@ describe('ObjectStorageService key builders', () => {
     );
   });
 
+  it('builds agent profile photo keys', () => {
+    const key = service.buildAgentProfilePhotoKey({
+      tenantId: 'tenant-1',
+      userId: 'user-1',
+      extension: 'jpg',
+    });
+    expect(key).toMatch(
+      /^tenants\/tenant-1\/agents\/user-1\/profile\/[0-9a-f-]+\.jpg$/,
+    );
+  });
+
   it('builds signature asset folder keys', () => {
     const keys = service.buildSignatureObjectKeys({
       tenantId: 'tenant-1',

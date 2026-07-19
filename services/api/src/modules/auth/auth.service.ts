@@ -533,6 +533,10 @@ export class AuthService {
     const publicId =
       user.publicId ?? (await this.ensureUserPublicId(user.id));
     const roleName = user.roles[0]?.role.name ?? null;
+    const profilePhotoStorageKey = user.profilePhotoStorageKey ?? null;
+    const profilePhotoUrl = profilePhotoStorageKey
+      ? await this.presignProfilePhoto(profilePhotoStorageKey)
+      : null;
 
     return {
       workspace: {
@@ -550,6 +554,9 @@ export class AuthService {
         roleName,
         branchId: user.branchId,
         publicId,
+        hasProfilePhoto: Boolean(profilePhotoStorageKey),
+        profilePhotoStorageKey,
+        profilePhotoUrl,
       },
       branch: user.branch
         ? {
@@ -560,6 +567,141 @@ export class AuthService {
         : null,
       session: await this.buildSession(user.id, user.tenantId),
     };
+  }
+
+  async getMe(userId: string, tenantId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, tenantId },
+      include: {
+        tenant: true,
+        branch: true,
+        roles: { include: { role: true } },
+      },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found.');
+    }
+    const profilePhotoStorageKey = user.profilePhotoStorageKey ?? null;
+    return {
+      user: {
+        id: user.id,
+        name: user.displayName,
+        email: user.email,
+        status: user.status,
+        roleName: user.roles[0]?.role.name ?? null,
+        branchId: user.branchId,
+        publicId: user.publicId,
+        hasProfilePhoto: Boolean(profilePhotoStorageKey),
+        profilePhotoStorageKey,
+        profilePhotoUrl: await this.presignProfilePhoto(profilePhotoStorageKey),
+      },
+      branch: user.branch
+        ? {
+            id: user.branch.id,
+            name: user.branch.name,
+            address: user.branch.address,
+          }
+        : null,
+      workspace: {
+        id: user.tenant.id,
+        name: user.tenant.name,
+        status: user.tenant.status,
+        currency: user.tenant.currency,
+        country: user.tenant.country,
+      },
+    };
+  }
+
+  async presignProfilePhotoUpload(
+    userId: string,
+    tenantId: string,
+    dto: { mimeType: string; extension?: string; fileName?: string },
+  ) {
+    const mime = dto.mimeType.toLowerCase();
+    if (!mime.startsWith('image/')) {
+      throw new BadRequestException('Profile photo must be an image.');
+    }
+    const extension =
+      dto.extension ||
+      this.extensionFromMime(mime) ||
+      this.extensionFromFileName(dto.fileName) ||
+      'jpg';
+    const storageKey = this.objectStorage.buildAgentProfilePhotoKey({
+      tenantId,
+      userId,
+      extension,
+    });
+    const presigned = await this.objectStorage.presignPut({
+      storageKey,
+      mimeType: dto.mimeType,
+    });
+    return {
+      ...presigned,
+      mimeType: dto.mimeType,
+    };
+  }
+
+  async confirmProfilePhoto(
+    userId: string,
+    tenantId: string,
+    dto: { storageKey: string; mimeType: string; byteSize: number },
+  ) {
+    const mime = dto.mimeType.toLowerCase();
+    if (!mime.startsWith('image/')) {
+      throw new BadRequestException('Profile photo must be an image.');
+    }
+    if (dto.byteSize < 1) {
+      throw new BadRequestException('Profile photo is empty.');
+    }
+    const expectedPrefix = `tenants/${tenantId}/agents/${userId}/profile/`;
+    if (!dto.storageKey.startsWith(expectedPrefix)) {
+      throw new BadRequestException(
+        'storageKey does not match this agent profile.',
+      );
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        profilePhotoStorageKey: dto.storageKey,
+        profilePhotoMimeType: dto.mimeType,
+        profilePhotoUpdatedAt: new Date(),
+      },
+    });
+
+    const profilePhotoUrl = await this.presignProfilePhoto(dto.storageKey);
+    return {
+      user: {
+        id: updated.id,
+        hasProfilePhoto: true,
+        profilePhotoStorageKey: updated.profilePhotoStorageKey,
+        profilePhotoUrl,
+      },
+    };
+  }
+
+  private async presignProfilePhoto(storageKey: string | null | undefined) {
+    if (!storageKey) return null;
+    try {
+      const signed = await this.objectStorage.presignGet({ storageKey });
+      return signed.downloadUrl;
+    } catch {
+      return null;
+    }
+  }
+
+  private extensionFromMime(mimeType: string) {
+    if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') return 'jpg';
+    if (mimeType === 'image/png') return 'png';
+    if (mimeType === 'image/webp') return 'webp';
+    return null;
+  }
+
+  private extensionFromFileName(fileName?: string) {
+    if (!fileName) return null;
+    const parts = fileName.split('.');
+    if (parts.length < 2) return null;
+    return parts[parts.length - 1]?.toLowerCase() || null;
   }
 
   private async ensureUserPublicId(userId: string): Promise<string> {
