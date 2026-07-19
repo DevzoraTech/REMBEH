@@ -6,7 +6,9 @@ import '../theme.dart';
 import 'agent_shell.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.idleSignedOutMessage});
+
+  final String? idleSignedOutMessage;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -20,6 +22,20 @@ class _LoginScreenState extends State<LoginScreen> {
 
   bool _loading = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final message = widget.idleSignedOutMessage;
+    if (message != null && message.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+      });
+    }
+  }
 
   @override
   void dispose() {

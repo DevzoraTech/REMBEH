@@ -130,6 +130,7 @@ class ApiClient {
       branchId: branch?['id'] as String? ?? user['branchId'] as String?,
       branchName: branch?['name'] as String?,
       branchAddress: branch?['address'] as String?,
+      publicId: user['publicId'] as String?,
     );
   }
 

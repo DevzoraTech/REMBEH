@@ -2,12 +2,16 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { LoanStatus, Prisma, RepaymentMethod } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
+import { generateAgentPublicId } from '../../common/security/agent-public-id';
+import { PrismaService } from '../../database/prisma.service';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import { computeLoanPricing } from '../loan-products/loan-pricing';
+import { SmsService } from '../notifications/sms.service';
 import { REALTIME_EVENTS } from '../realtime/realtime.events';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import {
@@ -30,9 +34,13 @@ import { RecordRepaymentDto } from './dto/record-repayment.dto';
 
 @Injectable()
 export class CollectionsService {
+  private readonly logger = new Logger(CollectionsService.name);
+
   constructor(
     private readonly repository: CollectionsRepository,
     private readonly realtime: RealtimeGateway,
+    private readonly smsService: SmsService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async getSummary(
@@ -284,7 +292,73 @@ export class CollectionsService {
       recordedByUserId: user.userId,
     });
 
+    void this.sendPaymentSms({
+      userId: user.userId,
+      phone: updatedLoan.customer.phone,
+      amount,
+      currency: updatedLoan.currency,
+      paidAt: repayment.paidAt,
+    }).catch((error) => {
+      this.logger.warn(`Payment SMS failed: ${String(error)}`);
+    });
+
     return { repayment: item, detail };
+  }
+
+  private async sendPaymentSms(input: {
+    userId: string;
+    phone: string;
+    amount: number;
+    currency: string;
+    paidAt: Date;
+  }) {
+    const agent = await this.prisma.user.findUnique({
+      where: { id: input.userId },
+      include: { tenant: true },
+    });
+    if (!input.phone?.trim()) {
+      return;
+    }
+
+    let publicId = agent?.publicId ?? null;
+    if (agent && !publicId) {
+      publicId = await this.assignPublicId(agent.id);
+    }
+
+    const amountLabel = `${input.currency} ${input.amount.toLocaleString('en-UG', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    })}`;
+
+    await this.smsService.sendPaymentRecordedSms({
+      destination: input.phone,
+      amountLabel,
+      agentName: agent?.displayName ?? 'Agent',
+      agentPublicId: publicId ?? 'A-00000',
+      companyName: agent?.tenant.name ?? 'REMBEH',
+      paidAt: input.paidAt,
+    });
+  }
+
+  private async assignPublicId(userId: string): Promise<string> {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const candidate = generateAgentPublicId();
+      try {
+        const updated = await this.prisma.user.update({
+          where: { id: userId },
+          data: { publicId: candidate },
+        });
+        return updated.publicId!;
+      } catch {
+        // unique collision — retry
+      }
+    }
+    const fallback = `A-${Date.now().toString().slice(-5)}`;
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { publicId: fallback },
+    });
+    return updated.publicId!;
   }
 
   private scope(user: AuthenticatedUser) {
@@ -325,6 +399,7 @@ export class CollectionsService {
     return {
       id: loan.id,
       loanId: loan.id,
+      walletId: loan.wallet?.id ?? null,
       customerId: loan.customerId,
       fullName: loan.customer.fullName,
       phone: loan.customer.phone,

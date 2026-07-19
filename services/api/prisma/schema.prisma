@@ -111,6 +111,7 @@ model Tenant {
   customers          Customer[]
   loans              Loan[]
   repayments         Repayment[]
+  clientWallets      ClientWallet[]
   loanApplications   LoanApplication[]
   loanRateOptions    LoanRateOption[]
   loanPeriodOptions  LoanPeriodOption[]
@@ -138,6 +139,7 @@ model Branch {
   customers          Customer[]
   loans              Loan[]
   repayments         Repayment[]
+  clientWallets      ClientWallet[]
   loanApplications   LoanApplication[]
   loanRateOptions    LoanRateOption[]
   loanPeriodOptions  LoanPeriodOption[]
@@ -206,6 +208,8 @@ model User {
   departmentId  String?    @map("department_id") @db.Uuid
   email         String     @unique
   phone         String?    @unique
+  /// Short human-reportable id for fraud reports (e.g. A-48291). Not the UUID.
+  publicId      String?    @unique @map("public_id")
   displayName   String     @map("display_name")
   passwordHash  String?    @map("password_hash")
   emailVerified Boolean    @default(false) @map("email_verified")
@@ -305,6 +309,7 @@ model Customer {
   tenant        Tenant   @relation(fields: [tenantId], references: [id])
   branch             Branch?  @relation(fields: [branchId], references: [id])
   loans              Loan[]
+  wallets            ClientWallet[]
   loanApplications   LoanApplication[]
 
   @@unique([tenantId, phone])
@@ -330,12 +335,36 @@ model Loan {
   branch      Branch     @relation(fields: [branchId], references: [id])
   customer    Customer   @relation(fields: [customerId], references: [id])
   application LoanApplication?
+  wallet      ClientWallet?
   repayments  Repayment[]
 
   @@index([tenantId, status])
   @@index([tenantId, branchId])
   @@index([tenantId, customerId])
   @@map("loans")
+}
+
+/// Per-loan client wallet opened when the loan application is submitted.
+model ClientWallet {
+  id                String   @id @default(uuid()) @db.Uuid
+  tenantId          String   @map("tenant_id") @db.Uuid
+  branchId          String   @map("branch_id") @db.Uuid
+  customerId        String   @map("customer_id") @db.Uuid
+  loanId            String   @unique @map("loan_id") @db.Uuid
+  loanApplicationId String?  @unique @map("loan_application_id") @db.Uuid
+  currency          String
+  openingBalance    Decimal  @map("opening_balance") @db.Decimal(18, 2)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+  branch            Branch   @relation(fields: [branchId], references: [id])
+  customer          Customer @relation(fields: [customerId], references: [id])
+  loan              Loan     @relation(fields: [loanId], references: [id])
+  loanApplication   LoanApplication? @relation(fields: [loanApplicationId], references: [id])
+
+  @@index([tenantId, customerId])
+  @@index([tenantId, branchId])
+  @@map("client_wallets")
 }
 
 /// Field collection / repayment against a loan. Allocates fees → interest → principal.
@@ -402,6 +431,7 @@ model LoanApplication {
   officer              User                  @relation("LoanApplicationOfficer", fields: [officerUserId], references: [id])
   customer             Customer?             @relation(fields: [customerId], references: [id])
   loan                 Loan?                 @relation(fields: [loanId], references: [id])
+  wallet               ClientWallet?
   guarantor            LoanApplicationGuarantor?
   media                LoanApplicationMedia[]
   signatures           LoanApplicationSignature[]

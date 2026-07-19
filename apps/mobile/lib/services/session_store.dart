@@ -18,6 +18,7 @@ class RembehSession {
     this.branchId,
     this.branchName,
     this.branchAddress,
+    this.publicId,
   });
 
   final String accessToken;
@@ -33,6 +34,8 @@ class RembehSession {
   final String? branchId;
   final String? branchName;
   final String? branchAddress;
+  /// Human-reportable agent id (e.g. A-48291).
+  final String? publicId;
 
   bool get isAgent =>
       (roleName ?? '').toLowerCase().contains('agent') ||
@@ -71,6 +74,7 @@ class RembehSession {
     String? branchId,
     String? branchName,
     String? branchAddress,
+    String? publicId,
   }) {
     return RembehSession(
       accessToken: accessToken ?? this.accessToken,
@@ -86,6 +90,7 @@ class RembehSession {
       branchId: branchId ?? this.branchId,
       branchName: branchName ?? this.branchName,
       branchAddress: branchAddress ?? this.branchAddress,
+      publicId: publicId ?? this.publicId,
     );
   }
 
@@ -103,6 +108,7 @@ class RembehSession {
         'branchId': branchId,
         'branchName': branchName,
         'branchAddress': branchAddress,
+        'publicId': publicId,
       };
 
   /// Non-secret profile fields kept in SharedPreferences.
@@ -118,6 +124,7 @@ class RembehSession {
         'branchId': branchId,
         'branchName': branchName,
         'branchAddress': branchAddress,
+        'publicId': publicId,
       };
 
   factory RembehSession.fromJson(Map<String, dynamic> json) {
@@ -137,6 +144,7 @@ class RembehSession {
       branchId: json['branchId'] as String?,
       branchName: json['branchName'] as String?,
       branchAddress: json['branchAddress'] as String?,
+      publicId: json['publicId'] as String?,
     );
   }
 }
@@ -146,6 +154,8 @@ class SessionStore {
   static const _legacyKey = 'rembeh_mobile_session';
   static const _accessTokenKey = 'rembeh_mobile_access_token';
   static const _refreshTokenKey = 'rembeh_mobile_refresh_token';
+  static const _lastActivityKey = 'rembeh_mobile_last_activity_at';
+  static const idleTimeout = Duration(minutes: 5);
 
   static const _secure = FlutterSecureStorage();
 
@@ -159,6 +169,25 @@ class SessionStore {
       await _secure.delete(key: _refreshTokenKey);
     }
     await prefs.remove(_legacyKey);
+    await markActivity(DateTime.now());
+  }
+
+  Future<void> markActivity(DateTime at) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lastActivityKey, at.toIso8601String());
+  }
+
+  Future<DateTime?> readLastActivityAt() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString(_lastActivityKey);
+    if (raw == null || raw.isEmpty) return null;
+    return DateTime.tryParse(raw);
+  }
+
+  Future<bool> isIdleTimedOut() async {
+    final last = await readLastActivityAt();
+    if (last == null) return false;
+    return DateTime.now().difference(last) >= idleTimeout;
   }
 
   Future<RembehSession?> read() async {
@@ -206,6 +235,7 @@ class SessionStore {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_profileKey);
     await prefs.remove(_legacyKey);
+    await prefs.remove(_lastActivityKey);
     await _secure.delete(key: _accessTokenKey);
     await _secure.delete(key: _refreshTokenKey);
   }

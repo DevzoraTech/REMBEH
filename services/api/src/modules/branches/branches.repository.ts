@@ -25,6 +25,7 @@ type CreateStaffInvitationRecordInput = {
   branchId: string;
   email: string;
   displayName: string;
+  publicId: string;
   roleName: string;
   rolePermissionKeys: string[];
   invitationTokenHash: string;
@@ -296,6 +297,7 @@ export class BranchesRepository {
           branchId: input.branchId,
           email: input.email,
           phone: null,
+          publicId: input.publicId,
           displayName: input.displayName,
           status: UserStatus.INVITED,
         },

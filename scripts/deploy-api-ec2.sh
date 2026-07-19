@@ -57,7 +57,7 @@ deploy_api_on_server() {
   fi
   cp "$REMOTE_DIR/.env" "$REMOTE_DIR/services/api/.env"
 
-  echo "==> Install, Prisma generate, build..."
+  echo "==> Install, Prisma migrate, generate, build..."
   export NODE_OPTIONS='--max-old-space-size=768'
   # Do NOT source .env before npm install — NODE_ENV=production skips devDependencies.
   npm install
@@ -65,6 +65,7 @@ deploy_api_on_server() {
   # shellcheck disable=SC1091
   . "$REMOTE_DIR/.env"
   set +a
+  npm --workspace services/api exec prisma migrate deploy
   npm --workspace services/api exec prisma generate
   (cd services/api && ../../node_modules/.bin/nest build)
   test -f services/api/dist/src/main.js || test -f services/api/dist/main.js

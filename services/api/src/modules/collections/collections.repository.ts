@@ -4,6 +4,10 @@ import {
   Prisma,
   RepaymentMethod,
 } from '@prisma/client';
+import {
+  looksLikePhoneQuery,
+  phoneSearchVariants,
+} from '../../common/security/identity-normalization';
 import { PrismaService } from '../../database/prisma.service';
 
 export const activeLoanStatuses: LoanStatus[] = [
@@ -17,6 +21,7 @@ export const activeLoanStatuses: LoanStatus[] = [
 
 const loanWithRelations = {
   customer: true,
+  wallet: true,
   application: {
     include: {
       officer: true,
@@ -60,37 +65,91 @@ export class CollectionsRepository {
     });
   }
 
-  searchLoans(input: {
+  async searchLoans(input: {
     tenantId: string;
     branchId: string | null;
     query: string;
     take?: number;
   }) {
     const q = input.query.trim();
-    return this.prisma.loan.findMany({
+    const take = input.take ?? 40;
+    const scope = {
+      ...this.branchScope(input),
+      status: { in: activeLoanStatuses },
+    };
+    const variants = phoneSearchVariants(q);
+    const phoneOr: Prisma.LoanWhereInput[] = variants.flatMap((variant) => [
+      { customer: { phone: { contains: variant } } },
+      { application: { phone: { contains: variant } } },
+    ]);
+    const nameOr: Prisma.LoanWhereInput[] = [
+      { customer: { fullName: { contains: q, mode: 'insensitive' } } },
+      { customer: { nationalId: { contains: q, mode: 'insensitive' } } },
+      { application: { surname: { contains: q, mode: 'insensitive' } } },
+      { application: { givenNames: { contains: q, mode: 'insensitive' } } },
+      {
+        application: {
+          nationalId: { contains: q, mode: 'insensitive' },
+        },
+      },
+    ];
+
+    // Phone-first path: dedicated query so number matches rank above names.
+    if (looksLikePhoneQuery(q) && phoneOr.length > 0) {
+      const phoneHits = await this.prisma.loan.findMany({
+        where: { ...scope, OR: phoneOr },
+        include: loanWithRelations,
+        take,
+        orderBy: { updatedAt: 'desc' },
+      });
+      if (phoneHits.length >= take) {
+        return phoneHits;
+      }
+      const excludeIds = phoneHits.map((loan) => loan.id);
+      const nameHits = await this.prisma.loan.findMany({
+        where: {
+          ...scope,
+          OR: nameOr,
+          ...(excludeIds.length ? { id: { notIn: excludeIds } } : {}),
+        },
+        include: loanWithRelations,
+        take: take - phoneHits.length,
+        orderBy: { updatedAt: 'desc' },
+      });
+      return [...phoneHits, ...nameHits];
+    }
+
+    const rows = await this.prisma.loan.findMany({
       where: {
-        ...this.branchScope(input),
-        status: { in: activeLoanStatuses },
-        OR: [
-          { customer: { fullName: { contains: q, mode: 'insensitive' } } },
-          { customer: { phone: { contains: q } } },
-          { customer: { nationalId: { contains: q, mode: 'insensitive' } } },
-          {
-            application: {
-              surname: { contains: q, mode: 'insensitive' },
-            },
-          },
-          {
-            application: {
-              givenNames: { contains: q, mode: 'insensitive' },
-            },
-          },
-        ],
+        ...scope,
+        OR: [...phoneOr, ...nameOr],
       },
       include: loanWithRelations,
-      take: input.take ?? 40,
+      take,
       orderBy: { updatedAt: 'desc' },
     });
+
+    // Prefer phone matches when the mixed query returns both kinds.
+    if (variants.length === 0) {
+      return rows;
+    }
+    return [...rows].sort((a, b) => {
+      const aPhone = this.matchesPhone(a, variants) ? 0 : 1;
+      const bPhone = this.matchesPhone(b, variants) ? 0 : 1;
+      return aPhone - bPhone;
+    });
+  }
+
+  private matchesPhone(
+    loan: LoanWithCollections,
+    variants: string[],
+  ): boolean {
+    const phones = [loan.customer.phone, loan.application?.phone ?? ''].filter(
+      Boolean,
+    );
+    return variants.some((variant) =>
+      phones.some((phone) => phone.includes(variant)),
+    );
   }
 
   findLoanById(input: {

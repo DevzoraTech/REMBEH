@@ -88,6 +88,8 @@ class AgentProfileScreen extends StatelessWidget {
             title: 'Account',
             children: [
               _InfoRow(label: 'Email', value: session.userEmail),
+              if (session.publicId != null && session.publicId!.isNotEmpty)
+                _InfoRow(label: 'Agent ID', value: session.publicId!),
               _InfoRow(label: 'Workspace', value: session.workspaceName),
               _InfoRow(
                 label: 'Branch',

@@ -15,6 +15,7 @@ import {
   getPrismaUniqueConstraintTargets,
   isPrismaUniqueConstraintError,
 } from '../../common/database/prisma-errors';
+import { generateAgentPublicId } from '../../common/security/agent-public-id';
 import {
   isInternationalPhoneNumber,
   normalizeEmailAddress,
@@ -121,6 +122,7 @@ type StaffUserRecord = {
   displayName: string;
   email: string;
   phone: string | null;
+  publicId: string | null;
   status: string;
   emailVerified: boolean;
   phoneVerified: boolean;
@@ -299,6 +301,7 @@ export class BranchesService {
         branchId,
         email: normalizedEmail,
         displayName: dto.displayName.trim(),
+        publicId: generateAgentPublicId(),
         roleName,
         rolePermissionKeys: STAFF_ROLE_PERMISSIONS[roleName],
         invitationTokenHash: this.otpService.hashCode(token),
@@ -473,6 +476,7 @@ export class BranchesService {
       name: user.displayName,
       email: user.email,
       phone: user.phone,
+      publicId: user.publicId ?? null,
       status: user.status,
       inviteStatus,
       emailVerified: user.emailVerified,
@@ -526,6 +530,7 @@ export class BranchesService {
       name: user.displayName,
       email: user.email,
       phone: user.phone,
+      publicId: user.publicId ?? null,
       status: user.status,
       emailVerified: user.emailVerified,
       phoneVerified: user.phoneVerified,

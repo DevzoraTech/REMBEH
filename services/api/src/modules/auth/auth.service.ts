@@ -23,6 +23,7 @@ import {
   getPrismaUniqueConstraintTargets,
   isPrismaUniqueConstraintError,
 } from '../../common/database/prisma-errors';
+import { generateAgentPublicId } from '../../common/security/agent-public-id';
 import {
   isInternationalPhoneNumber,
   normalizeEmailAddress,
@@ -144,6 +145,7 @@ export class AuthService {
             tenantId: tenant.id,
             email: normalizedEmail,
             phone: normalizedPhone,
+            publicId: generateAgentPublicId(),
             displayName: dto.ownerName.trim(),
             passwordHash,
             status: UserStatus.PENDING_VERIFICATION,
@@ -528,6 +530,8 @@ export class AuthService {
       throw new UnauthorizedException('Account or user is not active.');
     }
 
+    const publicId =
+      user.publicId ?? (await this.ensureUserPublicId(user.id));
     const roleName = user.roles[0]?.role.name ?? null;
 
     return {
@@ -545,6 +549,7 @@ export class AuthService {
         status: user.status,
         roleName,
         branchId: user.branchId,
+        publicId,
       },
       branch: user.branch
         ? {
@@ -555,6 +560,27 @@ export class AuthService {
         : null,
       session: await this.buildSession(user.id, user.tenantId),
     };
+  }
+
+  private async ensureUserPublicId(userId: string): Promise<string> {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const candidate = generateAgentPublicId();
+      try {
+        const updated = await this.prisma.user.update({
+          where: { id: userId },
+          data: { publicId: candidate },
+        });
+        if (updated.publicId) return updated.publicId;
+      } catch {
+        // unique collision — retry
+      }
+    }
+    const fallback = `A-${Date.now().toString().slice(-5)}`;
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: { publicId: fallback },
+    });
+    return updated.publicId!;
   }
 
   private buildWorkspaceRegistrationResponse(

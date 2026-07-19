@@ -45,12 +45,20 @@ class _BootScreenState extends State<_BootScreen> {
     if (!mounted) return;
 
     if (session != null) {
+      // Idle timeout survives process death via last-activity timestamp.
+      if (await store.isIdleTimedOut()) {
+        await store.clear();
+        if (!mounted) return;
+        _goLogin();
+        return;
+      }
+
       if (!session.isAccessExpired) {
         _goShell(session);
         return;
       }
 
-      // Access expired — try refresh before forcing login.
+      // Access expired — try refresh before forcing login (if not idle).
       if (session.canRefresh) {
         final refreshed = await ApiClient(store).refreshSession(session);
         if (!mounted) return;
@@ -63,6 +71,10 @@ class _BootScreenState extends State<_BootScreen> {
 
     await store.clear();
     if (!mounted) return;
+    _goLogin();
+  }
+
+  void _goLogin() {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
     );

@@ -14,6 +14,7 @@ export type BranchStaffMemberContract = {
   name: string;
   email: string;
   phone: string | null;
+  publicId: string | null;
   status: string;
   inviteStatus: BranchStaffInviteStatus;
   emailVerified: boolean;
@@ -60,6 +61,7 @@ export type BranchStaffUserContract = {
   name: string;
   email: string;
   phone: string | null;
+  publicId: string | null;
   status: string;
   emailVerified: boolean;
   phoneVerified: boolean;

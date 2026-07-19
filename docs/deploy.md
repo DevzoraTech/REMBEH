@@ -60,6 +60,18 @@ Repo → **Settings → Secrets and variables → Actions → New repository sec
 
 **Do not** put `.env`, `DATABASE_URL`, S3 keys, or RDS passwords in GitHub. Those stay only on the EC2 host at `/home/ubuntu/rembeh/.env`.
 
+### SMS (repayment receipts)
+
+Optional on the server `.env` (see root `.env.example`):
+
+| Variable | Notes |
+|----------|--------|
+| `SMS_PROVIDER` | `mock` (default, logs only), `twilio`, or `africastalking` |
+| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER` | Required for Twilio |
+| `AFRICASTALKING_USERNAME` / `AFRICASTALKING_API_KEY` / `AFRICASTALKING_FROM` | Required for Africa's Talking |
+
+If keys are missing, SMS stays in stub/log mode even when `SMS_PROVIDER` is set.
+
 ### How auto-deploy works
 
 1. Push lands on `main` and matches a workflow path filter.

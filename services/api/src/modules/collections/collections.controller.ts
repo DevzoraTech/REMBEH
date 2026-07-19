@@ -61,6 +61,16 @@ export class CollectionsController {
     return this.collectionsService.getLoanDetail(user, loanId);
   }
 
+  /** Alias: wallet view is the loan detail surface for field agents. */
+  @Get('wallets/:loanId')
+  @RequirePermissions(COLLECTION_PERMISSIONS.read)
+  getWallet(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('loanId', ParseUUIDPipe) loanId: string,
+  ) {
+    return this.collectionsService.getLoanDetail(user, loanId);
+  }
+
   @Post('repayments')
   @RequirePermissions(COLLECTION_PERMISSIONS.create)
   recordRepayment(

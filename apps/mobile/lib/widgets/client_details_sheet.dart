@@ -124,6 +124,15 @@ class ClientDetailsSheet extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 2),
+                          const Text(
+                            'Client wallet',
+                            style: TextStyle(
+                              color: forestEmerald,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
                           Text(
                             detail.phone,
                             style: const TextStyle(
@@ -383,7 +392,7 @@ class ClientDetailsSheet extends StatelessWidget {
                   onPressed: () =>
                       Navigator.of(context).pop('record_repayment'),
                   icon: const Icon(Icons.payments_outlined),
-                  label: const Text('Record Repayment'),
+                  label: const Text('Record payment'),
                 ),
               ),
             ),

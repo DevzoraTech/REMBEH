@@ -8,12 +8,16 @@ import {
   StaffInvitationEmailInput,
   StaffInvitationEmailResult,
 } from './notifications.contracts';
+import { SmsService } from './sms.service';
 
 const RESEND_EMAIL_ENDPOINT = 'https://api.resend.com/emails';
 
 @Injectable()
 export class NotificationsService {
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly smsService: SmsService,
+  ) {}
 
   async sendEmailOtp(
     input: EmailOtpDeliveryInput,
@@ -62,18 +66,26 @@ export class NotificationsService {
     };
   }
 
-  sendPhoneOtp(input: PhoneOtpDeliveryInput): Promise<PhoneOtpDeliveryResult> {
+  async sendPhoneOtp(
+    input: PhoneOtpDeliveryInput,
+  ): Promise<PhoneOtpDeliveryResult> {
+    const body = `Your REMBEH verification code is ${input.code}. It expires at ${input.expiresAt.toISOString()}.`;
+    const sms = await this.smsService.sendText({
+      destination: input.destination,
+      body,
+    });
     const devCode = this.canUsePhoneDevelopmentOtp() ? input.code : undefined;
 
-    return Promise.resolve({
+    return {
       channel: 'PHONE',
-      provider: 'development',
-      delivered: false,
+      provider: sms.delivered ? sms.provider : 'development',
+      delivered: sms.delivered,
       destination: input.destination,
       devCode,
-      message:
-        'SMS delivery is not configured, so this phone OTP is shown only in development.',
-    });
+      message: sms.delivered
+        ? sms.message
+        : 'SMS delivery is not configured, so this phone OTP is shown only in development.',
+    };
   }
 
   async sendStaffInvitationEmail(

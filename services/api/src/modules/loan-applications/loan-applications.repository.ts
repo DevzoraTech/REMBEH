@@ -319,6 +319,18 @@ export class LoanApplicationsRepository {
         },
       });
 
+      await tx.clientWallet.create({
+        data: {
+          tenantId: input.application.tenantId,
+          branchId: input.application.branchId,
+          customerId,
+          loanId: loan.id,
+          loanApplicationId: input.application.id,
+          currency: input.currency,
+          openingBalance: balance,
+        },
+      });
+
       const now = new Date();
       const application = await tx.loanApplication.update({
         where: { id: input.application.id },

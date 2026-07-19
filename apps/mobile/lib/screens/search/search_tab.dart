@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/network/phone_normalize.dart';
 import '../../features/repayment/data/repayment_repository_impl.dart';
 import '../../features/repayment/data/repayments_live_store.dart';
 import '../../models/client_detail.dart';
@@ -103,7 +104,8 @@ class _SearchTabState extends State<SearchTab> {
       _searchError = null;
     });
     try {
-      final clients = await _store.searchClients(query);
+      final normalized = normalizeClientSearchQuery(query);
+      final clients = await _store.searchClients(normalized);
       if (!mounted || _controller.text.trim() != query) return;
       setState(() {
         _results = clients.map(toUiClientDetail).toList();

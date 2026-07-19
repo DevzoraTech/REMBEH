@@ -39,6 +39,8 @@ export type RepaymentListItemContract = {
 export type ClientLoanDetailContract = {
   id: string;
   loanId: string;
+  /** Client wallet id (one per loan); null only for legacy gaps. */
+  walletId: string | null;
   customerId: string;
   fullName: string;
   phone: string;
