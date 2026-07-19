@@ -26,12 +26,13 @@ if [[ ! -f "$API_SRC" ]]; then
   exit 1
 fi
 
-if [[ ! -f "/etc/letsencrypt/live/${WEB_DOMAIN}/fullchain.pem" ]]; then
+# /etc/letsencrypt/live is root-only — must use sudo to probe certs
+if ! sudo test -f "/etc/letsencrypt/live/${WEB_DOMAIN}/fullchain.pem"; then
   echo "Missing Let's Encrypt cert for ${WEB_DOMAIN} at /etc/letsencrypt/live/${WEB_DOMAIN}/" >&2
   echo "Issue once: sudo certbot certonly --nginx -d ${WEB_DOMAIN}" >&2
   exit 1
 fi
-if [[ ! -f "/etc/letsencrypt/live/${API_DOMAIN}/fullchain.pem" ]]; then
+if ! sudo test -f "/etc/letsencrypt/live/${API_DOMAIN}/fullchain.pem"; then
   echo "Missing Let's Encrypt cert for ${API_DOMAIN} at /etc/letsencrypt/live/${API_DOMAIN}/" >&2
   exit 1
 fi
