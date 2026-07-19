@@ -45,19 +45,20 @@ sudo ln -sfn "$API_DST" /etc/nginx/sites-enabled/rembeh-api
 sudo rm -f /etc/nginx/sites-enabled/default
 
 # Guardrails: API must not catch the web hostname; web must have SSL listen
-if ! grep -q "server_name ${WEB_DOMAIN}" "$WEB_DST"; then
+# (ignore comments — only match real nginx directives)
+if ! grep -vE '^[[:space:]]*#' "$WEB_DST" | grep -qE "server_name[[:space:]].*${WEB_DOMAIN}"; then
   echo "rembeh-web.conf missing server_name ${WEB_DOMAIN}" >&2
   exit 1
 fi
-if ! grep -qE 'listen[[:space:]]+443' "$WEB_DST"; then
+if ! grep -vE '^[[:space:]]*#' "$WEB_DST" | grep -qE 'listen[[:space:]]+443'; then
   echo "rembeh-web.conf must listen on 443 ssl" >&2
   exit 1
 fi
-if grep -qE "server_name[[:space:]].*${WEB_DOMAIN}" "$API_DST"; then
+if grep -vE '^[[:space:]]*#' "$API_DST" | grep -qE "server_name[[:space:]].*${WEB_DOMAIN}([[:space:]]|;|\$)"; then
   echo "FATAL: rembeh-api.conf must not include server_name ${WEB_DOMAIN}" >&2
   exit 1
 fi
-if grep -qE 'default_server' "$API_DST"; then
+if grep -vE '^[[:space:]]*#' "$API_DST" | grep -qE 'default_server'; then
   echo "FATAL: rembeh-api.conf must not use default_server (steals unmatched Host on shared IP)" >&2
   exit 1
 fi
