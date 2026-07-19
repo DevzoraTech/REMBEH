@@ -5,10 +5,10 @@
 #   ./scripts/deploy-web-ec2.sh              # from laptop/CI: SSH + pull + on-server
 #   ./scripts/deploy-web-ec2.sh on-server    # run ON the EC2 host
 #
-# Public URLs (HTTP for now):
-#   http://rembeh.antikra.com/
-#   http://16.170.166.117/
-# API (HTTPS): NEXT_PUBLIC_API_URL=https://rembeh-api.antikra.com/api/v1
+# Public URLs:
+#   https://rembeh.antikra.com/
+#   http://16.170.166.117/  (HTTP only; domain redirects to HTTPS)
+# API: NEXT_PUBLIC_API_URL=https://rembeh-api.antikra.com/api/v1
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -25,6 +25,30 @@ WEB_PORT="${WEB_PORT:-3000}"
 API_URL="${NEXT_PUBLIC_API_URL:-https://rembeh-api.antikra.com/api/v1}"
 WEB_DOMAIN="${WEB_DOMAIN:-rembeh.antikra.com}"
 SKIP_PULL="${SKIP_PULL:-0}"
+
+smoke_check_web() {
+  local url="https://${WEB_DOMAIN}/dashboard"
+  echo "==> Smoke: $url"
+  local code body
+  code="$(curl -fsS -o /tmp/rembeh-web-smoke.body -w "%{http_code}" --max-time 25 "$url" || true)"
+  body="$(head -c 400 /tmp/rembeh-web-smoke.body 2>/dev/null || true)"
+  rm -f /tmp/rembeh-web-smoke.body
+  if [[ "$code" != "200" ]]; then
+    echo "FATAL: expected HTTP 200 from $url, got ${code:-curl-failed}" >&2
+    exit 1
+  fi
+  if echo "$body" | grep -q 'Cannot GET'; then
+    echo "FATAL: $url returned Nest 'Cannot GET' — nginx is proxying web Host to API :4000" >&2
+    exit 1
+  fi
+  if ! echo "$body" | grep -qiE 'next|<!DOCTYPE html'; then
+    echo "FATAL: $url body does not look like Next.js HTML" >&2
+    echo "$body" | head -c 200 >&2
+    echo >&2
+    exit 1
+  fi
+  echo "smoke_web=200 Next.js OK"
+}
 
 deploy_web_on_server() {
   set -euo pipefail
@@ -54,7 +78,7 @@ deploy_web_on_server() {
   NEXT_PUBLIC_API_URL="$API_URL" npm run build
   test -d .next
 
-  echo "==> systemd rembeh-web + nginx..."
+  echo "==> systemd rembeh-web..."
   sudo tee /etc/systemd/system/rembeh-web.service >/dev/null <<UNIT
 [Unit]
 Description=REMBEH Web (Next.js)
@@ -76,58 +100,19 @@ RestartSec=5
 WantedBy=multi-user.target
 UNIT
 
-  sudo tee /etc/nginx/sites-available/rembeh-web >/dev/null <<NGINX
-# IP access + catch-all (default_server)
-server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-    server_name _;
+  echo "==> nginx vhosts (committed deploy/nginx/*.conf)..."
+  bash "$REMOTE_DIR/scripts/ensure-nginx-web.sh"
 
-    location / {
-        proxy_pass http://127.0.0.1:${WEB_PORT};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
-    }
-}
-
-# Custom domain (HTTP for now — API keeps HTTPS via Let's Encrypt)
-server {
-    listen 80;
-    listen [::]:80;
-    server_name ${WEB_DOMAIN} www.${WEB_DOMAIN};
-
-    location / {
-        proxy_pass http://127.0.0.1:${WEB_PORT};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
-    }
-}
-NGINX
-
-  sudo ln -sfn /etc/nginx/sites-available/rembeh-web /etc/nginx/sites-enabled/rembeh-web
-  sudo rm -f /etc/nginx/sites-enabled/default
-  sudo nginx -t
   sudo systemctl daemon-reload
   sudo systemctl enable rembeh-web nginx
   sudo systemctl restart rembeh-web
-  sudo systemctl reload nginx
   sleep 3
   curl -sS --max-time 20 -o /dev/null -w "local_web=%{http_code}\n" "http://127.0.0.1:${WEB_PORT}/" || true
-  curl -sS --max-time 25 http://127.0.0.1:4000/api/v1/platform/health || true
+
+  smoke_check_web
+
   echo
-  echo "Web on-server deploy OK — http://${WEB_DOMAIN}/ (HTTP); API remains HTTPS."
+  echo "Web on-server deploy OK — https://${WEB_DOMAIN}/"
 }
 
 # --- on-server entry ---
@@ -157,7 +142,5 @@ ec2_ssh "$USER_NAME@$HOST" \
    bash '$REMOTE_DIR/scripts/deploy-web-ec2.sh' on-server"
 
 echo
-echo "Public web (IP): http://$HOST/"
-echo "Public web (domain): http://$WEB_DOMAIN/  (DNS A → $HOST)"
+echo "Public web: https://$WEB_DOMAIN/"
 echo "API: $API_URL"
-echo "Note: web is HTTP; rembeh-api.antikra.com keeps HTTPS (Let's Encrypt)."

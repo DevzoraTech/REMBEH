@@ -21,17 +21,46 @@ Optional:
 
 | Site | Scheme | Notes |
 |------|--------|--------|
-| API | **HTTPS** | `https://rembeh-api.antikra.com` — Let's Encrypt on the host |
-| Web | **HTTPS** | `https://rembeh.antikra.com` — Let's Encrypt via `certbot --nginx`; HTTP → HTTPS redirect |
+| API | **HTTPS** | `https://rembeh-api.antikra.com` — Let's Encrypt; nginx → `:4000` |
+| Web | **HTTPS** | `https://rembeh.antikra.com` — Let's Encrypt; nginx → `:3000`; HTTP → HTTPS |
 
 Renewal is handled by certbot's timer. Optional `www.rembeh.antikra.com` needs a DNS CNAME before it can be added to the web cert.
+
+Committed nginx configs (source of truth):
+
+| File | `server_name` | Upstream |
+|------|---------------|----------|
+| [`deploy/nginx/rembeh-web.conf`](../deploy/nginx/rembeh-web.conf) | `rembeh.antikra.com` (+ IP HTTP catch-all on `:80` only) | `127.0.0.1:3000` |
+| [`deploy/nginx/rembeh-api.conf`](../deploy/nginx/rembeh-api.conf) | `rembeh-api.antikra.com` **only** | `127.0.0.1:4000` |
+
+Every web (and API) deploy runs [`scripts/ensure-nginx-web.sh`](../scripts/ensure-nginx-web.sh): copy configs → `nginx -t` → reload. Web deploy also smokes `https://rembeh.antikra.com/dashboard` and **fails** if the response is not HTTP 200 Next.js (e.g. Nest `Cannot GET`).
+
+#### Why `Cannot GET /dashboard` happens
+
+Both hostnames share one EC2 public IP. Nginx picks the SSL `server` block by **SNI / `Host`**. If there is **no** `listen 443 ssl` block for `rembeh.antikra.com`, the request falls through to the **only** (or `default_server`) SSL vhost — historically the API — which proxies to Nest on `:4000`. Nest then returns JSON `Cannot GET /dashboard`.
+
+**Rules that prevent regression:**
+
+1. Separate `server_name`s — never put `rembeh.antikra.com` on the API vhost.
+2. Never mark the API SSL server as `default_server` on a shared IP without a dedicated web SSL vhost.
+3. Do not let `deploy-web` write an HTTP-only web config that wipes the web `:443` block.
+4. Do not let `deploy-api` overwrite or remove `rembeh-web`.
+
+One-shot repair on the host:
+
+```bash
+cd /home/ubuntu/rembeh
+git pull
+bash scripts/ensure-nginx-web.sh
+curl -sI https://rembeh.antikra.com/dashboard | head -15
+```
 
 Health check:
 
 ```bash
 curl https://rembeh-api.antikra.com/api/v1/platform/health
-curl -sI https://rembeh.antikra.com | head -20
-curl -sI http://rembeh.antikra.com | head -10   # expect 301 → https
+curl -sI https://rembeh.antikra.com/dashboard | head -20   # expect 200 + X-Powered-By: Next.js
+curl -sI http://rembeh.antikra.com | head -10              # expect 301 → https
 ```
 
 ---

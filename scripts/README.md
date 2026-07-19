@@ -10,7 +10,7 @@ Full production guide (DNS, GitHub secrets, deploy key, auto-deploy): **[`docs/d
 | `rembeh.antikra.com` | A | `16.170.166.117` |
 
 Optional: `www.rembeh.antikra.com` CNAME → `rembeh.antikra.com`.  
-Web is **HTTP**; API is **HTTPS** (Let's Encrypt on `rembeh-api`).
+Web and API are both **HTTPS** (separate nginx `server_name`s; see `deploy/nginx/`).
 
 ## GitHub Actions
 
@@ -50,13 +50,16 @@ curl https://rembeh-api.antikra.com/api/v1/platform/health
 
 ## Manual: Web → EC2
 
-Builds `apps/web` with `NEXT_PUBLIC_API_URL=https://rembeh-api.antikra.com/api/v1`, runs via `rembeh-web.service`, nginx `:80` → `:3000`.
+Builds `apps/web` with `NEXT_PUBLIC_API_URL=https://rembeh-api.antikra.com/api/v1`, runs via `rembeh-web.service`, installs `deploy/nginx/*.conf` via `ensure-nginx-web.sh` (HTTPS → `:3000`), and smokes `/dashboard`.
 
 ```bash
 ./scripts/deploy-web-ec2.sh
 
 # On server
 bash /home/ubuntu/rembeh/scripts/deploy-web-ec2.sh on-server
+
+# Nginx-only repair (no rebuild)
+bash /home/ubuntu/rembeh/scripts/ensure-nginx-web.sh
 ```
 
-Live: `http://rembeh.antikra.com/` (HTTP). API remains HTTPS.
+Live: `https://rembeh.antikra.com/`.

@@ -107,6 +107,16 @@ UNIT
   sudo systemctl --no-pager --full status rembeh-api | head -25
   curl -sS --max-time 25 http://127.0.0.1:4000/api/v1/platform/health || true
   echo
+
+  # Never overwrite/remove rembeh-web SSL. Re-install committed vhosts so API
+  # nginx stays scoped to rembeh-api.antikra.com only (no default_server on 443).
+  if [[ -x "$REMOTE_DIR/scripts/ensure-nginx-web.sh" ]] || [[ -f "$REMOTE_DIR/scripts/ensure-nginx-web.sh" ]]; then
+    echo "==> Ensuring nginx vhosts (web SSL preserved; API host-only)..."
+    bash "$REMOTE_DIR/scripts/ensure-nginx-web.sh"
+  else
+    echo "WARN: scripts/ensure-nginx-web.sh missing — not touching nginx" >&2
+  fi
+
   echo "API on-server deploy OK — https://rembeh-api.antikra.com/api/v1"
 }
 
