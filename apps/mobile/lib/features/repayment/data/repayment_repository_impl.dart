@@ -151,6 +151,23 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
       maturityDate:
           DateTime.tryParse(json['maturityDate'] as String? ?? '') ??
               DateTime.now(),
+      paymentStartDate:
+          DateTime.tryParse(json['paymentStartDate'] as String? ?? ''),
+      paymentHistory: ((json['paymentHistory'] as List?) ?? const [])
+          .whereType<Map>()
+          .map(
+            (row) => PaymentHistoryItem(
+              id: row['id'] as String? ?? '',
+              amount: _money(row['amount']),
+              method: row['method'] as String? ?? 'CASH',
+              paidAt: DateTime.tryParse(row['paidAt'] as String? ?? '') ??
+                  DateTime.now(),
+              recordedByName: row['recordedByName'] as String? ?? '',
+              note: row['note'] as String?,
+            ),
+          )
+          .toList()
+        ..sort((a, b) => b.paidAt.compareTo(a.paidAt)),
     );
   }
 
@@ -192,5 +209,18 @@ ClientDetail toUiClientDetail(ClientLoanDetail detail) {
     interestRatePercent: detail.interestRatePercent.toDouble(),
     loanStartDate: detail.loanStartDate,
     maturityDate: detail.maturityDate,
+    paymentStartDate: detail.paymentStartDate,
+    paymentHistory: detail.paymentHistory
+        .map(
+          (item) => ClientPaymentHistoryItem(
+            id: item.id,
+            amount: item.amount,
+            method: item.method,
+            paidAt: item.paidAt,
+            recordedByName: item.recordedByName,
+            note: item.note,
+          ),
+        )
+        .toList(),
   );
 }

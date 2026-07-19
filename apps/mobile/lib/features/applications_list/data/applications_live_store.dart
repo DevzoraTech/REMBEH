@@ -76,7 +76,7 @@ class ApplicationsLiveStore extends ChangeNotifier {
     bool sameDay(DateTime a, DateTime b) =>
         a.year == b.year && a.month == b.month && a.day == b.day;
 
-    return _applications.where((item) {
+    final filtered = _applications.where((item) {
       switch (filter) {
         case RecordsFilter.all:
         case RecordsFilter.dueToday:
@@ -101,6 +101,8 @@ class ApplicationsLiveStore extends ChangeNotifier {
                   .isAfter(customRange.end.add(const Duration(days: 1)));
       }
     }).toList();
+    filtered.sort((a, b) => b.registeredAt.compareTo(a.registeredAt));
+    return filtered;
   }
 
   void _onRealtime(Map<String, dynamic> payload) {

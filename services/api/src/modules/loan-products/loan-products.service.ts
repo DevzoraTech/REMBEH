@@ -1,9 +1,10 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { PaymentStartPolicyType, Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import {
@@ -11,14 +12,21 @@ import {
   CreateLoanRateOptionDto,
   UpdateLoanPeriodOptionDto,
   UpdateLoanRateOptionDto,
+  UpsertPaymentStartPolicyDto,
 } from './dto/loan-product.dto';
 import {
   LoanPeriodOptionContract,
   LoanProductsCatalogContract,
   LoanRateOptionContract,
+  PaymentStartPolicyContract,
 } from './loan-products.contracts';
 import { LOAN_PRODUCT_PERMISSIONS } from './loan-products.permissions';
 import { LoanProductsRepository } from './loan-products.repository';
+import {
+  DEFAULT_PAYMENT_START_POLICY,
+  computePaymentStartDate,
+  describePaymentStartPolicy,
+} from './payment-start-policy';
 
 @Injectable()
 export class LoanProductsService {
@@ -35,7 +43,7 @@ export class LoanProductsService {
     const branchId = canSeeAllBranches ? null : user.branchId;
     const activeOnly = !canManage;
 
-    const [rates, periods] = await Promise.all([
+    const [rates, periods, paymentStartPolicy] = await Promise.all([
       this.repository.listRates({
         tenantId: user.tenantId,
         branchId,
@@ -48,11 +56,18 @@ export class LoanProductsService {
         activeOnly,
         includeTenantWide: true,
       }),
+      this.repository.findEffectivePaymentStartPolicy({
+        tenantId: user.tenantId,
+        branchId: branchId ?? user.branchId,
+      }),
     ]);
 
     return {
       rates: rates.map((item) => this.toRateContract(item)),
       periods: periods.map((item) => this.toPeriodContract(item)),
+      paymentStartPolicy: paymentStartPolicy
+        ? this.toPaymentStartContract(paymentStartPolicy)
+        : this.defaultPaymentStartContract(user.tenantId, branchId),
     };
   }
 
@@ -172,6 +187,62 @@ export class LoanProductsService {
     return { period: this.toPeriodContract(updated) };
   }
 
+  async upsertPaymentStartPolicy(
+    user: AuthenticatedUser,
+    dto: UpsertPaymentStartPolicyDto,
+  ) {
+    this.requireManage(user);
+    const branchId = this.resolveWriteBranchId(user, dto.branchId);
+
+    if (
+      dto.policyType === PaymentStartPolicyType.AFTER_N_DAYS &&
+      (dto.afterDays == null || dto.afterDays < 1)
+    ) {
+      throw new BadRequestException(
+        'afterDays is required when policyType is AFTER_N_DAYS.',
+      );
+    }
+
+    const saved = await this.repository.upsertPaymentStartPolicy({
+      tenantId: user.tenantId,
+      branchId,
+      policyType: dto.policyType,
+      afterDays:
+        dto.policyType === PaymentStartPolicyType.AFTER_N_DAYS
+          ? (dto.afterDays ?? 1)
+          : null,
+      allowAgentDatePick: dto.allowAgentDatePick ?? false,
+    });
+
+    return { paymentStartPolicy: this.toPaymentStartContract(saved) };
+  }
+
+  /**
+   * Resolve effective policy + compute paymentStartDate for a branch loan.
+   * Used on application submit (and collections fallback).
+   */
+  async resolvePaymentStartDate(input: {
+    tenantId: string;
+    branchId: string;
+    anchorDate: Date;
+    agentPickedDate?: Date | null;
+  }): Promise<Date> {
+    const policy = await this.repository.findEffectivePaymentStartPolicy({
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+    });
+
+    return computePaymentStartDate({
+      policyType: policy?.policyType ?? DEFAULT_PAYMENT_START_POLICY.policyType,
+      afterDays: policy?.afterDays ?? DEFAULT_PAYMENT_START_POLICY.afterDays,
+      allowAgentDatePick:
+        policy?.allowAgentDatePick ??
+        DEFAULT_PAYMENT_START_POLICY.allowAgentDatePick,
+      anchorDate: input.anchorDate,
+      agentPickedDate: input.agentPickedDate,
+    });
+  }
+
   private canManage(user: AuthenticatedUser) {
     return user.permissions.includes(LOAN_PRODUCT_PERMISSIONS.manage);
   }
@@ -272,6 +343,50 @@ export class LoanProductsService {
       sortOrder: row.sortOrder,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
+    };
+  }
+
+  private toPaymentStartContract(row: {
+    id: string;
+    tenantId: string;
+    branchId: string | null;
+    policyType: PaymentStartPolicyType;
+    afterDays: number | null;
+    allowAgentDatePick: boolean;
+    isActive: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+  }): PaymentStartPolicyContract {
+    return {
+      id: row.id,
+      tenantId: row.tenantId,
+      branchId: row.branchId,
+      policyType: row.policyType,
+      afterDays: row.afterDays,
+      allowAgentDatePick: row.allowAgentDatePick,
+      isActive: row.isActive,
+      description: describePaymentStartPolicy(row),
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  }
+
+  private defaultPaymentStartContract(
+    tenantId: string,
+    branchId: string | null,
+  ): PaymentStartPolicyContract {
+    const now = new Date().toISOString();
+    return {
+      id: 'default',
+      tenantId,
+      branchId,
+      policyType: DEFAULT_PAYMENT_START_POLICY.policyType,
+      afterDays: DEFAULT_PAYMENT_START_POLICY.afterDays,
+      allowAgentDatePick: DEFAULT_PAYMENT_START_POLICY.allowAgentDatePick,
+      isActive: true,
+      description: describePaymentStartPolicy(DEFAULT_PAYMENT_START_POLICY),
+      createdAt: now,
+      updatedAt: now,
     };
   }
 }

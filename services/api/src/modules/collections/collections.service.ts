@@ -65,8 +65,12 @@ export class CollectionsService {
 
     const clientsDueToday = loans
       .map((loan) => this.toDueClient(loan, now))
-      .filter((item): item is DueClientContract => item != null && item.amountDue > 0);
-
+      .filter((item): item is DueClientContract => item != null && item.amountDue > 0)
+      .sort(
+        (a, b) =>
+          new Date(b.lastActivityAt).getTime() -
+          new Date(a.lastActivityAt).getTime(),
+      );
     return {
       summary: {
         amountCollectedToday: this.decimalToNumber(todayAgg._sum.amount) ?? 0,
@@ -149,9 +153,14 @@ export class CollectionsService {
       ...this.scope(user),
       query: q,
     });
-    return {
-      clients: loans.map((loan) => this.buildDetail(loan)),
-    };
+    const clients = loans
+      .map((loan) => this.buildDetail(loan))
+      .sort((a, b) => {
+        const aAt = a.lastPaymentAt ?? a.paymentStartDate ?? a.loanStartDate;
+        const bAt = b.lastPaymentAt ?? b.paymentStartDate ?? b.loanStartDate;
+        return new Date(bAt).getTime() - new Date(aAt).getTime();
+      });
+    return { clients };
   }
 
   async getLoanDetail(
@@ -288,8 +297,11 @@ export class CollectionsService {
       loanAmount: item.loanAmount,
       outstanding: detail.outstanding,
       recordedAt: item.recordedAt,
+      method: item.method,
+      note: item.note,
       synced: true,
       recordedByUserId: user.userId,
+      recordedByName: item.recordedByName,
     });
 
     void this.sendPaymentSms({
@@ -382,7 +394,10 @@ export class CollectionsService {
 
   private buildDetail(loan: LoanWithCollections): ClientLoanDetailContract {
     const pricing = this.loanPricing(loan);
+    // Prefer stored paymentStartDate (manager policy); fall back for legacy loans.
     const startDate =
+      loan.paymentStartDate ??
+      loan.application?.paymentStartDate ??
       loan.disbursedAt ??
       loan.application?.submittedAt ??
       loan.createdAt;
@@ -395,6 +410,14 @@ export class CollectionsService {
       startDate,
     });
     const last = loan.repayments[0] ?? null;
+    const paymentHistory = loan.repayments.map((row) => ({
+      id: row.id,
+      amount: this.decimalToNumber(row.amount) ?? 0,
+      method: row.method,
+      paidAt: row.paidAt.toISOString(),
+      recordedByName: row.recordedBy.displayName,
+      note: row.note,
+    }));
 
     return {
       id: loan.id,
@@ -424,8 +447,10 @@ export class CollectionsService {
       interestAmount: schedule.interestAmount,
       processingFee: schedule.processingFee,
       loanStartDate: schedule.loanStartDate,
+      paymentStartDate: startDate.toISOString(),
       maturityDate: schedule.maturityDate,
       status: loan.status,
+      paymentHistory,
     };
   }
 

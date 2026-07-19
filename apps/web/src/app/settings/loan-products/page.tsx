@@ -39,6 +39,14 @@ type PeriodOption = {
   branchId: string | null;
 };
 
+type PaymentStartPolicy = {
+  id: string;
+  policyType: "SAME_DAY" | "NEXT_DAY" | "AFTER_N_DAYS";
+  afterDays: number | null;
+  allowAgentDatePick: boolean;
+  description: string;
+};
+
 export default function LoanProductsPage() {
   const router = useRouter();
   const [session, setSession] = useState<RembehSession | null>(null);
@@ -47,6 +55,13 @@ export default function LoanProductsPage() {
   const [branch, setBranch] = useState<RembehBranch | null>(null);
   const [rates, setRates] = useState<RateOption[]>([]);
   const [periods, setPeriods] = useState<PeriodOption[]>([]);
+  const [paymentStartPolicy, setPaymentStartPolicy] =
+    useState<PaymentStartPolicy | null>(null);
+  const [policyType, setPolicyType] = useState<
+    "SAME_DAY" | "NEXT_DAY" | "AFTER_N_DAYS"
+  >("NEXT_DAY");
+  const [afterDays, setAfterDays] = useState("1");
+  const [allowAgentDatePick, setAllowAgentDatePick] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rateLabel, setRateLabel] = useState("");
@@ -94,6 +109,7 @@ export default function LoanProductsPage() {
         const payload = await readApiJson<{
           rates?: RateOption[];
           periods?: PeriodOption[];
+          paymentStartPolicy?: PaymentStartPolicy;
           message?: string | string[];
         }>(response);
         if (!response.ok) {
@@ -101,6 +117,7 @@ export default function LoanProductsPage() {
         }
         setRates(payload.rates ?? []);
         setPeriods(payload.periods ?? []);
+        applyPaymentStartPolicy(payload.paymentStartPolicy ?? null);
         setError(null);
       } catch (caught) {
         setError(
@@ -114,6 +131,19 @@ export default function LoanProductsPage() {
     })();
   }, [router]);
 
+  function applyPaymentStartPolicy(policy: PaymentStartPolicy | null) {
+    setPaymentStartPolicy(policy);
+    if (!policy) {
+      setPolicyType("NEXT_DAY");
+      setAfterDays("1");
+      setAllowAgentDatePick(false);
+      return;
+    }
+    setPolicyType(policy.policyType);
+    setAfterDays(String(policy.afterDays ?? 1));
+    setAllowAgentDatePick(policy.allowAgentDatePick);
+  }
+
   async function refreshCatalog(activeSession: RembehSession) {
     const response = await fetch(`${apiBaseUrl}/loan-products`, {
       headers: {
@@ -123,6 +153,7 @@ export default function LoanProductsPage() {
     const payload = await readApiJson<{
       rates?: RateOption[];
       periods?: PeriodOption[];
+      paymentStartPolicy?: PaymentStartPolicy;
       message?: string | string[];
     }>(response);
     if (!response.ok) {
@@ -130,6 +161,7 @@ export default function LoanProductsPage() {
     }
     setRates(payload.rates ?? []);
     setPeriods(payload.periods ?? []);
+    applyPaymentStartPolicy(payload.paymentStartPolicy ?? null);
   }
 
   async function addRate(event: FormEvent) {
@@ -258,6 +290,48 @@ export default function LoanProductsPage() {
     }
   }
 
+  async function savePaymentStartPolicy(event: FormEvent) {
+    event.preventDefault();
+    if (!session) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/loan-products/payment-start-policy`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `${session.tokenType} ${session.accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            policyType,
+            ...(policyType === "AFTER_N_DAYS"
+              ? { afterDays: Number(afterDays) }
+              : {}),
+            allowAgentDatePick,
+          }),
+        },
+      );
+      const payload = await readApiJson<{
+        paymentStartPolicy?: PaymentStartPolicy;
+        message?: string | string[];
+      }>(response);
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      applyPaymentStartPolicy(payload.paymentStartPolicy ?? null);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not save payment start policy.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (!session) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -279,8 +353,8 @@ export default function LoanProductsPage() {
             Loan products
           </h1>
           <p className="mt-1 text-sm text-slate-600">
-            Configure interest rates and loan periods that field agents select
-            when capturing applications.
+            Configure interest rates, loan periods, and when repayments start
+            after loan go-live (submit / disbursement).
           </p>
         </header>
 
@@ -290,6 +364,74 @@ export default function LoanProductsPage() {
           <p className="text-sm text-slate-500">Loading catalog…</p>
         ) : (
           <div className="grid gap-6 lg:grid-cols-2">
+            <section className="panel p-4 lg:col-span-2">
+              <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
+                Payment start policy
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Applied relative to loan go-live (disbursement / approval /
+                application submit). Default if unset: next day.
+              </p>
+              <form
+                onSubmit={savePaymentStartPolicy}
+                className="mt-3 grid gap-3 sm:grid-cols-2"
+              >
+                <label className="block text-sm">
+                  <span className="mb-1 block text-xs font-semibold text-slate-600">
+                    When repayments start
+                  </span>
+                  <select
+                    className="w-full border border-[var(--line)] bg-white px-3 py-2 text-sm"
+                    value={policyType}
+                    onChange={(event) =>
+                      setPolicyType(
+                        event.target.value as
+                          | "SAME_DAY"
+                          | "NEXT_DAY"
+                          | "AFTER_N_DAYS",
+                      )
+                    }
+                  >
+                    <option value="SAME_DAY">Same day</option>
+                    <option value="NEXT_DAY">Next day</option>
+                    <option value="AFTER_N_DAYS">After N days</option>
+                  </select>
+                </label>
+                {policyType === "AFTER_N_DAYS" ? (
+                  <TextField
+                    label="Days after go-live"
+                    value={afterDays}
+                    onChange={setAfterDays}
+                    placeholder="3"
+                    required
+                  />
+                ) : (
+                  <div />
+                )}
+                <label className="flex items-start gap-2 text-sm sm:col-span-2">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={allowAgentDatePick}
+                    onChange={(event) =>
+                      setAllowAgentDatePick(event.target.checked)
+                    }
+                  />
+                  <span>
+                    Allow agents to pick a later start date (on or after the
+                    policy date)
+                  </span>
+                </label>
+                {paymentStartPolicy ? (
+                  <p className="text-xs text-slate-500 sm:col-span-2">
+                    Current: {paymentStartPolicy.description}
+                  </p>
+                ) : null}
+                <PrimaryButton type="submit" disabled={saving}>
+                  Save payment start policy
+                </PrimaryButton>
+              </form>
+            </section>
             <section className="panel p-4">
               <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
                 Interest rates

@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Socket } from "socket.io-client";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
+import { formatClock, groupByLocalDate } from "../../lib/date-groups";
 import {
   connectRealtime,
   type LoanApplicationEvent,
@@ -115,6 +116,11 @@ export function LiveApplicationsPanel({
     };
   }, [accessToken, canRead, tokenType]);
 
+  const groups = useMemo(
+    () => groupByLocalDate(applications, (item) => item.registeredAt),
+    [applications],
+  );
+
   if (!canRead) return null;
 
   return (
@@ -126,7 +132,7 @@ export function LiveApplicationsPanel({
               Loan applications
             </h2>
             <p className="text-[11px] text-slate-500">
-              Live from field agents · tap a row for detail
+              Live from field agents · grouped by date · tap for detail
             </p>
           </div>
           <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--forest-emerald)]">
@@ -143,26 +149,35 @@ export function LiveApplicationsPanel({
             No submitted applications yet.
           </p>
         ) : (
-          applications.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => setSelectedId(item.id)}
-              className="flex w-full items-center justify-between gap-3 border-b border-[var(--line)] px-3 py-2.5 text-left last:border-b-0 hover:bg-[var(--soft-mist)]"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
-                  {item.clientName || "Applicant"}
-                </p>
-                <p className="truncate text-xs text-slate-500">
-                  {item.phone} · {item.interestRatePercent}% ·{" "}
-                  {item.synced ? "Synced" : "Pending sync"}
+          groups.map((group) => (
+            <div key={group.key}>
+              <div className="border-b border-[var(--line)] bg-[var(--soft-mist)] px-3 py-1.5">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                  {group.label}
                 </p>
               </div>
-              <p className="shrink-0 text-sm font-bold text-[var(--midnight-navy)]">
-                {formatAmount(item.amountRequested)}
-              </p>
-            </button>
+              {group.items.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setSelectedId(item.id)}
+                  className="flex w-full items-center justify-between gap-3 border-b border-[var(--line)] px-3 py-2.5 text-left last:border-b-0 hover:bg-[var(--soft-mist)]"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
+                      {item.clientName || "Applicant"}
+                    </p>
+                    <p className="truncate text-xs text-slate-500">
+                      {item.phone} · {item.interestRatePercent}% ·{" "}
+                      {formatClock(item.registeredAt)}
+                    </p>
+                  </div>
+                  <p className="shrink-0 text-sm font-bold text-[var(--midnight-navy)]">
+                    {formatAmount(item.amountRequested)}
+                  </p>
+                </button>
+              ))}
+            </div>
           ))
         )}
       </section>

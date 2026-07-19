@@ -1,3 +1,21 @@
+class PaymentHistoryItem {
+  const PaymentHistoryItem({
+    required this.id,
+    required this.amount,
+    required this.method,
+    required this.paidAt,
+    required this.recordedByName,
+    this.note,
+  });
+
+  final String id;
+  final int amount;
+  final String method;
+  final DateTime paidAt;
+  final String recordedByName;
+  final String? note;
+}
+
 class ClientLoanDetail {
   const ClientLoanDetail({
     required this.id,
@@ -22,6 +40,8 @@ class ClientLoanDetail {
     required this.interestRatePercent,
     required this.loanStartDate,
     required this.maturityDate,
+    this.paymentStartDate,
+    this.paymentHistory = const [],
   });
 
   final String id;
@@ -46,6 +66,8 @@ class ClientLoanDetail {
   final int interestRatePercent;
   final DateTime loanStartDate;
   final DateTime maturityDate;
+  final DateTime? paymentStartDate;
+  final List<PaymentHistoryItem> paymentHistory;
 
   String get initials {
     final parts = fullName

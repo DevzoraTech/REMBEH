@@ -22,9 +22,24 @@ export type LoanPeriodOptionContract = {
   updatedAt: string;
 };
 
+export type PaymentStartPolicyContract = {
+  id: string;
+  tenantId: string;
+  branchId: string | null;
+  policyType: 'SAME_DAY' | 'NEXT_DAY' | 'AFTER_N_DAYS';
+  afterDays: number | null;
+  allowAgentDatePick: boolean;
+  isActive: boolean;
+  description: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type LoanProductsCatalogContract = {
   rates: LoanRateOptionContract[];
   periods: LoanPeriodOptionContract[];
+  /** Effective policy for the caller's branch (branch override or tenant default). */
+  paymentStartPolicy: PaymentStartPolicyContract | null;
 };
 
 export type LoanPricingBreakdownContract = {

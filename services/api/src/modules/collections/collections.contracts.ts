@@ -36,6 +36,15 @@ export type RepaymentListItemContract = {
   recordedByName: string;
 };
 
+export type PaymentHistoryItemContract = {
+  id: string;
+  amount: number;
+  method: string;
+  paidAt: string;
+  recordedByName: string;
+  note: string | null;
+};
+
 export type ClientLoanDetailContract = {
   id: string;
   loanId: string;
@@ -62,8 +71,12 @@ export type ClientLoanDetailContract = {
   interestAmount: number;
   processingFee: number;
   loanStartDate: string;
+  /** First repayment day from manager payment-start policy. */
+  paymentStartDate: string;
   maturityDate: string;
   status: string;
+  /** Newest-first payment history for wallet views. */
+  paymentHistory: PaymentHistoryItemContract[];
 };
 
 export type RecordRepaymentResponseContract = {

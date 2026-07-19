@@ -5,6 +5,7 @@ import '../../features/repayment/data/repayments_live_store.dart';
 import '../../models/field_records.dart';
 import '../../services/session_store.dart';
 import '../../theme.dart';
+import '../../utils/date_groups.dart';
 import '../../utils/money.dart';
 import '../../widgets/application_details_sheet.dart';
 import '../../widgets/client_details_sheet.dart';
@@ -328,6 +329,28 @@ class _CountLabel extends StatelessWidget {
   }
 }
 
+class _DateGroupHeader extends StatelessWidget {
+  const _DateGroupHeader({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 2),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: slateText,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.4,
+        ),
+      ),
+    );
+  }
+}
+
 class _SegmentTab extends StatelessWidget {
   const _SegmentTab({
     required this.label,
@@ -406,6 +429,13 @@ class _RepaymentsList extends StatelessWidget {
     }
 
     final now = DateTime.now();
+    final groups = groupByLocalDate(items, (item) => item.recordedAt);
+    final rows = <Object>[];
+    for (final group in groups) {
+      rows.add(group.label);
+      rows.addAll(group.items);
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -413,10 +443,14 @@ class _RepaymentsList extends StatelessWidget {
         Expanded(
           child: ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            itemCount: items.length,
+            itemCount: rows.length,
             separatorBuilder: (_, _) => const SizedBox(height: 10),
             itemBuilder: (context, index) {
-              final item = items[index];
+              final row = rows[index];
+              if (row is String) {
+                return _DateGroupHeader(label: row);
+              }
+              final item = row as FieldRepayment;
               return _RecordCard(
                 initials: item.initials,
                 name: item.clientName,
@@ -486,6 +520,13 @@ class _ApplicationsList extends StatelessWidget {
     }
 
     final now = DateTime.now();
+    final groups = groupByLocalDate(items, (item) => item.registeredAt);
+    final rows = <Object>[];
+    for (final group in groups) {
+      rows.add(group.label);
+      rows.addAll(group.items);
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -493,10 +534,14 @@ class _ApplicationsList extends StatelessWidget {
         Expanded(
           child: ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            itemCount: items.length,
+            itemCount: rows.length,
             separatorBuilder: (_, _) => const SizedBox(height: 10),
             itemBuilder: (context, index) {
-              final item = items[index];
+              final row = rows[index];
+              if (row is String) {
+                return _DateGroupHeader(label: row);
+              }
+              final item = row as FieldApplication;
               return _RecordCard(
                 initials: item.initials,
                 name: item.clientName,

@@ -1,5 +1,7 @@
+import { PaymentStartPolicyType } from '@prisma/client';
 import {
   IsBoolean,
+  IsEnum,
   IsInt,
   IsNumber,
   IsOptional,
@@ -8,6 +10,7 @@ import {
   Length,
   Max,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
 export class CreateLoanRateOptionDto {
@@ -100,4 +103,23 @@ export class UpdateLoanPeriodOptionDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+}
+
+export class UpsertPaymentStartPolicyDto {
+  @IsEnum(PaymentStartPolicyType)
+  policyType!: PaymentStartPolicyType;
+
+  @ValidateIf((dto: UpsertPaymentStartPolicyDto) => dto.policyType === 'AFTER_N_DAYS')
+  @IsInt()
+  @Min(1)
+  @Max(365)
+  afterDays?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  allowAgentDatePick?: boolean;
+
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
 }

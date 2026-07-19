@@ -7,6 +7,7 @@ import {
   LogOut,
   Menu,
   Percent,
+  Wallet,
   UserRound,
   X,
 } from "lucide-react";
@@ -68,6 +69,14 @@ export function AppShell({
           operatorRole === "owner" ||
           operatorRole === "manager" ||
           Boolean(session.permissions.includes("loan.product.manage")),
+      },
+      {
+        href: "/dashboard#payments",
+        label: "Payments",
+        icon: Wallet,
+        enabled:
+          operatorRole !== "staff" &&
+          Boolean(session.permissions.includes("collection.read")),
       },
     ];
 

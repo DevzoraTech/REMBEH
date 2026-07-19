@@ -92,6 +92,14 @@ enum RepaymentMethod {
   OTHER
 }
 
+/// When repayments begin relative to loan go-live (submit / disbursement).
+/// Anchor = disbursedAt ?? approvedAt ?? submittedAt ?? createdAt.
+enum PaymentStartPolicyType {
+  SAME_DAY
+  NEXT_DAY
+  AFTER_N_DAYS
+}
+
 model Tenant {
   id                 String         @id @default(uuid()) @db.Uuid
   name               String
@@ -113,12 +121,13 @@ model Tenant {
   repayments         Repayment[]
   clientWallets      ClientWallet[]
   loanApplications   LoanApplication[]
-  loanRateOptions    LoanRateOption[]
-  loanPeriodOptions  LoanPeriodOption[]
-  enabledModules     TenantModule[]
-  auditLogs          AuditLog[]
-  outboxEvents       OutboxEvent[]
-  otpChallenges      OtpChallenge[]
+  loanRateOptions          LoanRateOption[]
+  loanPeriodOptions        LoanPeriodOption[]
+  loanPaymentStartPolicies LoanPaymentStartPolicy[]
+  enabledModules           TenantModule[]
+  auditLogs                AuditLog[]
+  outboxEvents             OutboxEvent[]
+  otpChallenges            OtpChallenge[]
 
   @@map("tenants")
 }
@@ -141,8 +150,9 @@ model Branch {
   repayments         Repayment[]
   clientWallets      ClientWallet[]
   loanApplications   LoanApplication[]
-  loanRateOptions    LoanRateOption[]
-  loanPeriodOptions  LoanPeriodOption[]
+  loanRateOptions          LoanRateOption[]
+  loanPeriodOptions        LoanPeriodOption[]
+  loanPaymentStartPolicies LoanPaymentStartPolicy[]
 
   @@index([tenantId, name])
   @@unique([tenantId, name])
@@ -186,6 +196,30 @@ model LoanPeriodOption {
   @@index([tenantId, branchId, isActive])
   @@index([tenantId, isActive, sortOrder])
   @@map("loan_period_options")
+}
+
+/// Manager-configured default for when the first repayment is due.
+/// Product rule: policy is applied to the loan go-live anchor
+/// (disbursedAt ?? approvedAt ?? application submittedAt).
+/// branchId null = tenant-wide default; set = branch override.
+model LoanPaymentStartPolicy {
+  id                 String                 @id @default(uuid()) @db.Uuid
+  tenantId           String                 @map("tenant_id") @db.Uuid
+  branchId           String?                @map("branch_id") @db.Uuid
+  policyType         PaymentStartPolicyType @map("policy_type")
+  /// Used when policyType = AFTER_N_DAYS (days after go-live).
+  afterDays          Int?                   @map("after_days")
+  /// When true, agents may pick an explicit date on/after the policy date.
+  allowAgentDatePick Boolean                @default(false) @map("allow_agent_date_pick")
+  isActive           Boolean                @default(true) @map("is_active")
+  createdAt          DateTime               @default(now()) @map("created_at")
+  updatedAt          DateTime               @updatedAt @map("updated_at")
+  tenant             Tenant                 @relation(fields: [tenantId], references: [id])
+  branch             Branch?                @relation(fields: [branchId], references: [id])
+
+  @@index([tenantId, branchId, isActive])
+  @@index([tenantId, isActive])
+  @@map("loan_payment_start_policies")
 }
 
 model Department {
@@ -319,28 +353,31 @@ model Customer {
 }
 
 model Loan {
-  id          String     @id @default(uuid()) @db.Uuid
-  tenantId    String     @map("tenant_id") @db.Uuid
-  branchId    String     @map("branch_id") @db.Uuid
-  customerId  String     @map("customer_id") @db.Uuid
-  principal   Decimal    @db.Decimal(18, 2)
-  balance     Decimal    @db.Decimal(18, 2)
-  currency    String
-  status      LoanStatus @default(DRAFT)
-  approvedAt  DateTime?  @map("approved_at")
-  disbursedAt DateTime?  @map("disbursed_at")
-  createdAt   DateTime   @default(now()) @map("created_at")
-  updatedAt   DateTime   @updatedAt @map("updated_at")
-  tenant      Tenant     @relation(fields: [tenantId], references: [id])
-  branch      Branch     @relation(fields: [branchId], references: [id])
-  customer    Customer   @relation(fields: [customerId], references: [id])
-  application LoanApplication?
-  wallet      ClientWallet?
-  repayments  Repayment[]
+  id               String     @id @default(uuid()) @db.Uuid
+  tenantId         String     @map("tenant_id") @db.Uuid
+  branchId         String     @map("branch_id") @db.Uuid
+  customerId       String     @map("customer_id") @db.Uuid
+  principal        Decimal    @db.Decimal(18, 2)
+  balance          Decimal    @db.Decimal(18, 2)
+  currency         String
+  status           LoanStatus @default(DRAFT)
+  approvedAt       DateTime?  @map("approved_at")
+  disbursedAt      DateTime?  @map("disbursed_at")
+  /// First day the daily repayment schedule starts (from payment-start policy).
+  paymentStartDate DateTime?  @map("payment_start_date")
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
+  tenant           Tenant     @relation(fields: [tenantId], references: [id])
+  branch           Branch     @relation(fields: [branchId], references: [id])
+  customer         Customer   @relation(fields: [customerId], references: [id])
+  application      LoanApplication?
+  wallet           ClientWallet?
+  repayments       Repayment[]
 
   @@index([tenantId, status])
   @@index([tenantId, branchId])
   @@index([tenantId, customerId])
+  @@index([tenantId, paymentStartDate])
   @@map("loans")
 }
 
@@ -415,29 +452,31 @@ model LoanApplication {
   principalAmount      Decimal?              @map("principal_amount") @db.Decimal(18, 2)
   interestRatePercent  Decimal?              @map("interest_rate_percent") @db.Decimal(8, 4)
   durationDays         Int?                  @map("duration_days")
-  processingFee        Decimal?              @map("processing_fee") @db.Decimal(18, 2)
-  collateralType       String?               @map("collateral_type")
-  smileJobId           String?               @map("smile_job_id")
-  smileResult          Json?                 @map("smile_result")
-  verificationCode     String?               @map("verification_code")
-  verifiedAt           DateTime?             @map("verified_at")
-  termsConfirmedAt     DateTime?             @map("terms_confirmed_at")
-  submittedAt          DateTime?             @map("submitted_at")
-  syncedAt             DateTime?             @map("synced_at")
-  createdAt            DateTime              @default(now()) @map("created_at")
-  updatedAt            DateTime              @updatedAt @map("updated_at")
-  tenant               Tenant                @relation(fields: [tenantId], references: [id])
-  branch               Branch                @relation(fields: [branchId], references: [id])
-  officer              User                  @relation("LoanApplicationOfficer", fields: [officerUserId], references: [id])
-  customer             Customer?             @relation(fields: [customerId], references: [id])
-  loan                 Loan?                 @relation(fields: [loanId], references: [id])
-  wallet               ClientWallet?
-  guarantor            LoanApplicationGuarantor?
-  media                LoanApplicationMedia[]
-  signatures           LoanApplicationSignature[]
-  signedAgreementKey   String?               @map("signed_agreement_key")
-  signedAgreementHash  String?               @map("signed_agreement_hash")
-  signedAgreementVersion Int?                @map("signed_agreement_version")
+  processingFee          Decimal?              @map("processing_fee") @db.Decimal(18, 2)
+  collateralType         String?               @map("collateral_type")
+  smileJobId             String?               @map("smile_job_id")
+  smileResult            Json?                 @map("smile_result")
+  verificationCode       String?               @map("verification_code")
+  verifiedAt             DateTime?             @map("verified_at")
+  termsConfirmedAt       DateTime?             @map("terms_confirmed_at")
+  /// Optional agent-picked start when policy allows; finalized on submit.
+  paymentStartDate       DateTime?             @map("payment_start_date")
+  submittedAt            DateTime?             @map("submitted_at")
+  syncedAt               DateTime?             @map("synced_at")
+  createdAt              DateTime              @default(now()) @map("created_at")
+  updatedAt              DateTime              @updatedAt @map("updated_at")
+  tenant                 Tenant                @relation(fields: [tenantId], references: [id])
+  branch                 Branch                @relation(fields: [branchId], references: [id])
+  officer                User                  @relation("LoanApplicationOfficer", fields: [officerUserId], references: [id])
+  customer               Customer?             @relation(fields: [customerId], references: [id])
+  loan                   Loan?                 @relation(fields: [loanId], references: [id])
+  wallet                 ClientWallet?
+  guarantor              LoanApplicationGuarantor?
+  media                  LoanApplicationMedia[]
+  signatures             LoanApplicationSignature[]
+  signedAgreementKey     String?               @map("signed_agreement_key")
+  signedAgreementHash    String?               @map("signed_agreement_hash")
+  signedAgreementVersion Int?                  @map("signed_agreement_version")
 
   @@index([tenantId, status])
   @@index([tenantId, branchId])

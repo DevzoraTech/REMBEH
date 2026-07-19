@@ -248,6 +248,8 @@ export class LoanApplicationsRepository {
     actorUserId: string;
     currency: string;
     eventPayload: LoanApplicationEventPayload;
+    goLiveAt: Date;
+    paymentStartDate: Date;
   }) {
     return this.prisma.$transaction(async (tx) => {
       const fullName = [
@@ -316,6 +318,9 @@ export class LoanApplicationsRepository {
           balance,
           currency: input.currency,
           status: LoanStatus.CURRENT,
+          approvedAt: input.goLiveAt,
+          disbursedAt: input.goLiveAt,
+          paymentStartDate: input.paymentStartDate,
         },
       });
 
@@ -331,15 +336,15 @@ export class LoanApplicationsRepository {
         },
       });
 
-      const now = new Date();
       const application = await tx.loanApplication.update({
         where: { id: input.application.id },
         data: {
           customerId,
           loanId: loan.id,
           status: LoanApplicationStatus.SUBMITTED,
-          submittedAt: now,
-          syncedAt: now,
+          submittedAt: input.goLiveAt,
+          syncedAt: input.goLiveAt,
+          paymentStartDate: input.paymentStartDate,
         },
         include: loanApplicationInclude,
       });

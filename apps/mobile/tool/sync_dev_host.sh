@@ -1,13 +1,55 @@
 #!/usr/bin/env bash
-# Syncs LAN IP into lib/config_dev_host.dart (+ optional MinIO public URL in .env).
-# Debug builds auto-use that host; release builds use EC2 (see lib/config.dart).
+# By default: keep mobile on the live production API.
+# Pass --local to write dart-defines that point debug builds at your Mac LAN API.
+#
+#   ./tool/sync_dev_host.sh              # production defaults (no local override)
+#   ./tool/sync_dev_host.sh --local      # detect LAN IP → dart_defines.dev.json
+#   ./tool/sync_dev_host.sh --local 192.168.1.10
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
 MOBILE="$ROOT/apps/mobile"
 ENV_FILE="$ROOT/.env"
+PROD_API="https://rembeh-api.antikra.com/api/v1"
 
-HOST="${1:-}"
+USE_LOCAL=0
+HOST=""
+
+for arg in "$@"; do
+  case "$arg" in
+    --local)
+      USE_LOCAL=1
+      ;;
+    *)
+      HOST="$arg"
+      ;;
+  esac
+done
+
+# Always clear the legacy in-code LAN host — config.dart ignores it.
+cat >"$MOBILE/lib/config_dev_host.dart" <<'EOF'
+/// Legacy LAN host stub. Mobile defaults to the live API (see `config.dart`).
+///
+/// To point a debug build at a local API, pass:
+/// `--dart-define=REMBEH_API_URL=http://<host>:4000/api/v1`
+/// or run `./tool/sync_dev_host.sh --local` and use the generated dart-defines.
+const String rembehDevApiHost = '';
+EOF
+
+if [[ "$USE_LOCAL" -eq 0 ]]; then
+  cat >"$MOBILE/dart_defines.dev.json" <<EOF
+{}
+EOF
+  echo "Wrote $MOBILE/dart_defines.dev.json (empty — app uses live API)"
+  echo "Wrote $MOBILE/lib/config_dev_host.dart"
+  echo "  default API → $PROD_API"
+  echo
+  echo "For a local API instead:"
+  echo "  ./tool/sync_dev_host.sh --local"
+  echo "  flutter run --dart-define-from-file=dart_defines.dev.json"
+  exit 0
+fi
+
 if [[ -z "$HOST" ]]; then
   HOST="$(ipconfig getifaddr en0 2>/dev/null || true)"
 fi
@@ -16,27 +58,23 @@ if [[ -z "$HOST" ]]; then
 fi
 if [[ -z "$HOST" ]]; then
   echo "Could not detect LAN IP. Pass it explicitly:" >&2
-  echo "  ./tool/sync_dev_host.sh 192.168.x.x" >&2
+  echo "  ./tool/sync_dev_host.sh --local 192.168.x.x" >&2
   exit 1
 fi
 
+LOCAL_API="http://${HOST}:4000/api/v1"
 S3_PUBLIC="http://${HOST}:9000"
 
-# Empty dart-defines so debug auto-detect is not overridden.
 cat >"$MOBILE/dart_defines.dev.json" <<EOF
-{}
+{
+  "REMBEH_API_URL": "${LOCAL_API}"
+}
 EOF
 
-cat >"$MOBILE/lib/config_dev_host.dart" <<EOF
-/// Generated/updated by \`tool/sync_dev_host.sh\`.
-/// Used as the default API host so physical devices reach your Mac on LAN.
-const String rembehDevApiHost = '${HOST}';
-EOF
-
-echo "Wrote $MOBILE/dart_defines.dev.json (no forced REMBEH_API_URL)"
+echo "Wrote $MOBILE/dart_defines.dev.json (local override)"
 echo "Wrote $MOBILE/lib/config_dev_host.dart"
-echo "  debug API → http://${HOST}:4000/api/v1"
-echo "  release API → EC2 (see lib/config.dart)"
+echo "  local API → ${LOCAL_API}"
+echo "  run with: flutter run --dart-define-from-file=dart_defines.dev.json"
 
 if [[ -f "$ENV_FILE" ]]; then
   if grep -q '^S3_PUBLIC_ENDPOINT=' "$ENV_FILE"; then
@@ -57,4 +95,4 @@ fi
 
 echo
 echo "Cold-start the app (hot reload will NOT pick up host changes):"
-echo "  cd apps/mobile && flutter run"
+echo "  cd apps/mobile && flutter run --dart-define-from-file=dart_defines.dev.json"

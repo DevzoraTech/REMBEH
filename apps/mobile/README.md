@@ -11,34 +11,34 @@ Agents use this app after invitation + activation.
 
 Customer data is branch-scoped. Manager/owner consoles read what agents capture.
 
-## API environment (automatic)
+## API environment
 
 | Build | API |
 | --- | --- |
-| **Debug** (`flutter run`) | Local Mac on LAN (`config_dev_host.dart`) |
-| **Release** (`flutter build` / store) | `https://rembeh-api.antikra.com/api/v1` |
+| **Debug** (`flutter run`) | `https://rembeh-api.antikra.com/api/v1` (live) |
+| **Release** (`flutter build` / store) | `https://rembeh-api.antikra.com/api/v1` (live) |
 
-Override anytime: `--dart-define=REMBEH_API_URL=...`
+All changes ship against the live server by default. Override only for rare local API work:
 
-## Run (local development)
+```bash
+flutter run --dart-define=REMBEH_API_URL=http://192.168.x.x:4000/api/v1
+# or after syncing a local host:
+./tool/sync_dev_host.sh --local
+flutter run --dart-define-from-file=dart_defines.dev.json
+```
 
-1. Sync your Mac’s LAN IP (phones need this):
+## Run (against live)
 
 ```bash
 cd apps/mobile
-chmod +x tool/sync_dev_host.sh
-./tool/sync_dev_host.sh
-```
-
-2. Start the API on your Mac (`HOST=0.0.0.0`).
-
-3. Cold-start the app:
-
-```bash
 flutter run
 ```
 
-Phone and Mac must be on the same Wi‑Fi.
+Optional: reset dart-defines to production defaults:
+
+```bash
+./tool/sync_dev_host.sh
+```
 
 ## Production builds
 
@@ -46,9 +46,9 @@ Phone and Mac must be on the same Wi‑Fi.
 flutter build apk   # or ipa — uses production HTTPS API automatically
 ```
 
-Optional explicit prod defines: `dart_defines.prod.json.example`.
+Optional explicit prod defines: `dart_defines.prod.json` / `dart_defines.prod.json.example`.
 
-## Force a URL (debug against production, etc.)
+## Force a URL
 
 ```bash
 # Must include /api/v1 (Nest global prefix). Host-only or /api will 404.

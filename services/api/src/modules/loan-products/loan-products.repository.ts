@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { PaymentStartPolicyType, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 
 @Injectable()
@@ -89,6 +89,82 @@ export class LoanProductsRepository {
     return this.prisma.loanPeriodOption.update({
       where: { id },
       data: { isActive: false },
+    });
+  }
+
+  /** Branch policy preferred over tenant-wide when both exist. */
+  async findEffectivePaymentStartPolicy(input: {
+    tenantId: string;
+    branchId: string | null;
+  }) {
+    if (input.branchId) {
+      const branchPolicy = await this.prisma.loanPaymentStartPolicy.findFirst({
+        where: {
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+          isActive: true,
+        },
+      });
+      if (branchPolicy) return branchPolicy;
+    }
+
+    return this.prisma.loanPaymentStartPolicy.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        branchId: null,
+        isActive: true,
+      },
+    });
+  }
+
+  findPaymentStartPolicy(input: {
+    tenantId: string;
+    branchId: string | null;
+  }) {
+    return this.prisma.loanPaymentStartPolicy.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        isActive: true,
+      },
+    });
+  }
+
+  async upsertPaymentStartPolicy(input: {
+    tenantId: string;
+    branchId: string | null;
+    policyType: PaymentStartPolicyType;
+    afterDays: number | null;
+    allowAgentDatePick: boolean;
+  }) {
+    const existing = await this.findPaymentStartPolicy({
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+    });
+
+    if (existing) {
+      return this.prisma.loanPaymentStartPolicy.update({
+        where: { id: existing.id },
+        data: {
+          policyType: input.policyType,
+          afterDays: input.afterDays,
+          allowAgentDatePick: input.allowAgentDatePick,
+          isActive: true,
+        },
+      });
+    }
+
+    return this.prisma.loanPaymentStartPolicy.create({
+      data: {
+        tenant: { connect: { id: input.tenantId } },
+        ...(input.branchId
+          ? { branch: { connect: { id: input.branchId } } }
+          : {}),
+        policyType: input.policyType,
+        afterDays: input.afterDays,
+        allowAgentDatePick: input.allowAgentDatePick,
+        isActive: true,
+      },
     });
   }
 }

@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsDateString,
   IsInt,
   IsNumber,
   IsOptional,
@@ -93,4 +94,9 @@ export class UpdateLoanApplicationDto {
   @IsOptional()
   @IsBoolean()
   termsConfirmed?: boolean;
+
+  /** Agent-picked repayment start when branch policy allows date pick. */
+  @IsOptional()
+  @IsDateString()
+  paymentStartDate?: string;
 }

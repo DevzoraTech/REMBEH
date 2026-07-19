@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/app/app-shell";
 import { LiveApplicationsPanel } from "../../components/app/live-applications-panel";
+import { LivePaymentsPanel } from "../../components/app/live-payments-panel";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import {
   RembehBranch,
@@ -245,6 +246,12 @@ function OwnerView({
         canRead={session.permissions.includes("loan.read")}
       />
 
+      <LivePaymentsPanel
+        accessToken={session.accessToken}
+        tokenType={session.tokenType}
+        canRead={session.permissions.includes("collection.read")}
+      />
+
       <section className="panel overflow-hidden">
         <div className="flex items-center justify-between border-b border-[var(--line)] px-3 py-2">
           <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
@@ -320,6 +327,12 @@ function ManagerView({
         accessToken={session.accessToken}
         tokenType={session.tokenType}
         canRead={session.permissions.includes("loan.read")}
+      />
+
+      <LivePaymentsPanel
+        accessToken={session.accessToken}
+        tokenType={session.tokenType}
+        canRead={session.permissions.includes("collection.read")}
       />
     </>
   );

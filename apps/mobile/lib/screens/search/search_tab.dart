@@ -107,8 +107,14 @@ class _SearchTabState extends State<SearchTab> {
       final normalized = normalizeClientSearchQuery(query);
       final clients = await _store.searchClients(normalized);
       if (!mounted || _controller.text.trim() != query) return;
+      final mapped = clients.map(toUiClientDetail).toList()
+        ..sort((a, b) {
+          final aAt = a.lastPaymentAt ?? a.loanStartDate;
+          final bAt = b.lastPaymentAt ?? b.loanStartDate;
+          return bAt.compareTo(aAt);
+        });
       setState(() {
-        _results = clients.map(toUiClientDetail).toList();
+        _results = mapped;
         _searching = false;
       });
     } catch (error) {

@@ -63,6 +63,8 @@ export type LoanApplicationContract = {
   verificationCode: string | null;
   verifiedAt: string | null;
   termsConfirmedAt: string | null;
+  /** Calendar day repayments start (set on submit from manager policy). */
+  paymentStartDate: string | null;
   submittedAt: string | null;
   syncedAt: string | null;
   createdAt: string;

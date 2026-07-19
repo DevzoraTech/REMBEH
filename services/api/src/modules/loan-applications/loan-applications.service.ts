@@ -46,6 +46,7 @@ import {
 import { UpdateLoanApplicationDto } from './dto/update-loan-application.dto';
 import { VerifyApplicantDto } from './dto/verify-applicant.dto';
 import { computeLoanPricing } from '../loan-products/loan-pricing';
+import { LoanProductsService } from '../loan-products/loan-products.service';
 
 const REQUIRED_MEDIA_ON_SUBMIT: LoanApplicationMediaType[] = [
   LoanApplicationMediaType.PASSPORT,
@@ -89,6 +90,7 @@ export class LoanApplicationsService {
     private readonly identityVerification: IdentityVerificationService,
     private readonly objectStorage: ObjectStorageService,
     private readonly realtimeGateway: RealtimeGateway,
+    private readonly loanProducts: LoanProductsService,
   ) {}
 
   async createDraft(
@@ -187,6 +189,15 @@ export class LoanApplicationsService {
           : dto.termsConfirmed === false
             ? null
             : undefined,
+      ...(dto.paymentStartDate !== undefined
+        ? {
+            paymentStartDate: await this.resolveAgentPaymentStartDate(
+              user,
+              existing.branchId,
+              dto.paymentStartDate,
+            ),
+          }
+        : {}),
     });
 
     if (dto.guarantor) {
@@ -538,11 +549,20 @@ export class LoanApplicationsService {
     const application = await this.requireWritableDraft(user, id);
     this.assertReadyForSubmit(application);
 
+    const goLiveAt = new Date();
+    const paymentStartDate = await this.loanProducts.resolvePaymentStartDate({
+      tenantId: user.tenantId,
+      branchId: application.branchId,
+      anchorDate: goLiveAt,
+      agentPickedDate: application.paymentStartDate,
+    });
+
     const eventPayload = this.toEventPayload({
       ...application,
       status: LoanApplicationStatus.SUBMITTED,
-      submittedAt: new Date(),
-      syncedAt: new Date(),
+      submittedAt: goLiveAt,
+      syncedAt: goLiveAt,
+      paymentStartDate,
     });
 
     const submitted = await this.repository.submitWithCustomerLoanAndOutbox({
@@ -550,6 +570,8 @@ export class LoanApplicationsService {
       actorUserId: user.userId,
       currency: 'UGX',
       eventPayload,
+      goLiveAt,
+      paymentStartDate,
     });
 
     this.realtimeGateway.broadcastLoanApplication(
@@ -876,6 +898,7 @@ export class LoanApplicationsService {
       verificationCode: application.verificationCode,
       verifiedAt: application.verifiedAt?.toISOString() ?? null,
       termsConfirmedAt: application.termsConfirmedAt?.toISOString() ?? null,
+      paymentStartDate: application.paymentStartDate?.toISOString() ?? null,
       submittedAt: application.submittedAt?.toISOString() ?? null,
       syncedAt: application.syncedAt?.toISOString() ?? null,
       createdAt: application.createdAt.toISOString(),
@@ -971,6 +994,31 @@ export class LoanApplicationsService {
       signatures,
       signedAgreementDownloadUrl,
     };
+  }
+
+  private async resolveAgentPaymentStartDate(
+    user: AuthenticatedUser,
+    branchId: string,
+    raw: string,
+  ): Promise<Date> {
+    const catalog = await this.loanProducts.getCatalog(user);
+    const policy = catalog.paymentStartPolicy;
+    if (!policy?.allowAgentDatePick) {
+      throw new BadRequestException(
+        'This branch does not allow agents to pick a payment start date.',
+      );
+    }
+    const picked = new Date(raw);
+    if (Number.isNaN(picked.getTime())) {
+      throw new BadRequestException('Invalid payment start date.');
+    }
+    // Validate against policy using "today" as provisional go-live anchor.
+    return this.loanProducts.resolvePaymentStartDate({
+      tenantId: user.tenantId,
+      branchId,
+      anchorDate: new Date(),
+      agentPickedDate: picked,
+    });
   }
 
   private clientName(application: LoanApplicationRecord) {

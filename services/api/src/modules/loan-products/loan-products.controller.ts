@@ -19,6 +19,7 @@ import {
   CreateLoanRateOptionDto,
   UpdateLoanPeriodOptionDto,
   UpdateLoanRateOptionDto,
+  UpsertPaymentStartPolicyDto,
 } from './dto/loan-product.dto';
 import { LOAN_PRODUCT_PERMISSIONS } from './loan-products.permissions';
 import { LoanProductsService } from './loan-products.service';
@@ -89,5 +90,14 @@ export class LoanProductsController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.loanProductsService.deactivatePeriod(user, id);
+  }
+
+  @Post('payment-start-policy')
+  @RequirePermissions(LOAN_PRODUCT_PERMISSIONS.manage)
+  upsertPaymentStartPolicy(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpsertPaymentStartPolicyDto,
+  ) {
+    return this.loanProductsService.upsertPaymentStartPolicy(user, dto);
   }
 }

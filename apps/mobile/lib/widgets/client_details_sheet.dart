@@ -5,6 +5,7 @@ import '../features/repayment/data/repayment_repository_impl.dart';
 import '../features/repayment/data/repayments_live_store.dart';
 import '../models/client_detail.dart';
 import '../theme.dart';
+import '../utils/date_groups.dart';
 import '../utils/money.dart';
 import 'record_repayment_sheet.dart';
 
@@ -362,8 +363,10 @@ class ClientDetailsSheet extends StatelessWidget {
                           Expanded(
                             child: _DetailItem(
                               icon: Icons.calendar_month_outlined,
-                              label: 'Loan Start Date',
-                              value: _shortDate(detail.loanStartDate),
+                              label: 'Repayments start',
+                              value: _shortDate(
+                                detail.paymentStartDate ?? detail.loanStartDate,
+                              ),
                             ),
                           ),
                           Expanded(
@@ -378,6 +381,85 @@ class ClientDetailsSheet extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (detail.paymentHistory.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Payment history',
+                      style: TextStyle(
+                        color: midnightNavy,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...groupByLocalDate(
+                    detail.paymentHistory,
+                    (item) => item.paidAt,
+                  ).expand((group) sync* {
+                    yield Padding(
+                      padding: const EdgeInsets.only(top: 6, bottom: 4),
+                      child: Text(
+                        group.label,
+                        style: const TextStyle(
+                          color: slateText,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    );
+                    for (final payment in group.items) {
+                      yield Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: line),
+                          color: Colors.white,
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    payment.recordedByName.isEmpty
+                                        ? 'Agent'
+                                        : payment.recordedByName,
+                                    style: const TextStyle(
+                                      color: midnightNavy,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${payment.method.replaceAll('_', ' ')} · ${_shortDate(payment.paidAt)}',
+                                    style: const TextStyle(
+                                      color: slateText,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Text(
+                              formatMoney(payment.amount),
+                              style: const TextStyle(
+                                color: forestEmerald,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+                  }),
+                ],
               ],
             ),
           ),

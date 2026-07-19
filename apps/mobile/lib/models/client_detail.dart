@@ -1,3 +1,21 @@
+class ClientPaymentHistoryItem {
+  const ClientPaymentHistoryItem({
+    required this.id,
+    required this.amount,
+    required this.method,
+    required this.paidAt,
+    required this.recordedByName,
+    this.note,
+  });
+
+  final String id;
+  final int amount;
+  final String method;
+  final DateTime paidAt;
+  final String recordedByName;
+  final String? note;
+}
+
 class ClientDetail {
   const ClientDetail({
     required this.id,
@@ -22,9 +40,11 @@ class ClientDetail {
     required this.interestRatePercent,
     required this.loanStartDate,
     required this.maturityDate,
+    this.paymentStartDate,
     this.interestAmount = 0,
     this.processingFee = 0,
     this.status = '',
+    this.paymentHistory = const [],
   });
 
   final String id;
@@ -49,9 +69,11 @@ class ClientDetail {
   final double interestRatePercent;
   final DateTime loanStartDate;
   final DateTime maturityDate;
+  final DateTime? paymentStartDate;
   final int interestAmount;
   final int processingFee;
   final String status;
+  final List<ClientPaymentHistoryItem> paymentHistory;
 
   String get initials {
     final parts = fullName
@@ -107,9 +129,27 @@ class ClientDetail {
           (json['interestRatePercent'] as num?)?.toDouble() ?? 0,
       loanStartDate: parseDate(json['loanStartDate'] as String?),
       maturityDate: parseDate(json['maturityDate'] as String?),
+      paymentStartDate: json['paymentStartDate'] != null
+          ? DateTime.tryParse(json['paymentStartDate'] as String)
+          : null,
       interestAmount: ((json['interestAmount'] as num?) ?? 0).round(),
       processingFee: ((json['processingFee'] as num?) ?? 0).round(),
       status: json['status'] as String? ?? '',
+      paymentHistory: ((json['paymentHistory'] as List?) ?? const [])
+          .whereType<Map>()
+          .map(
+            (row) => ClientPaymentHistoryItem(
+              id: row['id'] as String? ?? '',
+              amount: ((row['amount'] as num?) ?? 0).round(),
+              method: row['method'] as String? ?? 'CASH',
+              paidAt: DateTime.tryParse(row['paidAt'] as String? ?? '') ??
+                  DateTime.now(),
+              recordedByName: row['recordedByName'] as String? ?? '',
+              note: row['note'] as String?,
+            ),
+          )
+          .toList()
+        ..sort((a, b) => b.paidAt.compareTo(a.paidAt)),
     );
   }
 }

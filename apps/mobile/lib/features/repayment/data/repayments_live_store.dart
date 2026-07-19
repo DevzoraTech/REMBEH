@@ -89,7 +89,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
     bool sameDay(DateTime a, DateTime b) =>
         a.year == b.year && a.month == b.month && a.day == b.day;
 
-    return _repayments.where((item) {
+    final filtered = _repayments.where((item) {
       switch (filter) {
         case RecordsFilter.all:
           return true;
@@ -115,6 +115,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
                   .isAfter(customRange.end.add(const Duration(days: 1)));
       }
     }).toList();
+    filtered.sort((a, b) => b.recordedAt.compareTo(a.recordedAt));
+    return filtered;
   }
 
   Future<ClientLoanDetail> getLoanDetail(String loanId) async {

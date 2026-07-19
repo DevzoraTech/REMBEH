@@ -32,6 +32,9 @@ export type PaymentRealtimePayload = {
   loanAmount: number;
   outstanding: number;
   recordedAt: string;
+  method?: string;
+  note?: string | null;
   synced: boolean;
   recordedByUserId: string;
+  recordedByName?: string;
 };
