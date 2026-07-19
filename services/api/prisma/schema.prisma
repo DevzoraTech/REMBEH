@@ -92,6 +92,8 @@ model Tenant {
   country            String
   currency           String
   status             TenantStatus   @default(PENDING_VERIFICATION)
+  /// S3 object-storage prefix, e.g. tenants/{id}/
+  storagePrefix      String?        @map("storage_prefix")
   createdAt          DateTime       @default(now()) @map("created_at")
   updatedAt          DateTime       @updatedAt @map("updated_at")
   branches           Branch[]
@@ -102,6 +104,8 @@ model Tenant {
   customers          Customer[]
   loans              Loan[]
   loanApplications   LoanApplication[]
+  loanRateOptions    LoanRateOption[]
+  loanPeriodOptions  LoanPeriodOption[]
   enabledModules     TenantModule[]
   auditLogs          AuditLog[]
   outboxEvents       OutboxEvent[]
@@ -126,10 +130,51 @@ model Branch {
   customers          Customer[]
   loans              Loan[]
   loanApplications   LoanApplication[]
+  loanRateOptions    LoanRateOption[]
+  loanPeriodOptions  LoanPeriodOption[]
 
   @@index([tenantId, name])
   @@unique([tenantId, name])
   @@map("branches")
+}
+
+/// Manager-configured interest rates agents select during loan capture.
+/// branchId null = tenant-wide (owner); set = branch-scoped (manager).
+model LoanRateOption {
+  id                  String   @id @default(uuid()) @db.Uuid
+  tenantId            String   @map("tenant_id") @db.Uuid
+  branchId            String?  @map("branch_id") @db.Uuid
+  label               String
+  interestRatePercent Decimal  @map("interest_rate_percent") @db.Decimal(8, 4)
+  isActive            Boolean  @default(true) @map("is_active")
+  sortOrder           Int      @default(0) @map("sort_order")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+  tenant              Tenant   @relation(fields: [tenantId], references: [id])
+  branch              Branch?  @relation(fields: [branchId], references: [id])
+
+  @@index([tenantId, branchId, isActive])
+  @@index([tenantId, isActive, sortOrder])
+  @@map("loan_rate_options")
+}
+
+/// Manager-configured loan periods (e.g. 30 / 90 days) agents select.
+model LoanPeriodOption {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  branchId     String?  @map("branch_id") @db.Uuid
+  label        String
+  durationDays Int      @map("duration_days")
+  isActive     Boolean  @default(true) @map("is_active")
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  branch       Branch?  @relation(fields: [branchId], references: [id])
+
+  @@index([tenantId, branchId, isActive])
+  @@index([tenantId, isActive, sortOrder])
+  @@map("loan_period_options")
 }
 
 model Department {

@@ -113,7 +113,10 @@ class _ElectronicSignatureScreenState extends State<ElectronicSignatureScreen> {
       return;
     }
     if (_committedStrokes.isEmpty) return;
-    setState(() => _committedStrokes.removeLast());
+    setState(() {
+      _committedStrokes.removeLast();
+    });
+    // Keep Syncfusion clear; CustomPaint redraws remaining strokes.
     _padKey.currentState?.clear();
   }
 
@@ -135,18 +138,18 @@ class _ElectronicSignatureScreenState extends State<ElectronicSignatureScreen> {
     if (!_padEnabled || _activePoints.isEmpty) return;
     _activePoints.add(_pointFrom(event));
     if (_activePoints.length >= 2) {
+      final stroke = SignatureStroke(
+        points: List<SignatureStrokePoint>.from(_activePoints),
+        pointerKind: _activePointerKind,
+      );
       setState(() {
-        _committedStrokes.add(
-          SignatureStroke(
-            points: List<SignatureStrokePoint>.from(_activePoints),
-            pointerKind: _activePointerKind,
-          ),
-        );
+        _committedStrokes.add(stroke);
         _activePoints.clear();
       });
-      // Clear live Syncfusion ink so CustomPaint owns committed strokes
-      // (enables true last-stroke undo without double-drawing).
+      // Clear live Syncfusion ink after CustomPaint has committed strokes.
+      // Do NOT clear before setState — that caused ink to vanish on lift.
       WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
         _padKey.currentState?.clear();
       });
     } else {
@@ -424,8 +427,11 @@ class _ElectronicSignatureScreenState extends State<ElectronicSignatureScreen> {
                             fit: StackFit.expand,
                             children: [
                               CustomPaint(
-                                painter:
-                                    _CommittedStrokesPainter(_committedStrokes),
+                                painter: _CommittedStrokesPainter(
+                                  // New list identity each rebuild so shouldRepaint
+                                  // detects commits (mutating the same list hid ink).
+                                  List<SignatureStroke>.from(_committedStrokes),
+                                ),
                               ),
                               SfSignaturePad(
                                 key: _padKey,
@@ -524,6 +530,14 @@ class _CommittedStrokesPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _CommittedStrokesPainter oldDelegate) {
-    return oldDelegate.strokes != strokes;
+    if (oldDelegate.strokes.length != strokes.length) return true;
+    for (var i = 0; i < strokes.length; i++) {
+      if (!identical(oldDelegate.strokes[i], strokes[i]) &&
+          oldDelegate.strokes[i].points.length != strokes[i].points.length) {
+        return true;
+      }
+      if (!identical(oldDelegate.strokes[i], strokes[i])) return true;
+    }
+    return false;
   }
 }

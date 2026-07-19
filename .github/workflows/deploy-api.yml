@@ -1,0 +1,70 @@
+name: Deploy API (EC2)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/api/**"
+      - "package.json"
+      - "package-lock.json"
+      - "scripts/deploy-api-ec2.sh"
+      - "scripts/lib/ec2-ssh.sh"
+      - ".github/workflows/deploy-api.yml"
+  workflow_dispatch:
+
+concurrency:
+  # Shared with deploy-web so two jobs do not race on git/npm on the same host
+  group: deploy-ec2
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: SSH → pull → build → restart rembeh-api
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Configure SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+      - name: Add EC2 host key
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -H "${EC2_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Pull and deploy API on EC2
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_REMOTE_DIR: ${{ secrets.EC2_REMOTE_DIR }}
+        run: |
+          set -euo pipefail
+          USER_NAME="${EC2_USER:-ubuntu}"
+          REMOTE_DIR="${EC2_REMOTE_DIR:-/home/ubuntu/rembeh}"
+          HOST="$EC2_HOST"
+          if [[ -z "$HOST" ]]; then
+            echo "Missing secret EC2_HOST" >&2
+            exit 1
+          fi
+          ssh -o StrictHostKeyChecking=yes -o IdentitiesOnly=yes \
+            "${USER_NAME}@${HOST}" bash -s <<REMOTE
+          set -euo pipefail
+          cd "$REMOTE_DIR"
+          git fetch origin
+          git checkout main
+          git reset --hard origin/main
+          git clean -fd \
+            -e node_modules \
+            -e dist \
+            -e .env \
+            -e services/api/.env \
+            -e global-bundle.pem \
+            -e apps/web/.next \
+            -e apps/web/node_modules
+          echo "Deploying \$(git rev-parse --short HEAD) — \$(git log -1 --oneline)"
+          EC2_REMOTE_DIR="$REMOTE_DIR" bash scripts/deploy-api-ec2.sh on-server
+          REMOTE

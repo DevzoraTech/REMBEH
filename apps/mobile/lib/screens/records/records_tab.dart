@@ -6,6 +6,7 @@ import '../../services/field_records_store.dart';
 import '../../services/session_store.dart';
 import '../../theme.dart';
 import '../../utils/money.dart';
+import '../../widgets/application_details_sheet.dart';
 import '../../widgets/client_details_sheet.dart';
 
 class RecordsTab extends StatefulWidget {
@@ -462,10 +463,13 @@ class _ApplicationsList extends StatelessWidget {
                 timestamp: formatActivityTime(item.registeredAt, now),
                 synced: item.synced,
                 pendingLabel: 'Pending Sync',
-                onTap: () => showClientDetailsSheet(
+                onTap: () => showApplicationDetailsSheet(
                   context,
-                  phone: item.phone,
-                  fullName: item.clientName,
+                  applicationId: item.id,
+                  fallbackName: item.clientName,
+                  fallbackPhone: item.phone,
+                  fallbackAmount: item.amountRequested,
+                  fallbackInterestPercent: item.interestRatePercent,
                 ),
               );
             },

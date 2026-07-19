@@ -1,32 +1,62 @@
 # Deploy scripts
 
-## API → EC2 (GitHub)
+Full production guide (DNS, GitHub secrets, deploy key, auto-deploy): **[`docs/deploy.md`](../docs/deploy.md)**.
 
-Deploys from `https://github.com/DevzoraTech/REMBEH.git` onto the Ubuntu host.
+## DNS (quick)
+
+| Host | Type | Value |
+|------|------|-------|
+| `rembeh-api.antikra.com` | A | `16.170.166.117` |
+| `rembeh.antikra.com` | A | `16.170.166.117` |
+
+Optional: `www.rembeh.antikra.com` CNAME → `rembeh.antikra.com`.  
+Web is **HTTP**; API is **HTTPS** (Let's Encrypt on `rembeh-api`).
+
+## GitHub Actions
+
+Workflows (push to `main` + path filters, or manual `workflow_dispatch`):
+
+- `.github/workflows/deploy-api.yml` — API
+- `.github/workflows/deploy-web.yml` — Web
+
+**Secrets:** `EC2_HOST`, `EC2_USER`, `EC2_SSH_KEY`, optional `EC2_REMOTE_DIR`.  
+App secrets stay on the server (`.env`); never in GitHub. Private repo: add a read-only **deploy key** on EC2 (see `docs/deploy.md`).
+
+## Manual: API → EC2
 
 ```bash
-# From your Mac (needs services/rembeh-key-pair.pem + local .env)
+# From your Mac (PEM key + local .env for first-time / env sync)
 ./scripts/deploy-api-ec2.sh
+
+# Keep existing server .env (same as CI)
+SKIP_ENV_UPLOAD=1 ./scripts/deploy-api-ec2.sh
 ```
 
-Optional env overrides:
+Env overrides: `EC2_HOST`, `EC2_USER`, `EC2_KEY` (path) or `EC2_SSH_KEY` (PEM contents), `EC2_REMOTE_DIR`, `DEPLOY_BRANCH`, `REPO_URL`.
 
-- `EC2_HOST` (default `16.170.166.117`)
-- `DEPLOY_BRANCH` (default `main`)
-- `REPO_URL`
+On the server only:
 
-Secrets (`.env`) are scp’d; they are never committed. Deploy strips `S3_ACCESS_KEY` / `S3_SECRET_KEY` so the instance uses an **IAM role** for S3 — see `scripts/aws/README-ec2-iam.md`.
+```bash
+bash /home/ubuntu/rembeh/scripts/deploy-api-ec2.sh on-server
+```
 
-After deploy:
+Deploy strips static `S3_*` keys so the instance uses an **IAM role** — see `scripts/aws/README-ec2-iam.md`.
 
-1. Open **inbound TCP 4000** on the instance security group
-2. Attach IAM role `rembeh-ec2-api` (S3 policy in `scripts/aws/`)
-3. Allow EC2 → RDS **5432** on the RDS security group
-
-Health (public HTTPS API):
+Health:
 
 ```bash
 curl https://rembeh-api.antikra.com/api/v1/platform/health
 ```
 
-`EC2_HOST` remains the SSH/deploy target; clients should use the HTTPS domain above.
+## Manual: Web → EC2
+
+Builds `apps/web` with `NEXT_PUBLIC_API_URL=https://rembeh-api.antikra.com/api/v1`, runs via `rembeh-web.service`, nginx `:80` → `:3000`.
+
+```bash
+./scripts/deploy-web-ec2.sh
+
+# On server
+bash /home/ubuntu/rembeh/scripts/deploy-web-ec2.sh on-server
+```
+
+Live: `http://rembeh.antikra.com/` (HTTP). API remains HTTPS.

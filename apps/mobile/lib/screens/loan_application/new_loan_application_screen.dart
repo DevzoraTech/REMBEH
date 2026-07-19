@@ -44,11 +44,34 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   bool _busy = false;
   bool _bootstrapping = true;
   String? _bootError;
+  List<LoanRateOption> _rateOptions = const [];
+  List<LoanPeriodOption> _periodOptions = const [];
+  String? _productsError;
 
   @override
   void initState() {
     super.initState();
     _bootstrapDraft();
+    _loadLoanProducts();
+  }
+
+  Future<void> _loadLoanProducts() async {
+    try {
+      final catalog = await _locator.loadLoanProducts();
+      if (!mounted) return;
+      setState(() {
+        _rateOptions = catalog.rates;
+        _periodOptions = catalog.periods;
+        _productsError = catalog.rates.isEmpty || catalog.periods.isEmpty
+            ? 'Ask your branch manager to configure loan rates and periods.'
+            : null;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _productsError = 'Could not load loan products.';
+      });
+    }
   }
 
   Future<void> _bootstrapDraft() async {
@@ -235,8 +258,12 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     }
 
     if (_step == 3) {
-      final interest = _parseInterest(_draft.interestRate);
-      final duration = _parseDurationDays(_draft.loanDurationDays);
+      final interest = _selectedRatePercent();
+      final duration = _selectedDurationDays();
+      if (interest == null || duration == null) {
+        _showSnack('Select a configured interest rate and loan period.');
+        return;
+      }
       await _locator.saveStep(
         id: id,
         payload: {
@@ -279,17 +306,45 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     }
   }
 
-  double _parseInterest(String? value) {
-    if (value == null) return 0;
-    final match = RegExp(r'(\d+(?:\.\d+)?)').firstMatch(value);
-    return double.tryParse(match?.group(1) ?? '') ?? 0;
+  double? _selectedRatePercent() {
+    final label = _draft.interestRate;
+    if (label == null) return null;
+    for (final option in _rateOptions) {
+      if (option.label == label) return option.interestRatePercent;
+    }
+    return null;
   }
 
-  int _parseDurationDays(String? value) {
-    if (value == null) return 30;
-    if (value.contains('12 months')) return 365;
-    final match = RegExp(r'(\d+)').firstMatch(value);
-    return int.tryParse(match?.group(1) ?? '') ?? 30;
+  int? _selectedDurationDays() {
+    final label = _draft.loanDurationDays;
+    if (label == null) return null;
+    for (final option in _periodOptions) {
+      if (option.label == label) return option.durationDays;
+    }
+    return null;
+  }
+
+  Map<String, double>? _pricingPreview() {
+    final principal =
+        double.tryParse(_principal.text.replaceAll(',', '')) ?? 0;
+    final rate = _selectedRatePercent();
+    final days = _selectedDurationDays();
+    final fee =
+        double.tryParse(_processingFee.text.replaceAll(',', '')) ?? 0;
+    if (rate == null || days == null || principal <= 0) return null;
+    final interest =
+        (principal * (rate / 100) * (days / 365) * 100).round() / 100;
+    final total = ((principal + interest + fee) * 100).round() / 100;
+    return {
+      'interest': interest,
+      'total': total,
+    };
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   Future<void> _captureAndUpload(String mediaType) async {
@@ -310,6 +365,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       );
       if (!mounted) return;
       setState(() {
+        _draft.mediaPreviews[mediaType] = captured.bytes;
         _applyMediaFlags(application.mediaTypes);
       });
     } catch (error) {
@@ -361,6 +417,9 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       );
       if (!mounted) return;
       setState(() {
+        if (mimeType.startsWith('image/')) {
+          _draft.mediaPreviews[mediaType] = bytes;
+        }
         _applyMediaFlags(application.mediaTypes);
         if (mediaType == 'COLLATERAL_DOC') {
           _draft.collateralDocName = file.name;
@@ -470,6 +529,8 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         return _principal.text.trim().isNotEmpty &&
             _draft.interestRate != null &&
             _draft.loanDurationDays != null &&
+            _rateOptions.isNotEmpty &&
+            _periodOptions.isNotEmpty &&
             _processingFee.text.trim().isNotEmpty &&
             _draft.collateralType != null;
       case 4:
@@ -932,6 +993,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         subtitle: 'Capture a clear passport size photo.',
         icon: Icons.person_outline,
         captured: _draft.passportCaptured,
+        previewBytes: _draft.mediaPreviews['PASSPORT'],
         onCapture: () => _captureAndUpload('PASSPORT'),
       ),
       const SizedBox(height: 10),
@@ -940,6 +1002,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         subtitle: 'Capture the front side of the National ID.',
         icon: Icons.badge_outlined,
         captured: _draft.ninFrontCaptured,
+        previewBytes: _draft.mediaPreviews['NIN_FRONT'],
         onCapture: () => _captureAndUpload('NIN_FRONT'),
       ),
       const SizedBox(height: 10),
@@ -948,6 +1011,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         subtitle: 'Capture the back side of the National ID.',
         icon: Icons.credit_card,
         captured: _draft.ninBackCaptured,
+        previewBytes: _draft.mediaPreviews['NIN_BACK'],
         onCapture: () => _captureAndUpload('NIN_BACK'),
       ),
       const SizedBox(height: 14),
@@ -958,6 +1022,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   }
 
   List<Widget> _stepLoanDetails() {
+    final rateLabels = _rateOptions.map((item) => item.label).toList();
+    final periodLabels = _periodOptions.map((item) => item.label).toList();
+    final pricing = _pricingPreview();
+
     return [
       const Text(
         'Loan Details',
@@ -972,6 +1040,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         'Provide loan information as agreed with the client.',
         style: TextStyle(color: slateText, fontSize: 13),
       ),
+      if (_productsError != null) ...[
+        const SizedBox(height: 12),
+        LoanInfoBanner(text: _productsError!),
+      ],
       const SizedBox(height: 16),
       const LoanFieldLabel(label: 'Principal Amount'),
       const SizedBox(height: 6),
@@ -980,15 +1052,18 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         hint: 'Enter loan amount',
         icon: Icons.payments_outlined,
         keyboardType: TextInputType.number,
+        onChanged: (_) => setState(() {}),
       ),
       const SizedBox(height: 14),
       const LoanFieldLabel(label: 'Interest Rate (%)'),
       const SizedBox(height: 6),
       LoanSelectField(
         value: _draft.interestRate,
-        hint: 'Select interest rate',
+        hint: rateLabels.isEmpty
+            ? 'No rates configured'
+            : 'Select interest rate',
         icon: Icons.percent,
-        options: const ['5%', '10%', '12% per annum', '16%', '18%', '20%', '22%'],
+        options: rateLabels,
         onChanged: (value) => setState(() => _draft.interestRate = value),
       ),
       const SizedBox(height: 14),
@@ -996,9 +1071,11 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       const SizedBox(height: 6),
       LoanSelectField(
         value: _draft.loanDurationDays,
-        hint: 'Select duration',
+        hint: periodLabels.isEmpty
+            ? 'No periods configured'
+            : 'Select duration',
         icon: Icons.calendar_today_outlined,
-        options: const ['30 days', '45 days', '60 days', '90 days', '12 months'],
+        options: periodLabels,
         onChanged: (value) => setState(() => _draft.loanDurationDays = value),
       ),
       const SizedBox(height: 14),
@@ -1006,10 +1083,44 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       const SizedBox(height: 6),
       LoanTextField(
         controller: _processingFee,
-        hint: 'Enter received amount',
+        hint: 'Enter processing fee',
         icon: Icons.receipt_long_outlined,
         keyboardType: TextInputType.number,
+        onChanged: (_) => setState(() {}),
       ),
+      if (pricing != null) ...[
+        const SizedBox(height: 14),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: sage,
+            border: Border.all(color: line),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Interest (simple annual): ${formatMoney(pricing['interest']!)}',
+                style: const TextStyle(
+                  color: midnightNavy,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Total repayable: ${formatMoney(pricing['total']!)}',
+                style: const TextStyle(
+                  color: midnightNavy,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
       const SizedBox(height: 14),
       const LoanFieldLabel(label: 'Collateral Type'),
       const SizedBox(height: 6),
@@ -1028,7 +1139,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       ),
       const SizedBox(height: 14),
       const LoanInfoBanner(
-        text: 'Ensure all details are correct before proceeding.',
+        text: 'Rates and periods come from your branch manager configuration.',
       ),
     ];
   }
@@ -1071,6 +1182,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         subtitle: 'Capture the front side of the National ID.',
         icon: Icons.badge_outlined,
         captured: _draft.guarantorNinFrontCaptured,
+        previewBytes: _draft.mediaPreviews['GUARANTOR_NIN_FRONT'],
         onCapture: () => _captureAndUpload('GUARANTOR_NIN_FRONT'),
       ),
       const SizedBox(height: 10),
@@ -1079,6 +1191,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         subtitle: 'Capture the back side of the National ID.',
         icon: Icons.credit_card,
         captured: _draft.guarantorNinBackCaptured,
+        previewBytes: _draft.mediaPreviews['GUARANTOR_NIN_BACK'],
         onCapture: () => _captureAndUpload('GUARANTOR_NIN_BACK'),
       ),
       const SizedBox(height: 14),
@@ -1126,6 +1239,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         label: 'Collateral Document (Optional)',
         uploaded: _draft.collateralDocUploaded,
         fileName: _draft.collateralDocName,
+        previewBytes: _draft.mediaPreviews['COLLATERAL_DOC'],
         onUpload: () => _pickAndUploadDoc('COLLATERAL_DOC'),
       ),
       const SizedBox(height: 14),
@@ -1133,6 +1247,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         label: 'Additional Supporting Document (Optional)',
         uploaded: _draft.supportingDocUploaded,
         fileName: _draft.supportingDocName,
+        previewBytes: _draft.mediaPreviews['SUPPORTING_DOC'],
         onUpload: () => _pickAndUploadDoc('SUPPORTING_DOC'),
       ),
       const SizedBox(height: 14),
@@ -1140,6 +1255,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         label: 'Any Other Document (Optional)',
         uploaded: _draft.otherDocUploaded,
         fileName: _draft.otherDocName,
+        previewBytes: _draft.mediaPreviews['OTHER_DOC'],
         onUpload: () => _pickAndUploadDoc('OTHER_DOC'),
       ),
       const SizedBox(height: 14),

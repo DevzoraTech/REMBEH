@@ -6,6 +6,8 @@ export type LoanApplicationMediaContract = {
   byteSize: number;
   fileName: string | null;
   createdAt: string;
+  /** Presigned GET URL for manager/agent preview (short-lived). */
+  downloadUrl?: string | null;
 };
 
 export type LoanApplicationSignatureContract = {
@@ -22,11 +24,22 @@ export type LoanApplicationSignatureContract = {
   strokesContentHash: string;
   metadata: Record<string, unknown>;
   createdAt: string;
+  /** Presigned GET URL for the signature PNG preview. */
+  signatureDownloadUrl?: string | null;
 };
 
 export type LoanApplicationGuarantorContract = {
   fullName: string | null;
   phone: string | null;
+};
+
+export type LoanApplicationPricingContract = {
+  principalAmount: number;
+  interestRatePercent: number;
+  durationDays: number;
+  processingFee: number;
+  interestAmount: number;
+  totalRepayable: number;
 };
 
 export type LoanApplicationContract = {
@@ -62,6 +75,8 @@ export type LoanApplicationContract = {
   signedAgreementKey: string | null;
   signedAgreementHash: string | null;
   signedAgreementVersion: number | null;
+  signedAgreementDownloadUrl?: string | null;
+  pricing: LoanApplicationPricingContract | null;
 };
 
 export type LoanApplicationListItemContract = {

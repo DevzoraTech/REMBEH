@@ -30,4 +30,59 @@ class LoanApplicationLocator {
       SubmitLoanApplicationUseCase(repository);
   late final ListLoanApplicationsUseCase listApplications =
       ListLoanApplicationsUseCase(repository);
+  late final GetLoanApplicationUseCase getById =
+      GetLoanApplicationUseCase(repository);
+
+  Future<({List<LoanRateOption> rates, List<LoanPeriodOption> periods})>
+      loadLoanProducts() async {
+    final payload = await apiDatasource.listLoanProducts();
+    final rates = ((payload['rates'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .map(
+          (item) => LoanRateOption(
+            id: item['id'] as String,
+            label: item['label'] as String? ?? '',
+            interestRatePercent:
+                (item['interestRatePercent'] as num?)?.toDouble() ?? 0,
+          ),
+        )
+        .toList();
+    final periods = ((payload['periods'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .map(
+          (item) => LoanPeriodOption(
+            id: item['id'] as String,
+            label: item['label'] as String? ?? '',
+            durationDays: (item['durationDays'] as num?)?.toInt() ?? 0,
+          ),
+        )
+        .toList();
+    return (rates: rates, periods: periods);
+  }
+}
+
+class LoanRateOption {
+  const LoanRateOption({
+    required this.id,
+    required this.label,
+    required this.interestRatePercent,
+  });
+
+  final String id;
+  final String label;
+  final double interestRatePercent;
+}
+
+class LoanPeriodOption {
+  const LoanPeriodOption({
+    required this.id,
+    required this.label,
+    required this.durationDays,
+  });
+
+  final String id;
+  final String label;
+  final int durationDays;
 }

@@ -14,15 +14,16 @@ class ApiClient {
     required String email,
     required String password,
   }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/auth/login');
     final response = await http.post(
-      Uri.parse('$rembehApiBaseUrl/auth/login'),
+      uri,
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({'email': email.trim(), 'password': password}),
     );
 
     final body = _decode(response);
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ApiException(_message(body));
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
     }
 
     final sessionPayload = body['session'] as Map<String, dynamic>;
@@ -105,6 +106,19 @@ class ApiClient {
     if (message is List) return message.join(' ');
     if (message is String) return message;
     return 'Request failed.';
+  }
+
+  String _failureMessage(
+    Map<String, dynamic> body,
+    int statusCode,
+    Uri uri,
+  ) {
+    final message = _message(body);
+    // Surface the full URL on Nest Express 404s so a missing `/api/v1` is obvious.
+    if (statusCode == 404 || message.startsWith('Cannot POST')) {
+      return '$message → $uri';
+    }
+    return message;
   }
 }
 

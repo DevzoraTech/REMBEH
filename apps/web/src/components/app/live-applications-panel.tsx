@@ -7,6 +7,7 @@ import {
   connectRealtime,
   type LoanApplicationEvent,
 } from "../../lib/realtime";
+import { ApplicationDetailDrawer } from "./application-detail-drawer";
 
 type ApplicationRow = {
   id: string;
@@ -33,6 +34,7 @@ export function LiveApplicationsPanel({
   const [applications, setApplications] = useState<ApplicationRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!canRead) {
@@ -116,49 +118,62 @@ export function LiveApplicationsPanel({
   if (!canRead) return null;
 
   return (
-    <section className="panel overflow-hidden">
-      <div className="flex items-center justify-between border-b border-[var(--line)] px-3 py-2">
-        <div>
-          <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
-            Loan applications
-          </h2>
-          <p className="text-[11px] text-slate-500">Live from field agents</p>
-        </div>
-        <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--forest-emerald)]">
-          Live
-        </span>
-      </div>
-
-      {loading ? (
-        <p className="px-3 py-4 text-sm text-slate-500">Loading…</p>
-      ) : error ? (
-        <p className="px-3 py-4 text-sm text-red-600">{error}</p>
-      ) : applications.length === 0 ? (
-        <p className="px-3 py-4 text-sm text-slate-500">
-          No submitted applications yet.
-        </p>
-      ) : (
-        applications.map((item) => (
-          <div
-            key={item.id}
-            className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-3 py-2.5 last:border-b-0"
-          >
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
-                {item.clientName || "Applicant"}
-              </p>
-              <p className="truncate text-xs text-slate-500">
-                {item.phone} · {item.interestRatePercent}% ·{" "}
-                {item.synced ? "Synced" : "Pending sync"}
-              </p>
-            </div>
-            <p className="shrink-0 text-sm font-bold text-[var(--midnight-navy)]">
-              {formatAmount(item.amountRequested)}
+    <>
+      <section className="panel overflow-hidden">
+        <div className="flex items-center justify-between border-b border-[var(--line)] px-3 py-2">
+          <div>
+            <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
+              Loan applications
+            </h2>
+            <p className="text-[11px] text-slate-500">
+              Live from field agents · tap a row for detail
             </p>
           </div>
-        ))
-      )}
-    </section>
+          <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--forest-emerald)]">
+            Live
+          </span>
+        </div>
+
+        {loading ? (
+          <p className="px-3 py-4 text-sm text-slate-500">Loading…</p>
+        ) : error ? (
+          <p className="px-3 py-4 text-sm text-red-600">{error}</p>
+        ) : applications.length === 0 ? (
+          <p className="px-3 py-4 text-sm text-slate-500">
+            No submitted applications yet.
+          </p>
+        ) : (
+          applications.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setSelectedId(item.id)}
+              className="flex w-full items-center justify-between gap-3 border-b border-[var(--line)] px-3 py-2.5 text-left last:border-b-0 hover:bg-[var(--soft-mist)]"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
+                  {item.clientName || "Applicant"}
+                </p>
+                <p className="truncate text-xs text-slate-500">
+                  {item.phone} · {item.interestRatePercent}% ·{" "}
+                  {item.synced ? "Synced" : "Pending sync"}
+                </p>
+              </div>
+              <p className="shrink-0 text-sm font-bold text-[var(--midnight-navy)]">
+                {formatAmount(item.amountRequested)}
+              </p>
+            </button>
+          ))
+        )}
+      </section>
+
+      <ApplicationDetailDrawer
+        applicationId={selectedId}
+        accessToken={accessToken}
+        tokenType={tokenType}
+        onClose={() => setSelectedId(null)}
+      />
+    </>
   );
 }
 

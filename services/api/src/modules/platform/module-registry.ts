@@ -91,8 +91,16 @@ export const REMBEH_MODULES: RembehModuleDefinition[] = [
       'loan.approve',
       'loan.reject',
       'loan.disburse',
+      'loan.product.manage',
     ],
-    menu: [{ label: 'Loans', route: '/loans', surface: 'both' }],
+    menu: [
+      { label: 'Loans', route: '/loans', surface: 'both' },
+      {
+        label: 'Loan products',
+        route: '/settings/loan-products',
+        surface: 'web',
+      },
+    ],
     events: [
       'loan.created',
       'loan.approved',

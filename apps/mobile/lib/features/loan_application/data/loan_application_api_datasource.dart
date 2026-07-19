@@ -156,6 +156,15 @@ class LoanApplicationApiDatasource {
     return _decodeOk(response);
   }
 
+  Future<Map<String, dynamic>> listLoanProducts() async {
+    final session = await _requireSession();
+    final response = await http.get(
+      Uri.parse('$rembehApiBaseUrl/loan-products'),
+      headers: _headers(session),
+    );
+    return _decodeOk(response);
+  }
+
   Future<RembehSession> _requireSession() async {
     final session = await _sessionStore.read();
     if (session == null) {

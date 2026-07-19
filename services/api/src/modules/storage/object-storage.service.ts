@@ -15,6 +15,12 @@ export type PresignPutResult = {
   expiresInSeconds: number;
 };
 
+export type PresignGetResult = {
+  downloadUrl: string;
+  storageKey: string;
+  expiresInSeconds: number;
+};
+
 export type SignatureObjectKeys = {
   assetId: string;
   signaturePngKey: string;
@@ -22,6 +28,17 @@ export type SignatureObjectKeys = {
   metadataJsonKey: string;
 };
 
+/**
+ * Professional per-tenant object layout (never dump at bucket root):
+ *
+ * tenants/{tenantId}/
+ *   meta/company.json
+ *   loans/{loanApplicationId}/
+ *     media/{type}/{uuid}.{ext}
+ *     signatures/{role}/{uuid}/signature.png|strokes.json|metadata.json
+ *     documents/SignedLoanAgreement-{version}.pdf
+ *   products/   (optional future config snapshots)
+ */
 @Injectable()
 export class ObjectStorageService implements OnModuleInit {
   private readonly logger = new Logger(ObjectStorageService.name);
@@ -81,6 +98,56 @@ export class ObjectStorageService implements OnModuleInit {
     this.logger.log(
       `Object storage ready (bucket=${this.bucket}, region=${region}, mode=${endpoint ? 'custom-endpoint' : 'aws-s3'}, auth=${authMode})`,
     );
+  }
+
+  /** tenants/{tenantId}/ */
+  buildTenantPrefix(tenantId: string) {
+    return `tenants/${sanitizePathSegment(tenantId)}/`;
+  }
+
+  /** tenants/{tenantId}/meta/company.json */
+  buildTenantCompanyMetaKey(tenantId: string) {
+    return `${this.buildTenantPrefix(tenantId)}meta/company.json`;
+  }
+
+  /** tenants/{tenantId}/products/{name} */
+  buildTenantProductConfigKey(tenantId: string, name: string) {
+    const safe = sanitizePathSegment(name.toLowerCase());
+    return `${this.buildTenantPrefix(tenantId)}products/${safe}`;
+  }
+
+  /**
+   * Creates the tenant root marker object so every company has a dedicated
+   * prefix from registration day one.
+   */
+  async provisionTenantPrefix(input: {
+    tenantId: string;
+    name: string;
+    country: string;
+    currency: string;
+  }) {
+    const storagePrefix = this.buildTenantPrefix(input.tenantId);
+    const metaKey = this.buildTenantCompanyMetaKey(input.tenantId);
+    const body = JSON.stringify(
+      {
+        tenantId: input.tenantId,
+        name: input.name,
+        country: input.country,
+        currency: input.currency,
+        storagePrefix,
+        provisionedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    );
+
+    await this.upload({
+      storageKey: metaKey,
+      body,
+      mimeType: 'application/json',
+    });
+
+    return { storagePrefix, metaKey };
   }
 
   /**
@@ -158,6 +225,27 @@ export class ObjectStorageService implements OnModuleInit {
 
     return {
       uploadUrl,
+      storageKey: input.storageKey,
+      expiresInSeconds,
+    };
+  }
+
+  async presignGet(input: {
+    storageKey: string;
+    expiresInSeconds?: number;
+  }): Promise<PresignGetResult> {
+    const expiresInSeconds =
+      input.expiresInSeconds ?? this.defaultExpiresInSeconds;
+    const command = new GetObjectCommand({
+      Bucket: this.bucket,
+      Key: input.storageKey,
+    });
+    const downloadUrl = await getSignedUrl(this.presignClient, command, {
+      expiresIn: expiresInSeconds,
+    });
+
+    return {
+      downloadUrl,
       storageKey: input.storageKey,
       expiresInSeconds,
     };

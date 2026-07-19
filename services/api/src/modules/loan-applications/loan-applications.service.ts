@@ -45,6 +45,7 @@ import {
 } from './dto/signature.dto';
 import { UpdateLoanApplicationDto } from './dto/update-loan-application.dto';
 import { VerifyApplicantDto } from './dto/verify-applicant.dto';
+import { computeLoanPricing } from '../loan-products/loan-pricing';
 
 const REQUIRED_MEDIA_ON_SUBMIT: LoanApplicationMediaType[] = [
   LoanApplicationMediaType.PASSPORT,
@@ -135,7 +136,9 @@ export class LoanApplicationsService {
     id: string,
   ): Promise<LoanApplicationResponseContract> {
     const application = await this.requireAccessibleApplication(user, id);
-    return { application: this.toContract(application) };
+    return {
+      application: await this.toContractWithPreviews(application),
+    };
   }
 
   async updateApplication(
@@ -835,6 +838,23 @@ export class LoanApplicationsService {
   private toContract(
     application: LoanApplicationRecord,
   ): LoanApplicationContract {
+    const principalAmount = this.decimalToNumber(application.principalAmount);
+    const interestRatePercent = this.decimalToNumber(
+      application.interestRatePercent,
+    );
+    const processingFee = this.decimalToNumber(application.processingFee);
+    const pricing =
+      principalAmount != null &&
+      interestRatePercent != null &&
+      application.durationDays != null
+        ? computeLoanPricing({
+            principalAmount,
+            interestRatePercent,
+            durationDays: application.durationDays,
+            processingFee,
+          })
+        : null;
+
     return {
       id: application.id,
       branchId: application.branchId,
@@ -848,12 +868,10 @@ export class LoanApplicationsService {
       subCounty: application.subCounty,
       parish: application.parish,
       village: application.village,
-      principalAmount: this.decimalToNumber(application.principalAmount),
-      interestRatePercent: this.decimalToNumber(
-        application.interestRatePercent,
-      ),
+      principalAmount,
+      interestRatePercent,
       durationDays: application.durationDays,
-      processingFee: this.decimalToNumber(application.processingFee),
+      processingFee,
       collateralType: application.collateralType,
       verificationCode: application.verificationCode,
       verifiedAt: application.verifiedAt?.toISOString() ?? null,
@@ -900,6 +918,58 @@ export class LoanApplicationsService {
       signedAgreementKey: application.signedAgreementKey,
       signedAgreementHash: application.signedAgreementHash,
       signedAgreementVersion: application.signedAgreementVersion,
+      pricing,
+    };
+  }
+
+  private async toContractWithPreviews(
+    application: LoanApplicationRecord,
+  ): Promise<LoanApplicationContract> {
+    const base = this.toContract(application);
+
+    const media = await Promise.all(
+      base.media.map(async (item) => {
+        try {
+          const signed = await this.objectStorage.presignGet({
+            storageKey: item.storageKey,
+          });
+          return { ...item, downloadUrl: signed.downloadUrl };
+        } catch {
+          return { ...item, downloadUrl: null };
+        }
+      }),
+    );
+
+    const signatures = await Promise.all(
+      base.signatures.map(async (item) => {
+        try {
+          const signed = await this.objectStorage.presignGet({
+            storageKey: item.signatureStorageKey,
+          });
+          return { ...item, signatureDownloadUrl: signed.downloadUrl };
+        } catch {
+          return { ...item, signatureDownloadUrl: null };
+        }
+      }),
+    );
+
+    let signedAgreementDownloadUrl: string | null = null;
+    if (base.signedAgreementKey) {
+      try {
+        const signed = await this.objectStorage.presignGet({
+          storageKey: base.signedAgreementKey,
+        });
+        signedAgreementDownloadUrl = signed.downloadUrl;
+      } catch {
+        signedAgreementDownloadUrl = null;
+      }
+    }
+
+    return {
+      ...base,
+      media,
+      signatures,
+      signedAgreementDownloadUrl,
     };
   }
 

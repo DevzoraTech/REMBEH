@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 class LoanApplicationDraft {
   // Step 1 — basic
   String surname = '';
@@ -18,6 +20,8 @@ class LoanApplicationDraft {
   bool passportCaptured = false;
   bool ninFrontCaptured = false;
   bool ninBackCaptured = false;
+  /// Local preview bytes keyed by media type (e.g. PASSPORT).
+  final Map<String, Uint8List> mediaPreviews = {};
 
   // Step 3 — loan details
   String principalAmount = '';

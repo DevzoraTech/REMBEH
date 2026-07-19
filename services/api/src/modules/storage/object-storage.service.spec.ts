@@ -44,4 +44,14 @@ describe('ObjectStorageService key builders', () => {
       'tenants/tenant-1/loans/app-1/documents/SignedLoanAgreement-2.pdf',
     );
   });
+
+  it('builds tenant meta under company prefix', () => {
+    expect(service.buildTenantPrefix('tenant-1')).toBe('tenants/tenant-1/');
+    expect(service.buildTenantCompanyMetaKey('tenant-1')).toBe(
+      'tenants/tenant-1/meta/company.json',
+    );
+    expect(service.buildTenantProductConfigKey('tenant-1', 'rates.json')).toBe(
+      'tenants/tenant-1/products/rates_json',
+    );
+  });
 });

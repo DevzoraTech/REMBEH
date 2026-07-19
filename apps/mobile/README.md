@@ -51,8 +51,13 @@ Optional explicit prod defines: `dart_defines.prod.json.example`.
 ## Force a URL (debug against production, etc.)
 
 ```bash
+# Must include /api/v1 (Nest global prefix). Host-only or /api will 404.
+flutter run --dart-define-from-file=dart_defines.prod.json
+# or:
 flutter run --dart-define=REMBEH_API_URL=https://rembeh-api.antikra.com/api/v1
 ```
+
+Hot reload does **not** pick up dart-define / `config.dart` changes — fully stop the app and cold-start (`flutter run` again).
 
 ## Electronic signatures (Syncfusion)
 

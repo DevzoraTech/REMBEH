@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import '../../theme.dart';
@@ -191,6 +193,7 @@ class LoanCaptureRow extends StatelessWidget {
     required this.icon,
     required this.captured,
     required this.onCapture,
+    this.previewBytes,
   });
 
   final String title;
@@ -198,6 +201,79 @@ class LoanCaptureRow extends StatelessWidget {
   final IconData icon;
   final bool captured;
   final VoidCallback onCapture;
+  final Uint8List? previewBytes;
+
+  void _openPreview(BuildContext context) {
+    if (previewBytes == null) return;
+    showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.white,
+        insetPadding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        color: midnightNavy,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close, color: slateText),
+                  ),
+                ],
+              ),
+            ),
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.55,
+              ),
+              child: InteractiveViewer(
+                child: Image.memory(
+                  previewBytes!,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Close'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        onCapture();
+                      },
+                      icon: const Icon(Icons.refresh, size: 16),
+                      label: const Text('Retake'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -209,17 +285,27 @@ class LoanCaptureRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: 56,
-            height: 56,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: sage,
-              border: Border.all(color: line),
-            ),
-            child: Icon(
-              captured ? Icons.check_circle : icon,
-              color: forestEmerald,
+          GestureDetector(
+            onTap: previewBytes != null ? () => _openPreview(context) : null,
+            child: Container(
+              width: 56,
+              height: 56,
+              clipBehavior: Clip.hardEdge,
+              decoration: BoxDecoration(
+                color: sage,
+                border: Border.all(color: line),
+              ),
+              child: previewBytes != null
+                  ? Image.memory(
+                      previewBytes!,
+                      fit: BoxFit.cover,
+                      width: 56,
+                      height: 56,
+                    )
+                  : Icon(
+                      captured ? Icons.check_circle : icon,
+                      color: forestEmerald,
+                    ),
             ),
           ),
           const SizedBox(width: 12),
@@ -250,7 +336,11 @@ class LoanCaptureRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  captured ? 'Captured successfully.' : subtitle,
+                  captured
+                      ? (previewBytes != null
+                          ? 'Preview ready · tap thumbnail to enlarge.'
+                          : 'Captured successfully.')
+                      : subtitle,
                   style: TextStyle(
                     color: captured ? forestEmerald : slateText,
                     fontSize: 12,
@@ -284,12 +374,14 @@ class LoanUploadBox extends StatelessWidget {
     required this.uploaded,
     required this.fileName,
     required this.onUpload,
+    this.previewBytes,
   });
 
   final String label;
   final bool uploaded;
   final String fileName;
   final VoidCallback onUpload;
+  final Uint8List? previewBytes;
 
   @override
   Widget build(BuildContext context) {
@@ -317,12 +409,22 @@ class LoanUploadBox extends StatelessWidget {
               ),
               child: Column(
                 children: [
-                  Icon(
-                    uploaded ? Icons.check_circle : Icons.cloud_upload_outlined,
-                    color: forestEmerald,
-                    size: 28,
-                  ),
-                  const SizedBox(height: 8),
+                  if (previewBytes != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Image.memory(
+                        previewBytes!,
+                        height: 96,
+                        fit: BoxFit.contain,
+                      ),
+                    )
+                  else
+                    Icon(
+                      uploaded ? Icons.check_circle : Icons.cloud_upload_outlined,
+                      color: forestEmerald,
+                      size: 28,
+                    ),
+                  if (previewBytes == null) const SizedBox(height: 8),
                   Text(
                     uploaded ? fileName : 'Upload document',
                     style: const TextStyle(
@@ -332,7 +434,11 @@ class LoanUploadBox extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    uploaded ? 'Tap to replace' : 'PDF, JPG or PNG (Max. 10MB)',
+                    uploaded
+                        ? (previewBytes != null
+                            ? 'Preview shown · tap to replace'
+                            : 'Tap to replace')
+                        : 'PDF, JPG or PNG (Max. 10MB)',
                     style: const TextStyle(color: slateText, fontSize: 11),
                   ),
                 ],

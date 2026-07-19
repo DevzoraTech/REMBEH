@@ -95,3 +95,9 @@ class ListLoanApplicationsUseCase {
   Future<List<LoanApplicationListItem>> call() =>
       _repository.listApplications();
 }
+
+class GetLoanApplicationUseCase {
+  GetLoanApplicationUseCase(this._repository);
+  final LoanApplicationRepository _repository;
+  Future<LoanApplication> call(String id) => _repository.getById(id);
+}

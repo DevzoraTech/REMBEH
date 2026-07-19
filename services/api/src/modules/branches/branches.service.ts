@@ -60,6 +60,8 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'customer.update',
     'loan.create',
     'loan.read',
+    'loan.update',
+    'loan.product.manage',
     'collection.read',
     'report.read',
   ],

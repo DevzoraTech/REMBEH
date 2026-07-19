@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  Percent,
   UserRound,
   X,
 } from "lucide-react";
@@ -59,10 +60,19 @@ export function AppShell({
         icon: Building2,
         enabled: operatorRole === "owner",
       },
+      {
+        href: "/settings/loan-products",
+        label: "Loan products",
+        icon: Percent,
+        enabled:
+          operatorRole === "owner" ||
+          operatorRole === "manager" ||
+          Boolean(session.permissions.includes("loan.product.manage")),
+      },
     ];
 
     return items.filter((item) => item.enabled);
-  }, [operatorRole]);
+  }, [operatorRole, session.permissions]);
 
   useEffect(() => {
     function onPointerDown(event: MouseEvent) {

@@ -38,6 +38,7 @@ import {
 import { NOTIFICATION_EVENTS } from '../notifications/notifications.events';
 import { NotificationsService } from '../notifications/notifications.service';
 import { REMBEH_MODULES } from '../platform/module-registry';
+import { ObjectStorageService } from '../storage/object-storage.service';
 import { AUTH_EVENTS } from './auth.events';
 import {
   WorkspaceEmailOtpResendResponse,
@@ -79,6 +80,7 @@ export class AuthService {
     private readonly jwtTokenService: JwtTokenService,
     private readonly configService: ConfigService,
     private readonly notificationsService: NotificationsService,
+    private readonly objectStorage: ObjectStorageService,
   ) {}
 
   async registerWorkspace(
@@ -125,8 +127,16 @@ export class AuthService {
             country: dto.country.trim(),
             currency: normalizedCurrency,
             status: TenantStatus.PENDING_VERIFICATION,
+            storagePrefix: null,
           },
         });
+
+        const storagePrefix = `tenants/${tenant.id}/`;
+        await tx.tenant.update({
+          where: { id: tenant.id },
+          data: { storagePrefix },
+        });
+        tenant.storagePrefix = storagePrefix;
 
         const owner = await tx.user.create({
           data: {
@@ -227,6 +237,18 @@ export class AuthService {
         this.throwRegistrationConflictFromDatabaseError(error);
         throw error;
       });
+
+    try {
+      await this.objectStorage.provisionTenantPrefix({
+        tenantId: result.tenant.id,
+        name: result.tenant.name,
+        country: result.tenant.country,
+        currency: result.tenant.currency,
+      });
+    } catch {
+      // Registration must succeed even if object storage is temporarily unavailable.
+      // Keys remain under tenants/{tenantId}/ once uploads begin.
+    }
 
     const emailDelivery = await this.notificationsService.sendEmailOtp({
       tenantId: result.tenant.id,
