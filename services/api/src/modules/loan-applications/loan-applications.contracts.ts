@@ -1,0 +1,72 @@
+export type LoanApplicationMediaContract = {
+  id: string;
+  type: string;
+  storageKey: string;
+  mimeType: string;
+  byteSize: number;
+  fileName: string | null;
+  createdAt: string;
+};
+
+export type LoanApplicationGuarantorContract = {
+  fullName: string | null;
+  phone: string | null;
+};
+
+export type LoanApplicationContract = {
+  id: string;
+  branchId: string;
+  officerUserId: string;
+  status: string;
+  surname: string | null;
+  givenNames: string | null;
+  phone: string | null;
+  nationalId: string | null;
+  district: string | null;
+  subCounty: string | null;
+  parish: string | null;
+  village: string | null;
+  principalAmount: number | null;
+  interestRatePercent: number | null;
+  durationDays: number | null;
+  processingFee: number | null;
+  collateralType: string | null;
+  verificationCode: string | null;
+  verifiedAt: string | null;
+  termsConfirmedAt: string | null;
+  submittedAt: string | null;
+  syncedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  clientName: string;
+  synced: boolean;
+  guarantor: LoanApplicationGuarantorContract | null;
+  media: LoanApplicationMediaContract[];
+};
+
+export type LoanApplicationListItemContract = {
+  id: string;
+  clientName: string;
+  phone: string;
+  amountRequested: number;
+  interestRatePercent: number;
+  registeredAt: string;
+  synced: boolean;
+  status: string;
+  branchId: string;
+};
+
+export type LoanApplicationResponseContract = {
+  application: LoanApplicationContract;
+};
+
+export type LoanApplicationListResponseContract = {
+  applications: LoanApplicationListItemContract[];
+};
+
+export type MediaPresignResponseContract = {
+  uploadUrl: string;
+  storageKey: string;
+  expiresInSeconds: number;
+  mediaType: string;
+};

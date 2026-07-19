@@ -1,0 +1,416 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TenantStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum UserStatus {
+  INVITED
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+}
+
+enum LoanStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  DISBURSED
+  CURRENT
+  IN_ARREARS
+  RESTRUCTURED
+  WRITTEN_OFF
+  CLOSED
+}
+
+enum LoanApplicationStatus {
+  DRAFT
+  VERIFIED
+  SUBMITTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum LoanApplicationMediaType {
+  PASSPORT
+  NIN_FRONT
+  NIN_BACK
+  GUARANTOR_NIN_FRONT
+  GUARANTOR_NIN_BACK
+  COLLATERAL_DOC
+  SUPPORTING_DOC
+  OTHER_DOC
+  SIGNATURE_APPLICANT
+  SIGNATURE_GUARANTOR
+  SIGNATURE_OFFICER
+}
+
+enum ModuleStatus {
+  ENABLED
+  TRIAL
+  DISABLED
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSING
+  PUBLISHED
+  FAILED
+}
+
+enum OtpChannel {
+  EMAIL
+  PHONE
+}
+
+enum OtpPurpose {
+  WORKSPACE_REGISTRATION
+  EMPLOYEE_INVITATION
+  PASSWORD_RESET
+}
+
+model Tenant {
+  id                 String         @id @default(uuid()) @db.Uuid
+  name               String
+  registrationNumber String?        @map("registration_number")
+  country            String
+  currency           String
+  status             TenantStatus   @default(PENDING_VERIFICATION)
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+  branches           Branch[]
+  departments        Department[]
+  users              User[]
+  roles              Role[]
+  permissions        Permission[]
+  customers          Customer[]
+  loans              Loan[]
+  loanApplications   LoanApplication[]
+  enabledModules     TenantModule[]
+  auditLogs          AuditLog[]
+  outboxEvents       OutboxEvent[]
+  otpChallenges      OtpChallenge[]
+
+  @@map("tenants")
+}
+
+model Branch {
+  id           String     @id @default(uuid()) @db.Uuid
+  tenantId     String     @map("tenant_id") @db.Uuid
+  name         String
+  address      String
+  gpsLatitude  Decimal?   @map("gps_latitude") @db.Decimal(10, 7)
+  gpsLongitude Decimal?   @map("gps_longitude") @db.Decimal(10, 7)
+  phone        String?
+  workingHours Json?      @map("working_hours")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  tenant       Tenant     @relation(fields: [tenantId], references: [id])
+  users              User[]
+  customers          Customer[]
+  loans              Loan[]
+  loanApplications   LoanApplication[]
+
+  @@index([tenantId, name])
+  @@unique([tenantId, name])
+  @@map("branches")
+}
+
+model Department {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  users     User[]
+
+  @@unique([tenantId, name])
+  @@map("departments")
+}
+
+model User {
+  id            String     @id @default(uuid()) @db.Uuid
+  tenantId      String     @map("tenant_id") @db.Uuid
+  branchId      String?    @map("branch_id") @db.Uuid
+  departmentId  String?    @map("department_id") @db.Uuid
+  email         String     @unique
+  phone         String?    @unique
+  displayName   String     @map("display_name")
+  passwordHash  String?    @map("password_hash")
+  emailVerified Boolean    @default(false) @map("email_verified")
+  phoneVerified Boolean    @default(false) @map("phone_verified")
+  status        UserStatus @default(INVITED)
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+  tenant        Tenant     @relation(fields: [tenantId], references: [id])
+  branch        Branch?    @relation(fields: [branchId], references: [id])
+  department    Department? @relation(fields: [departmentId], references: [id])
+  roles              UserRole[]
+  auditLogs          AuditLog[]
+  otpChallenges      OtpChallenge[]
+  loanApplications   LoanApplication[] @relation("LoanApplicationOfficer")
+
+  @@unique([tenantId, email])
+  @@unique([tenantId, phone])
+  @@index([tenantId, branchId])
+  @@map("users")
+}
+
+model Role {
+  id          String           @id @default(uuid()) @db.Uuid
+  tenantId    String           @map("tenant_id") @db.Uuid
+  name        String
+  description String?
+  isSystem    Boolean          @default(false) @map("is_system")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  tenant      Tenant           @relation(fields: [tenantId], references: [id])
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@unique([tenantId, name])
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(uuid()) @db.Uuid
+  tenantId    String?          @map("tenant_id") @db.Uuid
+  key         String
+  moduleKey   String           @map("module_key")
+  description String?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  tenant      Tenant?          @relation(fields: [tenantId], references: [id])
+  roles       RolePermission[]
+
+  @@unique([tenantId, key])
+  @@index([moduleKey])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String     @map("role_id") @db.Uuid
+  permissionId String     @map("permission_id") @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId String @map("user_id") @db.Uuid
+  roleId String @map("role_id") @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model TenantModule {
+  id        String       @id @default(uuid()) @db.Uuid
+  tenantId  String       @map("tenant_id") @db.Uuid
+  moduleKey String       @map("module_key")
+  status    ModuleStatus @default(ENABLED)
+  enabledAt DateTime     @default(now()) @map("enabled_at")
+  tenant    Tenant       @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, moduleKey])
+  @@map("tenant_modules")
+}
+
+model Customer {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  branchId      String?  @map("branch_id") @db.Uuid
+  fullName      String   @map("full_name")
+  phone         String
+  nationalId    String?  @map("national_id")
+  email         String?
+  verifiedAt    DateTime? @map("verified_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  branch             Branch?  @relation(fields: [branchId], references: [id])
+  loans              Loan[]
+  loanApplications   LoanApplication[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId, branchId])
+  @@index([tenantId, nationalId])
+  @@map("customers")
+}
+
+model Loan {
+  id          String     @id @default(uuid()) @db.Uuid
+  tenantId    String     @map("tenant_id") @db.Uuid
+  branchId    String     @map("branch_id") @db.Uuid
+  customerId  String     @map("customer_id") @db.Uuid
+  principal   Decimal    @db.Decimal(18, 2)
+  balance     Decimal    @db.Decimal(18, 2)
+  currency    String
+  status      LoanStatus @default(DRAFT)
+  approvedAt  DateTime?  @map("approved_at")
+  disbursedAt DateTime?  @map("disbursed_at")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+  tenant      Tenant     @relation(fields: [tenantId], references: [id])
+  branch      Branch     @relation(fields: [branchId], references: [id])
+  customer    Customer   @relation(fields: [customerId], references: [id])
+  application LoanApplication?
+
+  @@index([tenantId, status])
+  @@index([tenantId, branchId])
+  @@index([tenantId, customerId])
+  @@map("loans")
+}
+
+model LoanApplication {
+  id                   String                @id @default(uuid()) @db.Uuid
+  tenantId             String                @map("tenant_id") @db.Uuid
+  branchId             String                @map("branch_id") @db.Uuid
+  officerUserId        String                @map("officer_user_id") @db.Uuid
+  customerId           String?               @map("customer_id") @db.Uuid
+  loanId               String?               @unique @map("loan_id") @db.Uuid
+  status               LoanApplicationStatus @default(DRAFT)
+  surname              String?
+  givenNames           String?               @map("given_names")
+  phone                String?
+  nationalId           String?               @map("national_id")
+  district             String?
+  subCounty            String?               @map("sub_county")
+  parish               String?
+  village              String?
+  principalAmount      Decimal?              @map("principal_amount") @db.Decimal(18, 2)
+  interestRatePercent  Decimal?              @map("interest_rate_percent") @db.Decimal(8, 4)
+  durationDays         Int?                  @map("duration_days")
+  processingFee        Decimal?              @map("processing_fee") @db.Decimal(18, 2)
+  collateralType       String?               @map("collateral_type")
+  smileJobId           String?               @map("smile_job_id")
+  smileResult          Json?                 @map("smile_result")
+  verificationCode     String?               @map("verification_code")
+  verifiedAt           DateTime?             @map("verified_at")
+  termsConfirmedAt     DateTime?             @map("terms_confirmed_at")
+  submittedAt          DateTime?             @map("submitted_at")
+  syncedAt             DateTime?             @map("synced_at")
+  createdAt            DateTime              @default(now()) @map("created_at")
+  updatedAt            DateTime              @updatedAt @map("updated_at")
+  tenant               Tenant                @relation(fields: [tenantId], references: [id])
+  branch               Branch                @relation(fields: [branchId], references: [id])
+  officer              User                  @relation("LoanApplicationOfficer", fields: [officerUserId], references: [id])
+  customer             Customer?             @relation(fields: [customerId], references: [id])
+  loan                 Loan?                 @relation(fields: [loanId], references: [id])
+  guarantor            LoanApplicationGuarantor?
+  media                LoanApplicationMedia[]
+
+  @@index([tenantId, status])
+  @@index([tenantId, branchId])
+  @@index([tenantId, officerUserId])
+  @@index([tenantId, nationalId])
+  @@index([tenantId, phone])
+  @@map("loan_applications")
+}
+
+model LoanApplicationGuarantor {
+  id                String          @id @default(uuid()) @db.Uuid
+  loanApplicationId String          @unique @map("loan_application_id") @db.Uuid
+  fullName          String?         @map("full_name")
+  phone             String?
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+  application       LoanApplication @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+
+  @@map("loan_application_guarantors")
+}
+
+model LoanApplicationMedia {
+  id                String                   @id @default(uuid()) @db.Uuid
+  loanApplicationId String                   @map("loan_application_id") @db.Uuid
+  type              LoanApplicationMediaType
+  storageKey        String                   @map("storage_key")
+  mimeType          String                   @map("mime_type")
+  byteSize          Int                      @map("byte_size")
+  checksum          String?
+  fileName          String?                  @map("file_name")
+  createdAt         DateTime                 @default(now()) @map("created_at")
+  application       LoanApplication          @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+
+  @@unique([loanApplicationId, type])
+  @@index([loanApplicationId])
+  @@map("loan_application_media")
+}
+
+model AuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  actorUserId  String?  @map("actor_user_id") @db.Uuid
+  action       String
+  entityType   String   @map("entity_type")
+  entityId     String?  @map("entity_id")
+  oldValue     Json?    @map("old_value")
+  newValue     Json?    @map("new_value")
+  ipAddress    String?  @map("ip_address")
+  device       String?
+  location     Json?
+  correlationId String? @map("correlation_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  actor        User?    @relation(fields: [actorUserId], references: [id])
+
+  @@index([tenantId, action, createdAt])
+  @@index([tenantId, entityType, entityId])
+  @@map("audit_logs")
+}
+
+model OutboxEvent {
+  id            String       @id @default(uuid()) @db.Uuid
+  tenantId      String       @map("tenant_id") @db.Uuid
+  topic         String
+  aggregateType String       @map("aggregate_type")
+  aggregateId   String       @map("aggregate_id")
+  payload       Json
+  status        OutboxStatus @default(PENDING)
+  attempts      Int          @default(0)
+  nextAttemptAt DateTime?    @map("next_attempt_at")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  publishedAt   DateTime?    @map("published_at")
+  tenant        Tenant       @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, topic, status])
+  @@index([status, nextAttemptAt])
+  @@map("outbox_events")
+}
+
+model OtpChallenge {
+  id          String     @id @default(uuid()) @db.Uuid
+  tenantId    String     @map("tenant_id") @db.Uuid
+  userId      String?    @map("user_id") @db.Uuid
+  channel     OtpChannel
+  purpose     OtpPurpose
+  destination String
+  codeHash    String     @map("code_hash")
+  expiresAt   DateTime   @map("expires_at")
+  consumedAt  DateTime?  @map("consumed_at")
+  attempts    Int        @default(0)
+  sentAt      DateTime?  @map("sent_at")
+  lastSentAt  DateTime?  @map("last_sent_at")
+  resendCount Int        @default(0) @map("resend_count")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  tenant      Tenant     @relation(fields: [tenantId], references: [id])
+  user        User?      @relation(fields: [userId], references: [id])
+
+  @@index([tenantId, purpose, destination])
+  @@index([expiresAt, consumedAt])
+  @@map("otp_challenges")
+}

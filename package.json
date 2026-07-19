@@ -1,0 +1,32 @@
+{
+  "name": "rembeh-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "REMBEH multi-tenant financial operations platform by ANTIKRA Mechanism.",
+  "workspaces": [
+    "apps/web",
+    "services/api"
+  ],
+  "scripts": {
+    "dev:web": "npm --workspace apps/web run dev -- --port 3000",
+    "dev:api": "PORT=4000 npm --workspace services/api run start:dev",
+    "dev:mobile": "cd apps/mobile && flutter run",
+    "dev:deps": "docker compose up -d postgres redis",
+    "dev:stack": "npm run dev:deps && npm run prisma:migrate:deploy && npm run dev:api",
+    "build": "npm --workspaces --if-present run build",
+    "lint": "npm --workspaces --if-present run lint",
+    "typecheck": "npm --workspaces --if-present run typecheck",
+    "test": "npm --workspaces --if-present run test",
+    "prisma:generate": "npm --workspace services/api run prisma:generate",
+    "prisma:migrate": "npm --workspace services/api run prisma:migrate",
+    "prisma:migrate:deploy": "npm --workspace services/api run prisma:migrate:deploy"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "overrides": {
+    "@hono/node-server": "^1.19.13",
+    "postcss": "^8.5.10"
+  }
+}
