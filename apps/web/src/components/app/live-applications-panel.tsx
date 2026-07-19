@@ -9,6 +9,7 @@ import {
   type LoanApplicationEvent,
 } from "../../lib/realtime";
 import { ApplicationDetailDrawer } from "./application-detail-drawer";
+import { DateGroupHeader } from "./date-group-header";
 
 type ApplicationRow = {
   id: string;
@@ -150,33 +151,32 @@ export function LiveApplicationsPanel({
           </p>
         ) : (
           groups.map((group) => (
-            <div key={group.key}>
-              <div className="border-b border-[var(--line)] bg-[var(--soft-mist)] px-3 py-1.5">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                  {group.label}
-                </p>
-              </div>
-              {group.items.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setSelectedId(item.id)}
-                  className="flex w-full items-center justify-between gap-3 border-b border-[var(--line)] px-3 py-2.5 text-left last:border-b-0 hover:bg-[var(--soft-mist)]"
-                >
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
-                      {item.clientName || "Applicant"}
-                    </p>
-                    <p className="truncate text-xs text-slate-500">
-                      {item.phone} · {item.interestRatePercent}% ·{" "}
-                      {formatClock(item.registeredAt)}
-                    </p>
-                  </div>
-                  <p className="shrink-0 text-sm font-bold text-[var(--midnight-navy)]">
-                    {formatAmount(item.amountRequested)}
-                  </p>
-                </button>
-              ))}
+            <div key={group.key} className="relative">
+              <DateGroupHeader label={group.label} count={group.items.length} />
+              <ul className="divide-y divide-[var(--line)]">
+                {group.items.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(item.id)}
+                      className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-[var(--soft-mist)]"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
+                          {item.clientName || "Applicant"}
+                        </p>
+                        <p className="truncate text-xs text-slate-500">
+                          {item.phone} · {item.interestRatePercent}% ·{" "}
+                          {formatClock(item.registeredAt)}
+                        </p>
+                      </div>
+                      <p className="shrink-0 text-sm font-bold tabular-nums text-[var(--midnight-navy)]">
+                        {formatAmount(item.amountRequested)}
+                      </p>
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </div>
           ))
         )}

@@ -401,6 +401,11 @@ export class CollectionsService {
       loan.disbursedAt ??
       loan.application?.submittedAt ??
       loan.createdAt;
+    if (!startDate) {
+      throw new BadRequestException(
+        `Loan ${loan.id} is missing a payment/loan start date.`,
+      );
+    }
     const schedule = computeCollectionSchedule({
       principalAmount: pricing.principalAmount,
       interestRatePercent: pricing.interestRatePercent,
@@ -409,13 +414,16 @@ export class CollectionsService {
       balance: this.decimalToNumber(loan.balance) ?? 0,
       startDate,
     });
-    const last = loan.repayments[0] ?? null;
-    const paymentHistory = loan.repayments.map((row) => ({
+    const repayments = (loan.repayments ?? []).filter(
+      (row) => row.paidAt instanceof Date && !Number.isNaN(row.paidAt.getTime()),
+    );
+    const last = repayments[0] ?? null;
+    const paymentHistory = repayments.map((row) => ({
       id: row.id,
       amount: this.decimalToNumber(row.amount) ?? 0,
       method: row.method,
       paidAt: row.paidAt.toISOString(),
-      recordedByName: row.recordedBy.displayName,
+      recordedByName: row.recordedBy?.displayName ?? 'Agent',
       note: row.note,
     }));
 
@@ -433,7 +441,7 @@ export class CollectionsService {
         ? (this.decimalToNumber(last.amount) ?? 0)
         : 0,
       lastPaymentAt: last?.paidAt.toISOString() ?? null,
-      lastPaymentBy: last?.recordedBy.displayName ?? null,
+      lastPaymentBy: last?.recordedBy?.displayName ?? null,
       expectedToday: schedule.expectedToday,
       carriedForward: schedule.carriedForward,
       dailyInstalment: schedule.dailyInstalment,

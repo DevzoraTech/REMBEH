@@ -188,13 +188,7 @@ export class CollectionsRepository {
       include: {
         recordedBy: true,
         loan: {
-          include: {
-            customer: true,
-            application: true,
-            repayments: {
-              select: { amount: true },
-            },
-          },
+          include: loanWithRelations,
         },
       },
       orderBy: { paidAt: 'desc' },

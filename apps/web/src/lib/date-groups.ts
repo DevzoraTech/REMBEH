@@ -26,11 +26,12 @@ function dayLabel(value: Date, now = new Date()) {
   if (day.getTime() === today.getTime()) return "Today";
   if (day.getTime() === yesterday.getTime()) return "Yesterday";
 
+  const sameYear = day.getFullYear() === today.getFullYear();
   return new Intl.DateTimeFormat("en-UG", {
     weekday: "short",
     day: "numeric",
     month: "short",
-    year: "numeric",
+    ...(sameYear ? {} : { year: "numeric" as const }),
   }).format(day);
 }
 
@@ -41,13 +42,19 @@ export function groupByLocalDate<T>(
 ): DateGroup<T>[] {
   const newestFirst = options?.newestFirst ?? true;
   const sorted = [...items].sort((a, b) => {
-    const ta = new Date(getIso(a)).getTime();
-    const tb = new Date(getIso(b)).getTime();
+    const ta = Date.parse(getIso(a));
+    const tb = Date.parse(getIso(b));
+    const aOk = Number.isFinite(ta);
+    const bOk = Number.isFinite(tb);
+    if (!aOk && !bOk) return 0;
+    if (!aOk) return 1;
+    if (!bOk) return -1;
     return newestFirst ? tb - ta : ta - tb;
   });
 
   const groups: DateGroup<T>[] = [];
   const indexByKey = new Map<string, number>();
+  const now = new Date();
 
   for (const item of sorted) {
     const date = new Date(getIso(item));
@@ -56,7 +63,7 @@ export function groupByLocalDate<T>(
     const existing = indexByKey.get(key);
     if (existing === undefined) {
       indexByKey.set(key, groups.length);
-      groups.push({ key, label: dayLabel(date), items: [item] });
+      groups.push({ key, label: dayLabel(date, now), items: [item] });
     } else {
       groups[existing]!.items.push(item);
     }

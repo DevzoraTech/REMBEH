@@ -5,6 +5,7 @@ import type { Socket } from "socket.io-client";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import { formatClock, groupByLocalDate } from "../../lib/date-groups";
 import { connectRealtime, type PaymentMadeEvent } from "../../lib/realtime";
+import { DateGroupHeader } from "./date-group-header";
 
 type PaymentRow = {
   id: string;
@@ -138,31 +139,29 @@ export function LivePaymentsPanel({
         </p>
       ) : (
         groups.map((group) => (
-          <div key={group.key}>
-            <div className="border-b border-[var(--line)] bg-[var(--soft-mist)] px-3 py-1.5">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                {group.label}
-              </p>
-            </div>
-            {group.items.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-3 py-2.5 last:border-b-0"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
-                    {item.clientName || "Client"}
+          <div key={group.key} className="relative">
+            <DateGroupHeader label={group.label} count={group.items.length} />
+            <ul className="divide-y divide-[var(--line)]">
+              {group.items.map((item) => (
+                <li
+                  key={item.id}
+                  className="flex items-center justify-between gap-3 px-3 py-2.5"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
+                      {item.clientName || "Client"}
+                    </p>
+                    <p className="truncate text-xs text-slate-500">
+                      {item.recordedByName} · {methodLabel(item.method)} ·{" "}
+                      {formatClock(item.recordedAt)}
+                    </p>
+                  </div>
+                  <p className="shrink-0 text-sm font-bold tabular-nums text-[var(--forest-emerald)]">
+                    {formatAmount(item.amount)}
                   </p>
-                  <p className="truncate text-xs text-slate-500">
-                    {item.recordedByName} · {methodLabel(item.method)} ·{" "}
-                    {formatClock(item.recordedAt)}
-                  </p>
-                </div>
-                <p className="shrink-0 text-sm font-bold text-[var(--forest-emerald)]">
-                  {formatAmount(item.amount)}
-                </p>
-              </div>
-            ))}
+                </li>
+              ))}
+            </ul>
           </div>
         ))
       )}
