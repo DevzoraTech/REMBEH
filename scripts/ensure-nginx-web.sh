@@ -103,12 +103,13 @@ if ! grep -vE '^[[:space:]]*#' "$GET_DST" | grep -qE "server_name[[:space:]].*${
   echo "rembeh-get.conf missing server_name ${GET_DOMAIN}" >&2
   exit 1
 fi
-# Marketing must never claim the app or API hostnames
-if grep -vE '^[[:space:]]*#' "$GET_DST" | grep -qE "server_name[[:space:]].*${WEB_DOMAIN}([[:space:]]|;|\$)"; then
+# Marketing must never claim the app or API hostnames (exact token match; avoid
+# false positives on get.rembeh.antikra.com containing rembeh.antikra.com).
+if grep -vE '^[[:space:]]*#' "$GET_DST" | grep -qE "server_name[[:space:]]+(www\.)?${WEB_DOMAIN//./\\.}([[:space:]]|;|\$)"; then
   echo "FATAL: rembeh-get must not include server_name ${WEB_DOMAIN}" >&2
   exit 1
 fi
-if grep -vE '^[[:space:]]*#' "$GET_DST" | grep -qE "server_name[[:space:]].*${API_DOMAIN}([[:space:]]|;|\$)"; then
+if grep -vE '^[[:space:]]*#' "$GET_DST" | grep -qE "server_name[[:space:]]+${API_DOMAIN//./\\.}([[:space:]]|;|\$)"; then
   echo "FATAL: rembeh-get must not include server_name ${API_DOMAIN}" >&2
   exit 1
 fi
