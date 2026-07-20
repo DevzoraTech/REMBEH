@@ -78,6 +78,55 @@ export function ApplicationDetailDrawer({
   const [preview, setPreview] = useState<{ src: string; alt: string } | null>(
     null,
   );
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  async function downloadAgreementPdf() {
+    if (!applicationId || downloadingPdf) return;
+    setDownloadingPdf(true);
+    setDownloadError(null);
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/loan-applications/${applicationId}/agreement.pdf`,
+        {
+          headers: {
+            Authorization: `${tokenType} ${accessToken}`,
+          },
+        },
+      );
+      if (!response.ok) {
+        let message = "Could not download agreement PDF.";
+        try {
+          const payload = (await response.json()) as {
+            message?: string | string[];
+          };
+          message = formatApiError(payload.message);
+        } catch {
+          // non-JSON error body
+        }
+        throw new Error(message);
+      }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const disposition = response.headers.get("content-disposition");
+      const match = disposition?.match(/filename="?([^"]+)"?/i);
+      anchor.href = objectUrl;
+      anchor.download = match?.[1] ?? `loan-agreement-${applicationId}.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (caught) {
+      setDownloadError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not download agreement PDF.",
+      );
+    } finally {
+      setDownloadingPdf(false);
+    }
+  }
 
   useEffect(() => {
     if (!applicationId) {
@@ -373,18 +422,34 @@ export function ApplicationDetailDrawer({
                 )}
               </Section>
 
-              {detail.signedAgreementDownloadUrl ? (
-                <Section title="Signed agreement">
+              <Section title="Loan agreement">
+                <button
+                  type="button"
+                  onClick={() => void downloadAgreementPdf()}
+                  disabled={downloadingPdf}
+                  className="text-sm font-semibold text-[var(--forest-emerald)] disabled:opacity-60"
+                >
+                  {downloadingPdf ? "Preparing PDF…" : "Download PDF"}
+                </button>
+                {downloadError ? (
+                  <p className="mt-2 text-xs text-rose-600">{downloadError}</p>
+                ) : (
+                  <p className="mt-2 text-xs text-slate-500">
+                    Filled from the Loan-agreement DOCX template using this
+                    application&apos;s latest data.
+                  </p>
+                )}
+                {detail.signedAgreementDownloadUrl ? (
                   <a
                     href={detail.signedAgreementDownloadUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-sm font-semibold text-[var(--forest-emerald)]"
+                    className="mt-2 inline-block text-xs text-slate-500 underline"
                   >
-                    Download PDF
+                    Open last stored copy
                   </a>
-                </Section>
-              ) : null}
+                ) : null}
+              </Section>
             </div>
           ) : null}
         </div>

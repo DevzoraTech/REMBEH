@@ -2,10 +2,12 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
@@ -40,6 +42,25 @@ export class LoanApplicationsController {
   @RequirePermissions(LOAN_APPLICATION_PERMISSIONS.create)
   create(@CurrentUser() user: AuthenticatedUser) {
     return this.loanApplicationsService.createDraft(user);
+  }
+
+  /**
+   * Regenerates the filled Loan-agreement DOCX → PDF and streams it.
+   * Always uses latest application / company / guarantor / fine fields.
+   */
+  @Get(':id/agreement.pdf')
+  @RequirePermissions(LOAN_APPLICATION_PERMISSIONS.read)
+  @Header('Cache-Control', 'no-store')
+  async downloadAgreementPdf(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const { pdfBytes, fileName } =
+      await this.loanApplicationsService.getAgreementPdf(user, id);
+    return new StreamableFile(pdfBytes, {
+      type: 'application/pdf',
+      disposition: `attachment; filename="${fileName}"`,
+    });
   }
 
   @Get(':id')

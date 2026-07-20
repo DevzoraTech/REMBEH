@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -92,6 +93,8 @@ const SIGNER_ROLE_TO_MEDIA: Record<
 
 @Injectable()
 export class LoanApplicationsService {
+  private readonly logger = new Logger(LoanApplicationsService.name);
+
   constructor(
     private readonly repository: LoanApplicationsRepository,
     private readonly identityVerification: IdentityVerificationService,
@@ -151,6 +154,30 @@ export class LoanApplicationsService {
     const application = await this.requireAccessibleApplication(user, id);
     return {
       application: await this.toContractWithPreviews(application),
+    };
+  }
+
+  /**
+   * Always regenerates the loan agreement PDF from the DOCX template + latest
+   * application data, stores it, and returns bytes for download.
+   */
+  async getAgreementPdf(
+    user: AuthenticatedUser,
+    id: string,
+  ): Promise<{ pdfBytes: Buffer; fileName: string; contentHash: string }> {
+    const application = await this.requireAccessibleApplication(user, id);
+    const { pdfBytes, contentHash, application: updated } =
+      await this.generateAndStoreSignedAgreement(application);
+
+    const safeName = (updated.surname || updated.givenNames || 'loan')
+      .toString()
+      .replace(/[^a-zA-Z0-9_-]+/g, '-')
+      .slice(0, 40);
+
+    return {
+      pdfBytes: Buffer.from(pdfBytes),
+      fileName: `REMBEH-Loan-Agreement-${safeName}-${updated.id.slice(0, 8)}.pdf`,
+      contentHash,
     };
   }
 
@@ -612,7 +639,8 @@ export class LoanApplicationsService {
     }
 
     if (this.hasAllLockedSignatures(fresh)) {
-      fresh = await this.generateAndStoreSignedAgreement(fresh);
+      const generated = await this.generateAndStoreSignedAgreement(fresh);
+      fresh = generated.application;
     }
 
     const payload = this.toEventPayload(fresh);
@@ -762,16 +790,24 @@ export class LoanApplicationsService {
 
   private async generateAndStoreSignedAgreement(
     application: LoanApplicationRecord,
-  ): Promise<LoanApplicationRecord> {
+  ): Promise<{
+    application: LoanApplicationRecord;
+    pdfBytes: Uint8Array;
+    contentHash: string;
+  }> {
     const latestByRole = REQUIRED_SIGNATURE_ROLES.map((role) => {
       const latest = application.signatures
-        .filter((item) => item.signerRole === role)
+        .filter((item) => item.signerRole === role && item.locked)
         .sort((a, b) => b.version - a.version)[0];
-      return latest!;
-    });
+      return latest ?? null;
+    }).filter(
+      (
+        sig,
+      ): sig is NonNullable<(typeof application.signatures)[number]> =>
+        sig != null,
+    );
 
-    const agreementVersion =
-      (application.signedAgreementVersion ?? 0) + 1;
+    const agreementVersion = (application.signedAgreementVersion ?? 0) + 1;
 
     const parties = await Promise.all(
       latestByRole.map(async (sig) => {
@@ -809,7 +845,7 @@ export class LoanApplicationsService {
           }`
         : null;
 
-    const { pdfBytes, contentHash } = await buildSignedLoanAgreementPdf({
+    const { pdfBytes, contentHash, source } = await buildSignedLoanAgreementPdf({
       applicationId: application.id,
       clientName: this.clientName(application),
       phone: application.phone,
@@ -840,6 +876,10 @@ export class LoanApplicationsService {
       parties,
     });
 
+    this.logger.log(
+      `Loan agreement PDF for ${application.id} generated via ${source}`,
+    );
+
     const storageKey = this.objectStorage.buildSignedAgreementKey({
       tenantId: application.tenantId,
       applicationId: application.id,
@@ -852,12 +892,14 @@ export class LoanApplicationsService {
       mimeType: 'application/pdf',
     });
 
-    return this.repository.updateSignedAgreement({
+    const updated = await this.repository.updateSignedAgreement({
       applicationId: application.id,
       storageKey,
       contentHash,
       version: agreementVersion,
     });
+
+    return { application: updated, pdfBytes, contentHash };
   }
 
   private async requireAccessibleApplication(

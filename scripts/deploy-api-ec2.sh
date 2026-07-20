@@ -28,7 +28,7 @@ deploy_api_on_server() {
   set -euo pipefail
   cd "$REMOTE_DIR"
 
-  echo "==> Runtime check (Node 22+, git)..."
+  echo "==> Runtime check (Node 22+, git, LibreOffice for loan-agreement PDF)..."
   export DEBIAN_FRONTEND=noninteractive
   if ! command -v node >/dev/null 2>&1 || [[ "$(node -v | sed 's/v//;s/\..*//')" -lt 22 ]]; then
     sudo apt-get update -y
@@ -38,6 +38,12 @@ deploy_api_on_server() {
   fi
   if ! command -v git >/dev/null 2>&1; then
     sudo apt-get update -y && sudo apt-get install -y git
+  fi
+  # Headless Writer used to convert filled Loan-agreement DOCX → PDF.
+  if ! command -v soffice >/dev/null 2>&1 && ! command -v libreoffice >/dev/null 2>&1; then
+    echo "==> Installing libreoffice-writer-nogui (DOCX→PDF)..."
+    sudo apt-get update -y
+    sudo apt-get install -y libreoffice-writer-nogui
   fi
   if ! swapon --show | grep -q .; then
     sudo fallocate -l 2G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
