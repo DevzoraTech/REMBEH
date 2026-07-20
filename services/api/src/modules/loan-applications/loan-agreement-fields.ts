@@ -6,6 +6,7 @@
  * | Placeholder                 | System field                                      |
  * |----------------------------|---------------------------------------------------|
  * | <<day>> <<month>> <<year>> | Agreement date (generate time / submit)           |
+ * | <<current_date>>           | Agreement date (footer; same as date label)       |
  * | <<company_name>>           | Tenant name                                       |
  * | <<company_address>>        | Branch address                                    |
  * | <<company_contact>>        | Branch phone                                      |
@@ -79,10 +80,13 @@ export function buildLoanAgreementMergeFields(
     input.collateralType?.trim() ||
     'the purpose agreed with the Lender';
 
+  const dateLabel = formatDate(agreementDate);
+
   return {
     day,
     month,
     year,
+    current_date: dateLabel,
     company_name: input.companyName?.trim() || 'REMBEH Lender',
     company_address: input.companyAddress?.trim() || '—',
     company_contact: input.companyContact?.trim() || '—',

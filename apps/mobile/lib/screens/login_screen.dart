@@ -588,22 +588,17 @@ class _IconField extends StatelessWidget {
         ),
         filled: true,
         fillColor: Colors.white,
-        contentPadding: const EdgeInsets.fromLTRB(0, 11, 10, 11),
+        contentPadding: const EdgeInsets.fromLTRB(0, 12, 12, 12),
         prefixIcon: Padding(
-          padding: const EdgeInsets.only(left: 8, right: 8),
-          child: Container(
-            width: 30,
-            height: 30,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: forestEmerald,
-              borderRadius: rembehBorderRadius(rembehRadiusSm),
-            ),
-            child: Icon(icon, color: Colors.white, size: 16),
+          padding: const EdgeInsets.only(left: 12, right: 8),
+          child: Icon(
+            icon,
+            color: forestEmerald.withValues(alpha: 0.72),
+            size: 17,
           ),
         ),
         prefixIconConstraints: const BoxConstraints(
-          minWidth: 46,
+          minWidth: 40,
           minHeight: 40,
         ),
         suffixIcon: suffix,

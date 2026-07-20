@@ -115,9 +115,7 @@ describe('loan-agreement-pdf.builder', () => {
 
     expect(result.pdfBytes.byteLength).toBeGreaterThan(500);
     expect(result.contentHash).toHaveLength(64);
-    expect(['docx-libreoffice', 'docx-fields-fallback']).toContain(
-      result.source,
-    );
+    expect(result.source).toBe('docx-fields-fallback');
 
     const pdf = await PDFDocument.load(result.pdfBytes);
     const text = extractPdfTextApprox(result.pdfBytes);
@@ -126,7 +124,11 @@ describe('loan-agreement-pdf.builder', () => {
     expect(text).not.toContain('Document version:');
     expect(text).not.toContain('LibreOffice PDF conversion unavailable');
     expect(text).not.toContain('ELECTRONIC SIGNATURES');
-    // template + no extra signature appendix pages
+    expect(text).not.toContain('<<current_date>>');
+    expect(text).toContain('LOAN AGREEMENT');
+    expect(text).toContain('Jane Doe');
+    expect(text).toContain('REMBEH Microfinance');
+    expect(text).toContain('BETWEEN');
     expect(pdf.getPageCount()).toBeLessThanOrEqual(4);
   });
 

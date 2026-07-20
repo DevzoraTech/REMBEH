@@ -58,8 +58,8 @@ export function resolveLoanAgreementTemplatePath(): string {
 }
 
 /**
- * Fills <<merge fields>> in the DOCX template and optionally embeds signature
- * PNGs inline at <<borrower_signature>> / <<guarantor_signature>> / <<agent_signature>>.
+ * Fills <<merge fields>> in the DOCX template (document + headers + footers)
+ * and optionally embeds signature PNGs inline at signature placeholders.
  */
 export async function fillLoanAgreementDocx(
   fields: LoanAgreementMergeFields,
@@ -73,18 +73,26 @@ export async function fillLoanAgreementDocx(
     throw new Error(`DOCX missing ${DOCUMENT_XML}`);
   }
 
-  let xml = await documentFile.async('string');
-  xml = replaceMergeFieldsInXml(xml, fields);
-
-  if (signatures) {
-    const embedded = await embedSignatureImagesInDocx(zip, xml, signatures);
-    xml = embedded.xml;
-  } else {
-    // No images: clear signature placeholders (do not leave raw <<tokens>>).
-    xml = clearSignaturePlaceholders(xml);
+  const xmlParts = listMergeableXmlPaths(zip);
+  for (const partPath of xmlParts) {
+    const part = zip.file(partPath);
+    if (!part) continue;
+    let xml = await part.async('string');
+    xml = coalesceSplitPlaceholders(xml);
+    xml = replaceMergeFieldsInXml(xml, fields);
+    if (partPath === DOCUMENT_XML) {
+      if (signatures) {
+        const embedded = await embedSignatureImagesInDocx(zip, xml, signatures);
+        xml = embedded.xml;
+      } else {
+        xml = clearSignaturePlaceholders(xml);
+      }
+    } else {
+      // Headers/footers never host signature images.
+      xml = clearSignaturePlaceholders(xml);
+    }
+    zip.file(partPath, xml);
   }
-
-  zip.file(DOCUMENT_XML, xml);
 
   return Buffer.from(
     await zip.generateAsync({
@@ -94,20 +102,89 @@ export async function fillLoanAgreementDocx(
   );
 }
 
+/** document.xml plus any header/footer parts that may contain <<placeholders>>. */
+export function listMergeableXmlPaths(zip: JSZip): string[] {
+  const paths = new Set<string>([DOCUMENT_XML]);
+  for (const name of Object.keys(zip.files)) {
+    if (/^word\/(header|footer)\d+\.xml$/i.test(name) && !zip.files[name]?.dir) {
+      paths.add(name);
+    }
+  }
+  return [...paths].sort();
+}
+
 /**
- * Replaces <<key>> placeholders. Placeholders are expected in single w:t runs
- * (template is normalized). Values are XML-escaped.
+ * Word often splits `&lt;&lt;token&gt;&gt;` across adjacent w:t runs (spell-check).
+ * Rebuild w:t values from the joined plain text when a token spans multiple runs.
+ */
+export function coalesceSplitPlaceholders(xml: string): string {
+  const matches = [...xml.matchAll(/<w:t(\b[^>]*)>([^<]*)<\/w:t>/g)];
+  if (matches.length === 0) return xml;
+
+  const texts = matches.map((m) => m[2] ?? '');
+  const joined = texts.join('');
+  // Allow whitespace/newlines Word inserts inside a split token.
+  const looseTokenRe = /&lt;&lt;\s*([A-Za-z0-9_]+)\s*&gt;&gt;/g;
+  const needsFix = [...joined.matchAll(looseTokenRe)].some((m) => {
+    const tight = `&lt;&lt;${m[1]}&gt;&gt;`;
+    return !texts.some((t) => t.includes(tight));
+  });
+  if (!needsFix) return xml;
+
+  // Character → owning w:t index
+  const owner: number[] = [];
+  for (let i = 0; i < texts.length; i += 1) {
+    for (let c = 0; c < texts[i]!.length; c += 1) owner.push(i);
+  }
+
+  const next = [...texts];
+  for (const match of joined.matchAll(looseTokenRe)) {
+    const key = match[1]!;
+    const tight = `&lt;&lt;${key}&gt;&gt;`;
+    if (next.some((t) => t.includes(tight))) continue;
+
+    const start = match.index ?? 0;
+    const end = start + match[0]!.length;
+    const startNode = owner[start];
+    const endNode = owner[end - 1];
+    if (startNode == null || endNode == null) continue;
+
+    let offsetInStart = 0;
+    for (let i = 0; i < start; i += 1) {
+      if (owner[i] === startNode) offsetInStart += 1;
+    }
+    let offsetInEnd = 0;
+    for (let i = 0; i < end; i += 1) {
+      if (owner[i] === endNode) offsetInEnd += 1;
+    }
+
+    const prefix = next[startNode]!.slice(0, offsetInStart);
+    const suffix = next[endNode]!.slice(offsetInEnd);
+    next[startNode] = `${prefix}${tight}`;
+    for (let n = startNode + 1; n <= endNode; n += 1) {
+      next[n] = n === endNode ? suffix : '';
+    }
+  }
+
+  let i = 0;
+  return xml.replace(/<w:t(\b[^>]*)>([^<]*)<\/w:t>/g, (_full, attrs: string) => {
+    const value = next[i] ?? '';
+    i += 1;
+    return `<w:t${attrs}>${value}</w:t>`;
+  });
+}
+
+/**
+ * Replaces <<key>> placeholders. Values are XML-escaped.
  * Signature keys are skipped — they are handled by image embedding / clear.
  */
 export function replaceMergeFieldsInXml(
   xml: string,
   fields: LoanAgreementMergeFields,
 ): string {
-  let result = xml;
+  let result = coalesceSplitPlaceholders(xml);
   for (const [key, value] of Object.entries(fields)) {
-    if (
-      (SIGNATURE_FIELD_KEYS as readonly string[]).includes(key)
-    ) {
+    if ((SIGNATURE_FIELD_KEYS as readonly string[]).includes(key)) {
       continue;
     }
     const escaped = escapeXmlText(value);
@@ -124,7 +201,7 @@ export function replaceMergeFieldsInXml(
 }
 
 export function clearSignaturePlaceholders(xml: string): string {
-  let result = xml;
+  let result = coalesceSplitPlaceholders(xml);
   for (const key of SIGNATURE_FIELD_KEYS) {
     result = result.replace(
       new RegExp(`&lt;&lt;${escapeRegex(key)}&gt;&gt;`, 'g'),

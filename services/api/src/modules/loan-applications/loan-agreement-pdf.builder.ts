@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { inflateSync } from 'node:zlib';
 import {
   PDFDocument,
   StandardFonts,
@@ -20,11 +21,13 @@ import {
 
 /**
  * Builds the signed loan agreement PDF from product-idea-assets/Loan-agreement .docx:
- * 1) Fill <<merge fields>> in the DOCX template
- * 2) Embed signature PNGs inline at <<borrower_signature>> / <<guarantor_signature>> /
- *    <<agent_signature>> placeholders (template signature blocks — no appendix)
- * 3) Convert filled DOCX → PDF via LibreOffice when available
- * 4) Stamp centered brand footer on every page
+ * 1) Fill <<merge fields>> in the DOCX template (document + headers + footers)
+ * 2) Embed signature PNGs inline at signature placeholders
+ * 3) Prefer LibreOffice DOCX→PDF when it produces readable body text
+ * 4) Otherwise render a professional pdf-lib fallback with the same layout
+ *
+ * IMPORTANT: never re-save LibreOffice PDFs through pdf-lib — load/save strips
+ * CID-font body text and yields a near-blank page (signatures/footers only).
  *
  * Field mapping: see loan-agreement-fields.ts and docs/loan-agreement-fields.md
  */
@@ -65,21 +68,74 @@ export async function buildSignedLoanAgreementPdf(
     signatures,
   );
 
-  let bodyPdf: Uint8Array | null = await convertDocxToPdfWithLibreOffice(
-    filledDocx,
-  );
-  let source: SignedAgreementPdfResult['source'] = 'docx-libreoffice';
+  // Default to the reliable pdf-lib layout (always filled). Opt into LibreOffice
+  // with LOAN_AGREEMENT_USE_LIBREOFFICE=1 — LO PDFs are accepted only when body
+  // text is detectable (pdf-lib must never re-save them).
+  const useLibreOffice =
+    process.env.LOAN_AGREEMENT_USE_LIBREOFFICE?.trim() === '1';
+
+  let bodyPdf: Uint8Array | null = null;
+  let source: SignedAgreementPdfResult['source'] = 'docx-fields-fallback';
+
+  if (useLibreOffice) {
+    const loPdf = await convertDocxToPdfWithLibreOffice(filledDocx);
+    if (loPdf && pdfLooksLikeFilledAgreement(loPdf)) {
+      bodyPdf = loPdf;
+      source = 'docx-libreoffice';
+    }
+  }
 
   if (!bodyPdf) {
     source = 'docx-fields-fallback';
     bodyPdf = await buildFallbackPdfFromTemplateFields(fields, signatures);
+    // Fallback draws body; stamp brand footer once (safe — pdf-lib created this PDF).
+    const generatedDate = formatDate(input.agreementDate ?? new Date());
+    bodyPdf = await stampAgreementBrandFooter(bodyPdf, generatedDate);
   }
 
-  const generatedDate = formatDate(input.agreementDate ?? new Date());
-  const stamped = await stampAgreementBrandFooter(bodyPdf, generatedDate);
-  const contentHash = createHash('sha256').update(stamped).digest('hex');
+  const contentHash = createHash('sha256').update(bodyPdf).digest('hex');
+  return { pdfBytes: bodyPdf, contentHash, source };
+}
 
-  return { pdfBytes: stamped, contentHash, source };
+/**
+ * LibreOffice PDFs use CID fonts; pdf-lib load/save often drops that body text.
+ * Detect a usable conversion by looking for known agreement phrases in streams.
+ */
+export function pdfLooksLikeFilledAgreement(pdfBytes: Uint8Array): boolean {
+  const raw = Buffer.from(pdfBytes);
+  // Uncompressed markers / Latin strings LibreOffice may emit
+  if (
+    raw.includes(Buffer.from('LOAN AGREEMENT')) ||
+    raw.includes(Buffer.from('THE REPUBLIC')) ||
+    raw.includes(Buffer.from('BETWEEN')) ||
+    raw.includes(Buffer.from('MONEYLENDERS'))
+  ) {
+    return true;
+  }
+
+  // FlateDecode content: inflate and search
+  const asLatin = raw.toString('latin1');
+  const re = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+    let match: RegExpExecArray | null;
+    let hit = false;
+    while ((match = re.exec(asLatin))) {
+      const payload = Buffer.from(match[1]!, 'binary');
+      try {
+        const dec = inflateSync(payload);
+        const text = dec.toString('latin1');
+        if (
+          /LOAN AGREEMENT|THE REPUBLIC|BETWEEN|MONEYLENDERS|Borrower/i.test(text)
+        ) {
+          hit = true;
+        }
+      } catch {
+        // ignore non-flate streams
+      }
+    }
+
+  if (hit) return true;
+  // Do not trust byte-size heuristics — blank LO PDFs can still embed large fonts.
+  return false;
 }
 
 export function mapPartiesToSignatureImages(
