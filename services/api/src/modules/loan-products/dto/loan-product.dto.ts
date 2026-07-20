@@ -1,4 +1,9 @@
-import { PaymentStartPolicyType } from '@prisma/client';
+import {
+  LoanInterestType,
+  LoanRepaymentFrequency,
+  LoanTermUnit,
+  PaymentStartPolicyType,
+} from '@prisma/client';
 import {
   IsBoolean,
   IsEnum,
@@ -143,4 +148,158 @@ export class UpsertLoanFinePolicyDto {
   @IsOptional()
   @IsUUID()
   branchId?: string;
+}
+
+export class CreateLoanProductTemplateDto {
+  @IsString()
+  @Length(1, 120)
+  name!: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 2000)
+  description?: string;
+
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @Max(1000)
+  interestRatePercent!: number;
+
+  @IsOptional()
+  @IsEnum(LoanInterestType)
+  interestType?: LoanInterestType;
+
+  @IsInt()
+  @Min(1)
+  @Max(3650)
+  termValue!: number;
+
+  @IsEnum(LoanTermUnit)
+  termUnit!: LoanTermUnit;
+
+  @IsEnum(LoanRepaymentFrequency)
+  repaymentFrequency!: LoanRepaymentFrequency;
+
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @Max(100)
+  processingFeePercent!: number;
+
+  /** Penalty % of original principal per fine period after maturity. */
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @Max(1000)
+  penaltyRatePercent!: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(3650)
+  finePeriodDays?: number;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  minLoanAmount?: number;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  maxLoanAmount?: number;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 4000)
+  notes?: string;
+
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  sortOrder?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class UpdateLoanProductTemplateDto {
+  @IsOptional()
+  @IsString()
+  @Length(1, 120)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 2000)
+  description?: string | null;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @Max(1000)
+  interestRatePercent?: number;
+
+  @IsOptional()
+  @IsEnum(LoanInterestType)
+  interestType?: LoanInterestType;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(3650)
+  termValue?: number;
+
+  @IsOptional()
+  @IsEnum(LoanTermUnit)
+  termUnit?: LoanTermUnit;
+
+  @IsOptional()
+  @IsEnum(LoanRepaymentFrequency)
+  repaymentFrequency?: LoanRepaymentFrequency;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @Max(100)
+  processingFeePercent?: number;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 4 })
+  @Min(0)
+  @Max(1000)
+  penaltyRatePercent?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(3650)
+  finePeriodDays?: number;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  minLoanAmount?: number | null;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  maxLoanAmount?: number | null;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 4000)
+  notes?: string | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  sortOrder?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }

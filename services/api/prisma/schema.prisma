@@ -107,6 +107,24 @@ enum PaymentStartPolicyType {
   AFTER_N_DAYS
 }
 
+/// Interest pricing model for loan type templates (REMBEH uses flat).
+enum LoanInterestType {
+  FLAT
+}
+
+enum LoanTermUnit {
+  DAYS
+  MONTHS
+  YEARS
+}
+
+enum LoanRepaymentFrequency {
+  DAILY
+  WEEKLY
+  BIWEEKLY
+  MONTHLY
+}
+
 model Tenant {
   id                 String         @id @default(uuid()) @db.Uuid
   name               String
@@ -130,6 +148,7 @@ model Tenant {
   loanApplications   LoanApplication[]
   loanRateOptions          LoanRateOption[]
   loanPeriodOptions        LoanPeriodOption[]
+  loanProductTemplates     LoanProductTemplate[]
   loanPaymentStartPolicies LoanPaymentStartPolicy[]
   loanFinePolicies         LoanFinePolicy[]
   loanFines                LoanFine[]
@@ -161,6 +180,7 @@ model Branch {
   loanApplications   LoanApplication[]
   loanRateOptions          LoanRateOption[]
   loanPeriodOptions        LoanPeriodOption[]
+  loanProductTemplates     LoanProductTemplate[]
   loanPaymentStartPolicies LoanPaymentStartPolicy[]
   loanFinePolicies         LoanFinePolicy[]
   loanFines                LoanFine[]
@@ -168,6 +188,40 @@ model Branch {
   @@index([tenantId, name])
   @@unique([tenantId, name])
   @@map("branches")
+}
+
+/// Manager-configured loan type template (source of truth for agent capture).
+/// Agents select a template; rate/term/fee/penalty are snapshotted onto the application.
+model LoanProductTemplate {
+  id                    String                  @id @default(uuid()) @db.Uuid
+  tenantId              String                  @map("tenant_id") @db.Uuid
+  branchId              String?                 @map("branch_id") @db.Uuid
+  name                  String
+  description           String?
+  interestRatePercent   Decimal                 @map("interest_rate_percent") @db.Decimal(8, 4)
+  interestType          LoanInterestType        @default(FLAT) @map("interest_type")
+  termValue             Int                     @map("term_value")
+  termUnit              LoanTermUnit            @map("term_unit")
+  repaymentFrequency    LoanRepaymentFrequency  @map("repayment_frequency")
+  processingFeePercent  Decimal                 @map("processing_fee_percent") @db.Decimal(8, 4)
+  /// Penalty rate % of original principal applied each fine period after maturity.
+  penaltyRatePercent    Decimal                 @map("penalty_rate_percent") @db.Decimal(8, 4)
+  /// Days after maturity (and between recurring fines) before a fine applies.
+  finePeriodDays        Int                     @default(10) @map("fine_period_days")
+  minLoanAmount         Decimal?                @map("min_loan_amount") @db.Decimal(18, 2)
+  maxLoanAmount         Decimal?                @map("max_loan_amount") @db.Decimal(18, 2)
+  notes                 String?
+  isActive              Boolean                 @default(true) @map("is_active")
+  sortOrder             Int                     @default(0) @map("sort_order")
+  createdAt             DateTime                @default(now()) @map("created_at")
+  updatedAt             DateTime                @updatedAt @map("updated_at")
+  tenant                Tenant                  @relation(fields: [tenantId], references: [id])
+  branch                Branch?                 @relation(fields: [branchId], references: [id])
+  applications          LoanApplication[]
+
+  @@index([tenantId, branchId, isActive])
+  @@index([tenantId, isActive, sortOrder])
+  @@map("loan_product_templates")
 }
 
 /// Manager-configured interest rates agents select during loan capture.
@@ -526,6 +580,19 @@ model LoanApplication {
   interestRatePercent  Decimal?              @map("interest_rate_percent") @db.Decimal(8, 4)
   durationDays         Int?                  @map("duration_days")
   processingFee          Decimal?              @map("processing_fee") @db.Decimal(18, 2)
+  /// Selected loan type template (nullable for legacy apps).
+  loanProductTemplateId  String?               @map("loan_product_template_id") @db.Uuid
+  /// Snapshotted template fields — edits to the live template do not rewrite history.
+  templateName           String?               @map("template_name")
+  interestType           LoanInterestType?     @map("interest_type")
+  termValue              Int?                  @map("term_value")
+  termUnit               LoanTermUnit?         @map("term_unit")
+  repaymentFrequency     LoanRepaymentFrequency? @map("repayment_frequency")
+  processingFeePercent   Decimal?              @map("processing_fee_percent") @db.Decimal(8, 4)
+  /// Snapshotted penalty % of original principal for overdue fines.
+  penaltyRatePercent     Decimal?              @map("penalty_rate_percent") @db.Decimal(8, 4)
+  finePeriodDays         Int?                  @map("fine_period_days")
+  loanPurpose            String?               @map("loan_purpose")
   collateralType         String?               @map("collateral_type")
   smileJobId             String?               @map("smile_job_id")
   smileResult            Json?                 @map("smile_result")
@@ -543,6 +610,7 @@ model LoanApplication {
   officer                User                  @relation("LoanApplicationOfficer", fields: [officerUserId], references: [id])
   customer               Customer?             @relation(fields: [customerId], references: [id])
   loan                   Loan?                 @relation(fields: [loanId], references: [id])
+  loanProductTemplate    LoanProductTemplate?  @relation(fields: [loanProductTemplateId], references: [id])
   wallet                 ClientWallet?
   guarantor              LoanApplicationGuarantor?
   media                  LoanApplicationMedia[]
@@ -556,6 +624,7 @@ model LoanApplication {
   @@index([tenantId, officerUserId])
   @@index([tenantId, nationalId])
   @@index([tenantId, phone])
+  @@index([tenantId, loanProductTemplateId])
   @@map("loan_applications")
 }
 

@@ -4,13 +4,21 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PaymentStartPolicyType, Prisma } from '@prisma/client';
+import {
+  LoanInterestType,
+  LoanRepaymentFrequency,
+  LoanTermUnit,
+  PaymentStartPolicyType,
+  Prisma,
+} from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import {
   CreateLoanPeriodOptionDto,
+  CreateLoanProductTemplateDto,
   CreateLoanRateOptionDto,
   UpdateLoanPeriodOptionDto,
+  UpdateLoanProductTemplateDto,
   UpdateLoanRateOptionDto,
   UpsertLoanFinePolicyDto,
   UpsertPaymentStartPolicyDto,
@@ -18,12 +26,14 @@ import {
 import {
   LoanFinePolicyContract,
   LoanPeriodOptionContract,
+  LoanProductTemplateContract,
   LoanProductsCatalogContract,
   LoanRateOptionContract,
   PaymentStartPolicyContract,
 } from './loan-products.contracts';
 import { LOAN_PRODUCT_PERMISSIONS } from './loan-products.permissions';
 import { LoanProductsRepository } from './loan-products.repository';
+import { termToDurationDays } from './loan-term';
 import {
   DEFAULT_PAYMENT_START_POLICY,
   computePaymentStartDate,
@@ -45,30 +55,38 @@ export class LoanProductsService {
     const branchId = canSeeAllBranches ? null : user.branchId;
     const activeOnly = !canManage;
 
-    const [rates, periods, paymentStartPolicy, finePolicy] = await Promise.all([
-      this.repository.listRates({
-        tenantId: user.tenantId,
-        branchId,
-        activeOnly,
-        includeTenantWide: true,
-      }),
-      this.repository.listPeriods({
-        tenantId: user.tenantId,
-        branchId,
-        activeOnly,
-        includeTenantWide: true,
-      }),
-      this.repository.findEffectivePaymentStartPolicy({
-        tenantId: user.tenantId,
-        branchId: branchId ?? user.branchId,
-      }),
-      this.repository.findEffectiveFinePolicy({
-        tenantId: user.tenantId,
-        branchId: branchId ?? user.branchId,
-      }),
-    ]);
+    const [templates, rates, periods, paymentStartPolicy, finePolicy] =
+      await Promise.all([
+        this.repository.listTemplates({
+          tenantId: user.tenantId,
+          branchId,
+          activeOnly,
+          includeTenantWide: true,
+        }),
+        this.repository.listRates({
+          tenantId: user.tenantId,
+          branchId,
+          activeOnly,
+          includeTenantWide: true,
+        }),
+        this.repository.listPeriods({
+          tenantId: user.tenantId,
+          branchId,
+          activeOnly,
+          includeTenantWide: true,
+        }),
+        this.repository.findEffectivePaymentStartPolicy({
+          tenantId: user.tenantId,
+          branchId: branchId ?? user.branchId,
+        }),
+        this.repository.findEffectiveFinePolicy({
+          tenantId: user.tenantId,
+          branchId: branchId ?? user.branchId,
+        }),
+      ]);
 
     return {
+      templates: templates.map((item) => this.toTemplateContract(item)),
       rates: rates.map((item) => this.toRateContract(item)),
       periods: periods.map((item) => this.toPeriodContract(item)),
       paymentStartPolicy: paymentStartPolicy
@@ -76,6 +94,217 @@ export class LoanProductsService {
         : this.defaultPaymentStartContract(user.tenantId, branchId),
       finePolicy: finePolicy ? this.toFinePolicyContract(finePolicy) : null,
     };
+  }
+
+  async createTemplate(
+    user: AuthenticatedUser,
+    dto: CreateLoanProductTemplateDto,
+  ) {
+    this.requireManage(user);
+    this.assertTemplateAmounts(dto.minLoanAmount, dto.maxLoanAmount);
+    const branchId = this.resolveWriteBranchId(user, dto.branchId);
+
+    const created = await this.repository.createTemplate({
+      tenant: { connect: { id: user.tenantId } },
+      ...(branchId ? { branch: { connect: { id: branchId } } } : {}),
+      name: dto.name.trim(),
+      description: dto.description?.trim() || null,
+      interestRatePercent: new Prisma.Decimal(dto.interestRatePercent),
+      interestType: dto.interestType ?? 'FLAT',
+      termValue: dto.termValue,
+      termUnit: dto.termUnit,
+      repaymentFrequency: dto.repaymentFrequency,
+      processingFeePercent: new Prisma.Decimal(dto.processingFeePercent),
+      penaltyRatePercent: new Prisma.Decimal(dto.penaltyRatePercent),
+      finePeriodDays: dto.finePeriodDays ?? 10,
+      minLoanAmount:
+        dto.minLoanAmount != null
+          ? new Prisma.Decimal(dto.minLoanAmount.toFixed(2))
+          : null,
+      maxLoanAmount:
+        dto.maxLoanAmount != null
+          ? new Prisma.Decimal(dto.maxLoanAmount.toFixed(2))
+          : null,
+      notes: dto.notes?.trim() || null,
+      sortOrder: dto.sortOrder ?? 0,
+      isActive: dto.isActive ?? true,
+    });
+
+    return { template: this.toTemplateContract(created) };
+  }
+
+  async updateTemplate(
+    user: AuthenticatedUser,
+    id: string,
+    dto: UpdateLoanProductTemplateDto,
+  ) {
+    this.requireManage(user);
+    const existing = await this.repository.findTemplate({
+      tenantId: user.tenantId,
+      id,
+    });
+    if (!existing) {
+      throw new NotFoundException('Loan type template not found.');
+    }
+    this.assertCanEditScopedRow(user, existing.branchId);
+
+    const minAmount =
+      dto.minLoanAmount !== undefined
+        ? dto.minLoanAmount
+        : existing.minLoanAmount != null
+          ? Number(existing.minLoanAmount.toString())
+          : null;
+    const maxAmount =
+      dto.maxLoanAmount !== undefined
+        ? dto.maxLoanAmount
+        : existing.maxLoanAmount != null
+          ? Number(existing.maxLoanAmount.toString())
+          : null;
+    this.assertTemplateAmounts(minAmount, maxAmount);
+
+    const updated = await this.repository.updateTemplate(id, {
+      ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+      ...(dto.description !== undefined
+        ? { description: dto.description?.trim() || null }
+        : {}),
+      ...(dto.interestRatePercent !== undefined
+        ? {
+            interestRatePercent: new Prisma.Decimal(dto.interestRatePercent),
+          }
+        : {}),
+      ...(dto.interestType !== undefined
+        ? { interestType: dto.interestType }
+        : {}),
+      ...(dto.termValue !== undefined ? { termValue: dto.termValue } : {}),
+      ...(dto.termUnit !== undefined ? { termUnit: dto.termUnit } : {}),
+      ...(dto.repaymentFrequency !== undefined
+        ? { repaymentFrequency: dto.repaymentFrequency }
+        : {}),
+      ...(dto.processingFeePercent !== undefined
+        ? {
+            processingFeePercent: new Prisma.Decimal(dto.processingFeePercent),
+          }
+        : {}),
+      ...(dto.penaltyRatePercent !== undefined
+        ? { penaltyRatePercent: new Prisma.Decimal(dto.penaltyRatePercent) }
+        : {}),
+      ...(dto.finePeriodDays !== undefined
+        ? { finePeriodDays: dto.finePeriodDays }
+        : {}),
+      ...(dto.minLoanAmount !== undefined
+        ? {
+            minLoanAmount:
+              dto.minLoanAmount == null
+                ? null
+                : new Prisma.Decimal(dto.minLoanAmount.toFixed(2)),
+          }
+        : {}),
+      ...(dto.maxLoanAmount !== undefined
+        ? {
+            maxLoanAmount:
+              dto.maxLoanAmount == null
+                ? null
+                : new Prisma.Decimal(dto.maxLoanAmount.toFixed(2)),
+          }
+        : {}),
+      ...(dto.notes !== undefined
+        ? { notes: dto.notes?.trim() || null }
+        : {}),
+      ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
+      ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+    });
+
+    return { template: this.toTemplateContract(updated) };
+  }
+
+  async deactivateTemplate(user: AuthenticatedUser, id: string) {
+    this.requireManage(user);
+    const existing = await this.repository.findTemplate({
+      tenantId: user.tenantId,
+      id,
+    });
+    if (!existing) {
+      throw new NotFoundException('Loan type template not found.');
+    }
+    this.assertCanEditScopedRow(user, existing.branchId);
+    const updated = await this.repository.softDeleteTemplate(id);
+    return { template: this.toTemplateContract(updated) };
+  }
+
+  async duplicateTemplate(user: AuthenticatedUser, id: string) {
+    this.requireManage(user);
+    const existing = await this.repository.findTemplate({
+      tenantId: user.tenantId,
+      id,
+    });
+    if (!existing) {
+      throw new NotFoundException('Loan type template not found.');
+    }
+    this.assertCanEditScopedRow(user, existing.branchId);
+
+    const created = await this.repository.createTemplate({
+      tenant: { connect: { id: user.tenantId } },
+      ...(existing.branchId
+        ? { branch: { connect: { id: existing.branchId } } }
+        : {}),
+      name: `${existing.name} (copy)`,
+      description: existing.description,
+      interestRatePercent: existing.interestRatePercent,
+      interestType: existing.interestType,
+      termValue: existing.termValue,
+      termUnit: existing.termUnit,
+      repaymentFrequency: existing.repaymentFrequency,
+      processingFeePercent: existing.processingFeePercent,
+      penaltyRatePercent: existing.penaltyRatePercent,
+      finePeriodDays: existing.finePeriodDays,
+      minLoanAmount: existing.minLoanAmount,
+      maxLoanAmount: existing.maxLoanAmount,
+      notes: existing.notes,
+      sortOrder: existing.sortOrder,
+      isActive: true,
+    });
+
+    return { template: this.toTemplateContract(created) };
+  }
+
+  /** Resolve an active template visible to the agent/manager. */
+  async requireActiveTemplate(input: {
+    tenantId: string;
+    branchId: string | null;
+    templateId: string;
+  }) {
+    const template = await this.repository.findTemplate({
+      tenantId: input.tenantId,
+      id: input.templateId,
+    });
+    if (!template || !template.isActive) {
+      throw new NotFoundException('Loan type template not found.');
+    }
+    if (
+      template.branchId &&
+      input.branchId &&
+      template.branchId !== input.branchId
+    ) {
+      throw new ForbiddenException(
+        'This loan type is not available for your branch.',
+      );
+    }
+    return template;
+  }
+
+  private assertTemplateAmounts(
+    minLoanAmount?: number | null,
+    maxLoanAmount?: number | null,
+  ) {
+    if (
+      minLoanAmount != null &&
+      maxLoanAmount != null &&
+      minLoanAmount > maxLoanAmount
+    ) {
+      throw new BadRequestException(
+        'minLoanAmount cannot be greater than maxLoanAmount.',
+      );
+    }
   }
 
   async createRate(user: AuthenticatedUser, dto: CreateLoanRateOptionDto) {
@@ -325,6 +554,59 @@ export class LoanProductsService {
         'You can only edit products for your branch.',
       );
     }
+  }
+
+  private toTemplateContract(row: {
+    id: string;
+    tenantId: string;
+    branchId: string | null;
+    name: string;
+    description: string | null;
+    interestRatePercent: Prisma.Decimal;
+    interestType: LoanInterestType;
+    termValue: number;
+    termUnit: LoanTermUnit;
+    repaymentFrequency: LoanRepaymentFrequency;
+    processingFeePercent: Prisma.Decimal;
+    penaltyRatePercent: Prisma.Decimal;
+    finePeriodDays: number;
+    minLoanAmount: Prisma.Decimal | null;
+    maxLoanAmount: Prisma.Decimal | null;
+    notes: string | null;
+    isActive: boolean;
+    sortOrder: number;
+    createdAt: Date;
+    updatedAt: Date;
+  }): LoanProductTemplateContract {
+    return {
+      id: row.id,
+      tenantId: row.tenantId,
+      branchId: row.branchId,
+      name: row.name,
+      description: row.description,
+      interestRatePercent: Number(row.interestRatePercent.toString()),
+      interestType: 'FLAT',
+      termValue: row.termValue,
+      termUnit: row.termUnit,
+      durationDays: termToDurationDays(row.termValue, row.termUnit),
+      repaymentFrequency: row.repaymentFrequency,
+      processingFeePercent: Number(row.processingFeePercent.toString()),
+      penaltyRatePercent: Number(row.penaltyRatePercent.toString()),
+      finePeriodDays: row.finePeriodDays,
+      minLoanAmount:
+        row.minLoanAmount != null
+          ? Number(row.minLoanAmount.toString())
+          : null,
+      maxLoanAmount:
+        row.maxLoanAmount != null
+          ? Number(row.maxLoanAmount.toString())
+          : null,
+      notes: row.notes,
+      isActive: row.isActive,
+      sortOrder: row.sortOrder,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    };
   }
 
   private toRateContract(row: {

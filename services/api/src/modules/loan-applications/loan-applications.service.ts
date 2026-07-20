@@ -47,6 +47,12 @@ import {
 import { UpdateLoanApplicationDto } from './dto/update-loan-application.dto';
 import { VerifyApplicantDto } from './dto/verify-applicant.dto';
 import { computeLoanPricing } from '../loan-products/loan-pricing';
+import {
+  computePenaltyFineAmount,
+  computeProcessingFeeAmount,
+  describeLoanTerm,
+  termToDurationDays,
+} from '../loan-products/loan-term';
 import { LoanProductsService } from '../loan-products/loan-products.service';
 
 const REQUIRED_MEDIA_ON_SUBMIT: LoanApplicationMediaType[] = [
@@ -165,6 +171,36 @@ export class LoanApplicationsService {
       dto.phone = phone;
     }
 
+    const templateSnapshot = dto.loanProductTemplateId
+      ? await this.buildTemplateSnapshot(user, dto)
+      : null;
+
+    const principalForFee =
+      dto.principalAmount ??
+      (existing.principalAmount != null
+        ? Number(existing.principalAmount.toString())
+        : null);
+
+    let processingFeeFromTemplate: number | undefined;
+    if (
+      templateSnapshot &&
+      principalForFee != null &&
+      dto.processingFee === undefined
+    ) {
+      processingFeeFromTemplate = computeProcessingFeeAmount({
+        principalAmount: principalForFee,
+        processingFeePercent: templateSnapshot.processingFeePercent,
+      });
+    }
+
+    if (templateSnapshot && principalForFee != null) {
+      this.assertPrincipalWithinTemplate(
+        principalForFee,
+        templateSnapshot.minLoanAmount,
+        templateSnapshot.maxLoanAmount,
+      );
+    }
+
     const updated = await this.repository.updateApplication(existing.id, {
       surname: dto.surname?.trim(),
       givenNames: dto.givenNames?.trim(),
@@ -183,14 +219,49 @@ export class LoanApplicationsService {
         dto.principalAmount !== undefined
           ? new Prisma.Decimal(dto.principalAmount)
           : undefined,
-      interestRatePercent:
-        dto.interestRatePercent !== undefined
-          ? new Prisma.Decimal(dto.interestRatePercent)
-          : undefined,
-      durationDays: dto.durationDays,
-      processingFee:
-        dto.processingFee !== undefined
-          ? new Prisma.Decimal(dto.processingFee)
+      ...(templateSnapshot
+        ? {
+            loanProductTemplate: {
+              connect: { id: templateSnapshot.templateId },
+            },
+            templateName: templateSnapshot.templateName,
+            interestType: templateSnapshot.interestType,
+            termValue: templateSnapshot.termValue,
+            termUnit: templateSnapshot.termUnit,
+            repaymentFrequency: templateSnapshot.repaymentFrequency,
+            processingFeePercent: new Prisma.Decimal(
+              templateSnapshot.processingFeePercent,
+            ),
+            penaltyRatePercent: new Prisma.Decimal(
+              templateSnapshot.penaltyRatePercent,
+            ),
+            finePeriodDays: templateSnapshot.finePeriodDays,
+            interestRatePercent: new Prisma.Decimal(
+              templateSnapshot.interestRatePercent,
+            ),
+            durationDays: templateSnapshot.durationDays,
+            processingFee: new Prisma.Decimal(
+              (
+                dto.processingFee ??
+                processingFeeFromTemplate ??
+                0
+              ).toFixed(2),
+            ),
+          }
+        : {
+            interestRatePercent:
+              dto.interestRatePercent !== undefined
+                ? new Prisma.Decimal(dto.interestRatePercent)
+                : undefined,
+            durationDays: dto.durationDays,
+            processingFee:
+              dto.processingFee !== undefined
+                ? new Prisma.Decimal(dto.processingFee)
+                : undefined,
+          }),
+      loanPurpose:
+        dto.loanPurpose !== undefined
+          ? dto.loanPurpose.trim() || null
           : undefined,
       collateralType: dto.collateralType?.trim(),
       termsConfirmedAt:
@@ -716,23 +787,55 @@ export class LoanApplicationsService {
       }),
     );
 
+    const principalAmount = this.decimalToNumber(application.principalAmount);
+    const penaltyRate = this.decimalToNumber(application.penaltyRatePercent);
+    const fineAmount =
+      principalAmount != null && penaltyRate != null
+        ? computePenaltyFineAmount({
+            principalAmount,
+            penaltyRatePercent: penaltyRate,
+          })
+        : null;
+    const loanDurationLabel =
+      application.termValue != null && application.termUnit != null
+        ? describeLoanTerm(application.termValue, application.termUnit)
+        : application.durationDays != null
+          ? `${application.durationDays} days`
+          : null;
+    const finePeriodLabel =
+      application.finePeriodDays != null
+        ? `${application.finePeriodDays} day${
+            application.finePeriodDays === 1 ? '' : 's'
+          }`
+        : null;
+
     const { pdfBytes, contentHash } = await buildSignedLoanAgreementPdf({
       applicationId: application.id,
       clientName: this.clientName(application),
       phone: application.phone,
       nationalId: application.nationalId,
-      principalAmount: this.decimalToNumber(application.principalAmount),
+      principalAmount,
       interestRatePercent: this.decimalToNumber(
         application.interestRatePercent,
       ),
       durationDays: application.durationDays,
+      loanDurationLabel,
       processingFee: this.decimalToNumber(application.processingFee),
       collateralType: application.collateralType,
+      loanPurpose: application.loanPurpose,
       district: application.district,
       subCounty: application.subCounty,
       parish: application.parish,
       village: application.village,
       guarantorName: application.guarantor?.fullName ?? null,
+      companyName: application.tenant?.name ?? null,
+      companyAddress: application.branch?.address ?? null,
+      companyContact: application.branch?.phone ?? null,
+      agentName: application.officer?.displayName ?? null,
+      agreementDate: new Date(),
+      dateLoanTaken: application.submittedAt ?? new Date(),
+      fineAmount,
+      finePeriodLabel,
       version: agreementVersion,
       parties,
     });
@@ -919,6 +1022,18 @@ export class LoanApplicationsService {
       interestRatePercent,
       durationDays: application.durationDays,
       processingFee,
+      loanProductTemplateId: application.loanProductTemplateId,
+      templateName: application.templateName,
+      interestType: application.interestType,
+      termValue: application.termValue,
+      termUnit: application.termUnit,
+      repaymentFrequency: application.repaymentFrequency,
+      processingFeePercent: this.decimalToNumber(
+        application.processingFeePercent,
+      ),
+      penaltyRatePercent: this.decimalToNumber(application.penaltyRatePercent),
+      finePeriodDays: application.finePeriodDays,
+      loanPurpose: application.loanPurpose,
       collateralType: application.collateralType,
       verificationCode: application.verificationCode,
       verifiedAt: application.verifiedAt?.toISOString() ?? null,
@@ -1032,6 +1147,55 @@ export class LoanApplicationsService {
       signedAgreementDownloadUrl,
       agentPhotoUrl,
     };
+  }
+
+  private async buildTemplateSnapshot(
+    user: AuthenticatedUser,
+    dto: UpdateLoanApplicationDto,
+  ) {
+    const template = await this.loanProducts.requireActiveTemplate({
+      tenantId: user.tenantId,
+      branchId: user.branchId,
+      templateId: dto.loanProductTemplateId!,
+    });
+    return {
+      templateId: template.id,
+      templateName: template.name,
+      interestType: template.interestType,
+      termValue: template.termValue,
+      termUnit: template.termUnit,
+      repaymentFrequency: template.repaymentFrequency,
+      interestRatePercent: Number(template.interestRatePercent.toString()),
+      processingFeePercent: Number(template.processingFeePercent.toString()),
+      penaltyRatePercent: Number(template.penaltyRatePercent.toString()),
+      finePeriodDays: template.finePeriodDays,
+      durationDays: termToDurationDays(template.termValue, template.termUnit),
+      minLoanAmount:
+        template.minLoanAmount != null
+          ? Number(template.minLoanAmount.toString())
+          : null,
+      maxLoanAmount:
+        template.maxLoanAmount != null
+          ? Number(template.maxLoanAmount.toString())
+          : null,
+    };
+  }
+
+  private assertPrincipalWithinTemplate(
+    principal: number,
+    minLoanAmount: number | null,
+    maxLoanAmount: number | null,
+  ) {
+    if (minLoanAmount != null && principal < minLoanAmount) {
+      throw new BadRequestException(
+        `Principal must be at least ${minLoanAmount}.`,
+      );
+    }
+    if (maxLoanAmount != null && principal > maxLoanAmount) {
+      throw new BadRequestException(
+        `Principal must be at most ${maxLoanAmount}.`,
+      );
+    }
   }
 
   private async resolveAgentPaymentStartDate(

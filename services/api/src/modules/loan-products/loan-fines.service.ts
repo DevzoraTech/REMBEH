@@ -10,6 +10,7 @@ import {
   computeLoanDueDate,
   computeMissingFinePeriods,
 } from './loan-fine-schedule';
+import { computePenaltyFineAmount } from './loan-term';
 import { LoanProductsRepository } from './loan-products.repository';
 
 const ACTIVE_FOR_FINES: LoanStatus[] = [
@@ -96,7 +97,14 @@ export class LoanFinesService {
       include: {
         customer: true,
         wallet: true,
-        application: { select: { durationDays: true, paymentStartDate: true } },
+        application: {
+          select: {
+            durationDays: true,
+            paymentStartDate: true,
+            penaltyRatePercent: true,
+            finePeriodDays: true,
+          },
+        },
         fines: { select: { periodIndex: true } },
       },
     });
@@ -104,33 +112,13 @@ export class LoanFinesService {
     let finesApplied = 0;
     let loansTouched = 0;
 
-    // Cache effective policy per branch
+    // Cache effective legacy fixed-amount policy per branch
     const policyCache = new Map<
       string,
       Awaited<ReturnType<LoanProductsRepository['findEffectiveFinePolicy']>>
     >();
 
     for (const loan of loans) {
-      const cacheKey = loan.branchId;
-      if (!policyCache.has(cacheKey)) {
-        policyCache.set(
-          cacheKey,
-          await this.repository.findEffectiveFinePolicy({
-            tenantId,
-            branchId: loan.branchId,
-          }),
-        );
-      }
-      const policy = policyCache.get(cacheKey);
-      if (
-        !policy ||
-        !policy.isActive ||
-        policy.finePeriodDays < 1 ||
-        Number(policy.fineAmount.toString()) <= 0
-      ) {
-        continue;
-      }
-
       const paymentStartDate =
         loan.paymentStartDate ??
         loan.application?.paymentStartDate ??
@@ -141,12 +129,23 @@ export class LoanFinesService {
         continue;
       }
 
+      const fineResolution = await this.resolveFineAmount({
+        tenantId,
+        branchId: loan.branchId,
+        principal: Number(loan.principal.toString()),
+        application: loan.application,
+        policyCache,
+      });
+      if (!fineResolution) {
+        continue;
+      }
+
       const balance = Number(loan.balance.toString());
       const appliedIndexes = loan.fines.map((f) => f.periodIndex);
       const missing = computeMissingFinePeriods({
         paymentStartDate,
         durationDays,
-        finePeriodDays: policy.finePeriodDays,
+        finePeriodDays: fineResolution.finePeriodDays,
         balance,
         asOf,
         appliedPeriodIndexes: appliedIndexes,
@@ -170,8 +169,8 @@ export class LoanFinesService {
           currency: loan.currency,
           periodIndex: period.periodIndex,
           dueAt: period.dueAt,
-          fineAmount: policy.fineAmount,
-          finePeriodDays: policy.finePeriodDays,
+          fineAmount: fineResolution.fineAmount,
+          finePeriodDays: fineResolution.finePeriodDays,
           companyName: undefined,
         });
         if (applied) {
@@ -186,6 +185,76 @@ export class LoanFinesService {
     }
 
     return { tenantId, finesApplied, loansTouched };
+  }
+
+  /**
+   * Prefer application-snapshotted template penalty (% of original principal).
+   * Fall back to branch/tenant fixed fine policy for legacy loans.
+   */
+  private async resolveFineAmount(input: {
+    tenantId: string;
+    branchId: string;
+    principal: number;
+    application: {
+      penaltyRatePercent: Prisma.Decimal | null;
+      finePeriodDays: number | null;
+    } | null;
+    policyCache: Map<
+      string,
+      Awaited<ReturnType<LoanProductsRepository['findEffectiveFinePolicy']>>
+    >;
+  }): Promise<{
+    fineAmount: Prisma.Decimal;
+    finePeriodDays: number;
+  } | null> {
+    const penaltyRate =
+      input.application?.penaltyRatePercent != null
+        ? Number(input.application.penaltyRatePercent.toString())
+        : null;
+    const templateFinePeriodDays = input.application?.finePeriodDays ?? null;
+
+    if (
+      penaltyRate != null &&
+      penaltyRate > 0 &&
+      templateFinePeriodDays != null &&
+      templateFinePeriodDays >= 1
+    ) {
+      const amount = computePenaltyFineAmount({
+        principalAmount: input.principal,
+        penaltyRatePercent: penaltyRate,
+      });
+      if (amount <= 0) {
+        return null;
+      }
+      return {
+        fineAmount: new Prisma.Decimal(amount.toFixed(2)),
+        finePeriodDays: templateFinePeriodDays,
+      };
+    }
+
+    const cacheKey = input.branchId;
+    if (!input.policyCache.has(cacheKey)) {
+      input.policyCache.set(
+        cacheKey,
+        await this.repository.findEffectiveFinePolicy({
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+        }),
+      );
+    }
+    const policy = input.policyCache.get(cacheKey);
+    if (
+      !policy ||
+      !policy.isActive ||
+      policy.finePeriodDays < 1 ||
+      Number(policy.fineAmount.toString()) <= 0
+    ) {
+      return null;
+    }
+    return {
+      fineAmount: policy.fineAmount,
+      finePeriodDays: policy.finePeriodDays,
+    };
   }
 
   private async applyFinePeriod(input: {

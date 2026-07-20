@@ -26,6 +26,8 @@ export const loanApplicationInclude = {
       profilePhotoStorageKey: true,
     },
   },
+  tenant: { select: { id: true, name: true } },
+  branch: { select: { id: true, name: true, address: true, phone: true } },
 } satisfies Prisma.LoanApplicationInclude;
 
 export type LoanApplicationRecord = Prisma.LoanApplicationGetPayload<{

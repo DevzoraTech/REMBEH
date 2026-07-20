@@ -8,6 +8,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   Min,
   MinLength,
@@ -73,6 +74,11 @@ export class UpdateLoanApplicationDto {
   @Min(0)
   principalAmount?: number;
 
+  /** When set, snapshots rate/term/fee/penalty from the template (preferred). */
+  @IsOptional()
+  @IsUUID()
+  loanProductTemplateId?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 4 })
@@ -91,6 +97,10 @@ export class UpdateLoanApplicationDto {
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   processingFee?: number;
+
+  @IsOptional()
+  @IsString()
+  loanPurpose?: string;
 
   @IsOptional()
   @IsString()

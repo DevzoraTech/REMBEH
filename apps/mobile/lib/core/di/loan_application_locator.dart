@@ -33,9 +33,19 @@ class LoanApplicationLocator {
   late final GetLoanApplicationUseCase getById =
       GetLoanApplicationUseCase(repository);
 
-  Future<({List<LoanRateOption> rates, List<LoanPeriodOption> periods})>
-      loadLoanProducts() async {
+  Future<
+      ({
+        List<LoanProductTemplateOption> templates,
+        List<LoanRateOption> rates,
+        List<LoanPeriodOption> periods,
+      })> loadLoanProducts() async {
     final payload = await apiDatasource.listLoanProducts();
+    final templates = ((payload['templates'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .where((item) => item['isActive'] != false)
+        .map(LoanProductTemplateOption.fromJson)
+        .toList();
     final rates = ((payload['rates'] as List?) ?? const [])
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
@@ -59,7 +69,81 @@ class LoanApplicationLocator {
           ),
         )
         .toList();
-    return (rates: rates, periods: periods);
+    return (templates: templates, rates: rates, periods: periods);
+  }
+}
+
+class LoanProductTemplateOption {
+  const LoanProductTemplateOption({
+    required this.id,
+    required this.name,
+    required this.interestRatePercent,
+    required this.interestType,
+    required this.termValue,
+    required this.termUnit,
+    required this.durationDays,
+    required this.repaymentFrequency,
+    required this.processingFeePercent,
+    required this.penaltyRatePercent,
+    required this.finePeriodDays,
+    this.minLoanAmount,
+    this.maxLoanAmount,
+    this.description,
+  });
+
+  final String id;
+  final String name;
+  final double interestRatePercent;
+  final String interestType;
+  final int termValue;
+  final String termUnit;
+  final int durationDays;
+  final String repaymentFrequency;
+  final double processingFeePercent;
+  final double penaltyRatePercent;
+  final int finePeriodDays;
+  final double? minLoanAmount;
+  final double? maxLoanAmount;
+  final String? description;
+
+  String get termLabel {
+    final unit = termUnit.toLowerCase();
+    return '$termValue $unit ($durationDays days)';
+  }
+
+  String get repaymentLabel {
+    switch (repaymentFrequency) {
+      case 'WEEKLY':
+        return 'Weekly';
+      case 'BIWEEKLY':
+        return 'Biweekly';
+      case 'MONTHLY':
+        return 'Monthly';
+      default:
+        return 'Daily';
+    }
+  }
+
+  factory LoanProductTemplateOption.fromJson(Map<String, dynamic> json) {
+    return LoanProductTemplateOption(
+      id: json['id'] as String,
+      name: json['name'] as String? ?? '',
+      interestRatePercent:
+          (json['interestRatePercent'] as num?)?.toDouble() ?? 0,
+      interestType: json['interestType'] as String? ?? 'FLAT',
+      termValue: (json['termValue'] as num?)?.toInt() ?? 0,
+      termUnit: json['termUnit'] as String? ?? 'DAYS',
+      durationDays: (json['durationDays'] as num?)?.toInt() ?? 0,
+      repaymentFrequency: json['repaymentFrequency'] as String? ?? 'DAILY',
+      processingFeePercent:
+          (json['processingFeePercent'] as num?)?.toDouble() ?? 0,
+      penaltyRatePercent:
+          (json['penaltyRatePercent'] as num?)?.toDouble() ?? 0,
+      finePeriodDays: (json['finePeriodDays'] as num?)?.toInt() ?? 10,
+      minLoanAmount: (json['minLoanAmount'] as num?)?.toDouble(),
+      maxLoanAmount: (json['maxLoanAmount'] as num?)?.toDouble(),
+      description: json['description'] as String?,
+    );
   }
 }
 

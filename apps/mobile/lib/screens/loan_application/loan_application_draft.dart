@@ -27,10 +27,13 @@ class LoanApplicationDraft {
   final Map<String, Uint8List> mediaPreviews = {};
 
   // Step 3 — loan details
+  String? loanProductTemplateId;
+  String? loanProductTemplateName;
   String principalAmount = '';
   String? interestRate;
   String? loanDurationDays;
   String processingFee = '';
+  String? repaymentFrequencyLabel;
   String? collateralType;
 
   // Step 4 — guarantor

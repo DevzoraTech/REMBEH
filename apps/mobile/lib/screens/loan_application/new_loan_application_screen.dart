@@ -44,8 +44,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   bool _busy = false;
   bool _bootstrapping = true;
   String? _bootError;
-  List<LoanRateOption> _rateOptions = const [];
-  List<LoanPeriodOption> _periodOptions = const [];
+  List<LoanProductTemplateOption> _templates = const [];
   String? _productsError;
 
   @override
@@ -60,10 +59,9 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       final catalog = await _locator.loadLoanProducts();
       if (!mounted) return;
       setState(() {
-        _rateOptions = catalog.rates;
-        _periodOptions = catalog.periods;
-        _productsError = catalog.rates.isEmpty || catalog.periods.isEmpty
-            ? 'Ask your branch manager to configure loan rates and periods.'
+        _templates = catalog.templates;
+        _productsError = catalog.templates.isEmpty
+            ? 'Ask your branch manager to configure loan type templates.'
             : null;
       });
     } catch (error) {
@@ -72,6 +70,49 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         _productsError = 'Could not load loan products.';
       });
     }
+  }
+
+  LoanProductTemplateOption? _selectedTemplate() {
+    final id = _draft.loanProductTemplateId;
+    if (id == null) return null;
+    for (final template in _templates) {
+      if (template.id == id) return template;
+    }
+    return null;
+  }
+
+  void _applyTemplate(LoanProductTemplateOption template) {
+    final principal =
+        double.tryParse(_principal.text.replaceAll(',', '')) ?? 0;
+    final fee = principal > 0
+        ? (principal * (template.processingFeePercent / 100) * 100).round() /
+            100
+        : 0.0;
+    setState(() {
+      _draft
+        ..loanProductTemplateId = template.id
+        ..loanProductTemplateName = template.name
+        ..interestRate = '${template.interestRatePercent}%'
+        ..loanDurationDays = template.termLabel
+        ..repaymentFrequencyLabel = template.repaymentLabel
+        ..processingFee = fee > 0 ? fee.toStringAsFixed(0) : '';
+      if (fee > 0) {
+        _processingFee.text = fee.toStringAsFixed(0);
+      }
+    });
+  }
+
+  void _recomputeFeeFromTemplate() {
+    final template = _selectedTemplate();
+    if (template == null) return;
+    final principal =
+        double.tryParse(_principal.text.replaceAll(',', '')) ?? 0;
+    if (principal <= 0) return;
+    final fee =
+        (principal * (template.processingFeePercent / 100) * 100).round() /
+            100;
+    _processingFee.text = fee.toStringAsFixed(0);
+    _draft.processingFee = _processingFee.text;
   }
 
   Future<void> _bootstrapDraft() async {
@@ -322,19 +363,32 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     }
 
     if (_step == 3) {
-      final interest = _selectedRatePercent();
-      final duration = _selectedDurationDays();
-      if (interest == null || duration == null) {
-        _showSnack('Select a configured interest rate and loan period.');
+      final template = _selectedTemplate();
+      final principal =
+          double.tryParse(_principal.text.replaceAll(',', '')) ?? 0;
+      if (template == null) {
+        _showSnack('Select a loan type first.');
+        return;
+      }
+      if (template.minLoanAmount != null &&
+          principal < template.minLoanAmount!) {
+        _showSnack(
+          'Principal must be at least ${template.minLoanAmount!.toStringAsFixed(0)}.',
+        );
+        return;
+      }
+      if (template.maxLoanAmount != null &&
+          principal > template.maxLoanAmount!) {
+        _showSnack(
+          'Principal must be at most ${template.maxLoanAmount!.toStringAsFixed(0)}.',
+        );
         return;
       }
       await _locator.saveStep(
         id: id,
         payload: {
-          'principalAmount':
-              double.tryParse(_principal.text.replaceAll(',', '')) ?? 0,
-          'interestRatePercent': interest,
-          'durationDays': duration,
+          'loanProductTemplateId': template.id,
+          'principalAmount': principal,
           'processingFee':
               double.tryParse(_processingFee.text.replaceAll(',', '')) ?? 0,
           'collateralType': _draft.collateralType,
@@ -370,35 +424,15 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     }
   }
 
-  double? _selectedRatePercent() {
-    final label = _draft.interestRate;
-    if (label == null) return null;
-    for (final option in _rateOptions) {
-      if (option.label == label) return option.interestRatePercent;
-    }
-    return null;
-  }
-
-  int? _selectedDurationDays() {
-    final label = _draft.loanDurationDays;
-    if (label == null) return null;
-    for (final option in _periodOptions) {
-      if (option.label == label) return option.durationDays;
-    }
-    return null;
-  }
-
   Map<String, double>? _pricingPreview() {
     final principal =
         double.tryParse(_principal.text.replaceAll(',', '')) ?? 0;
-    final rate = _selectedRatePercent();
-    final days = _selectedDurationDays();
+    final template = _selectedTemplate();
     final fee =
         double.tryParse(_processingFee.text.replaceAll(',', '')) ?? 0;
-    // Duration is still required for the loan term / schedule, but interest is
-    // flat: loanRate = principal × (rate% / 100) — no days/365 factor.
-    if (rate == null || days == null || principal <= 0) return null;
-    final interest = (principal * (rate / 100) * 100).round() / 100;
+    if (template == null || principal <= 0) return null;
+    final interest =
+        (principal * (template.interestRatePercent / 100) * 100).round() / 100;
     final total = ((principal + interest + fee) * 100).round() / 100;
     return {
       'interest': interest,
@@ -591,11 +625,8 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
             _draft.ninFrontCaptured &&
             _draft.ninBackCaptured;
       case 3:
-        return _principal.text.trim().isNotEmpty &&
-            _draft.interestRate != null &&
-            _draft.loanDurationDays != null &&
-            _rateOptions.isNotEmpty &&
-            _periodOptions.isNotEmpty &&
+        return _draft.loanProductTemplateId != null &&
+            _principal.text.trim().isNotEmpty &&
             _processingFee.text.trim().isNotEmpty &&
             _draft.collateralType != null;
       case 4:
@@ -1096,9 +1127,14 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   }
 
   List<Widget> _stepLoanDetails() {
-    final rateLabels = _rateOptions.map((item) => item.label).toList();
-    final periodLabels = _periodOptions.map((item) => item.label).toList();
+    final templateNames = _templates.map((item) => item.name).toList();
+    final selected = _selectedTemplate();
     final pricing = _pricingPreview();
+    final rangeHint = selected == null
+        ? null
+        : selected.minLoanAmount == null && selected.maxLoanAmount == null
+            ? null
+            : 'Allowed: ${selected.minLoanAmount?.toStringAsFixed(0) ?? '—'} – ${selected.maxLoanAmount?.toStringAsFixed(0) ?? '—'}';
 
     return [
       const Text(
@@ -1111,7 +1147,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       ),
       const SizedBox(height: 6),
       const Text(
-        'Provide loan information as agreed with the client.',
+        'Select the loan type first — terms auto-fill. Then enter the principal.',
         style: TextStyle(color: slateText, fontSize: 13),
       ),
       if (_productsError != null) ...[
@@ -1119,6 +1155,70 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         LoanInfoBanner(text: _productsError!),
       ],
       const SizedBox(height: 16),
+      const LoanFieldLabel(label: 'Loan Type'),
+      const SizedBox(height: 6),
+      LoanSelectField(
+        value: _draft.loanProductTemplateName,
+        hint: templateNames.isEmpty
+            ? 'No loan types configured'
+            : 'Select loan type',
+        icon: Icons.category_outlined,
+        options: templateNames,
+        onChanged: (value) {
+          if (value == null) return;
+          for (final template in _templates) {
+            if (template.name == value) {
+              _applyTemplate(template);
+              break;
+            }
+          }
+        },
+      ),
+      if (selected != null) ...[
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: sage,
+            border: Border.all(color: line),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Interest: ${selected.interestRatePercent}% flat',
+                style: const TextStyle(
+                  color: midnightNavy,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Term: ${selected.termLabel}',
+                style: const TextStyle(color: midnightNavy, fontSize: 13),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Repayment: ${selected.repaymentLabel}',
+                style: const TextStyle(color: midnightNavy, fontSize: 13),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Processing fee: ${selected.processingFeePercent}%',
+                style: const TextStyle(color: midnightNavy, fontSize: 13),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Penalty: ${selected.penaltyRatePercent}% of principal every ${selected.finePeriodDays} days after maturity',
+                style: const TextStyle(color: midnightNavy, fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+      ],
+      const SizedBox(height: 14),
       const LoanFieldLabel(label: 'Principal Amount'),
       const SizedBox(height: 6),
       LoanTextField(
@@ -1126,38 +1226,24 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         hint: 'Enter loan amount',
         icon: Icons.payments_outlined,
         keyboardType: TextInputType.number,
-        onChanged: (_) => setState(() {}),
+        onChanged: (_) {
+          _recomputeFeeFromTemplate();
+          setState(() {});
+        },
       ),
-      const SizedBox(height: 14),
-      const LoanFieldLabel(label: 'Interest Rate (%)'),
-      const SizedBox(height: 6),
-      LoanSelectField(
-        value: _draft.interestRate,
-        hint: rateLabels.isEmpty
-            ? 'No rates configured'
-            : 'Select interest rate',
-        icon: Icons.percent,
-        options: rateLabels,
-        onChanged: (value) => setState(() => _draft.interestRate = value),
-      ),
-      const SizedBox(height: 14),
-      const LoanFieldLabel(label: 'Loan Duration (Days)'),
-      const SizedBox(height: 6),
-      LoanSelectField(
-        value: _draft.loanDurationDays,
-        hint: periodLabels.isEmpty
-            ? 'No periods configured'
-            : 'Select duration',
-        icon: Icons.calendar_today_outlined,
-        options: periodLabels,
-        onChanged: (value) => setState(() => _draft.loanDurationDays = value),
-      ),
+      if (rangeHint != null) ...[
+        const SizedBox(height: 6),
+        Text(
+          rangeHint,
+          style: const TextStyle(color: slateText, fontSize: 12),
+        ),
+      ],
       const SizedBox(height: 14),
       const LoanFieldLabel(label: 'Loan Processing Fee'),
       const SizedBox(height: 6),
       LoanTextField(
         controller: _processingFee,
-        hint: 'Enter processing fee',
+        hint: 'Auto-filled from loan type',
         icon: Icons.receipt_long_outlined,
         keyboardType: TextInputType.number,
         onChanged: (_) => setState(() {}),
@@ -1213,7 +1299,8 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       ),
       const SizedBox(height: 14),
       const LoanInfoBanner(
-        text: 'Rates and periods come from your branch manager configuration.',
+        text:
+            'Loan type terms come from your branch manager. Template edits later do not change this application.',
       ),
     ];
   }

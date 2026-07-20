@@ -110,6 +110,8 @@ Daily job at **01:00** (Nest `@nestjs/schedule`). Set timezone on the API host `
 | `CRON_TZ` | e.g. `Africa/Kampala` (preferred). Falls back to `TZ` / host local. |
 | `LOAN_FINES_CRON_ENABLED` | `true` (default) or `false` to pause the cron; managers can still `POST /loan-products/fines/run`. |
 
+**Fine amount source of truth:** loans created from a **loan type template** use snapshotted `penaltyRatePercent` × original principal, every `finePeriodDays` after maturity. Legacy loans without a template snapshot still use the branch/tenant fixed `LoanFinePolicy` amount.
+
 ### Email / invitation links
 
 Set on the server `.env` (never in Git):

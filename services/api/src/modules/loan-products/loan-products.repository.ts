@@ -92,6 +92,49 @@ export class LoanProductsRepository {
     });
   }
 
+  listTemplates(input: {
+    tenantId: string;
+    branchId: string | null;
+    activeOnly: boolean;
+    includeTenantWide: boolean;
+  }) {
+    const branchFilter: Prisma.LoanProductTemplateWhereInput = input.branchId
+      ? input.includeTenantWide
+        ? { OR: [{ branchId: input.branchId }, { branchId: null }] }
+        : { branchId: input.branchId }
+      : {};
+
+    return this.prisma.loanProductTemplate.findMany({
+      where: {
+        tenantId: input.tenantId,
+        ...(input.activeOnly ? { isActive: true } : {}),
+        ...branchFilter,
+      },
+      orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    });
+  }
+
+  createTemplate(data: Prisma.LoanProductTemplateCreateInput) {
+    return this.prisma.loanProductTemplate.create({ data });
+  }
+
+  findTemplate(input: { tenantId: string; id: string }) {
+    return this.prisma.loanProductTemplate.findFirst({
+      where: { tenantId: input.tenantId, id: input.id },
+    });
+  }
+
+  updateTemplate(id: string, data: Prisma.LoanProductTemplateUpdateInput) {
+    return this.prisma.loanProductTemplate.update({ where: { id }, data });
+  }
+
+  softDeleteTemplate(id: string) {
+    return this.prisma.loanProductTemplate.update({
+      where: { id },
+      data: { isActive: false },
+    });
+  }
+
   /** Branch policy preferred over tenant-wide when both exist. */
   async findEffectivePaymentStartPolicy(input: {
     tenantId: string;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Copy, Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "../../../components/app/app-shell";
 import {
@@ -21,22 +21,24 @@ import {
 } from "../../../lib/auth-session";
 import { resolveOperatorRole } from "../../../lib/roles";
 
-type RateOption = {
+type LoanTemplate = {
   id: string;
-  label: string;
+  name: string;
+  description: string | null;
   interestRatePercent: number;
-  isActive: boolean;
-  sortOrder: number;
-  branchId: string | null;
-};
-
-type PeriodOption = {
-  id: string;
-  label: string;
+  interestType: "FLAT";
+  termValue: number;
+  termUnit: "DAYS" | "MONTHS" | "YEARS";
   durationDays: number;
+  repaymentFrequency: "DAILY" | "WEEKLY" | "BIWEEKLY" | "MONTHLY";
+  processingFeePercent: number;
+  penaltyRatePercent: number;
+  finePeriodDays: number;
+  minLoanAmount: number | null;
+  maxLoanAmount: number | null;
+  notes: string | null;
   isActive: boolean;
   sortOrder: number;
-  branchId: string | null;
 };
 
 type PaymentStartPolicy = {
@@ -47,13 +49,86 @@ type PaymentStartPolicy = {
   description: string;
 };
 
-type FinePolicy = {
-  id: string;
-  finePeriodDays: number;
-  fineAmount: number;
-  isActive: boolean;
+type TemplateForm = {
+  name: string;
   description: string;
+  interestRatePercent: string;
+  interestType: "FLAT";
+  termValue: string;
+  termUnit: "DAYS" | "MONTHS" | "YEARS";
+  repaymentFrequency: "DAILY" | "WEEKLY" | "BIWEEKLY" | "MONTHLY";
+  processingFeePercent: string;
+  penaltyRatePercent: string;
+  finePeriodDays: string;
+  minLoanAmount: string;
+  maxLoanAmount: string;
+  notes: string;
 };
+
+const emptyForm = (): TemplateForm => ({
+  name: "",
+  description: "",
+  interestRatePercent: "",
+  interestType: "FLAT",
+  termValue: "",
+  termUnit: "DAYS",
+  repaymentFrequency: "DAILY",
+  processingFeePercent: "",
+  penaltyRatePercent: "",
+  finePeriodDays: "10",
+  minLoanAmount: "",
+  maxLoanAmount: "",
+  notes: "",
+});
+
+function formFromTemplate(template: LoanTemplate): TemplateForm {
+  return {
+    name: template.name,
+    description: template.description ?? "",
+    interestRatePercent: String(template.interestRatePercent),
+    interestType: "FLAT",
+    termValue: String(template.termValue),
+    termUnit: template.termUnit,
+    repaymentFrequency: template.repaymentFrequency,
+    processingFeePercent: String(template.processingFeePercent),
+    penaltyRatePercent: String(template.penaltyRatePercent),
+    finePeriodDays: String(template.finePeriodDays),
+    minLoanAmount:
+      template.minLoanAmount != null ? String(template.minLoanAmount) : "",
+    maxLoanAmount:
+      template.maxLoanAmount != null ? String(template.maxLoanAmount) : "",
+    notes: template.notes ?? "",
+  };
+}
+
+function SelectField(props: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  required?: boolean;
+}) {
+  return (
+    <label className="block text-sm">
+      <span className="mb-1 block text-xs font-semibold text-slate-600">
+        {props.label}
+        {props.required ? " *" : ""}
+      </span>
+      <select
+        className="w-full border border-[var(--line)] bg-white px-3 py-2 text-sm"
+        value={props.value}
+        required={props.required}
+        onChange={(event) => props.onChange(event.target.value)}
+      >
+        {props.options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
 export default function LoanProductsPage() {
   const router = useRouter();
@@ -61,26 +136,20 @@ export default function LoanProductsPage() {
   const [workspace, setWorkspace] = useState<RembehWorkspace | null>(null);
   const [user, setUser] = useState<RembehUser | null>(null);
   const [branch, setBranch] = useState<RembehBranch | null>(null);
-  const [rates, setRates] = useState<RateOption[]>([]);
-  const [periods, setPeriods] = useState<PeriodOption[]>([]);
+  const [templates, setTemplates] = useState<LoanTemplate[]>([]);
   const [paymentStartPolicy, setPaymentStartPolicy] =
     useState<PaymentStartPolicy | null>(null);
-  const [finePolicy, setFinePolicy] = useState<FinePolicy | null>(null);
   const [policyType, setPolicyType] = useState<
     "SAME_DAY" | "NEXT_DAY" | "AFTER_N_DAYS"
   >("NEXT_DAY");
   const [afterDays, setAfterDays] = useState("1");
   const [allowAgentDatePick, setAllowAgentDatePick] = useState(false);
-  const [finePeriodDays, setFinePeriodDays] = useState("10");
-  const [fineAmount, setFineAmount] = useState("");
-  const [fineActive, setFineActive] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [rateLabel, setRateLabel] = useState("");
-  const [ratePercent, setRatePercent] = useState("");
-  const [periodLabel, setPeriodLabel] = useState("");
-  const [periodDays, setPeriodDays] = useState("");
   const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState<TemplateForm>(emptyForm);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [showForm, setShowForm] = useState(false);
 
   useEffect(() => {
     const auth = readAuthState();
@@ -113,25 +182,7 @@ export default function LoanProductsPage() {
 
     void (async () => {
       try {
-        const response = await fetch(`${apiBaseUrl}/loan-products`, {
-          headers: {
-            Authorization: `${auth.session!.tokenType} ${auth.session!.accessToken}`,
-          },
-        });
-        const payload = await readApiJson<{
-          rates?: RateOption[];
-          periods?: PeriodOption[];
-          paymentStartPolicy?: PaymentStartPolicy;
-          finePolicy?: FinePolicy | null;
-          message?: string | string[];
-        }>(response);
-        if (!response.ok) {
-          throw new Error(formatApiError(payload.message));
-        }
-        setRates(payload.rates ?? []);
-        setPeriods(payload.periods ?? []);
-        applyPaymentStartPolicy(payload.paymentStartPolicy ?? null);
-        applyFinePolicy(payload.finePolicy ?? null);
+        await refreshCatalog(auth.session!);
         setError(null);
       } catch (caught) {
         setError(
@@ -158,19 +209,6 @@ export default function LoanProductsPage() {
     setAllowAgentDatePick(policy.allowAgentDatePick);
   }
 
-  function applyFinePolicy(policy: FinePolicy | null) {
-    setFinePolicy(policy);
-    if (!policy) {
-      setFinePeriodDays("10");
-      setFineAmount("");
-      setFineActive(true);
-      return;
-    }
-    setFinePeriodDays(String(policy.finePeriodDays));
-    setFineAmount(String(policy.fineAmount));
-    setFineActive(policy.isActive);
-  }
-
   async function refreshCatalog(activeSession: RembehSession) {
     const response = await fetch(`${apiBaseUrl}/loan-products`, {
       headers: {
@@ -178,37 +216,74 @@ export default function LoanProductsPage() {
       },
     });
     const payload = await readApiJson<{
-      rates?: RateOption[];
-      periods?: PeriodOption[];
+      templates?: LoanTemplate[];
       paymentStartPolicy?: PaymentStartPolicy;
-      finePolicy?: FinePolicy | null;
       message?: string | string[];
     }>(response);
     if (!response.ok) {
       throw new Error(formatApiError(payload.message));
     }
-    setRates(payload.rates ?? []);
-    setPeriods(payload.periods ?? []);
+    setTemplates(payload.templates ?? []);
     applyPaymentStartPolicy(payload.paymentStartPolicy ?? null);
-    applyFinePolicy(payload.finePolicy ?? null);
   }
 
-  async function addRate(event: FormEvent) {
+  function updateForm<K extends keyof TemplateForm>(
+    key: K,
+    value: TemplateForm[K],
+  ) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function openCreate() {
+    setEditingId(null);
+    setForm(emptyForm());
+    setShowForm(true);
+  }
+
+  function openEdit(template: LoanTemplate) {
+    setEditingId(template.id);
+    setForm(formFromTemplate(template));
+    setShowForm(true);
+  }
+
+  function formPayload() {
+    return {
+      name: form.name.trim(),
+      description: form.description.trim() || undefined,
+      interestRatePercent: Number(form.interestRatePercent),
+      interestType: form.interestType,
+      termValue: Number(form.termValue),
+      termUnit: form.termUnit,
+      repaymentFrequency: form.repaymentFrequency,
+      processingFeePercent: Number(form.processingFeePercent),
+      penaltyRatePercent: Number(form.penaltyRatePercent),
+      finePeriodDays: Number(form.finePeriodDays || "10"),
+      minLoanAmount: form.minLoanAmount.trim()
+        ? Number(form.minLoanAmount)
+        : undefined,
+      maxLoanAmount: form.maxLoanAmount.trim()
+        ? Number(form.maxLoanAmount)
+        : undefined,
+      notes: form.notes.trim() || undefined,
+    };
+  }
+
+  async function saveTemplate(event: FormEvent) {
     event.preventDefault();
     if (!session) return;
     setSaving(true);
     setError(null);
     try {
-      const response = await fetch(`${apiBaseUrl}/loan-products/rates`, {
-        method: "POST",
+      const url = editingId
+        ? `${apiBaseUrl}/loan-products/templates/${editingId}`
+        : `${apiBaseUrl}/loan-products/templates`;
+      const response = await fetch(url, {
+        method: editingId ? "PATCH" : "POST",
         headers: {
           Authorization: `${session.tokenType} ${session.accessToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          label: rateLabel.trim() || `${ratePercent}%`,
-          interestRatePercent: Number(ratePercent),
-        }),
+        body: JSON.stringify(formPayload()),
       });
       const payload = await readApiJson<{ message?: string | string[] }>(
         response,
@@ -216,86 +291,61 @@ export default function LoanProductsPage() {
       if (!response.ok) {
         throw new Error(formatApiError(payload.message));
       }
-      setRateLabel("");
-      setRatePercent("");
+      setShowForm(false);
+      setEditingId(null);
+      setForm(emptyForm());
       await refreshCatalog(session);
     } catch (caught) {
       setError(
-        caught instanceof Error ? caught.message : "Could not add rate.",
+        caught instanceof Error
+          ? caught.message
+          : "Could not save loan type template.",
       );
     } finally {
       setSaving(false);
     }
   }
 
-  async function addPeriod(event: FormEvent) {
-    event.preventDefault();
+  async function duplicateTemplate(id: string) {
     if (!session) return;
     setSaving(true);
     setError(null);
-    try {
-      const days = Number(periodDays);
-      const response = await fetch(`${apiBaseUrl}/loan-products/periods`, {
-        method: "POST",
-        headers: {
-          Authorization: `${session.tokenType} ${session.accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          label: periodLabel.trim() || `${days} days`,
-          durationDays: days,
-        }),
-      });
-      const payload = await readApiJson<{ message?: string | string[] }>(
-        response,
-      );
-      if (!response.ok) {
-        throw new Error(formatApiError(payload.message));
-      }
-      setPeriodLabel("");
-      setPeriodDays("");
-      await refreshCatalog(session);
-    } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : "Could not add period.",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function deactivateRate(id: string) {
-    if (!session) return;
-    setSaving(true);
-    try {
-      const response = await fetch(`${apiBaseUrl}/loan-products/rates/${id}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `${session.tokenType} ${session.accessToken}`,
-        },
-      });
-      if (!response.ok) {
-        const payload = await readApiJson<{ message?: string | string[] }>(
-          response,
-        );
-        throw new Error(formatApiError(payload.message));
-      }
-      await refreshCatalog(session);
-    } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : "Could not remove rate.",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function deactivatePeriod(id: string) {
-    if (!session) return;
-    setSaving(true);
     try {
       const response = await fetch(
-        `${apiBaseUrl}/loan-products/periods/${id}`,
+        `${apiBaseUrl}/loan-products/templates/${id}/duplicate`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `${session.tokenType} ${session.accessToken}`,
+          },
+        },
+      );
+      const payload = await readApiJson<{ message?: string | string[] }>(
+        response,
+      );
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      await refreshCatalog(session);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not duplicate template.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteTemplate(id: string) {
+    if (!session) return;
+    if (!window.confirm("Deactivate this loan type template?")) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/loan-products/templates/${id}`,
         {
           method: "DELETE",
           headers: {
@@ -303,16 +353,18 @@ export default function LoanProductsPage() {
           },
         },
       );
+      const payload = await readApiJson<{ message?: string | string[] }>(
+        response,
+      );
       if (!response.ok) {
-        const payload = await readApiJson<{ message?: string | string[] }>(
-          response,
-        );
         throw new Error(formatApiError(payload.message));
       }
       await refreshCatalog(session);
     } catch (caught) {
       setError(
-        caught instanceof Error ? caught.message : "Could not remove period.",
+        caught instanceof Error
+          ? caught.message
+          : "Could not delete template.",
       );
     } finally {
       setSaving(false);
@@ -361,42 +413,7 @@ export default function LoanProductsPage() {
     }
   }
 
-  async function saveFinePolicy(event: FormEvent) {
-    event.preventDefault();
-    if (!session) return;
-    setSaving(true);
-    setError(null);
-    try {
-      const response = await fetch(`${apiBaseUrl}/loan-products/fine-policy`, {
-        method: "POST",
-        headers: {
-          Authorization: `${session.tokenType} ${session.accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          finePeriodDays: Number(finePeriodDays),
-          fineAmount: Number(fineAmount),
-          isActive: fineActive,
-        }),
-      });
-      const payload = await readApiJson<{
-        finePolicy?: FinePolicy;
-        message?: string | string[];
-      }>(response);
-      if (!response.ok) {
-        throw new Error(formatApiError(payload.message));
-      }
-      applyFinePolicy(payload.finePolicy ?? null);
-    } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Could not save overdue fine policy.",
-      );
-    } finally {
-      setSaving(false);
-    }
-  }
+  const activeTemplates = templates.filter((item) => item.isActive);
 
   if (!session) {
     return (
@@ -413,15 +430,22 @@ export default function LoanProductsPage() {
       user={user}
       branch={branch}
     >
-      <div className="mx-auto max-w-4xl space-y-6 px-4 py-6 sm:px-6">
-        <header>
-          <h1 className="font-[family-name:var(--font-display)] text-2xl tracking-[-0.03em] text-[var(--midnight-navy)]">
-            Loan products
-          </h1>
-          <p className="mt-1 text-sm text-slate-600">
-            Configure interest rates, loan periods, when repayments start, and
-            overdue fines after maturity.
-          </p>
+      <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 sm:px-6">
+        <header className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h1 className="font-[family-name:var(--font-display)] text-2xl tracking-[-0.03em] text-[var(--midnight-navy)]">
+              Loan type templates
+            </h1>
+            <p className="mt-1 text-sm text-slate-600">
+              Define loan products agents pick first. Interest, term, fees, and
+              overdue penalty are filled automatically and snapshotted on each
+              application.
+            </p>
+          </div>
+          <PrimaryButton type="button" onClick={openCreate} disabled={saving}>
+            <Plus className="size-3.5" />
+            New template
+          </PrimaryButton>
         </header>
 
         <FormError error={error} />
@@ -429,59 +453,273 @@ export default function LoanProductsPage() {
         {loading ? (
           <p className="text-sm text-slate-500">Loading catalog…</p>
         ) : (
-          <div className="grid gap-6 lg:grid-cols-2">
-            <section className="panel p-4 lg:col-span-2">
-              <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
-                Overdue fine policy
-              </h2>
-              <p className="mt-1 text-xs text-slate-500">
-                After the loan period ends, if the balance is still unpaid for
-                the fine period, add the fine amount to outstanding. Repeats
-                every fine period until paid.
-              </p>
-              <form
-                onSubmit={saveFinePolicy}
-                className="mt-3 grid gap-3 sm:grid-cols-2"
-              >
-                <TextField
-                  label="Fine period (days)"
-                  value={finePeriodDays}
-                  onChange={setFinePeriodDays}
-                  placeholder="10"
-                  required
-                />
-                <TextField
-                  label="Fine amount"
-                  value={fineAmount}
-                  onChange={setFineAmount}
-                  placeholder="5000"
-                  required
-                />
-                <label className="flex items-start gap-2 text-sm sm:col-span-2">
-                  <input
-                    type="checkbox"
-                    className="mt-1"
-                    checked={fineActive}
-                    onChange={(event) => setFineActive(event.target.checked)}
+          <div className="space-y-6">
+            {showForm ? (
+              <section className="panel p-4">
+                <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
+                  {editingId
+                    ? "Edit loan product template"
+                    : "New loan product template"}
+                </h2>
+                <form
+                  onSubmit={saveTemplate}
+                  className="mt-3 grid gap-3 sm:grid-cols-2"
+                >
+                  <TextField
+                    label="Template / Loan type name"
+                    value={form.name}
+                    onChange={(value) => updateForm("name", value)}
+                    placeholder="e.g. 30-day working capital"
+                    required
                   />
-                  <span>Enable overdue fines for this branch / workspace</span>
-                </label>
-                {finePolicy ? (
+                  <SelectField
+                    label="Interest Type"
+                    value={form.interestType}
+                    onChange={() => updateForm("interestType", "FLAT")}
+                    options={[{ value: "FLAT", label: "Flat" }]}
+                    required
+                  />
+                  <label className="block text-sm sm:col-span-2">
+                    <span className="mb-1 block text-xs font-semibold text-slate-600">
+                      Description
+                    </span>
+                    <textarea
+                      className="min-h-20 w-full border border-[var(--line)] bg-white px-3 py-2 text-sm"
+                      value={form.description}
+                      onChange={(event) =>
+                        updateForm("description", event.target.value)
+                      }
+                      placeholder="Optional product description for agents"
+                    />
+                  </label>
+                  <TextField
+                    label="Interest Rate (%)"
+                    value={form.interestRatePercent}
+                    onChange={(value) =>
+                      updateForm("interestRatePercent", value)
+                    }
+                    placeholder="12"
+                    required
+                  />
+                  <TextField
+                    label="Processing Fee (%)"
+                    value={form.processingFeePercent}
+                    onChange={(value) =>
+                      updateForm("processingFeePercent", value)
+                    }
+                    placeholder="2"
+                    required
+                  />
+                  <TextField
+                    label="Loan Term"
+                    value={form.termValue}
+                    onChange={(value) => updateForm("termValue", value)}
+                    placeholder="30"
+                    required
+                  />
+                  <SelectField
+                    label="Term Unit"
+                    value={form.termUnit}
+                    onChange={(value) =>
+                      updateForm(
+                        "termUnit",
+                        value as TemplateForm["termUnit"],
+                      )
+                    }
+                    options={[
+                      { value: "DAYS", label: "Days" },
+                      { value: "MONTHS", label: "Months" },
+                      { value: "YEARS", label: "Years" },
+                    ]}
+                    required
+                  />
+                  <SelectField
+                    label="Repayment Frequency"
+                    value={form.repaymentFrequency}
+                    onChange={(value) =>
+                      updateForm(
+                        "repaymentFrequency",
+                        value as TemplateForm["repaymentFrequency"],
+                      )
+                    }
+                    options={[
+                      { value: "DAILY", label: "Daily" },
+                      { value: "WEEKLY", label: "Weekly" },
+                      { value: "BIWEEKLY", label: "Biweekly" },
+                      { value: "MONTHLY", label: "Monthly" },
+                    ]}
+                    required
+                  />
+                  <TextField
+                    label="Penalty Rate (%)"
+                    value={form.penaltyRatePercent}
+                    onChange={(value) =>
+                      updateForm("penaltyRatePercent", value)
+                    }
+                    placeholder="5"
+                    required
+                  />
+                  <TextField
+                    label="Fine period (days)"
+                    value={form.finePeriodDays}
+                    onChange={(value) => updateForm("finePeriodDays", value)}
+                    placeholder="10"
+                    required
+                  />
+                  <TextField
+                    label="Min Loan Amount"
+                    value={form.minLoanAmount}
+                    onChange={(value) => updateForm("minLoanAmount", value)}
+                    placeholder="Optional"
+                  />
+                  <TextField
+                    label="Max Loan Amount"
+                    value={form.maxLoanAmount}
+                    onChange={(value) => updateForm("maxLoanAmount", value)}
+                    placeholder="Optional"
+                  />
+                  <label className="block text-sm sm:col-span-2">
+                    <span className="mb-1 block text-xs font-semibold text-slate-600">
+                      Notes (internal)
+                    </span>
+                    <textarea
+                      className="min-h-16 w-full border border-[var(--line)] bg-white px-3 py-2 text-sm"
+                      value={form.notes}
+                      onChange={(event) =>
+                        updateForm("notes", event.target.value)
+                      }
+                      placeholder="Internal notes — not shown to borrowers"
+                    />
+                  </label>
                   <p className="text-xs text-slate-500 sm:col-span-2">
-                    Current: {finePolicy.description}
+                    Overdue fine = penalty rate % of original principal, charged
+                    every fine period days after maturity while unpaid.
                   </p>
-                ) : (
-                  <p className="text-xs text-slate-500 sm:col-span-2">
-                    No fine policy set — overdue fines are disabled.
-                  </p>
-                )}
-                <PrimaryButton type="submit" disabled={saving}>
-                  Save fine policy
-                </PrimaryButton>
-              </form>
+                  <div className="flex flex-wrap gap-2 sm:col-span-2">
+                    <PrimaryButton type="submit" disabled={saving}>
+                      {editingId ? "Save changes" : "Create template"}
+                    </PrimaryButton>
+                    <button
+                      type="button"
+                      className="btn btn-ghost h-10 px-3 text-sm"
+                      onClick={() => {
+                        setShowForm(false);
+                        setEditingId(null);
+                      }}
+                      disabled={saving}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </section>
+            ) : null}
+
+            <section className="space-y-3">
+              <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
+                Active templates
+              </h2>
+              {activeTemplates.length === 0 ? (
+                <div className="panel p-6 text-sm text-slate-500">
+                  No active loan type templates yet. Create one so agents can
+                  start new loans from a product.
+                </div>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {activeTemplates.map((template) => (
+                    <article key={template.id} className="panel p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-base font-bold text-[var(--midnight-navy)]">
+                            {template.name}
+                          </h3>
+                          {template.description ? (
+                            <p className="mt-1 text-xs text-slate-600">
+                              {template.description}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                        <div>
+                          <dt className="text-slate-500">Interest</dt>
+                          <dd className="font-semibold text-[var(--midnight-navy)]">
+                            {template.interestRatePercent}% flat
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-slate-500">Term</dt>
+                          <dd className="font-semibold text-[var(--midnight-navy)]">
+                            {template.termValue}{" "}
+                            {template.termUnit.toLowerCase()} (
+                            {template.durationDays}d)
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-slate-500">Fee</dt>
+                          <dd className="font-semibold text-[var(--midnight-navy)]">
+                            {template.processingFeePercent}%
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-slate-500">Penalty</dt>
+                          <dd className="font-semibold text-[var(--midnight-navy)]">
+                            {template.penaltyRatePercent}% /{" "}
+                            {template.finePeriodDays}d
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-slate-500">Repayment</dt>
+                          <dd className="font-semibold text-[var(--midnight-navy)]">
+                            {template.repaymentFrequency.toLowerCase()}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-slate-500">Amount range</dt>
+                          <dd className="font-semibold text-[var(--midnight-navy)]">
+                            {template.minLoanAmount != null ||
+                            template.maxLoanAmount != null
+                              ? `${template.minLoanAmount ?? "—"} – ${template.maxLoanAmount ?? "—"}`
+                              : "No limits"}
+                          </dd>
+                        </div>
+                      </dl>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="btn btn-ghost h-8 px-2 text-xs"
+                          onClick={() => openEdit(template)}
+                          disabled={saving}
+                        >
+                          <Pencil className="size-3.5" />
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-ghost h-8 px-2 text-xs"
+                          onClick={() => void duplicateTemplate(template.id)}
+                          disabled={saving}
+                        >
+                          <Copy className="size-3.5" />
+                          Duplicate
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-ghost h-8 px-2 text-xs text-red-600"
+                          onClick={() => void deleteTemplate(template.id)}
+                          disabled={saving}
+                        >
+                          <Trash2 className="size-3.5" />
+                          Delete
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
             </section>
 
-            <section className="panel p-4 lg:col-span-2">
+            <section className="panel p-4">
               <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
                 Payment start policy
               </h2>
@@ -493,27 +731,20 @@ export default function LoanProductsPage() {
                 onSubmit={savePaymentStartPolicy}
                 className="mt-3 grid gap-3 sm:grid-cols-2"
               >
-                <label className="block text-sm">
-                  <span className="mb-1 block text-xs font-semibold text-slate-600">
-                    When repayments start
-                  </span>
-                  <select
-                    className="w-full border border-[var(--line)] bg-white px-3 py-2 text-sm"
-                    value={policyType}
-                    onChange={(event) =>
-                      setPolicyType(
-                        event.target.value as
-                          | "SAME_DAY"
-                          | "NEXT_DAY"
-                          | "AFTER_N_DAYS",
-                      )
-                    }
-                  >
-                    <option value="SAME_DAY">Same day</option>
-                    <option value="NEXT_DAY">Next day</option>
-                    <option value="AFTER_N_DAYS">After N days</option>
-                  </select>
-                </label>
+                <SelectField
+                  label="When repayments start"
+                  value={policyType}
+                  onChange={(value) =>
+                    setPolicyType(
+                      value as "SAME_DAY" | "NEXT_DAY" | "AFTER_N_DAYS",
+                    )
+                  }
+                  options={[
+                    { value: "SAME_DAY", label: "Same day" },
+                    { value: "NEXT_DAY", label: "Next day" },
+                    { value: "AFTER_N_DAYS", label: "After N days" },
+                  ]}
+                />
                 {policyType === "AFTER_N_DAYS" ? (
                   <TextField
                     label="Days after go-live"
@@ -548,123 +779,6 @@ export default function LoanProductsPage() {
                   Save payment start policy
                 </PrimaryButton>
               </form>
-            </section>
-            <section className="panel p-4">
-              <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
-                Interest rates
-              </h2>
-              <form onSubmit={addRate} className="mt-3 space-y-2">
-                <TextField
-                  label="Label"
-                  value={rateLabel}
-                  onChange={setRateLabel}
-                  placeholder="e.g. 12% per annum"
-                />
-                <TextField
-                  label="Rate (%)"
-                  value={ratePercent}
-                  onChange={setRatePercent}
-                  placeholder="12"
-                  required
-                />
-                <PrimaryButton type="submit" disabled={saving}>
-                  <Plus className="size-3.5" />
-                  Add rate
-                </PrimaryButton>
-              </form>
-              <ul className="mt-4 divide-y divide-[var(--line)]">
-                {rates.filter((item) => item.isActive).length === 0 ? (
-                  <li className="py-3 text-sm text-slate-500">
-                    No active rates yet.
-                  </li>
-                ) : (
-                  rates
-                    .filter((item) => item.isActive)
-                    .map((item) => (
-                      <li
-                        key={item.id}
-                        className="flex items-center justify-between gap-3 py-2.5"
-                      >
-                        <div>
-                          <p className="text-sm font-semibold text-[var(--midnight-navy)]">
-                            {item.label}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            {item.interestRatePercent}%
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          className="btn btn-ghost h-8 px-2 text-xs text-red-600"
-                          onClick={() => void deactivateRate(item.id)}
-                          disabled={saving}
-                        >
-                          <Trash2 className="size-3.5" />
-                          Remove
-                        </button>
-                      </li>
-                    ))
-                )}
-              </ul>
-            </section>
-
-            <section className="panel p-4">
-              <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
-                Loan periods
-              </h2>
-              <form onSubmit={addPeriod} className="mt-3 space-y-2">
-                <TextField
-                  label="Label"
-                  value={periodLabel}
-                  onChange={setPeriodLabel}
-                  placeholder="e.g. 90 days"
-                />
-                <TextField
-                  label="Duration (days)"
-                  value={periodDays}
-                  onChange={setPeriodDays}
-                  placeholder="90"
-                  required
-                />
-                <PrimaryButton type="submit" disabled={saving}>
-                  <Plus className="size-3.5" />
-                  Add period
-                </PrimaryButton>
-              </form>
-              <ul className="mt-4 divide-y divide-[var(--line)]">
-                {periods.filter((item) => item.isActive).length === 0 ? (
-                  <li className="py-3 text-sm text-slate-500">
-                    No active periods yet.
-                  </li>
-                ) : (
-                  periods
-                    .filter((item) => item.isActive)
-                    .map((item) => (
-                      <li
-                        key={item.id}
-                        className="flex items-center justify-between gap-3 py-2.5"
-                      >
-                        <div>
-                          <p className="text-sm font-semibold text-[var(--midnight-navy)]">
-                            {item.label}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            {item.durationDays} days
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          className="btn btn-ghost h-8 px-2 text-xs text-red-600"
-                          onClick={() => void deactivatePeriod(item.id)}
-                          disabled={saving}
-                        >
-                          <Trash2 className="size-3.5" />
-                          Remove
-                        </button>
-                      </li>
-                    ))
-                )}
-              </ul>
             </section>
           </div>
         )}

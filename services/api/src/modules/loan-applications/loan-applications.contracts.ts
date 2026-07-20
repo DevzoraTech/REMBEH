@@ -68,6 +68,16 @@ export type LoanApplicationContract = {
   interestRatePercent: number | null;
   durationDays: number | null;
   processingFee: number | null;
+  loanProductTemplateId: string | null;
+  templateName: string | null;
+  interestType: 'FLAT' | null;
+  termValue: number | null;
+  termUnit: 'DAYS' | 'MONTHS' | 'YEARS' | null;
+  repaymentFrequency: 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | null;
+  processingFeePercent: number | null;
+  penaltyRatePercent: number | null;
+  finePeriodDays: number | null;
+  loanPurpose: string | null;
   collateralType: string | null;
   verificationCode: string | null;
   verifiedAt: string | null;

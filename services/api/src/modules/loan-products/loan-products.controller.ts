@@ -16,8 +16,10 @@ import { RequirePermissions } from '../../common/auth/permissions.decorator';
 import { PermissionsGuard } from '../../common/auth/permissions.guard';
 import {
   CreateLoanPeriodOptionDto,
+  CreateLoanProductTemplateDto,
   CreateLoanRateOptionDto,
   UpdateLoanPeriodOptionDto,
+  UpdateLoanProductTemplateDto,
   UpdateLoanRateOptionDto,
   UpsertLoanFinePolicyDto,
   UpsertPaymentStartPolicyDto,
@@ -39,6 +41,43 @@ export class LoanProductsController {
   @RequirePermissions(LOAN_PRODUCT_PERMISSIONS.read)
   getCatalog(@CurrentUser() user: AuthenticatedUser) {
     return this.loanProductsService.getCatalog(user);
+  }
+
+  @Post('templates')
+  @RequirePermissions(LOAN_PRODUCT_PERMISSIONS.manage)
+  createTemplate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateLoanProductTemplateDto,
+  ) {
+    return this.loanProductsService.createTemplate(user, dto);
+  }
+
+  @Patch('templates/:id')
+  @RequirePermissions(LOAN_PRODUCT_PERMISSIONS.manage)
+  updateTemplate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateLoanProductTemplateDto,
+  ) {
+    return this.loanProductsService.updateTemplate(user, id, dto);
+  }
+
+  @Post('templates/:id/duplicate')
+  @RequirePermissions(LOAN_PRODUCT_PERMISSIONS.manage)
+  duplicateTemplate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.loanProductsService.duplicateTemplate(user, id);
+  }
+
+  @Delete('templates/:id')
+  @RequirePermissions(LOAN_PRODUCT_PERMISSIONS.manage)
+  deactivateTemplate(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.loanProductsService.deactivateTemplate(user, id);
   }
 
   @Post('rates')
