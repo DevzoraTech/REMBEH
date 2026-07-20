@@ -10,6 +10,7 @@ import 'profile/agent_selfie_capture_screen.dart';
 
 const _rememberEmailKey = 'rembeh.login.remember_email';
 const _rememberMeKey = 'rembeh.login.remember_me';
+const _loginMaxCardWidth = 360.0;
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, this.idleSignedOutMessage});
@@ -41,11 +42,11 @@ class _LoginScreenState extends State<LoginScreen>
     super.initState();
     _motion = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 520),
+      duration: const Duration(milliseconds: 480),
     );
     _fade = CurvedAnimation(parent: _motion, curve: Curves.easeOutCubic);
     _slide = Tween<Offset>(
-      begin: const Offset(0, 0.04),
+      begin: const Offset(0, 0.03),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _motion, curve: Curves.easeOutCubic));
     _motion.forward();
@@ -141,6 +142,7 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final short = MediaQuery.sizeOf(context).height < 700;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F5),
@@ -157,41 +159,51 @@ class _LoginScreenState extends State<LoginScreen>
                   builder: (context, constraints) {
                     return SingleChildScrollView(
                       padding: EdgeInsets.fromLTRB(
-                        24,
-                        20,
-                        24,
-                        bottomInset > 0 ? 16 : 20,
+                        16,
+                        short ? 12 : 16,
+                        16,
+                        bottomInset > 0 ? 12 : 16,
                       ),
                       child: ConstrainedBox(
                         constraints: BoxConstraints(
-                          minHeight: constraints.maxHeight - 40,
+                          minHeight: constraints.maxHeight -
+                              (bottomInset > 0 ? 24 : 32),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const _LoginBrandHeader(),
-                            SizedBox(height: bottomInset > 0 ? 20 : 36),
-                            _LoginCard(
-                              email: _email,
-                              password: _password,
-                              obscurePassword: _obscurePassword,
-                              rememberMe: _rememberMe,
-                              loading: _loading,
-                              error: _error,
-                              onToggleObscure: () {
-                                setState(
-                                  () => _obscurePassword = !_obscurePassword,
-                                );
-                              },
-                              onRememberChanged: (value) {
-                                setState(() => _rememberMe = value);
-                              },
-                              onForgotPassword: _onForgotPassword,
-                              onSubmit: _loading ? null : _submit,
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(
+                              maxWidth: _loginMaxCardWidth,
                             ),
-                            SizedBox(height: bottomInset > 0 ? 20 : 32),
-                            _LoginFooter(versionLabel: _versionLabel),
-                          ],
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const _LoginBrandHeader(),
+                                SizedBox(height: short || bottomInset > 0 ? 14 : 20),
+                                _LoginCard(
+                                  email: _email,
+                                  password: _password,
+                                  obscurePassword: _obscurePassword,
+                                  rememberMe: _rememberMe,
+                                  loading: _loading,
+                                  error: _error,
+                                  onToggleObscure: () {
+                                    setState(
+                                      () =>
+                                          _obscurePassword = !_obscurePassword,
+                                    );
+                                  },
+                                  onRememberChanged: (value) {
+                                    setState(() => _rememberMe = value);
+                                  },
+                                  onForgotPassword: _onForgotPassword,
+                                  onSubmit: _loading ? null : _submit,
+                                ),
+                                SizedBox(height: short || bottomInset > 0 ? 14 : 20),
+                                _LoginFooter(versionLabel: _versionLabel),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     );
@@ -215,14 +227,14 @@ class _LoginAtmosphere extends StatelessWidget {
       children: [
         const ColoredBox(color: Color(0xFFF4F6F5)),
         Positioned(
-          top: 36,
-          right: -28,
+          top: 24,
+          right: -40,
           child: Opacity(
-            opacity: 0.07,
+            opacity: 0.06,
             child: Image.asset(
               'assets/rembeh-mark.png',
-              width: 280,
-              height: 280,
+              width: 220,
+              height: 220,
               fit: BoxFit.contain,
             ),
           ),
@@ -244,52 +256,53 @@ class _LoginBrandHeader extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             ClipRRect(
-              borderRadius: rembehBorderRadius(14),
+              borderRadius: rembehBorderRadius(rembehRadiusMd),
               child: Image.asset(
                 'assets/rembeh-app-icon.png',
-                width: 52,
-                height: 52,
+                width: 40,
+                height: 40,
                 fit: BoxFit.cover,
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             const Text(
               'REMBEH',
               style: TextStyle(
                 color: forestEmerald,
-                fontSize: 28,
+                fontSize: 22,
                 fontWeight: FontWeight.w800,
-                letterSpacing: 0.8,
+                letterSpacing: 0.6,
                 height: 1,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
         Container(
-          width: 48,
-          height: 2.5,
+          width: 40,
+          height: 2,
           decoration: BoxDecoration(
             color: warmGold,
             borderRadius: rembehBorderRadius(2),
           ),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 10),
         const Text(
-          'Field agent',
+          'Financial Management System',
           style: TextStyle(
             color: forestEmerald,
-            fontSize: 16,
+            fontSize: 14,
             fontWeight: FontWeight.w700,
-            letterSpacing: 0.1,
+            letterSpacing: 0.05,
+            height: 1.2,
           ),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 3),
         Text(
           'Peace in every decision.',
           style: TextStyle(
             color: slateText.withValues(alpha: 0.55),
-            fontSize: 13,
+            fontSize: 12,
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -327,20 +340,20 @@ class _LoginCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(22, 26, 22, 24),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: rembehBorderRadius(20),
+        borderRadius: rembehBorderRadius(rembehRadiusLg),
         boxShadow: [
           BoxShadow(
-            color: midnightNavy.withValues(alpha: 0.07),
-            blurRadius: 28,
-            offset: const Offset(0, 12),
+            color: midnightNavy.withValues(alpha: 0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
           ),
           BoxShadow(
             color: midnightNavy.withValues(alpha: 0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
           ),
         ],
       ),
@@ -351,21 +364,21 @@ class _LoginCard extends StatelessWidget {
             'Welcome back 👋',
             style: TextStyle(
               color: Color(0xFF1A1F27),
-              fontSize: 22,
+              fontSize: 18,
               fontWeight: FontWeight.w800,
               height: 1.2,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Text(
             'Sign in to continue to your account.',
             style: TextStyle(
               color: slateText.withValues(alpha: 0.62),
-              fontSize: 13.5,
-              height: 1.35,
+              fontSize: 12.5,
+              height: 1.3,
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
           _IconField(
             controller: email,
             label: 'Email',
@@ -375,7 +388,7 @@ class _LoginCard extends StatelessWidget {
             textInputAction: TextInputAction.next,
             autofillHints: const [AutofillHints.username, AutofillHints.email],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           _IconField(
             controller: password,
             label: 'Password',
@@ -388,39 +401,42 @@ class _LoginCard extends StatelessWidget {
             suffix: IconButton(
               onPressed: onToggleObscure,
               tooltip: obscurePassword ? 'Show password' : 'Hide password',
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              padding: EdgeInsets.zero,
               icon: Icon(
                 obscurePassword
                     ? Icons.visibility_outlined
                     : Icons.visibility_off_outlined,
                 color: forestEmerald,
-                size: 22,
+                size: 18,
               ),
             ),
           ),
           if (error != null) ...[
-            const SizedBox(height: 14),
+            const SizedBox(height: 10),
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               decoration: BoxDecoration(
                 color: const Color(0xFFFFEBEE),
-                borderRadius: rembehBorderRadius(rembehRadiusMd),
+                borderRadius: rembehBorderRadius(rembehRadiusSm),
                 border: Border.all(color: const Color(0xFFFFCDD2)),
               ),
               child: Text(
                 error!,
                 style: const TextStyle(
                   color: Color(0xFFB71C1C),
-                  fontSize: 13,
+                  fontSize: 12,
                 ),
               ),
             ),
           ],
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Row(
             children: [
               SizedBox(
-                height: 24,
-                width: 24,
+                height: 20,
+                width: 20,
                 child: Checkbox(
                   value: rememberMe,
                   onChanged: (value) => onRememberChanged(value ?? false),
@@ -428,7 +444,7 @@ class _LoginCard extends StatelessWidget {
                   checkColor: Colors.white,
                   side: BorderSide(
                     color: forestEmerald.withValues(alpha: 0.55),
-                    width: 1.6,
+                    width: 1.4,
                   ),
                   shape: RoundedRectangleBorder(
                     borderRadius: rembehBorderRadius(4),
@@ -437,14 +453,14 @@ class _LoginCard extends StatelessWidget {
                   visualDensity: VisualDensity.compact,
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               GestureDetector(
                 onTap: () => onRememberChanged(!rememberMe),
                 child: Text(
                   'Remember me',
                   style: TextStyle(
                     color: slateText.withValues(alpha: 0.72),
-                    fontSize: 13.5,
+                    fontSize: 12.5,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -461,32 +477,34 @@ class _LoginCard extends StatelessWidget {
                 child: const Text(
                   'Forgot password?',
                   style: TextStyle(
-                    fontSize: 13.5,
+                    fontSize: 12.5,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 14),
           SizedBox(
-            height: 52,
+            height: 44,
             child: ElevatedButton(
               onPressed: onSubmit,
               style: ElevatedButton.styleFrom(
                 backgroundColor: forestEmerald,
                 foregroundColor: Colors.white,
                 elevation: 0,
+                minimumSize: const Size.fromHeight(44),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
                 shape: RoundedRectangleBorder(
-                  borderRadius: rembehBorderRadius(14),
+                  borderRadius: rembehBorderRadius(rembehRadiusMd),
                 ),
               ),
               child: loading
                   ? const SizedBox(
-                      width: 20,
-                      height: 20,
+                      width: 18,
+                      height: 18,
                       child: CircularProgressIndicator(
-                        strokeWidth: 2.2,
+                        strokeWidth: 2,
                         color: Colors.white,
                       ),
                     )
@@ -496,13 +514,13 @@ class _LoginCard extends StatelessWidget {
                         Text(
                           'Sign in',
                           style: TextStyle(
-                            fontSize: 16,
+                            fontSize: 14.5,
                             fontWeight: FontWeight.w700,
-                            letterSpacing: 0.2,
+                            letterSpacing: 0.15,
                           ),
                         ),
-                        SizedBox(width: 8),
-                        Icon(Icons.arrow_forward_rounded, size: 20),
+                        SizedBox(width: 6),
+                        Icon(Icons.arrow_forward_rounded, size: 18),
                       ],
                     ),
             ),
@@ -549,53 +567,61 @@ class _IconField extends StatelessWidget {
       onSubmitted: onSubmitted,
       style: const TextStyle(
         color: slateText,
-        fontSize: 15,
+        fontSize: 14,
         fontWeight: FontWeight.w500,
+        height: 1.25,
       ),
       decoration: InputDecoration(
+        isDense: true,
         labelText: label,
         hintText: hint,
         floatingLabelBehavior: FloatingLabelBehavior.auto,
         labelStyle: TextStyle(
           color: slateText.withValues(alpha: 0.55),
+          fontSize: 13,
           fontWeight: FontWeight.w500,
         ),
         hintStyle: TextStyle(
           color: slateText.withValues(alpha: 0.35),
+          fontSize: 13,
           fontWeight: FontWeight.w400,
         ),
         filled: true,
         fillColor: Colors.white,
-        contentPadding: const EdgeInsets.fromLTRB(0, 16, 12, 16),
+        contentPadding: const EdgeInsets.fromLTRB(0, 11, 10, 11),
         prefixIcon: Padding(
-          padding: const EdgeInsets.only(left: 10, right: 10),
+          padding: const EdgeInsets.only(left: 8, right: 8),
           child: Container(
-            width: 40,
-            height: 40,
+            width: 30,
+            height: 30,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: forestEmerald,
-              borderRadius: rembehBorderRadius(10),
+              borderRadius: rembehBorderRadius(rembehRadiusSm),
             ),
-            child: Icon(icon, color: Colors.white, size: 20),
+            child: Icon(icon, color: Colors.white, size: 16),
           ),
         ),
         prefixIconConstraints: const BoxConstraints(
-          minWidth: 60,
-          minHeight: 48,
+          minWidth: 46,
+          minHeight: 40,
         ),
         suffixIcon: suffix,
+        suffixIconConstraints: const BoxConstraints(
+          minWidth: 36,
+          minHeight: 36,
+        ),
         border: OutlineInputBorder(
-          borderRadius: rembehBorderRadius(14),
-          borderSide: const BorderSide(color: Color(0xFFE2E8E4)),
+          borderRadius: rembehBorderRadius(rembehRadiusMd),
+          borderSide: const BorderSide(color: line),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: rembehBorderRadius(14),
-          borderSide: const BorderSide(color: Color(0xFFE2E8E4)),
+          borderRadius: rembehBorderRadius(rembehRadiusMd),
+          borderSide: const BorderSide(color: line),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: rembehBorderRadius(14),
-          borderSide: const BorderSide(color: forestEmerald, width: 1.5),
+          borderRadius: rembehBorderRadius(rembehRadiusMd),
+          borderSide: const BorderSide(color: forestEmerald, width: 1.4),
         ),
       ),
     );
@@ -616,26 +642,26 @@ class _LoginFooter extends StatelessWidget {
           children: [
             Icon(
               Icons.verified_user_outlined,
-              size: 16,
+              size: 14,
               color: forestEmerald.withValues(alpha: 0.85),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 5),
             Text(
               'Your data is safe and secure',
               style: TextStyle(
                 color: slateText.withValues(alpha: 0.55),
-                fontSize: 12.5,
+                fontSize: 11.5,
                 fontWeight: FontWeight.w500,
               ),
             ),
           ],
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 6),
         Text(
           'Version $versionLabel',
           style: TextStyle(
             color: slateText.withValues(alpha: 0.38),
-            fontSize: 12,
+            fontSize: 11,
             fontWeight: FontWeight.w500,
           ),
         ),
