@@ -160,19 +160,19 @@ class _RecordsTabState extends State<RecordsTab> {
       case RecordsFilter.all:
         return Icons.check_circle;
       case RecordsFilter.dueToday:
-        return Icons.calendar_today_outlined;
+        return Icons.calendar_today;
       case RecordsFilter.collectedToday:
-        return Icons.check_circle_outline;
+        return Icons.check_circle;
       case RecordsFilter.today:
-        return Icons.today_outlined;
+        return Icons.today;
       case RecordsFilter.yesterday:
-        return Icons.event_outlined;
+        return Icons.event;
       case RecordsFilter.thisWeek:
-        return Icons.date_range_outlined;
+        return Icons.date_range;
       case RecordsFilter.thisMonth:
-        return Icons.calendar_month_outlined;
+        return Icons.calendar_month;
       case RecordsFilter.pendingSync:
-        return Icons.cloud_outlined;
+        return Icons.cloud;
       case RecordsFilter.uploaded:
         return Icons.task_alt;
       case RecordsFilter.custom:

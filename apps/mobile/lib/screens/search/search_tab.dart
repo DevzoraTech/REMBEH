@@ -104,17 +104,13 @@ class _SearchTabState extends State<SearchTab> {
       _searchError = null;
     });
     try {
+      // Strip separators only — API expands 07… / 7… / 256… / +256… variants
+      // and returns phone-first ranking; do not E.164-normalize or re-sort.
       final normalized = normalizeClientSearchQuery(query);
       final clients = await _store.searchClients(normalized);
       if (!mounted || _controller.text.trim() != query) return;
-      final mapped = clients.map(toUiClientDetail).toList()
-        ..sort((a, b) {
-          final aAt = a.lastPaymentAt ?? a.loanStartDate;
-          final bAt = b.lastPaymentAt ?? b.loanStartDate;
-          return bAt.compareTo(aAt);
-        });
       setState(() {
-        _results = mapped;
+        _results = clients.map(toUiClientDetail).toList();
         _searching = false;
       });
     } catch (error) {

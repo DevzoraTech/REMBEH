@@ -210,7 +210,7 @@ class _ApplicationDetailsSheetState extends State<ApplicationDetailsSheet> {
                                 side: const BorderSide(color: forestEmerald),
                                 foregroundColor: forestEmerald,
                               ),
-                              icon: const Icon(Icons.phone_outlined),
+                              icon: const Icon(Icons.phone),
                             ),
                           IconButton(
                             onPressed: () => Navigator.of(context).pop(),

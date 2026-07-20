@@ -237,7 +237,7 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
                 children: [
                   Expanded(
                     child: _MiniCard(
-                      icon: Icons.account_balance_wallet_outlined,
+                      icon: Icons.account_balance_wallet,
                       iconColor: warmGold,
                       label: 'Expected Today',
                       value: formatMoney(detail.expectedToday),
@@ -247,7 +247,7 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: _MiniCard(
-                      icon: Icons.calendar_today_outlined,
+                      icon: Icons.calendar_today,
                       iconColor: forestEmerald,
                       label: 'Daily Instalment',
                       value: formatMoney(detail.dailyInstalment),
@@ -400,7 +400,7 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
                             color: Colors.white,
                           ),
                         )
-                      : const Icon(Icons.save_outlined),
+                      : const Icon(Icons.save),
                   label: Text(_saving ? 'Saving…' : 'Save Repayment'),
                 ),
               ),

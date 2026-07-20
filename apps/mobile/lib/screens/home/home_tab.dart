@@ -213,7 +213,7 @@ class _HomeTabState extends State<HomeTab> {
                       children: [
                         Expanded(
                           child: _SummaryMetric(
-                            icon: Icons.account_balance_wallet_outlined,
+                            icon: Icons.account_balance_wallet,
                             iconColor: forestEmerald,
                             label: 'Collected',
                             value: formatMoney(_summary.amountCollectedToday),
@@ -226,7 +226,7 @@ class _HomeTabState extends State<HomeTab> {
                         ),
                         Expanded(
                           child: _SummaryMetric(
-                            icon: Icons.groups_outlined,
+                            icon: Icons.groups,
                             iconColor: forestEmerald,
                             label: 'Repayments',
                             value: '${_summary.repaymentsTodayCount}',
@@ -239,7 +239,7 @@ class _HomeTabState extends State<HomeTab> {
                         ),
                         Expanded(
                           child: _SummaryMetric(
-                            icon: Icons.calendar_today_outlined,
+                            icon: Icons.calendar_today,
                             iconColor: warmGold,
                             label: 'Due Today',
                             value: '${_summary.dueTodayCount}',
@@ -252,7 +252,7 @@ class _HomeTabState extends State<HomeTab> {
                         ),
                         Expanded(
                           child: _SummaryMetric(
-                            icon: Icons.note_add_outlined,
+                            icon: Icons.note_add,
                             iconColor: midnightNavy,
                             label: 'Applications',
                             value: '${_summary.newApplicationsTodayCount}',
@@ -337,7 +337,7 @@ class _HomeTabState extends State<HomeTab> {
                           borderRadius: rembehBorderRadius(rembehRadiusMd),
                         ),
                         child: const Icon(
-                          Icons.note_add_outlined,
+                          Icons.note_add,
                           color: forestEmerald,
                           size: 20,
                         ),

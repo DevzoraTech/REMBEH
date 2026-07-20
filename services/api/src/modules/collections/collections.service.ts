@@ -172,13 +172,8 @@ export class CollectionsService {
       ...scope,
       query: q,
     });
-    const clients = (
-      await Promise.all(loans.map((loan) => this.buildDetail(loan)))
-    ).sort((a, b) => {
-      const aAt = a.lastPaymentAt ?? a.paymentStartDate ?? a.loanStartDate;
-      const bAt = b.lastPaymentAt ?? b.paymentStartDate ?? b.loanStartDate;
-      return new Date(bAt).getTime() - new Date(aAt).getTime();
-    });
+    // Preserve repository phone-first ranking (do not re-sort by payment date).
+    const clients = await Promise.all(loans.map((loan) => this.buildDetail(loan)));
     return { clients };
   }
 

@@ -19,9 +19,10 @@ bool looksLikePhoneQuery(String raw) {
   return digits.length / compact.length >= 0.7;
 }
 
-/// Prefer normalized phone for search when the query looks like a number.
+/// Light cleanup for client search — do not E.164-normalize.
+///
+/// The API expands `07…` / `7…` / `256…` / `+256…` variants. Pre-normalizing
+/// search queries (especially partial `07…`) breaks substring matching.
 String normalizeClientSearchQuery(String raw) {
-  final trimmed = raw.trim();
-  if (!looksLikePhoneQuery(trimmed)) return trimmed;
-  return normalizePhoneForApi(trimmed);
+  return raw.trim().replaceAll(RegExp(r'[\s()-]'), '');
 }

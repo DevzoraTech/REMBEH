@@ -233,7 +233,7 @@ class ClientDetailsSheet extends StatelessWidget {
                         side: const BorderSide(color: forestEmerald),
                         foregroundColor: forestEmerald,
                       ),
-                      icon: const Icon(Icons.phone_outlined),
+                      icon: const Icon(Icons.phone),
                     ),
                     IconButton(
                       onPressed: () => Navigator.of(context).pop(),
@@ -334,7 +334,7 @@ class ClientDetailsSheet extends StatelessWidget {
                   children: [
                     Expanded(
                       child: _MetricCell(
-                        icon: Icons.account_balance_wallet_outlined,
+                        icon: Icons.account_balance_wallet,
                         iconColor: warmGold,
                         label: 'Expected Today',
                         value: formatMoney(detail.expectedToday),
@@ -346,7 +346,7 @@ class ClientDetailsSheet extends StatelessWidget {
                     ),
                     Expanded(
                       child: _MetricCell(
-                        icon: Icons.calendar_today_outlined,
+                        icon: Icons.calendar_today,
                         iconColor: forestEmerald,
                         label: 'Daily Instalment',
                         value: formatMoney(detail.dailyInstalment),
@@ -365,7 +365,7 @@ class ClientDetailsSheet extends StatelessWidget {
                     ),
                     Expanded(
                       child: _MetricCell(
-                        icon: Icons.event_outlined,
+                        icon: Icons.event,
                         iconColor: warmGold,
                         label: 'Next Due',
                         value: detail.nextDueLabel,
@@ -424,7 +424,7 @@ class ClientDetailsSheet extends StatelessWidget {
                         children: [
                           Expanded(
                             child: _DetailItem(
-                              icon: Icons.payments_outlined,
+                              icon: Icons.payments,
                               label: 'Loan Amount',
                               value: formatMoney(detail.loanAmount),
                             ),
@@ -446,7 +446,7 @@ class ClientDetailsSheet extends StatelessWidget {
                         children: [
                           Expanded(
                             child: _DetailItem(
-                              icon: Icons.calendar_month_outlined,
+                              icon: Icons.calendar_month,
                               label: 'Repayments start',
                               value: _shortDate(
                                 detail.paymentStartDate ?? detail.loanStartDate,
@@ -455,7 +455,7 @@ class ClientDetailsSheet extends StatelessWidget {
                           ),
                           Expanded(
                             child: _DetailItem(
-                              icon: Icons.event_available_outlined,
+                              icon: Icons.event_available,
                               label: 'Maturity Date',
                               value: _shortDate(detail.maturityDate),
                             ),
@@ -641,7 +641,7 @@ class ClientDetailsSheet extends StatelessWidget {
                 child: ElevatedButton.icon(
                   onPressed: () =>
                       Navigator.of(context).pop('record_repayment'),
-                  icon: const Icon(Icons.payments_outlined),
+                  icon: const Icon(Icons.payments),
                   label: const Text('Record payment'),
                 ),
               ),
