@@ -40,10 +40,16 @@ deploy_api_on_server() {
     sudo apt-get update -y && sudo apt-get install -y git
   fi
   # Headless Writer used to convert filled Loan-agreement DOCX → PDF.
+  # Best-effort: disk-constrained hosts fall back to template-field PDF rendering.
   if ! command -v soffice >/dev/null 2>&1 && ! command -v libreoffice >/dev/null 2>&1; then
-    echo "==> Installing libreoffice-writer-nogui (DOCX→PDF)..."
-    sudo apt-get update -y
-    sudo apt-get install -y libreoffice-writer-nogui
+    echo "==> Attempting libreoffice-writer-nogui install (DOCX→PDF)..."
+    if sudo apt-get update -y && sudo apt-get install -y libreoffice-writer-nogui; then
+      echo "LibreOffice installed."
+    else
+      echo "WARN: LibreOffice install failed (disk/deps). Agreement PDF will use DOCX field fallback." >&2
+      sudo dpkg --configure -a >/dev/null 2>&1 || true
+      sudo apt-get -y -f install >/dev/null 2>&1 || true
+    fi
   fi
   if ! swapon --show | grep -q .; then
     sudo fallocate -l 2G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
