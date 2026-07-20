@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/ec2-ssh.sh"
 
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-HOST="${EC2_HOST:-16.170.166.117}"
+HOST="${EC2_HOST:-13.63.130.241}"
 USER_NAME="${EC2_USER:-ubuntu}"
 REMOTE_DIR="${EC2_REMOTE_DIR:-/home/ubuntu/rembeh}"
 REPO_URL="${REPO_URL:-https://github.com/DevzoraTech/REMBEH.git}"
@@ -187,7 +187,7 @@ for line in text.splitlines():
         lines.append("PORT=4000")
     elif line.startswith("CORS_ORIGIN="):
         lines.append(
-            "CORS_ORIGIN=http://rembeh.antikra.com,https://rembeh.antikra.com,http://16.170.166.117,http://localhost:3000,http://127.0.0.1:3000"
+            "CORS_ORIGIN=http://rembeh.antikra.com,https://rembeh.antikra.com,http://13.63.130.241,https://13.63.130.241,http://localhost:3000,http://127.0.0.1:3000"
         )
     elif line.startswith("NODE_ENV="):
         lines.append("NODE_ENV=production")

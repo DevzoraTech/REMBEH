@@ -1,6 +1,6 @@
 # REMBEH production deploy
 
-EC2 host: `16.170.166.117` · Repo: `https://github.com/DevzoraTech/REMBEH.git` · App dir: `/home/ubuntu/rembeh`
+EC2 host: `13.63.130.241` · Repo: `https://github.com/DevzoraTech/REMBEH.git` · App dir: `/home/ubuntu/rembeh`
 
 ## DNS records
 
@@ -8,8 +8,8 @@ Add these in your DNS provider for `antikra.com`:
 
 | Host | Type | Value |
 |------|------|-------|
-| `rembeh-api.antikra.com` | A | `16.170.166.117` |
-| `rembeh.antikra.com` | A | `16.170.166.117` |
+| `rembeh-api.antikra.com` | A | `13.63.130.241` |
+| `rembeh.antikra.com` | A | `13.63.130.241` |
 
 Optional:
 
@@ -82,7 +82,7 @@ Repo → **Settings → Secrets and variables → Actions → New repository sec
 
 | Secret | Required | Example / notes |
 |--------|----------|-----------------|
-| `EC2_HOST` | yes | `16.170.166.117` |
+| `EC2_HOST` | yes | `13.63.130.241` |
 | `EC2_USER` | yes | `ubuntu` |
 | `EC2_SSH_KEY` | yes | Full PEM private key for SSH into EC2 (contents of `rembeh-key-pair.pem` or a dedicated deploy user key). Include `-----BEGIN…-----` / `-----END…-----` lines. |
 | `EC2_REMOTE_DIR` | no | Defaults to `/home/ubuntu/rembeh` if unset |
@@ -150,7 +150,7 @@ If the GitHub repo is **private**, HTTPS `git fetch` on EC2 will fail without cr
 ### 1. Create a key on the EC2 host
 
 ```bash
-ssh -i services/rembeh-key-pair.pem ubuntu@16.170.166.117
+ssh -i services/rembeh-key-pair.pem ubuntu@13.63.130.241
 ssh-keygen -t ed25519 -C "rembeh-ec2-deploy" -f ~/.ssh/rembeh_deploy_ed25519 -N ""
 cat ~/.ssh/rembeh_deploy_ed25519.pub
 ```

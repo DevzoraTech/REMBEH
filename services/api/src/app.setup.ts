@@ -7,7 +7,8 @@ const DEFAULT_CORS_ORIGINS = [
   'http://127.0.0.1:3000',
   'http://rembeh.antikra.com',
   'https://rembeh.antikra.com',
-  'http://16.170.166.117',
+  'http://13.63.130.241',
+  'https://13.63.130.241',
 ];
 
 function resolveCorsOrigin():

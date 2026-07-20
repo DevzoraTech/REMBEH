@@ -6,8 +6,8 @@ Full production guide (DNS, GitHub secrets, deploy key, auto-deploy): **[`docs/d
 
 | Host | Type | Value |
 |------|------|-------|
-| `rembeh-api.antikra.com` | A | `16.170.166.117` |
-| `rembeh.antikra.com` | A | `16.170.166.117` |
+| `rembeh-api.antikra.com` | A | `13.63.130.241` |
+| `rembeh.antikra.com` | A | `13.63.130.241` |
 
 Optional: `www.rembeh.antikra.com` CNAME → `rembeh.antikra.com`.  
 Web and API are both **HTTPS** (separate nginx `server_name`s; see `deploy/nginx/`).

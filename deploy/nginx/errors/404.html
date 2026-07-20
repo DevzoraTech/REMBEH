@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex" />
+  <title>Page not found · REMBEH</title>
+  <style>
+:root {
+  --navy: #14213d;
+  --navy-deep: #101c34;
+  --emerald: #0f8a6c;
+  --gold: #c4922a;
+  --sage: #8fb3a4;
+  --ivory: #f4f6f5;
+  --mist: #e8eeeb;
+  --slate: #1f2933;
+  --line: #cfd8d3;
+  --bg: #eef1ef;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { height: 100%; }
+body {
+  min-height: 100%;
+  font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  color: var(--slate);
+  background:
+    radial-gradient(ellipse 80% 60% at 100% 0%, rgba(15, 138, 108, 0.14), transparent 55%),
+    radial-gradient(ellipse 70% 50% at 0% 100%, rgba(196, 146, 42, 0.10), transparent 50%),
+    linear-gradient(165deg, var(--ivory) 0%, var(--bg) 45%, var(--mist) 100%);
+  display: flex;
+  flex-direction: column;
+}
+.shell {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.25rem 3rem;
+}
+.card {
+  width: 100%;
+  max-width: 34rem;
+  background: rgba(255,255,255,0.92);
+  border: 1px solid var(--line);
+  box-shadow: 0 18px 50px rgba(20, 33, 61, 0.08);
+  padding: 2rem 1.75rem 1.75rem;
+}
+@media (min-width: 640px) {
+  .card { padding: 2.5rem 2.25rem 2rem; }
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  margin-bottom: 1.75rem;
+}
+.mark { width: 2.75rem; height: 2.75rem; flex-shrink: 0; }
+.brand-text { display: flex; flex-direction: column; gap: 0.2rem; }
+.brand-name {
+  font-family: "Newsreader", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  font-size: 1.65rem;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--navy);
+}
+.brand-sub {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(31, 41, 51, 0.55);
+}
+.code {
+  display: inline-block;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gold);
+  margin-bottom: 0.75rem;
+}
+h1 {
+  font-family: "Newsreader", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  font-size: clamp(1.65rem, 4vw, 2.05rem);
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+  color: var(--navy);
+  margin-bottom: 0.85rem;
+}
+.lead {
+  font-size: 0.975rem;
+  line-height: 1.65;
+  color: rgba(31, 41, 51, 0.78);
+  margin-bottom: 0.65rem;
+}
+.hint {
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: rgba(31, 41, 51, 0.58);
+  margin-bottom: 1.75rem;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0 1.15rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.btn-primary {
+  background: var(--emerald);
+  color: #fff;
+}
+.btn-primary:hover { background: #0c735a; }
+.btn-secondary {
+  background: transparent;
+  color: var(--navy);
+  border-color: var(--line);
+}
+.btn-secondary:hover {
+  border-color: var(--sage);
+  background: var(--mist);
+}
+.footer {
+  margin-top: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: rgba(31, 41, 51, 0.5);
+}
+.footer a {
+  color: var(--emerald);
+  text-decoration: none;
+  font-weight: 600;
+}
+.footer a:hover { text-decoration: underline; }
+.site-footer {
+  text-align: center;
+  padding: 0 1rem 1.5rem;
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(31, 41, 51, 0.4);
+}
+</style>
+</head>
+<body>
+  <main class="shell">
+    <div class="card">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 48 48" aria-hidden="true" role="img"><defs><linearGradient id="g" x1="8" y1="4" x2="40" y2="44" gradientUnits="userSpaceOnUse"><stop stop-color="#0f8a6c"/><stop offset="1" stop-color="#c4922a"/></linearGradient></defs><rect width="48" height="48" rx="10" fill="#101c34"/><path fill="url(#g)" d="M14 12h12.2c5.4 0 8.8 2.9 8.8 7.3 0 3.4-1.8 5.7-4.8 6.8L36 36h-6.2l-5.4-9.2H20V36h-6V12zm6 4.4v6.4h5.6c2.6 0 4.1-1.2 4.1-3.2s-1.5-3.2-4.1-3.2H20z"/></svg>
+        <div class="brand-text">
+          <span class="brand-name">REMBEH</span>
+          <span class="brand-sub">by ANTIKRA Mechanism</span>
+        </div>
+      </div>
+      <p class="code">Error 404</p>
+      <h1>Page not found</h1>
+      <p class="lead">The page you requested does not exist or may have moved.</p>
+      <p class="hint">Check the address, or go back to the REMBEH home page.</p>
+      <div class="actions">
+        <a class="btn btn-primary" href="javascript:location.reload()">Try again</a>
+        <a class="btn btn-secondary" href="https://rembeh.antikra.com/">Go to home</a>
+      </div>
+      <div class="footer">
+        Need help? Contact your REMBEH workspace administrator, or reach ANTIKRA support via your account manager.
+      </div>
+    </div>
+  </main>
+  <p class="site-footer">REMBEH · Lending operations platform</p>
+</body>
+</html>

@@ -37,6 +37,18 @@ if ! sudo test -f "/etc/letsencrypt/live/${API_DOMAIN}/fullchain.pem"; then
   exit 1
 fi
 
+ERRORS_SRC="$ROOT/deploy/nginx/errors"
+ERRORS_DST="/var/www/rembeh-errors"
+
+echo "==> Installing branded nginx error pages..."
+if [[ ! -d "$ERRORS_SRC" ]]; then
+  echo "Missing $ERRORS_SRC" >&2
+  exit 1
+fi
+sudo mkdir -p "$ERRORS_DST"
+sudo cp -f "$ERRORS_SRC"/*.html "$ERRORS_DST"/
+sudo chmod 644 "$ERRORS_DST"/*.html
+
 echo "==> Installing nginx site configs from deploy/nginx/..."
 sudo cp "$WEB_SRC" "$WEB_DST"
 sudo cp "$API_SRC" "$API_DST"
@@ -65,4 +77,4 @@ fi
 
 sudo nginx -t
 sudo systemctl reload nginx
-echo "nginx web+api vhosts OK (web → :3000, api → :4000)."
+echo "nginx web+api vhosts OK (web → :3000, api → :4000, errors → ${ERRORS_DST})."
