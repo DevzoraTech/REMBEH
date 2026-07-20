@@ -1,7 +1,11 @@
 import { createHash } from 'node:crypto';
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib';
 import { convertDocxToPdfWithLibreOffice } from './loan-agreement-docx-to-pdf';
-import { fillLoanAgreementDocx } from './loan-agreement-docx.merger';
+import {
+  fillLoanAgreementDocx,
+  resolveLoanAgreementTemplatePath,
+  type LoanAgreementSignatureImages,
+} from './loan-agreement-docx.merger';
 import {
   buildLoanAgreementMergeFields,
   type LoanAgreementFieldSource,
@@ -10,8 +14,9 @@ import {
 /**
  * Builds the signed loan agreement PDF from product-idea-assets/Loan-agreement .docx:
  * 1) Fill <<merge fields>> in the DOCX template
- * 2) Convert filled DOCX → PDF via LibreOffice when available
- * 3) Append electronic signature images
+ * 2) Embed signature PNGs inline at <<borrower_signature>> / <<guarantor_signature>> /
+ *    <<agent_signature>> placeholders (template signature blocks — no appendix)
+ * 3) Convert filled DOCX → PDF via LibreOffice when available
  *
  * Field mapping: see loan-agreement-fields.ts and docs/loan-agreement-fields.md
  */
@@ -34,7 +39,7 @@ export type SignedAgreementInput = LoanAgreementFieldSource & {
 export type SignedAgreementPdfResult = {
   pdfBytes: Uint8Array;
   contentHash: string;
-  /** How the PDF body was produced (signatures always appended via pdf-lib). */
+  /** How the PDF body was produced (signatures embedded in DOCX when LibreOffice path used). */
   source: 'docx-libreoffice' | 'docx-fields-fallback';
 };
 
@@ -42,7 +47,12 @@ export async function buildSignedLoanAgreementPdf(
   input: SignedAgreementInput,
 ): Promise<SignedAgreementPdfResult> {
   const fields = buildLoanAgreementMergeFields(input);
-  const filledDocx = await fillLoanAgreementDocx(fields);
+  const signatures = mapPartiesToSignatureImages(input.parties);
+  const filledDocx = await fillLoanAgreementDocx(
+    fields,
+    resolveLoanAgreementTemplatePath(),
+    signatures,
+  );
 
   let bodyPdf: Uint8Array | null = await convertDocxToPdfWithLibreOffice(
     filledDocx,
@@ -51,81 +61,45 @@ export async function buildSignedLoanAgreementPdf(
 
   if (!bodyPdf) {
     source = 'docx-fields-fallback';
-    bodyPdf = await buildFallbackPdfFromTemplateFields(input, fields);
+    bodyPdf = await buildFallbackPdfFromTemplateFields(
+      input,
+      fields,
+      signatures,
+    );
   }
 
-  const withSignatures = await appendSignaturePages(bodyPdf, input);
-  const contentHash = createHash('sha256')
-    .update(withSignatures)
-    .digest('hex');
+  const contentHash = createHash('sha256').update(bodyPdf).digest('hex');
 
-  return { pdfBytes: withSignatures, contentHash, source };
+  return { pdfBytes: bodyPdf, contentHash, source };
 }
 
-async function appendSignaturePages(
-  bodyPdf: Uint8Array,
-  input: SignedAgreementInput,
-): Promise<Uint8Array> {
-  if (input.parties.length === 0) return bodyPdf;
-
-  const doc = await PDFDocument.load(bodyPdf);
-  const font = await doc.embedFont(StandardFonts.Helvetica);
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
-  let page = doc.addPage([595.28, 841.89]);
-  let y = 800;
-  const left = 50;
-  const companyName = input.companyName?.trim() || 'REMBEH Lender';
-
-  const draw = (text: string, size = 10, useBold = false) => {
-    const active = useBold ? bold : font;
-    page.drawText(text.slice(0, 110), {
-      x: left,
-      y,
-      size,
-      font: active,
-      color: rgb(0.1, 0.12, 0.18),
-    });
-    y -= size + 6;
-  };
-
-  draw('ELECTRONIC SIGNATURES', 14, true);
-  draw(`Application ID: ${input.applicationId}`, 9);
-  draw(`Document version: ${input.version}`, 9);
-  y -= 8;
-
-  for (const party of input.parties) {
-    if (y < 140) {
-      page = doc.addPage([595.28, 841.89]);
-      y = 800;
+export function mapPartiesToSignatureImages(
+  parties: SignedAgreementParty[],
+): LoanAgreementSignatureImages {
+  const images: LoanAgreementSignatureImages = {};
+  for (const party of parties) {
+    if (!party.signaturePng || party.signaturePng.byteLength === 0) continue;
+    if (party.role === 'APPLICANT') {
+      images.borrower_signature = party.signaturePng;
+    } else if (party.role === 'GUARANTOR') {
+      images.guarantor_signature = party.signaturePng;
+    } else if (party.role === 'OFFICER') {
+      images.agent_signature = party.signaturePng;
     }
-    const label =
-      party.role === 'APPLICANT'
-        ? 'The Borrower'
-        : party.role === 'GUARANTOR'
-          ? 'Guarantor'
-          : `On Behalf of ${companyName}`;
-    draw(label, 11, true);
-    draw(`Name: ${party.signerName}`, 10);
-    draw(`Signed at: ${party.signedAt}`, 9);
-    y = await drawSignature(page, doc, party.signaturePng, left, y);
-    y -= 10;
   }
-
-  draw(
-    'By signing electronically, each party agrees this signature has the same legal effect as a handwritten signature.',
-    8,
-  );
-
-  return doc.save();
+  return images;
 }
 
 /**
  * Fallback when LibreOffice is unavailable: render the same clauses/fields as the
- * DOCX template (not a sparse custom layout). Prefer installing LibreOffice in prod.
+ * DOCX template (not a sparse custom layout). Signatures are drawn inline in the
+ * template signature blocks — never as an "ELECTRONIC SIGNATURES" appendix.
+ * Prefer installing LibreOffice in prod.
  */
 async function buildFallbackPdfFromTemplateFields(
   input: SignedAgreementInput,
   fields: Record<string, string>,
+  signatures: LoanAgreementSignatureImages,
 ): Promise<Uint8Array> {
   const doc = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.TimesRoman);
@@ -222,17 +196,19 @@ async function buildFallbackPdfFromTemplateFields(
   y -= 8;
 
   drawWrapped('The Borrower', 11, true);
-  drawWrapped(
-    `Name: ${fields.borrower_name}              Signature: ${fields.borrower_signature}`,
-  );
+  drawWrapped(`Name: ${fields.borrower_name}`);
+  drawWrapped('Signature:');
+  y = await drawInlineSignature(page, doc, signatures.borrower_signature, left, y);
+
   drawWrapped('Guarantor', 11, true);
-  drawWrapped(
-    `Name: ${fields.gurantor_name}         Signature: ${fields.guarantor_signature}`,
-  );
+  drawWrapped(`Name: ${fields.gurantor_name}`);
+  drawWrapped('Signature:');
+  y = await drawInlineSignature(page, doc, signatures.guarantor_signature, left, y);
+
   drawWrapped(`On Behalf of ${fields.company_name}`, 11, true);
-  drawWrapped(
-    `Name: ${fields.agent_name}                 Signature: ${fields.agent_signature}`,
-  );
+  drawWrapped(`Name: ${fields.agent_name}`);
+  drawWrapped('Signature:');
+  y = await drawInlineSignature(page, doc, signatures.agent_signature, left, y);
 
   drawWrapped(`Application ID: ${input.applicationId}`, 8);
   drawWrapped(`Document version: ${input.version}`, 8);
@@ -244,7 +220,7 @@ async function buildFallbackPdfFromTemplateFields(
   return doc.save();
 }
 
-async function drawSignature(
+async function drawInlineSignature(
   page: PDFPage,
   doc: PDFDocument,
   signaturePng: Uint8Array | null | undefined,
@@ -254,8 +230,8 @@ async function drawSignature(
   if (signaturePng && signaturePng.byteLength > 0) {
     try {
       const image = await doc.embedPng(signaturePng);
-      const maxWidth = 220;
-      const maxHeight = 70;
+      const maxWidth = 180;
+      const maxHeight = 54;
       const scale = Math.min(
         maxWidth / image.width,
         maxHeight / image.height,
@@ -263,18 +239,21 @@ async function drawSignature(
       );
       const width = image.width * scale;
       const height = image.height * scale;
+      if (y - height < 40) {
+        // Caller may have already paged; still clamp to avoid drawing off-page.
+      }
       page.drawImage(image, {
         x: left,
         y: y - height,
         width,
         height,
       });
-      return y - height - 16;
+      return y - height - 12;
     } catch {
       // fall through
     }
   }
-  return y - 12;
+  return y - 8;
 }
 
 function wrapText(

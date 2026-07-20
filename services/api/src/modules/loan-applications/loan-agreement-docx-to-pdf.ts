@@ -50,6 +50,7 @@ export async function convertDocxToPdfWithLibreOffice(
 
   try {
     await writeFile(docxPath, docxBytes);
+    // writer_pdf_Export keeps Writer layout (fonts, inline images) closer to the DOCX.
     await execFileAsync(
       soffice,
       [
@@ -59,7 +60,7 @@ export async function convertDocxToPdfWithLibreOffice(
         '--nodefault',
         '--nofirststartwizard',
         '--convert-to',
-        'pdf',
+        'pdf:writer_pdf_Export',
         '--outdir',
         workDir,
         docxPath,

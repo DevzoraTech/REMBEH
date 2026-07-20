@@ -27,16 +27,16 @@ Runtime copy: `services/api/assets/loan-agreement.docx`
 | `<<collateral_1>>` | Collateral type |
 | `<<gurantor_name>>` | Guarantor full name (DOCX spelling kept) |
 | `<<agent_name>>` | Officer display name |
-| `<<borrower_signature>>` | Marker in DOCX; PNG appended on PDF signature pages |
-| `<<guarantor_signature>>` | Marker in DOCX; PNG appended on PDF signature pages |
-| `<<agent_signature>>` | Marker in DOCX; PNG appended on PDF signature pages |
+| `<<borrower_signature>>` | Applicant PNG embedded **inline** at this placeholder |
+| `<<guarantor_signature>>` | Guarantor PNG embedded **inline** at this placeholder |
+| `<<agent_signature>>` | Officer PNG embedded **inline** at this placeholder |
 
 ## Download flow
 
 1. Web **Download PDF** calls `GET /api/v1/loan-applications/:id/agreement.pdf` with JWT.
 2. API fills the DOCX template with the merge fields above.
-3. LibreOffice headless converts the filled DOCX to PDF (preferred).
-4. Electronic signature PNGs are appended as extra PDF pages.
+3. Signature PNGs replace `<<borrower_signature>>` / `<<guarantor_signature>>` / `<<agent_signature>>` **in place** in the DOCX (template signature blocks). No separate “ELECTRONIC SIGNATURES” appendix or extra signature pages.
+4. LibreOffice headless converts the filled DOCX to PDF (`pdf:writer_pdf_Export`).
 5. PDF is stored in S3 under `tenants/{tenantId}/loans/{id}/documents/` and streamed to the client.
 
-If LibreOffice is missing, the API still fills the DOCX fields and renders an equivalent PDF from those same template clauses (Times New Roman), then appends signatures.
+If LibreOffice is missing, the API still fills the DOCX fields and renders an equivalent PDF from those same template clauses (Times New Roman), with signatures drawn inline in the signature blocks.

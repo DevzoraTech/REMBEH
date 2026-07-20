@@ -25,9 +25,9 @@
  * | <<collateral_1>>           | Collateral type                                   |
  * | <<gurantor_name>>          | Guarantor name (DOCX spelling)                    |
  * | <<agent_name>>             | Officer display name                              |
- * | <<borrower_signature>>     | Replaced with marker; PNG appended in PDF         |
- * | <<guarantor_signature>>    | Replaced with marker; PNG appended in PDF         |
- * | <<agent_signature>>        | Replaced with marker; PNG appended in PDF         |
+ * | <<borrower_signature>>     | Inline PNG at template signature placeholder      |
+ * | <<guarantor_signature>>    | Inline PNG at template signature placeholder      |
+ * | <<agent_signature>>        | Inline PNG at template signature placeholder      |
  */
 
 export type LoanAgreementMergeFields = Record<string, string>;
@@ -57,7 +57,8 @@ export type LoanAgreementFieldSource = {
   finePeriodLabel?: string | null;
 };
 
-const SIGNATURE_MARKER = '[electronic signature]';
+/** Cleared in DOCX; real PNGs are embedded at these placeholder locations. */
+const SIGNATURE_PLACEHOLDER = '';
 
 export function buildLoanAgreementMergeFields(
   input: LoanAgreementFieldSource,
@@ -104,9 +105,9 @@ export function buildLoanAgreementMergeFields(
     collateral_1: input.collateralType?.trim() || '—',
     gurantor_name: input.guarantorName?.trim() || '—',
     agent_name: input.agentName?.trim() || '—',
-    borrower_signature: SIGNATURE_MARKER,
-    guarantor_signature: SIGNATURE_MARKER,
-    agent_signature: SIGNATURE_MARKER,
+    borrower_signature: SIGNATURE_PLACEHOLDER,
+    guarantor_signature: SIGNATURE_PLACEHOLDER,
+    agent_signature: SIGNATURE_PLACEHOLDER,
   };
 }
 
