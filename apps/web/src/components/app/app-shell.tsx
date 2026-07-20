@@ -7,7 +7,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
-  Percent,
+  Settings,
   Wallet,
   UserRound,
   X,
@@ -48,8 +48,8 @@ export function AppShell({
   const profileRef = useRef<HTMLDivElement | null>(null);
   const operatorRole = resolveOperatorRole(session, user);
 
-  const navItems = useMemo(() => {
-    const items = [
+  const { primaryNav, settingsEnabled } = useMemo(() => {
+    const primary = [
       {
         href: "/dashboard",
         label: "Home",
@@ -61,15 +61,6 @@ export function AppShell({
         label: "Branches",
         icon: Building2,
         enabled: operatorRole === "owner",
-      },
-      {
-        href: "/settings/loan-products",
-        label: "Loan products",
-        icon: Percent,
-        enabled:
-          operatorRole === "owner" ||
-          operatorRole === "manager" ||
-          Boolean(session.permissions.includes("loan.product.manage")),
       },
       {
         href: "/dashboard#payments",
@@ -87,9 +78,14 @@ export function AppShell({
           operatorRole !== "staff" &&
           Boolean(session.permissions.includes("collection.read")),
       },
-    ];
+    ].filter((item) => item.enabled);
 
-    return items.filter((item) => item.enabled);
+    const settingsEnabled =
+      operatorRole === "owner" ||
+      operatorRole === "manager" ||
+      Boolean(session.permissions.includes("loan.product.manage"));
+
+    return { primaryNav: primary, settingsEnabled };
   }, [operatorRole, session.permissions]);
 
   useEffect(() => {
@@ -171,38 +167,60 @@ export function AppShell({
             </button>
           </div>
 
-          <nav className="mt-4 space-y-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const active =
-                pathname === item.href || pathname.startsWith(`${item.href}/`);
+          <nav className="mt-4 flex flex-1 flex-col">
+            <div className="space-y-1">
+              {primaryNav.map((item) => {
+                const Icon = item.icon;
+                const active =
+                  pathname === item.href ||
+                  (item.href !== "/dashboard" &&
+                    pathname.startsWith(`${item.href}/`)) ||
+                  (item.href === "/dashboard" && pathname === "/dashboard");
 
-              return (
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setMobileOpen(false)}
+                    className={`flex items-center gap-2.5 px-3 py-2 text-sm font-semibold ${
+                      active
+                        ? "bg-[var(--forest-emerald)] text-white"
+                        : "text-white/70 hover:bg-white/8 hover:text-white"
+                    }`}
+                  >
+                    <Icon className="size-4" />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+
+            <div className="mt-auto space-y-1 border-t border-white/10 pt-3">
+              {settingsEnabled ? (
                 <Link
-                  key={item.href}
-                  href={item.href}
+                  href="/settings"
                   onClick={() => setMobileOpen(false)}
                   className={`flex items-center gap-2.5 px-3 py-2 text-sm font-semibold ${
-                    active
+                    pathname === "/settings" ||
+                    pathname.startsWith("/settings/")
                       ? "bg-[var(--forest-emerald)] text-white"
                       : "text-white/70 hover:bg-white/8 hover:text-white"
                   }`}
                 >
-                  <Icon className="size-4" />
-                  {item.label}
+                  <Settings className="size-4" />
+                  Settings
                 </Link>
-              );
-            })}
+              ) : null}
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-sm font-semibold text-white/70 hover:bg-white/8 hover:text-white"
+              >
+                <LogOut className="size-4" />
+                Sign out
+              </button>
+            </div>
           </nav>
-
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="btn mt-auto w-full border border-white/12 bg-white/5 text-white hover:bg-white/10"
-          >
-            <LogOut className="size-4" />
-            Sign out
-          </button>
         </div>
       </aside>
 

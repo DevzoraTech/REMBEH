@@ -96,8 +96,8 @@ export const REMBEH_MODULES: RembehModuleDefinition[] = [
     menu: [
       { label: 'Loans', route: '/loans', surface: 'both' },
       {
-        label: 'Loan products',
-        route: '/settings/loan-products',
+        label: 'Settings',
+        route: '/settings',
         surface: 'web',
       },
     ],
