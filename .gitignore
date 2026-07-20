@@ -41,3 +41,8 @@ yarn-error.log*
 # Generated Prisma client artifacts can be regenerated.
 services/api/prisma/dev.db
 services/api/.env
+
+# Marketing site static export
+website/out/
+website/.next/
+website/node_modules/

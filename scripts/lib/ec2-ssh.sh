@@ -57,7 +57,10 @@ if [[ -d "\$REMOTE_DIR/.git" ]]; then
     -e services/api/.env \
     -e global-bundle.pem \
     -e apps/web/.next \
-    -e apps/web/node_modules
+    -e apps/web/node_modules \
+    -e website/node_modules \
+    -e website/out \
+    -e website/.next
 else
   rm -rf "\$REMOTE_DIR"
   git clone --branch "\$BRANCH" "\$REPO_URL" "\$REMOTE_DIR"

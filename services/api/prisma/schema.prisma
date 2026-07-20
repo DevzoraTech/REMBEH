@@ -750,3 +750,27 @@ model OtpChallenge {
   @@index([expiresAt, consumedAt])
   @@map("otp_challenges")
 }
+
+/// Mobile / desktop app release metadata for APK distribution + Shorebird.
+model AppRelease {
+  id                String   @id @default(uuid()) @db.Uuid
+  appName           String   @map("app_name")
+  platform          String   @default("android")
+  version           String
+  buildNumber       Int      @map("build_number")
+  updateMode        String   @map("update_mode")
+  forceUpdate       Boolean  @default(false) @map("force_update")
+  minSupportedBuild Int      @default(1) @map("min_supported_build")
+  apkUrl            String?  @map("apk_url")
+  apkHash           String?  @map("apk_hash")
+  changelog         String[] @default([])
+  message           String?
+  isActive          Boolean  @default(true) @map("is_active")
+  downloadCount     Int      @default(0) @map("download_count")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@unique([appName, platform, buildNumber])
+  @@index([appName, platform, isActive])
+  @@map("app_releases")
+}

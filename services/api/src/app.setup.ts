@@ -5,8 +5,12 @@ import { PrismaExceptionFilter } from './common/database/prisma-exception.filter
 const DEFAULT_CORS_ORIGINS = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
+  'http://localhost:3002',
+  'http://127.0.0.1:3002',
   'http://rembeh.antikra.com',
   'https://rembeh.antikra.com',
+  'http://get.rembeh.antikra.com',
+  'https://get.rembeh.antikra.com',
   'http://13.63.130.241',
   'https://13.63.130.241',
 ];

@@ -11,6 +11,7 @@ import { CustomersModule } from './modules/customers/customers.module';
 import { IdentityVerificationModule } from './modules/identity-verification/identity-verification.module';
 import { LoanApplicationsModule } from './modules/loan-applications/loan-applications.module';
 import { LoanProductsModule } from './modules/loan-products/loan-products.module';
+import { AppUpdateModule } from './modules/app-update/app-update.module';
 import { PlatformModule } from './modules/platform/platform.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { StorageModule } from './modules/storage/storage.module';
@@ -33,6 +34,7 @@ import { StorageModule } from './modules/storage/storage.module';
     LoanApplicationsModule,
     LoanProductsModule,
     PlatformModule,
+    AppUpdateModule,
   ],
   controllers: [AppController],
   providers: [AppService],

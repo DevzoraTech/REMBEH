@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import 'screens/agent_shell.dart';
+import 'screens/force_update_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/profile/agent_selfie_capture_screen.dart';
 import 'services/api_client.dart';
 import 'services/session_cleanup.dart';
 import 'services/session_store.dart';
+import 'services/update_service.dart';
 import 'theme.dart';
 
 void main() {
@@ -42,6 +44,25 @@ class _BootScreenState extends State<_BootScreen> {
   }
 
   Future<void> _boot() async {
+    // Non-blocking for Shorebird patches; blocking only for forced full APK.
+    final update = await UpdateService.checkForUpdate();
+    if (!mounted) return;
+    if (update != null && update.requiresFullInstall) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ForceUpdateScreen(
+            updateResult: update,
+            onSkip: update.isBlocking ? null : () => Navigator.of(context).pop(),
+          ),
+        ),
+      );
+      if (!mounted) return;
+      if (update.isBlocking) {
+        // Stay on update screen until user updates — re-show if they popped.
+        return _boot();
+      }
+    }
+
     final store = SessionStore();
     var session = await store.read();
     if (!mounted) return;

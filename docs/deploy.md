@@ -4,12 +4,13 @@ EC2 host: `13.63.130.241` · Repo: `https://github.com/DevzoraTech/REMBEH.git` �
 
 ## DNS records
 
-Add these in your DNS provider for `antikra.com`:
+Add these in your DNS provider (Spaceship) for `antikra.com`:
 
 | Host | Type | Value |
 |------|------|-------|
 | `rembeh-api.antikra.com` | A | `13.63.130.241` |
 | `rembeh.antikra.com` | A | `13.63.130.241` |
+| `get.rembeh.antikra.com` | A | `13.63.130.241` |
 
 Optional:
 
@@ -23,6 +24,7 @@ Optional:
 |------|--------|--------|
 | API | **HTTPS** | `https://rembeh-api.antikra.com` — Let's Encrypt; nginx → `:4000` |
 | Web | **HTTPS** | `https://rembeh.antikra.com` — Let's Encrypt; nginx → `:3000`; HTTP → HTTPS |
+| Marketing | **HTTP then HTTPS** | `http://get.rembeh.antikra.com` until DNS A exists; then `sudo certbot --nginx -d get.rembeh.antikra.com` |
 
 Renewal is handled by certbot's timer. Optional `www.rembeh.antikra.com` needs a DNS CNAME before it can be added to the web cert.
 
@@ -32,8 +34,14 @@ Committed nginx configs (source of truth):
 |------|---------------|----------|
 | [`deploy/nginx/rembeh-web.conf`](../deploy/nginx/rembeh-web.conf) | `rembeh.antikra.com` (+ IP HTTP catch-all on `:80` only) | `127.0.0.1:3000` |
 | [`deploy/nginx/rembeh-api.conf`](../deploy/nginx/rembeh-api.conf) | `rembeh-api.antikra.com` **only** | `127.0.0.1:4000` |
+| [`deploy/nginx/rembeh-get.conf`](../deploy/nginx/rembeh-get.conf) | `get.rembeh.antikra.com` | static `/var/www/rembeh-get` (HTTP) |
+| [`deploy/nginx/rembeh-get-ssl.conf`](../deploy/nginx/rembeh-get-ssl.conf) | `get.rembeh.antikra.com` | same root (HTTPS when cert exists) |
 
-Every web (and API) deploy runs [`scripts/ensure-nginx-web.sh`](../scripts/ensure-nginx-web.sh): copy configs → `nginx -t` → reload. Web deploy also smokes `https://rembeh.antikra.com/dashboard` and **fails** if the response is not HTTP 200 Next.js (e.g. Nest `Cannot GET`).
+Every web / API / website deploy runs [`scripts/ensure-nginx-web.sh`](../scripts/ensure-nginx-web.sh): copy configs → `nginx -t` → reload. Web deploy also smokes `https://rembeh.antikra.com/dashboard` and **fails** if the response is not HTTP 200 Next.js (e.g. Nest `Cannot GET`).
+
+Marketing deploy: [`scripts/deploy-website-ec2.sh`](../scripts/deploy-website-ec2.sh) builds `website/out` on the server and rsyncs to `/var/www/rembeh-get`.
+
+Mobile APK distribution: see [`docs/mobile-releases.md`](mobile-releases.md).
 
 #### Why `Cannot GET /dashboard` happens
 
@@ -73,8 +81,9 @@ On every push to `main` (path-filtered):
 |----------|-------|--------|
 | [`.github/workflows/deploy-api.yml`](../.github/workflows/deploy-api.yml) | `services/api/**`, root `package.json` / `package-lock.json`, deploy scripts | SSH → `git pull` → build API → restart `rembeh-api` |
 | [`.github/workflows/deploy-web.yml`](../.github/workflows/deploy-web.yml) | `apps/web/**`, root package files, deploy scripts | SSH → `git pull` → build Next.js → restart `rembeh-web` + reload nginx |
+| [`.github/workflows/deploy-website.yml`](../.github/workflows/deploy-website.yml) | `website/**`, get nginx configs, deploy-website script | SSH → `git pull` → build static export → `/var/www/rembeh-get` + reload nginx |
 
-Both support **Actions → Run workflow** (`workflow_dispatch`) for a manual redeploy.
+All three support **Actions → Run workflow** (`workflow_dispatch`) for a manual redeploy.
 
 ### GitHub secrets to add
 

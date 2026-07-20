@@ -18,6 +18,16 @@ tenants/{tenantId}/
       metadata.json
     documents/SignedLoanAgreement-{version}.pdf
   products/                  # reserved for future config snapshots
+
+## Platform releases (not tenant-scoped)
+
+Android APKs for the field app (private bucket, presigned download only):
+
+```
+releases/mobile/android/build-{buildNumber}/rembeh-v{version}.apk
+```
+
+See [`docs/mobile-releases.md`](mobile-releases.md).
 ```
 
 ## Provisioning
