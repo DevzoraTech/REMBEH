@@ -54,12 +54,17 @@ export type LoanProductTemplateContract = {
   name: string;
   description: string | null;
   interestRatePercent: number;
-  interestType: 'FLAT';
+  interestType: 'FLAT' | 'REDUCING_BALANCE' | 'COMPOUND';
   termValue: number;
-  termUnit: 'DAYS' | 'MONTHS' | 'YEARS';
+  termUnit: 'DAYS' | 'WEEKS' | 'MONTHS' | 'YEARS';
   /** Derived duration in days for schedules / fines. */
   durationDays: number;
-  repaymentFrequency: 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY';
+  repaymentFrequency:
+    | 'DAILY'
+    | 'WEEKLY'
+    | 'BIWEEKLY'
+    | 'MONTHLY'
+    | 'LUMP_SUM';
   processingFeePercent: number;
   /** Fine = this % of original principal each finePeriodDays after maturity. */
   penaltyRatePercent: number;
@@ -89,7 +94,10 @@ export type LoanPricingBreakdownContract = {
   interestRatePercent: number;
   durationDays: number;
   processingFee: number;
-  /** Flat interest: principal × (rate% / 100). Duration does not affect this. */
+  /**
+   * Interest preview: principal × (rate% / 100) for all types today.
+   * REDUCING_BALANCE / COMPOUND use the same interim until amortization.
+   */
   interestAmount: number;
   /** principal + interestAmount + processingFee */
   totalRepayable: number;

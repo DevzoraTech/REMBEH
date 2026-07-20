@@ -585,7 +585,7 @@ export class LoanProductsService {
       name: row.name,
       description: row.description,
       interestRatePercent: Number(row.interestRatePercent.toString()),
-      interestType: 'FLAT',
+      interestType: row.interestType,
       termValue: row.termValue,
       termUnit: row.termUnit,
       durationDays: termToDurationDays(row.termValue, row.termUnit),

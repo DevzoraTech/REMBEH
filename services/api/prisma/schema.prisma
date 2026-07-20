@@ -107,14 +107,18 @@ enum PaymentStartPolicyType {
   AFTER_N_DAYS
 }
 
-/// Interest pricing model for loan type templates (REMBEH uses flat).
+/// Interest pricing model for loan type templates.
 enum LoanInterestType {
   FLAT
+  REDUCING_BALANCE
+  COMPOUND
 }
 
 enum LoanTermUnit {
   DAYS
+  WEEKS
   MONTHS
+  /// Kept for backward compatibility; UI offers Days / Weeks / Month(s) only.
   YEARS
 }
 
@@ -123,6 +127,7 @@ enum LoanRepaymentFrequency {
   WEEKLY
   BIWEEKLY
   MONTHLY
+  LUMP_SUM
 }
 
 model Tenant {

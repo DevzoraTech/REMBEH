@@ -30,13 +30,19 @@ export function FormError({ error }: { error: string | null }) {
 export function FieldLabel({
   label,
   hint,
+  compact = false,
 }: {
   label: string;
   hint?: string;
+  compact?: boolean;
 }) {
   return (
-    <div className="mb-2 flex items-end justify-between gap-3">
-      <span className="text-sm font-semibold text-[var(--midnight-navy)]">
+    <div
+      className={`flex items-end justify-between gap-3 ${compact ? "mb-1" : "mb-2"}`}
+    >
+      <span
+        className={`font-semibold text-[var(--midnight-navy)] ${compact ? "text-xs" : "text-sm"}`}
+      >
         {label}
       </span>
       {hint ? <span className="text-xs text-slate-500">{hint}</span> : null}
@@ -55,6 +61,7 @@ export function TextField({
   placeholder,
   autoComplete,
   hint,
+  compact = false,
 }: {
   label: string;
   value: string;
@@ -66,14 +73,15 @@ export function TextField({
   placeholder?: string;
   autoComplete?: string;
   hint?: string;
+  compact?: boolean;
 }) {
   return (
     <label className="block">
-      <FieldLabel label={label} hint={hint} />
+      <FieldLabel label={label} hint={hint} compact={compact} />
       <input
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="field-input"
+        className={`field-input ${compact ? "h-9 text-sm" : ""}`}
         type={type}
         required={required}
         maxLength={maxLength}
@@ -138,6 +146,7 @@ export function SelectField({
   options,
   required = false,
   placeholder,
+  compact = false,
 }: {
   label: string;
   value: string;
@@ -145,14 +154,15 @@ export function SelectField({
   options: Array<{ value: string; label: string }>;
   required?: boolean;
   placeholder?: string;
+  compact?: boolean;
 }) {
   return (
     <label className="block">
-      <FieldLabel label={label} />
+      <FieldLabel label={label} compact={compact} />
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="field-input appearance-none bg-[url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%228%22 fill=%22none%22%3E%3Cpath d=%22M1 1.5 6 6.5 11 1.5%22 stroke=%22%2366756E%22 stroke-width=%221.5%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E')] bg-[length:12px_8px] bg-[right_14px_center] bg-no-repeat pr-10"
+        className={`field-input appearance-none bg-[url('data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2212%22 height=%228%22 fill=%22none%22%3E%3Cpath d=%22M1 1.5 6 6.5 11 1.5%22 stroke=%22%2366756E%22 stroke-width=%221.5%22 stroke-linecap=%22round%22 stroke-linejoin=%22round%22/%3E%3C/svg%3E')] bg-[length:12px_8px] bg-[right_14px_center] bg-no-repeat pr-10 ${compact ? "h-9 text-sm" : ""}`}
         required={required}
       >
         {placeholder ? (

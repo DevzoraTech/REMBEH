@@ -70,10 +70,16 @@ export type LoanApplicationContract = {
   processingFee: number | null;
   loanProductTemplateId: string | null;
   templateName: string | null;
-  interestType: 'FLAT' | null;
+  interestType: 'FLAT' | 'REDUCING_BALANCE' | 'COMPOUND' | null;
   termValue: number | null;
-  termUnit: 'DAYS' | 'MONTHS' | 'YEARS' | null;
-  repaymentFrequency: 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | null;
+  termUnit: 'DAYS' | 'WEEKS' | 'MONTHS' | 'YEARS' | null;
+  repaymentFrequency:
+    | 'DAILY'
+    | 'WEEKLY'
+    | 'BIWEEKLY'
+    | 'MONTHLY'
+    | 'LUMP_SUM'
+    | null;
   processingFeePercent: number | null;
   penaltyRatePercent: number | null;
   finePeriodDays: number | null;

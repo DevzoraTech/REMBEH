@@ -44,4 +44,28 @@ describe('computeLoanPricing', () => {
     expect(long.interestAmount).toBe(5_000);
     expect(short.totalRepayable).toBe(long.totalRepayable);
   });
+
+  it('uses flat interim preview for reducing/compound types', () => {
+    const flat = computeLoanPricing({
+      principalAmount: 100_000,
+      interestRatePercent: 12,
+      durationDays: 30,
+      interestType: 'FLAT',
+    });
+    const reducing = computeLoanPricing({
+      principalAmount: 100_000,
+      interestRatePercent: 12,
+      durationDays: 30,
+      interestType: 'REDUCING_BALANCE',
+    });
+    const compound = computeLoanPricing({
+      principalAmount: 100_000,
+      interestRatePercent: 12,
+      durationDays: 30,
+      interestType: 'COMPOUND',
+    });
+
+    expect(reducing.interestAmount).toBe(flat.interestAmount);
+    expect(compound.interestAmount).toBe(flat.interestAmount);
+  });
 });

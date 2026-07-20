@@ -1,23 +1,31 @@
 /**
- * Flat percent interest on principal (no duration factor):
- * loanRate = principal × (rate% / 100)
- * repayable = principal + loanRate + processingFee
+ * Loan interest / repayable preview.
  *
- * Duration/period is still used for payment schedules and due dates elsewhere,
- * but not for the interest amount. New loans snapshot totalRepayable onto the
- * wallet opening balance / loan balance at submit; those stored values stay as
- * stored even if this formula changes later.
+ * FLAT:
+ *   interest = principal × (rate% / 100)
+ *
+ * REDUCING_BALANCE / COMPOUND (interim until full amortization schedules):
+ *   Same principal × rate% preview as FLAT so submit / snapshot stay stable.
+ *   The interest type is stored on the template and application for later
+ *   amortization work; duration still drives schedules/due dates elsewhere.
+ *
+ * repayable = principal + interest + processingFee
  */
 export function computeLoanPricing(input: {
   principalAmount: number;
   interestRatePercent: number;
   durationDays: number;
   processingFee?: number | null;
+  /** Stored on template; does not change interim math yet. */
+  interestType?: string | null;
 }) {
   const principal = roundMoney(input.principalAmount);
   const rate = input.interestRatePercent;
   const days = input.durationDays;
   const fee = roundMoney(input.processingFee ?? 0);
+  // Interim: all interest types use flat principal×rate% for repayable preview.
+  // REDUCING_BALANCE / COMPOUND remain stored for future amortization.
+  void input.interestType;
   const interestAmount = roundMoney(principal * (rate / 100));
   const totalRepayable = roundMoney(principal + interestAmount + fee);
 

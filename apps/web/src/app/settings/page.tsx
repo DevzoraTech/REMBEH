@@ -48,11 +48,16 @@ type LoanTemplate = {
   name: string;
   description: string | null;
   interestRatePercent: number;
-  interestType: "FLAT";
+  interestType: "FLAT" | "REDUCING_BALANCE" | "COMPOUND";
   termValue: number;
-  termUnit: "DAYS" | "MONTHS" | "YEARS";
+  termUnit: "DAYS" | "WEEKS" | "MONTHS" | "YEARS";
   durationDays: number;
-  repaymentFrequency: "DAILY" | "WEEKLY" | "BIWEEKLY" | "MONTHLY";
+  repaymentFrequency:
+    | "DAILY"
+    | "WEEKLY"
+    | "BIWEEKLY"
+    | "MONTHLY"
+    | "LUMP_SUM";
   processingFeePercent: number;
   penaltyRatePercent: number;
   finePeriodDays: number;
@@ -99,10 +104,15 @@ type TemplateForm = {
   name: string;
   description: string;
   interestRatePercent: string;
-  interestType: "FLAT";
+  interestType: "FLAT" | "REDUCING_BALANCE" | "COMPOUND";
   termValue: string;
-  termUnit: "DAYS" | "MONTHS" | "YEARS";
-  repaymentFrequency: "DAILY" | "WEEKLY" | "BIWEEKLY" | "MONTHLY";
+  termUnit: "DAYS" | "WEEKS" | "MONTHS";
+  repaymentFrequency:
+    | "DAILY"
+    | "WEEKLY"
+    | "BIWEEKLY"
+    | "MONTHLY"
+    | "LUMP_SUM";
   processingFeePercent: string;
   penaltyRatePercent: string;
   finePeriodDays: string;
@@ -156,13 +166,17 @@ const emptyForm = (): TemplateForm => ({
 });
 
 function formFromTemplate(template: LoanTemplate): TemplateForm {
+  const termUnit =
+    template.termUnit === "WEEKS" || template.termUnit === "MONTHS"
+      ? template.termUnit
+      : "DAYS";
   return {
     name: template.name,
     description: template.description ?? "",
     interestRatePercent: String(template.interestRatePercent),
-    interestType: "FLAT",
+    interestType: template.interestType,
     termValue: String(template.termValue),
-    termUnit: template.termUnit,
+    termUnit,
     repaymentFrequency: template.repaymentFrequency,
     processingFeePercent: String(template.processingFeePercent),
     penaltyRatePercent: String(template.penaltyRatePercent),
@@ -192,6 +206,8 @@ function termLabel(unit: LoanTemplate["termUnit"]) {
   switch (unit) {
     case "DAYS":
       return "days";
+    case "WEEKS":
+      return "weeks";
     case "MONTHS":
       return "months";
     case "YEARS":
@@ -206,9 +222,22 @@ function frequencyLabel(value: LoanTemplate["repaymentFrequency"]) {
     case "WEEKLY":
       return "Weekly";
     case "BIWEEKLY":
-      return "Biweekly";
+      return "Bi-weekly";
     case "MONTHLY":
       return "Monthly";
+    case "LUMP_SUM":
+      return "Lump sum";
+  }
+}
+
+function interestTypeLabel(value: LoanTemplate["interestType"]) {
+  switch (value) {
+    case "FLAT":
+      return "Flat";
+    case "REDUCING_BALANCE":
+      return "Reducing balance";
+    case "COMPOUND":
+      return "Compound";
   }
 }
 
@@ -922,7 +951,10 @@ function SettingsPageContent() {
                               </p>
                             </td>
                             <td className="py-2.5 pr-3 align-middle font-semibold text-[var(--midnight-navy)]">
-                              {template.interestRatePercent}% flat
+                              {template.interestRatePercent}%{" "}
+                              <span className="font-normal text-slate-500">
+                                {interestTypeLabel(template.interestType)}
+                              </span>
                             </td>
                             <td className="py-2.5 pr-3 align-middle text-[var(--midnight-navy)]">
                               {template.termValue} {termLabel(template.termUnit)}
@@ -1320,7 +1352,7 @@ function SettingsPageContent() {
         <form
           id="loan-template-form"
           onSubmit={saveTemplate}
-          className="grid gap-3 sm:grid-cols-2"
+          className="grid grid-cols-1 gap-2.5 sm:grid-cols-2"
         >
           <TextField
             label="Template / Loan type name"
@@ -1328,20 +1360,31 @@ function SettingsPageContent() {
             onChange={(value) => updateForm("name", value)}
             placeholder="e.g. 30-day working capital"
             required
+            compact
           />
           <SelectField
             label="Interest Type"
             value={form.interestType}
-            onChange={() => updateForm("interestType", "FLAT")}
-            options={[{ value: "FLAT", label: "Flat" }]}
+            onChange={(value) =>
+              updateForm(
+                "interestType",
+                value as TemplateForm["interestType"],
+              )
+            }
+            options={[
+              { value: "FLAT", label: "Flat" },
+              { value: "REDUCING_BALANCE", label: "Reducing balance" },
+              { value: "COMPOUND", label: "Compound" },
+            ]}
             required
+            compact
           />
           <label className="block sm:col-span-2">
-            <span className="mb-2 block text-sm font-semibold text-[var(--midnight-navy)]">
+            <span className="mb-1 block text-xs font-semibold text-[var(--midnight-navy)]">
               Description
             </span>
             <textarea
-              className="min-h-16 w-full border border-[var(--line)] bg-white px-3 py-2 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] focus:shadow-[inset_0_0_0_1px_var(--forest-emerald)]"
+              className="min-h-12 w-full border border-[var(--line)] bg-white px-2.5 py-1.5 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] focus:shadow-[inset_0_0_0_1px_var(--forest-emerald)]"
               value={form.description}
               onChange={(event) =>
                 updateForm("description", event.target.value)
@@ -1355,6 +1398,7 @@ function SettingsPageContent() {
             onChange={(value) => updateForm("interestRatePercent", value)}
             placeholder="12"
             required
+            compact
           />
           <TextField
             label="Processing Fee (%)"
@@ -1362,6 +1406,7 @@ function SettingsPageContent() {
             onChange={(value) => updateForm("processingFeePercent", value)}
             placeholder="2"
             required
+            compact
           />
           <TextField
             label="Loan Term"
@@ -1369,6 +1414,7 @@ function SettingsPageContent() {
             onChange={(value) => updateForm("termValue", value)}
             placeholder="30"
             required
+            compact
           />
           <SelectField
             label="Term Unit"
@@ -1378,10 +1424,11 @@ function SettingsPageContent() {
             }
             options={[
               { value: "DAYS", label: "Days" },
-              { value: "MONTHS", label: "Months" },
-              { value: "YEARS", label: "Years" },
+              { value: "WEEKS", label: "Weeks" },
+              { value: "MONTHS", label: "Month(s)" },
             ]}
             required
+            compact
           />
           <SelectField
             label="Repayment Frequency"
@@ -1395,10 +1442,12 @@ function SettingsPageContent() {
             options={[
               { value: "DAILY", label: "Daily" },
               { value: "WEEKLY", label: "Weekly" },
-              { value: "BIWEEKLY", label: "Biweekly" },
+              { value: "BIWEEKLY", label: "Bi-weekly" },
               { value: "MONTHLY", label: "Monthly" },
+              { value: "LUMP_SUM", label: "Lump sum" },
             ]}
             required
+            compact
           />
           <TextField
             label="Penalty Rate (%)"
@@ -1406,6 +1455,7 @@ function SettingsPageContent() {
             onChange={(value) => updateForm("penaltyRatePercent", value)}
             placeholder="5"
             required
+            compact
           />
           <TextField
             label="Fine period (days)"
@@ -1413,33 +1463,38 @@ function SettingsPageContent() {
             onChange={(value) => updateForm("finePeriodDays", value)}
             placeholder="10"
             required
+            compact
           />
           <TextField
             label="Min Loan Amount"
             value={form.minLoanAmount}
             onChange={(value) => updateForm("minLoanAmount", value)}
             placeholder="Optional"
+            compact
           />
           <TextField
             label="Max Loan Amount"
             value={form.maxLoanAmount}
             onChange={(value) => updateForm("maxLoanAmount", value)}
             placeholder="Optional"
+            compact
           />
           <label className="block sm:col-span-2">
-            <span className="mb-2 block text-sm font-semibold text-[var(--midnight-navy)]">
+            <span className="mb-1 block text-xs font-semibold text-[var(--midnight-navy)]">
               Notes (internal)
             </span>
             <textarea
-              className="min-h-14 w-full border border-[var(--line)] bg-white px-3 py-2 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] focus:shadow-[inset_0_0_0_1px_var(--forest-emerald)]"
+              className="min-h-11 w-full border border-[var(--line)] bg-white px-2.5 py-1.5 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] focus:shadow-[inset_0_0_0_1px_var(--forest-emerald)]"
               value={form.notes}
               onChange={(event) => updateForm("notes", event.target.value)}
               placeholder="Internal notes — not shown to borrowers"
             />
           </label>
-          <p className="text-xs text-slate-500 sm:col-span-2">
+          <p className="text-[11px] leading-snug text-slate-500 sm:col-span-2">
             Overdue fine = penalty rate % of original principal, charged every
-            fine period days after maturity while unpaid.
+            fine period days after maturity while unpaid. Reducing / compound
+            types are stored; repayable preview currently uses flat principal ×
+            rate% until amortization is added.
           </p>
         </form>
       </SettingsModal>

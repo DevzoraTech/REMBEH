@@ -13,6 +13,9 @@ export function termToDurationDays(
     case LoanTermUnit.DAYS:
     case 'DAYS':
       return value;
+    case LoanTermUnit.WEEKS:
+    case 'WEEKS':
+      return value * 7;
     case LoanTermUnit.MONTHS:
     case 'MONTHS':
       return value * 30;
@@ -28,19 +31,16 @@ export function describeLoanTerm(
   termValue: number,
   termUnit: LoanTermUnit | string,
 ): string {
-  const unit =
-    termUnit === 'MONTHS' || termUnit === LoanTermUnit.MONTHS
-      ? termValue === 1
-        ? 'month'
-        : 'months'
-      : termUnit === 'YEARS' || termUnit === LoanTermUnit.YEARS
-        ? termValue === 1
-          ? 'year'
-          : 'years'
-        : termValue === 1
-          ? 'day'
-          : 'days';
-  return `${termValue} ${unit}`;
+  if (termUnit === 'WEEKS' || termUnit === LoanTermUnit.WEEKS) {
+    return `${termValue} ${termValue === 1 ? 'week' : 'weeks'}`;
+  }
+  if (termUnit === 'MONTHS' || termUnit === LoanTermUnit.MONTHS) {
+    return `${termValue} ${termValue === 1 ? 'month' : 'months'}`;
+  }
+  if (termUnit === 'YEARS' || termUnit === LoanTermUnit.YEARS) {
+    return `${termValue} ${termValue === 1 ? 'year' : 'years'}`;
+  }
+  return `${termValue} ${termValue === 1 ? 'day' : 'days'}`;
 }
 
 /** Fine amount = penaltyRatePercent of original principal (rounded to 2dp). */

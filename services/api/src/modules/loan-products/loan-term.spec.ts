@@ -8,12 +8,14 @@ import {
 describe('loan-term helpers', () => {
   it('converts term units to days', () => {
     expect(termToDurationDays(30, 'DAYS')).toBe(30);
+    expect(termToDurationDays(2, 'WEEKS')).toBe(14);
     expect(termToDurationDays(3, 'MONTHS')).toBe(90);
     expect(termToDurationDays(1, 'YEARS')).toBe(365);
   });
 
   it('describes terms', () => {
     expect(describeLoanTerm(1, 'DAYS')).toBe('1 day');
+    expect(describeLoanTerm(2, 'WEEKS')).toBe('2 weeks');
     expect(describeLoanTerm(3, 'MONTHS')).toBe('3 months');
   });
 

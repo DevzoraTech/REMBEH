@@ -107,8 +107,16 @@ class LoanProductTemplateOption {
   final String? description;
 
   String get termLabel {
-    final unit = termUnit.toLowerCase();
-    return '$termValue $unit ($durationDays days)';
+    switch (termUnit) {
+      case 'WEEKS':
+        return '$termValue ${termValue == 1 ? 'week' : 'weeks'} ($durationDays days)';
+      case 'MONTHS':
+        return '$termValue ${termValue == 1 ? 'month' : 'months'} ($durationDays days)';
+      case 'YEARS':
+        return '$termValue ${termValue == 1 ? 'year' : 'years'} ($durationDays days)';
+      default:
+        return '$termValue ${termValue == 1 ? 'day' : 'days'}';
+    }
   }
 
   String get repaymentLabel {
@@ -116,11 +124,24 @@ class LoanProductTemplateOption {
       case 'WEEKLY':
         return 'Weekly';
       case 'BIWEEKLY':
-        return 'Biweekly';
+        return 'Bi-weekly';
       case 'MONTHLY':
         return 'Monthly';
+      case 'LUMP_SUM':
+        return 'Lump sum';
       default:
         return 'Daily';
+    }
+  }
+
+  String get interestTypeLabel {
+    switch (interestType) {
+      case 'REDUCING_BALANCE':
+        return 'Reducing balance';
+      case 'COMPOUND':
+        return 'Compound';
+      default:
+        return 'Flat';
     }
   }
 
