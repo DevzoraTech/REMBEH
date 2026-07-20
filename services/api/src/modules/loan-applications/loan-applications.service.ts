@@ -263,6 +263,9 @@ export class LoanApplicationsService {
               templateSnapshot.penaltyRatePercent,
             ),
             finePeriodDays: templateSnapshot.finePeriodDays,
+            paymentStartPolicy: templateSnapshot.paymentStartPolicy,
+            paymentStartDelayDays: templateSnapshot.paymentStartDelayDays,
+            allowAgentDatePick: templateSnapshot.allowAgentDatePick,
             interestRatePercent: new Prisma.Decimal(
               templateSnapshot.interestRatePercent,
             ),
@@ -303,6 +306,17 @@ export class LoanApplicationsService {
               user,
               existing.branchId,
               dto.paymentStartDate,
+              {
+                paymentStartPolicy:
+                  templateSnapshot?.paymentStartPolicy ??
+                  existing.paymentStartPolicy,
+                paymentStartDelayDays:
+                  templateSnapshot?.paymentStartDelayDays ??
+                  existing.paymentStartDelayDays,
+                allowAgentDatePick:
+                  templateSnapshot?.allowAgentDatePick ??
+                  existing.allowAgentDatePick,
+              },
             ),
           }
         : {}),
@@ -671,6 +685,9 @@ export class LoanApplicationsService {
       branchId: application.branchId,
       anchorDate: goLiveAt,
       agentPickedDate: application.paymentStartDate,
+      paymentStartPolicy: application.paymentStartPolicy,
+      paymentStartDelayDays: application.paymentStartDelayDays,
+      allowAgentDatePick: application.allowAgentDatePick ?? false,
     });
 
     const eventPayload = this.toEventPayload({
@@ -1075,6 +1092,9 @@ export class LoanApplicationsService {
       ),
       penaltyRatePercent: this.decimalToNumber(application.penaltyRatePercent),
       finePeriodDays: application.finePeriodDays,
+      paymentStartPolicy: application.paymentStartPolicy,
+      paymentStartDelayDays: application.paymentStartDelayDays,
+      allowAgentDatePick: application.allowAgentDatePick,
       loanPurpose: application.loanPurpose,
       collateralType: application.collateralType,
       verificationCode: application.verificationCode,
@@ -1211,6 +1231,9 @@ export class LoanApplicationsService {
       processingFeePercent: Number(template.processingFeePercent.toString()),
       penaltyRatePercent: Number(template.penaltyRatePercent.toString()),
       finePeriodDays: template.finePeriodDays,
+      paymentStartPolicy: template.paymentStartPolicy,
+      paymentStartDelayDays: template.paymentStartDelayDays,
+      allowAgentDatePick: template.allowAgentDatePick,
       durationDays: termToDurationDays(template.termValue, template.termUnit),
       minLoanAmount:
         template.minLoanAmount != null
@@ -1244,24 +1267,35 @@ export class LoanApplicationsService {
     user: AuthenticatedUser,
     branchId: string,
     raw: string,
+    application?: {
+      paymentStartPolicy?: import('@prisma/client').PaymentStartPolicyType | null;
+      paymentStartDelayDays?: number | null;
+      allowAgentDatePick?: boolean | null;
+    },
   ): Promise<Date> {
-    const catalog = await this.loanProducts.getCatalog(user);
-    const policy = catalog.paymentStartPolicy;
-    if (!policy?.allowAgentDatePick) {
+    const allowPick =
+      application?.allowAgentDatePick ??
+      (await this.loanProducts.getCatalog(user)).paymentStartPolicy
+        ?.allowAgentDatePick ??
+      false;
+    if (!allowPick) {
       throw new BadRequestException(
-        'This branch does not allow agents to pick a payment start date.',
+        'Agents are not allowed to pick a payment start date for this product.',
       );
     }
     const picked = new Date(raw);
     if (Number.isNaN(picked.getTime())) {
       throw new BadRequestException('Invalid payment start date.');
     }
-    // Validate against policy using "today" as provisional go-live anchor.
+    // Validate against template snapshot (or legacy branch policy) using today as provisional go-live.
     return this.loanProducts.resolvePaymentStartDate({
       tenantId: user.tenantId,
       branchId,
       anchorDate: new Date(),
       agentPickedDate: picked,
+      paymentStartPolicy: application?.paymentStartPolicy,
+      paymentStartDelayDays: application?.paymentStartDelayDays,
+      allowAgentDatePick: true,
     });
   }
 

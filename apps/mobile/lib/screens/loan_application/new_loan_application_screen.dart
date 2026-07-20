@@ -88,6 +88,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         ? (principal * (template.processingFeePercent / 100) * 100).round() /
             100
         : 0.0;
+    final paymentStart = template.computePaymentStartDate();
     setState(() {
       _draft
         ..loanProductTemplateId = template.id
@@ -95,7 +96,8 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         ..interestRate = '${template.interestRatePercent}%'
         ..loanDurationDays = template.termLabel
         ..repaymentFrequencyLabel = template.repaymentLabel
-        ..processingFee = fee > 0 ? fee.toStringAsFixed(0) : '';
+        ..processingFee = fee > 0 ? fee.toStringAsFixed(0) : ''
+        ..paymentStartDate = paymentStart;
       if (fee > 0) {
         _processingFee.text = fee.toStringAsFixed(0);
       }
@@ -1187,7 +1189,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Interest: ${selected.interestRatePercent}% flat',
+                'Interest: ${selected.interestRatePercent}% ${selected.interestTypeLabel.toLowerCase()}',
                 style: const TextStyle(
                   color: midnightNavy,
                   fontWeight: FontWeight.w600,
@@ -1212,6 +1214,11 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
               const SizedBox(height: 4),
               Text(
                 'Penalty: ${selected.penaltyRatePercent}% of principal every ${selected.finePeriodDays} days after maturity',
+                style: const TextStyle(color: midnightNavy, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Payment start: ${selected.paymentStartLabel}',
                 style: const TextStyle(color: midnightNavy, fontSize: 12),
               ),
             ],

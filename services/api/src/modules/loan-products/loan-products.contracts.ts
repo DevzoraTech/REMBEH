@@ -69,6 +69,11 @@ export type LoanProductTemplateContract = {
   /** Fine = this % of original principal each finePeriodDays after maturity. */
   penaltyRatePercent: number;
   finePeriodDays: number;
+  /** When repayments begin relative to loan go-live. */
+  paymentStartPolicy: 'SAME_DAY' | 'NEXT_DAY' | 'AFTER_N_DAYS';
+  /** Used when paymentStartPolicy = AFTER_N_DAYS. */
+  paymentStartDelayDays: number | null;
+  allowAgentDatePick: boolean;
   minLoanAmount: number | null;
   maxLoanAmount: number | null;
   notes: string | null;
@@ -81,11 +86,13 @@ export type LoanProductTemplateContract = {
 export type LoanProductsCatalogContract = {
   /** Preferred source of truth for agent loan capture. */
   templates: LoanProductTemplateContract[];
+  /** @deprecated Prefer templates — kept for legacy clients. */
   rates: LoanRateOptionContract[];
+  /** @deprecated Prefer templates — kept for legacy clients. */
   periods: LoanPeriodOptionContract[];
-  /** Effective policy for the caller's branch (branch override or tenant default). */
+  /** @deprecated Prefer template.paymentStartPolicy — legacy branch/tenant fallback. */
   paymentStartPolicy: PaymentStartPolicyContract | null;
-  /** Effective overdue fine policy (null / inactive = fines disabled). Legacy fallback when loans lack template snapshot. */
+  /** @deprecated Prefer template penalty — legacy fixed-amount fallback. */
   finePolicy: LoanFinePolicyContract | null;
 };
 

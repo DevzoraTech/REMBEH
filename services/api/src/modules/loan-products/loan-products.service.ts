@@ -102,7 +102,9 @@ export class LoanProductsService {
   ) {
     this.requireManage(user);
     this.assertTemplateAmounts(dto.minLoanAmount, dto.maxLoanAmount);
+    this.assertPaymentStart(dto.paymentStartPolicy, dto.paymentStartDelayDays);
     const branchId = this.resolveWriteBranchId(user, dto.branchId);
+    const paymentStartPolicy = dto.paymentStartPolicy ?? 'NEXT_DAY';
 
     const created = await this.repository.createTemplate({
       tenant: { connect: { id: user.tenantId } },
@@ -117,6 +119,12 @@ export class LoanProductsService {
       processingFeePercent: new Prisma.Decimal(dto.processingFeePercent),
       penaltyRatePercent: new Prisma.Decimal(dto.penaltyRatePercent),
       finePeriodDays: dto.finePeriodDays ?? 10,
+      paymentStartPolicy,
+      paymentStartDelayDays:
+        paymentStartPolicy === 'AFTER_N_DAYS'
+          ? (dto.paymentStartDelayDays ?? 1)
+          : null,
+      allowAgentDatePick: dto.allowAgentDatePick ?? false,
       minLoanAmount:
         dto.minLoanAmount != null
           ? new Prisma.Decimal(dto.minLoanAmount.toFixed(2))
@@ -162,6 +170,16 @@ export class LoanProductsService {
           : null;
     this.assertTemplateAmounts(minAmount, maxAmount);
 
+    const nextPaymentStartType =
+      dto.paymentStartPolicy !== undefined
+        ? dto.paymentStartPolicy
+        : existing.paymentStartPolicy;
+    const nextPaymentStartAfterDays =
+      dto.paymentStartDelayDays !== undefined
+        ? dto.paymentStartDelayDays
+        : existing.paymentStartDelayDays;
+    this.assertPaymentStart(nextPaymentStartType, nextPaymentStartAfterDays);
+
     const updated = await this.repository.updateTemplate(id, {
       ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
       ...(dto.description !== undefined
@@ -190,6 +208,21 @@ export class LoanProductsService {
         : {}),
       ...(dto.finePeriodDays !== undefined
         ? { finePeriodDays: dto.finePeriodDays }
+        : {}),
+      ...(dto.paymentStartPolicy !== undefined
+        ? { paymentStartPolicy: dto.paymentStartPolicy }
+        : {}),
+      ...(dto.paymentStartPolicy !== undefined ||
+      dto.paymentStartDelayDays !== undefined
+        ? {
+            paymentStartDelayDays:
+              nextPaymentStartType === 'AFTER_N_DAYS'
+                ? (nextPaymentStartAfterDays ?? 1)
+                : null,
+          }
+        : {}),
+      ...(dto.allowAgentDatePick !== undefined
+        ? { allowAgentDatePick: dto.allowAgentDatePick }
         : {}),
       ...(dto.minLoanAmount !== undefined
         ? {
@@ -257,6 +290,9 @@ export class LoanProductsService {
       processingFeePercent: existing.processingFeePercent,
       penaltyRatePercent: existing.penaltyRatePercent,
       finePeriodDays: existing.finePeriodDays,
+      paymentStartPolicy: existing.paymentStartPolicy,
+      paymentStartDelayDays: existing.paymentStartDelayDays,
+      allowAgentDatePick: existing.allowAgentDatePick,
       minLoanAmount: existing.minLoanAmount,
       maxLoanAmount: existing.maxLoanAmount,
       notes: existing.notes,
@@ -303,6 +339,20 @@ export class LoanProductsService {
     ) {
       throw new BadRequestException(
         'minLoanAmount cannot be greater than maxLoanAmount.',
+      );
+    }
+  }
+
+  private assertPaymentStart(
+    paymentStartPolicy?: PaymentStartPolicyType | null,
+    paymentStartDelayDays?: number | null,
+  ) {
+    if (
+      paymentStartPolicy === PaymentStartPolicyType.AFTER_N_DAYS &&
+      (paymentStartDelayDays == null || paymentStartDelayDays < 1)
+    ) {
+      throw new BadRequestException(
+        'paymentStartDelayDays is required when paymentStartPolicy is AFTER_N_DAYS.',
       );
     }
   }
@@ -476,15 +526,30 @@ export class LoanProductsService {
   }
 
   /**
-   * Resolve effective policy + compute paymentStartDate for a branch loan.
-   * Used on application submit (and collections fallback).
+   * Resolve payment start date for a branch loan.
+   * Prefer explicit template/application snapshot policy; fall back to legacy
+   * branch/tenant LoanPaymentStartPolicy, then DEFAULT (NEXT_DAY).
    */
   async resolvePaymentStartDate(input: {
     tenantId: string;
     branchId: string;
     anchorDate: Date;
     agentPickedDate?: Date | null;
+    /** Snapshotted / template-owned policy (preferred). */
+    paymentStartPolicy?: PaymentStartPolicyType | null;
+    paymentStartDelayDays?: number | null;
+    allowAgentDatePick?: boolean;
   }): Promise<Date> {
+    if (input.paymentStartPolicy) {
+      return computePaymentStartDate({
+        policyType: input.paymentStartPolicy,
+        afterDays: input.paymentStartDelayDays,
+        allowAgentDatePick: input.allowAgentDatePick ?? false,
+        anchorDate: input.anchorDate,
+        agentPickedDate: input.agentPickedDate,
+      });
+    }
+
     const policy = await this.repository.findEffectivePaymentStartPolicy({
       tenantId: input.tenantId,
       branchId: input.branchId,
@@ -494,6 +559,7 @@ export class LoanProductsService {
       policyType: policy?.policyType ?? DEFAULT_PAYMENT_START_POLICY.policyType,
       afterDays: policy?.afterDays ?? DEFAULT_PAYMENT_START_POLICY.afterDays,
       allowAgentDatePick:
+        input.allowAgentDatePick ??
         policy?.allowAgentDatePick ??
         DEFAULT_PAYMENT_START_POLICY.allowAgentDatePick,
       anchorDate: input.anchorDate,
@@ -570,6 +636,9 @@ export class LoanProductsService {
     processingFeePercent: Prisma.Decimal;
     penaltyRatePercent: Prisma.Decimal;
     finePeriodDays: number;
+    paymentStartPolicy: PaymentStartPolicyType;
+    paymentStartDelayDays: number | null;
+    allowAgentDatePick: boolean;
     minLoanAmount: Prisma.Decimal | null;
     maxLoanAmount: Prisma.Decimal | null;
     notes: string | null;
@@ -593,6 +662,9 @@ export class LoanProductsService {
       processingFeePercent: Number(row.processingFeePercent.toString()),
       penaltyRatePercent: Number(row.penaltyRatePercent.toString()),
       finePeriodDays: row.finePeriodDays,
+      paymentStartPolicy: row.paymentStartPolicy,
+      paymentStartDelayDays: row.paymentStartDelayDays,
+      allowAgentDatePick: row.allowAgentDatePick,
       minLoanAmount:
         row.minLoanAmount != null
           ? Number(row.minLoanAmount.toString())

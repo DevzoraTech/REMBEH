@@ -83,12 +83,15 @@ export type LoanApplicationContract = {
   processingFeePercent: number | null;
   penaltyRatePercent: number | null;
   finePeriodDays: number | null;
+  paymentStartPolicy: 'SAME_DAY' | 'NEXT_DAY' | 'AFTER_N_DAYS' | null;
+  paymentStartDelayDays: number | null;
+  allowAgentDatePick: boolean | null;
   loanPurpose: string | null;
   collateralType: string | null;
   verificationCode: string | null;
   verifiedAt: string | null;
   termsConfirmedAt: string | null;
-  /** Calendar day repayments start (set on submit from manager policy). */
+  /** Calendar day repayments start (set on submit from template policy). */
   paymentStartDate: string | null;
   submittedAt: string | null;
   syncedAt: string | null;

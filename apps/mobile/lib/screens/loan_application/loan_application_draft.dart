@@ -35,6 +35,8 @@ class LoanApplicationDraft {
   String processingFee = '';
   String? repaymentFrequencyLabel;
   String? collateralType;
+  /// Provisional payment start computed from the selected template policy.
+  DateTime? paymentStartDate;
 
   // Step 4 — guarantor
   String guarantorName = '';

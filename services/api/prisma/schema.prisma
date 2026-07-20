@@ -196,7 +196,7 @@ model Branch {
 }
 
 /// Manager-configured loan type template (source of truth for agent capture).
-/// Agents select a template; rate/term/fee/penalty are snapshotted onto the application.
+/// Agents select a template; rate/term/fee/penalty/payment-start are snapshotted onto the application.
 model LoanProductTemplate {
   id                    String                  @id @default(uuid()) @db.Uuid
   tenantId              String                  @map("tenant_id") @db.Uuid
@@ -213,6 +213,12 @@ model LoanProductTemplate {
   penaltyRatePercent    Decimal                 @map("penalty_rate_percent") @db.Decimal(8, 4)
   /// Days after maturity (and between recurring fines) before a fine applies.
   finePeriodDays        Int                     @default(10) @map("fine_period_days")
+  /// When repayments begin relative to loan go-live (owned by the template).
+  paymentStartPolicy    PaymentStartPolicyType  @default(NEXT_DAY) @map("payment_start_policy")
+  /// Used when paymentStartPolicy = AFTER_N_DAYS.
+  paymentStartDelayDays Int?                    @map("payment_start_delay_days")
+  /// When true, agents may pick an explicit date on/after the policy date.
+  allowAgentDatePick    Boolean                 @default(false) @map("allow_agent_date_pick")
   minLoanAmount         Decimal?                @map("min_loan_amount") @db.Decimal(18, 2)
   maxLoanAmount         Decimal?                @map("max_loan_amount") @db.Decimal(18, 2)
   notes                 String?
@@ -597,6 +603,10 @@ model LoanApplication {
   /// Snapshotted penalty % of original principal for overdue fines.
   penaltyRatePercent     Decimal?              @map("penalty_rate_percent") @db.Decimal(8, 4)
   finePeriodDays         Int?                  @map("fine_period_days")
+  /// Snapshotted payment-start policy from the selected template.
+  paymentStartPolicy     PaymentStartPolicyType? @map("payment_start_policy")
+  paymentStartDelayDays  Int?                  @map("payment_start_delay_days")
+  allowAgentDatePick     Boolean?              @map("allow_agent_date_pick")
   loanPurpose            String?               @map("loan_purpose")
   collateralType         String?               @map("collateral_type")
   smileJobId             String?               @map("smile_job_id")

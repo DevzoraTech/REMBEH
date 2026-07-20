@@ -86,6 +86,9 @@ class LoanProductTemplateOption {
     required this.processingFeePercent,
     required this.penaltyRatePercent,
     required this.finePeriodDays,
+    required this.paymentStartPolicy,
+    this.paymentStartDelayDays,
+    this.allowAgentDatePick = false,
     this.minLoanAmount,
     this.maxLoanAmount,
     this.description,
@@ -102,6 +105,9 @@ class LoanProductTemplateOption {
   final double processingFeePercent;
   final double penaltyRatePercent;
   final int finePeriodDays;
+  final String paymentStartPolicy;
+  final int? paymentStartDelayDays;
+  final bool allowAgentDatePick;
   final double? minLoanAmount;
   final double? maxLoanAmount;
   final String? description;
@@ -145,6 +151,35 @@ class LoanProductTemplateOption {
     }
   }
 
+  String get paymentStartLabel {
+    switch (paymentStartPolicy) {
+      case 'SAME_DAY':
+        return 'Same day as go-live';
+      case 'AFTER_N_DAYS':
+        final days = paymentStartDelayDays ?? 1;
+        return 'After $days ${days == 1 ? 'day' : 'days'}';
+      default:
+        return 'Next day after go-live';
+    }
+  }
+
+  /// Provisional payment start date from today (agent preview before submit).
+  DateTime computePaymentStartDate([DateTime? anchor]) {
+    final start = DateTime(
+      (anchor ?? DateTime.now()).year,
+      (anchor ?? DateTime.now()).month,
+      (anchor ?? DateTime.now()).day,
+    );
+    switch (paymentStartPolicy) {
+      case 'SAME_DAY':
+        return start;
+      case 'AFTER_N_DAYS':
+        return start.add(Duration(days: paymentStartDelayDays ?? 1));
+      default:
+        return start.add(const Duration(days: 1));
+    }
+  }
+
   factory LoanProductTemplateOption.fromJson(Map<String, dynamic> json) {
     return LoanProductTemplateOption(
       id: json['id'] as String,
@@ -161,6 +196,9 @@ class LoanProductTemplateOption {
       penaltyRatePercent:
           (json['penaltyRatePercent'] as num?)?.toDouble() ?? 0,
       finePeriodDays: (json['finePeriodDays'] as num?)?.toInt() ?? 10,
+      paymentStartPolicy: json['paymentStartPolicy'] as String? ?? 'NEXT_DAY',
+      paymentStartDelayDays: (json['paymentStartDelayDays'] as num?)?.toInt(),
+      allowAgentDatePick: json['allowAgentDatePick'] as bool? ?? false,
       minLoanAmount: (json['minLoanAmount'] as num?)?.toDouble(),
       maxLoanAmount: (json['maxLoanAmount'] as num?)?.toDouble(),
       description: json['description'] as String?,

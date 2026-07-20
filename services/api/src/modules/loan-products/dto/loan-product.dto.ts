@@ -198,6 +198,23 @@ export class CreateLoanProductTemplateDto {
   finePeriodDays?: number;
 
   @IsOptional()
+  @IsEnum(PaymentStartPolicyType)
+  paymentStartPolicy?: PaymentStartPolicyType;
+
+  @ValidateIf(
+    (dto: CreateLoanProductTemplateDto) =>
+      dto.paymentStartPolicy === 'AFTER_N_DAYS',
+  )
+  @IsInt()
+  @Min(1)
+  @Max(365)
+  paymentStartDelayDays?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  allowAgentDatePick?: boolean;
+
+  @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   minLoanAmount?: number;
@@ -278,6 +295,24 @@ export class UpdateLoanProductTemplateDto {
   @Min(1)
   @Max(3650)
   finePeriodDays?: number;
+
+  @IsOptional()
+  @IsEnum(PaymentStartPolicyType)
+  paymentStartPolicy?: PaymentStartPolicyType;
+
+  @IsOptional()
+  @ValidateIf(
+    (dto: UpdateLoanProductTemplateDto) =>
+      dto.paymentStartPolicy === 'AFTER_N_DAYS',
+  )
+  @IsInt()
+  @Min(1)
+  @Max(365)
+  paymentStartDelayDays?: number | null;
+
+  @IsOptional()
+  @IsBoolean()
+  allowAgentDatePick?: boolean;
 
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
