@@ -154,6 +154,8 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
               DateTime.now(),
       paymentStartDate:
           DateTime.tryParse(json['paymentStartDate'] as String? ?? ''),
+      isFined: json['isFined'] as bool? ?? false,
+      finesTotal: _money(json['finesTotal']),
       paymentHistory: ((json['paymentHistory'] as List?) ?? const [])
           .whereType<Map>()
           .map(
@@ -170,6 +172,21 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
           )
           .toList()
         ..sort((a, b) => b.paidAt.compareTo(a.paidAt)),
+      fineHistory: ((json['fineHistory'] as List?) ?? const [])
+          .whereType<Map>()
+          .map(
+            (row) => FineHistoryItem(
+              id: row['id'] as String? ?? '',
+              periodIndex: _int(row['periodIndex']),
+              amount: _money(row['amount']),
+              dueAt: DateTime.tryParse(row['dueAt'] as String? ?? '') ??
+                  DateTime.now(),
+              appliedAt: DateTime.tryParse(row['appliedAt'] as String? ?? '') ??
+                  DateTime.now(),
+            ),
+          )
+          .toList()
+        ..sort((a, b) => b.periodIndex.compareTo(a.periodIndex)),
     );
   }
 
@@ -213,6 +230,8 @@ ClientDetail toUiClientDetail(ClientLoanDetail detail) {
     loanStartDate: detail.loanStartDate,
     maturityDate: detail.maturityDate,
     paymentStartDate: detail.paymentStartDate,
+    isFined: detail.isFined,
+    finesTotal: detail.finesTotal,
     paymentHistory: detail.paymentHistory
         .map(
           (item) => ClientPaymentHistoryItem(
@@ -223,6 +242,17 @@ ClientDetail toUiClientDetail(ClientLoanDetail detail) {
             recordedByName: item.recordedByName,
             agentPhotoUrl: item.agentPhotoUrl,
             note: item.note,
+          ),
+        )
+        .toList(),
+    fineHistory: detail.fineHistory
+        .map(
+          (item) => ClientFineHistoryItem(
+            id: item.id,
+            periodIndex: item.periodIndex,
+            amount: item.amount,
+            dueAt: item.dueAt,
+            appliedAt: item.appliedAt,
           ),
         )
         .toList(),

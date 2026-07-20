@@ -18,6 +18,22 @@ class ClientPaymentHistoryItem {
   final String? note;
 }
 
+class ClientFineHistoryItem {
+  const ClientFineHistoryItem({
+    required this.id,
+    required this.periodIndex,
+    required this.amount,
+    required this.dueAt,
+    required this.appliedAt,
+  });
+
+  final String id;
+  final int periodIndex;
+  final int amount;
+  final DateTime dueAt;
+  final DateTime appliedAt;
+}
+
 class ClientDetail {
   const ClientDetail({
     required this.id,
@@ -47,7 +63,10 @@ class ClientDetail {
     this.interestAmount = 0,
     this.processingFee = 0,
     this.status = '',
+    this.isFined = false,
+    this.finesTotal = 0,
     this.paymentHistory = const [],
+    this.fineHistory = const [],
   });
 
   final String id;
@@ -77,7 +96,10 @@ class ClientDetail {
   final int interestAmount;
   final int processingFee;
   final String status;
+  final bool isFined;
+  final int finesTotal;
   final List<ClientPaymentHistoryItem> paymentHistory;
+  final List<ClientFineHistoryItem> fineHistory;
 
   String get initials {
     final parts = fullName
@@ -140,6 +162,8 @@ class ClientDetail {
       interestAmount: ((json['interestAmount'] as num?) ?? 0).round(),
       processingFee: ((json['processingFee'] as num?) ?? 0).round(),
       status: json['status'] as String? ?? '',
+      isFined: json['isFined'] as bool? ?? false,
+      finesTotal: ((json['finesTotal'] as num?) ?? 0).round(),
       paymentHistory: ((json['paymentHistory'] as List?) ?? const [])
           .whereType<Map>()
           .map(
@@ -156,6 +180,21 @@ class ClientDetail {
           )
           .toList()
         ..sort((a, b) => b.paidAt.compareTo(a.paidAt)),
+      fineHistory: ((json['fineHistory'] as List?) ?? const [])
+          .whereType<Map>()
+          .map(
+            (row) => ClientFineHistoryItem(
+              id: row['id'] as String? ?? '',
+              periodIndex: ((row['periodIndex'] as num?) ?? 0).round(),
+              amount: ((row['amount'] as num?) ?? 0).round(),
+              dueAt: DateTime.tryParse(row['dueAt'] as String? ?? '') ??
+                  DateTime.now(),
+              appliedAt: DateTime.tryParse(row['appliedAt'] as String? ?? '') ??
+                  DateTime.now(),
+            ),
+          )
+          .toList()
+        ..sort((a, b) => b.periodIndex.compareTo(a.periodIndex)),
     );
   }
 }

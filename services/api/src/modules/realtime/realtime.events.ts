@@ -3,6 +3,7 @@ export const REALTIME_EVENTS = {
   loanApplicationUpdated: 'loan_application.updated',
   loanApplicationMediaUploaded: 'loan_application.media_uploaded',
   paymentMade: 'payment.made',
+  loanFined: 'loan.fined',
 } as const;
 
 export type LoanApplicationRealtimePayload = {

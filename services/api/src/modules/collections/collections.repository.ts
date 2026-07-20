@@ -35,6 +35,9 @@ const loanWithRelations = {
       recordedBy: true,
     },
   },
+  fines: {
+    orderBy: { periodIndex: 'desc' as const },
+  },
 } satisfies Prisma.LoanInclude;
 
 export type LoanWithCollections = Prisma.LoanGetPayload<{

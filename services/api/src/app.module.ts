@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
@@ -20,6 +21,7 @@ import { StorageModule } from './modules/storage/storage.module';
       envFilePath: ['.env', '../../.env'],
       isGlobal: true,
     }),
+    ScheduleModule.forRoot(),
     DatabaseModule,
     StorageModule,
     RealtimeModule,

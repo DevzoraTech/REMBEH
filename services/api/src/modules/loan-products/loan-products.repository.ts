@@ -167,4 +167,77 @@ export class LoanProductsRepository {
       },
     });
   }
+
+  /** Branch fine policy preferred over tenant-wide when both exist. */
+  async findEffectiveFinePolicy(input: {
+    tenantId: string;
+    branchId: string | null;
+  }) {
+    if (input.branchId) {
+      const branchPolicy = await this.prisma.loanFinePolicy.findFirst({
+        where: {
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+          isActive: true,
+        },
+      });
+      if (branchPolicy) return branchPolicy;
+    }
+
+    return this.prisma.loanFinePolicy.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        branchId: null,
+        isActive: true,
+      },
+    });
+  }
+
+  findFinePolicy(input: { tenantId: string; branchId: string | null }) {
+    return this.prisma.loanFinePolicy.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        isActive: true,
+      },
+    });
+  }
+
+  async upsertFinePolicy(input: {
+    tenantId: string;
+    branchId: string | null;
+    finePeriodDays: number;
+    fineAmount: Prisma.Decimal;
+    isActive: boolean;
+  }) {
+    const existing = await this.prisma.loanFinePolicy.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+      },
+    });
+
+    if (existing) {
+      return this.prisma.loanFinePolicy.update({
+        where: { id: existing.id },
+        data: {
+          finePeriodDays: input.finePeriodDays,
+          fineAmount: input.fineAmount,
+          isActive: input.isActive,
+        },
+      });
+    }
+
+    return this.prisma.loanFinePolicy.create({
+      data: {
+        tenant: { connect: { id: input.tenantId } },
+        ...(input.branchId
+          ? { branch: { connect: { id: input.branchId } } }
+          : {}),
+        finePeriodDays: input.finePeriodDays,
+        fineAmount: input.fineAmount,
+        isActive: input.isActive,
+      },
+    });
+  }
 }

@@ -12,9 +12,11 @@ import {
   CreateLoanRateOptionDto,
   UpdateLoanPeriodOptionDto,
   UpdateLoanRateOptionDto,
+  UpsertLoanFinePolicyDto,
   UpsertPaymentStartPolicyDto,
 } from './dto/loan-product.dto';
 import {
+  LoanFinePolicyContract,
   LoanPeriodOptionContract,
   LoanProductsCatalogContract,
   LoanRateOptionContract,
@@ -43,7 +45,7 @@ export class LoanProductsService {
     const branchId = canSeeAllBranches ? null : user.branchId;
     const activeOnly = !canManage;
 
-    const [rates, periods, paymentStartPolicy] = await Promise.all([
+    const [rates, periods, paymentStartPolicy, finePolicy] = await Promise.all([
       this.repository.listRates({
         tenantId: user.tenantId,
         branchId,
@@ -60,6 +62,10 @@ export class LoanProductsService {
         tenantId: user.tenantId,
         branchId: branchId ?? user.branchId,
       }),
+      this.repository.findEffectiveFinePolicy({
+        tenantId: user.tenantId,
+        branchId: branchId ?? user.branchId,
+      }),
     ]);
 
     return {
@@ -68,6 +74,7 @@ export class LoanProductsService {
       paymentStartPolicy: paymentStartPolicy
         ? this.toPaymentStartContract(paymentStartPolicy)
         : this.defaultPaymentStartContract(user.tenantId, branchId),
+      finePolicy: finePolicy ? this.toFinePolicyContract(finePolicy) : null,
     };
   }
 
@@ -215,6 +222,28 @@ export class LoanProductsService {
     });
 
     return { paymentStartPolicy: this.toPaymentStartContract(saved) };
+  }
+
+  async upsertFinePolicy(user: AuthenticatedUser, dto: UpsertLoanFinePolicyDto) {
+    this.requireManage(user);
+    const branchId = this.resolveWriteBranchId(user, dto.branchId);
+
+    if (dto.finePeriodDays < 1) {
+      throw new BadRequestException('finePeriodDays must be at least 1.');
+    }
+    if (dto.fineAmount < 0) {
+      throw new BadRequestException('fineAmount cannot be negative.');
+    }
+
+    const saved = await this.repository.upsertFinePolicy({
+      tenantId: user.tenantId,
+      branchId,
+      finePeriodDays: dto.finePeriodDays,
+      fineAmount: new Prisma.Decimal(dto.fineAmount.toFixed(2)),
+      isActive: dto.isActive ?? true,
+    });
+
+    return { finePolicy: this.toFinePolicyContract(saved) };
   }
 
   /**
@@ -387,6 +416,32 @@ export class LoanProductsService {
       description: describePaymentStartPolicy(DEFAULT_PAYMENT_START_POLICY),
       createdAt: now,
       updatedAt: now,
+    };
+  }
+
+  private toFinePolicyContract(row: {
+    id: string;
+    tenantId: string;
+    branchId: string | null;
+    finePeriodDays: number;
+    fineAmount: Prisma.Decimal;
+    isActive: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+  }): LoanFinePolicyContract {
+    const amount = Number(row.fineAmount.toString());
+    return {
+      id: row.id,
+      tenantId: row.tenantId,
+      branchId: row.branchId,
+      finePeriodDays: row.finePeriodDays,
+      fineAmount: amount,
+      isActive: row.isActive,
+      description: row.isActive
+        ? `Every ${row.finePeriodDays} day${row.finePeriodDays === 1 ? '' : 's'} after loan maturity while unpaid, add ${amount} to outstanding.`
+        : 'Overdue fines disabled.',
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
     };
   }
 }

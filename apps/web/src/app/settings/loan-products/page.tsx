@@ -47,6 +47,14 @@ type PaymentStartPolicy = {
   description: string;
 };
 
+type FinePolicy = {
+  id: string;
+  finePeriodDays: number;
+  fineAmount: number;
+  isActive: boolean;
+  description: string;
+};
+
 export default function LoanProductsPage() {
   const router = useRouter();
   const [session, setSession] = useState<RembehSession | null>(null);
@@ -57,11 +65,15 @@ export default function LoanProductsPage() {
   const [periods, setPeriods] = useState<PeriodOption[]>([]);
   const [paymentStartPolicy, setPaymentStartPolicy] =
     useState<PaymentStartPolicy | null>(null);
+  const [finePolicy, setFinePolicy] = useState<FinePolicy | null>(null);
   const [policyType, setPolicyType] = useState<
     "SAME_DAY" | "NEXT_DAY" | "AFTER_N_DAYS"
   >("NEXT_DAY");
   const [afterDays, setAfterDays] = useState("1");
   const [allowAgentDatePick, setAllowAgentDatePick] = useState(false);
+  const [finePeriodDays, setFinePeriodDays] = useState("10");
+  const [fineAmount, setFineAmount] = useState("");
+  const [fineActive, setFineActive] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rateLabel, setRateLabel] = useState("");
@@ -110,6 +122,7 @@ export default function LoanProductsPage() {
           rates?: RateOption[];
           periods?: PeriodOption[];
           paymentStartPolicy?: PaymentStartPolicy;
+          finePolicy?: FinePolicy | null;
           message?: string | string[];
         }>(response);
         if (!response.ok) {
@@ -118,6 +131,7 @@ export default function LoanProductsPage() {
         setRates(payload.rates ?? []);
         setPeriods(payload.periods ?? []);
         applyPaymentStartPolicy(payload.paymentStartPolicy ?? null);
+        applyFinePolicy(payload.finePolicy ?? null);
         setError(null);
       } catch (caught) {
         setError(
@@ -144,6 +158,19 @@ export default function LoanProductsPage() {
     setAllowAgentDatePick(policy.allowAgentDatePick);
   }
 
+  function applyFinePolicy(policy: FinePolicy | null) {
+    setFinePolicy(policy);
+    if (!policy) {
+      setFinePeriodDays("10");
+      setFineAmount("");
+      setFineActive(true);
+      return;
+    }
+    setFinePeriodDays(String(policy.finePeriodDays));
+    setFineAmount(String(policy.fineAmount));
+    setFineActive(policy.isActive);
+  }
+
   async function refreshCatalog(activeSession: RembehSession) {
     const response = await fetch(`${apiBaseUrl}/loan-products`, {
       headers: {
@@ -154,6 +181,7 @@ export default function LoanProductsPage() {
       rates?: RateOption[];
       periods?: PeriodOption[];
       paymentStartPolicy?: PaymentStartPolicy;
+      finePolicy?: FinePolicy | null;
       message?: string | string[];
     }>(response);
     if (!response.ok) {
@@ -162,6 +190,7 @@ export default function LoanProductsPage() {
     setRates(payload.rates ?? []);
     setPeriods(payload.periods ?? []);
     applyPaymentStartPolicy(payload.paymentStartPolicy ?? null);
+    applyFinePolicy(payload.finePolicy ?? null);
   }
 
   async function addRate(event: FormEvent) {
@@ -332,6 +361,43 @@ export default function LoanProductsPage() {
     }
   }
 
+  async function saveFinePolicy(event: FormEvent) {
+    event.preventDefault();
+    if (!session) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch(`${apiBaseUrl}/loan-products/fine-policy`, {
+        method: "POST",
+        headers: {
+          Authorization: `${session.tokenType} ${session.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          finePeriodDays: Number(finePeriodDays),
+          fineAmount: Number(fineAmount),
+          isActive: fineActive,
+        }),
+      });
+      const payload = await readApiJson<{
+        finePolicy?: FinePolicy;
+        message?: string | string[];
+      }>(response);
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      applyFinePolicy(payload.finePolicy ?? null);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not save overdue fine policy.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (!session) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -353,8 +419,8 @@ export default function LoanProductsPage() {
             Loan products
           </h1>
           <p className="mt-1 text-sm text-slate-600">
-            Configure interest rates, loan periods, and when repayments start
-            after loan go-live (submit / disbursement).
+            Configure interest rates, loan periods, when repayments start, and
+            overdue fines after maturity.
           </p>
         </header>
 
@@ -364,6 +430,57 @@ export default function LoanProductsPage() {
           <p className="text-sm text-slate-500">Loading catalog…</p>
         ) : (
           <div className="grid gap-6 lg:grid-cols-2">
+            <section className="panel p-4 lg:col-span-2">
+              <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
+                Overdue fine policy
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                After the loan period ends, if the balance is still unpaid for
+                the fine period, add the fine amount to outstanding. Repeats
+                every fine period until paid.
+              </p>
+              <form
+                onSubmit={saveFinePolicy}
+                className="mt-3 grid gap-3 sm:grid-cols-2"
+              >
+                <TextField
+                  label="Fine period (days)"
+                  value={finePeriodDays}
+                  onChange={setFinePeriodDays}
+                  placeholder="10"
+                  required
+                />
+                <TextField
+                  label="Fine amount"
+                  value={fineAmount}
+                  onChange={setFineAmount}
+                  placeholder="5000"
+                  required
+                />
+                <label className="flex items-start gap-2 text-sm sm:col-span-2">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={fineActive}
+                    onChange={(event) => setFineActive(event.target.checked)}
+                  />
+                  <span>Enable overdue fines for this branch / workspace</span>
+                </label>
+                {finePolicy ? (
+                  <p className="text-xs text-slate-500 sm:col-span-2">
+                    Current: {finePolicy.description}
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-500 sm:col-span-2">
+                    No fine policy set — overdue fines are disabled.
+                  </p>
+                )}
+                <PrimaryButton type="submit" disabled={saving}>
+                  Save fine policy
+                </PrimaryButton>
+              </form>
+            </section>
+
             <section className="panel p-4 lg:col-span-2">
               <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
                 Payment start policy

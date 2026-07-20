@@ -116,13 +116,41 @@ class ClientDetailsSheet extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            detail.fullName,
-                            style: const TextStyle(
-                              color: midnightNavy,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 18,
-                            ),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  detail.fullName,
+                                  style: const TextStyle(
+                                    color: midnightNavy,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                              ),
+                              if (detail.isFined)
+                                Container(
+                                  margin: const EdgeInsets.only(left: 8),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFE8E0),
+                                    border: Border.all(
+                                      color: const Color(0xFFC45C26),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'FINED',
+                                    style: TextStyle(
+                                      color: Color(0xFFC45C26),
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                           const SizedBox(height: 2),
                           const Text(
@@ -230,6 +258,26 @@ class ClientDetailsSheet extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 10),
+                    Expanded(
+                      child: _SummaryTile(
+                        label: 'Fines total',
+                        child: Text(
+                          formatMoney(detail.finesTotal),
+                          style: TextStyle(
+                            color: detail.finesTotal > 0
+                                ? const Color(0xFFC45C26)
+                                : midnightNavy,
+                            fontWeight: FontWeight.w800,
+                            fontSize: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
                     Expanded(
                       child: _SummaryTile(
                         label: 'Last Payment',
@@ -417,6 +465,67 @@ class ClientDetailsSheet extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (detail.fineHistory.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Fine history',
+                      style: TextStyle(
+                        color: midnightNavy,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...detail.fineHistory.map(
+                    (fine) => Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: line),
+                        color: const Color(0xFFFFF8F5),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Period ${fine.periodIndex}',
+                                  style: const TextStyle(
+                                    color: midnightNavy,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Applied ${_shortDate(fine.appliedAt)}',
+                                  style: const TextStyle(
+                                    color: slateText,
+                                    fontSize: 11,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Text(
+                            formatMoney(fine.amount),
+                            style: const TextStyle(
+                              color: Color(0xFFC45C26),
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
                 if (detail.paymentHistory.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   const Align(

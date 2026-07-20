@@ -123,3 +123,24 @@ export class UpsertPaymentStartPolicyDto {
   @IsUUID()
   branchId?: string;
 }
+
+export class UpsertLoanFinePolicyDto {
+  /** Days after maturity (and between recurring fines). */
+  @IsInt()
+  @Min(1)
+  @Max(3650)
+  finePeriodDays!: number;
+
+  /** Fixed amount added to outstanding each fine period. */
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  fineAmount!: number;
+
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
+}

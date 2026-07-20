@@ -240,6 +240,8 @@ export class CollectionsService {
         currency: loan.currency,
         loanOutstanding: detail.outstanding,
         loanStatus: detail.status,
+        isFined: detail.isFined,
+        finesTotal: detail.finesTotal,
       },
     };
   }
@@ -546,9 +548,14 @@ export class CollectionsService {
       { fees: 0, interest: 0, principal: 0 },
     );
 
+    const finesTotal = this.decimalToNumber(loan.finesTotal) ?? 0;
+    // Fines are collected in the fees bucket ahead of interest / principal.
     const allocation = allocateRepayment({
       amount,
-      remainingFees: Math.max(0, pricing.processingFee - totals.fees),
+      remainingFees: Math.max(
+        0,
+        pricing.processingFee + finesTotal - totals.fees,
+      ),
       remainingInterest: Math.max(0, pricing.interestAmount - totals.interest),
       remainingPrincipal: Math.max(0, pricing.principalAmount - totals.principal),
     });
@@ -790,6 +797,24 @@ export class CollectionsService {
       agentPhotoUrl: historyPhotos[index] ?? null,
       note: row.note,
     }));
+    const finesTotal =
+      this.decimalToNumber(loan.finesTotal) ??
+      this.decimalToNumber(loan.wallet?.finesTotal) ??
+      0;
+    const isFined = loan.isFined || (loan.wallet?.isFined ?? false);
+    const baseRepayable = openingBalance ?? schedule.totalRepayable;
+    const fineHistory = (loan.fines ?? []).map((row) => ({
+      id: row.id,
+      periodIndex: row.periodIndex,
+      amount: this.decimalToNumber(row.amount) ?? 0,
+      dueAt: row.dueAt.toISOString(),
+      appliedAt: row.appliedAt.toISOString(),
+    }));
+    // Past maturity (or when fined), due amount is full outstanding incl. fines.
+    const expectedToday =
+      schedule.nextDueLabel === 'Overdue' || finesTotal > 0
+        ? schedule.outstanding
+        : schedule.expectedToday;
 
     return {
       id: loan.id,
@@ -809,7 +834,7 @@ export class CollectionsService {
       lastPaymentAt: last?.paidAt.toISOString() ?? null,
       lastPaymentBy: last?.recordedBy?.displayName ?? null,
       lastPaymentByPhotoUrl,
-      expectedToday: schedule.expectedToday,
+      expectedToday,
       carriedForward: schedule.carriedForward,
       dailyInstalment: schedule.dailyInstalment,
       loanPeriodDays: schedule.loanPeriodDays,
@@ -817,8 +842,8 @@ export class CollectionsService {
       nextDueLabel: schedule.nextDueLabel,
       nextDueIsToday: schedule.nextDueIsToday,
       paidAmount: schedule.paidAmount,
-      // Prefer wallet opening (set at submit to total repayable) when present.
-      loanAmount: openingBalance ?? schedule.totalRepayable,
+      // Original repayable at submit + applied overdue fines.
+      loanAmount: this.roundMoney(baseRepayable + finesTotal),
       interestRatePercent: pricing.interestRatePercent,
       interestAmount: schedule.interestAmount,
       processingFee: schedule.processingFee,
@@ -826,7 +851,10 @@ export class CollectionsService {
       paymentStartDate: startDate.toISOString(),
       maturityDate: schedule.maturityDate,
       status: loan.status,
+      isFined,
+      finesTotal,
       paymentHistory,
+      fineHistory,
     };
   }
 

@@ -25,6 +25,8 @@ type PaymentDetail = {
   currency: string;
   loanOutstanding: number | null;
   loanStatus: string | null;
+  isFined?: boolean;
+  finesTotal?: number;
 };
 
 type PaymentDetailDrawerProps = {
@@ -170,6 +172,18 @@ export function PaymentDetailDrawer({
                       ? formatAmount(detail.loanOutstanding)
                       : "—"
                   }
+                />
+                <Row
+                  label="Fines total"
+                  value={
+                    detail.finesTotal != null && detail.finesTotal > 0
+                      ? formatAmount(detail.finesTotal)
+                      : "—"
+                  }
+                />
+                <Row
+                  label="Fined"
+                  value={detail.isFined ? "Yes" : "No"}
                 />
                 <Row label="Status" value={detail.loanStatus || "—"} />
                 <Row

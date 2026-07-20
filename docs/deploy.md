@@ -101,6 +101,15 @@ Optional on the server `.env` (see root `.env.example`):
 
 If keys are missing, SMS stays in stub/log mode even when `SMS_PROVIDER` is set.
 
+### Overdue fines cron
+
+Daily job at **01:00** (Nest `@nestjs/schedule`). Set timezone on the API host `.env`:
+
+| Variable | Notes |
+|----------|--------|
+| `CRON_TZ` | e.g. `Africa/Kampala` (preferred). Falls back to `TZ` / host local. |
+| `LOAN_FINES_CRON_ENABLED` | `true` (default) or `false` to pause the cron; managers can still `POST /loan-products/fines/run`. |
+
 ### Email / invitation links
 
 Set on the server `.env` (never in Git):

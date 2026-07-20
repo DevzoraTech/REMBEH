@@ -51,6 +51,14 @@ export type PaymentHistoryItemContract = {
   note: string | null;
 };
 
+export type FineHistoryItemContract = {
+  id: string;
+  periodIndex: number;
+  amount: number;
+  dueAt: string;
+  appliedAt: string;
+};
+
 export type ClientLoanDetailContract = {
   id: string;
   loanId: string;
@@ -77,6 +85,7 @@ export type ClientLoanDetailContract = {
   nextDueLabel: string;
   nextDueIsToday: boolean;
   paidAmount: number;
+  /** Original total repayable + applied fines. */
   loanAmount: number;
   interestRatePercent: number;
   interestAmount: number;
@@ -86,8 +95,14 @@ export type ClientLoanDetailContract = {
   paymentStartDate: string;
   maturityDate: string;
   status: string;
+  /** True once at least one overdue fine has been applied. */
+  isFined: boolean;
+  /** Sum of applied overdue fines (included in outstanding). */
+  finesTotal: number;
   /** Newest-first payment history for wallet views. */
   paymentHistory: PaymentHistoryItemContract[];
+  /** Newest-first overdue fine history. */
+  fineHistory: FineHistoryItemContract[];
 };
 
 export type RecordRepaymentResponseContract = {
@@ -102,6 +117,8 @@ export type RepaymentDetailContract = RepaymentListItemContract & {
   currency: string;
   loanOutstanding: number | null;
   loanStatus: string | null;
+  isFined: boolean;
+  finesTotal: number;
 };
 
 export type DailyAgentApplicationItemContract = {

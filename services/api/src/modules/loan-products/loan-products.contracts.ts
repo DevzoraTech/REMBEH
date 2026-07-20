@@ -35,11 +35,25 @@ export type PaymentStartPolicyContract = {
   updatedAt: string;
 };
 
+export type LoanFinePolicyContract = {
+  id: string;
+  tenantId: string;
+  branchId: string | null;
+  finePeriodDays: number;
+  fineAmount: number;
+  isActive: boolean;
+  description: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type LoanProductsCatalogContract = {
   rates: LoanRateOptionContract[];
   periods: LoanPeriodOptionContract[];
   /** Effective policy for the caller's branch (branch override or tenant default). */
   paymentStartPolicy: PaymentStartPolicyContract | null;
+  /** Effective overdue fine policy (null / inactive = fines disabled). */
+  finePolicy: LoanFinePolicyContract | null;
 };
 
 export type LoanPricingBreakdownContract = {

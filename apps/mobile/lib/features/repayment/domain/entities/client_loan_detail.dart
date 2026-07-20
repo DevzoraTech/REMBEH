@@ -18,6 +18,22 @@ class PaymentHistoryItem {
   final String? note;
 }
 
+class FineHistoryItem {
+  const FineHistoryItem({
+    required this.id,
+    required this.periodIndex,
+    required this.amount,
+    required this.dueAt,
+    required this.appliedAt,
+  });
+
+  final String id;
+  final int periodIndex;
+  final int amount;
+  final DateTime dueAt;
+  final DateTime appliedAt;
+}
+
 class ClientLoanDetail {
   const ClientLoanDetail({
     required this.id,
@@ -44,7 +60,10 @@ class ClientLoanDetail {
     required this.maturityDate,
     this.paymentStartDate,
     this.agentPhotoUrl,
+    this.isFined = false,
+    this.finesTotal = 0,
     this.paymentHistory = const [],
+    this.fineHistory = const [],
   });
 
   final String id;
@@ -71,7 +90,10 @@ class ClientLoanDetail {
   final DateTime loanStartDate;
   final DateTime maturityDate;
   final DateTime? paymentStartDate;
+  final bool isFined;
+  final int finesTotal;
   final List<PaymentHistoryItem> paymentHistory;
+  final List<FineHistoryItem> fineHistory;
 
   String get initials {
     final parts = fullName

@@ -19,15 +19,20 @@ import {
   CreateLoanRateOptionDto,
   UpdateLoanPeriodOptionDto,
   UpdateLoanRateOptionDto,
+  UpsertLoanFinePolicyDto,
   UpsertPaymentStartPolicyDto,
 } from './dto/loan-product.dto';
 import { LOAN_PRODUCT_PERMISSIONS } from './loan-products.permissions';
 import { LoanProductsService } from './loan-products.service';
+import { LoanFinesService } from './loan-fines.service';
 
 @Controller('loan-products')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class LoanProductsController {
-  constructor(private readonly loanProductsService: LoanProductsService) {}
+  constructor(
+    private readonly loanProductsService: LoanProductsService,
+    private readonly loanFinesService: LoanFinesService,
+  ) {}
 
   /** Active catalog for agents; full catalog (incl. inactive) for managers. */
   @Get()
@@ -99,5 +104,21 @@ export class LoanProductsController {
     @Body() dto: UpsertPaymentStartPolicyDto,
   ) {
     return this.loanProductsService.upsertPaymentStartPolicy(user, dto);
+  }
+
+  @Post('fine-policy')
+  @RequirePermissions(LOAN_PRODUCT_PERMISSIONS.manage)
+  upsertFinePolicy(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpsertLoanFinePolicyDto,
+  ) {
+    return this.loanProductsService.upsertFinePolicy(user, dto);
+  }
+
+  /** Ops / manager: scan overdue loans and apply due fines now. */
+  @Post('fines/run')
+  @RequirePermissions(LOAN_PRODUCT_PERMISSIONS.manage)
+  runFines(@CurrentUser() user: AuthenticatedUser) {
+    return this.loanFinesService.runForTenant(user.tenantId);
   }
 }

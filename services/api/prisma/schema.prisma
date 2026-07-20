@@ -131,6 +131,8 @@ model Tenant {
   loanRateOptions          LoanRateOption[]
   loanPeriodOptions        LoanPeriodOption[]
   loanPaymentStartPolicies LoanPaymentStartPolicy[]
+  loanFinePolicies         LoanFinePolicy[]
+  loanFines                LoanFine[]
   enabledModules           TenantModule[]
   auditLogs                AuditLog[]
   outboxEvents             OutboxEvent[]
@@ -160,6 +162,8 @@ model Branch {
   loanRateOptions          LoanRateOption[]
   loanPeriodOptions        LoanPeriodOption[]
   loanPaymentStartPolicies LoanPaymentStartPolicy[]
+  loanFinePolicies         LoanFinePolicy[]
+  loanFines                LoanFine[]
 
   @@index([tenantId, name])
   @@unique([tenantId, name])
@@ -227,6 +231,52 @@ model LoanPaymentStartPolicy {
   @@index([tenantId, branchId, isActive])
   @@index([tenantId, isActive])
   @@map("loan_payment_start_policies")
+}
+
+/// Manager-configured overdue fine policy.
+/// After loan maturity (paymentStartDate + durationDays), every finePeriodDays
+/// while balance > 0, fineAmount is added to the outstanding balance.
+/// branchId null = tenant-wide default; set = branch override.
+model LoanFinePolicy {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  branchId       String?  @map("branch_id") @db.Uuid
+  /// Days after maturity (and between recurring fines) before a fine applies.
+  finePeriodDays Int      @map("fine_period_days")
+  /// Fixed amount added to repayable / outstanding each period.
+  fineAmount     Decimal  @map("fine_amount") @db.Decimal(18, 2)
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  branch         Branch?  @relation(fields: [branchId], references: [id])
+
+  @@index([tenantId, branchId, isActive])
+  @@index([tenantId, isActive])
+  @@map("loan_fine_policies")
+}
+
+/// One applied overdue fine (idempotent per loan + period index).
+model LoanFine {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  branchId    String   @map("branch_id") @db.Uuid
+  loanId      String   @map("loan_id") @db.Uuid
+  /// 1-based interval after maturity (1 = first fine period, 2 = second, …).
+  periodIndex Int      @map("period_index")
+  amount      Decimal  @db.Decimal(18, 2)
+  /// Calendar date the fine became due (maturity + periodIndex * finePeriodDays).
+  dueAt       DateTime @map("due_at")
+  appliedAt   DateTime @default(now()) @map("applied_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  branch      Branch   @relation(fields: [branchId], references: [id])
+  loan        Loan     @relation(fields: [loanId], references: [id])
+
+  @@unique([loanId, periodIndex])
+  @@index([tenantId, loanId])
+  @@index([tenantId, appliedAt])
+  @@map("loan_fines")
 }
 
 model Department {
@@ -376,6 +426,10 @@ model Loan {
   disbursedAt      DateTime?  @map("disbursed_at")
   /// First day the daily repayment schedule starts (from payment-start policy).
   paymentStartDate DateTime?  @map("payment_start_date")
+  /// True once at least one overdue fine has been applied.
+  isFined          Boolean    @default(false) @map("is_fined")
+  /// Sum of all applied overdue fines (included in balance / outstanding).
+  finesTotal       Decimal    @default(0) @map("fines_total") @db.Decimal(18, 2)
   createdAt        DateTime   @default(now()) @map("created_at")
   updatedAt        DateTime   @updatedAt @map("updated_at")
   tenant           Tenant     @relation(fields: [tenantId], references: [id])
@@ -384,11 +438,13 @@ model Loan {
   application      LoanApplication?
   wallet           ClientWallet?
   repayments       Repayment[]
+  fines            LoanFine[]
 
   @@index([tenantId, status])
   @@index([tenantId, branchId])
   @@index([tenantId, customerId])
   @@index([tenantId, paymentStartDate])
+  @@index([tenantId, isFined])
   @@map("loans")
 }
 
@@ -402,6 +458,10 @@ model ClientWallet {
   loanApplicationId String?  @unique @map("loan_application_id") @db.Uuid
   currency          String
   openingBalance    Decimal  @map("opening_balance") @db.Decimal(18, 2)
+  /// Mirrors loan.isFined for wallet / client views.
+  isFined           Boolean  @default(false) @map("is_fined")
+  /// Mirrors loan.finesTotal for wallet / client views.
+  finesTotal        Decimal  @default(0) @map("fines_total") @db.Decimal(18, 2)
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
   tenant            Tenant   @relation(fields: [tenantId], references: [id])
