@@ -14,6 +14,12 @@ export type CollectionScheduleInput = {
    * / interest when pricing inputs drift.
    */
   recordedPaidAmount?: number;
+  /**
+   * Wallet opening balance snapshot from loan submit. When present, use it as
+   * totalRepayable (and derive interest) so existing loans keep stored totals
+   * even if live pricing formula changes.
+   */
+  totalRepayableOverride?: number;
   /** Loan start used for daily schedule (disbursed/submitted/created). */
   startDate: Date;
   asOf?: Date;
@@ -61,7 +67,19 @@ export function computeCollectionSchedule(
     processingFee: input.processingFee,
   });
 
-  const totalRepayable = pricing.totalRepayable;
+  const totalRepayable =
+    input.totalRepayableOverride != null
+      ? roundMoney(input.totalRepayableOverride)
+      : pricing.totalRepayable;
+  const interestAmount =
+    input.totalRepayableOverride != null
+      ? roundMoney(
+          Math.max(
+            0,
+            totalRepayable - pricing.principalAmount - pricing.processingFee,
+          ),
+        )
+      : pricing.interestAmount;
   const outstanding = roundMoney(Math.max(0, input.balance));
   const paidAmount =
     input.recordedPaidAmount != null
@@ -108,7 +126,7 @@ export function computeCollectionSchedule(
 
   return {
     principalAmount: pricing.principalAmount,
-    interestAmount: pricing.interestAmount,
+    interestAmount,
     processingFee: pricing.processingFee,
     totalRepayable,
     paidAmount,

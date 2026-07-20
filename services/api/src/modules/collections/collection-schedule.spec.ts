@@ -72,4 +72,41 @@ describe('collection-schedule', () => {
     expect(schedule.paidAmount).toBe(100_000);
     expect(schedule.outstanding).toBe(900_000);
   });
+
+  it('uses flat percent interest when no override (duration ignored for interest)', () => {
+    const start = new Date(2026, 6, 1);
+    const schedule = computeCollectionSchedule({
+      principalAmount: 100_000,
+      interestRatePercent: 12,
+      durationDays: 90,
+      processingFee: 0,
+      balance: 112_000,
+      recordedPaidAmount: 0,
+      startDate: start,
+      asOf: start,
+    });
+
+    expect(schedule.interestAmount).toBe(12_000);
+    expect(schedule.totalRepayable).toBe(112_000);
+  });
+
+  it('prefers totalRepayableOverride snapshot over live pricing', () => {
+    const start = new Date(2026, 6, 1);
+    const schedule = computeCollectionSchedule({
+      principalAmount: 100_000,
+      interestRatePercent: 12,
+      durationDays: 90,
+      processingFee: 0,
+      balance: 103_000,
+      recordedPaidAmount: 0,
+      // Legacy submit snapshot (old annualized formula) stays as stored.
+      totalRepayableOverride: 103_000,
+      startDate: start,
+      asOf: start,
+    });
+
+    expect(schedule.totalRepayable).toBe(103_000);
+    expect(schedule.interestAmount).toBe(3_000);
+    expect(schedule.dailyInstalment).toBeCloseTo(103_000 / 90, 2);
+  });
 });

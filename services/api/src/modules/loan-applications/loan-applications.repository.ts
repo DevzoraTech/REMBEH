@@ -310,6 +310,8 @@ export class LoanApplicationsRepository {
       const rate = Number(input.application.interestRatePercent ?? 0);
       const days = input.application.durationDays ?? 0;
       const fee = Number(input.application.processingFee ?? 0);
+      // Snapshot total repayable at submit (flat percent interest). Wallet
+      // openingBalance / loan.balance keep this value even if pricing changes later.
       const pricing = computeLoanPricing({
         principalAmount: Number(principal),
         interestRatePercent: rate,

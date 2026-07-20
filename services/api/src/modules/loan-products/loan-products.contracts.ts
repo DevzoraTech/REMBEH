@@ -47,7 +47,7 @@ export type LoanPricingBreakdownContract = {
   interestRatePercent: number;
   durationDays: number;
   processingFee: number;
-  /** Simple interest: principal × rate% × (days / 365). */
+  /** Flat interest: principal × (rate% / 100). Duration does not affect this. */
   interestAmount: number;
   /** principal + interestAmount + processingFee */
   totalRepayable: number;

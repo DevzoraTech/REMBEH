@@ -764,6 +764,8 @@ export class CollectionsService {
       processingFee: pricing.processingFee,
       balance: this.decimalToNumber(loan.balance) ?? 0,
       recordedPaidAmount,
+      // Keep submit-time snapshot for daily schedule / interest display.
+      totalRepayableOverride: openingBalance ?? undefined,
       startDate,
     });
     const last = repayments[0] ?? null;
@@ -864,12 +866,26 @@ export class CollectionsService {
     // (that inflated totalRepayable and made interest look like "paid").
     const days = app?.durationDays ?? 0;
     const fee = this.decimalToNumber(app?.processingFee) ?? 0;
-    return computeLoanPricing({
+    const computed = computeLoanPricing({
       principalAmount: principal,
       interestRatePercent: rate,
       durationDays: days,
       processingFee: fee,
     });
+    // Prefer wallet opening snapshot so repayment allocation buckets stay
+    // aligned with the total stored at submit (formula may change over time).
+    const opening = this.decimalToNumber(loan.wallet?.openingBalance);
+    if (opening == null) {
+      return computed;
+    }
+    const interestAmount = this.roundMoney(
+      Math.max(0, opening - computed.principalAmount - computed.processingFee),
+    );
+    return {
+      ...computed,
+      interestAmount,
+      totalRepayable: opening,
+    };
   }
 
   private async presignPhotoUrl(storageKey: string | null | undefined) {

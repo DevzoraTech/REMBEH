@@ -395,9 +395,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     final days = _selectedDurationDays();
     final fee =
         double.tryParse(_processingFee.text.replaceAll(',', '')) ?? 0;
+    // Duration is still required for the loan term / schedule, but interest is
+    // flat: loanRate = principal × (rate% / 100) — no days/365 factor.
     if (rate == null || days == null || principal <= 0) return null;
-    final interest =
-        (principal * (rate / 100) * (days / 365) * 100).round() / 100;
+    final interest = (principal * (rate / 100) * 100).round() / 100;
     final total = ((principal + interest + fee) * 100).round() / 100;
     return {
       'interest': interest,
@@ -1174,7 +1175,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Interest (simple annual): ${formatMoney(pricing['interest']!)}',
+                'Interest: ${formatMoney(pricing['interest']!)}',
                 style: const TextStyle(
                   color: midnightNavy,
                   fontWeight: FontWeight.w600,
