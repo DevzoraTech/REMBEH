@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  Check,
   Copy,
   Loader2,
   Pencil,
@@ -36,7 +37,12 @@ import {
 } from "../../lib/auth-session";
 import { resolveOperatorRole } from "../../lib/roles";
 
-type SettingsSection = "loan-products";
+type SettingsSection =
+  | "loan-products"
+  | "workspace"
+  | "notifications"
+  | "security"
+  | "integrations";
 
 type LoanTemplate = {
   id: string;
@@ -90,11 +96,48 @@ type TemplateForm = {
   notes: string;
 };
 
+type WizardStepId =
+  | "basics"
+  | "interest"
+  | "term"
+  | "payment-start"
+  | "fines"
+  | "review";
+
+const WIZARD_STEPS: { id: WizardStepId; label: string }[] = [
+  { id: "basics", label: "Basics" },
+  { id: "interest", label: "Interest & fees" },
+  { id: "term", label: "Term" },
+  { id: "payment-start", label: "Payment start" },
+  { id: "fines", label: "Fines" },
+  { id: "review", label: "Review" },
+];
+
 const SECTIONS: { id: SettingsSection; label: string; hint: string }[] = [
   {
     id: "loan-products",
     label: "Loan products",
-    hint: "All product settings — interest, term, fees, penalty, and payment start — live on each template",
+    hint: "Templates own interest, term, fees, penalty, and payment start",
+  },
+  {
+    id: "workspace",
+    label: "Workspace",
+    hint: "Company profile and contact details for this tenant",
+  },
+  {
+    id: "notifications",
+    label: "Notifications",
+    hint: "SMS and alert preferences for staff and borrowers",
+  },
+  {
+    id: "security",
+    label: "Security",
+    hint: "Session lifetime and access controls",
+  },
+  {
+    id: "integrations",
+    label: "Integrations",
+    hint: "Branding and third-party connections",
   },
 ];
 
@@ -144,13 +187,32 @@ function formFromTemplate(template: LoanTemplate): TemplateForm {
   };
 }
 
-function parseSection(_value: string | null): SettingsSection {
-  // Legacy sections (payment-start, fines, rates, periods) redirect here —
-  // templates own all product settings.
+function parseSection(value: string | null): SettingsSection {
+  // Legacy product tabs redirect to loan-products (config lives on templates).
+  if (
+    value === "payment-start" ||
+    value === "fines" ||
+    value === "rates" ||
+    value === "periods" ||
+    value === "loan-products"
+  ) {
+    return "loan-products";
+  }
+  if (
+    value === "workspace" ||
+    value === "notifications" ||
+    value === "security" ||
+    value === "integrations"
+  ) {
+    return value;
+  }
   return "loan-products";
 }
 
-function paymentStartLabel(template: LoanTemplate) {
+function paymentStartLabel(template: Pick<
+  LoanTemplate,
+  "paymentStartPolicy" | "paymentStartDelayDays"
+>) {
   switch (template.paymentStartPolicy) {
     case "SAME_DAY":
       return "Same day";
@@ -200,6 +262,16 @@ function interestTypeLabel(value: LoanTemplate["interestType"]) {
   }
 }
 
+function formatExpiry(iso: string | undefined) {
+  if (!iso) return "—";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
 function SectionHeader({
   title,
   description,
@@ -218,6 +290,67 @@ function SectionHeader({
         <p className="mt-0.5 text-xs text-slate-500">{description}</p>
       </div>
       {action}
+    </div>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid gap-0.5 border-b border-[var(--line)] py-2.5 last:border-0 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-3">
+      <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+        {label}
+      </dt>
+      <dd className="text-sm text-[var(--midnight-navy)]">{value || "—"}</dd>
+    </div>
+  );
+}
+
+function ComingSoonNote({ children }: { children: ReactNode }) {
+  return (
+    <p className="rounded-sm border border-dashed border-[var(--line)] bg-[var(--soft-mist)]/50 px-3 py-2 text-[11px] leading-snug text-slate-600">
+      {children}
+    </p>
+  );
+}
+
+function WizardStepIndicator({
+  stepIndex,
+}: {
+  stepIndex: number;
+}) {
+  return (
+    <ol className="mb-3 flex flex-wrap gap-1.5">
+      {WIZARD_STEPS.map((step, index) => {
+        const done = index < stepIndex;
+        const active = index === stepIndex;
+        return (
+          <li
+            key={step.id}
+            className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.06em] ${
+              active
+                ? "bg-[var(--midnight-navy)] text-white"
+                : done
+                  ? "bg-[rgba(15,138,108,0.12)] text-[var(--forest-emerald)]"
+                  : "bg-slate-100 text-slate-500"
+            }`}
+          >
+            <span className="tabular-nums">{index + 1}</span>
+            <span className="hidden sm:inline">{step.label}</span>
+            {done ? <Check className="size-2.5" /> : null}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function ReviewLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 border-b border-[var(--line)] py-1.5 text-xs last:border-0">
+      <span className="text-slate-500">{label}</span>
+      <span className="text-right font-semibold text-[var(--midnight-navy)]">
+        {value}
+      </span>
     </div>
   );
 }
@@ -254,6 +387,8 @@ function SettingsPageContent() {
   const [form, setForm] = useState<TemplateForm>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [wizardStep, setWizardStep] = useState(0);
+  const [wizardError, setWizardError] = useState<string | null>(null);
 
   const setSection = useCallback(
     (next: SettingsSection) => {
@@ -283,20 +418,16 @@ function SettingsPageContent() {
       return;
     }
 
-    if (!auth.session.permissions.includes("loan.product.manage")) {
-      setError("You do not have permission to manage settings.");
-      setSession(auth.session);
-      setWorkspace(auth.workspace);
-      setUser(auth.user);
-      setBranch(auth.branch);
-      setLoading(false);
-      return;
-    }
-
     setSession(auth.session);
     setWorkspace(auth.workspace);
     setUser(auth.user);
     setBranch(auth.branch);
+
+    if (!auth.session.permissions.includes("loan.product.manage")) {
+      setError("You can view workspace settings, but not manage loan products.");
+      setLoading(false);
+      return;
+    }
 
     void (async () => {
       try {
@@ -340,12 +471,16 @@ function SettingsPageContent() {
   function openCreate() {
     setEditingId(null);
     setForm(emptyForm());
+    setWizardStep(0);
+    setWizardError(null);
     setModalOpen(true);
   }
 
   function openEdit(template: LoanTemplate) {
     setEditingId(template.id);
     setForm(formFromTemplate(template));
+    setWizardStep(0);
+    setWizardError(null);
     setModalOpen(true);
   }
 
@@ -353,6 +488,8 @@ function SettingsPageContent() {
     setModalOpen(false);
     setEditingId(null);
     setForm(emptyForm());
+    setWizardStep(0);
+    setWizardError(null);
   }
 
   function formPayload() {
@@ -383,11 +520,95 @@ function SettingsPageContent() {
     };
   }
 
+  function validateWizardStep(step: number): string | null {
+    switch (WIZARD_STEPS[step]?.id) {
+      case "basics":
+        if (!form.name.trim()) return "Enter a loan type name.";
+        if (
+          form.minLoanAmount.trim() &&
+          form.maxLoanAmount.trim() &&
+          Number(form.minLoanAmount) > Number(form.maxLoanAmount)
+        ) {
+          return "Min amount cannot be greater than max amount.";
+        }
+        return null;
+      case "interest":
+        if (
+          form.interestRatePercent === "" ||
+          Number.isNaN(Number(form.interestRatePercent))
+        ) {
+          return "Enter an interest rate.";
+        }
+        if (
+          form.processingFeePercent === "" ||
+          Number.isNaN(Number(form.processingFeePercent))
+        ) {
+          return "Enter a processing fee percent.";
+        }
+        return null;
+      case "term":
+        if (!form.termValue || Number(form.termValue) < 1) {
+          return "Enter a loan term of at least 1.";
+        }
+        return null;
+      case "payment-start":
+        if (
+          form.paymentStartPolicy === "AFTER_N_DAYS" &&
+          (!form.paymentStartDelayDays ||
+            Number(form.paymentStartDelayDays) < 1)
+        ) {
+          return "Enter days after go-live (at least 1).";
+        }
+        return null;
+      case "fines":
+        if (
+          form.penaltyRatePercent === "" ||
+          Number.isNaN(Number(form.penaltyRatePercent))
+        ) {
+          return "Enter a penalty rate.";
+        }
+        if (!form.finePeriodDays || Number(form.finePeriodDays) < 1) {
+          return "Enter fine period days (at least 1).";
+        }
+        return null;
+      default:
+        return null;
+    }
+  }
+
+  function goNextStep() {
+    const message = validateWizardStep(wizardStep);
+    if (message) {
+      setWizardError(message);
+      return;
+    }
+    setWizardError(null);
+    setWizardStep((prev) => Math.min(prev + 1, WIZARD_STEPS.length - 1));
+  }
+
+  function goBackStep() {
+    setWizardError(null);
+    setWizardStep((prev) => Math.max(prev - 1, 0));
+  }
+
   async function saveTemplate(event: FormEvent) {
     event.preventDefault();
     if (!session) return;
+    if (WIZARD_STEPS[wizardStep]?.id !== "review") {
+      goNextStep();
+      return;
+    }
+    for (let i = 0; i < WIZARD_STEPS.length - 1; i += 1) {
+      const message = validateWizardStep(i);
+      if (message) {
+        setWizardStep(i);
+        setWizardError(message);
+        return;
+      }
+    }
     setSaving(true);
     setError(null);
+    setWizardError(null);
     try {
       const url = editingId
         ? `${apiBaseUrl}/loan-products/templates/${editingId}`
@@ -409,7 +630,7 @@ function SettingsPageContent() {
       closeModal();
       await refreshCatalog(session);
     } catch (caught) {
-      setError(
+      setWizardError(
         caught instanceof Error
           ? caught.message
           : "Could not save loan type template.",
@@ -498,6 +719,11 @@ function SettingsPageContent() {
     [templates],
   );
 
+  const canManageProducts =
+    session?.permissions.includes("loan.product.manage") ?? false;
+  const isLastWizardStep = wizardStep >= WIZARD_STEPS.length - 1;
+  const currentWizard = WIZARD_STEPS[wizardStep];
+
   if (!session) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -519,8 +745,7 @@ function SettingsPageContent() {
             Settings
           </h1>
           <p className="mt-0.5 text-xs text-slate-500">
-            Configure loan product templates — interest, term, fees, penalty,
-            and payment start.
+            Loan products and workspace system settings.
           </p>
         </header>
 
@@ -563,19 +788,25 @@ function SettingsPageContent() {
                   title="Loan products"
                   description={activeSection.hint}
                   action={
-                    <button
-                      type="button"
-                      className="btn btn-primary h-8 px-3 text-xs"
-                      onClick={openCreate}
-                      disabled={saving}
-                    >
-                      <Plus className="size-3.5" />
-                      New template
-                    </button>
+                    canManageProducts ? (
+                      <button
+                        type="button"
+                        className="btn btn-primary h-8 px-3 text-xs"
+                        onClick={openCreate}
+                        disabled={saving}
+                      >
+                        <Plus className="size-3.5" />
+                        New template
+                      </button>
+                    ) : null
                   }
                 />
 
-                {sortedTemplates.length === 0 ? (
+                {!canManageProducts ? (
+                  <p className="py-6 text-center text-sm text-slate-500">
+                    You do not have permission to manage loan products.
+                  </p>
+                ) : sortedTemplates.length === 0 ? (
                   <p className="py-8 text-center text-sm text-slate-500">
                     No loan type templates yet. Create one so agents can start
                     loans from a product.
@@ -621,7 +852,8 @@ function SettingsPageContent() {
                               </span>
                             </td>
                             <td className="py-2.5 pr-3 align-middle text-[var(--midnight-navy)]">
-                              {template.termValue} {termLabel(template.termUnit)}
+                              {template.termValue}{" "}
+                              {termLabel(template.termUnit)}
                               <span className="ml-1 text-slate-500">
                                 ({template.durationDays}d)
                               </span>
@@ -685,6 +917,179 @@ function SettingsPageContent() {
               </div>
             ) : null}
 
+            {!loading && section === "workspace" ? (
+              <div className="space-y-3">
+                <SectionHeader
+                  title="Workspace"
+                  description={activeSection.hint}
+                />
+                <dl>
+                  <InfoRow
+                    label="Company"
+                    value={workspace?.name ?? "—"}
+                  />
+                  <InfoRow
+                    label="Country"
+                    value={workspace?.country ?? "—"}
+                  />
+                  <InfoRow
+                    label="Currency"
+                    value={workspace?.currency ?? "—"}
+                  />
+                  <InfoRow
+                    label="Status"
+                    value={workspace?.status ?? "—"}
+                  />
+                  <InfoRow label="Signed-in as" value={user?.name ?? "—"} />
+                  <InfoRow label="Email" value={user?.email ?? "—"} />
+                  <InfoRow label="Phone" value={user?.phone ?? "—"} />
+                  <InfoRow
+                    label="Active branch"
+                    value={
+                      branch?.name
+                        ? `${branch.name}${branch.address ? ` · ${branch.address}` : ""}`
+                        : "Tenant-wide"
+                    }
+                  />
+                </dl>
+                <ComingSoonNote>
+                  Editing company legal name, registration number, and logo
+                  will land here once the workspace profile API is exposed.
+                </ComingSoonNote>
+              </div>
+            ) : null}
+
+            {!loading && section === "notifications" ? (
+              <div className="space-y-3">
+                <SectionHeader
+                  title="Notifications"
+                  description={activeSection.hint}
+                />
+                <div className="space-y-2 text-sm text-[var(--midnight-navy)]">
+                  <label className="flex items-start gap-2">
+                    <input type="checkbox" className="mt-1" checked disabled />
+                    <span>
+                      <span className="font-semibold">OTP / login SMS</span>
+                      <span className="mt-0.5 block text-xs text-slate-500">
+                        Delivered via the server SMS provider configured in
+                        environment (active).
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-2 opacity-70">
+                    <input type="checkbox" className="mt-1" disabled />
+                    <span>
+                      <span className="font-semibold">
+                        Repayment reminder SMS
+                      </span>
+                      <span className="mt-0.5 block text-xs text-slate-500">
+                        Coming soon — no manager toggle API yet.
+                      </span>
+                    </span>
+                  </label>
+                  <label className="flex items-start gap-2 opacity-70">
+                    <input type="checkbox" className="mt-1" disabled />
+                    <span>
+                      <span className="font-semibold">
+                        Overdue fine alerts
+                      </span>
+                      <span className="mt-0.5 block text-xs text-slate-500">
+                        Coming soon — fines already run from loan templates.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              </div>
+            ) : null}
+
+            {!loading && section === "security" ? (
+              <div className="space-y-3">
+                <SectionHeader
+                  title="Security"
+                  description={activeSection.hint}
+                />
+                <dl>
+                  <InfoRow
+                    label="Access token expires"
+                    value={formatExpiry(session.expiresAt)}
+                  />
+                  <InfoRow
+                    label="Refresh available until"
+                    value={formatExpiry(session.refreshExpiresAt)}
+                  />
+                  <InfoRow
+                    label="Role"
+                    value={user?.roleName ?? resolveOperatorRole(session, user)}
+                  />
+                  <InfoRow
+                    label="Permissions"
+                    value={`${session.permissions.length} granted`}
+                  />
+                </dl>
+                <ComingSoonNote>
+                  Configurable idle timeout and forced re-auth will be added
+                  when session policy is managed per tenant. Today, expiry
+                  follows the API JWT lifetimes above.
+                </ComingSoonNote>
+              </div>
+            ) : null}
+
+            {!loading && section === "integrations" ? (
+              <div className="space-y-3">
+                <SectionHeader
+                  title="Integrations"
+                  description={activeSection.hint}
+                />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="border border-[var(--line)] p-3">
+                    <p className="text-xs font-bold text-[var(--midnight-navy)]">
+                      KYC (Smile ID)
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Applicant verification is wired in the API. Branding and
+                      webhook keys stay server-side.
+                    </p>
+                    <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--forest-emerald)]">
+                      Connected via env
+                    </p>
+                  </div>
+                  <div className="border border-[var(--line)] p-3">
+                    <p className="text-xs font-bold text-[var(--midnight-navy)]">
+                      Object storage
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Media, agreements, and APK releases use the tenant S3
+                      bucket / IAM role on EC2.
+                    </p>
+                    <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--forest-emerald)]">
+                      Active
+                    </p>
+                  </div>
+                  <div className="border border-[var(--line)] p-3 opacity-80">
+                    <p className="text-xs font-bold text-[var(--midnight-navy)]">
+                      Branding kit
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Custom logo and accent colors for web + PDF agreements.
+                    </p>
+                    <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                      Coming soon
+                    </p>
+                  </div>
+                  <div className="border border-[var(--line)] p-3 opacity-80">
+                    <p className="text-xs font-bold text-[var(--midnight-navy)]">
+                      Accounting export
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Push collections and disbursements to external ledgers.
+                    </p>
+                    <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                      Coming soon
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </section>
         </div>
       </div>
@@ -692,7 +1097,7 @@ function SettingsPageContent() {
       <SettingsModal
         open={modalOpen}
         title={editingId ? "Edit loan product" : "New loan product"}
-        subtitle="Interest, term, fees, penalty, and payment start are snapshotted on each application."
+        subtitle={`${currentWizard?.label ?? "Basics"} · step ${wizardStep + 1} of ${WIZARD_STEPS.length}`}
         onClose={closeModal}
         footer={
           <>
@@ -704,209 +1109,303 @@ function SettingsPageContent() {
             >
               Cancel
             </button>
-            <button
-              type="submit"
-              form="loan-template-form"
-              className="btn btn-primary h-9 px-4 text-xs"
-              disabled={saving}
-            >
-              {saving ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : null}
-              {editingId ? "Save changes" : "Create template"}
-            </button>
+            {wizardStep > 0 ? (
+              <button
+                type="button"
+                className="btn btn-ghost h-9 px-3 text-xs"
+                onClick={goBackStep}
+                disabled={saving}
+              >
+                Back
+              </button>
+            ) : null}
+            {!isLastWizardStep ? (
+              <button
+                type="button"
+                className="btn btn-primary h-9 px-4 text-xs"
+                onClick={goNextStep}
+                disabled={saving}
+              >
+                Next
+              </button>
+            ) : (
+              <button
+                type="submit"
+                form="loan-template-form"
+                className="btn btn-primary h-9 px-4 text-xs"
+                disabled={saving}
+              >
+                {saving ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : null}
+                {editingId ? "Save changes" : "Create template"}
+              </button>
+            )}
           </>
         }
       >
         <form
           id="loan-template-form"
           onSubmit={saveTemplate}
-          className="grid grid-cols-1 gap-2.5 sm:grid-cols-2"
+          className="space-y-3"
         >
-          <TextField
-            label="Template / Loan type name"
-            value={form.name}
-            onChange={(value) => updateForm("name", value)}
-            placeholder="e.g. 30-day working capital"
-            required
-            compact
-          />
-          <SelectField
-            label="Interest Type"
-            value={form.interestType}
-            onChange={(value) =>
-              updateForm(
-                "interestType",
-                value as TemplateForm["interestType"],
-              )
-            }
-            options={[
-              { value: "FLAT", label: "Flat" },
-              { value: "REDUCING_BALANCE", label: "Reducing balance" },
-              { value: "COMPOUND", label: "Compound" },
-            ]}
-            required
-            compact
-          />
-          <label className="block sm:col-span-2">
-            <span className="mb-1 block text-xs font-semibold text-[var(--midnight-navy)]">
-              Description
-            </span>
-            <textarea
-              className="min-h-12 w-full border border-[var(--line)] bg-white px-2.5 py-1.5 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] focus:shadow-[inset_0_0_0_1px_var(--forest-emerald)]"
-              value={form.description}
-              onChange={(event) =>
-                updateForm("description", event.target.value)
-              }
-              placeholder="Optional product description for agents"
-            />
-          </label>
-          <TextField
-            label="Interest Rate (%)"
-            value={form.interestRatePercent}
-            onChange={(value) => updateForm("interestRatePercent", value)}
-            placeholder="12"
-            required
-            compact
-          />
-          <TextField
-            label="Processing Fee (%)"
-            value={form.processingFeePercent}
-            onChange={(value) => updateForm("processingFeePercent", value)}
-            placeholder="2"
-            required
-            compact
-          />
-          <TextField
-            label="Loan Term"
-            value={form.termValue}
-            onChange={(value) => updateForm("termValue", value)}
-            placeholder="30"
-            required
-            compact
-          />
-          <SelectField
-            label="Term Unit"
-            value={form.termUnit}
-            onChange={(value) =>
-              updateForm("termUnit", value as TemplateForm["termUnit"])
-            }
-            options={[
-              { value: "DAYS", label: "Days" },
-              { value: "WEEKS", label: "Weeks" },
-              { value: "MONTHS", label: "Month(s)" },
-            ]}
-            required
-            compact
-          />
-          <SelectField
-            label="Repayment Frequency"
-            value={form.repaymentFrequency}
-            onChange={(value) =>
-              updateForm(
-                "repaymentFrequency",
-                value as TemplateForm["repaymentFrequency"],
-              )
-            }
-            options={[
-              { value: "DAILY", label: "Daily" },
-              { value: "WEEKLY", label: "Weekly" },
-              { value: "BIWEEKLY", label: "Bi-weekly" },
-              { value: "MONTHLY", label: "Monthly" },
-              { value: "LUMP_SUM", label: "Lump sum" },
-            ]}
-            required
-            compact
-          />
-          <TextField
-            label="Penalty Rate (%)"
-            value={form.penaltyRatePercent}
-            onChange={(value) => updateForm("penaltyRatePercent", value)}
-            placeholder="5"
-            required
-            compact
-          />
-          <TextField
-            label="Fine period (days)"
-            value={form.finePeriodDays}
-            onChange={(value) => updateForm("finePeriodDays", value)}
-            placeholder="10"
-            required
-            compact
-          />
-          <SelectField
-            label="Payment start"
-            value={form.paymentStartPolicy}
-            onChange={(value) =>
-              updateForm(
-                "paymentStartPolicy",
-                value as TemplateForm["paymentStartPolicy"],
-              )
-            }
-            options={[
-              { value: "SAME_DAY", label: "Same day as go-live" },
-              { value: "NEXT_DAY", label: "Next day after go-live" },
-              { value: "AFTER_N_DAYS", label: "After N days" },
-            ]}
-            required
-            compact
-          />
-          {form.paymentStartPolicy === "AFTER_N_DAYS" ? (
-            <TextField
-              label="Days after go-live"
-              value={form.paymentStartDelayDays}
-              onChange={(value) => updateForm("paymentStartDelayDays", value)}
-              placeholder="1"
-              required
-              compact
-            />
+          <WizardStepIndicator stepIndex={wizardStep} />
+          {wizardError ? (
+            <p className="text-xs font-semibold text-red-600">{wizardError}</p>
           ) : null}
-          <TextField
-            label="Min Loan Amount"
-            value={form.minLoanAmount}
-            onChange={(value) => updateForm("minLoanAmount", value)}
-            placeholder="Optional"
-            compact
-          />
-          <TextField
-            label="Max Loan Amount"
-            value={form.maxLoanAmount}
-            onChange={(value) => updateForm("maxLoanAmount", value)}
-            placeholder="Optional"
-            compact
-          />
-          <label className="flex items-start gap-2 text-sm sm:col-span-2">
-            <input
-              type="checkbox"
-              className="mt-1"
-              checked={form.allowAgentDatePick}
-              onChange={(event) =>
-                updateForm("allowAgentDatePick", event.target.checked)
-              }
-            />
-            <span className="text-xs text-slate-600">
-              Allow agents to pick a later payment start date (on or after the
-              policy date)
-            </span>
-          </label>
-          <label className="block sm:col-span-2">
-            <span className="mb-1 block text-xs font-semibold text-[var(--midnight-navy)]">
-              Notes (internal)
-            </span>
-            <textarea
-              className="min-h-11 w-full border border-[var(--line)] bg-white px-2.5 py-1.5 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] focus:shadow-[inset_0_0_0_1px_var(--forest-emerald)]"
-              value={form.notes}
-              onChange={(event) => updateForm("notes", event.target.value)}
-              placeholder="Internal notes — not shown to borrowers"
-            />
-          </label>
-          <p className="text-[11px] leading-snug text-slate-500 sm:col-span-2">
-            Overdue fine = penalty rate % of original principal, charged every
-            fine period days after maturity while unpaid. Payment start is
-            computed from go-live using this template&apos;s policy. Reducing /
-            compound types are stored; repayable preview currently uses flat
-            principal × rate% until amortization is added.
-          </p>
+
+          {currentWizard?.id === "basics" ? (
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              <TextField
+                label="Template / Loan type name"
+                value={form.name}
+                onChange={(value) => updateForm("name", value)}
+                placeholder="e.g. 30-day working capital"
+                required
+                compact
+              />
+              <div className="hidden sm:block" />
+              <label className="block sm:col-span-2">
+                <span className="mb-1 block text-xs font-semibold text-[var(--midnight-navy)]">
+                  Description
+                </span>
+                <textarea
+                  className="min-h-12 w-full border border-[var(--line)] bg-white px-2.5 py-1.5 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] focus:shadow-[inset_0_0_0_1px_var(--forest-emerald)]"
+                  value={form.description}
+                  onChange={(event) =>
+                    updateForm("description", event.target.value)
+                  }
+                  placeholder="Optional product description for agents"
+                />
+              </label>
+              <TextField
+                label="Min Loan Amount"
+                value={form.minLoanAmount}
+                onChange={(value) => updateForm("minLoanAmount", value)}
+                placeholder="Optional"
+                compact
+              />
+              <TextField
+                label="Max Loan Amount"
+                value={form.maxLoanAmount}
+                onChange={(value) => updateForm("maxLoanAmount", value)}
+                placeholder="Optional"
+                compact
+              />
+              <label className="block sm:col-span-2">
+                <span className="mb-1 block text-xs font-semibold text-[var(--midnight-navy)]">
+                  Notes (internal)
+                </span>
+                <textarea
+                  className="min-h-11 w-full border border-[var(--line)] bg-white px-2.5 py-1.5 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] focus:shadow-[inset_0_0_0_1px_var(--forest-emerald)]"
+                  value={form.notes}
+                  onChange={(event) => updateForm("notes", event.target.value)}
+                  placeholder="Internal notes — not shown to borrowers"
+                />
+              </label>
+            </div>
+          ) : null}
+
+          {currentWizard?.id === "interest" ? (
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              <SelectField
+                label="Interest Type"
+                value={form.interestType}
+                onChange={(value) =>
+                  updateForm(
+                    "interestType",
+                    value as TemplateForm["interestType"],
+                  )
+                }
+                options={[
+                  { value: "FLAT", label: "Flat" },
+                  { value: "REDUCING_BALANCE", label: "Reducing balance" },
+                  { value: "COMPOUND", label: "Compound" },
+                ]}
+                required
+                compact
+              />
+              <TextField
+                label="Interest Rate (%)"
+                value={form.interestRatePercent}
+                onChange={(value) => updateForm("interestRatePercent", value)}
+                placeholder="12"
+                required
+                compact
+              />
+              <TextField
+                label="Processing Fee (%)"
+                value={form.processingFeePercent}
+                onChange={(value) => updateForm("processingFeePercent", value)}
+                placeholder="2"
+                required
+                compact
+              />
+            </div>
+          ) : null}
+
+          {currentWizard?.id === "term" ? (
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              <TextField
+                label="Loan Term"
+                value={form.termValue}
+                onChange={(value) => updateForm("termValue", value)}
+                placeholder="30"
+                required
+                compact
+              />
+              <SelectField
+                label="Term Unit"
+                value={form.termUnit}
+                onChange={(value) =>
+                  updateForm("termUnit", value as TemplateForm["termUnit"])
+                }
+                options={[
+                  { value: "DAYS", label: "Days" },
+                  { value: "WEEKS", label: "Weeks" },
+                  { value: "MONTHS", label: "Month(s)" },
+                ]}
+                required
+                compact
+              />
+              <SelectField
+                label="Repayment Frequency"
+                value={form.repaymentFrequency}
+                onChange={(value) =>
+                  updateForm(
+                    "repaymentFrequency",
+                    value as TemplateForm["repaymentFrequency"],
+                  )
+                }
+                options={[
+                  { value: "DAILY", label: "Daily" },
+                  { value: "WEEKLY", label: "Weekly" },
+                  { value: "BIWEEKLY", label: "Bi-weekly" },
+                  { value: "MONTHLY", label: "Monthly" },
+                  { value: "LUMP_SUM", label: "Lump sum" },
+                ]}
+                required
+                compact
+              />
+            </div>
+          ) : null}
+
+          {currentWizard?.id === "payment-start" ? (
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              <SelectField
+                label="Payment start"
+                value={form.paymentStartPolicy}
+                onChange={(value) =>
+                  updateForm(
+                    "paymentStartPolicy",
+                    value as TemplateForm["paymentStartPolicy"],
+                  )
+                }
+                options={[
+                  { value: "SAME_DAY", label: "Same day as go-live" },
+                  { value: "NEXT_DAY", label: "Next day after go-live" },
+                  { value: "AFTER_N_DAYS", label: "After N days" },
+                ]}
+                required
+                compact
+              />
+              {form.paymentStartPolicy === "AFTER_N_DAYS" ? (
+                <TextField
+                  label="Days after go-live"
+                  value={form.paymentStartDelayDays}
+                  onChange={(value) =>
+                    updateForm("paymentStartDelayDays", value)
+                  }
+                  placeholder="1"
+                  required
+                  compact
+                />
+              ) : (
+                <div className="hidden sm:block" />
+              )}
+              <label className="flex items-start gap-2 text-sm sm:col-span-2">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={form.allowAgentDatePick}
+                  onChange={(event) =>
+                    updateForm("allowAgentDatePick", event.target.checked)
+                  }
+                />
+                <span className="text-xs text-slate-600">
+                  Allow agents to pick a later payment start date (on or after
+                  the policy date)
+                </span>
+              </label>
+            </div>
+          ) : null}
+
+          {currentWizard?.id === "fines" ? (
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              <TextField
+                label="Penalty Rate (%)"
+                value={form.penaltyRatePercent}
+                onChange={(value) => updateForm("penaltyRatePercent", value)}
+                placeholder="5"
+                required
+                compact
+              />
+              <TextField
+                label="Fine period (days)"
+                value={form.finePeriodDays}
+                onChange={(value) => updateForm("finePeriodDays", value)}
+                placeholder="10"
+                required
+                compact
+              />
+              <p className="text-[11px] leading-snug text-slate-500 sm:col-span-2">
+                Overdue fine = penalty rate % of original principal, charged
+                every fine period days after maturity while unpaid.
+              </p>
+            </div>
+          ) : null}
+
+          {currentWizard?.id === "review" ? (
+            <div className="space-y-1">
+              <ReviewLine label="Name" value={form.name.trim() || "—"} />
+              <ReviewLine
+                label="Interest"
+                value={`${form.interestRatePercent || "—"}% ${interestTypeLabel(form.interestType)}`}
+              />
+              <ReviewLine
+                label="Processing fee"
+                value={`${form.processingFeePercent || "—"}%`}
+              />
+              <ReviewLine
+                label="Term"
+                value={`${form.termValue || "—"} ${termLabel(form.termUnit)} · ${frequencyLabel(form.repaymentFrequency)}`}
+              />
+              <ReviewLine
+                label="Payment start"
+                value={paymentStartLabel({
+                  paymentStartPolicy: form.paymentStartPolicy,
+                  paymentStartDelayDays: Number(
+                    form.paymentStartDelayDays || "1",
+                  ),
+                })}
+              />
+              <ReviewLine
+                label="Agent date pick"
+                value={form.allowAgentDatePick ? "Allowed" : "Not allowed"}
+              />
+              <ReviewLine
+                label="Penalty"
+                value={`${form.penaltyRatePercent || "—"}% every ${form.finePeriodDays || "—"}d`}
+              />
+              <ReviewLine
+                label="Amount range"
+                value={`${form.minLoanAmount || "—"} – ${form.maxLoanAmount || "—"}`}
+              />
+              {form.notes.trim() ? (
+                <ReviewLine label="Notes" value={form.notes.trim()} />
+              ) : null}
+            </div>
+          ) : null}
         </form>
       </SettingsModal>
     </AppShell>
