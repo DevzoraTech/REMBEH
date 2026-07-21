@@ -4,6 +4,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
+import { AgentsModule } from './modules/agents/agents.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { BranchesModule } from './modules/branches/branches.module';
 import { CollectionsModule } from './modules/collections/collections.module';
@@ -27,6 +28,7 @@ import { StorageModule } from './modules/storage/storage.module';
     StorageModule,
     RealtimeModule,
     AuthModule,
+    AgentsModule,
     BranchesModule,
     CustomersModule,
     CollectionsModule,

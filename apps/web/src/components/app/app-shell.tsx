@@ -8,6 +8,7 @@ import {
   LogOut,
   Menu,
   Settings,
+  Users,
   Wallet,
   UserRound,
   X,
@@ -61,6 +62,18 @@ export function AppShell({
         label: "Branches",
         icon: Building2,
         enabled: operatorRole === "owner",
+      },
+      {
+        href: "/agents",
+        label: "Agents",
+        icon: Users,
+        enabled:
+          operatorRole !== "staff" &&
+          Boolean(
+            session.permissions.includes("branch.staff.read") ||
+              session.permissions.includes("user.read") ||
+              session.permissions.includes("collection.read"),
+          ),
       },
       {
         href: "/dashboard#payments",

@@ -5,10 +5,10 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Request } from 'express';
-import { TenantStatus, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { AuthenticatedUser } from './authenticated-user';
 import { JwtTokenService } from './jwt-token.service';
+import { assertUserCanAuthenticate } from './user-status-access';
 
 type AuthenticatedRequest = Request & {
   user?: AuthenticatedUser;
@@ -56,12 +56,7 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException('User session is no longer valid.');
     }
 
-    if (
-      user.status !== UserStatus.ACTIVE ||
-      user.tenant.status !== TenantStatus.ACTIVE
-    ) {
-      throw new UnauthorizedException('Account or user is not active.');
-    }
+    assertUserCanAuthenticate(user);
 
     request.user = {
       userId: user.id,

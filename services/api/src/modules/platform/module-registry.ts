@@ -58,6 +58,7 @@ export const REMBEH_MODULES: RembehModuleDefinition[] = [
       'permission.assign',
     ],
     menu: [
+      { label: 'Agents', route: '/agents', surface: 'web' },
       { label: 'Employees', route: '/employees', surface: 'web' },
       { label: 'Roles', route: '/settings/roles', surface: 'web' },
     ],

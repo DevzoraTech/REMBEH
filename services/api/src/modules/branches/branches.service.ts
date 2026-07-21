@@ -57,6 +57,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'branch.staff.invite',
     'user.read',
     'user.invite',
+    'user.activate',
     'customer.create',
     'customer.read',
     'customer.update',
@@ -497,6 +498,10 @@ export class BranchesService {
 
     if (status === UserStatus.SUSPENDED) {
       return 'SUSPENDED';
+    }
+
+    if (status === UserStatus.INACTIVE) {
+      return 'INACTIVE';
     }
 
     if (status === UserStatus.PENDING_VERIFICATION) {

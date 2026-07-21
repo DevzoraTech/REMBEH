@@ -5,6 +5,7 @@ export type BranchStaffInviteStatus =
   | 'INVITE_PENDING'
   | 'INVITE_EXPIRED'
   | 'SUSPENDED'
+  | 'INACTIVE'
   | 'PENDING_VERIFICATION';
 
 export type BranchStaffMemberContract = {

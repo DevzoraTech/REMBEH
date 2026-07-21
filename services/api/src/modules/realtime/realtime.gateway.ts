@@ -8,7 +8,7 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { TenantStatus, UserStatus } from '@prisma/client';
+import { resolveAuthStatusBlock } from '../../common/auth/user-status-access';
 import { Server, Socket } from 'socket.io';
 import { JwtTokenService } from '../../common/auth/jwt-token.service';
 import { PrismaService } from '../../database/prisma.service';
@@ -73,8 +73,7 @@ export class RealtimeGateway
       if (
         !user ||
         user.tenantId !== payload.tenantId ||
-        user.status !== UserStatus.ACTIVE ||
-        user.tenant.status !== TenantStatus.ACTIVE
+        resolveAuthStatusBlock(user)
       ) {
         client.disconnect(true);
         return;

@@ -18,6 +18,8 @@ enum UserStatus {
   PENDING_VERIFICATION
   ACTIVE
   SUSPENDED
+  /// Soft-deactivated: cannot login (distinct from SUSPENDED).
+  INACTIVE
 }
 
 enum LoanStatus {
@@ -161,6 +163,7 @@ model Tenant {
   auditLogs                AuditLog[]
   outboxEvents             OutboxEvent[]
   otpChallenges            OtpChallenge[]
+  agentDailyFloats         AgentDailyFloat[]
 
   @@map("tenants")
 }
@@ -189,6 +192,7 @@ model Branch {
   loanPaymentStartPolicies LoanPaymentStartPolicy[]
   loanFinePolicies         LoanFinePolicy[]
   loanFines                LoanFine[]
+  agentDailyFloats         AgentDailyFloat[]
 
   @@index([tenantId, name])
   @@unique([tenantId, name])
@@ -385,11 +389,37 @@ model User {
   otpChallenges      OtpChallenge[]
   loanApplications   LoanApplication[] @relation("LoanApplicationOfficer")
   repaymentsRecorded Repayment[]       @relation("RepaymentRecorder")
+  dailyFloats        AgentDailyFloat[] @relation("AgentDailyFloatAgent")
+  dailyFloatsRecorded AgentDailyFloat[] @relation("AgentDailyFloatRecorder")
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
   @@index([tenantId, branchId])
   @@map("users")
+}
+
+/// Cash float given to a field agent at the start of a working day for new loans.
+model AgentDailyFloat {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  branchId         String?  @map("branch_id") @db.Uuid
+  agentId          String   @map("agent_id") @db.Uuid
+  /// Calendar day the float covers (tenant-local date stored as UTC date).
+  floatDate        DateTime @map("float_date") @db.Date
+  amountGiven      Decimal  @map("amount_given") @db.Decimal(14, 2)
+  recordedByUserId String   @map("recorded_by_user_id") @db.Uuid
+  notes            String?
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  tenant           Tenant   @relation(fields: [tenantId], references: [id])
+  branch           Branch?  @relation(fields: [branchId], references: [id])
+  agent            User     @relation("AgentDailyFloatAgent", fields: [agentId], references: [id])
+  recordedBy       User     @relation("AgentDailyFloatRecorder", fields: [recordedByUserId], references: [id])
+
+  @@unique([tenantId, agentId, floatDate])
+  @@index([tenantId, floatDate])
+  @@index([tenantId, branchId, floatDate])
+  @@map("agent_daily_floats")
 }
 
 model Role {

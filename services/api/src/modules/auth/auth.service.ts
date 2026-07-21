@@ -19,6 +19,7 @@ import {
 import type { Prisma } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
 import { JwtTokenService } from '../../common/auth/jwt-token.service';
+import { assertUserCanAuthenticate } from '../../common/auth/user-status-access';
 import {
   getPrismaUniqueConstraintTargets,
   isPrismaUniqueConstraintError,
@@ -523,12 +524,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password.');
     }
 
-    if (
-      user.status !== UserStatus.ACTIVE ||
-      user.tenant.status !== TenantStatus.ACTIVE
-    ) {
-      throw new UnauthorizedException('Account or user is not active.');
-    }
+    assertUserCanAuthenticate(user);
 
     const publicId =
       user.publicId ?? (await this.ensureUserPublicId(user.id));
@@ -1000,12 +996,16 @@ export class AuthService {
       include: { tenant: true },
     });
 
-    if (
-      !user ||
-      user.tenantId !== payload.tenantId ||
-      user.status !== UserStatus.ACTIVE ||
-      user.tenant.status !== TenantStatus.ACTIVE
-    ) {
+    if (!user || user.tenantId !== payload.tenantId) {
+      throw new UnauthorizedException('Unable to refresh session.');
+    }
+
+    try {
+      assertUserCanAuthenticate(user);
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
       throw new UnauthorizedException('Unable to refresh session.');
     }
 
