@@ -1,9 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import {
-  LoanApplicationStatus,
-  Prisma,
-  UserStatus,
-} from '@prisma/client';
+import { LoanApplicationStatus, Prisma, UserStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 
 const FIELD_AGENT_ROLES = [

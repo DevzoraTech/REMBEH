@@ -59,12 +59,7 @@ export type LoanProductTemplateContract = {
   termUnit: 'DAYS' | 'WEEKS' | 'MONTHS' | 'YEARS';
   /** Derived duration in days for schedules / fines. */
   durationDays: number;
-  repaymentFrequency:
-    | 'DAILY'
-    | 'WEEKLY'
-    | 'BIWEEKLY'
-    | 'MONTHLY'
-    | 'LUMP_SUM';
+  repaymentFrequency: 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | 'LUMP_SUM';
   processingFeePercent: number;
   /** Fine = this % of original principal each finePeriodDays after maturity. */
   penaltyRatePercent: number;

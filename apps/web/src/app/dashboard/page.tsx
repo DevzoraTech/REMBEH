@@ -35,6 +35,49 @@ type Branch = {
   };
 };
 
+type LoanRow = {
+  status: string;
+  balance: number;
+  currency: string;
+};
+
+type CollectionSummary = {
+  amountCollectedToday: number;
+  repaymentsTodayCount: number;
+  dueTodayCount: number;
+};
+
+type DashboardStats = {
+  activeLoans: number | null;
+  completedLoans: number | null;
+  outstanding: number | null;
+  collectedToday: number | null;
+  dueToday: number | null;
+  repaymentsToday: number | null;
+  currency: string;
+};
+
+const ACTIVE_LOAN_STATUSES = new Set([
+  "SUBMITTED",
+  "APPROVED",
+  "DISBURSED",
+  "CURRENT",
+  "IN_ARREARS",
+  "RESTRUCTURED",
+]);
+
+const COMPLETED_LOAN_STATUSES = new Set(["CLOSED"]);
+
+const emptyStats: DashboardStats = {
+  activeLoans: null,
+  completedLoans: null,
+  outstanding: null,
+  collectedToday: null,
+  dueToday: null,
+  repaymentsToday: null,
+  currency: "UGX",
+};
+
 export default function DashboardPage() {
   const router = useRouter();
   const [session, setSession] = useState<RembehSession | null>(null);
@@ -43,6 +86,7 @@ export default function DashboardPage() {
   const [branch, setBranch] = useState<RembehBranch | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
   const [customerCount, setCustomerCount] = useState<number | null>(null);
+  const [stats, setStats] = useState<DashboardStats>(emptyStats);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,10 +129,13 @@ export default function DashboardPage() {
         setWorkspace(auth.workspace);
         setUser(auth.user);
         setBranch(auth.branch);
+        setStats((current) => ({
+          ...current,
+          currency: auth.workspace?.currency ?? current.currency,
+        }));
 
         const role = resolveOperatorRole(activeSession, auth.user);
 
-        // Agents / field staff: no console data.
         if (role === "staff") {
           setIsLoading(false);
           return;
@@ -123,6 +170,63 @@ export default function DashboardPage() {
                 if (response.ok) {
                   setCustomerCount(payload.customers?.length ?? 0);
                 }
+              })
+            : Promise.resolve(),
+          activeSession.permissions.includes("loan.read")
+            ? fetch(`${apiBaseUrl}/loans`, {
+                headers: {
+                  Authorization: `${activeSession.tokenType} ${activeSession.accessToken}`,
+                },
+              }).then(async (response) => {
+                const payload = await readApiJson<{
+                  loans?: LoanRow[];
+                  message?: string | string[];
+                }>(response);
+                if (!response.ok) {
+                  throw new Error(formatApiError(payload.message));
+                }
+                const loans = payload.loans ?? [];
+                const activeLoans = loans.filter((loan) =>
+                  ACTIVE_LOAN_STATUSES.has(loan.status),
+                );
+                setStats((current) => ({
+                  ...current,
+                  activeLoans: activeLoans.length,
+                  completedLoans: loans.filter((loan) =>
+                    COMPLETED_LOAN_STATUSES.has(loan.status),
+                  ).length,
+                  outstanding: roundMoney(
+                    activeLoans.reduce((sum, loan) => sum + loan.balance, 0),
+                  ),
+                  currency:
+                    loans[0]?.currency ??
+                    auth.workspace?.currency ??
+                    current.currency,
+                }));
+              })
+            : Promise.resolve(),
+          role === "manager" &&
+          activeSession.permissions.includes("collection.read")
+            ? fetch(`${apiBaseUrl}/collections/summary`, {
+                headers: {
+                  Authorization: `${activeSession.tokenType} ${activeSession.accessToken}`,
+                },
+              }).then(async (response) => {
+                const payload = await readApiJson<{
+                  summary?: CollectionSummary;
+                  message?: string | string[];
+                }>(response);
+                if (!response.ok) {
+                  throw new Error(formatApiError(payload.message));
+                }
+                setStats((current) => ({
+                  ...current,
+                  collectedToday:
+                    payload.summary?.amountCollectedToday ?? null,
+                  dueToday: payload.summary?.dueTodayCount ?? null,
+                  repaymentsToday:
+                    payload.summary?.repaymentsTodayCount ?? null,
+                }));
               })
             : Promise.resolve(),
         ])
@@ -188,6 +292,7 @@ export default function DashboardPage() {
           <OwnerView
             branches={branches}
             customerCount={customerCount}
+            stats={stats}
             session={session}
           />
         ) : operatorRole === "manager" ? (
@@ -203,6 +308,7 @@ export default function DashboardPage() {
                 : null)
             }
             customerCount={customerCount}
+            stats={stats}
             session={session}
           />
         ) : (
@@ -216,22 +322,32 @@ export default function DashboardPage() {
 function OwnerView({
   branches,
   customerCount,
+  stats,
   session,
 }: {
   branches: Branch[];
   customerCount: number | null;
+  stats: DashboardStats;
   session: RembehSession;
 }) {
   return (
     <>
-      <section className="grid gap-2 sm:grid-cols-3">
-        <Stat label="Branches" value={String(branches.length)} />
+      <section className="grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
+        <Stat label="branches" value={String(branches.length)} />
         <Stat
-          label="Customers"
-          value={customerCount === null ? "—" : String(customerCount)}
+          label="borrowers"
+          value={numberStat(customerCount)}
         />
         <Stat
-          label="Pending managers"
+          label="active loans"
+          value={numberStat(stats.activeLoans)}
+        />
+        <Stat
+          label="outstanding"
+          value={moneyStat(stats.outstanding, stats.currency)}
+        />
+        <Stat
+          label="pending managers"
           value={String(
             branches.filter(
               (item) => item.manager?.inviteStatus === "INVITE_PENDING",
@@ -239,6 +355,8 @@ function OwnerView({
           )}
         />
       </section>
+
+      <OwnerBranchesTable branches={branches} />
 
       <LiveApplicationsPanel
         accessToken={session.accessToken}
@@ -251,41 +369,6 @@ function OwnerView({
         tokenType={session.tokenType}
         canRead={session.permissions.includes("collection.read")}
       />
-
-      <section className="panel overflow-hidden">
-        <div className="flex items-center justify-between border-b border-[var(--line)] px-3 py-2">
-          <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
-            Branches
-          </h2>
-          <Link href="/branches" className="btn btn-ghost h-8 text-xs">
-            Manage
-          </Link>
-        </div>
-        {branches.map((item) => (
-          <div
-            key={item.id}
-            className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-3 py-2 last:border-b-0"
-          >
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
-                {item.name}
-              </p>
-              <p className="truncate text-xs text-slate-500">
-                {item.manager
-                  ? `${item.manager.name} · ${statusLabel(item.manager.inviteStatus)}`
-                  : "No manager"}
-              </p>
-            </div>
-            <Link
-              href={`/branches?invite=manager&branchId=${item.id}`}
-              className="btn btn-ghost h-8 shrink-0 text-xs"
-            >
-              <UserPlus className="size-3.5" />
-              {item.manager ? "Manager" : "Invite"}
-            </Link>
-          </div>
-        ))}
-      </section>
     </>
   );
 }
@@ -293,34 +376,47 @@ function OwnerView({
 function ManagerView({
   branch,
   customerCount,
+  stats,
   session,
 }: {
   branch: Branch | null;
   customerCount: number | null;
+  stats: DashboardStats;
   session: RembehSession;
 }) {
   return (
     <>
-      <section className="grid gap-2 sm:grid-cols-3">
+      <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
-          label="Customers"
-          value={customerCount === null ? "—" : String(customerCount)}
+          label="borrowers"
+          value={numberStat(customerCount)}
+        />
+        <Stat label="active loans" value={numberStat(stats.activeLoans)} />
+        <Stat
+          label="completed loans"
+          value={numberStat(stats.completedLoans)}
         />
         <Stat
-          label="Active staff"
+          label="outstanding"
+          value={moneyStat(stats.outstanding, stats.currency)}
+        />
+        <Stat
+          label="collected today"
+          value={moneyStat(stats.collectedToday, stats.currency)}
+        />
+        <Stat label="due today" value={numberStat(stats.dueToday)} />
+        <Stat
+          label="payments today"
+          value={numberStat(stats.repaymentsToday)}
+        />
+        <Stat
+          label="active staff"
           value={String(branch?.staffSummary?.active ?? 0)}
         />
         <Stat
-          label="Pending invites"
+          label="pending invites"
           value={String(branch?.staffSummary?.pendingInvites ?? 0)}
         />
-      </section>
-
-      <section className="flex flex-wrap gap-2">
-        <Link href="/onboarding" className="btn btn-primary h-9 text-xs">
-          <UserPlus className="size-3.5" />
-          Invite agent
-        </Link>
       </section>
 
       <LiveApplicationsPanel
@@ -348,12 +444,11 @@ function StaffView() {
         Use REMBEH mobile
       </h2>
       <p className="mt-2 text-sm leading-6 text-slate-500">
-        Agents work in the REMBEH mobile app. This web console is for owners and
-        branch managers only — no field data is shown here.
+        Open REMBEH on mobile to continue.
       </p>
       <div className="mt-5 flex items-center justify-center gap-2 text-xs font-semibold text-[var(--midnight-navy)]">
         <Building2 className="size-3.5 text-[var(--forest-emerald)]" />
-        Open REMBEH on your phone to continue
+        Continue on mobile
       </div>
     </section>
   );
@@ -361,9 +456,9 @@ function StaffView() {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="border border-[var(--line)] bg-white px-3 py-2.5">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
-        {label}
+    <div className="panel border-l-4 border-l-[var(--midnight-navy)] bg-white px-3 py-2.5 shadow-[0_8px_22px_rgba(20,33,61,0.05)]">
+      <p className="text-[10px] font-semibold lowercase tracking-[0.1em] text-slate-500">
+        {label.toLowerCase()}
       </p>
       <p className="mt-0.5 text-xl font-bold text-[var(--midnight-navy)]">
         {value}
@@ -372,9 +467,125 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+function numberStat(value: number | null) {
+  if (value === null) return "—";
+  return new Intl.NumberFormat("en-UG").format(value);
+}
+
+function moneyStat(value: number | null, currency: string) {
+  if (value === null) return "—";
+  return `${currency} ${new Intl.NumberFormat("en-UG", {
+    maximumFractionDigits: 0,
+  }).format(value)}`;
+}
+
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function OwnerBranchesTable({ branches }: { branches: Branch[] }) {
+  return (
+    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
+      <div className="flex items-center justify-between border-b border-[var(--line)] bg-[#eef3f0] px-3 py-2.5">
+        <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
+          Branches
+        </h2>
+        <Link href="/branches" className="btn btn-ghost h-8 text-xs">
+          Manage
+        </Link>
+      </div>
+      {branches.length === 0 ? (
+        <p className="px-3 py-5 text-sm text-slate-500">No branches yet.</p>
+      ) : (
+        <table className="w-full table-fixed text-left text-[12px]">
+          <thead className="border-b border-[var(--line)] bg-[#f7faf8] text-[9px] lowercase tracking-[0.06em] text-slate-500">
+            <tr>
+              <th className="w-[24%] px-3 py-2.5 font-semibold">branch</th>
+              <th className="w-[23%] px-3 py-2.5 font-semibold">address</th>
+              <th className="w-[20%] px-3 py-2.5 font-semibold">manager</th>
+              <th className="w-[10%] px-3 py-2.5 text-right font-semibold">
+                staff
+              </th>
+              <th className="w-[11%] px-3 py-2.5 text-right font-semibold">
+                pending
+              </th>
+              <th className="w-[12%] px-3 py-2.5 text-right font-semibold">
+                action
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--line)]">
+            {branches.map((item) => (
+              <tr
+                key={item.id}
+                className="odd:bg-white even:bg-[#fbfdfc] hover:bg-[var(--soft-mist)]"
+              >
+                <td className="px-3 py-3">
+                  <p className="truncate font-semibold text-[var(--midnight-navy)]">
+                    {item.name}
+                  </p>
+                </td>
+                <td className="px-3 py-3 text-slate-600">
+                  <span className="block truncate">{item.address || "—"}</span>
+                </td>
+                <td className="px-3 py-3">
+                  <p className="truncate font-semibold text-[var(--midnight-navy)]">
+                    {item.manager?.name ?? "No manager"}
+                  </p>
+                  <ManagerStatusBadge status={item.manager?.inviteStatus} />
+                </td>
+                <td className="px-3 py-3 text-right font-bold tabular-nums text-[var(--midnight-navy)]">
+                  {item.staffSummary?.active ?? 0}
+                </td>
+                <td className="px-3 py-3 text-right font-bold tabular-nums text-amber-700">
+                  {item.staffSummary?.pendingInvites ?? 0}
+                </td>
+                <td className="px-2 py-3 text-right">
+                  <Link
+                    href={`/branches?invite=manager&branchId=${item.id}`}
+                    className="btn btn-ghost h-8 px-2 text-[11px]"
+                  >
+                    <UserPlus className="size-3.5" />
+                    {item.manager ? "Edit" : "Assign"}
+                  </Link>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+function ManagerStatusBadge({ status }: { status?: string | null }) {
+  if (!status) {
+    return (
+      <span className="mt-1 inline-flex border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold lowercase tracking-[0.04em] text-amber-700">
+        not assigned
+      </span>
+    );
+  }
+
+  const className =
+    status === "ACTIVE"
+      ? "border-emerald-200 bg-emerald-50 text-[var(--forest-emerald)]"
+      : status === "INVITE_PENDING"
+        ? "border-amber-200 bg-amber-50 text-amber-700"
+        : "border-[var(--line)] bg-[var(--soft-mist)] text-slate-600";
+
+  return (
+    <span
+      className={`mt-1 inline-flex border px-1.5 py-0.5 text-[9px] font-bold lowercase tracking-[0.04em] ${className}`}
+    >
+      {statusLabel(status)}
+    </span>
+  );
+}
+
 function statusLabel(status: string) {
-  if (status === "ACTIVE") return "Active";
-  if (status === "INVITE_PENDING") return "Pending";
-  if (status === "INVITE_EXPIRED") return "Expired";
+  if (status === "ACTIVE") return "active";
+  if (status === "INVITE_PENDING") return "pending";
+  if (status === "INVITE_EXPIRED") return "expired";
   return status;
 }

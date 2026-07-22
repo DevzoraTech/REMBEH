@@ -6,9 +6,7 @@ const DEFAULT_DEV_WEB_APP_URL = 'http://localhost:3000';
  * Public web app origin for email links (invitations, etc.).
  * Prefers WEB_APP_URL; also accepts APP_WEB_URL / FRONTEND_URL aliases.
  */
-export function resolveWebAppBaseUrl(
-  configService: ConfigService,
-): string {
+export function resolveWebAppBaseUrl(configService: ConfigService): string {
   const candidates = [
     configService.get<string>('WEB_APP_URL'),
     configService.get<string>('APP_WEB_URL'),

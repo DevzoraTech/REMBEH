@@ -39,6 +39,7 @@ export class AgentsService {
   async listAgents(
     user: AuthenticatedUser,
     search?: string,
+    date?: string,
   ): Promise<AgentsListResponse> {
     this.assertCanRead(user);
     const scope = this.scope(user);
@@ -47,7 +48,7 @@ export class AgentsService {
       search,
     });
 
-    const { dayStart, dayEnd } = this.parseDayBounds();
+    const { dayStart, dayEnd, floatDate } = this.parseDayBounds(date);
     const agentIds = agents.map((agent) => agent.id);
 
     const [
@@ -65,13 +66,16 @@ export class AgentsService {
         where: {
           tenantId: scope.tenantId,
           agentId: { in: agentIds },
-          floatDate: this.toDateOnly(dayStart),
+          floatDate,
         },
       }),
     ]);
 
     const floatByAgent = new Map(
-      floatsToday.map((row) => [row.agentId, this.decimalToNumber(row.amountGiven)]),
+      floatsToday.map((row) => [
+        row.agentId,
+        this.decimalToNumber(row.amountGiven),
+      ]),
     );
 
     const items: AgentListItemContract[] = await Promise.all(
@@ -140,39 +144,34 @@ export class AgentsService {
     const { dayStart, dayEnd, dateLabel, floatDate } =
       this.parseDayBounds(date);
 
-    const [
-      repayToday,
-      repayLife,
-      appsToday,
-      appsLife,
-      floatRow,
-    ] = await Promise.all([
-      this.repository.sumRepayments({
-        tenantId: scope.tenantId,
-        agentId,
-        from: dayStart,
-        to: dayEnd,
-      }),
-      this.repository.sumRepayments({
-        tenantId: scope.tenantId,
-        agentId,
-      }),
-      this.repository.sumApplicationPrincipal({
-        tenantId: scope.tenantId,
-        agentId,
-        from: dayStart,
-        to: dayEnd,
-      }),
-      this.repository.sumApplicationPrincipal({
-        tenantId: scope.tenantId,
-        agentId,
-      }),
-      this.repository.findFloatForDay({
-        tenantId: scope.tenantId,
-        agentId,
-        floatDate,
-      }),
-    ]);
+    const [repayToday, repayLife, appsToday, appsLife, floatRow] =
+      await Promise.all([
+        this.repository.sumRepayments({
+          tenantId: scope.tenantId,
+          agentId,
+          from: dayStart,
+          to: dayEnd,
+        }),
+        this.repository.sumRepayments({
+          tenantId: scope.tenantId,
+          agentId,
+        }),
+        this.repository.sumApplicationPrincipal({
+          tenantId: scope.tenantId,
+          agentId,
+          from: dayStart,
+          to: dayEnd,
+        }),
+        this.repository.sumApplicationPrincipal({
+          tenantId: scope.tenantId,
+          agentId,
+        }),
+        this.repository.findFloatForDay({
+          tenantId: scope.tenantId,
+          agentId,
+          floatDate,
+        }),
+      ]);
 
     const amountGiven = this.decimalToNumber(floatRow?.amountGiven) ?? 0;
     const amountDisbursed =
@@ -255,6 +254,7 @@ export class AgentsService {
       range,
       applications: applications.map((app) => ({
         id: app.id,
+        customerId: app.customerId ?? app.customer?.id ?? null,
         clientName:
           app.customer?.fullName ||
           [app.surname, app.givenNames].filter(Boolean).join(' ') ||
@@ -268,6 +268,7 @@ export class AgentsService {
       collections: repayments.map((row) => ({
         id: row.id,
         loanId: row.loanId,
+        customerId: row.loan.customer.id,
         clientName: row.loan.customer.fullName,
         phone: row.loan.customer.phone,
         amount: this.decimalToNumber(row.amount) ?? 0,
@@ -311,7 +312,10 @@ export class AgentsService {
     user: AuthenticatedUser,
     agentId: string,
     dto: RecordAgentFloatDto,
-  ): Promise<{ float: AgentDailyFloatContract; accountability: AgentAccountabilityContract }> {
+  ): Promise<{
+    float: AgentDailyFloatContract;
+    accountability: AgentAccountabilityContract;
+  }> {
     this.assertCanManage(user);
     const scope = this.scope(user);
     const agent = await this.repository.findAgentById({
@@ -493,9 +497,7 @@ export class AgentsService {
     if (!user.tenantId?.trim()) {
       throw new ForbiddenException('Tenant scope is required.');
     }
-    const canAllBranches = user.permissions.includes(
-      BRANCH_PERMISSIONS.create,
-    );
+    const canAllBranches = user.permissions.includes(BRANCH_PERMISSIONS.create);
     return {
       tenantId: user.tenantId,
       branchId: canAllBranches ? null : user.branchId,
@@ -508,9 +510,7 @@ export class AgentsService {
       user.permissions.includes(key),
     );
     if (!allowed) {
-      throw new ForbiddenException(
-        'Missing permission to view agents.',
-      );
+      throw new ForbiddenException('Missing permission to view agents.');
     }
   }
 
@@ -520,9 +520,7 @@ export class AgentsService {
       user.permissions.includes(key),
     );
     if (!allowed) {
-      throw new ForbiddenException(
-        'Missing permission to manage agents.',
-      );
+      throw new ForbiddenException('Missing permission to manage agents.');
     }
   }
 
@@ -530,18 +528,14 @@ export class AgentsService {
     if (!user.tenantId?.trim()) {
       throw new ForbiddenException('Tenant scope is required.');
     }
-    const canAllBranches = user.permissions.includes(
-      BRANCH_PERMISSIONS.create,
-    );
+    const canAllBranches = user.permissions.includes(BRANCH_PERMISSIONS.create);
     if (!canAllBranches && !user.branchId) {
       throw new ForbiddenException('Branch scope is required.');
     }
   }
 
   private parseDayBounds(date?: string) {
-    const base = date?.trim()
-      ? this.parseDateInput(date.trim())
-      : new Date();
+    const base = date?.trim() ? this.parseDateInput(date.trim()) : new Date();
     const dayStart = new Date(
       base.getFullYear(),
       base.getMonth(),
@@ -598,11 +592,7 @@ export class AgentsService {
 
   private toDateOnly(dayStart: Date) {
     return new Date(
-      Date.UTC(
-        dayStart.getFullYear(),
-        dayStart.getMonth(),
-        dayStart.getDate(),
-      ),
+      Date.UTC(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate()),
     );
   }
 

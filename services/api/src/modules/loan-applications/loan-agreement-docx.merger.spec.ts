@@ -107,18 +107,26 @@ describe('loan-agreement-docx.merger', () => {
 
     const zip = await JSZip.loadAsync(filled);
     const xml = await zip.file('word/document.xml')!.async('string');
-    const rels = await zip.file('word/_rels/document.xml.rels')!.async('string');
+    const rels = await zip
+      .file('word/_rels/document.xml.rels')!
+      .async('string');
     const contentTypes = await zip.file('[Content_Types].xml')!.async('string');
 
-    expect(xml).not.toMatch(/&lt;&lt;(borrower|guarantor|agent)_signature&gt;&gt;/);
+    expect(xml).not.toMatch(
+      /&lt;&lt;(borrower|guarantor|agent)_signature&gt;&gt;/,
+    );
     expect(xml).toContain('<w:drawing>');
     expect(xml).toContain('r:embed=');
     expect(rels).toContain(
       'http://schemas.openxmlformats.org/officeDocument/2006/relationships/image',
     );
     expect(contentTypes).toMatch(/Extension="png"/i);
-    expect(zip.file('word/media/signature_borrower_signature.png')).toBeTruthy();
-    expect(zip.file('word/media/signature_guarantor_signature.png')).toBeTruthy();
+    expect(
+      zip.file('word/media/signature_borrower_signature.png'),
+    ).toBeTruthy();
+    expect(
+      zip.file('word/media/signature_guarantor_signature.png'),
+    ).toBeTruthy();
     expect(zip.file('word/media/signature_agent_signature.png')).toBeTruthy();
     expect(xml).not.toContain('ELECTRONIC SIGNATURES');
   });

@@ -7,9 +7,7 @@ import type {
 } from './identity-verification.types';
 
 @Injectable()
-export class StubIdentityVerificationProvider
-  implements IdentityVerificationProvider
-{
+export class StubIdentityVerificationProvider implements IdentityVerificationProvider {
   private readonly logger = new Logger(StubIdentityVerificationProvider.name);
 
   async verifyNationalId(

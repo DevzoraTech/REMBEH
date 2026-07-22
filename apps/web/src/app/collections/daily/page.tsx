@@ -7,12 +7,11 @@ import {
   Loader2,
   RefreshCw,
 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Socket } from "socket.io-client";
 import { AgentPhoto } from "../../../components/app/agent-photo";
 import { AppShell } from "../../../components/app/app-shell";
-import { ApplicationDetailDrawer } from "../../../components/app/application-detail-drawer";
-import { PaymentDetailDrawer } from "../../../components/app/payment-detail-drawer";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../../lib/api";
 import {
   RembehBranch,
@@ -24,11 +23,7 @@ import {
   readAuthState,
 } from "../../../lib/auth-session";
 import { formatClock } from "../../../lib/date-groups";
-import {
-  connectRealtime,
-  type LoanApplicationEvent,
-  type PaymentMadeEvent,
-} from "../../../lib/realtime";
+import { connectRealtime } from "../../../lib/realtime";
 import { resolveOperatorRole } from "../../../lib/roles";
 
 type DailyAgentSummary = {
@@ -60,6 +55,7 @@ type DailySummary = {
 
 type AgentApplication = {
   id: string;
+  customerId: string | null;
   clientName: string;
   phone: string | null;
   principalAmount: number;
@@ -71,6 +67,7 @@ type AgentApplication = {
 type AgentPayment = {
   id: string;
   loanId: string;
+  customerId: string;
   clientName: string;
   phone: string | null;
   amount: number;
@@ -107,12 +104,6 @@ export default function DailyCollectionsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<AgentDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(
-    null,
-  );
-  const [selectedApplicationId, setSelectedApplicationId] = useState<
-    string | null
-  >(null);
 
   const canRead = Boolean(session?.permissions.includes("collection.read"));
 
@@ -151,31 +142,35 @@ export default function DailyCollectionsPage() {
   );
 
   useEffect(() => {
-    const auth = readAuthState();
-    if (!auth.session || isSessionExpired(auth.session)) {
-      clearAuthState();
-      router.replace("/login");
-      return;
-    }
+    const boot = window.setTimeout(() => {
+      const auth = readAuthState();
+      if (!auth.session || isSessionExpired(auth.session)) {
+        clearAuthState();
+        router.replace("/login");
+        return;
+      }
 
-    const role = resolveOperatorRole(auth.session, auth.user);
-    if (role === "staff") {
-      router.replace("/dashboard");
-      return;
-    }
+      const role = resolveOperatorRole(auth.session, auth.user);
+      if (role === "staff") {
+        router.replace("/dashboard");
+        return;
+      }
 
-    setSession(auth.session);
-    setWorkspace(auth.workspace);
-    setUser(auth.user);
-    setBranch(auth.branch);
+      setSession(auth.session);
+      setWorkspace(auth.workspace);
+      setUser(auth.user);
+      setBranch(auth.branch);
 
-    if (!auth.session.permissions.includes("collection.read")) {
-      setError("You need collection.read to view the daily close page.");
-      setLoading(false);
-      return;
-    }
+      if (!auth.session.permissions.includes("collection.read")) {
+        setError("You do not have access to daily close.");
+        setLoading(false);
+        return;
+      }
 
-    void loadSummary(auth.session, date);
+      void loadSummary(auth.session, date);
+    }, 0);
+
+    return () => window.clearTimeout(boot);
   }, [router, date, loadSummary]);
 
   useEffect(() => {
@@ -188,8 +183,8 @@ export default function DailyCollectionsPage() {
         void loadAgentDetail(session, expandedId, date);
       }
     };
-    const onPayment = (_event: PaymentMadeEvent) => refresh();
-    const onApplication = (_event: LoanApplicationEvent) => refresh();
+    const onPayment = () => refresh();
+    const onApplication = () => refresh();
 
     socket.on("payment.made", onPayment);
     socket.on("loan_application.submitted", onApplication);
@@ -201,7 +196,6 @@ export default function DailyCollectionsPage() {
       socket.off("loan_application.updated", onApplication);
       socket.disconnect();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadAgentDetail is stable enough via session/date
   }, [session, canRead, date, expandedId, loadSummary]);
 
   async function loadAgentDetail(
@@ -276,8 +270,8 @@ export default function DailyCollectionsPage() {
       <div className="mx-auto max-w-5xl space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--forest-emerald)]">
-              Collections
+            <p className="text-[11px] font-semibold lowercase tracking-[0.12em] text-[var(--forest-emerald)]">
+              collections
             </p>
             <h1 className="text-xl font-bold text-[var(--midnight-navy)]">
               {pageTitle}
@@ -288,7 +282,7 @@ export default function DailyCollectionsPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <label className="text-xs font-semibold text-slate-500">
-              Date
+              date
               <input
                 type="date"
                 value={date}
@@ -317,22 +311,22 @@ export default function DailyCollectionsPage() {
         {totals ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
-              label="Applications"
+              label="applications"
               value={String(totals.applicationsCount)}
               hint={`${formatAmount(totals.principalLent)} lent`}
             />
             <StatCard
-              label="Collected"
+              label="collected"
               value={formatAmount(totals.amountCollected)}
               hint={`${totals.paymentsCount} payments`}
             />
             <StatCard
-              label="Principal lent"
+              label="principal lent"
               value={formatAmount(totals.principalLent)}
               hint="Submitted applications"
             />
             <StatCard
-              label="Net cash"
+              label="net cash"
               value={formatAmount(totals.netCash)}
               hint="Collected − lent"
               emphasize
@@ -394,22 +388,22 @@ export default function DailyCollectionsPage() {
                         {formatAmount(agent.amountCollected)} collected
                       </p>
                       <p className="text-[11px] text-slate-500">
-                        Net {formatAmount(agent.netCash)}
+                        net {formatAmount(agent.netCash)}
                       </p>
                     </div>
                   </button>
 
                   <div className="grid grid-cols-3 gap-2 border-t border-[var(--line)] px-3 py-2 sm:hidden">
                     <MiniStat
-                      label="Apps"
+                      label="apps"
                       value={`${agent.applicationsCount}`}
                     />
                     <MiniStat
-                      label="Lent"
+                      label="lent"
                       value={formatAmount(agent.principalLent)}
                     />
                     <MiniStat
-                      label="Collected"
+                      label="collected"
                       value={formatAmount(agent.amountCollected)}
                     />
                   </div>
@@ -424,8 +418,8 @@ export default function DailyCollectionsPage() {
                       ) : detail?.agent.agentId === agent.agentId ? (
                         <div className="grid gap-4 md:grid-cols-2">
                           <div>
-                            <h3 className="mb-2 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
-                              Applications ({detail.applications.length})
+                            <h3 className="mb-2 text-xs font-bold lowercase tracking-[0.08em] text-slate-500">
+                              applications ({detail.applications.length})
                             </h3>
                             {detail.applications.length === 0 ? (
                               <p className="text-sm text-slate-500">
@@ -435,34 +429,38 @@ export default function DailyCollectionsPage() {
                               <ul className="divide-y divide-[var(--line)] border border-[var(--line)]">
                                 {detail.applications.map((app) => (
                                   <li key={app.id}>
-                                    <button
-                                      type="button"
-                                      className="flex w-full items-center justify-between gap-2 px-2.5 py-2 text-left hover:bg-[var(--soft-mist)]"
-                                      onClick={() =>
-                                        setSelectedApplicationId(app.id)
-                                      }
-                                    >
-                                      <div className="min-w-0">
-                                        <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
-                                          {app.clientName}
+                                    {app.customerId ? (
+                                      <Link
+                                        href={`/clients/${app.customerId}`}
+                                        className="flex w-full items-center justify-between gap-2 px-2.5 py-2 text-left hover:bg-[var(--soft-mist)]"
+                                      >
+                                        <ActivityText
+                                          name={app.clientName}
+                                          meta={`${formatClock(app.submittedAt)} · ${app.status}`}
+                                        />
+                                        <p className="shrink-0 text-sm font-bold tabular-nums">
+                                          {formatAmount(app.principalAmount)}
                                         </p>
-                                        <p className="text-[11px] text-slate-500">
-                                          {formatClock(app.submittedAt)} ·{" "}
-                                          {app.status}
+                                      </Link>
+                                    ) : (
+                                      <div className="flex w-full items-center justify-between gap-2 px-2.5 py-2 text-left">
+                                        <ActivityText
+                                          name={app.clientName}
+                                          meta={`${formatClock(app.submittedAt)} · ${app.status}`}
+                                        />
+                                        <p className="shrink-0 text-sm font-bold tabular-nums">
+                                          {formatAmount(app.principalAmount)}
                                         </p>
                                       </div>
-                                      <p className="shrink-0 text-sm font-bold tabular-nums">
-                                        {formatAmount(app.principalAmount)}
-                                      </p>
-                                    </button>
+                                    )}
                                   </li>
                                 ))}
                               </ul>
                             )}
                           </div>
                           <div>
-                            <h3 className="mb-2 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
-                              Payments ({detail.payments.length})
+                            <h3 className="mb-2 text-xs font-bold lowercase tracking-[0.08em] text-slate-500">
+                              payments ({detail.payments.length})
                             </h3>
                             {detail.payments.length === 0 ? (
                               <p className="text-sm text-slate-500">
@@ -472,26 +470,18 @@ export default function DailyCollectionsPage() {
                               <ul className="divide-y divide-[var(--line)] border border-[var(--line)]">
                                 {detail.payments.map((payment) => (
                                   <li key={payment.id}>
-                                    <button
-                                      type="button"
+                                    <Link
+                                      href={`/clients/${payment.customerId}`}
                                       className="flex w-full items-center justify-between gap-2 px-2.5 py-2 text-left hover:bg-[var(--soft-mist)]"
-                                      onClick={() =>
-                                        setSelectedPaymentId(payment.id)
-                                      }
                                     >
-                                      <div className="min-w-0">
-                                        <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
-                                          {payment.clientName}
-                                        </p>
-                                        <p className="text-[11px] text-slate-500">
-                                          {formatClock(payment.paidAt)} ·{" "}
-                                          {methodLabel(payment.method)}
-                                        </p>
-                                      </div>
+                                      <ActivityText
+                                        name={payment.clientName}
+                                        meta={`${formatClock(payment.paidAt)} · ${methodLabel(payment.method)}`}
+                                      />
                                       <p className="shrink-0 text-sm font-bold tabular-nums text-[var(--forest-emerald)]">
                                         {formatAmount(payment.amount)}
                                       </p>
-                                    </button>
+                                    </Link>
                                   </li>
                                 ))}
                               </ul>
@@ -508,19 +498,18 @@ export default function DailyCollectionsPage() {
         )}
       </div>
 
-      <PaymentDetailDrawer
-        repaymentId={selectedPaymentId}
-        accessToken={session.accessToken}
-        tokenType={session.tokenType}
-        onClose={() => setSelectedPaymentId(null)}
-      />
-      <ApplicationDetailDrawer
-        applicationId={selectedApplicationId}
-        accessToken={session.accessToken}
-        tokenType={session.tokenType}
-        onClose={() => setSelectedApplicationId(null)}
-      />
     </AppShell>
+  );
+}
+
+function ActivityText({ name, meta }: { name: string; meta: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
+        {name}
+      </p>
+      <p className="text-[11px] text-slate-500">{meta}</p>
+    </div>
   );
 }
 
@@ -537,8 +526,8 @@ function StatCard({
 }) {
   return (
     <div className="panel px-3 py-3">
-      <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-        {label}
+      <p className="text-[10px] font-semibold lowercase tracking-[0.08em] text-slate-500">
+        {label.toLowerCase()}
       </p>
       <p
         className={`mt-1 text-lg font-bold tabular-nums ${
@@ -557,8 +546,8 @@ function StatCard({
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[10px] uppercase tracking-[0.06em] text-slate-500">
-        {label}
+      <p className="text-[10px] lowercase tracking-[0.06em] text-slate-500">
+        {label.toLowerCase()}
       </p>
       <p className="text-sm font-bold tabular-nums text-[var(--midnight-navy)]">
         {value}
@@ -572,8 +561,8 @@ function formatAmount(value: number) {
 }
 
 function methodLabel(method: string) {
-  if (method === "MOBILE_MONEY") return "Mobile money";
-  if (method === "BANK_TRANSFER") return "Bank";
-  if (method === "CASH") return "Cash";
+  if (method === "MOBILE_MONEY") return "mobile money";
+  if (method === "BANK_TRANSFER") return "bank";
+  if (method === "CASH") return "cash";
   return method;
 }

@@ -132,27 +132,32 @@ enum LoanRepaymentFrequency {
   LUMP_SUM
 }
 
+enum BorrowerListType {
+  BLACKLISTED
+  WATCHLIST
+}
+
 model Tenant {
-  id                 String         @id @default(uuid()) @db.Uuid
-  name               String
-  registrationNumber String?        @map("registration_number")
-  country            String
-  currency           String
-  status             TenantStatus   @default(PENDING_VERIFICATION)
+  id                       String                   @id @default(uuid()) @db.Uuid
+  name                     String
+  registrationNumber       String?                  @map("registration_number")
+  country                  String
+  currency                 String
+  status                   TenantStatus             @default(PENDING_VERIFICATION)
   /// S3 object-storage prefix, e.g. tenants/{id}/
-  storagePrefix      String?        @map("storage_prefix")
-  createdAt          DateTime       @default(now()) @map("created_at")
-  updatedAt          DateTime       @updatedAt @map("updated_at")
-  branches           Branch[]
-  departments        Department[]
-  users              User[]
-  roles              Role[]
-  permissions        Permission[]
-  customers          Customer[]
-  loans              Loan[]
-  repayments         Repayment[]
-  clientWallets      ClientWallet[]
-  loanApplications   LoanApplication[]
+  storagePrefix            String?                  @map("storage_prefix")
+  createdAt                DateTime                 @default(now()) @map("created_at")
+  updatedAt                DateTime                 @updatedAt @map("updated_at")
+  branches                 Branch[]
+  departments              Department[]
+  users                    User[]
+  roles                    Role[]
+  permissions              Permission[]
+  customers                Customer[]
+  loans                    Loan[]
+  repayments               Repayment[]
+  clientWallets            ClientWallet[]
+  loanApplications         LoanApplication[]
   loanRateOptions          LoanRateOption[]
   loanPeriodOptions        LoanPeriodOption[]
   loanProductTemplates     LoanProductTemplate[]
@@ -169,23 +174,23 @@ model Tenant {
 }
 
 model Branch {
-  id           String     @id @default(uuid()) @db.Uuid
-  tenantId     String     @map("tenant_id") @db.Uuid
-  name         String
-  address      String
-  gpsLatitude  Decimal?   @map("gps_latitude") @db.Decimal(10, 7)
-  gpsLongitude Decimal?   @map("gps_longitude") @db.Decimal(10, 7)
-  phone        String?
-  workingHours Json?      @map("working_hours")
-  createdAt    DateTime   @default(now()) @map("created_at")
-  updatedAt    DateTime   @updatedAt @map("updated_at")
-  tenant       Tenant     @relation(fields: [tenantId], references: [id])
-  users              User[]
-  customers          Customer[]
-  loans              Loan[]
-  repayments         Repayment[]
-  clientWallets      ClientWallet[]
-  loanApplications   LoanApplication[]
+  id                       String                   @id @default(uuid()) @db.Uuid
+  tenantId                 String                   @map("tenant_id") @db.Uuid
+  name                     String
+  address                  String
+  gpsLatitude              Decimal?                 @map("gps_latitude") @db.Decimal(10, 7)
+  gpsLongitude             Decimal?                 @map("gps_longitude") @db.Decimal(10, 7)
+  phone                    String?
+  workingHours             Json?                    @map("working_hours")
+  createdAt                DateTime                 @default(now()) @map("created_at")
+  updatedAt                DateTime                 @updatedAt @map("updated_at")
+  tenant                   Tenant                   @relation(fields: [tenantId], references: [id])
+  users                    User[]
+  customers                Customer[]
+  loans                    Loan[]
+  repayments               Repayment[]
+  clientWallets            ClientWallet[]
+  loanApplications         LoanApplication[]
   loanRateOptions          LoanRateOption[]
   loanPeriodOptions        LoanPeriodOption[]
   loanProductTemplates     LoanProductTemplate[]
@@ -194,44 +199,44 @@ model Branch {
   loanFines                LoanFine[]
   agentDailyFloats         AgentDailyFloat[]
 
-  @@index([tenantId, name])
   @@unique([tenantId, name])
+  @@index([tenantId, name])
   @@map("branches")
 }
 
 /// Manager-configured loan type template (source of truth for agent capture).
 /// Agents select a template; rate/term/fee/penalty/payment-start are snapshotted onto the application.
 model LoanProductTemplate {
-  id                    String                  @id @default(uuid()) @db.Uuid
-  tenantId              String                  @map("tenant_id") @db.Uuid
-  branchId              String?                 @map("branch_id") @db.Uuid
+  id                    String                 @id @default(uuid()) @db.Uuid
+  tenantId              String                 @map("tenant_id") @db.Uuid
+  branchId              String?                @map("branch_id") @db.Uuid
   name                  String
   description           String?
-  interestRatePercent   Decimal                 @map("interest_rate_percent") @db.Decimal(8, 4)
-  interestType          LoanInterestType        @default(FLAT) @map("interest_type")
-  termValue             Int                     @map("term_value")
-  termUnit              LoanTermUnit            @map("term_unit")
-  repaymentFrequency    LoanRepaymentFrequency  @map("repayment_frequency")
-  processingFeePercent  Decimal                 @map("processing_fee_percent") @db.Decimal(8, 4)
+  interestRatePercent   Decimal                @map("interest_rate_percent") @db.Decimal(8, 4)
+  interestType          LoanInterestType       @default(FLAT) @map("interest_type")
+  termValue             Int                    @map("term_value")
+  termUnit              LoanTermUnit           @map("term_unit")
+  repaymentFrequency    LoanRepaymentFrequency @map("repayment_frequency")
+  processingFeePercent  Decimal                @map("processing_fee_percent") @db.Decimal(8, 4)
   /// Penalty rate % of original principal applied each fine period after maturity.
-  penaltyRatePercent    Decimal                 @map("penalty_rate_percent") @db.Decimal(8, 4)
+  penaltyRatePercent    Decimal                @map("penalty_rate_percent") @db.Decimal(8, 4)
   /// Days after maturity (and between recurring fines) before a fine applies.
-  finePeriodDays        Int                     @default(10) @map("fine_period_days")
+  finePeriodDays        Int                    @default(10) @map("fine_period_days")
   /// When repayments begin relative to loan go-live (owned by the template).
-  paymentStartPolicy    PaymentStartPolicyType  @default(NEXT_DAY) @map("payment_start_policy")
+  paymentStartPolicy    PaymentStartPolicyType @default(NEXT_DAY) @map("payment_start_policy")
   /// Used when paymentStartPolicy = AFTER_N_DAYS.
-  paymentStartDelayDays Int?                    @map("payment_start_delay_days")
+  paymentStartDelayDays Int?                   @map("payment_start_delay_days")
   /// When true, agents may pick an explicit date on/after the policy date.
-  allowAgentDatePick    Boolean                 @default(false) @map("allow_agent_date_pick")
-  minLoanAmount         Decimal?                @map("min_loan_amount") @db.Decimal(18, 2)
-  maxLoanAmount         Decimal?                @map("max_loan_amount") @db.Decimal(18, 2)
+  allowAgentDatePick    Boolean                @default(false) @map("allow_agent_date_pick")
+  minLoanAmount         Decimal?               @map("min_loan_amount") @db.Decimal(18, 2)
+  maxLoanAmount         Decimal?               @map("max_loan_amount") @db.Decimal(18, 2)
   notes                 String?
-  isActive              Boolean                 @default(true) @map("is_active")
-  sortOrder             Int                     @default(0) @map("sort_order")
-  createdAt             DateTime                @default(now()) @map("created_at")
-  updatedAt             DateTime                @updatedAt @map("updated_at")
-  tenant                Tenant                  @relation(fields: [tenantId], references: [id])
-  branch                Branch?                 @relation(fields: [branchId], references: [id])
+  isActive              Boolean                @default(true) @map("is_active")
+  sortOrder             Int                    @default(0) @map("sort_order")
+  createdAt             DateTime               @default(now()) @map("created_at")
+  updatedAt             DateTime               @updatedAt @map("updated_at")
+  tenant                Tenant                 @relation(fields: [tenantId], references: [id])
+  branch                Branch?                @relation(fields: [branchId], references: [id])
   applications          LoanApplication[]
 
   @@index([tenantId, branchId, isActive])
@@ -362,35 +367,35 @@ model Department {
 }
 
 model User {
-  id            String     @id @default(uuid()) @db.Uuid
-  tenantId      String     @map("tenant_id") @db.Uuid
-  branchId      String?    @map("branch_id") @db.Uuid
-  departmentId  String?    @map("department_id") @db.Uuid
-  email         String     @unique
-  phone         String?    @unique
+  id                     String            @id @default(uuid()) @db.Uuid
+  tenantId               String            @map("tenant_id") @db.Uuid
+  branchId               String?           @map("branch_id") @db.Uuid
+  departmentId           String?           @map("department_id") @db.Uuid
+  email                  String            @unique
+  phone                  String?           @unique
   /// Short human-reportable id for fraud reports (e.g. A-48291). Not the UUID.
-  publicId      String?    @unique @map("public_id")
-  displayName   String     @map("display_name")
-  passwordHash  String?    @map("password_hash")
+  publicId               String?           @unique @map("public_id")
+  displayName            String            @map("display_name")
+  passwordHash           String?           @map("password_hash")
   /// Agent professional selfie (S3 key under tenants/{tenantId}/agents/...).
-  profilePhotoStorageKey String?   @map("profile_photo_storage_key")
-  profilePhotoMimeType   String?   @map("profile_photo_mime_type")
-  profilePhotoUpdatedAt  DateTime? @map("profile_photo_updated_at")
-  emailVerified Boolean    @default(false) @map("email_verified")
-  phoneVerified Boolean    @default(false) @map("phone_verified")
-  status        UserStatus @default(INVITED)
-  createdAt     DateTime   @default(now()) @map("created_at")
-  updatedAt     DateTime   @updatedAt @map("updated_at")
-  tenant        Tenant     @relation(fields: [tenantId], references: [id])
-  branch        Branch?    @relation(fields: [branchId], references: [id])
-  department    Department? @relation(fields: [departmentId], references: [id])
-  roles              UserRole[]
-  auditLogs          AuditLog[]
-  otpChallenges      OtpChallenge[]
-  loanApplications   LoanApplication[] @relation("LoanApplicationOfficer")
-  repaymentsRecorded Repayment[]       @relation("RepaymentRecorder")
-  dailyFloats        AgentDailyFloat[] @relation("AgentDailyFloatAgent")
-  dailyFloatsRecorded AgentDailyFloat[] @relation("AgentDailyFloatRecorder")
+  profilePhotoStorageKey String?           @map("profile_photo_storage_key")
+  profilePhotoMimeType   String?           @map("profile_photo_mime_type")
+  profilePhotoUpdatedAt  DateTime?         @map("profile_photo_updated_at")
+  emailVerified          Boolean           @default(false) @map("email_verified")
+  phoneVerified          Boolean           @default(false) @map("phone_verified")
+  status                 UserStatus        @default(INVITED)
+  createdAt              DateTime          @default(now()) @map("created_at")
+  updatedAt              DateTime          @updatedAt @map("updated_at")
+  tenant                 Tenant            @relation(fields: [tenantId], references: [id])
+  branch                 Branch?           @relation(fields: [branchId], references: [id])
+  department             Department?       @relation(fields: [departmentId], references: [id])
+  roles                  UserRole[]
+  auditLogs              AuditLog[]
+  otpChallenges          OtpChallenge[]
+  loanApplications       LoanApplication[] @relation("LoanApplicationOfficer")
+  repaymentsRecorded     Repayment[]       @relation("RepaymentRecorder")
+  dailyFloats            AgentDailyFloat[] @relation("AgentDailyFloatAgent")
+  dailyFloatsRecorded    AgentDailyFloat[] @relation("AgentDailyFloatRecorder")
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
@@ -486,21 +491,21 @@ model TenantModule {
 }
 
 model Customer {
-  id            String   @id @default(uuid()) @db.Uuid
-  tenantId      String   @map("tenant_id") @db.Uuid
-  branchId      String?  @map("branch_id") @db.Uuid
-  fullName      String   @map("full_name")
-  phone         String
-  nationalId    String?  @map("national_id")
-  email         String?
-  verifiedAt    DateTime? @map("verified_at")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-  tenant        Tenant   @relation(fields: [tenantId], references: [id])
-  branch             Branch?  @relation(fields: [branchId], references: [id])
-  loans              Loan[]
-  wallets            ClientWallet[]
-  loanApplications   LoanApplication[]
+  id               String            @id @default(uuid()) @db.Uuid
+  tenantId         String            @map("tenant_id") @db.Uuid
+  branchId         String?           @map("branch_id") @db.Uuid
+  fullName         String            @map("full_name")
+  phone            String
+  nationalId       String?           @map("national_id")
+  email            String?
+  verifiedAt       DateTime?         @map("verified_at")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
+  branch           Branch?           @relation(fields: [branchId], references: [id])
+  loans            Loan[]
+  wallets          ClientWallet[]
+  loanApplications LoanApplication[]
 
   @@unique([tenantId, phone])
   @@index([tenantId, branchId])
@@ -508,28 +513,49 @@ model Customer {
   @@map("customers")
 }
 
+model BorrowerListEntry {
+  id              String           @id @default(uuid()) @db.Uuid
+  tenantId        String           @map("tenant_id") @db.Uuid
+  branchId        String?          @map("branch_id") @db.Uuid
+  customerId      String?          @map("customer_id") @db.Uuid
+  createdByUserId String           @map("created_by_user_id") @db.Uuid
+  type            BorrowerListType
+  fullName        String?          @map("full_name")
+  nationalId      String           @map("national_id")
+  phone           String?
+  reason          String?
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  @@unique([tenantId, nationalId])
+  @@index([tenantId, type])
+  @@index([tenantId, branchId, type])
+  @@index([tenantId, customerId])
+  @@map("borrower_list_entries")
+}
+
 model Loan {
-  id               String     @id @default(uuid()) @db.Uuid
-  tenantId         String     @map("tenant_id") @db.Uuid
-  branchId         String     @map("branch_id") @db.Uuid
-  customerId       String     @map("customer_id") @db.Uuid
-  principal        Decimal    @db.Decimal(18, 2)
-  balance          Decimal    @db.Decimal(18, 2)
+  id               String           @id @default(uuid()) @db.Uuid
+  tenantId         String           @map("tenant_id") @db.Uuid
+  branchId         String           @map("branch_id") @db.Uuid
+  customerId       String           @map("customer_id") @db.Uuid
+  principal        Decimal          @db.Decimal(18, 2)
+  balance          Decimal          @db.Decimal(18, 2)
   currency         String
-  status           LoanStatus @default(DRAFT)
-  approvedAt       DateTime?  @map("approved_at")
-  disbursedAt      DateTime?  @map("disbursed_at")
+  status           LoanStatus       @default(DRAFT)
+  approvedAt       DateTime?        @map("approved_at")
+  disbursedAt      DateTime?        @map("disbursed_at")
   /// First day the daily repayment schedule starts (from payment-start policy).
-  paymentStartDate DateTime?  @map("payment_start_date")
+  paymentStartDate DateTime?        @map("payment_start_date")
   /// True once at least one overdue fine has been applied.
-  isFined          Boolean    @default(false) @map("is_fined")
+  isFined          Boolean          @default(false) @map("is_fined")
   /// Sum of all applied overdue fines (included in balance / outstanding).
-  finesTotal       Decimal    @default(0) @map("fines_total") @db.Decimal(18, 2)
-  createdAt        DateTime   @default(now()) @map("created_at")
-  updatedAt        DateTime   @updatedAt @map("updated_at")
-  tenant           Tenant     @relation(fields: [tenantId], references: [id])
-  branch           Branch     @relation(fields: [branchId], references: [id])
-  customer         Customer   @relation(fields: [customerId], references: [id])
+  finesTotal       Decimal          @default(0) @map("fines_total") @db.Decimal(18, 2)
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+  tenant           Tenant           @relation(fields: [tenantId], references: [id])
+  branch           Branch           @relation(fields: [branchId], references: [id])
+  customer         Customer         @relation(fields: [customerId], references: [id])
   application      LoanApplication?
   wallet           ClientWallet?
   repayments       Repayment[]
@@ -545,24 +571,24 @@ model Loan {
 
 /// Per-loan client wallet opened when the loan application is submitted.
 model ClientWallet {
-  id                String   @id @default(uuid()) @db.Uuid
-  tenantId          String   @map("tenant_id") @db.Uuid
-  branchId          String   @map("branch_id") @db.Uuid
-  customerId        String   @map("customer_id") @db.Uuid
-  loanId            String   @unique @map("loan_id") @db.Uuid
-  loanApplicationId String?  @unique @map("loan_application_id") @db.Uuid
+  id                String           @id @default(uuid()) @db.Uuid
+  tenantId          String           @map("tenant_id") @db.Uuid
+  branchId          String           @map("branch_id") @db.Uuid
+  customerId        String           @map("customer_id") @db.Uuid
+  loanId            String           @unique @map("loan_id") @db.Uuid
+  loanApplicationId String?          @unique @map("loan_application_id") @db.Uuid
   currency          String
-  openingBalance    Decimal  @map("opening_balance") @db.Decimal(18, 2)
+  openingBalance    Decimal          @map("opening_balance") @db.Decimal(18, 2)
   /// Mirrors loan.isFined for wallet / client views.
-  isFined           Boolean  @default(false) @map("is_fined")
+  isFined           Boolean          @default(false) @map("is_fined")
   /// Mirrors loan.finesTotal for wallet / client views.
-  finesTotal        Decimal  @default(0) @map("fines_total") @db.Decimal(18, 2)
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
-  tenant            Tenant   @relation(fields: [tenantId], references: [id])
-  branch            Branch   @relation(fields: [branchId], references: [id])
-  customer          Customer @relation(fields: [customerId], references: [id])
-  loan              Loan     @relation(fields: [loanId], references: [id])
+  finesTotal        Decimal          @default(0) @map("fines_total") @db.Decimal(18, 2)
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+  tenant            Tenant           @relation(fields: [tenantId], references: [id])
+  branch            Branch           @relation(fields: [branchId], references: [id])
+  customer          Customer         @relation(fields: [customerId], references: [id])
+  loan              Loan             @relation(fields: [loanId], references: [id])
   loanApplication   LoanApplication? @relation(fields: [loanApplicationId], references: [id])
 
   @@index([tenantId, customerId])
@@ -600,69 +626,69 @@ model Repayment {
 }
 
 model LoanApplication {
-  id                   String                @id @default(uuid()) @db.Uuid
-  tenantId             String                @map("tenant_id") @db.Uuid
-  branchId             String                @map("branch_id") @db.Uuid
-  officerUserId        String                @map("officer_user_id") @db.Uuid
-  customerId           String?               @map("customer_id") @db.Uuid
-  loanId               String?               @unique @map("loan_id") @db.Uuid
-  status               LoanApplicationStatus @default(DRAFT)
-  surname              String?
-  givenNames           String?               @map("given_names")
-  phone                String?
-  nationalId           String?               @map("national_id")
-  gender               ApplicantGender?
-  dateOfBirth          DateTime?             @map("date_of_birth") @db.Date
-  district             String?
-  subCounty            String?               @map("sub_county")
-  parish               String?
-  village              String?
-  principalAmount      Decimal?              @map("principal_amount") @db.Decimal(18, 2)
-  interestRatePercent  Decimal?              @map("interest_rate_percent") @db.Decimal(8, 4)
-  durationDays         Int?                  @map("duration_days")
-  processingFee          Decimal?              @map("processing_fee") @db.Decimal(18, 2)
+  id                     String                     @id @default(uuid()) @db.Uuid
+  tenantId               String                     @map("tenant_id") @db.Uuid
+  branchId               String                     @map("branch_id") @db.Uuid
+  officerUserId          String                     @map("officer_user_id") @db.Uuid
+  customerId             String?                    @map("customer_id") @db.Uuid
+  loanId                 String?                    @unique @map("loan_id") @db.Uuid
+  status                 LoanApplicationStatus      @default(DRAFT)
+  surname                String?
+  givenNames             String?                    @map("given_names")
+  phone                  String?
+  nationalId             String?                    @map("national_id")
+  gender                 ApplicantGender?
+  dateOfBirth            DateTime?                  @map("date_of_birth") @db.Date
+  district               String?
+  subCounty              String?                    @map("sub_county")
+  parish                 String?
+  village                String?
+  principalAmount        Decimal?                   @map("principal_amount") @db.Decimal(18, 2)
+  interestRatePercent    Decimal?                   @map("interest_rate_percent") @db.Decimal(8, 4)
+  durationDays           Int?                       @map("duration_days")
+  processingFee          Decimal?                   @map("processing_fee") @db.Decimal(18, 2)
   /// Selected loan type template (nullable for legacy apps).
-  loanProductTemplateId  String?               @map("loan_product_template_id") @db.Uuid
+  loanProductTemplateId  String?                    @map("loan_product_template_id") @db.Uuid
   /// Snapshotted template fields — edits to the live template do not rewrite history.
-  templateName           String?               @map("template_name")
-  interestType           LoanInterestType?     @map("interest_type")
-  termValue              Int?                  @map("term_value")
-  termUnit               LoanTermUnit?         @map("term_unit")
-  repaymentFrequency     LoanRepaymentFrequency? @map("repayment_frequency")
-  processingFeePercent   Decimal?              @map("processing_fee_percent") @db.Decimal(8, 4)
+  templateName           String?                    @map("template_name")
+  interestType           LoanInterestType?          @map("interest_type")
+  termValue              Int?                       @map("term_value")
+  termUnit               LoanTermUnit?              @map("term_unit")
+  repaymentFrequency     LoanRepaymentFrequency?    @map("repayment_frequency")
+  processingFeePercent   Decimal?                   @map("processing_fee_percent") @db.Decimal(8, 4)
   /// Snapshotted penalty % of original principal for overdue fines.
-  penaltyRatePercent     Decimal?              @map("penalty_rate_percent") @db.Decimal(8, 4)
-  finePeriodDays         Int?                  @map("fine_period_days")
+  penaltyRatePercent     Decimal?                   @map("penalty_rate_percent") @db.Decimal(8, 4)
+  finePeriodDays         Int?                       @map("fine_period_days")
   /// Snapshotted payment-start policy from the selected template.
-  paymentStartPolicy     PaymentStartPolicyType? @map("payment_start_policy")
-  paymentStartDelayDays  Int?                  @map("payment_start_delay_days")
-  allowAgentDatePick     Boolean?              @map("allow_agent_date_pick")
-  loanPurpose            String?               @map("loan_purpose")
-  collateralType         String?               @map("collateral_type")
-  smileJobId             String?               @map("smile_job_id")
-  smileResult            Json?                 @map("smile_result")
-  verificationCode       String?               @map("verification_code")
-  verifiedAt             DateTime?             @map("verified_at")
-  termsConfirmedAt       DateTime?             @map("terms_confirmed_at")
+  paymentStartPolicy     PaymentStartPolicyType?    @map("payment_start_policy")
+  paymentStartDelayDays  Int?                       @map("payment_start_delay_days")
+  allowAgentDatePick     Boolean?                   @map("allow_agent_date_pick")
+  loanPurpose            String?                    @map("loan_purpose")
+  collateralType         String?                    @map("collateral_type")
+  smileJobId             String?                    @map("smile_job_id")
+  smileResult            Json?                      @map("smile_result")
+  verificationCode       String?                    @map("verification_code")
+  verifiedAt             DateTime?                  @map("verified_at")
+  termsConfirmedAt       DateTime?                  @map("terms_confirmed_at")
   /// Optional agent-picked start when policy allows; finalized on submit.
-  paymentStartDate       DateTime?             @map("payment_start_date")
-  submittedAt            DateTime?             @map("submitted_at")
-  syncedAt               DateTime?             @map("synced_at")
-  createdAt              DateTime              @default(now()) @map("created_at")
-  updatedAt              DateTime              @updatedAt @map("updated_at")
-  tenant                 Tenant                @relation(fields: [tenantId], references: [id])
-  branch                 Branch                @relation(fields: [branchId], references: [id])
-  officer                User                  @relation("LoanApplicationOfficer", fields: [officerUserId], references: [id])
-  customer               Customer?             @relation(fields: [customerId], references: [id])
-  loan                   Loan?                 @relation(fields: [loanId], references: [id])
-  loanProductTemplate    LoanProductTemplate?  @relation(fields: [loanProductTemplateId], references: [id])
+  paymentStartDate       DateTime?                  @map("payment_start_date")
+  submittedAt            DateTime?                  @map("submitted_at")
+  syncedAt               DateTime?                  @map("synced_at")
+  createdAt              DateTime                   @default(now()) @map("created_at")
+  updatedAt              DateTime                   @updatedAt @map("updated_at")
+  tenant                 Tenant                     @relation(fields: [tenantId], references: [id])
+  branch                 Branch                     @relation(fields: [branchId], references: [id])
+  officer                User                       @relation("LoanApplicationOfficer", fields: [officerUserId], references: [id])
+  customer               Customer?                  @relation(fields: [customerId], references: [id])
+  loan                   Loan?                      @relation(fields: [loanId], references: [id])
+  loanProductTemplate    LoanProductTemplate?       @relation(fields: [loanProductTemplateId], references: [id])
   wallet                 ClientWallet?
   guarantor              LoanApplicationGuarantor?
   media                  LoanApplicationMedia[]
   signatures             LoanApplicationSignature[]
-  signedAgreementKey     String?               @map("signed_agreement_key")
-  signedAgreementHash    String?               @map("signed_agreement_hash")
-  signedAgreementVersion Int?                  @map("signed_agreement_version")
+  signedAgreementKey     String?                    @map("signed_agreement_key")
+  signedAgreementHash    String?                    @map("signed_agreement_hash")
+  signedAgreementVersion Int?                       @map("signed_agreement_version")
 
   @@index([tenantId, status])
   @@index([tenantId, branchId])
@@ -705,22 +731,22 @@ model LoanApplicationMedia {
 /// Versioned electronic signature capture (PNG + strokes + metadata).
 /// Once locked, a role cannot be overwritten — only a new version may be created.
 model LoanApplicationSignature {
-  id                   String                     @id @default(uuid()) @db.Uuid
-  loanApplicationId    String                     @map("loan_application_id") @db.Uuid
-  signerRole           LoanApplicationSignerRole  @map("signer_role")
-  version              Int                        @default(1)
-  locked               Boolean                    @default(true)
-  signerName           String                     @map("signer_name")
-  signedAt             DateTime                   @map("signed_at")
-  signatureStorageKey  String                     @map("signature_storage_key")
-  strokesStorageKey    String                     @map("strokes_storage_key")
-  metadataStorageKey   String                     @map("metadata_storage_key")
-  pngContentHash       String                     @map("png_content_hash")
-  strokesContentHash   String                     @map("strokes_content_hash")
-  metadata             Json
-  createdAt            DateTime                   @default(now()) @map("created_at")
-  updatedAt            DateTime                   @updatedAt @map("updated_at")
-  application          LoanApplication            @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
+  id                  String                    @id @default(uuid()) @db.Uuid
+  loanApplicationId   String                    @map("loan_application_id") @db.Uuid
+  signerRole          LoanApplicationSignerRole @map("signer_role")
+  version             Int                       @default(1)
+  locked              Boolean                   @default(true)
+  signerName          String                    @map("signer_name")
+  signedAt            DateTime                  @map("signed_at")
+  signatureStorageKey String                    @map("signature_storage_key")
+  strokesStorageKey   String                    @map("strokes_storage_key")
+  metadataStorageKey  String                    @map("metadata_storage_key")
+  pngContentHash      String                    @map("png_content_hash")
+  strokesContentHash  String                    @map("strokes_content_hash")
+  metadata            Json
+  createdAt           DateTime                  @default(now()) @map("created_at")
+  updatedAt           DateTime                  @updatedAt @map("updated_at")
+  application         LoanApplication           @relation(fields: [loanApplicationId], references: [id], onDelete: Cascade)
 
   @@unique([loanApplicationId, signerRole, version])
   @@index([loanApplicationId, signerRole])
@@ -728,21 +754,21 @@ model LoanApplicationSignature {
 }
 
 model AuditLog {
-  id           String   @id @default(uuid()) @db.Uuid
-  tenantId     String   @map("tenant_id") @db.Uuid
-  actorUserId  String?  @map("actor_user_id") @db.Uuid
-  action       String
-  entityType   String   @map("entity_type")
-  entityId     String?  @map("entity_id")
-  oldValue     Json?    @map("old_value")
-  newValue     Json?    @map("new_value")
-  ipAddress    String?  @map("ip_address")
-  device       String?
-  location     Json?
-  correlationId String? @map("correlation_id")
-  createdAt    DateTime @default(now()) @map("created_at")
-  tenant       Tenant   @relation(fields: [tenantId], references: [id])
-  actor        User?    @relation(fields: [actorUserId], references: [id])
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  actorUserId   String?  @map("actor_user_id") @db.Uuid
+  action        String
+  entityType    String   @map("entity_type")
+  entityId      String?  @map("entity_id")
+  oldValue      Json?    @map("old_value")
+  newValue      Json?    @map("new_value")
+  ipAddress     String?  @map("ip_address")
+  device        String?
+  location      Json?
+  correlationId String?  @map("correlation_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  actor         User?    @relation(fields: [actorUserId], references: [id])
 
   @@index([tenantId, action, createdAt])
   @@index([tenantId, entityType, entityId])

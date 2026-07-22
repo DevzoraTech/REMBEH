@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
@@ -17,6 +25,15 @@ export class CustomersController {
   @RequirePermissions(CUSTOMER_PERMISSIONS.read)
   listCustomers(@CurrentUser() user: AuthenticatedUser) {
     return this.customersService.listCustomers(user);
+  }
+
+  @Get(':customerId')
+  @RequirePermissions(CUSTOMER_PERMISSIONS.read)
+  getCustomer(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('customerId', ParseUUIDPipe) customerId: string,
+  ) {
+    return this.customersService.getCustomer(user, customerId);
   }
 
   @Post()

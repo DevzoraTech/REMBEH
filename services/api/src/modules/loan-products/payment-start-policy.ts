@@ -88,9 +88,7 @@ export function describePaymentStartPolicy(input: {
   afterDays?: number | null;
   allowAgentDatePick?: boolean;
 }): string {
-  const pick = input.allowAgentDatePick
-    ? ' Agents may pick a later date.'
-    : '';
+  const pick = input.allowAgentDatePick ? ' Agents may pick a later date.' : '';
   switch (input.policyType) {
     case PaymentStartPolicyType.SAME_DAY:
       return `Repayments start the same day as loan go-live.${pick}`;

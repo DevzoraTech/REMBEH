@@ -22,7 +22,9 @@ export class ReleaseStorageService {
   private readonly downloadExpiry = 3600;
 
   constructor(private readonly configService: ConfigService) {
-    const endpoint = emptyToUndefined(this.configService.get<string>('S3_ENDPOINT'));
+    const endpoint = emptyToUndefined(
+      this.configService.get<string>('S3_ENDPOINT'),
+    );
     const publicEndpoint =
       emptyToUndefined(this.configService.get<string>('S3_PUBLIC_ENDPOINT')) ||
       endpoint;
@@ -33,7 +35,8 @@ export class ReleaseStorageService {
     const secretAccessKey =
       this.configService.get<string>('S3_SECRET_KEY')?.trim() ?? '';
     this.bucket =
-      this.configService.get<string>('S3_BUCKET')?.trim() || 'rembeh-prod-bucket';
+      this.configService.get<string>('S3_BUCKET')?.trim() ||
+      'rembeh-prod-bucket';
 
     const credentials =
       accessKeyId && secretAccessKey

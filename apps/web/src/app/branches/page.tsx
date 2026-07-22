@@ -473,8 +473,8 @@ export default function BranchesPage() {
       <div className="mx-auto max-w-5xl space-y-3 animate-rise">
         <section className="flex flex-col gap-2 border-b border-[var(--line)] pb-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--forest-emerald)]">
-              Branches
+            <p className="text-[11px] font-semibold lowercase tracking-[0.12em] text-[var(--forest-emerald)]">
+              branches
             </p>
             <h2 className="font-[family-name:var(--font-display)] text-xl tracking-[-0.02em] text-[var(--midnight-navy)]">
               {branches.length} location{branches.length === 1 ? "" : "s"}
@@ -551,13 +551,13 @@ export default function BranchesPage() {
           </section>
         ) : (
           <section className="panel overflow-hidden">
-            <div className="hidden grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,1fr)_72px_72px_auto] gap-3 border-b border-[var(--line)] bg-[var(--soft-mist)] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500 md:grid">
-              <span>Branch</span>
-              <span>Manager</span>
-              <span>Status</span>
-              <span className="text-right">Staff</span>
-              <span className="text-right">Pending</span>
-              <span className="text-right">Action</span>
+            <div className="hidden grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,1fr)_72px_72px_auto] gap-3 border-b border-[var(--line)] bg-[var(--soft-mist)] px-3 py-2 text-[10px] font-semibold lowercase tracking-[0.1em] text-slate-500 md:grid">
+              <span>branch</span>
+              <span>manager</span>
+              <span>status</span>
+              <span className="text-right">staff</span>
+              <span className="text-right">pending</span>
+              <span className="text-right">action</span>
             </div>
 
             <ul className="divide-y divide-[var(--line)]">
@@ -596,7 +596,7 @@ export default function BranchesPage() {
                             </p>
                           </>
                         ) : (
-                          <p className="text-sm text-slate-500">No manager</p>
+                          <p className="text-sm text-slate-500">no manager</p>
                         )}
                       </div>
 
@@ -609,14 +609,14 @@ export default function BranchesPage() {
                           />
                         ) : (
                           <span className="inline-flex border border-dashed border-[var(--line)] px-1.5 py-0.5 text-[11px] font-semibold text-slate-500">
-                            Unassigned
+                            unassigned
                           </span>
                         )}
                       </div>
 
                       <p className="text-sm font-semibold text-[var(--midnight-navy)] md:text-right">
                         <span className="md:hidden text-xs font-normal text-slate-500">
-                          Staff{" "}
+                          staff{" "}
                         </span>
                         {branch.staffSummary?.active ?? 0}/
                         {branch.staffSummary?.total ?? 0}
@@ -624,7 +624,7 @@ export default function BranchesPage() {
 
                       <p className="text-sm font-semibold text-[var(--midnight-navy)] md:text-right">
                         <span className="md:hidden text-xs font-normal text-slate-500">
-                          Pending{" "}
+                          pending{" "}
                         </span>
                         {branch.staffSummary?.pendingInvites ?? 0}
                       </p>
@@ -647,8 +647,8 @@ export default function BranchesPage() {
 
                     {team.length > 0 ? (
                       <div className="mt-2 border-t border-[var(--line)] pt-2">
-                        <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
-                          Team · {team.length}
+                        <p className="mb-1 text-[10px] font-semibold lowercase tracking-[0.1em] text-slate-500">
+                          team · {team.length}
                         </p>
                         <div className="flex flex-wrap gap-1.5">
                           {team.map((member) => (
@@ -769,10 +769,10 @@ export default function BranchesPage() {
           <form className="space-y-3.5" onSubmit={handleInviteStaff}>
             <div>
               <p className="mb-2 text-sm font-semibold text-[var(--midnight-navy)]">
-                Role
+                role
               </p>
               <div className="flex h-11 items-center border border-[var(--line)] bg-[var(--soft-mist)] px-3 text-sm font-semibold text-[var(--midnight-navy)]">
-                Branch Manager
+                branch manager
               </div>
             </div>
             <TextField
@@ -821,32 +821,32 @@ function StatusBadge({
 }) {
   const config = {
     ACTIVE: {
-      label: "Active",
-      short: "Active",
+      label: "active",
+      short: "active",
       className: "border-emerald-300 bg-emerald-50 text-emerald-800",
       icon: CheckCircle2,
     },
     INVITE_PENDING: {
-      label: "Invite pending",
-      short: "Pending",
+      label: "invite pending",
+      short: "pending",
       className: "border-amber-300 bg-amber-50 text-amber-900",
       icon: Clock3,
     },
     INVITE_EXPIRED: {
-      label: "Invite expired",
-      short: "Expired",
+      label: "invite expired",
+      short: "expired",
       className: "border-red-300 bg-red-50 text-red-800",
       icon: Clock3,
     },
     SUSPENDED: {
-      label: "Suspended",
-      short: "Suspended",
+      label: "suspended",
+      short: "suspended",
       className: "border-slate-300 bg-slate-100 text-slate-700",
       icon: Clock3,
     },
     PENDING_VERIFICATION: {
-      label: "Pending verification",
-      short: "Verify",
+      label: "pending verification",
+      short: "verify",
       className: "border-amber-300 bg-amber-50 text-amber-900",
       icon: Clock3,
     },

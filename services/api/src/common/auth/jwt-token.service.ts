@@ -1,10 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import {
-  AccessTokenPayload,
-  RefreshTokenPayload,
-} from './authenticated-user';
+import { AccessTokenPayload, RefreshTokenPayload } from './authenticated-user';
 
 /** Access tokens are short-lived; clients refresh via refresh token. */
 const ACCESS_TOKEN_TTL_SECONDS = 60 * 60; // 1 hour
@@ -58,7 +55,7 @@ export class JwtTokenService {
     if (payload.typ !== 'access') {
       throw new UnauthorizedException('Invalid token type.');
     }
-    return payload as AccessTokenPayload;
+    return payload;
   }
 
   verifyRefreshToken(token: string): RefreshTokenPayload {
@@ -66,12 +63,10 @@ export class JwtTokenService {
     if (payload.typ !== 'refresh') {
       throw new UnauthorizedException('Invalid refresh token.');
     }
-    return payload as RefreshTokenPayload;
+    return payload;
   }
 
-  private verifyToken(
-    token: string,
-  ): AccessTokenPayload | RefreshTokenPayload {
+  private verifyToken(token: string): AccessTokenPayload | RefreshTokenPayload {
     const [encodedHeader, encodedPayload, signature] = token.split('.');
 
     if (!encodedHeader || !encodedPayload || !signature) {
@@ -120,9 +115,7 @@ export class JwtTokenService {
     }
   }
 
-  private sign(
-    payload: AccessTokenPayload | RefreshTokenPayload,
-  ): string {
+  private sign(payload: AccessTokenPayload | RefreshTokenPayload): string {
     const header = {
       alg: 'HS256',
       typ: 'JWT',

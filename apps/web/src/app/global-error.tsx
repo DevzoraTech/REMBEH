@@ -52,7 +52,7 @@ export default function GlobalError({
               fontSize: "0.6875rem",
               fontWeight: 600,
               letterSpacing: "0.16em",
-              textTransform: "uppercase",
+              textTransform: "lowercase",
               color: "rgba(31, 41, 51, 0.55)",
             }}
           >
@@ -64,11 +64,11 @@ export default function GlobalError({
               fontSize: "0.6875rem",
               fontWeight: 700,
               letterSpacing: "0.18em",
-              textTransform: "uppercase",
+              textTransform: "lowercase",
               color: "#c4922a",
             }}
           >
-            Application error
+            application error
           </p>
           <h1
             style={{
@@ -92,7 +92,7 @@ export default function GlobalError({
             }}
           >
             REMBEH hit an unexpected error. Please try again. If the problem
-            continues, contact your workspace administrator.
+            continues, contact your account administrator.
           </p>
           <div style={{ marginTop: "1.75rem", display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
             <button
@@ -109,7 +109,7 @@ export default function GlobalError({
                 cursor: "pointer",
               }}
             >
-              Try again
+            try again
             </button>
             <a
               href="https://rembeh.antikra.com/"
@@ -125,7 +125,7 @@ export default function GlobalError({
                 textDecoration: "none",
               }}
             >
-              Go to home
+              go to home
             </a>
           </div>
         </div>

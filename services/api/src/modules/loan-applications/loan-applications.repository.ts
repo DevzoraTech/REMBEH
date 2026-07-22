@@ -17,7 +17,9 @@ import { LOAN_APPLICATION_PERMISSIONS } from './loan-applications.permissions';
 export const loanApplicationInclude = {
   guarantor: true,
   media: { orderBy: { createdAt: 'asc' as const } },
-  signatures: { orderBy: [{ signerRole: 'asc' as const }, { version: 'desc' as const }] },
+  signatures: {
+    orderBy: [{ signerRole: 'asc' as const }, { version: 'desc' as const }],
+  },
   officer: {
     select: {
       id: true,
@@ -54,6 +56,57 @@ export class LoanApplicationsRepository {
     });
   }
 
+  createDraftForCustomer(input: {
+    tenantId: string;
+    branchId: string;
+    officerUserId: string;
+    customerId: string;
+    fullName: string;
+    phone: string;
+    nationalId: string | null;
+    verifiedAt: Date | null;
+  }) {
+    return this.prisma.loanApplication.create({
+      data: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        officerUserId: input.officerUserId,
+        customerId: input.customerId,
+        givenNames: input.fullName,
+        phone: input.phone,
+        nationalId: input.nationalId,
+        status:
+          input.nationalId && input.verifiedAt
+            ? LoanApplicationStatus.VERIFIED
+            : LoanApplicationStatus.DRAFT,
+        verifiedAt: input.verifiedAt,
+      },
+      include: loanApplicationInclude,
+    });
+  }
+
+  findCustomerForApplication(input: {
+    tenantId: string;
+    branchId?: string | null;
+    customerId: string;
+  }) {
+    return this.prisma.customer.findFirst({
+      where: {
+        id: input.customerId,
+        tenantId: input.tenantId,
+        ...(input.branchId ? { branchId: input.branchId } : {}),
+      },
+      select: {
+        id: true,
+        branchId: true,
+        fullName: true,
+        phone: true,
+        nationalId: true,
+        verifiedAt: true,
+      },
+    });
+  }
+
   findById(input: { tenantId: string; id: string }) {
     return this.prisma.loanApplication.findFirst({
       where: { id: input.id, tenantId: input.tenantId },
@@ -71,9 +124,7 @@ export class LoanApplicationsRepository {
       where: {
         tenantId: input.tenantId,
         ...(input.branchId ? { branchId: input.branchId } : {}),
-        ...(input.officerUserId
-          ? { officerUserId: input.officerUserId }
-          : {}),
+        ...(input.officerUserId ? { officerUserId: input.officerUserId } : {}),
         status: {
           in: [
             LoanApplicationStatus.SUBMITTED,
@@ -308,7 +359,8 @@ export class LoanApplicationsRepository {
         }
       }
 
-      const principal = input.application.principalAmount ?? new Prisma.Decimal(0);
+      const principal =
+        input.application.principalAmount ?? new Prisma.Decimal(0);
       const rate = Number(input.application.interestRatePercent ?? 0);
       const days = input.application.durationDays ?? 0;
       const fee = Number(input.application.processingFee ?? 0);

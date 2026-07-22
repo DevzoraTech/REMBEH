@@ -94,9 +94,13 @@ export function computeCollectionSchedule(
   maturity.setDate(maturity.getDate() + periodDays);
 
   const msPerDay = 24 * 60 * 60 * 1000;
-  const rawElapsed = Math.floor((asOf.getTime() - start.getTime()) / msPerDay) + 1;
+  const rawElapsed =
+    Math.floor((asOf.getTime() - start.getTime()) / msPerDay) + 1;
   const daysElapsed = Math.min(periodDays, Math.max(1, rawElapsed));
-  const daysLeft = Math.max(0, periodDays - daysElapsed + (asOf < maturity ? 1 : 0));
+  const daysLeft = Math.max(
+    0,
+    periodDays - daysElapsed + (asOf < maturity ? 1 : 0),
+  );
   const calendarDaysLeft = Math.max(
     0,
     Math.ceil((maturity.getTime() - asOf.getTime()) / msPerDay),
@@ -105,7 +109,9 @@ export function computeCollectionSchedule(
   const expectedCumulative = roundMoney(
     Math.min(totalRepayable, dailyInstalment * daysElapsed),
   );
-  const owedThroughToday = roundMoney(Math.max(0, expectedCumulative - paidAmount));
+  const owedThroughToday = roundMoney(
+    Math.max(0, expectedCumulative - paidAmount),
+  );
   const expectedToday = roundMoney(Math.min(outstanding, owedThroughToday));
   const carriedForward = roundMoney(
     Math.max(0, expectedToday - dailyInstalment),
@@ -153,7 +159,9 @@ export function allocateRepayment(input: {
   remainingPrincipal: number;
 }) {
   let left = roundMoney(input.amount);
-  const feesAllocated = roundMoney(Math.min(left, Math.max(0, input.remainingFees)));
+  const feesAllocated = roundMoney(
+    Math.min(left, Math.max(0, input.remainingFees)),
+  );
   left = roundMoney(left - feesAllocated);
   const interestAllocated = roundMoney(
     Math.min(left, Math.max(0, input.remainingInterest)),

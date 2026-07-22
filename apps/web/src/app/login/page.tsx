@@ -116,32 +116,28 @@ function LoginForm() {
 
   return (
     <AuthShell
-      eyebrow="Secure access"
-      title="Sign in to REMBEH."
-      description="Owners monitor institutions. Managers run branches and field teams. Your console opens from your role."
+      eyebrow="REMBEH"
+      title="sign in"
       footer={
         <p className="text-center text-sm text-slate-500">
-          New institution?{" "}
+          new account?{" "}
           <Link
             href="/register"
             className="font-bold text-[var(--forest-emerald)] hover:underline"
           >
-            Create an account
+            create an account
           </Link>
         </p>
       }
     >
       <form className="space-y-5" onSubmit={handleLogin}>
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--forest-emerald)]">
-            Sign in
+          <p className="text-xs font-semibold lowercase tracking-[0.18em] text-[var(--forest-emerald)]">
+            sign in
           </p>
           <h2 className="mt-2 font-[family-name:var(--font-display)] text-3xl tracking-[-0.03em] text-[var(--midnight-navy)]">
-            Welcome back
+            welcome back
           </h2>
-          <p className="mt-2 text-sm leading-6 text-slate-500">
-            Use your owner or staff credentials to open the control center.
-          </p>
         </div>
 
         <TextField
@@ -168,7 +164,7 @@ function LoginForm() {
         <FormError error={error} />
 
         <PrimaryButton type="submit" loading={isSubmitting}>
-          Open control center
+          sign in
         </PrimaryButton>
       </form>
     </AuthShell>

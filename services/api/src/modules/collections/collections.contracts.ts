@@ -123,6 +123,7 @@ export type RepaymentDetailContract = RepaymentListItemContract & {
 
 export type DailyAgentApplicationItemContract = {
   id: string;
+  customerId: string | null;
   clientName: string;
   phone: string | null;
   principalAmount: number;
@@ -134,6 +135,7 @@ export type DailyAgentApplicationItemContract = {
 export type DailyAgentPaymentItemContract = {
   id: string;
   loanId: string;
+  customerId: string;
   clientName: string;
   phone: string | null;
   amount: number;

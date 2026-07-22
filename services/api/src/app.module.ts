@@ -6,11 +6,13 @@ import { AppService } from './app.service';
 import { DatabaseModule } from './database/database.module';
 import { AgentsModule } from './modules/agents/agents.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { BorrowerListsModule } from './modules/borrower-lists/borrower-lists.module';
 import { BranchesModule } from './modules/branches/branches.module';
 import { CollectionsModule } from './modules/collections/collections.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { IdentityVerificationModule } from './modules/identity-verification/identity-verification.module';
 import { LoanApplicationsModule } from './modules/loan-applications/loan-applications.module';
+import { LoansModule } from './modules/loans/loans.module';
 import { LoanProductsModule } from './modules/loan-products/loan-products.module';
 import { AppUpdateModule } from './modules/app-update/app-update.module';
 import { PlatformModule } from './modules/platform/platform.module';
@@ -28,12 +30,14 @@ import { StorageModule } from './modules/storage/storage.module';
     StorageModule,
     RealtimeModule,
     AuthModule,
+    BorrowerListsModule,
     AgentsModule,
     BranchesModule,
     CustomersModule,
     CollectionsModule,
     IdentityVerificationModule,
     LoanApplicationsModule,
+    LoansModule,
     LoanProductsModule,
     PlatformModule,
     AppUpdateModule,
@@ -42,4 +46,3 @@ import { StorageModule } from './modules/storage/storage.module';
   providers: [AppService],
 })
 export class AppModule {}
-

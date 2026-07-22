@@ -116,22 +116,22 @@ export function pdfLooksLikeFilledAgreement(pdfBytes: Uint8Array): boolean {
   // FlateDecode content: inflate and search
   const asLatin = raw.toString('latin1');
   const re = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
-    let match: RegExpExecArray | null;
-    let hit = false;
-    while ((match = re.exec(asLatin))) {
-      const payload = Buffer.from(match[1]!, 'binary');
-      try {
-        const dec = inflateSync(payload);
-        const text = dec.toString('latin1');
-        if (
-          /LOAN AGREEMENT|THE REPUBLIC|BETWEEN|MONEYLENDERS|Borrower/i.test(text)
-        ) {
-          hit = true;
-        }
-      } catch {
-        // ignore non-flate streams
+  let match: RegExpExecArray | null;
+  let hit = false;
+  while ((match = re.exec(asLatin))) {
+    const payload = Buffer.from(match[1], 'binary');
+    try {
+      const dec = inflateSync(payload);
+      const text = dec.toString('latin1');
+      if (
+        /LOAN AGREEMENT|THE REPUBLIC|BETWEEN|MONEYLENDERS|Borrower/i.test(text)
+      ) {
+        hit = true;
       }
+    } catch {
+      // ignore non-flate streams
     }
+  }
 
   if (hit) return true;
   // Do not trust byte-size heuristics — blank LO PDFs can still embed large fonts.
@@ -271,12 +271,7 @@ async function buildFallbackPdfFromTemplateFields(
 
   // ——— Header (centered) ———
   drawCentered('THE REPUBLIC OF UGANDA', 12, true, 6);
-  drawCentered(
-    'IN THE MATTER OF THE MONEYLENDERS ACT, CAP.273',
-    11,
-    true,
-    5,
-  );
+  drawCentered('IN THE MATTER OF THE MONEYLENDERS ACT, CAP.273', 11, true, 5);
   drawCentered('AND', 11, true, 5);
   drawCentered(
     `IN THE MATTER OF ${fields.company_name.toUpperCase()}`,
@@ -503,7 +498,7 @@ function wrapText(
   const words = text.split(/\s+/).filter(Boolean);
   if (words.length === 0) return [''];
   const lines: string[] = [];
-  let current = words[0]!;
+  let current = words[0];
   for (let i = 1; i < words.length; i += 1) {
     const next = `${current} ${words[i]}`;
     if (font.widthOfTextAtSize(next, size) <= maxWidth) {

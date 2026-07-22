@@ -19,6 +19,7 @@ import {
   normalizeInternationalPhoneNumber,
 } from '../../common/security/identity-normalization';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
+import { BorrowerListsService } from '../borrower-lists/borrower-lists.service';
 import { IdentityVerificationService } from '../identity-verification/identity-verification.service';
 import { REALTIME_EVENTS } from '../realtime/realtime.events';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -41,10 +42,8 @@ import {
 } from './loan-applications.repository';
 import { buildSignedLoanAgreementPdf } from './loan-agreement-pdf.builder';
 import { MediaConfirmDto, MediaPresignDto } from './dto/media-presign.dto';
-import {
-  SignatureConfirmDto,
-  SignaturePresignDto,
-} from './dto/signature.dto';
+import { CreateLoanApplicationFromCustomerDto } from './dto/create-from-customer.dto';
+import { SignatureConfirmDto, SignaturePresignDto } from './dto/signature.dto';
 import { UpdateLoanApplicationDto } from './dto/update-loan-application.dto';
 import { VerifyApplicantDto } from './dto/verify-applicant.dto';
 import { computeLoanPricing } from '../loan-products/loan-pricing';
@@ -101,6 +100,7 @@ export class LoanApplicationsService {
     private readonly objectStorage: ObjectStorageService,
     private readonly realtimeGateway: RealtimeGateway,
     private readonly loanProducts: LoanProductsService,
+    private readonly borrowerLists: BorrowerListsService,
   ) {}
 
   async createDraft(
@@ -112,6 +112,50 @@ export class LoanApplicationsService {
       branchId: user.branchId!,
       officerUserId: user.userId,
     });
+    return { application: this.toContract(application) };
+  }
+
+  async createDraftFromCustomer(
+    user: AuthenticatedUser,
+    dto: CreateLoanApplicationFromCustomerDto,
+  ): Promise<LoanApplicationResponseContract> {
+    if (!user.tenantId?.trim()) {
+      throw new ForbiddenException('Account access is required.');
+    }
+
+    const canSeeAllBranches = user.permissions.includes(
+      BRANCH_PERMISSIONS.create,
+    );
+
+    if (!canSeeAllBranches) {
+      this.requireBranch(user);
+    }
+
+    const customer = await this.repository.findCustomerForApplication({
+      tenantId: user.tenantId,
+      branchId: canSeeAllBranches ? null : user.branchId,
+      customerId: dto.customerId,
+    });
+
+    if (!customer?.branchId) {
+      throw new NotFoundException('Borrower was not found.');
+    }
+
+    if (customer.nationalId?.trim()) {
+      await this.borrowerLists.assertCanReceiveLoan(user, customer.nationalId);
+    }
+
+    const application = await this.repository.createDraftForCustomer({
+      tenantId: user.tenantId,
+      branchId: customer.branchId,
+      officerUserId: user.userId,
+      customerId: customer.id,
+      fullName: customer.fullName,
+      phone: customer.phone,
+      nationalId: customer.nationalId?.trim().toUpperCase() || null,
+      verifiedAt: customer.verifiedAt,
+    });
+
     return { application: this.toContract(application) };
   }
 
@@ -166,8 +210,11 @@ export class LoanApplicationsService {
     id: string,
   ): Promise<{ pdfBytes: Buffer; fileName: string; contentHash: string }> {
     const application = await this.requireAccessibleApplication(user, id);
-    const { pdfBytes, contentHash, application: updated } =
-      await this.generateAndStoreSignedAgreement(application);
+    const {
+      pdfBytes,
+      contentHash,
+      application: updated,
+    } = await this.generateAndStoreSignedAgreement(application);
 
     const safeName = (updated.surname || updated.givenNames || 'loan')
       .toString()
@@ -196,6 +243,10 @@ export class LoanApplicationsService {
         );
       }
       dto.phone = phone;
+    }
+
+    if (dto.nationalId?.trim()) {
+      await this.borrowerLists.assertCanReceiveLoan(user, dto.nationalId);
     }
 
     const templateSnapshot = dto.loanProductTemplateId
@@ -271,11 +322,7 @@ export class LoanApplicationsService {
             ),
             durationDays: templateSnapshot.durationDays,
             processingFee: new Prisma.Decimal(
-              (
-                dto.processingFee ??
-                processingFeeFromTemplate ??
-                0
-              ).toFixed(2),
+              (dto.processingFee ?? processingFeeFromTemplate ?? 0).toFixed(2),
             ),
           }
         : {
@@ -359,6 +406,8 @@ export class LoanApplicationsService {
         'phone must be a valid international phone number.',
       );
     }
+
+    await this.borrowerLists.assertCanReceiveLoan(user, nationalId);
 
     const customerConflict = await this.repository.findCustomerConflict({
       tenantId: user.tenantId,
@@ -474,7 +523,9 @@ export class LoanApplicationsService {
     }
 
     if (!dto.storageKey.includes(application.id)) {
-      throw new BadRequestException('storageKey does not match this application.');
+      throw new BadRequestException(
+        'storageKey does not match this application.',
+      );
     }
 
     await this.repository.upsertMedia({
@@ -630,7 +681,7 @@ export class LoanApplicationsService {
       metadataStorageKey: dto.metadataStorageKey,
       pngContentHash: dto.pngContentHash.toLowerCase(),
       strokesContentHash: dto.strokesContentHash.toLowerCase(),
-      metadata: metadata as Prisma.InputJsonValue,
+      metadata: metadata,
     });
 
     await this.repository.upsertMedia({
@@ -677,6 +728,12 @@ export class LoanApplicationsService {
     id: string,
   ): Promise<LoanApplicationResponseContract> {
     const application = await this.requireWritableDraft(user, id);
+    if (application.nationalId?.trim()) {
+      await this.borrowerLists.assertCanReceiveLoan(
+        user,
+        application.nationalId,
+      );
+    }
     this.assertReadyForSubmit(application);
 
     const goLiveAt = new Date();
@@ -742,7 +799,9 @@ export class LoanApplicationsService {
     ];
 
     const missing = requiredFields
-      .filter(([value]) => value === null || value === undefined || value === '')
+      .filter(
+        ([value]) => value === null || value === undefined || value === '',
+      )
       .map(([, label]) => label);
 
     const mediaTypes = new Set(application.media.map((item) => item.type));
@@ -818,9 +877,7 @@ export class LoanApplicationsService {
         .sort((a, b) => b.version - a.version)[0];
       return latest ?? null;
     }).filter(
-      (
-        sig,
-      ): sig is NonNullable<(typeof application.signatures)[number]> =>
+      (sig): sig is NonNullable<(typeof application.signatures)[number]> =>
         sig != null,
     );
 
@@ -862,36 +919,38 @@ export class LoanApplicationsService {
           }`
         : null;
 
-    const { pdfBytes, contentHash, source } = await buildSignedLoanAgreementPdf({
-      applicationId: application.id,
-      clientName: this.clientName(application),
-      phone: application.phone,
-      nationalId: application.nationalId,
-      principalAmount,
-      interestRatePercent: this.decimalToNumber(
-        application.interestRatePercent,
-      ),
-      durationDays: application.durationDays,
-      loanDurationLabel,
-      processingFee: this.decimalToNumber(application.processingFee),
-      collateralType: application.collateralType,
-      loanPurpose: application.loanPurpose,
-      district: application.district,
-      subCounty: application.subCounty,
-      parish: application.parish,
-      village: application.village,
-      guarantorName: application.guarantor?.fullName ?? null,
-      companyName: application.tenant?.name ?? null,
-      companyAddress: application.branch?.address ?? null,
-      companyContact: application.branch?.phone ?? null,
-      agentName: application.officer?.displayName ?? null,
-      agreementDate: new Date(),
-      dateLoanTaken: application.submittedAt ?? new Date(),
-      fineAmount,
-      finePeriodLabel,
-      version: agreementVersion,
-      parties,
-    });
+    const { pdfBytes, contentHash, source } = await buildSignedLoanAgreementPdf(
+      {
+        applicationId: application.id,
+        clientName: this.clientName(application),
+        phone: application.phone,
+        nationalId: application.nationalId,
+        principalAmount,
+        interestRatePercent: this.decimalToNumber(
+          application.interestRatePercent,
+        ),
+        durationDays: application.durationDays,
+        loanDurationLabel,
+        processingFee: this.decimalToNumber(application.processingFee),
+        collateralType: application.collateralType,
+        loanPurpose: application.loanPurpose,
+        district: application.district,
+        subCounty: application.subCounty,
+        parish: application.parish,
+        village: application.village,
+        guarantorName: application.guarantor?.fullName ?? null,
+        companyName: application.tenant?.name ?? null,
+        companyAddress: application.branch?.address ?? null,
+        companyContact: application.branch?.phone ?? null,
+        agentName: application.officer?.displayName ?? null,
+        agreementDate: new Date(),
+        dateLoanTaken: application.submittedAt ?? new Date(),
+        fineAmount,
+        finePeriodLabel,
+        version: agreementVersion,
+        parties,
+      },
+    );
 
     this.logger.log(
       `Loan agreement PDF for ${application.id} generated via ${source}`,
@@ -1268,7 +1327,8 @@ export class LoanApplicationsService {
     branchId: string,
     raw: string,
     application?: {
-      paymentStartPolicy?: import('@prisma/client').PaymentStartPolicyType | null;
+      paymentStartPolicy?:
+        import('@prisma/client').PaymentStartPolicyType | null;
       paymentStartDelayDays?: number | null;
       allowAgentDatePick?: boolean | null;
     },
@@ -1314,7 +1374,9 @@ export class LoanApplicationsService {
       date.getUTCMonth() !== month - 1 ||
       date.getUTCDate() !== day
     ) {
-      throw new BadRequestException('dateOfBirth must be a valid calendar date.');
+      throw new BadRequestException(
+        'dateOfBirth must be a valid calendar date.',
+      );
     }
     const today = new Date();
     const todayUtc = Date.UTC(

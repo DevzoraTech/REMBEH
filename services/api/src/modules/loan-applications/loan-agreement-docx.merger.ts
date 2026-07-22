@@ -34,7 +34,13 @@ export function resolveLoanAgreementTemplatePath(): string {
   const candidates = [
     fromEnv,
     join(process.cwd(), 'assets', 'loan-agreement.docx'),
-    join(process.cwd(), '..', '..', 'product-idea-assets', 'Loan-agreement .docx'),
+    join(
+      process.cwd(),
+      '..',
+      '..',
+      'product-idea-assets',
+      'Loan-agreement .docx',
+    ),
     join(__dirname, '..', '..', '..', 'assets', 'loan-agreement.docx'),
     join(
       __dirname,
@@ -106,7 +112,10 @@ export async function fillLoanAgreementDocx(
 export function listMergeableXmlPaths(zip: JSZip): string[] {
   const paths = new Set<string>([DOCUMENT_XML]);
   for (const name of Object.keys(zip.files)) {
-    if (/^word\/(header|footer)\d+\.xml$/i.test(name) && !zip.files[name]?.dir) {
+    if (
+      /^word\/(header|footer)\d+\.xml$/i.test(name) &&
+      !zip.files[name]?.dir
+    ) {
       paths.add(name);
     }
   }
@@ -134,17 +143,17 @@ export function coalesceSplitPlaceholders(xml: string): string {
   // Character → owning w:t index
   const owner: number[] = [];
   for (let i = 0; i < texts.length; i += 1) {
-    for (let c = 0; c < texts[i]!.length; c += 1) owner.push(i);
+    for (let c = 0; c < texts[i].length; c += 1) owner.push(i);
   }
 
   const next = [...texts];
   for (const match of joined.matchAll(looseTokenRe)) {
-    const key = match[1]!;
+    const key = match[1];
     const tight = `&lt;&lt;${key}&gt;&gt;`;
     if (next.some((t) => t.includes(tight))) continue;
 
     const start = match.index ?? 0;
-    const end = start + match[0]!.length;
+    const end = start + match[0].length;
     const startNode = owner[start];
     const endNode = owner[end - 1];
     if (startNode == null || endNode == null) continue;
@@ -158,8 +167,8 @@ export function coalesceSplitPlaceholders(xml: string): string {
       if (owner[i] === endNode) offsetInEnd += 1;
     }
 
-    const prefix = next[startNode]!.slice(0, offsetInStart);
-    const suffix = next[endNode]!.slice(offsetInEnd);
+    const prefix = next[startNode].slice(0, offsetInStart);
+    const suffix = next[endNode].slice(offsetInEnd);
     next[startNode] = `${prefix}${tight}`;
     for (let n = startNode + 1; n <= endNode; n += 1) {
       next[n] = n === endNode ? suffix : '';
@@ -167,11 +176,14 @@ export function coalesceSplitPlaceholders(xml: string): string {
   }
 
   let i = 0;
-  return xml.replace(/<w:t(\b[^>]*)>([^<]*)<\/w:t>/g, (_full, attrs: string) => {
-    const value = next[i] ?? '';
-    i += 1;
-    return `<w:t${attrs}>${value}</w:t>`;
-  });
+  return xml.replace(
+    /<w:t(\b[^>]*)>([^<]*)<\/w:t>/g,
+    (_full, attrs: string) => {
+      const value = next[i] ?? '';
+      i += 1;
+      return `<w:t${attrs}>${value}</w:t>`;
+    },
+  );
 }
 
 /**
@@ -360,7 +372,10 @@ function addImageRelationship(
     `Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" ` +
     `Target="${target}"/>`;
   if (relsXml.includes('</Relationships>')) {
-    return relsXml.replace('</Relationships>', `${relationship}</Relationships>`);
+    return relsXml.replace(
+      '</Relationships>',
+      `${relationship}</Relationships>`,
+    );
   }
   return `${relsXml}${relationship}`;
 }
@@ -377,8 +392,7 @@ function ensurePngContentType(contentTypesXml: string): string {
   if (/Extension="png"/i.test(contentTypesXml)) {
     return contentTypesXml;
   }
-  const pngDefault =
-    '<Default Extension="png" ContentType="image/png"/>';
+  const pngDefault = '<Default Extension="png" ContentType="image/png"/>';
   if (contentTypesXml.includes('</Types>')) {
     return contentTypesXml.replace('</Types>', `${pngDefault}</Types>`);
   }
@@ -393,10 +407,8 @@ export function readPngSize(png: Uint8Array): {
   if (png.byteLength < 24) {
     return { width: 400, height: 150 };
   }
-  const width =
-    (png[16]! << 24) | (png[17]! << 16) | (png[18]! << 8) | png[19]!;
-  const height =
-    (png[20]! << 24) | (png[21]! << 16) | (png[22]! << 8) | png[23]!;
+  const width = (png[16] << 24) | (png[17] << 16) | (png[18] << 8) | png[19];
+  const height = (png[20] << 24) | (png[21] << 16) | (png[22] << 8) | png[23];
   if (width <= 0 || height <= 0) {
     return { width: 400, height: 150 };
   }

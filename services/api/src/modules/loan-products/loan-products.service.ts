@@ -240,9 +240,7 @@ export class LoanProductsService {
                 : new Prisma.Decimal(dto.maxLoanAmount.toFixed(2)),
           }
         : {}),
-      ...(dto.notes !== undefined
-        ? { notes: dto.notes?.trim() || null }
-        : {}),
+      ...(dto.notes !== undefined ? { notes: dto.notes?.trim() || null } : {}),
       ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
       ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
     });
@@ -503,7 +501,10 @@ export class LoanProductsService {
     return { paymentStartPolicy: this.toPaymentStartContract(saved) };
   }
 
-  async upsertFinePolicy(user: AuthenticatedUser, dto: UpsertLoanFinePolicyDto) {
+  async upsertFinePolicy(
+    user: AuthenticatedUser,
+    dto: UpsertLoanFinePolicyDto,
+  ) {
     this.requireManage(user);
     const branchId = this.resolveWriteBranchId(user, dto.branchId);
 
@@ -666,13 +667,9 @@ export class LoanProductsService {
       paymentStartDelayDays: row.paymentStartDelayDays,
       allowAgentDatePick: row.allowAgentDatePick,
       minLoanAmount:
-        row.minLoanAmount != null
-          ? Number(row.minLoanAmount.toString())
-          : null,
+        row.minLoanAmount != null ? Number(row.minLoanAmount.toString()) : null,
       maxLoanAmount:
-        row.maxLoanAmount != null
-          ? Number(row.maxLoanAmount.toString())
-          : null,
+        row.maxLoanAmount != null ? Number(row.maxLoanAmount.toString()) : null,
       notes: row.notes,
       isActive: row.isActive,
       sortOrder: row.sortOrder,

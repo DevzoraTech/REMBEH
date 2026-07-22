@@ -327,18 +327,17 @@ export default function RegisterPage() {
 
   return (
     <AuthShell
-      eyebrow="Get started"
-      title="Register your lending institution."
-      description="Create the company account, verify the owner email, then set up branches and assign managers who will run day-to-day operations."
+      eyebrow="REMBEH"
+      title="create account"
       footer={
         step === "details" ? (
           <p className="text-center text-sm text-slate-500">
-            Already registered?{" "}
+            already registered?{" "}
             <Link
               href="/login"
               className="font-bold text-[var(--forest-emerald)] hover:underline"
             >
-              Sign in
+              sign in
             </Link>
           </p>
         ) : null
@@ -348,21 +347,21 @@ export default function RegisterPage() {
         <form className="space-y-5" onSubmit={handleVerifyEmail}>
           <div>
             <div className="mb-4 flex items-center gap-2">
-              <StepPill active label="1. Details" done />
-              <StepPill active label="2. Verify" />
+              <StepPill active label="1. details" done />
+              <StepPill active label="2. verify" />
             </div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--forest-emerald)]">
-              Email verification
+            <p className="text-xs font-semibold lowercase tracking-[0.18em] text-[var(--forest-emerald)]">
+              email verification
             </p>
             <h2 className="mt-2 font-[family-name:var(--font-display)] text-3xl tracking-[-0.03em] text-[var(--midnight-navy)]">
-              Enter your code
+              enter your code
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-500">
-              We sent a 6-digit code to{" "}
+              we sent a 6-digit code to{" "}
               <span className="font-semibold text-[var(--midnight-navy)]">
                 {registration.emailChallenge.destination}
               </span>
-              {expiresAt ? `. Expires at ${expiresAt}.` : "."}
+              {expiresAt ? `. expires ${expiresAt}.` : "."}
             </p>
           </div>
 
@@ -374,19 +373,16 @@ export default function RegisterPage() {
               <div>
                 <p className="font-semibold text-[var(--midnight-navy)]">
                   {registration.emailDelivery.delivered
-                    ? "Verification email sent"
-                    : registration.emailDelivery.provider === "development"
-                      ? "Development delivery mode"
-                      : "Delivery pending"}
+                    ? "code sent"
+                    : "code pending"}
                 </p>
-                <p className="mt-1">{registration.emailDelivery.message}</p>
               </div>
             </div>
           </div>
 
           <div>
             <p className="mb-2 text-sm font-semibold text-[var(--midnight-navy)]">
-              Verification code
+              verification code
             </p>
             <OtpInput value={emailOtpCode} onChange={setEmailOtpCode} />
           </div>
@@ -394,7 +390,7 @@ export default function RegisterPage() {
           <FormError error={error} />
 
           <PrimaryButton type="submit" loading={isSubmitting}>
-            Verify and start setup
+            verify and start setup
           </PrimaryButton>
 
           <div className="flex items-center justify-between gap-3">
@@ -402,7 +398,7 @@ export default function RegisterPage() {
               href="/login"
               className="text-sm font-semibold text-slate-500 hover:text-[var(--midnight-navy)]"
             >
-              Already verified? Sign in
+              already verified? sign in
             </Link>
             <button
               type="button"
@@ -417,8 +413,8 @@ export default function RegisterPage() {
             >
               <RefreshCw className={`size-3.5 ${isResending ? "animate-spin" : ""}`} />
               {resendSeconds > 0
-                ? `Resend in ${resendSeconds}s`
-                : "Resend code"}
+                ? `resend in ${resendSeconds}s`
+                : "resend code"}
             </button>
           </div>
         </form>
@@ -426,18 +422,15 @@ export default function RegisterPage() {
         <form className="space-y-5" onSubmit={handleRegister}>
           <div>
             <div className="mb-4 flex items-center gap-2">
-              <StepPill active label="1. Details" />
-              <StepPill label="2. Verify" />
+              <StepPill active label="1. details" />
+              <StepPill label="2. verify" />
             </div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--forest-emerald)]">
-              Company registration
+            <p className="text-xs font-semibold lowercase tracking-[0.18em] text-[var(--forest-emerald)]">
+              company registration
             </p>
             <h2 className="mt-2 font-[family-name:var(--font-display)] text-3xl tracking-[-0.03em] text-[var(--midnight-navy)]">
-              Set up your account
+              set up your account
             </h2>
-            <p className="mt-2 text-sm leading-6 text-slate-500">
-              Tell us about the institution and the account owner.
-            </p>
           </div>
 
           <TextField
@@ -529,7 +522,7 @@ export default function RegisterPage() {
           <FormError error={error} />
 
           <PrimaryButton type="submit" loading={isSubmitting} variant="navy">
-            Continue to verification
+            continue to verification
           </PrimaryButton>
         </form>
       )}
@@ -554,7 +547,7 @@ function StepPill({
           : "border-[var(--line)] bg-[var(--soft-mist)] text-slate-500"
       }`}
     >
-      {label}
+      {label.toLowerCase()}
     </span>
   );
 }

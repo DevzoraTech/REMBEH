@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, X } from "lucide-react";
+import Link from "next/link";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import { formatClock } from "../../lib/date-groups";
 import { AgentPhoto } from "./agent-photo";
-import { ApplicationDetailDrawer } from "./application-detail-drawer";
 
 type AgentAccountability = {
   date: string;
@@ -49,6 +49,7 @@ type AgentDetail = {
 
 type ActivityApplication = {
   id: string;
+  customerId: string | null;
   clientName: string;
   phone: string | null;
   principalAmount: number;
@@ -60,6 +61,7 @@ type ActivityApplication = {
 type ActivityCollection = {
   id: string;
   loanId: string;
+  customerId: string;
   clientName: string;
   phone: string | null;
   amount: number;
@@ -96,13 +98,7 @@ export function AgentDetailDrawer({
   const [applications, setApplications] = useState<ActivityApplication[]>([]);
   const [collections, setCollections] = useState<ActivityCollection[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
-  const [floatAmount, setFloatAmount] = useState("");
-  const [floatNotes, setFloatNotes] = useState("");
-  const [savingFloat, setSavingFloat] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
-  const [selectedApplicationId, setSelectedApplicationId] = useState<
-    string | null
-  >(null);
 
   const authHeader = `${tokenType} ${accessToken}`;
 
@@ -124,13 +120,6 @@ export function AgentDetailDrawer({
         }
         const agent = payload.agent ?? null;
         setDetail(agent);
-        if (agent?.float) {
-          setFloatAmount(String(agent.float.amountGiven));
-          setFloatNotes(agent.float.notes ?? "");
-        } else {
-          setFloatAmount("");
-          setFloatNotes("");
-        }
       } catch (caught) {
         setDetail(null);
         setError(
@@ -183,58 +172,21 @@ export function AgentDetailDrawer({
   );
 
   useEffect(() => {
-    if (!agentId) {
-      setDetail(null);
-      setApplications([]);
-      setCollections([]);
-      return;
-    }
-    void loadDetail(agentId, date);
-    void loadActivity(agentId, date, range);
+    const boot = window.setTimeout(() => {
+      if (!agentId) {
+        setDetail(null);
+        setApplications([]);
+        setCollections([]);
+        return;
+      }
+      void loadDetail(agentId, date);
+      void loadActivity(agentId, date, range);
+    }, 0);
+
+    return () => window.clearTimeout(boot);
   }, [agentId, date, range, loadDetail, loadActivity]);
 
   if (!agentId) return null;
-
-  async function saveFloat() {
-    if (!agentId || savingFloat) return;
-    const amount = Number(floatAmount);
-    if (!Number.isFinite(amount) || amount < 0) {
-      setError("Enter a valid float amount.");
-      return;
-    }
-    setSavingFloat(true);
-    setError(null);
-    try {
-      const response = await fetch(`${apiBaseUrl}/agents/${agentId}/floats`, {
-        method: "POST",
-        headers: {
-          Authorization: authHeader,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          amountGiven: amount,
-          date,
-          notes: floatNotes.trim() || undefined,
-        }),
-      });
-      const payload = await readApiJson<{
-        message?: string | string[];
-      }>(response);
-      if (!response.ok) {
-        throw new Error(formatApiError(payload.message));
-      }
-      await loadDetail(agentId, date);
-      onChanged?.();
-    } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Could not record float.",
-      );
-    } finally {
-      setSavingFloat(false);
-    }
-  }
 
   async function setStatus(status: "ACTIVE" | "INACTIVE" | "SUSPENDED") {
     if (!agentId || statusBusy) return;
@@ -275,41 +227,40 @@ export function AgentDetailDrawer({
   const accountability = detail?.accountability;
 
   return (
-    <>
-      <div className="fixed inset-0 z-50 flex justify-end bg-black/35">
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/35">
         <button
           type="button"
           className="absolute inset-0"
           aria-label="Close agent panel"
           onClick={onClose}
         />
-        <aside className="relative z-10 flex h-full w-full max-w-xl flex-col border-l border-[var(--line)] bg-[var(--soft-ivory)] shadow-xl">
+        <aside className="relative z-10 flex h-full w-full max-w-2xl flex-col border-l border-[var(--line)] bg-[var(--soft-ivory)] shadow-xl">
           <div className="flex items-start justify-between gap-3 border-b border-[var(--line)] px-4 py-3">
             <div className="flex min-w-0 items-start gap-3">
               <AgentPhoto
                 src={detail?.photoUrl}
-                name={detail?.name ?? "Agent"}
+                name={detail?.name ?? "agent"}
                 publicId={detail?.publicId}
                 size="lg"
               />
               <div className="min-w-0">
                 <p className="truncate text-lg font-bold text-[var(--midnight-navy)]">
-                  {detail?.name ?? "Agent"}
+                  {detail?.name ?? "agent"}
                 </p>
                 <p className="text-xs text-slate-500">
-                  {[detail?.publicId, detail?.roleName, detail?.branchName]
+                  {[detail?.publicId, detail?.roleName]
                     .filter(Boolean)
-                    .join(" · ") || "Field agent"}
+                    .join(" · ") || "field agent"}
                 </p>
                 {detail ? (
                   <span
-                    className={`mt-1 inline-block text-[10px] font-bold uppercase tracking-[0.08em] ${statusTone(detail.status)}`}
+                    className={`mt-1 inline-block text-[10px] font-bold lowercase tracking-[0.08em] ${statusTone(detail.status)}`}
                   >
-                    {detail.status}
+                    {detail.status.toLowerCase()}
                   </span>
                 ) : null}
                 <p className="mt-1 text-xs text-slate-600">
-                  {detail?.phone || "No phone"}
+                  {detail?.phone || "no phone"}
                   <br />
                   {detail?.email}
                 </p>
@@ -337,22 +288,22 @@ export function AgentDetailDrawer({
               <p className="mb-3 text-sm text-red-600">{error}</p>
             ) : null}
 
-            <div className="mb-3 flex flex-wrap items-center gap-2">
-              <label className="text-xs font-semibold text-slate-500">
-                Day
+            <div className="panel mb-3 flex flex-wrap items-end justify-between gap-3 px-3 py-3">
+              <label className="grid gap-1 text-xs font-semibold text-slate-500">
+                <span>day</span>
                 <input
                   type="date"
                   value={date}
                   onChange={(event) => setDate(event.target.value)}
-                  className="ml-2 border border-[var(--line)] bg-white px-2 py-1.5 text-sm"
+                  className="h-9 border border-[var(--line)] bg-white px-2 text-sm"
                 />
               </label>
-              <div className="flex gap-1">
+              <div className="flex gap-1" aria-label="Activity range">
                 {(["today", "week", "all"] as const).map((value) => (
                   <button
                     key={value}
                     type="button"
-                    className={`h-8 px-2.5 text-xs font-semibold uppercase ${
+                    className={`h-8 px-2.5 text-xs font-semibold lowercase ${
                       range === value
                         ? "bg-[var(--midnight-navy)] text-white"
                         : "border border-[var(--line)] bg-white text-slate-600"
@@ -367,27 +318,24 @@ export function AgentDetailDrawer({
 
             {accountability ? (
               <div className="panel mb-3 space-y-2 px-3 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                  Float & accountability · {accountability.date}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  {accountability.formula}
+                <p className="text-[10px] font-semibold lowercase tracking-[0.08em] text-slate-500">
+                  float accountability · {accountability.date}
                 </p>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <MiniStat
-                    label="Given"
+                    label="given"
                     value={formatAmount(accountability.amountGiven)}
                   />
                   <MiniStat
-                    label="Disbursed"
+                    label="disbursed"
                     value={formatAmount(accountability.amountDisbursed)}
                   />
                   <MiniStat
-                    label="Collected"
+                    label="collected"
                     value={formatAmount(accountability.amountCollected)}
                   />
                   <MiniStat
-                    label="Expected cash"
+                    label="expected cash"
                     value={formatAmount(accountability.expectedCash)}
                     emphasize
                   />
@@ -397,78 +345,48 @@ export function AgentDetailDrawer({
 
             {canManage ? (
               <div className="panel mb-3 space-y-2 px-3 py-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                  Record today’s float
+                <p className="text-[10px] font-semibold lowercase tracking-[0.08em] text-slate-500">
+                  status controls
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={floatAmount}
-                    onChange={(event) => setFloatAmount(event.target.value)}
-                    placeholder="Amount given"
-                    className="min-w-[140px] flex-1 border border-[var(--line)] bg-white px-2 py-1.5 text-sm"
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-primary h-9 text-xs"
-                    disabled={savingFloat}
-                    onClick={() => void saveFloat()}
-                  >
-                    {savingFloat ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : null}
-                    Save float
-                  </button>
-                </div>
-                <input
-                  type="text"
-                  value={floatNotes}
-                  onChange={(event) => setFloatNotes(event.target.value)}
-                  placeholder="Notes (optional)"
-                  className="w-full border border-[var(--line)] bg-white px-2 py-1.5 text-sm"
-                />
                 {detail?.float ? (
                   <p className="text-[11px] text-slate-500">
-                    Last recorded by {detail.float.recordedByName} ·{" "}
+                    float recorded by {detail.float.recordedByName} ·{" "}
                     {formatClock(detail.float.recordedAt)}
                   </p>
                 ) : null}
-              </div>
-            ) : null}
-
-            {canManage && detail ? (
-              <div className="mb-3 flex flex-wrap gap-2">
-                {detail.status !== "ACTIVE" ? (
-                  <button
-                    type="button"
-                    className="btn btn-ghost h-8 text-xs"
-                    disabled={statusBusy}
-                    onClick={() => void setStatus("ACTIVE")}
-                  >
-                    Activate
-                  </button>
-                ) : null}
-                {detail.status !== "INACTIVE" ? (
-                  <button
-                    type="button"
-                    className="btn btn-ghost h-8 text-xs"
-                    disabled={statusBusy}
-                    onClick={() => void setStatus("INACTIVE")}
-                  >
-                    Inactivate
-                  </button>
-                ) : null}
-                {detail.status !== "SUSPENDED" ? (
-                  <button
-                    type="button"
-                    className="btn btn-ghost h-8 text-xs text-red-700"
-                    disabled={statusBusy}
-                    onClick={() => void setStatus("SUSPENDED")}
-                  >
-                    Suspend
-                  </button>
+                {detail ? (
+                  <div className="flex flex-wrap gap-2">
+                    {detail.status !== "ACTIVE" ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost h-8 text-xs"
+                        disabled={statusBusy}
+                        onClick={() => void setStatus("ACTIVE")}
+                      >
+                        activate
+                      </button>
+                    ) : null}
+                    {detail.status !== "INACTIVE" ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost h-8 text-xs"
+                        disabled={statusBusy}
+                        onClick={() => void setStatus("INACTIVE")}
+                      >
+                        inactivate
+                      </button>
+                    ) : null}
+                    {detail.status !== "SUSPENDED" ? (
+                      <button
+                        type="button"
+                        className="btn btn-ghost h-8 text-xs text-red-700"
+                        disabled={statusBusy}
+                        onClick={() => void setStatus("SUSPENDED")}
+                      >
+                        suspend
+                      </button>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
             ) : null}
@@ -477,12 +395,12 @@ export function AgentDetailDrawer({
               <TabButton
                 active={tab === "collections"}
                 onClick={() => setTab("collections")}
-                label={`Collections (${collections.length})`}
+                label={`collections (${collections.length})`}
               />
               <TabButton
                 active={tab === "applications"}
                 onClick={() => setTab("applications")}
-                label={`Loan applications (${applications.length})`}
+                label={`loan applications (${applications.length})`}
               />
             </div>
 
@@ -494,42 +412,48 @@ export function AgentDetailDrawer({
             ) : tab === "collections" ? (
               collections.length === 0 ? (
                 <p className="text-sm text-slate-500">
-                  No collections in this range.
+                  no collections in this range.
                 </p>
               ) : (
                 <ul className="divide-y divide-[var(--line)] border border-[var(--line)] bg-white">
                   {collections.map((row) => (
                     <li
                       key={row.id}
-                      className="flex items-center justify-between gap-2 px-2.5 py-2"
+                      className="hover:bg-[var(--soft-mist)]"
                     >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
-                          {row.clientName}
+                      <Link
+                        href={`/clients/${row.customerId}`}
+                        className="flex items-center justify-between gap-2 px-2.5 py-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
+                            {row.clientName}
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            {formatClock(row.paidAt)} ·{" "}
+                            {methodLabel(row.method)}
+                          </p>
+                        </div>
+                        <p className="shrink-0 text-sm font-bold tabular-nums text-[var(--forest-emerald)]">
+                          {formatAmount(row.amount)}
                         </p>
-                        <p className="text-[11px] text-slate-500">
-                          {formatClock(row.paidAt)} · {methodLabel(row.method)}
-                        </p>
-                      </div>
-                      <p className="shrink-0 text-sm font-bold tabular-nums text-[var(--forest-emerald)]">
-                        {formatAmount(row.amount)}
-                      </p>
+                      </Link>
                     </li>
                   ))}
                 </ul>
               )
             ) : applications.length === 0 ? (
               <p className="text-sm text-slate-500">
-                No loan applications in this range.
+                no loan applications in this range.
               </p>
             ) : (
               <ul className="divide-y divide-[var(--line)] border border-[var(--line)] bg-white">
                 {applications.map((app) => (
                   <li key={app.id}>
-                    <button
-                      type="button"
+                    {app.customerId ? (
+                    <Link
+                      href={`/clients/${app.customerId}`}
                       className="flex w-full items-center justify-between gap-2 px-2.5 py-2 text-left hover:bg-[var(--soft-mist)]"
-                      onClick={() => setSelectedApplicationId(app.id)}
                     >
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
@@ -542,7 +466,22 @@ export function AgentDetailDrawer({
                       <p className="shrink-0 text-sm font-bold tabular-nums">
                         {formatAmount(app.principalAmount)}
                       </p>
-                    </button>
+                    </Link>
+                    ) : (
+                      <div className="flex w-full items-center justify-between gap-2 px-2.5 py-2 text-left">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
+                            {app.clientName}
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            {formatClock(app.submittedAt)} · {app.status}
+                          </p>
+                        </div>
+                        <p className="shrink-0 text-sm font-bold tabular-nums">
+                          {formatAmount(app.principalAmount)}
+                        </p>
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -550,14 +489,6 @@ export function AgentDetailDrawer({
           </div>
         </aside>
       </div>
-
-      <ApplicationDetailDrawer
-        applicationId={selectedApplicationId}
-        accessToken={accessToken}
-        tokenType={tokenType}
-        onClose={() => setSelectedApplicationId(null)}
-      />
-    </>
   );
 }
 
@@ -574,13 +505,13 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`px-3 py-2 text-xs font-bold uppercase tracking-[0.06em] ${
+      className={`px-3 py-2 text-xs font-bold lowercase tracking-[0.06em] ${
         active
           ? "border-b-2 border-[var(--forest-emerald)] text-[var(--midnight-navy)]"
           : "text-slate-500"
       }`}
     >
-      {label}
+      {label.toLowerCase()}
     </button>
   );
 }
@@ -596,8 +527,8 @@ function MiniStat({
 }) {
   return (
     <div>
-      <p className="text-[10px] uppercase tracking-[0.06em] text-slate-500">
-        {label}
+      <p className="text-[10px] lowercase tracking-[0.06em] text-slate-500">
+        {label.toLowerCase()}
       </p>
       <p
         className={`text-sm font-bold tabular-nums ${
@@ -625,9 +556,9 @@ function formatAmount(value: number) {
 }
 
 function methodLabel(method: string) {
-  if (method === "MOBILE_MONEY") return "Mobile money";
-  if (method === "BANK_TRANSFER") return "Bank";
-  if (method === "CASH") return "Cash";
+  if (method === "MOBILE_MONEY") return "mobile money";
+  if (method === "BANK_TRANSFER") return "bank";
+  if (method === "CASH") return "cash";
   return method;
 }
 

@@ -4,10 +4,12 @@ import {
   Building2,
   CalendarDays,
   ChevronDown,
+  FileText,
   LayoutDashboard,
   LogOut,
   Menu,
   Settings,
+  ShieldAlert,
   Users,
   Wallet,
   UserRound,
@@ -76,6 +78,30 @@ export function AppShell({
           ),
       },
       {
+        href: "/loans",
+        label: "Loans",
+        icon: FileText,
+        enabled:
+          operatorRole !== "staff" &&
+          Boolean(session.permissions.includes("loan.read")),
+      },
+      {
+        href: "/clients",
+        label: "Borrowers",
+        icon: UserRound,
+        enabled:
+          operatorRole !== "staff" &&
+          Boolean(session.permissions.includes("customer.read")),
+      },
+      {
+        href: "/blacklist-watchlist",
+        label: "Blacklist & Watchlist",
+        icon: ShieldAlert,
+        enabled:
+          operatorRole !== "staff" &&
+          Boolean(session.permissions.includes("customer.read")),
+      },
+      {
         href: "/dashboard#payments",
         label: "Payments",
         icon: Wallet,
@@ -117,7 +143,6 @@ export function AppShell({
     router.replace("/login");
   }
 
-  // Agents / field staff: no console data surface.
   if (operatorRole === "staff") {
     return (
       <div className="min-h-screen bg-[var(--background)] text-[var(--slate-text)]">
@@ -136,7 +161,7 @@ export function AppShell({
             </div>
             <button type="button" onClick={handleLogout} className="btn btn-ghost h-9 text-xs">
               <LogOut className="size-3.5" />
-              Sign out
+              sign out
             </button>
           </div>
         </header>
@@ -165,7 +190,7 @@ export function AppShell({
                 <p className="font-[family-name:var(--font-display)] text-lg leading-none tracking-[-0.03em] text-white">
                   REMBEH
                 </p>
-                <p className="mt-1 text-[10px] uppercase tracking-[0.12em] text-white/45">
+                <p className="mt-1 text-[10px] lowercase tracking-[0.12em] text-white/45">
                   {operatorRole === "owner" ? "Owner" : "Manager"}
                 </p>
               </div>
@@ -259,13 +284,13 @@ export function AppShell({
                 <Menu className="size-4" />
               </button>
               <div className="min-w-0">
-                <p className="truncate text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--forest-emerald)]">
+                <p className="truncate text-[11px] font-semibold tracking-[0.12em] text-[var(--forest-emerald)]">
                   {workspace?.name ?? "REMBEH"}
                 </p>
                 <h1 className="truncate text-sm font-bold text-[var(--midnight-navy)]">
                   {operatorRole === "manager"
-                    ? branch?.name ?? "Branch console"
-                    : "Control center"}
+                    ? branch?.name ?? "branch"
+                    : "account"}
                 </h1>
               </div>
             </div>
@@ -281,7 +306,7 @@ export function AppShell({
                   <UserRound className="size-3.5" />
                 </span>
                 <span className="hidden max-w-[140px] truncate sm:inline">
-                  {user?.name ?? "Profile"}
+                  {user?.name ?? "profile"}
                 </span>
                 <ChevronDown className="size-3.5 text-slate-500" />
               </button>
@@ -299,10 +324,13 @@ export function AppShell({
                   <div className="space-y-1.5 px-3 py-2.5 text-xs">
                     <ProfileLine
                       label="Role"
-                      value={user?.roleName ?? (operatorRole === "owner" ? "Account Owner" : "Manager")}
+                      value={
+                        user?.roleName ??
+                        (operatorRole === "owner" ? "account owner" : "manager")
+                      }
                     />
                     <ProfileLine
-                      label="Workspace"
+                      label="Account"
                       value={workspace?.name ?? "—"}
                     />
                     {operatorRole === "manager" ? (
@@ -348,7 +376,7 @@ export function AppShell({
 function ProfileLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-3">
-      <span className="text-slate-500">{label}</span>
+      <span className="text-slate-500">{label.toLowerCase()}</span>
       <span className="max-w-[160px] truncate text-right font-semibold text-[var(--midnight-navy)]">
         {value}
       </span>

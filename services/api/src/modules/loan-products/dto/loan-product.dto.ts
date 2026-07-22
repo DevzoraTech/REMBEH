@@ -114,7 +114,9 @@ export class UpsertPaymentStartPolicyDto {
   @IsEnum(PaymentStartPolicyType)
   policyType!: PaymentStartPolicyType;
 
-  @ValidateIf((dto: UpsertPaymentStartPolicyDto) => dto.policyType === 'AFTER_N_DAYS')
+  @ValidateIf(
+    (dto: UpsertPaymentStartPolicyDto) => dto.policyType === 'AFTER_N_DAYS',
+  )
   @IsInt()
   @Min(1)
   @Max(365)

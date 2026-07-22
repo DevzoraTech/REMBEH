@@ -16,10 +16,8 @@ import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RequirePermissions } from '../../common/auth/permissions.decorator';
 import { PermissionsGuard } from '../../common/auth/permissions.guard';
 import { MediaConfirmDto, MediaPresignDto } from './dto/media-presign.dto';
-import {
-  SignatureConfirmDto,
-  SignaturePresignDto,
-} from './dto/signature.dto';
+import { CreateLoanApplicationFromCustomerDto } from './dto/create-from-customer.dto';
+import { SignatureConfirmDto, SignaturePresignDto } from './dto/signature.dto';
 import { UpdateLoanApplicationDto } from './dto/update-loan-application.dto';
 import { VerifyApplicantDto } from './dto/verify-applicant.dto';
 import { LOAN_APPLICATION_PERMISSIONS } from './loan-applications.permissions';
@@ -42,6 +40,15 @@ export class LoanApplicationsController {
   @RequirePermissions(LOAN_APPLICATION_PERMISSIONS.create)
   create(@CurrentUser() user: AuthenticatedUser) {
     return this.loanApplicationsService.createDraft(user);
+  }
+
+  @Post('from-customer')
+  @RequirePermissions(LOAN_APPLICATION_PERMISSIONS.create)
+  createFromCustomer(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateLoanApplicationFromCustomerDto,
+  ) {
+    return this.loanApplicationsService.createDraftFromCustomer(user, dto);
   }
 
   /**

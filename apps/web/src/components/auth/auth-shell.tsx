@@ -6,7 +6,7 @@ import rembehIcon from "../../assets/rembeh-icon.png";
 type AuthShellProps = {
   eyebrow: string;
   title: string;
-  description: string;
+  description?: string;
   children: ReactNode;
   footer?: ReactNode;
 };
@@ -37,22 +37,24 @@ export function AuthShell({
                 <p className="font-[family-name:var(--font-display)] text-3xl leading-none tracking-[-0.03em]">
                   REMBEH
                 </p>
-                <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.16em] text-white/55">
-                  Lending operations platform
+                <p className="mt-1 text-[11px] font-medium lowercase tracking-[0.16em] text-white/55">
+                  lending operations platform
                 </p>
               </div>
             </Link>
 
             <div className="mt-auto max-w-lg pb-2 pt-14 lg:pt-20">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--warm-gold)]">
-                {eyebrow}
+              <p className="text-[11px] font-semibold lowercase tracking-[0.18em] text-[var(--warm-gold)]">
+                {eyebrow.toLowerCase()}
               </p>
               <h1 className="mt-3 font-[family-name:var(--font-display)] text-4xl leading-[1.08] tracking-[-0.03em] sm:text-[2.75rem]">
                 {title}
               </h1>
-              <p className="mt-4 max-w-md text-sm leading-7 text-white/68">
-                {description}
-              </p>
+              {description ? (
+                <p className="mt-4 max-w-md text-sm leading-7 text-white/68">
+                  {description}
+                </p>
+              ) : null}
             </div>
           </div>
         </aside>

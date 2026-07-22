@@ -82,15 +82,15 @@ export class SmsService {
   private hasTwilioKeys() {
     return Boolean(
       this.configService.get<string>('TWILIO_ACCOUNT_SID')?.trim() &&
-        this.configService.get<string>('TWILIO_AUTH_TOKEN')?.trim() &&
-        this.configService.get<string>('TWILIO_FROM_NUMBER')?.trim(),
+      this.configService.get<string>('TWILIO_AUTH_TOKEN')?.trim() &&
+      this.configService.get<string>('TWILIO_FROM_NUMBER')?.trim(),
     );
   }
 
   private hasAfricasTalkingKeys() {
     return Boolean(
       this.configService.get<string>('AFRICASTALKING_USERNAME')?.trim() &&
-        this.configService.get<string>('AFRICASTALKING_API_KEY')?.trim(),
+      this.configService.get<string>('AFRICASTALKING_API_KEY')?.trim(),
     );
   }
 
@@ -162,7 +162,8 @@ export class SmsService {
       .get<string>('AFRICASTALKING_API_KEY')!
       .trim();
     const from =
-      this.configService.get<string>('AFRICASTALKING_FROM')?.trim() || undefined;
+      this.configService.get<string>('AFRICASTALKING_FROM')?.trim() ||
+      undefined;
 
     const params = new URLSearchParams({
       username,
@@ -172,15 +173,18 @@ export class SmsService {
     if (from) params.set('from', from);
 
     try {
-      const response = await fetch('https://api.africastalking.com/version1/messaging', {
-        method: 'POST',
-        headers: {
-          apiKey,
-          Accept: 'application/json',
-          'Content-Type': 'application/x-www-form-urlencoded',
+      const response = await fetch(
+        'https://api.africastalking.com/version1/messaging',
+        {
+          method: 'POST',
+          headers: {
+            apiKey,
+            Accept: 'application/json',
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: params.toString(),
         },
-        body: params.toString(),
-      });
+      );
       if (!response.ok) {
         const text = await response.text();
         this.logger.warn(

@@ -37,12 +37,7 @@ import {
 } from "../../lib/auth-session";
 import { resolveOperatorRole } from "../../lib/roles";
 
-type SettingsSection =
-  | "loan-products"
-  | "workspace"
-  | "notifications"
-  | "security"
-  | "integrations";
+type SettingsSection = "loan-products" | "workspace";
 
 type LoanTemplate = {
   id: string;
@@ -105,39 +100,24 @@ type WizardStepId =
   | "review";
 
 const WIZARD_STEPS: { id: WizardStepId; label: string }[] = [
-  { id: "basics", label: "Basics" },
-  { id: "interest", label: "Interest & fees" },
-  { id: "term", label: "Term" },
-  { id: "payment-start", label: "Payment start" },
-  { id: "fines", label: "Fines" },
-  { id: "review", label: "Review" },
+  { id: "basics", label: "basics" },
+  { id: "interest", label: "interest & fees" },
+  { id: "term", label: "term" },
+  { id: "payment-start", label: "payment start" },
+  { id: "fines", label: "fines" },
+  { id: "review", label: "review" },
 ];
 
 const SECTIONS: { id: SettingsSection; label: string; hint: string }[] = [
   {
     id: "loan-products",
-    label: "Loan products",
-    hint: "Templates own interest, term, fees, penalty, and payment start",
+    label: "Loan types",
+    hint: "Set the loan options agents choose from.",
   },
   {
     id: "workspace",
-    label: "Workspace",
-    hint: "Company profile and contact details for this tenant",
-  },
-  {
-    id: "notifications",
-    label: "Notifications",
-    hint: "SMS and alert preferences for staff and borrowers",
-  },
-  {
-    id: "security",
-    label: "Security",
-    hint: "Session lifetime and access controls",
-  },
-  {
-    id: "integrations",
-    label: "Integrations",
-    hint: "Branding and third-party connections",
+    label: "Account",
+    hint: "View your account details.",
   },
 ];
 
@@ -188,7 +168,6 @@ function formFromTemplate(template: LoanTemplate): TemplateForm {
 }
 
 function parseSection(value: string | null): SettingsSection {
-  // Legacy product tabs redirect to loan-products (config lives on templates).
   if (
     value === "payment-start" ||
     value === "fines" ||
@@ -198,14 +177,7 @@ function parseSection(value: string | null): SettingsSection {
   ) {
     return "loan-products";
   }
-  if (
-    value === "workspace" ||
-    value === "notifications" ||
-    value === "security" ||
-    value === "integrations"
-  ) {
-    return value;
-  }
+  if (value === "workspace") return value;
   return "loan-products";
 }
 
@@ -262,16 +234,6 @@ function interestTypeLabel(value: LoanTemplate["interestType"]) {
   }
 }
 
-function formatExpiry(iso: string | undefined) {
-  if (!iso) return "—";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-}
-
 function SectionHeader({
   title,
   description,
@@ -285,7 +247,7 @@ function SectionHeader({
     <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--line)] pb-3">
       <div className="min-w-0">
         <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
-          {title}
+          {title.toLowerCase()}
         </h2>
         <p className="mt-0.5 text-xs text-slate-500">{description}</p>
       </div>
@@ -297,19 +259,11 @@ function SectionHeader({
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="grid gap-0.5 border-b border-[var(--line)] py-2.5 last:border-0 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-3">
-      <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">
-        {label}
+      <dt className="text-[11px] font-semibold lowercase tracking-[0.06em] text-slate-500">
+        {label.toLowerCase()}
       </dt>
       <dd className="text-sm text-[var(--midnight-navy)]">{value || "—"}</dd>
     </div>
-  );
-}
-
-function ComingSoonNote({ children }: { children: ReactNode }) {
-  return (
-    <p className="rounded-sm border border-dashed border-[var(--line)] bg-[var(--soft-mist)]/50 px-3 py-2 text-[11px] leading-snug text-slate-600">
-      {children}
-    </p>
   );
 }
 
@@ -326,7 +280,7 @@ function WizardStepIndicator({
         return (
           <li
             key={step.id}
-            className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.06em] ${
+            className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-semibold lowercase tracking-[0.06em] ${
               active
                 ? "bg-[var(--midnight-navy)] text-white"
                 : done
@@ -347,7 +301,7 @@ function WizardStepIndicator({
 function ReviewLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3 border-b border-[var(--line)] py-1.5 text-xs last:border-0">
-      <span className="text-slate-500">{label}</span>
+      <span className="text-slate-500">{label.toLowerCase()}</span>
       <span className="text-right font-semibold text-[var(--midnight-navy)]">
         {value}
       </span>
@@ -405,44 +359,48 @@ function SettingsPageContent() {
   );
 
   useEffect(() => {
-    const auth = readAuthState();
-    if (!auth.session || isSessionExpired(auth.session)) {
-      clearAuthState();
-      router.replace("/login");
-      return;
-    }
-
-    const role = resolveOperatorRole(auth.session, auth.user);
-    if (role === "staff") {
-      router.replace("/dashboard");
-      return;
-    }
-
-    setSession(auth.session);
-    setWorkspace(auth.workspace);
-    setUser(auth.user);
-    setBranch(auth.branch);
-
-    if (!auth.session.permissions.includes("loan.product.manage")) {
-      setError("You can view workspace settings, but not manage loan products.");
-      setLoading(false);
-      return;
-    }
-
-    void (async () => {
-      try {
-        await refreshCatalog(auth.session!);
-        setError(null);
-      } catch (caught) {
-        setError(
-          caught instanceof Error
-            ? caught.message
-            : "Could not load settings.",
-        );
-      } finally {
-        setLoading(false);
+    const boot = window.setTimeout(() => {
+      const auth = readAuthState();
+      if (!auth.session || isSessionExpired(auth.session)) {
+        clearAuthState();
+        router.replace("/login");
+        return;
       }
-    })();
+
+      const role = resolveOperatorRole(auth.session, auth.user);
+      if (role === "staff") {
+        router.replace("/dashboard");
+        return;
+      }
+
+      setSession(auth.session);
+      setWorkspace(auth.workspace);
+      setUser(auth.user);
+      setBranch(auth.branch);
+
+      if (!auth.session.permissions.includes("loan.product.manage")) {
+        setError("You can view settings, but cannot manage loan types.");
+        setLoading(false);
+        return;
+      }
+
+      void (async () => {
+        try {
+          await refreshCatalog(auth.session!);
+          setError(null);
+        } catch (caught) {
+          setError(
+            caught instanceof Error
+              ? caught.message
+              : "Could not load settings.",
+          );
+        } finally {
+          setLoading(false);
+        }
+      })();
+    }, 0);
+
+    return () => window.clearTimeout(boot);
   }, [router]);
 
   async function refreshCatalog(activeSession: RembehSession) {
@@ -557,7 +515,7 @@ function SettingsPageContent() {
           (!form.paymentStartDelayDays ||
             Number(form.paymentStartDelayDays) < 1)
         ) {
-          return "Enter days after go-live (at least 1).";
+          return "Enter the number of days before payment starts.";
         }
         return null;
       case "fines":
@@ -633,7 +591,7 @@ function SettingsPageContent() {
       setWizardError(
         caught instanceof Error
           ? caught.message
-          : "Could not save loan type template.",
+          : "Could not save loan type.",
       );
     } finally {
       setSaving(false);
@@ -665,7 +623,7 @@ function SettingsPageContent() {
       setError(
         caught instanceof Error
           ? caught.message
-          : "Could not duplicate template.",
+          : "Could not duplicate loan type.",
       );
     } finally {
       setSaving(false);
@@ -674,7 +632,7 @@ function SettingsPageContent() {
 
   async function deleteTemplate(id: string) {
     if (!session) return;
-    if (!window.confirm("Deactivate this loan type template?")) return;
+    if (!window.confirm("Deactivate this loan type?")) return;
     setSaving(true);
     setError(null);
     try {
@@ -698,7 +656,7 @@ function SettingsPageContent() {
       setError(
         caught instanceof Error
           ? caught.message
-          : "Could not delete template.",
+          : "Could not deactivate loan type.",
       );
     } finally {
       setSaving(false);
@@ -742,10 +700,10 @@ function SettingsPageContent() {
       <div className="mx-auto max-w-6xl">
         <header className="mb-4">
           <h1 className="font-[family-name:var(--font-display)] text-xl tracking-[-0.03em] text-[var(--midnight-navy)]">
-            Settings
+            settings
           </h1>
           <p className="mt-0.5 text-xs text-slate-500">
-            Loan products and workspace system settings.
+            loan types and account settings.
           </p>
         </header>
 
@@ -785,7 +743,7 @@ function SettingsPageContent() {
             {!loading && section === "loan-products" ? (
               <div className="space-y-3">
                 <SectionHeader
-                  title="Loan products"
+                  title="Loan types"
                   description={activeSection.hint}
                   action={
                     canManageProducts ? (
@@ -796,7 +754,7 @@ function SettingsPageContent() {
                         disabled={saving}
                       >
                         <Plus className="size-3.5" />
-                        New template
+                        New loan type
                       </button>
                     ) : null
                   }
@@ -804,27 +762,26 @@ function SettingsPageContent() {
 
                 {!canManageProducts ? (
                   <p className="py-6 text-center text-sm text-slate-500">
-                    You do not have permission to manage loan products.
+                    You do not have permission to manage loan types.
                   </p>
                 ) : sortedTemplates.length === 0 ? (
                   <p className="py-8 text-center text-sm text-slate-500">
-                    No loan type templates yet. Create one so agents can start
-                    loans from a product.
+                    No loan types yet. Create one so agents can choose it when giving loans.
                   </p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full min-w-[720px] border-collapse text-left text-xs">
                       <thead>
-                        <tr className="border-b border-[var(--line)] text-[10px] uppercase tracking-[0.08em] text-slate-500">
-                          <th className="py-2 pr-3 font-semibold">Name</th>
-                          <th className="py-2 pr-3 font-semibold">Rate</th>
-                          <th className="py-2 pr-3 font-semibold">Term</th>
+                        <tr className="border-b border-[var(--line)] text-[10px] lowercase tracking-[0.08em] text-slate-500">
+                          <th className="py-2 pr-3 font-semibold">name</th>
+                          <th className="py-2 pr-3 font-semibold">rate</th>
+                          <th className="py-2 pr-3 font-semibold">term</th>
                           <th className="py-2 pr-3 font-semibold">
-                            Frequency
+                            frequency
                           </th>
-                          <th className="py-2 pr-3 font-semibold">Status</th>
+                          <th className="py-2 pr-3 font-semibold">status</th>
                           <th className="py-2 font-semibold text-right">
-                            Actions
+                            actions
                           </th>
                         </tr>
                       </thead>
@@ -863,13 +820,13 @@ function SettingsPageContent() {
                             </td>
                             <td className="py-2.5 pr-3 align-middle">
                               <span
-                                className={`inline-block px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] ${
+                                className={`inline-block px-1.5 py-0.5 text-[10px] font-bold lowercase tracking-[0.06em] ${
                                   template.isActive
                                     ? "bg-[rgba(15,138,108,0.12)] text-[var(--forest-emerald)]"
                                     : "bg-slate-100 text-slate-500"
                                 }`}
                               >
-                                {template.isActive ? "Active" : "Inactive"}
+                                {template.isActive ? "active" : "inactive"}
                               </span>
                             </td>
                             <td className="py-2.5 align-middle">
@@ -920,174 +877,38 @@ function SettingsPageContent() {
             {!loading && section === "workspace" ? (
               <div className="space-y-3">
                 <SectionHeader
-                  title="Workspace"
+                  title="account"
                   description={activeSection.hint}
                 />
                 <dl>
                   <InfoRow
-                    label="Company"
+                    label="company"
                     value={workspace?.name ?? "—"}
                   />
                   <InfoRow
-                    label="Country"
+                    label="country"
                     value={workspace?.country ?? "—"}
                   />
                   <InfoRow
-                    label="Currency"
+                    label="currency"
                     value={workspace?.currency ?? "—"}
                   />
                   <InfoRow
-                    label="Status"
+                    label="status"
                     value={workspace?.status ?? "—"}
                   />
-                  <InfoRow label="Signed-in as" value={user?.name ?? "—"} />
-                  <InfoRow label="Email" value={user?.email ?? "—"} />
-                  <InfoRow label="Phone" value={user?.phone ?? "—"} />
+                  <InfoRow label="signed-in as" value={user?.name ?? "—"} />
+                  <InfoRow label="email" value={user?.email ?? "—"} />
+                  <InfoRow label="phone" value={user?.phone ?? "—"} />
                   <InfoRow
-                    label="Active branch"
+                    label="active branch"
                     value={
                       branch?.name
                         ? `${branch.name}${branch.address ? ` · ${branch.address}` : ""}`
-                        : "Tenant-wide"
+                        : "account-wide"
                     }
                   />
                 </dl>
-                <ComingSoonNote>
-                  Editing company legal name, registration number, and logo
-                  will land here once the workspace profile API is exposed.
-                </ComingSoonNote>
-              </div>
-            ) : null}
-
-            {!loading && section === "notifications" ? (
-              <div className="space-y-3">
-                <SectionHeader
-                  title="Notifications"
-                  description={activeSection.hint}
-                />
-                <div className="space-y-2 text-sm text-[var(--midnight-navy)]">
-                  <label className="flex items-start gap-2">
-                    <input type="checkbox" className="mt-1" checked disabled />
-                    <span>
-                      <span className="font-semibold">OTP / login SMS</span>
-                      <span className="mt-0.5 block text-xs text-slate-500">
-                        Delivered via the server SMS provider configured in
-                        environment (active).
-                      </span>
-                    </span>
-                  </label>
-                  <label className="flex items-start gap-2 opacity-70">
-                    <input type="checkbox" className="mt-1" disabled />
-                    <span>
-                      <span className="font-semibold">
-                        Repayment reminder SMS
-                      </span>
-                      <span className="mt-0.5 block text-xs text-slate-500">
-                        Coming soon — no manager toggle API yet.
-                      </span>
-                    </span>
-                  </label>
-                  <label className="flex items-start gap-2 opacity-70">
-                    <input type="checkbox" className="mt-1" disabled />
-                    <span>
-                      <span className="font-semibold">
-                        Overdue fine alerts
-                      </span>
-                      <span className="mt-0.5 block text-xs text-slate-500">
-                        Coming soon — fines already run from loan templates.
-                      </span>
-                    </span>
-                  </label>
-                </div>
-              </div>
-            ) : null}
-
-            {!loading && section === "security" ? (
-              <div className="space-y-3">
-                <SectionHeader
-                  title="Security"
-                  description={activeSection.hint}
-                />
-                <dl>
-                  <InfoRow
-                    label="Access token expires"
-                    value={formatExpiry(session.expiresAt)}
-                  />
-                  <InfoRow
-                    label="Refresh available until"
-                    value={formatExpiry(session.refreshExpiresAt)}
-                  />
-                  <InfoRow
-                    label="Role"
-                    value={user?.roleName ?? resolveOperatorRole(session, user)}
-                  />
-                  <InfoRow
-                    label="Permissions"
-                    value={`${session.permissions.length} granted`}
-                  />
-                </dl>
-                <ComingSoonNote>
-                  Configurable idle timeout and forced re-auth will be added
-                  when session policy is managed per tenant. Today, expiry
-                  follows the API JWT lifetimes above.
-                </ComingSoonNote>
-              </div>
-            ) : null}
-
-            {!loading && section === "integrations" ? (
-              <div className="space-y-3">
-                <SectionHeader
-                  title="Integrations"
-                  description={activeSection.hint}
-                />
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <div className="border border-[var(--line)] p-3">
-                    <p className="text-xs font-bold text-[var(--midnight-navy)]">
-                      KYC (Smile ID)
-                    </p>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Applicant verification is wired in the API. Branding and
-                      webhook keys stay server-side.
-                    </p>
-                    <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--forest-emerald)]">
-                      Connected via env
-                    </p>
-                  </div>
-                  <div className="border border-[var(--line)] p-3">
-                    <p className="text-xs font-bold text-[var(--midnight-navy)]">
-                      Object storage
-                    </p>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Media, agreements, and APK releases use the tenant S3
-                      bucket / IAM role on EC2.
-                    </p>
-                    <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-[var(--forest-emerald)]">
-                      Active
-                    </p>
-                  </div>
-                  <div className="border border-[var(--line)] p-3 opacity-80">
-                    <p className="text-xs font-bold text-[var(--midnight-navy)]">
-                      Branding kit
-                    </p>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Custom logo and accent colors for web + PDF agreements.
-                    </p>
-                    <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-500">
-                      Coming soon
-                    </p>
-                  </div>
-                  <div className="border border-[var(--line)] p-3 opacity-80">
-                    <p className="text-xs font-bold text-[var(--midnight-navy)]">
-                      Accounting export
-                    </p>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Push collections and disbursements to external ledgers.
-                    </p>
-                    <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-500">
-                      Coming soon
-                    </p>
-                  </div>
-                </div>
               </div>
             ) : null}
           </section>
@@ -1096,7 +917,7 @@ function SettingsPageContent() {
 
       <SettingsModal
         open={modalOpen}
-        title={editingId ? "Edit loan product" : "New loan product"}
+        title={editingId ? "Edit loan type" : "New loan type"}
         subtitle={`${currentWizard?.label ?? "Basics"} · step ${wizardStep + 1} of ${WIZARD_STEPS.length}`}
         onClose={closeModal}
         footer={
@@ -1138,7 +959,7 @@ function SettingsPageContent() {
                 {saving ? (
                   <Loader2 className="size-3.5 animate-spin" />
                 ) : null}
-                {editingId ? "Save changes" : "Create template"}
+                {editingId ? "Save changes" : "Create loan type"}
               </button>
             )}
           </>
@@ -1157,7 +978,7 @@ function SettingsPageContent() {
           {currentWizard?.id === "basics" ? (
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               <TextField
-                label="Template / Loan type name"
+                label="loan type name"
                 value={form.name}
                 onChange={(value) => updateForm("name", value)}
                 placeholder="e.g. 30-day working capital"
@@ -1167,7 +988,7 @@ function SettingsPageContent() {
               <div className="hidden sm:block" />
               <label className="block sm:col-span-2">
                 <span className="mb-1 block text-xs font-semibold text-[var(--midnight-navy)]">
-                  Description
+                  description
                 </span>
                 <textarea
                   className="min-h-12 w-full border border-[var(--line)] bg-white px-2.5 py-1.5 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] focus:shadow-[inset_0_0_0_1px_var(--forest-emerald)]"
@@ -1175,32 +996,32 @@ function SettingsPageContent() {
                   onChange={(event) =>
                     updateForm("description", event.target.value)
                   }
-                  placeholder="Optional product description for agents"
+                  placeholder="short description for agents"
                 />
               </label>
               <TextField
-                label="Min Loan Amount"
+                label="min loan amount"
                 value={form.minLoanAmount}
                 onChange={(value) => updateForm("minLoanAmount", value)}
-                placeholder="Optional"
+                placeholder="optional"
                 compact
               />
               <TextField
-                label="Max Loan Amount"
+                label="max loan amount"
                 value={form.maxLoanAmount}
                 onChange={(value) => updateForm("maxLoanAmount", value)}
-                placeholder="Optional"
+                placeholder="optional"
                 compact
               />
               <label className="block sm:col-span-2">
                 <span className="mb-1 block text-xs font-semibold text-[var(--midnight-navy)]">
-                  Notes (internal)
+                  notes
                 </span>
                 <textarea
                   className="min-h-11 w-full border border-[var(--line)] bg-white px-2.5 py-1.5 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] focus:shadow-[inset_0_0_0_1px_var(--forest-emerald)]"
                   value={form.notes}
                   onChange={(event) => updateForm("notes", event.target.value)}
-                  placeholder="Internal notes — not shown to borrowers"
+                  placeholder="notes for your team"
                 />
               </label>
             </div>
@@ -1302,16 +1123,16 @@ function SettingsPageContent() {
                   )
                 }
                 options={[
-                  { value: "SAME_DAY", label: "Same day as go-live" },
-                  { value: "NEXT_DAY", label: "Next day after go-live" },
-                  { value: "AFTER_N_DAYS", label: "After N days" },
+                  { value: "SAME_DAY", label: "Same day" },
+                  { value: "NEXT_DAY", label: "Next day" },
+                  { value: "AFTER_N_DAYS", label: "After some days" },
                 ]}
                 required
                 compact
               />
               {form.paymentStartPolicy === "AFTER_N_DAYS" ? (
                 <TextField
-                  label="Days after go-live"
+                  label="days before payment starts"
                   value={form.paymentStartDelayDays}
                   onChange={(value) =>
                     updateForm("paymentStartDelayDays", value)
@@ -1333,8 +1154,7 @@ function SettingsPageContent() {
                   }
                 />
                 <span className="text-xs text-slate-600">
-                  Allow agents to pick a later payment start date (on or after
-                  the policy date)
+                  Allow agents to pick a later payment start date
                 </span>
               </label>
             </div>

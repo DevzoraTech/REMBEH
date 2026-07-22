@@ -160,10 +160,7 @@ export class LoanProductsRepository {
     });
   }
 
-  findPaymentStartPolicy(input: {
-    tenantId: string;
-    branchId: string | null;
-  }) {
+  findPaymentStartPolicy(input: { tenantId: string; branchId: string | null }) {
     return this.prisma.loanPaymentStartPolicy.findFirst({
       where: {
         tenantId: input.tenantId,

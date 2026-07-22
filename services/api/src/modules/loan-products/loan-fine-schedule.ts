@@ -51,11 +51,7 @@ export function computeDueFinePeriods(
   input: FineScheduleInput,
 ): FinePeriodDue[] {
   const finePeriodDays = Math.floor(input.finePeriodDays);
-  if (
-    input.balance <= 0 ||
-    finePeriodDays < 1 ||
-    input.durationDays < 0
-  ) {
+  if (input.balance <= 0 || finePeriodDays < 1 || input.durationDays < 0) {
     return [];
   }
 

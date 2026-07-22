@@ -526,8 +526,7 @@ export class AuthService {
 
     assertUserCanAuthenticate(user);
 
-    const publicId =
-      user.publicId ?? (await this.ensureUserPublicId(user.id));
+    const publicId = user.publicId ?? (await this.ensureUserPublicId(user.id));
     const roleName = user.roles[0]?.role.name ?? null;
     const profilePhotoStorageKey = user.profilePhotoStorageKey ?? null;
     const profilePhotoUrl = profilePhotoStorageKey

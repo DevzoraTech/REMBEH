@@ -102,6 +102,8 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
   Cashier: [
     'branch.read',
     'customer.read',
+    'loan.create',
+    'loan.read',
     'cashdrawer.open',
     'cashdrawer.close',
     'cashdrawer.reconcile',

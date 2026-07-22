@@ -43,7 +43,7 @@ export function FieldLabel({
       <span
         className={`font-semibold text-[var(--midnight-navy)] ${compact ? "text-xs" : "text-sm"}`}
       >
-        {label}
+        {label.toLowerCase()}
       </span>
       {hint ? <span className="text-xs text-slate-500">{hint}</span> : null}
     </div>
@@ -205,7 +205,7 @@ export function PhoneField({
           value={countryCode}
           onChange={(event) => onCountryCodeChange(event.target.value)}
           className="h-11 border-r border-[var(--line)] bg-[var(--soft-mist)] px-2 text-sm font-semibold outline-none"
-          aria-label={`${label} country code`}
+        aria-label={`${label.toLowerCase()} country code`}
         >
           {PHONE_COUNTRIES.map((country) => (
             <option key={country.code} value={country.dialCode}>

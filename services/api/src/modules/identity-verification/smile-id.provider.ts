@@ -72,7 +72,9 @@ export class SmileIdProvider implements IdentityVerificationProvider {
       return {
         valid: false,
         provider: 'smile_id',
-        jobId: String(raw.smile_job_id ?? raw.JobID ?? body.partner_params.job_id),
+        jobId: String(
+          raw.smile_job_id ?? raw.JobID ?? body.partner_params.job_id,
+        ),
         verificationCode: '',
         errorCode: 'SMILE_HTTP_ERROR',
         errorMessage:
@@ -95,7 +97,9 @@ export class SmileIdProvider implements IdentityVerificationProvider {
     return {
       valid,
       provider: 'smile_id',
-      jobId: String(raw.smile_job_id ?? raw.JobID ?? body.partner_params.job_id),
+      jobId: String(
+        raw.smile_job_id ?? raw.JobID ?? body.partner_params.job_id,
+      ),
       verificationCode: String(
         raw.Signature ?? (resultCode || 'VERIFIED'),
       ).slice(0, 12),

@@ -73,7 +73,9 @@ export class CollectionsService {
       loans.map((loan) => this.toDueClient(loan, now)),
     );
     const clientsDueToday = dueCandidates
-      .filter((item): item is DueClientContract => item != null && item.amountDue > 0)
+      .filter(
+        (item): item is DueClientContract => item != null && item.amountDue > 0,
+      )
       .sort(
         (a, b) =>
           new Date(b.lastActivityAt).getTime() -
@@ -112,7 +114,7 @@ export class CollectionsService {
 
     const repayments = await Promise.all(
       rows.map(async (row) => {
-        const loan = row.loan as LoanWithCollections;
+        const loan = row.loan;
         const detail = await this.buildDetail(loan);
         const agentPhotoStorageKey =
           row.recordedBy.profilePhotoStorageKey ?? null;
@@ -173,7 +175,9 @@ export class CollectionsService {
       query: q,
     });
     // Preserve repository phone-first ranking (do not re-sort by payment date).
-    const clients = await Promise.all(loans.map((loan) => this.buildDetail(loan)));
+    const clients = await Promise.all(
+      loans.map((loan) => this.buildDetail(loan)),
+    );
     return { clients };
   }
 
@@ -205,10 +209,9 @@ export class CollectionsService {
       throw new NotFoundException('Payment not found.');
     }
 
-    const loan = row.loan as LoanWithCollections;
+    const loan = row.loan;
     const detail = await this.buildDetail(loan);
-    const agentPhotoStorageKey =
-      row.recordedBy.profilePhotoStorageKey ?? null;
+    const agentPhotoStorageKey = row.recordedBy.profilePhotoStorageKey ?? null;
 
     return {
       repayment: {
@@ -475,7 +478,9 @@ export class CollectionsService {
         agent: summary,
         applications: applications.map((app) => ({
           id: app.id,
+          customerId: app.customerId ?? app.customer?.id ?? null,
           clientName:
+            app.customer?.fullName ||
             [app.surname, app.givenNames].filter(Boolean).join(' ') ||
             'Client',
           phone: app.phone,
@@ -487,6 +492,7 @@ export class CollectionsService {
         payments: repayments.map((row) => ({
           id: row.id,
           loanId: row.loanId,
+          customerId: row.loan.customer.id,
           clientName: row.loan.customer.fullName,
           phone: row.loan.customer.phone,
           amount: this.decimalToNumber(row.amount) ?? 0,
@@ -552,7 +558,10 @@ export class CollectionsService {
         pricing.processingFee + finesTotal - totals.fees,
       ),
       remainingInterest: Math.max(0, pricing.interestAmount - totals.interest),
-      remainingPrincipal: Math.max(0, pricing.principalAmount - totals.principal),
+      remainingPrincipal: Math.max(
+        0,
+        pricing.principalAmount - totals.principal,
+      ),
     });
 
     const nextBalance = this.roundMoney(Math.max(0, balance - amount));
@@ -668,10 +677,13 @@ export class CollectionsService {
       publicId = await this.assignPublicId(agent.id);
     }
 
-    const amountLabel = `${input.currency} ${input.amount.toLocaleString('en-UG', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    })}`;
+    const amountLabel = `${input.currency} ${input.amount.toLocaleString(
+      'en-UG',
+      {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      },
+    )}`;
 
     await this.smsService.sendPaymentRecordedSms({
       destination: input.phone,
@@ -710,9 +722,7 @@ export class CollectionsService {
     }
     // Only workspace owners (branch.create) may query across branches.
     // Branch managers and agents stay on their assigned branch.
-    const canAllBranches = user.permissions.includes(
-      BRANCH_PERMISSIONS.create,
-    );
+    const canAllBranches = user.permissions.includes(BRANCH_PERMISSIONS.create);
     return {
       tenantId: user.tenantId,
       branchId: canAllBranches ? null : user.branchId,
@@ -723,9 +733,7 @@ export class CollectionsService {
     if (!user.tenantId?.trim()) {
       throw new ForbiddenException('Tenant scope is required.');
     }
-    const canAllBranches = user.permissions.includes(
-      BRANCH_PERMISSIONS.create,
-    );
+    const canAllBranches = user.permissions.includes(BRANCH_PERMISSIONS.create);
     if (!canAllBranches && !user.branchId) {
       throw new ForbiddenException('Branch scope is required.');
     }
@@ -748,7 +756,8 @@ export class CollectionsService {
       );
     }
     const repayments = (loan.repayments ?? []).filter(
-      (row) => row.paidAt instanceof Date && !Number.isNaN(row.paidAt.getTime()),
+      (row) =>
+        row.paidAt instanceof Date && !Number.isNaN(row.paidAt.getTime()),
     );
     // Paid is strictly the sum of recorded repayments — never fees/interest
     // inferred from totalRepayable − balance (that caused spurious "paid" on new loans).
@@ -823,9 +832,7 @@ export class CollectionsService {
       agentPhotoUrl,
       agentPhotoStorageKey,
       outstanding: schedule.outstanding,
-      lastPaymentAmount: last
-        ? (this.decimalToNumber(last.amount) ?? 0)
-        : 0,
+      lastPaymentAmount: last ? (this.decimalToNumber(last.amount) ?? 0) : 0,
       lastPaymentAt: last?.paidAt.toISOString() ?? null,
       lastPaymentBy: last?.recordedBy?.displayName ?? null,
       lastPaymentByPhotoUrl,
@@ -869,11 +876,7 @@ export class CollectionsService {
       amountPaid: detail.paidAmount,
       loanAmount: detail.loanAmount,
       amountDue: detail.expectedToday,
-      lastActivityAt: (
-        last?.paidAt ??
-        loan.updatedAt ??
-        asOf
-      ).toISOString(),
+      lastActivityAt: (last?.paidAt ?? loan.updatedAt ?? asOf).toISOString(),
       synced: true,
     };
   }
@@ -975,7 +978,9 @@ export class CollectionsService {
     }
     if (filter === 'thisWeek') {
       const from = new Date(startOfToday);
-      from.setDate(from.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1));
+      from.setDate(
+        from.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1),
+      );
       return { from, to: now };
     }
     if (filter === 'thisMonth') {

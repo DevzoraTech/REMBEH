@@ -39,80 +39,80 @@ export function LiveApplicationsPanel({
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!canRead) {
-      setLoading(false);
-      return;
-    }
-
     let socket: Socket | null = null;
     let cancelled = false;
-
-    async function load() {
-      try {
-        const response = await fetch(`${apiBaseUrl}/loan-applications`, {
-          headers: {
-            Authorization: `${tokenType} ${accessToken}`,
-          },
-        });
-        const payload = await readApiJson<{
-          applications?: ApplicationRow[];
-          message?: string | string[];
-        }>(response);
-
-        if (!response.ok) {
-          throw new Error(formatApiError(payload.message));
-        }
-
-        if (!cancelled) {
-          setApplications(
-            (payload.applications ?? []).filter(
-              (item) => item.status === "SUBMITTED",
-            ),
-          );
-          setError(null);
-        }
-      } catch (caught) {
-        if (!cancelled) {
-          setError(
-            caught instanceof Error
-              ? caught.message
-              : "Could not load applications.",
-          );
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+    const boot = window.setTimeout(() => {
+      if (!canRead) {
+        setLoading(false);
+        return;
       }
-    }
 
-    void load();
+      async function load() {
+        try {
+          const response = await fetch(`${apiBaseUrl}/loan-applications`, {
+            headers: {
+              Authorization: `${tokenType} ${accessToken}`,
+            },
+          });
+          const payload = await readApiJson<{
+            applications?: ApplicationRow[];
+            message?: string | string[];
+          }>(response);
 
-    socket = connectRealtime(accessToken);
-    const onEvent = (event: LoanApplicationEvent) => {
-      if (event.status && event.status !== "SUBMITTED") return;
+          if (!response.ok) {
+            throw new Error(formatApiError(payload.message));
+          }
 
-      setApplications((current) => {
-        const next: ApplicationRow = {
-          id: event.applicationId,
-          clientName: event.clientName,
-          phone: event.phone,
-          amountRequested: event.amountRequested ?? 0,
-          interestRatePercent: event.interestRatePercent ?? 0,
-          registeredAt: event.registeredAt,
-          synced: event.synced,
-          status: event.status || "SUBMITTED",
-        };
-        const without = current.filter((item) => item.id !== next.id);
-        return [next, ...without];
-      });
-    };
+          if (!cancelled) {
+            setApplications(
+              (payload.applications ?? []).filter(
+                (item) => item.status === "SUBMITTED",
+              ),
+            );
+            setError(null);
+          }
+        } catch (caught) {
+          if (!cancelled) {
+            setError(
+              caught instanceof Error
+                ? caught.message
+                : "Could not load applications.",
+            );
+          }
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      }
 
-    socket.on("loan_application.submitted", onEvent);
-    socket.on("loan_application.updated", onEvent);
+      void load();
+
+      socket = connectRealtime(accessToken);
+      const onEvent = (event: LoanApplicationEvent) => {
+        if (event.status && event.status !== "SUBMITTED") return;
+
+        setApplications((current) => {
+          const next: ApplicationRow = {
+            id: event.applicationId,
+            clientName: event.clientName,
+            phone: event.phone,
+            amountRequested: event.amountRequested ?? 0,
+            interestRatePercent: event.interestRatePercent ?? 0,
+            registeredAt: event.registeredAt,
+            synced: event.synced,
+            status: event.status || "SUBMITTED",
+          };
+          const without = current.filter((item) => item.id !== next.id);
+          return [next, ...without];
+        });
+      };
+
+      socket.on("loan_application.submitted", onEvent);
+      socket.on("loan_application.updated", onEvent);
+    }, 0);
 
     return () => {
       cancelled = true;
-      socket?.off("loan_application.submitted", onEvent);
-      socket?.off("loan_application.updated", onEvent);
+      window.clearTimeout(boot);
       socket?.disconnect();
     };
   }, [accessToken, canRead, tokenType]);
@@ -130,14 +130,14 @@ export function LiveApplicationsPanel({
         <div className="flex items-center justify-between border-b border-[var(--line)] px-3 py-2">
           <div>
             <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
-              Loan applications
+              loan applications
             </h2>
             <p className="text-[11px] text-slate-500">
-              Live from field agents · grouped by date · tap for detail
+              live from field agents · grouped by date · tap for detail
             </p>
           </div>
-          <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--forest-emerald)]">
-            Live
+          <span className="text-[10px] font-semibold lowercase tracking-[0.08em] text-[var(--forest-emerald)]">
+            live
           </span>
         </div>
 
@@ -147,7 +147,7 @@ export function LiveApplicationsPanel({
           <p className="px-3 py-4 text-sm text-red-600">{error}</p>
         ) : applications.length === 0 ? (
           <p className="px-3 py-4 text-sm text-slate-500">
-            No submitted applications yet.
+            no submitted applications yet.
           </p>
         ) : (
           groups.map((group) => (
@@ -163,7 +163,7 @@ export function LiveApplicationsPanel({
                     >
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
-                          {item.clientName || "Applicant"}
+                          {item.clientName || "applicant"}
                         </p>
                         <p className="truncate text-xs text-slate-500">
                           {item.phone} · {item.interestRatePercent}% ·{" "}

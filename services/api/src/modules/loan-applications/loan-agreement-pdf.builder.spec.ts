@@ -14,7 +14,7 @@ function extractPdfTextApprox(pdfBytes: Uint8Array): string {
   const re = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
   let match: RegExpExecArray | null;
   while ((match = re.exec(raw))) {
-    const payload = Buffer.from(match[1]!, 'binary');
+    const payload = Buffer.from(match[1], 'binary');
     try {
       chunks.push(inflateSync(payload).toString('latin1'));
     } catch {

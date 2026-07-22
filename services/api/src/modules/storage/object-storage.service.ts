@@ -317,7 +317,10 @@ function emptyToUndefined(value: string | undefined): string | undefined {
 
 function sanitizeExtension(extension?: string) {
   if (!extension) return undefined;
-  return extension.replace(/^\./, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return extension
+    .replace(/^\./, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
 }
 
 function sanitizePathSegment(value: string) {

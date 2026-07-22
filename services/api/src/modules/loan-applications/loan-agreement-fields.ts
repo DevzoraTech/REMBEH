@@ -181,17 +181,15 @@ function numberToWords(n: number): string {
   ];
 
   const chunk = (num: number): string => {
-    if (num < 20) return ones[num]!;
+    if (num < 20) return ones[num];
     if (num < 100) {
       const t = Math.floor(num / 10);
       const o = num % 10;
-      return o ? `${tens[t]} ${ones[o]}` : tens[t]!;
+      return o ? `${tens[t]} ${ones[o]}` : tens[t];
     }
     const h = Math.floor(num / 100);
     const rest = num % 100;
-    return rest
-      ? `${ones[h]} Hundred ${chunk(rest)}`
-      : `${ones[h]} Hundred`;
+    return rest ? `${ones[h]} Hundred ${chunk(rest)}` : `${ones[h]} Hundred`;
   };
 
   if (n < 1000) return chunk(n);

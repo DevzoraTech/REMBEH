@@ -147,7 +147,12 @@ export class RealtimeGateway
     this.server.to(this.tenantRoom(tenantId)).emit(event, payload);
   }
 
-  emitToBranch(tenantId: string, branchId: string, event: string, payload: unknown) {
+  emitToBranch(
+    tenantId: string,
+    branchId: string,
+    event: string,
+    payload: unknown,
+  ) {
     this.server.to(this.branchRoom(tenantId, branchId)).emit(event, payload);
   }
 

@@ -46,3 +46,6 @@ services/api/.env
 website/out/
 website/.next/
 website/node_modules/
+
+# Local APK staging (not committed)
+tmp-releases/

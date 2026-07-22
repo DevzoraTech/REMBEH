@@ -207,7 +207,9 @@ export class NotificationsService {
   }
 
   private getResendApiKey(): string | undefined {
-    return this.configService.get<string>('RESEND_API_KEY')?.trim() || undefined;
+    return (
+      this.configService.get<string>('RESEND_API_KEY')?.trim() || undefined
+    );
   }
 
   /** Resend-style "Name <email@domain>" when EMAIL_FROM_NAME is set. */

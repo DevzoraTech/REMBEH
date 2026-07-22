@@ -129,51 +129,54 @@ export function ApplicationDetailDrawer({
   }
 
   useEffect(() => {
-    if (!applicationId) {
-      setDetail(null);
-      setError(null);
-      return;
-    }
-
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    void (async () => {
-      try {
-        const response = await fetch(
-          `${apiBaseUrl}/loan-applications/${applicationId}`,
-          {
-            headers: {
-              Authorization: `${tokenType} ${accessToken}`,
-            },
-          },
-        );
-        const payload = await readApiJson<{
-          application?: ApplicationDetail;
-          message?: string | string[];
-        }>(response);
-        if (!response.ok) {
-          throw new Error(formatApiError(payload.message));
-        }
-        if (!cancelled) {
-          setDetail(payload.application ?? null);
-        }
-      } catch (caught) {
-        if (!cancelled) {
-          setError(
-            caught instanceof Error
-              ? caught.message
-              : "Could not load application.",
-          );
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+    const boot = window.setTimeout(() => {
+      if (!applicationId) {
+        setDetail(null);
+        setError(null);
+        return;
       }
-    })();
+
+      setLoading(true);
+      setError(null);
+
+      void (async () => {
+        try {
+          const response = await fetch(
+            `${apiBaseUrl}/loan-applications/${applicationId}`,
+            {
+              headers: {
+                Authorization: `${tokenType} ${accessToken}`,
+              },
+            },
+          );
+          const payload = await readApiJson<{
+            application?: ApplicationDetail;
+            message?: string | string[];
+          }>(response);
+          if (!response.ok) {
+            throw new Error(formatApiError(payload.message));
+          }
+          if (!cancelled) {
+            setDetail(payload.application ?? null);
+          }
+        } catch (caught) {
+          if (!cancelled) {
+            setError(
+              caught instanceof Error
+                ? caught.message
+                : "Could not load application.",
+            );
+          }
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      })();
+    }, 0);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(boot);
     };
   }, [applicationId, accessToken, tokenType]);
 
@@ -190,8 +193,8 @@ export function ApplicationDetailDrawer({
       <aside className="relative z-10 flex h-full w-full max-w-xl flex-col bg-[var(--soft-ivory)] shadow-xl">
         <header className="flex items-start justify-between gap-3 border-b border-[var(--line)] px-4 py-3">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-              Application
+            <p className="text-[10px] font-semibold lowercase tracking-[0.08em] text-slate-500">
+              application
             </p>
             <h2 className="text-lg font-bold text-[var(--midnight-navy)]">
               {detail?.clientName || "Loading…"}
@@ -199,7 +202,7 @@ export function ApplicationDetailDrawer({
             {detail ? (
               <p className="text-xs text-slate-500">
                 {detail.status}
-                {detail.synced ? " · Synced" : ""}
+                {detail.synced ? " · synced" : ""}
               </p>
             ) : null}
           </div>
@@ -222,17 +225,17 @@ export function ApplicationDetailDrawer({
             <p className="text-sm text-red-600">{error}</p>
           ) : detail ? (
             <div className="space-y-5">
-              <Section title="Applicant">
-                <Row label="Name" value={detail.clientName || "—"} />
-                <Row label="Phone" value={detail.phone || "—"} />
-                <Row label="National ID" value={detail.nationalId || "—"} />
-                <Row label="Gender" value={formatGender(detail.gender)} />
+              <Section title="applicant">
+                <Row label="name" value={detail.clientName || "—"} />
+                <Row label="phone" value={detail.phone || "—"} />
+                <Row label="national id" value={detail.nationalId || "—"} />
+                <Row label="gender" value={formatGender(detail.gender)} />
                 <Row
-                  label="Date of birth"
+                  label="date of birth"
                   value={formatDateOfBirth(detail.dateOfBirth)}
                 />
                 <Row
-                  label="Location"
+                  label="location"
                   value={
                     [
                       detail.village,
@@ -246,11 +249,11 @@ export function ApplicationDetailDrawer({
                 />
               </Section>
 
-              <Section title="Field agent">
+              <Section title="field agent">
                 <div className="flex items-center gap-3">
                   <AgentPhoto
                     src={detail.agentPhotoUrl}
-                    name={detail.officerName || "Branch officer"}
+                    name={detail.officerName || "branch officer"}
                     publicId={detail.officerPublicId}
                     size="md"
                   />
@@ -259,19 +262,19 @@ export function ApplicationDetailDrawer({
                       {detail.officerName || "Branch officer"}
                     </p>
                     <p className="truncate text-xs text-slate-500">
-                      {detail.officerPublicId || "Agent photo pending"}
+                      {detail.officerPublicId || "agent photo pending"}
                     </p>
                   </div>
                 </div>
               </Section>
 
-              <Section title="Loan terms">
+              <Section title="loan terms">
                 <Row
-                  label="Principal"
+                  label="principal"
                   value={formatAmount(detail.principalAmount)}
                 />
                 <Row
-                  label="Interest rate"
+                  label="interest rate"
                   value={
                     detail.interestRatePercent != null
                       ? `${detail.interestRatePercent}%`
@@ -279,7 +282,7 @@ export function ApplicationDetailDrawer({
                   }
                 />
                 <Row
-                  label="Period"
+                  label="period"
                   value={
                     detail.durationDays != null
                       ? `${detail.durationDays} days`
@@ -287,34 +290,34 @@ export function ApplicationDetailDrawer({
                   }
                 />
                 <Row
-                  label="Processing fee"
+                  label="processing fee"
                   value={formatAmount(detail.processingFee)}
                 />
                 <Row
-                  label="Interest amount"
+                  label="interest amount"
                   value={formatAmount(detail.pricing?.interestAmount ?? null)}
                 />
                 <Row
-                  label="Total repayable"
+                  label="total repayable"
                   value={formatAmount(detail.pricing?.totalRepayable ?? null)}
                 />
                 <Row
-                  label="Collateral"
+                  label="collateral"
                   value={detail.collateralType || "—"}
                 />
               </Section>
 
-              <Section title="Guarantor">
+              <Section title="guarantor">
                 <Row
-                  label="Name"
+                  label="name"
                   value={detail.guarantor?.fullName || "—"}
                 />
-                <Row label="Phone" value={detail.guarantor?.phone || "—"} />
+                <Row label="phone" value={detail.guarantor?.phone || "—"} />
               </Section>
 
-              <Section title="Signatures">
+              <Section title="signatures">
                 {detail.signatures.length === 0 ? (
-                  <p className="text-sm text-slate-500">No signatures yet.</p>
+                  <p className="text-sm text-slate-500">no signatures yet.</p>
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2">
                     {detail.signatures.map((sig) => (
@@ -327,7 +330,7 @@ export function ApplicationDetailDrawer({
                         </p>
                         <p className="text-[11px] text-slate-500">
                           {sig.signerName}
-                          {sig.locked ? " · Locked" : ""}
+                          {sig.locked ? " · locked" : ""}
                         </p>
                         {sig.signatureDownloadUrl ? (
                           <button
@@ -354,12 +357,12 @@ export function ApplicationDetailDrawer({
                               }}
                             />
                             <p className="mt-2 hidden text-xs text-slate-400">
-                              Preview unavailable
+                              preview unavailable
                             </p>
                           </button>
                         ) : (
                           <p className="mt-2 text-xs text-slate-400">
-                            Preview unavailable
+                            preview unavailable
                           </p>
                         )}
                       </div>
@@ -368,9 +371,9 @@ export function ApplicationDetailDrawer({
                 )}
               </Section>
 
-              <Section title="Uploads">
+              <Section title="uploads">
                 {detail.media.length === 0 ? (
-                  <p className="text-sm text-slate-500">No media uploaded.</p>
+                  <p className="text-sm text-slate-500">no media uploaded.</p>
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2">
                     {detail.media.map((item) => (
@@ -379,7 +382,7 @@ export function ApplicationDetailDrawer({
                         className="rounded border border-[var(--line)] bg-white p-2"
                       >
                         <p className="truncate text-xs font-semibold text-[var(--midnight-navy)]">
-                          {item.type === "PASSPORT" ? "Applicant Photo" : item.type}
+                          {mediaLabel(item.type)}
                         </p>
                         <p className="truncate text-[11px] text-slate-500">
                           {item.fileName || item.mimeType}
@@ -409,11 +412,11 @@ export function ApplicationDetailDrawer({
                             rel="noreferrer"
                             className="mt-2 inline-block text-xs font-semibold text-[var(--forest-emerald)]"
                           >
-                            Open file
+                            open file
                           </a>
                         ) : (
                           <p className="mt-2 text-xs text-slate-400">
-                            Preview unavailable
+                            preview unavailable
                           </p>
                         )}
                       </div>
@@ -422,20 +425,20 @@ export function ApplicationDetailDrawer({
                 )}
               </Section>
 
-              <Section title="Loan agreement">
+              <Section title="loan agreement">
                 <button
                   type="button"
                   onClick={() => void downloadAgreementPdf()}
                   disabled={downloadingPdf}
                   className="text-sm font-semibold text-[var(--forest-emerald)] disabled:opacity-60"
                 >
-                  {downloadingPdf ? "Preparing PDF…" : "Download PDF"}
+                  {downloadingPdf ? "preparing pdf…" : "download pdf"}
                 </button>
                 {downloadError ? (
                   <p className="mt-2 text-xs text-rose-600">{downloadError}</p>
                 ) : (
                   <p className="mt-2 text-xs text-slate-500">
-                    Filled from the Loan-agreement DOCX template using this
+                    filled from the loan-agreement docx template using this
                     application&apos;s latest data.
                   </p>
                 )}
@@ -446,7 +449,7 @@ export function ApplicationDetailDrawer({
                     rel="noreferrer"
                     className="mt-2 inline-block text-xs text-slate-500 underline"
                   >
-                    Open last stored copy
+                    open last stored copy
                   </a>
                 ) : null}
               </Section>
@@ -494,8 +497,8 @@ function Section({
 }) {
   return (
     <section>
-      <h3 className="mb-2 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
-        {title}
+      <h3 className="mb-2 text-xs font-bold lowercase tracking-[0.08em] text-slate-500">
+        {title.toLowerCase()}
       </h3>
       <div className="space-y-1.5">{children}</div>
     </section>
@@ -505,7 +508,7 @@ function Section({
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-3 text-sm">
-      <span className="text-slate-500">{label}</span>
+      <span className="text-slate-500">{label.toLowerCase()}</span>
       <span className="max-w-[60%] text-right font-medium text-[var(--midnight-navy)]">
         {value}
       </span>
@@ -519,10 +522,15 @@ function formatAmount(value: number | null | undefined) {
 }
 
 function formatGender(value: ApplicationDetail["gender"]) {
-  if (value === "MALE") return "Male";
-  if (value === "FEMALE") return "Female";
-  if (value === "OTHER") return "Other";
+  if (value === "MALE") return "male";
+  if (value === "FEMALE") return "female";
+  if (value === "OTHER") return "other";
   return "—";
+}
+
+function mediaLabel(type: string) {
+  if (type === "PASSPORT") return "applicant photo";
+  return type.toLowerCase().replaceAll("_", " ");
 }
 
 function formatDateOfBirth(value: string | null | undefined) {

@@ -47,51 +47,54 @@ export function PaymentDetailDrawer({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!repaymentId) {
-      setDetail(null);
-      setError(null);
-      return;
-    }
-
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    void (async () => {
-      try {
-        const response = await fetch(
-          `${apiBaseUrl}/collections/repayments/${repaymentId}`,
-          {
-            headers: {
-              Authorization: `${tokenType} ${accessToken}`,
-            },
-          },
-        );
-        const payload = await readApiJson<{
-          repayment?: PaymentDetail;
-          message?: string | string[];
-        }>(response);
-        if (!response.ok) {
-          throw new Error(formatApiError(payload.message));
-        }
-        if (!cancelled) {
-          setDetail(payload.repayment ?? null);
-        }
-      } catch (caught) {
-        if (!cancelled) {
-          setError(
-            caught instanceof Error
-              ? caught.message
-              : "Could not load payment.",
-          );
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+    const boot = window.setTimeout(() => {
+      if (!repaymentId) {
+        setDetail(null);
+        setError(null);
+        return;
       }
-    })();
+
+      setLoading(true);
+      setError(null);
+
+      void (async () => {
+        try {
+          const response = await fetch(
+            `${apiBaseUrl}/collections/repayments/${repaymentId}`,
+            {
+              headers: {
+                Authorization: `${tokenType} ${accessToken}`,
+              },
+            },
+          );
+          const payload = await readApiJson<{
+            repayment?: PaymentDetail;
+            message?: string | string[];
+          }>(response);
+          if (!response.ok) {
+            throw new Error(formatApiError(payload.message));
+          }
+          if (!cancelled) {
+            setDetail(payload.repayment ?? null);
+          }
+        } catch (caught) {
+          if (!cancelled) {
+            setError(
+              caught instanceof Error
+                ? caught.message
+                : "Could not load payment.",
+            );
+          }
+        } finally {
+          if (!cancelled) setLoading(false);
+        }
+      })();
+    }, 0);
 
     return () => {
       cancelled = true;
+      window.clearTimeout(boot);
     };
   }, [repaymentId, accessToken, tokenType]);
 
@@ -108,8 +111,8 @@ export function PaymentDetailDrawer({
       <aside className="relative z-10 flex h-full w-full max-w-xl flex-col bg-[var(--soft-ivory)] shadow-xl">
         <header className="flex items-start justify-between gap-3 border-b border-[var(--line)] px-4 py-3">
           <div>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-              Payment
+            <p className="text-[10px] font-semibold lowercase tracking-[0.08em] text-slate-500">
+              payment
             </p>
             <h2 className="text-lg font-bold text-[var(--midnight-navy)]">
               {detail
@@ -141,32 +144,32 @@ export function PaymentDetailDrawer({
             <p className="text-sm text-red-600">{error}</p>
           ) : detail ? (
             <div className="space-y-5">
-              <Section title="Payment">
-                <Row label="Amount" value={formatAmount(detail.amount)} />
-                <Row label="Method" value={methodLabel(detail.method)} />
+              <Section title="payment">
+                <Row label="amount" value={formatAmount(detail.amount)} />
+                <Row label="method" value={methodLabel(detail.method)} />
                 <Row
-                  label="Paid at"
+                  label="paid at"
                   value={formatDateTime(detail.recordedAt)}
                 />
-                <Row label="Note" value={detail.note?.trim() || "—"} />
+                <Row label="note" value={detail.note?.trim() || "—"} />
               </Section>
 
-              <Section title="Client">
-                <Row label="Name" value={detail.clientName || "—"} />
-                <Row label="Phone" value={detail.phone || "—"} />
+              <Section title="client">
+                <Row label="name" value={detail.clientName || "—"} />
+                <Row label="phone" value={detail.phone || "—"} />
               </Section>
 
-              <Section title="Loan">
+              <Section title="loan">
                 <Row
-                  label="Loan amount"
+                  label="loan amount"
                   value={formatAmount(detail.loanAmount)}
                 />
                 <Row
-                  label="Total paid"
+                  label="total paid"
                   value={formatAmount(detail.amountPaid)}
                 />
                 <Row
-                  label="Outstanding"
+                  label="outstanding"
                   value={
                     detail.loanOutstanding != null
                       ? formatAmount(detail.loanOutstanding)
@@ -174,7 +177,7 @@ export function PaymentDetailDrawer({
                   }
                 />
                 <Row
-                  label="Fines total"
+                  label="fines total"
                   value={
                     detail.finesTotal != null && detail.finesTotal > 0
                       ? formatAmount(detail.finesTotal)
@@ -182,17 +185,17 @@ export function PaymentDetailDrawer({
                   }
                 />
                 <Row
-                  label="Fined"
-                  value={detail.isFined ? "Yes" : "No"}
+                  label="fined"
+                  value={detail.isFined ? "yes" : "no"}
                 />
-                <Row label="Status" value={detail.loanStatus || "—"} />
+                <Row label="status" value={detail.loanStatus || "—"} />
                 <Row
-                  label="Loan ID"
+                  label="loan id"
                   value={shortId(detail.loanId)}
                 />
               </Section>
 
-              <Section title="Field agent">
+              <Section title="field agent">
                 <div className="flex items-center gap-3">
                   <AgentPhoto
                     src={detail.agentPhotoUrl}
@@ -211,10 +214,10 @@ export function PaymentDetailDrawer({
                 </div>
               </Section>
 
-              <Section title="Company">
-                <Row label="Workspace" value={detail.companyName || "—"} />
-                <Row label="Branch" value={detail.branchName || "—"} />
-                <Row label="Currency" value={detail.currency || "—"} />
+              <Section title="company">
+                <Row label="account" value={detail.companyName || "—"} />
+                <Row label="branch" value={detail.branchName || "—"} />
+                <Row label="currency" value={detail.currency || "—"} />
               </Section>
             </div>
           ) : null}
@@ -233,8 +236,8 @@ function Section({
 }) {
   return (
     <section>
-      <h3 className="mb-2 text-xs font-bold uppercase tracking-[0.08em] text-slate-500">
-        {title}
+      <h3 className="mb-2 text-xs font-bold lowercase tracking-[0.08em] text-slate-500">
+        {title.toLowerCase()}
       </h3>
       <div className="space-y-1.5">{children}</div>
     </section>
@@ -244,7 +247,7 @@ function Section({
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-3 text-sm">
-      <span className="text-slate-500">{label}</span>
+      <span className="text-slate-500">{label.toLowerCase()}</span>
       <span className="max-w-[60%] text-right font-medium text-[var(--midnight-navy)]">
         {value}
       </span>
@@ -267,9 +270,9 @@ function formatDateTime(value: string) {
 }
 
 function methodLabel(method: string) {
-  if (method === "MOBILE_MONEY") return "Mobile money";
-  if (method === "BANK_TRANSFER") return "Bank";
-  if (method === "CASH") return "Cash";
+  if (method === "MOBILE_MONEY") return "mobile money";
+  if (method === "BANK_TRANSFER") return "bank";
+  if (method === "CASH") return "cash";
   return method;
 }
 

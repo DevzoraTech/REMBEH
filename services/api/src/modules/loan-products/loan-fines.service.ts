@@ -435,10 +435,13 @@ export class LoanFinesService {
     if (!input.destination?.trim()) {
       return;
     }
-    const amountLabel = `${input.currency} ${input.amount.toLocaleString('en-UG', {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    })}`;
+    const amountLabel = `${input.currency} ${input.amount.toLocaleString(
+      'en-UG',
+      {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      },
+    )}`;
     const outstandingLabel = `${input.currency} ${input.outstanding.toLocaleString(
       'en-UG',
       { minimumFractionDigits: 0, maximumFractionDigits: 0 },

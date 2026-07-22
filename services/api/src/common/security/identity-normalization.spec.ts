@@ -38,23 +38,14 @@ describe('phoneSearchVariants', () => {
   it('strips leading 0 on partial local queries so they match E.164', () => {
     const variants = phoneSearchVariants('0700123');
     expect(variants).toEqual(
-      expect.arrayContaining([
-        '0700123',
-        '700123',
-        '+256700123',
-        '256700123',
-      ]),
+      expect.arrayContaining(['0700123', '700123', '+256700123', '256700123']),
     );
   });
 
   it('handles dashed and spaced local input', () => {
     const variants = phoneSearchVariants('0700-123-456');
     expect(variants).toEqual(
-      expect.arrayContaining([
-        '0700123456',
-        '700123456',
-        '+256700123456',
-      ]),
+      expect.arrayContaining(['0700123456', '700123456', '+256700123456']),
     );
   });
 });

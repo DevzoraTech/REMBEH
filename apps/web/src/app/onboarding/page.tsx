@@ -144,23 +144,20 @@ export default function OnboardingPage() {
         <section className="panel overflow-hidden">
           <div className="border-b border-[var(--line)] px-4 py-3">
             <h1 className="text-lg font-bold text-[var(--midnight-navy)]">
-              {activeBranch?.name ?? "Branch"} setup
+              {activeBranch?.name ?? "branch"} setup
             </h1>
           </div>
 
           <div className="grid grid-cols-3 border-b border-[var(--line)] text-xs font-semibold">
-            <Tab n={1} current={step} label="Branch" />
-            <Tab n={2} current={step} label="Invite" />
-            <Tab n={3} current={step} label="Done" />
+            <Tab n={1} current={step} label="branch" />
+            <Tab n={2} current={step} label="invite" />
+            <Tab n={3} current={step} label="done" />
           </div>
 
           {step === 1 ? (
             <div className="space-y-3 p-4">
-              <p className="text-sm text-slate-600">
-                Invite agents. They work in the mobile app.
-              </p>
               <PrimaryButton type="button" onClick={() => setStep(2)}>
-                Continue
+                continue
                 <ArrowRight className="size-4" />
               </PrimaryButton>
             </div>
@@ -202,29 +199,25 @@ export default function OnboardingPage() {
               />
               <FormError error={error} />
               <PrimaryButton type="submit" loading={isInviting} variant="navy">
-                Send invite
+                send invite
               </PrimaryButton>
               <button
                 type="button"
                 className="w-full text-sm font-semibold text-slate-500"
                 onClick={() => setStep(3)}
               >
-                Skip
+                skip
               </button>
             </form>
           ) : null}
 
           {step === 3 ? (
             <div className="space-y-3 p-4">
-              <p className="text-sm text-slate-600">
-                Agents capture customers in the field. Your console follows that
-                data.
-              </p>
               <PrimaryButton
                 type="button"
                 onClick={() => router.replace("/dashboard")}
               >
-                Open console
+                Open account
               </PrimaryButton>
             </div>
           ) : null}
@@ -252,7 +245,7 @@ function Tab({
           : "text-slate-400"
       }`}
     >
-      {n}. {label}
+      {n}. {label.toLowerCase()}
     </div>
   );
 }

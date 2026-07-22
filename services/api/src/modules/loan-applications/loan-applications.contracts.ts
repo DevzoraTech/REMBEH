@@ -74,12 +74,7 @@ export type LoanApplicationContract = {
   termValue: number | null;
   termUnit: 'DAYS' | 'WEEKS' | 'MONTHS' | 'YEARS' | null;
   repaymentFrequency:
-    | 'DAILY'
-    | 'WEEKLY'
-    | 'BIWEEKLY'
-    | 'MONTHLY'
-    | 'LUMP_SUM'
-    | null;
+    'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | 'LUMP_SUM' | null;
   processingFeePercent: number | null;
   penaltyRatePercent: number | null;
   finePeriodDays: number | null;

@@ -1,9 +1,5 @@
 export type AgentStatusContract =
-  | 'INVITED'
-  | 'PENDING_VERIFICATION'
-  | 'ACTIVE'
-  | 'SUSPENDED'
-  | 'INACTIVE';
+  'INVITED' | 'PENDING_VERIFICATION' | 'ACTIVE' | 'SUSPENDED' | 'INACTIVE';
 
 export type AgentListItemContract = {
   id: string;
@@ -83,6 +79,7 @@ export type AgentDetailContract = {
 
 export type AgentActivityApplicationContract = {
   id: string;
+  customerId: string | null;
   clientName: string;
   phone: string | null;
   principalAmount: number;
@@ -94,6 +91,7 @@ export type AgentActivityApplicationContract = {
 export type AgentActivityCollectionContract = {
   id: string;
   loanId: string;
+  customerId: string;
   clientName: string;
   phone: string | null;
   amount: number;

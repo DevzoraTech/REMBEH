@@ -47,7 +47,9 @@ export type LoanWithCollections = Prisma.LoanGetPayload<{
 /** Tenant id must come from auth context — never optional on scoped queries. */
 export function requireTenantId(tenantId: string | null | undefined): string {
   if (typeof tenantId !== 'string' || !tenantId.trim()) {
-    throw new BadRequestException('tenantId is required for tenant-scoped queries.');
+    throw new BadRequestException(
+      'tenantId is required for tenant-scoped queries.',
+    );
   }
   return tenantId.trim();
 }
@@ -64,10 +66,7 @@ export class CollectionsRepository {
     };
   }
 
-  listActiveLoans(input: {
-    tenantId: string;
-    branchId: string | null;
-  }) {
+  listActiveLoans(input: { tenantId: string; branchId: string | null }) {
     return this.prisma.loan.findMany({
       where: {
         ...this.branchScope(input),
@@ -177,10 +176,7 @@ export class CollectionsRepository {
     });
   }
 
-  private matchesPhone(
-    loan: LoanWithCollections,
-    variants: string[],
-  ): boolean {
+  private matchesPhone(loan: LoanWithCollections, variants: string[]): boolean {
     const phones = [loan.customer.phone, loan.application?.phone ?? ''].filter(
       Boolean,
     );
@@ -309,22 +305,18 @@ export class CollectionsRepository {
         ...this.branchScope(input),
         status: { not: LoanApplicationStatus.DRAFT },
         submittedAt: { gte: input.dayStart, lte: input.dayEnd },
-        ...(input.officerUserId
-          ? { officerUserId: input.officerUserId }
-          : {}),
+        ...(input.officerUserId ? { officerUserId: input.officerUserId } : {}),
       },
       include: {
         officer: true,
         branch: true,
+        customer: true,
       },
       orderBy: { submittedAt: 'desc' },
     });
   }
 
-  listFieldAgents(input: {
-    tenantId: string;
-    branchId: string | null;
-  }) {
+  listFieldAgents(input: { tenantId: string; branchId: string | null }) {
     const fieldRoles = [
       'Agent',
       'Loan Officer',

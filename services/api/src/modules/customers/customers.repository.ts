@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import {
   CUSTOMER_EVENTS,
@@ -15,6 +16,104 @@ type CreateCustomerRecordInput = {
   nationalId?: string | null;
   email?: string | null;
 };
+
+const customerMediaSelect = {
+  id: true,
+  type: true,
+  storageKey: true,
+  mimeType: true,
+  byteSize: true,
+  fileName: true,
+  createdAt: true,
+} satisfies Prisma.LoanApplicationMediaSelect;
+
+const applicationSummarySelect = {
+  id: true,
+  templateName: true,
+  loanProductTemplate: { select: { name: true } },
+  loanPurpose: true,
+  collateralType: true,
+  district: true,
+  subCounty: true,
+  village: true,
+  updatedAt: true,
+  createdAt: true,
+} satisfies Prisma.LoanApplicationSelect;
+
+const applicationDetailSelect = {
+  ...applicationSummarySelect,
+  media: {
+    select: customerMediaSelect,
+    orderBy: { createdAt: 'asc' as const },
+  },
+} satisfies Prisma.LoanApplicationSelect;
+
+const customerListInclude = {
+  branch: { select: { id: true, name: true } },
+  loanApplications: {
+    select: applicationSummarySelect,
+    orderBy: { updatedAt: 'desc' as const },
+    take: 1,
+  },
+  _count: { select: { loans: true } },
+} satisfies Prisma.CustomerInclude;
+
+const customerDetailInclude = {
+  branch: { select: { id: true, name: true } },
+  loanApplications: {
+    select: applicationDetailSelect,
+    orderBy: { updatedAt: 'desc' as const },
+    take: 50,
+  },
+  loans: {
+    include: {
+      wallet: true,
+      application: {
+        select: {
+          id: true,
+          submittedAt: true,
+          templateName: true,
+          loanProductTemplate: { select: { name: true } },
+          loanPurpose: true,
+          collateralType: true,
+          district: true,
+          subCounty: true,
+          village: true,
+          media: {
+            select: customerMediaSelect,
+            orderBy: { createdAt: 'asc' as const },
+          },
+          officer: {
+            select: {
+              displayName: true,
+              publicId: true,
+            },
+          },
+        },
+      },
+      repayments: {
+        orderBy: { paidAt: 'desc' as const },
+        include: {
+          recordedBy: {
+            select: {
+              displayName: true,
+              publicId: true,
+            },
+          },
+        },
+      },
+    },
+    orderBy: { updatedAt: 'desc' as const },
+  },
+} satisfies Prisma.CustomerInclude;
+
+export type CustomerDetailRecord = Prisma.CustomerGetPayload<{
+  include: typeof customerDetailInclude;
+}>;
+
+export type CustomerListRecord = Prisma.CustomerGetPayload<{
+  include: typeof customerListInclude;
+}>;
 
 @Injectable()
 export class CustomersRepository {
@@ -34,14 +133,30 @@ export class CustomersRepository {
     tenantId: string;
     branchId?: string | null;
     limit?: number;
-  }) {
+  }): Promise<CustomerListRecord[]> {
     return this.prisma.customer.findMany({
       where: {
         tenantId: input.tenantId,
         ...(input.branchId ? { branchId: input.branchId } : {}),
       },
+      include: customerListInclude,
       orderBy: { createdAt: 'desc' },
       take: input.limit ?? 100,
+    });
+  }
+
+  findByIdForScope(input: {
+    tenantId: string;
+    branchId?: string | null;
+    customerId: string;
+  }): Promise<CustomerDetailRecord | null> {
+    return this.prisma.customer.findFirst({
+      where: {
+        id: input.customerId,
+        tenantId: input.tenantId,
+        ...(input.branchId ? { branchId: input.branchId } : {}),
+      },
+      include: customerDetailInclude,
     });
   }
 
