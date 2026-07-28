@@ -30,6 +30,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   static const _totalSteps = 7;
 
   final _locator = LoanApplicationLocator.instance;
+  final _dayStore = AgentDayStatusStore.instance;
   final _draft = LoanApplicationDraft();
   final _surname = TextEditingController();
   final _givenNames = TextEditingController();
@@ -52,8 +53,17 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   @override
   void initState() {
     super.initState();
+    _dayStore.addListener(_onDayStatusChanged);
+    // Refresh today's float for immediate loan amount validation.
+    // ignore: discarded_futures
+    _dayStore.start(widget.session);
     _bootstrapDraft();
     _loadLoanProducts();
+  }
+
+  void _onDayStatusChanged() {
+    if (!mounted) return;
+    setState(() {});
   }
 
   Future<void> _loadLoanProducts() async {
@@ -121,20 +131,20 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   }
 
   int? _remainingFloatForLoan() {
-    final status = AgentDayStatusStore.instance.status;
+    final status = _dayStore.status;
     if (status == null) return null;
     return status.float.unusedFloat < 0 ? 0 : status.float.unusedFloat;
   }
 
   String? _floatMessageForPrincipal(double principal) {
-    final status = AgentDayStatusStore.instance.status;
+    final status = _dayStore.status;
     if (status == null || principal <= 0) return null;
     if (status.float.amountReceived <= 0) {
       return 'You need float assigned before issuing a loan.';
     }
     final remaining = _remainingFloatForLoan() ?? 0;
     if (principal > remaining) {
-      return 'Only UGX ${formatMoney(remaining)} is left from your float.';
+      return 'Loan amount exceeds your remaining float. Available: UGX ${formatMoney(remaining)}.';
     }
     return null;
   }
@@ -158,6 +168,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
 
   @override
   void dispose() {
+    _dayStore.removeListener(_onDayStatusChanged);
     _surname.dispose();
     _givenNames.dispose();
     _phone.dispose();
@@ -654,7 +665,8 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         return _draft.loanProductTemplateId != null &&
             _principal.text.trim().isNotEmpty &&
             _processingFee.text.trim().isNotEmpty &&
-            _draft.collateralType != null;
+            _draft.collateralType != null &&
+            _floatMessageForPrincipal(_currentPrincipalAmount()) == null;
       case 4:
         return _guarantorName.text.trim().isNotEmpty &&
             _guarantorPhone.text.trim().isNotEmpty &&
@@ -1171,6 +1183,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     final principal = _currentPrincipalAmount();
     final remainingFloat = _remainingFloatForLoan();
     final floatMessage = _floatMessageForPrincipal(principal);
+    final checkingFloat = remainingFloat == null && _dayStore.loading;
 
     return [
       const Text(
@@ -1267,6 +1280,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         hint: 'Enter loan amount',
         icon: Icons.payments_outlined,
         keyboardType: TextInputType.number,
+        errorText: floatMessage,
         onChanged: (_) {
           _recomputeFeeFromTemplate();
           setState(() {});
@@ -1276,38 +1290,54 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         const SizedBox(height: 6),
         Text(rangeHint, style: const TextStyle(color: slateText, fontSize: 12)),
       ],
-      if (remainingFloat != null) ...[
+      if (checkingFloat || remainingFloat != null) ...[
         const SizedBox(height: 8),
         Container(
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: floatMessage == null
+            color: checkingFloat
+                ? sage
+                : floatMessage == null
                 ? forestEmerald.withValues(alpha: 0.08)
-                : warmGold.withValues(alpha: 0.12),
+                : const Color(0xFFC62828).withValues(alpha: 0.08),
             border: Border.all(
-              color: floatMessage == null
+              color: checkingFloat
+                  ? line
+                  : floatMessage == null
                   ? forestEmerald.withValues(alpha: 0.28)
-                  : warmGold.withValues(alpha: 0.35),
+                  : const Color(0xFFC62828).withValues(alpha: 0.28),
             ),
             borderRadius: rembehBorderRadius(rembehRadiusMd),
           ),
           child: Row(
             children: [
               Icon(
-                floatMessage == null
+                checkingFloat
+                    ? Icons.sync_rounded
+                    : floatMessage == null
                     ? Icons.account_balance_wallet_outlined
-                    : Icons.info_outline,
-                color: floatMessage == null ? forestEmerald : warmGold,
+                    : Icons.warning_amber_rounded,
+                color: checkingFloat
+                    ? slateText
+                    : floatMessage == null
+                    ? forestEmerald
+                    : const Color(0xFFC62828),
                 size: 18,
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  floatMessage ??
-                      'Float left: UGX ${formatMoney(remainingFloat)}',
+                  checkingFloat
+                      ? "Checking today's float..."
+                      : floatMessage ??
+                            'Float left: UGX ${formatMoney(remainingFloat ?? 0)}',
                   style: TextStyle(
-                    color: floatMessage == null ? forestEmerald : midnightNavy,
+                    color: checkingFloat
+                        ? slateText
+                        : floatMessage == null
+                        ? forestEmerald
+                        : const Color(0xFFC62828),
                     fontSize: 12,
                     fontWeight: FontWeight.w800,
                     height: 1.2,

@@ -31,7 +31,10 @@ class LoanFieldLabel extends StatelessWidget {
         if (required)
           const Text(
             ' *',
-            style: TextStyle(color: Color(0xFFC62828), fontWeight: FontWeight.w800),
+            style: TextStyle(
+              color: Color(0xFFC62828),
+              fontWeight: FontWeight.w800,
+            ),
           ),
         if (showInfo) ...[
           const SizedBox(width: 4),
@@ -51,6 +54,7 @@ class LoanTextField extends StatelessWidget {
     this.keyboardType,
     this.onChanged,
     this.enabled = true,
+    this.errorText,
   });
 
   final TextEditingController controller;
@@ -59,6 +63,7 @@ class LoanTextField extends StatelessWidget {
   final TextInputType? keyboardType;
   final ValueChanged<String>? onChanged;
   final bool enabled;
+  final String? errorText;
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +77,7 @@ class LoanTextField extends StatelessWidget {
         prefixIcon: Icon(icon, color: forestEmerald, size: 20),
         filled: true,
         fillColor: Colors.white,
+        errorText: errorText,
       ),
     );
   }
@@ -165,11 +171,7 @@ class LoanDateField extends StatelessWidget {
 }
 
 class LoanHint extends StatelessWidget {
-  const LoanHint({
-    super.key,
-    required this.text,
-    this.warning = false,
-  });
+  const LoanHint({super.key, required this.text, this.warning = false});
 
   final String text;
   final bool warning;
@@ -289,10 +291,7 @@ class LoanCaptureRow extends StatelessWidget {
                 maxHeight: MediaQuery.sizeOf(context).height * 0.55,
               ),
               child: InteractiveViewer(
-                child: Image.memory(
-                  previewBytes!,
-                  fit: BoxFit.contain,
-                ),
+                child: Image.memory(previewBytes!, fit: BoxFit.contain),
               ),
             ),
             Padding(
@@ -388,8 +387,8 @@ class LoanCaptureRow extends StatelessWidget {
                 Text(
                   captured
                       ? (previewBytes != null
-                          ? 'Preview ready · tap thumbnail to enlarge.'
-                          : 'Captured successfully.')
+                            ? 'Preview ready · tap thumbnail to enlarge.'
+                            : 'Captured successfully.')
                       : subtitle,
                   style: TextStyle(
                     color: captured ? forestEmerald : slateText,
@@ -408,7 +407,10 @@ class LoanCaptureRow extends StatelessWidget {
                 borderRadius: rembehBorderRadius(rembehRadiusMd),
               ),
             ),
-            icon: Icon(captured ? Icons.refresh : Icons.photo_camera_outlined, size: 16),
+            icon: Icon(
+              captured ? Icons.refresh : Icons.photo_camera_outlined,
+              size: 16,
+            ),
             label: Text(captured ? 'Retake' : 'Capture'),
           ),
         ],
@@ -470,7 +472,9 @@ class LoanUploadBox extends StatelessWidget {
                     )
                   else
                     Icon(
-                      uploaded ? Icons.check_circle : Icons.cloud_upload_outlined,
+                      uploaded
+                          ? Icons.check_circle
+                          : Icons.cloud_upload_outlined,
                       color: forestEmerald,
                       size: 28,
                     ),
@@ -486,8 +490,8 @@ class LoanUploadBox extends StatelessWidget {
                   Text(
                     uploaded
                         ? (previewBytes != null
-                            ? 'Preview shown · tap to replace'
-                            : 'Tap to replace')
+                              ? 'Preview shown · tap to replace'
+                              : 'Tap to replace')
                         : 'PDF, JPG or PNG (Max. 10MB)',
                     style: const TextStyle(color: slateText, fontSize: 11),
                   ),
@@ -578,9 +582,7 @@ class LoanSignaturePad extends StatelessWidget {
                 width: double.infinity,
                 height: 96,
                 alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  border: Border.all(color: line),
-                ),
+                decoration: BoxDecoration(border: Border.all(color: line)),
                 child: signed
                     ? Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -609,7 +611,10 @@ class LoanSignaturePad extends StatelessWidget {
                         children: [
                           Icon(Icons.draw_outlined, color: slateText),
                           SizedBox(height: 4),
-                          Text('Sign here.', style: TextStyle(color: slateText)),
+                          Text(
+                            'Sign here.',
+                            style: TextStyle(color: slateText),
+                          ),
                         ],
                       ),
               ),
