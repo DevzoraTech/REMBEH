@@ -371,10 +371,10 @@ async function buildFallbackPdfFromTemplateFields(
     14,
   );
 
-  // Inline signature blocks (as in DOCX — not an ELECTRONIC SIGNATURES appendix)
-  ensureSpace(120);
-  drawLeft('The Borrower', 11, true, 8);
-  y = await drawNameSignatureRow(
+  // Inline signature table (no appendix): each party owns one column, with
+  // the signature directly below that person's name.
+  ensureSpace(150);
+  y = await drawSignatureTable(
     page,
     doc,
     font,
@@ -382,38 +382,23 @@ async function buildFallbackPdfFromTemplateFields(
     left,
     maxWidth,
     y,
-    fields.borrower_name,
-    signatures.borrower_signature,
-    ink,
-  );
-
-  ensureSpace(120);
-  drawLeft('Guarantor', 11, true, 8);
-  y = await drawNameSignatureRow(
-    page,
-    doc,
-    font,
-    bold,
-    left,
-    maxWidth,
-    y,
-    fields.gurantor_name,
-    signatures.guarantor_signature,
-    ink,
-  );
-
-  ensureSpace(120);
-  drawLeft(`On Behalf of ${fields.company_name}`, 11, true, 8);
-  y = await drawNameSignatureRow(
-    page,
-    doc,
-    font,
-    bold,
-    left,
-    maxWidth,
-    y,
-    fields.agent_name,
-    signatures.agent_signature,
+    [
+      {
+        role: 'The Borrower',
+        name: fields.borrower_name,
+        signaturePng: signatures.borrower_signature,
+      },
+      {
+        role: 'Guarantor',
+        name: fields.gurantor_name,
+        signaturePng: signatures.guarantor_signature,
+      },
+      {
+        role: `On Behalf of ${fields.company_name}`,
+        name: fields.agent_name,
+        signaturePng: signatures.agent_signature,
+      },
+    ],
     ink,
   );
 
@@ -421,7 +406,13 @@ async function buildFallbackPdfFromTemplateFields(
   return doc.save();
 }
 
-async function drawNameSignatureRow(
+type SignatureTableEntry = {
+  role: string;
+  name: string;
+  signaturePng: Uint8Array | null | undefined;
+};
+
+async function drawSignatureTable(
   page: PDFPage,
   doc: PDFDocument,
   font: PDFFont,
@@ -429,36 +420,167 @@ async function drawNameSignatureRow(
   left: number,
   maxWidth: number,
   y: number,
-  name: string,
-  signaturePng: Uint8Array | null | undefined,
+  entries: SignatureTableEntry[],
   ink: ReturnType<typeof rgb>,
 ): Promise<number> {
-  const size = 11;
-  const nameLabel = `Name: ${name}`;
-  page.drawText(nameLabel, {
+  const columns = entries.length;
+  const tableWidth = maxWidth;
+  const columnWidth = tableWidth / columns;
+  const roleHeight = 30;
+  const nameHeight = 34;
+  const signatureHeight = 70;
+  const tableHeight = roleHeight + nameHeight + signatureHeight;
+  const top = y;
+  const bottom = top - tableHeight;
+  const line = rgb(0.74, 0.77, 0.76);
+  const headerFill = rgb(0.95, 0.97, 0.96);
+
+  page.drawRectangle({
     x: left,
-    y,
-    size,
-    font,
-    color: ink,
+    y: top - roleHeight,
+    width: tableWidth,
+    height: roleHeight,
+    color: headerFill,
   });
 
-  const sigLabel = 'Signature:';
-  const midX = left + maxWidth * 0.52;
-  page.drawText(sigLabel, {
-    x: midX,
-    y,
-    size,
-    font: bold,
-    color: ink,
-  });
+  for (let i = 0; i <= columns; i += 1) {
+    const x = left + columnWidth * i;
+    page.drawLine({
+      start: { x, y: top },
+      end: { x, y: bottom },
+      thickness: 0.7,
+      color: line,
+    });
+  }
 
-  let nextY = y - size - 6;
-  if (signaturePng && signaturePng.byteLength > 0) {
+  for (const rowY of [
+    top,
+    top - roleHeight,
+    top - roleHeight - nameHeight,
+    bottom,
+  ]) {
+    page.drawLine({
+      start: { x: left, y: rowY },
+      end: { x: left + tableWidth, y: rowY },
+      thickness: 0.7,
+      color: line,
+    });
+  }
+
+  for (const [index, entry] of entries.entries()) {
+    const cellX = left + columnWidth * index;
+    drawCellText({
+      page,
+      text: entry.role,
+      x: cellX,
+      top,
+      width: columnWidth,
+      height: roleHeight,
+      font: bold,
+      size: 10,
+      color: ink,
+      align: 'center',
+      maxLines: 2,
+    });
+    drawCellText({
+      page,
+      text: `Name: ${entry.name}`,
+      x: cellX,
+      top: top - roleHeight,
+      width: columnWidth,
+      height: nameHeight,
+      font,
+      size: 10,
+      color: ink,
+      align: 'left',
+      maxLines: 2,
+    });
+    drawCellText({
+      page,
+      text: 'Signature:',
+      x: cellX,
+      top: top - roleHeight - nameHeight,
+      width: columnWidth,
+      height: 18,
+      font: bold,
+      size: 9,
+      color: ink,
+      align: 'left',
+      maxLines: 1,
+    });
+
+    await drawSignatureImageOrLine({
+      page,
+      doc,
+      signaturePng: entry.signaturePng,
+      x: cellX,
+      y: bottom,
+      width: columnWidth,
+      height: signatureHeight,
+      color: ink,
+    });
+  }
+
+  return bottom - 18;
+}
+
+function drawCellText(input: {
+  page: PDFPage;
+  text: string;
+  x: number;
+  top: number;
+  width: number;
+  height: number;
+  font: PDFFont;
+  size: number;
+  color: ReturnType<typeof rgb>;
+  align: 'left' | 'center';
+  maxLines: number;
+}) {
+  const padX = 8;
+  const lineGap = 2;
+  const lines = wrapText(
+    input.text,
+    input.font,
+    input.size,
+    input.width - padX * 2,
+  ).slice(0, input.maxLines);
+  const textHeight =
+    lines.length * input.size + Math.max(lines.length - 1, 0) * lineGap;
+  let textY = input.top - (input.height - textHeight) / 2 - input.size;
+
+  for (const lineText of lines) {
+    const textWidth = input.font.widthOfTextAtSize(lineText, input.size);
+    const textX =
+      input.align === 'center'
+        ? input.x + (input.width - textWidth) / 2
+        : input.x + padX;
+    input.page.drawText(lineText, {
+      x: textX,
+      y: textY,
+      size: input.size,
+      font: input.font,
+      color: input.color,
+    });
+    textY -= input.size + lineGap;
+  }
+}
+
+async function drawSignatureImageOrLine(input: {
+  page: PDFPage;
+  doc: PDFDocument;
+  signaturePng: Uint8Array | null | undefined;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: ReturnType<typeof rgb>;
+}) {
+  if (input.signaturePng && input.signaturePng.byteLength > 0) {
     try {
-      const image = await doc.embedPng(signaturePng);
-      const maxSigWidth = 160;
-      const maxSigHeight = 48;
+      const image = await input.doc.embedPng(input.signaturePng);
+      const maxSigWidth = input.width - 24;
+      const maxSigHeight = input.height - 26;
       const scale = Math.min(
         maxSigWidth / image.width,
         maxSigHeight / image.height,
@@ -466,27 +588,24 @@ async function drawNameSignatureRow(
       );
       const width = image.width * scale;
       const height = image.height * scale;
-      page.drawImage(image, {
-        x: midX,
-        y: nextY - height,
+      input.page.drawImage(image, {
+        x: input.x + (input.width - width) / 2,
+        y: input.y + 8,
         width,
         height,
       });
-      nextY = nextY - height - 14;
-      return nextY;
+      return;
     } catch {
-      // fall through
+      // fall through to signature line
     }
   }
 
-  // Signature line when image missing
-  page.drawLine({
-    start: { x: midX + 58, y: y + 2 },
-    end: { x: left + maxWidth, y: y + 2 },
+  input.page.drawLine({
+    start: { x: input.x + 16, y: input.y + 24 },
+    end: { x: input.x + input.width - 16, y: input.y + 24 },
     thickness: 0.6,
-    color: ink,
+    color: input.color,
   });
-  return nextY - 12;
 }
 
 function wrapText(

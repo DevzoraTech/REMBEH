@@ -129,6 +129,11 @@ describe('loan-agreement-pdf.builder', () => {
     expect(text).toContain('Jane Doe');
     expect(text).toContain('REMBEH Microfinance');
     expect(text).toContain('BETWEEN');
+    expect(text).toContain('The Borrower');
+    expect(text).toContain('Guarantor');
+    expect(text).toContain('On Behalf of REMBEH');
+    expect(text).toContain('Microfinance');
+    expect((text.match(/Signature:/g) ?? []).length).toBe(3);
     expect(pdf.getPageCount()).toBeLessThanOrEqual(4);
   });
 

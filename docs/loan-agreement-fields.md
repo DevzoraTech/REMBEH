@@ -45,7 +45,7 @@ If LibreOffice is missing, the API fills the DOCX fields and renders an equivale
 
 - **Header (centered):** Republic / Moneylenders Act / AND / company matter / **LOAN AGREEMENT** (bold + underlined)
 - **Body (left-aligned):** preamble, BETWEEN / AND party blocks, WHEREAS / NOW THEREFORE, numbered clauses with indented sub-clauses
-- **Signatures:** inline Name / Signature rows (no “ELECTRONIC SIGNATURES” appendix)
+- **Signatures:** a bordered table with Borrower, Guarantor, and Lender representative columns; each name sits above that party’s signature (no “ELECTRONIC SIGNATURES” appendix)
 - **Footer (centered, small):** Rembeh Financial Software (ANTIKRA Mechanism) + date
 
 Legacy notices such as “Document version: N” and “LibreOffice PDF conversion unavailable” are not included.
