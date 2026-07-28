@@ -86,10 +86,22 @@ export type DailyOperationContract = {
   notes: string | null;
 };
 
+export type DailyOperationCarryoverContract = {
+  id: string;
+  branchId: string;
+  branchName: string;
+  operationDate: string;
+  status: BranchOperationStatusContract;
+  openedAt: string;
+};
+
 export type DailyOperationResponseContract = {
   date: string;
   branch: DailyOperationBranchContract | null;
   openingBalance: number | null;
+  openingBalanceSource: 'PREVIOUS_CLOSING' | 'MANUAL';
+  previousClosedOperation: DailyOperationCarryoverContract | null;
+  pendingClosureOperation: DailyOperationCarryoverContract | null;
   operation: DailyOperationContract | null;
 };
 

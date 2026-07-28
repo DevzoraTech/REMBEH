@@ -61,6 +61,32 @@ export class OperationsRepository {
         closingBalance: { not: null },
       },
       orderBy: { operationDate: 'desc' },
+      include: {
+        branch: true,
+        openedBy: { select: { id: true, displayName: true } },
+        closedBy: { select: { id: true, displayName: true } },
+      },
+    });
+  }
+
+  findOldestUnclosedBefore(input: {
+    tenantId: string;
+    branchId: string;
+    beforeDate: Date;
+  }) {
+    return this.prisma.branchDailyOperation.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        operationDate: { lt: input.beforeDate },
+        status: { not: BranchOperationStatus.CLOSED },
+      },
+      orderBy: { operationDate: 'asc' },
+      include: {
+        branch: true,
+        openedBy: { select: { id: true, displayName: true } },
+        closedBy: { select: { id: true, displayName: true } },
+      },
     });
   }
 

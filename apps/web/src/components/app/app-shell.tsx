@@ -41,6 +41,10 @@ type AppShellProps = {
 type OperationOpenCheck = {
   branch: { id: string; name: string } | null;
   operation: { id: string; status: string } | null;
+  pendingClosureOperation: {
+    operationDate: string;
+    status: string;
+  } | null;
 };
 
 export function AppShell({
@@ -164,7 +168,13 @@ export function AppShell({
         });
         const payload = await readApiJson<OperationOpenCheck>(response);
         if (cancelled || !response.ok) return;
-        if (payload.branch && !payload.operation) {
+        if (payload.pendingClosureOperation) {
+          router.replace(
+            `/operations?date=${encodeURIComponent(
+              payload.pendingClosureOperation.operationDate,
+            )}&prompt=close`,
+          );
+        } else if (payload.branch && !payload.operation) {
           router.replace("/operations?prompt=open");
         }
       } catch {

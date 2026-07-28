@@ -19,6 +19,7 @@ import { RecordOperationExpenseDto } from './dto/record-operation-expense.dto';
 import {
   AgentDailyOperationResponseContract,
   DailyOperationAgentReturnContract,
+  DailyOperationCarryoverContract,
   DailyOperationContract,
   DailyOperationResponseContract,
 } from './operations.contracts';
@@ -49,11 +50,14 @@ export class OperationsService {
         date: bounds.dateLabel,
         branch: null,
         openingBalance: null,
+        openingBalanceSource: 'MANUAL',
+        previousClosedOperation: null,
+        pendingClosureOperation: null,
         operation: null,
       };
     }
 
-    const [operation, previousClosed] = await Promise.all([
+    const [operation, previousClosed, pendingClosure] = await Promise.all([
       this.repository.findOperationForDay({
         tenantId: user.tenantId,
         branchId: branch.id,
@@ -64,7 +68,15 @@ export class OperationsService {
         branchId: branch.id,
         beforeDate: bounds.dateOnly,
       }),
+      this.repository.findOldestUnclosedBefore({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        beforeDate: bounds.dateOnly,
+      }),
     ]);
+    const openingBalance = previousClosed
+      ? this.decimalToNumber(previousClosed.closingBalance)
+      : null;
 
     return {
       date: bounds.dateLabel,
@@ -73,8 +85,13 @@ export class OperationsService {
         name: branch.name,
         address: branch.address,
       },
-      openingBalance: previousClosed
-        ? this.decimalToNumber(previousClosed.closingBalance)
+      openingBalance,
+      openingBalanceSource: previousClosed ? 'PREVIOUS_CLOSING' : 'MANUAL',
+      previousClosedOperation: previousClosed
+        ? this.toCarryoverContract(previousClosed)
+        : null,
+      pendingClosureOperation: pendingClosure
+        ? this.toCarryoverContract(pendingClosure)
         : null,
       operation: operation
         ? await this.toContract(operation, bounds.dayStart, bounds.dayEnd)
@@ -261,11 +278,25 @@ export class OperationsService {
       throw new ConflictException('This branch is already open for this day.');
     }
 
-    const previousClosed = await this.repository.findLatestClosedBefore({
-      tenantId: user.tenantId,
-      branchId: branch.id,
-      beforeDate: bounds.dateOnly,
-    });
+    const [previousClosed, pendingClosure] = await Promise.all([
+      this.repository.findLatestClosedBefore({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        beforeDate: bounds.dateOnly,
+      }),
+      this.repository.findOldestUnclosedBefore({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        beforeDate: bounds.dateOnly,
+      }),
+    ]);
+
+    if (pendingClosure) {
+      throw new BadRequestException(
+        `Close ${this.formatDateLabel(pendingClosure.operationDate)} before opening a new day.`,
+      );
+    }
+
     const openingBalance = previousClosed
       ? this.decimalToNumber(previousClosed.closingBalance)
       : dto.openingBalance;
@@ -335,7 +366,6 @@ export class OperationsService {
     }
 
     const bounds = this.parseDayBounds(dto.date);
-    this.assertCanChangeDay(bounds.dateOnly);
     const operation = await this.repository.findOperationForDay({
       tenantId: user.tenantId,
       branchId: branch.id,
@@ -408,7 +438,6 @@ export class OperationsService {
     }
 
     const bounds = this.parseDayBounds(dto.date);
-    this.assertCanChangeDay(bounds.dateOnly);
     const operation = await this.repository.findOperationForDay({
       tenantId: user.tenantId,
       branchId: branch.id,
@@ -470,7 +499,6 @@ export class OperationsService {
     }
 
     const bounds = this.parseDayBounds(dto.date);
-    this.assertCanChangeDay(bounds.dateOnly);
     const operation = await this.repository.findOperationForDay({
       tenantId: user.tenantId,
       branchId: branch.id,
@@ -657,6 +685,21 @@ export class OperationsService {
     }
 
     return operation;
+  }
+
+  private toCarryoverContract(
+    operation: NonNullable<
+      Awaited<ReturnType<OperationsRepository['findOperationForDay']>>
+    >,
+  ): DailyOperationCarryoverContract {
+    return {
+      id: operation.id,
+      branchId: operation.branchId,
+      branchName: operation.branch.name,
+      operationDate: this.formatDateLabel(operation.operationDate),
+      status: operation.status,
+      openedAt: operation.openedAt.toISOString(),
+    };
   }
 
   private async toContract(

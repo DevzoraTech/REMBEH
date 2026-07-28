@@ -73,6 +73,15 @@ type DailyOperation = {
   notes: string | null;
 };
 
+type OperationCarryover = {
+  id: string;
+  branchId: string;
+  branchName: string;
+  operationDate: string;
+  status: "OPEN" | "CLOSING" | "CLOSED";
+  openedAt: string;
+};
+
 type ExpenseCategory =
   | "TRANSPORT"
   | "FUEL"
@@ -119,6 +128,9 @@ type OperationResponse = {
   date: string;
   branch: OperationBranch | null;
   openingBalance: number | null;
+  openingBalanceSource: "PREVIOUS_CLOSING" | "MANUAL";
+  previousClosedOperation: OperationCarryover | null;
+  pendingClosureOperation: OperationCarryover | null;
   operation: DailyOperation | null;
   message?: string | string[];
 };
@@ -199,13 +211,23 @@ function todayInputValue() {
   return `${year}-${month}-${day}`;
 }
 
+function validDateInputValue(value: string | null) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value ?? "");
+}
+
+function initialOperationDate() {
+  if (typeof window === "undefined") return todayInputValue();
+  const queryDate = new URLSearchParams(window.location.search).get("date");
+  return validDateInputValue(queryDate) ? queryDate! : todayInputValue();
+}
+
 export default function OperationsPage() {
   const router = useRouter();
   const [session, setSession] = useState<RembehSession | null>(null);
   const [workspace, setWorkspace] = useState<RembehWorkspace | null>(null);
   const [user, setUser] = useState<RembehUser | null>(null);
   const [branch, setBranch] = useState<RembehBranch | null>(null);
-  const [date, setDate] = useState(todayInputValue);
+  const [date, setDate] = useState(initialOperationDate);
   const [data, setData] = useState<OperationResponse | null>(null);
   const [form, setForm] = useState<OpeningForm>(emptyOpeningForm);
   const [expenseForm, setExpenseForm] = useState<ExpenseForm>(emptyExpenseForm);
@@ -230,12 +252,24 @@ export default function OperationsPage() {
   const canClose = Boolean(session?.permissions.includes("operation.close"));
   const activeBranch = data?.branch;
   const operation = data?.operation;
+  const pendingClosureOperation = data?.pendingClosureOperation ?? null;
+  const previousClosedOperation = data?.previousClosedOperation ?? null;
   const suggestedOpeningBalance = data?.openingBalance ?? null;
   const isToday = date === todayInputValue();
+  const canFinishOpenOperation = Boolean(
+    operation && operation.status === "OPEN",
+  );
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("prompt") === "open") {
+    const queryDate = params.get("date");
+    const prompt = params.get("prompt");
+    if (validDateInputValue(queryDate)) {
+      setDate((current) => (queryDate === current ? current : queryDate!));
+    }
+    if (prompt === "close") {
+      setNotice("Close the previous branch day before opening a new day.");
+    } else if (prompt === "open") {
       setNotice("Open today's branch before continuing.");
     }
   }, []);
@@ -258,6 +292,9 @@ export default function OperationsPage() {
           throw new Error(formatApiError(payload.message));
         }
         setData(payload);
+        if (payload.pendingClosureOperation) {
+          setNotice("Close the previous branch day before opening a new day.");
+        }
         if (!payload.operation && payload.openingBalance != null) {
           setForm((current) =>
             current.openingBalance
@@ -361,8 +398,8 @@ export default function OperationsPage() {
 
   async function recordExpense() {
     if (!session || !activeBranch || recordingExpense) return;
-    if (!isToday) {
-      setError("Only today's records can be changed.");
+    if (!canFinishOpenOperation) {
+      setError("Only an open branch day can be changed.");
       return;
     }
     setRecordingExpense(true);
@@ -401,8 +438,8 @@ export default function OperationsPage() {
 
   async function recordAgentReturn() {
     if (!session || !activeBranch || recordingAgentReturn) return;
-    if (!isToday) {
-      setError("Only today's records can be changed.");
+    if (!canFinishOpenOperation) {
+      setError("Only an open branch day can be changed.");
       return;
     }
     setRecordingAgentReturn(true);
@@ -443,8 +480,8 @@ export default function OperationsPage() {
 
   async function closeBranch() {
     if (!session || !activeBranch || closing) return;
-    if (!isToday) {
-      setError("Only today's records can be changed.");
+    if (!canFinishOpenOperation) {
+      setError("Only an open branch day can be closed.");
       return;
     }
     setClosing(true);
@@ -478,6 +515,22 @@ export default function OperationsPage() {
     } finally {
       setClosing(false);
     }
+  }
+
+  function goToPendingClosure() {
+    if (!pendingClosureOperation) return;
+    setNotice("Close this branch day before opening a new day.");
+    setError(null);
+    setForm(emptyOpeningForm);
+    setExpenseForm(emptyExpenseForm);
+    setAgentReturnForm(emptyAgentReturnForm);
+    setClosingForm(emptyClosingForm);
+    setDate(pendingClosureOperation.operationDate);
+    router.replace(
+      `/operations?date=${encodeURIComponent(
+        pendingClosureOperation.operationDate,
+      )}&prompt=close`,
+    );
   }
 
   if (!session) {
@@ -553,7 +606,7 @@ export default function OperationsPage() {
         ) : operation ? (
           <OpenOperationView
             operation={operation}
-            editable={isToday && operation.status === "OPEN"}
+            editable={canFinishOpenOperation}
             canRecordReturn={canRecordReturn}
             canRecordExpense={canRecordExpense}
             canClose={canClose}
@@ -570,6 +623,11 @@ export default function OperationsPage() {
             onRecordAgentReturn={() => void recordAgentReturn()}
             onRecordExpense={() => void recordExpense()}
           />
+        ) : pendingClosureOperation ? (
+          <PendingClosureView
+            pendingOperation={pendingClosureOperation}
+            onReview={goToPendingClosure}
+          />
         ) : (
           <OpeningView
             branch={activeBranch}
@@ -578,6 +636,7 @@ export default function OperationsPage() {
             form={form}
             opening={opening}
             openingTotal={openingTotal}
+            previousClosedOperation={previousClosedOperation}
             suggestedOpeningBalance={suggestedOpeningBalance}
             setForm={setForm}
             onOpen={() => void openBranch()}
@@ -588,6 +647,46 @@ export default function OperationsPage() {
   );
 }
 
+function PendingClosureView({
+  pendingOperation,
+  onReview,
+}: {
+  pendingOperation: OperationCarryover;
+  onReview: () => void;
+}) {
+  return (
+    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
+      <div className="grid gap-4 p-5 lg:grid-cols-[1fr_260px] lg:items-center">
+        <div>
+          <p className="text-[11px] font-semibold tracking-[0.12em] text-amber-700">
+            Close Previous Day
+          </p>
+          <h2 className="mt-2 text-xl font-bold text-[var(--midnight-navy)]">
+            Close {formatDateOnly(pendingOperation.operationDate)} first
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+            This branch still has an open record from the previous day. Close it
+            first so the next day starts with the correct opening balance.
+          </p>
+        </div>
+        <div className="border border-amber-200 bg-amber-50 p-4">
+          <p className="text-xs font-bold text-amber-700">Open branch day</p>
+          <p className="mt-1 text-lg font-bold text-[var(--midnight-navy)]">
+            {formatDateOnly(pendingOperation.operationDate)}
+          </p>
+          <button
+            type="button"
+            onClick={onReview}
+            className="btn btn-primary mt-4 h-9 w-full text-xs"
+          >
+            Close this day
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function OpeningView({
   branch,
   canOpen,
@@ -595,6 +694,7 @@ function OpeningView({
   form,
   opening,
   openingTotal,
+  previousClosedOperation,
   suggestedOpeningBalance,
   setForm,
   onOpen,
@@ -605,6 +705,7 @@ function OpeningView({
   form: OpeningForm;
   opening: boolean;
   openingTotal: number;
+  previousClosedOperation: OperationCarryover | null;
   suggestedOpeningBalance: number | null;
   setForm: (next: OpeningForm) => void;
   onOpen: () => void;
@@ -635,6 +736,15 @@ function OpeningView({
             locked={!editableDate || suggestedOpeningBalance != null}
             onChange={(value) => setForm({ ...form, openingBalance: value })}
           />
+          {suggestedOpeningBalance != null ? (
+            <p className="self-end text-xs font-semibold leading-5 text-slate-500">
+              From closing cash
+              {previousClosedOperation
+                ? ` on ${formatDateOnly(previousClosedOperation.operationDate)}`
+                : ""}
+              . This amount cannot be edited.
+            </p>
+          ) : null}
           <MoneyField
             label="Cash added today"
             value={form.cashAddedToday}
@@ -1631,4 +1741,13 @@ function formatDateTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatDateOnly(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Intl.DateTimeFormat("en-UG", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(year, month - 1, day));
 }
