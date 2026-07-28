@@ -761,10 +761,12 @@ function OpenOperationView({
     <div className="space-y-4">
       <section className="grid grid-cols-6 gap-1 sm:gap-1.5 xl:gap-2">
         <OperationStat
-          label="Status"
-          value={operationLabel(operation.status)}
-          hint={`Opened ${formatClock(operation.openedAt)}`}
+          label="Expected closing"
+          value={formatMoney(operation.expectedClosingBalance)}
+          hint="After agent returns"
           tone="good"
+          icon={<ShieldCheck className="size-4" />}
+          featured
         />
         <OperationStat
           label="Available cash"
@@ -860,7 +862,7 @@ function OpenOperationView({
               )}`}
             />
             <DetailRow
-              label="Expected close"
+              label="Expected closing"
               value={formatMoney(operation.expectedClosingBalance)}
             />
             {operation.closingBalance != null ? (
@@ -1456,12 +1458,14 @@ function OperationStat({
   value,
   hint,
   tone,
+  featured = false,
 }: {
   icon?: ReactNode;
   label: string;
   value: string;
   hint: string;
   tone: "good" | "blue" | "warn" | "bad";
+  featured?: boolean;
 }) {
   const toneClass =
     tone === "good"
@@ -1471,9 +1475,12 @@ function OperationStat({
         : tone === "warn"
           ? "border-amber-100 bg-amber-50 text-amber-700"
           : "border-rose-100 bg-rose-50 text-rose-700";
+  const articleClass = featured
+    ? "panel flex min-h-[78px] min-w-0 items-start gap-1.5 border-2 border-emerald-300 bg-emerald-50 px-1.5 py-2 shadow-[0_12px_28px_rgba(15,118,87,0.16)] sm:gap-2 sm:px-2 xl:px-3"
+    : "panel flex min-h-[76px] min-w-0 items-start gap-1.5 bg-white px-1.5 py-2 shadow-[0_8px_20px_rgba(20,33,61,0.05)] sm:gap-2 sm:px-2 xl:px-3";
 
   return (
-    <article className="panel flex min-h-[76px] min-w-0 items-start gap-1.5 bg-white px-1.5 py-2 shadow-[0_8px_20px_rgba(20,33,61,0.05)] sm:gap-2 sm:px-2 xl:px-3">
+    <article className={articleClass}>
       <span
         className={`hidden size-7 shrink-0 place-items-center border md:grid xl:size-8 ${toneClass}`}
       >
@@ -1483,7 +1490,13 @@ function OperationStat({
         <p className="text-[8px] font-semibold tracking-[0.06em] text-slate-500 sm:text-[9px] xl:text-[10px]">
           {label}
         </p>
-        <p className="mt-1 break-words text-[clamp(0.55rem,1.15vw,1rem)] font-bold leading-tight tabular-nums text-[var(--midnight-navy)]">
+        <p
+          className={`mt-1 break-words font-bold leading-tight tabular-nums ${
+            featured
+              ? "text-[clamp(0.6rem,1.25vw,1.1rem)] text-[var(--forest-emerald)]"
+              : "text-[clamp(0.55rem,1.15vw,1rem)] text-[var(--midnight-navy)]"
+          }`}
+        >
           {value}
         </p>
         <p className="mt-0.5 break-words text-[clamp(0.5rem,0.9vw,0.7rem)] leading-tight text-slate-500">
