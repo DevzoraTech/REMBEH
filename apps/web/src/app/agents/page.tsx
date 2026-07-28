@@ -154,14 +154,17 @@ export default function AgentsPage() {
         }
         if (requestId !== agentsRequestId.current) return;
         const nextAgents = payload.agents ?? [];
+        const nextAssignableAgents = nextAgents.filter(
+          (agent) => agent.floatToday == null,
+        );
         setAgents(nextAgents);
         setFloatForm((current) => ({
           ...current,
           agentId:
             current.agentId &&
-            nextAgents.some((agent) => agent.id === current.agentId)
+            nextAssignableAgents.some((agent) => agent.id === current.agentId)
               ? current.agentId
-              : (nextAgents[0]?.id ?? ""),
+              : (nextAssignableAgents[0]?.id ?? ""),
         }));
         setCounts(payload.counts ?? null);
       } catch (caught) {
@@ -328,10 +331,10 @@ export default function AgentsPage() {
       router.replace("/operations?prompt=open");
       return;
     }
-    if (amount > availableFloatForSelectedAgent) {
+    if (amount > floatLeftFromOperations) {
       setError(
         `Float exceeds amount set aside. Available: UGX ${formatAmount(
-          availableFloatForSelectedAgent,
+          floatLeftFromOperations,
         )}.`,
       );
       return;
@@ -419,24 +422,23 @@ export default function AgentsPage() {
     };
   }, [agents]);
 
+  const assignableAgents = useMemo(
+    () => agents.filter((agent) => agent.floatToday == null),
+    [agents],
+  );
   const selectedFloatAgent = useMemo(
-    () => agents.find((agent) => agent.id === floatForm.agentId) ?? null,
-    [agents, floatForm.agentId],
+    () =>
+      assignableAgents.find((agent) => agent.id === floatForm.agentId) ?? null,
+    [assignableAgents, floatForm.agentId],
   );
   const isSelectedDateToday = selectedDate === todayInputValue();
   const operationForSelectedDate = operationSummary?.operation ?? null;
-  const selectedAgentCurrentFloat = selectedFloatAgent?.floatToday ?? 0;
-  const availableFloatForSelectedAgent = operationForSelectedDate
-    ? Math.max(
-        operationForSelectedDate.floatRemaining + selectedAgentCurrentFloat,
-        0,
-      )
-    : 0;
+  const floatLeftFromOperations = operationForSelectedDate?.floatRemaining ?? 0;
   const floatAmount = Number(floatForm.amount);
   const floatAmountValid =
     floatForm.amount !== "" && Number.isFinite(floatAmount) && floatAmount >= 0;
   const floatAmountExceedsSetAside =
-    floatAmountValid && floatAmount > availableFloatForSelectedAgent;
+    floatAmountValid && floatAmount > floatLeftFromOperations;
   const canSubmitFloat =
     canManageFloat &&
     Boolean(selectedFloatAgent) &&
@@ -480,7 +482,12 @@ export default function AgentsPage() {
           <button
             type="button"
             className="btn btn-ghost h-9 text-xs"
-            onClick={() => void loadAgents(session, query, selectedDate)}
+            onClick={() =>
+              void Promise.all([
+                loadAgents(session, query, selectedDate),
+                loadOperationSummary(session, selectedDate),
+              ])
+            }
             disabled={loading}
           >
             <RefreshCw
@@ -549,8 +556,8 @@ export default function AgentsPage() {
             </p>
             <p className="break-words text-[clamp(0.68rem,1.4vw,1.125rem)] font-bold leading-tight tabular-nums text-[var(--midnight-navy)]">
               {operationForSelectedDate
-                ? formatAmount(operationForSelectedDate.floatRemaining)
-                : "0"}
+                ? `UGX ${formatAmount(floatLeftFromOperations)}`
+                : "UGX 0"}
             </p>
           </div>
 
@@ -564,9 +571,18 @@ export default function AgentsPage() {
                     agentId: event.target.value,
                   }))
                 }
+                disabled={
+                  assignableAgents.length === 0 ||
+                  !operationForSelectedDate ||
+                  operationForSelectedDate.status !== "OPEN" ||
+                  !isSelectedDateToday
+                }
                 className="h-9 min-w-0 border border-[var(--line)] bg-white px-2 text-sm"
               >
-                {agents.map((agent) => (
+                {assignableAgents.length === 0 ? (
+                  <option value="">All agents assigned</option>
+                ) : null}
+                {assignableAgents.map((agent) => (
                   <option key={agent.id} value={agent.id}>
                     {agent.name}
                     {agent.publicId ? ` · ${agent.publicId}` : ""}
@@ -623,7 +639,21 @@ export default function AgentsPage() {
           ) : canManageFloat && floatAmountExceedsSetAside ? (
             <p className="w-full text-xs font-semibold text-red-600">
               Float exceeds amount set aside. Available: UGX{" "}
-              {formatAmount(availableFloatForSelectedAgent)}.
+              {formatAmount(floatLeftFromOperations)}.
+            </p>
+          ) : canManageFloat &&
+            operationForSelectedDate &&
+            operationForSelectedDate.status === "OPEN" &&
+            assignableAgents.length === 0 ? (
+            <p className="w-full text-xs font-semibold text-[var(--forest-emerald)]">
+              All agents have been given float for this day.
+            </p>
+          ) : canManageFloat &&
+            operationForSelectedDate &&
+            operationForSelectedDate.status === "OPEN" &&
+            floatLeftFromOperations <= 0 ? (
+            <p className="w-full text-xs font-semibold text-amber-700">
+              No float left from the amount set aside.
             </p>
           ) : null}
         </div>
@@ -840,18 +870,14 @@ export default function AgentsPage() {
                 label="Activate"
               />
             ) : null}
-            {canManageFloat ? (
+            {canManageFloat && actionMenuAgent.floatToday == null ? (
               <ActionMenuItem
                 disabled={statusBusyId === actionMenuAgent.id}
                 onClick={() => {
                   setActionMenu(null);
                   openFloatForAgent(actionMenuAgent);
                 }}
-                label={
-                  actionMenuAgent.floatToday == null
-                    ? "Set float"
-                    : "Edit float"
-                }
+                label="Set float"
               />
             ) : null}
             {actionMenuAgent.status !== "INACTIVE" ? (

@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { Prisma, UserStatus } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
+import { isPrismaUniqueConstraintError } from '../../common/database/prisma-errors';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import { ObjectStorageService } from '../storage/object-storage.service';
 import { OperationsService } from '../operations/operations.service';
@@ -342,15 +343,24 @@ export class AgentsService {
       amountGiven: this.decimalToNumber(amount) ?? 0,
       date: dateLabel,
     });
-    const floatRow = await this.repository.upsertFloat({
-      tenantId: scope.tenantId,
-      branchId: agent.branchId,
-      agentId,
-      floatDate,
-      amountGiven: amount,
-      recordedByUserId: user.userId,
-      notes: dto.notes?.trim() || null,
-    });
+    const floatRow = await this.repository
+      .createFloat({
+        tenantId: scope.tenantId,
+        branchId: agent.branchId,
+        agentId,
+        floatDate,
+        amountGiven: amount,
+        recordedByUserId: user.userId,
+        notes: dto.notes?.trim() || null,
+      })
+      .catch((error: unknown) => {
+        if (isPrismaUniqueConstraintError(error)) {
+          throw new BadRequestException(
+            'This agent already has float for this day.',
+          );
+        }
+        throw error;
+      });
 
     const [appsToday, repayToday] = await Promise.all([
       this.repository.sumApplicationPrincipal({

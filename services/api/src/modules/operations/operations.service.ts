@@ -413,16 +413,15 @@ export class OperationsService {
         }),
       ]);
 
-    if (existingFloat?.returnedAt) {
+    if (existingFloat) {
       throw new BadRequestException(
-        "This agent's float has already been returned.",
+        'This agent already has float for this day.',
       );
     }
 
     const cashAvailableAtOpening = this.cashAvailableAtOpening(operation);
     const floatSetAside = this.floatSetAsideAmount(operation);
     const totalAlreadyIssued = this.decimalToNumber(floatAgg._sum.amountGiven);
-    const currentAgentFloat = this.decimalToNumber(existingFloat?.amountGiven);
     const expensesTotal = this.decimalToNumber(expensesAgg._sum.amount);
     const cashReturnedByAgents = this.decimalToNumber(
       returnedAgg._sum.amountReturned,
@@ -431,11 +430,10 @@ export class OperationsService {
       cashAvailableAtOpening -
         expensesTotal -
         totalAlreadyIssued +
-        cashReturnedByAgents +
-        currentAgentFloat,
+        cashReturnedByAgents,
     );
     const setAsideAvailableForThisAgent = this.roundMoney(
-      floatSetAside - totalAlreadyIssued + currentAgentFloat,
+      floatSetAside - totalAlreadyIssued,
     );
     const availableForThisAgent = Math.max(
       0,

@@ -264,7 +264,7 @@ export class AgentsRepository {
     });
   }
 
-  upsertFloat(input: {
+  createFloat(input: {
     tenantId: string;
     branchId: string | null;
     agentId: string;
@@ -273,15 +273,8 @@ export class AgentsRepository {
     recordedByUserId: string;
     notes: string | null;
   }) {
-    return this.prisma.agentDailyFloat.upsert({
-      where: {
-        tenantId_agentId_floatDate: {
-          tenantId: input.tenantId,
-          agentId: input.agentId,
-          floatDate: input.floatDate,
-        },
-      },
-      create: {
+    return this.prisma.agentDailyFloat.create({
+      data: {
         tenantId: input.tenantId,
         branchId: input.branchId,
         agentId: input.agentId,
@@ -289,12 +282,6 @@ export class AgentsRepository {
         amountGiven: input.amountGiven,
         recordedByUserId: input.recordedByUserId,
         notes: input.notes,
-      },
-      update: {
-        amountGiven: input.amountGiven,
-        notes: input.notes,
-        recordedByUserId: input.recordedByUserId,
-        branchId: input.branchId,
       },
       include: {
         recordedBy: true,
