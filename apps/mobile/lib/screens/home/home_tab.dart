@@ -25,7 +25,8 @@ class HomeTab extends StatefulWidget {
   final void Function({
     required RecordsSection section,
     required RecordsFilter filter,
-  }) onOpenRecords;
+  })
+  onOpenRecords;
 
   @override
   State<HomeTab> createState() => _HomeTabState();
@@ -135,10 +136,7 @@ class _HomeTabState extends State<HomeTab> {
                       const SizedBox(height: 4),
                       Text(
                         greetingSubtext(now),
-                        style: const TextStyle(
-                          color: slateText,
-                          fontSize: 13,
-                        ),
+                        style: const TextStyle(color: slateText, fontSize: 13),
                       ),
                     ],
                   ),
@@ -156,8 +154,10 @@ class _HomeTabState extends State<HomeTab> {
               child: InkWell(
                 onTap: widget.onOpenSearch,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 13,
+                  ),
                   decoration: BoxDecoration(
                     border: Border.all(color: line),
                     borderRadius: rembehBorderRadius(rembehRadiusLg),
@@ -168,18 +168,11 @@ class _HomeTabState extends State<HomeTab> {
                       SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'Search client by name or phone...',
-                          style: TextStyle(
-                            color: slateText,
-                            fontSize: 14,
-                          ),
+                          'Search customer by name or phone...',
+                          style: TextStyle(color: slateText, fontSize: 14),
                         ),
                       ),
-                      Icon(
-                        Icons.chevron_right,
-                        size: 20,
-                        color: slateText,
-                      ),
+                      Icon(Icons.chevron_right, size: 20, color: slateText),
                     ],
                   ),
                 ),
@@ -358,18 +351,12 @@ class _HomeTabState extends State<HomeTab> {
                             SizedBox(height: 2),
                             Text(
                               'Register a new client for a loan.',
-                              style: TextStyle(
-                                color: slateText,
-                                fontSize: 12,
-                              ),
+                              style: TextStyle(color: slateText, fontSize: 12),
                             ),
                           ],
                         ),
                       ),
-                      const Icon(
-                        Icons.chevron_right,
-                        color: slateText,
-                      ),
+                      const Icon(Icons.chevron_right, color: slateText),
                     ],
                   ),
                 ),
@@ -444,7 +431,6 @@ class _HomeTabState extends State<HomeTab> {
       ),
     );
   }
-
 }
 
 class _HomeProfileAvatar extends StatelessWidget {
@@ -500,7 +486,9 @@ class _HomeProfileAvatar extends StatelessWidget {
         .toList();
     if (parts.isEmpty) return 'A';
     if (parts.length == 1) {
-      return parts.first.substring(0, parts.first.length.clamp(0, 2)).toUpperCase();
+      return parts.first
+          .substring(0, parts.first.length.clamp(0, 2))
+          .toUpperCase();
     }
     return ('${parts.first[0]}${parts.last[0]}').toUpperCase();
   }
@@ -598,118 +586,119 @@ class _DueClientCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: rembehBorderRadius(rembehRadiusLg),
         child: Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        border: Border.all(color: line),
-        borderRadius: rembehBorderRadius(rembehRadiusLg),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              color: sage,
-              shape: BoxShape.circle,
-            ),
-            child: Text(
-              client.initials,
-              style: const TextStyle(
-                color: forestEmerald,
-                fontWeight: FontWeight.w800,
-                fontSize: 13,
-              ),
-            ),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            border: Border.all(color: line),
+            borderRadius: rembehBorderRadius(rembehRadiusLg),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: sage,
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  client.initials,
+                  style: const TextStyle(
+                    color: forestEmerald,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Text(
-                        client.fullName,
-                        style: const TextStyle(
-                          color: midnightNavy,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 14,
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            client.fullName,
+                            style: const TextStyle(
+                              color: midnightNavy,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 14,
+                            ),
+                          ),
                         ),
-                      ),
+                        const SizedBox(width: 8),
+                        Text(
+                          formatActivityTime(client.lastActivityAt, now),
+                          style: const TextStyle(
+                            color: slateText,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      formatActivityTime(client.lastActivityAt, now),
-                      style: const TextStyle(
-                        color: slateText,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
+                    const SizedBox(height: 4),
+                    Text.rich(
+                      TextSpan(
+                        style: const TextStyle(fontSize: 12),
+                        children: [
+                          TextSpan(
+                            text: '${client.phone} • ',
+                            style: const TextStyle(color: slateText),
+                          ),
+                          TextSpan(
+                            text:
+                                'Paid ${formatCompactMoney(client.amountPaid)}',
+                            style: const TextStyle(
+                              color: forestEmerald,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          TextSpan(
+                            text: ' · ${formatCompactMoney(client.loanAmount)}',
+                            style: const TextStyle(
+                              color: warmGold,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 6),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            client.synced
+                                ? Icons.check_circle
+                                : Icons.cloud_outlined,
+                            size: 14,
+                            color: client.synced ? forestEmerald : warmGold,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            client.synced ? 'Uploaded' : 'Pending',
+                            style: TextStyle(
+                              color: client.synced ? forestEmerald : warmGold,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 4),
-                Text.rich(
-                  TextSpan(
-                    style: const TextStyle(fontSize: 12),
-                    children: [
-                      TextSpan(
-                        text: '${client.phone} • ',
-                        style: const TextStyle(color: slateText),
-                      ),
-                      TextSpan(
-                        text: 'Paid ${formatCompactMoney(client.amountPaid)}',
-                        style: const TextStyle(
-                          color: forestEmerald,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      TextSpan(
-                        text: ' · ${formatCompactMoney(client.loanAmount)}',
-                        style: const TextStyle(
-                          color: warmGold,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ],
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        client.synced
-                            ? Icons.check_circle
-                            : Icons.cloud_outlined,
-                        size: 14,
-                        color: client.synced ? forestEmerald : warmGold,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        client.synced ? 'Uploaded' : 'Pending',
-                        style: TextStyle(
-                          color: client.synced ? forestEmerald : warmGold,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
         ),
       ),
     );

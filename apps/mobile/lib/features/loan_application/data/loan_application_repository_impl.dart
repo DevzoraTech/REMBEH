@@ -89,8 +89,8 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
       final presign = await _api.presignMedia(id, {
         'mediaType': mediaType,
         'mimeType': mimeType,
-        if (fileName != null) 'fileName': fileName,
-        if (extension != null) 'extension': extension,
+        'fileName': ?fileName,
+        'extension': ?extension,
       });
 
       final uploadUrl = presign['uploadUrl'] as String;
@@ -107,7 +107,7 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
         'storageKey': storageKey,
         'mimeType': mimeType,
         'byteSize': bytes.length,
-        if (fileName != null) 'fileName': fileName,
+        'fileName': ?fileName,
       });
 
       return _mapApplication(confirmed['application'] as Map<String, dynamic>);
@@ -260,9 +260,9 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
       clientName: json['clientName'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
       amountRequested: ((json['amountRequested'] as num?) ?? 0).round(),
-      interestRatePercent:
-          ((json['interestRatePercent'] as num?) ?? 0).round(),
-      registeredAt: DateTime.tryParse(json['registeredAt'] as String? ?? '') ??
+      interestRatePercent: ((json['interestRatePercent'] as num?) ?? 0).round(),
+      registeredAt:
+          DateTime.tryParse(json['registeredAt'] as String? ?? '') ??
           DateTime.now(),
       synced: json['synced'] as bool? ?? false,
       status: json['status'] as String? ?? 'DRAFT',
