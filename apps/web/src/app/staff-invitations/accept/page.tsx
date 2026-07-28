@@ -14,6 +14,7 @@ import {
   useState,
 } from "react";
 import rembehIcon from "../../../assets/rembeh-icon.png";
+import { AuthPageSkeleton } from "../../../components/app/skeleton";
 import {
   FormError,
   PasswordField,
@@ -227,14 +228,7 @@ export default function AcceptStaffInvitationPage() {
   }
 
   if (isLoading) {
-    return (
-      <main className="grid min-h-screen place-items-center bg-[var(--soft-ivory)]">
-        <div className="text-center">
-          <Loader2 className="mx-auto size-6 animate-spin text-[var(--forest-emerald)]" />
-          <p className="mt-3 text-sm text-slate-500">Opening invitation…</p>
-        </div>
-      </main>
-    );
+    return <AuthPageSkeleton />;
   }
 
   if (!lookup) {
@@ -244,7 +238,7 @@ export default function AcceptStaffInvitationPage() {
           <p className="text-[11px] font-semibold lowercase tracking-[0.14em] text-red-600">
             invitation unavailable
           </p>
-          <h1 className="mt-2 font-[family-name:var(--font-display)] text-2xl text-[var(--midnight-navy)]">
+          <h1 className="mt-2 text-2xl font-bold text-[var(--midnight-navy)]">
             this link cannot be used
           </h1>
           <p className="mt-2 text-sm leading-6 text-slate-500">
@@ -274,7 +268,7 @@ export default function AcceptStaffInvitationPage() {
               priority
             />
             <div>
-              <p className="font-[family-name:var(--font-display)] text-2xl leading-none tracking-[-0.03em]">
+              <p className="text-2xl font-bold leading-none">
                 REMBEH
               </p>
               <p className="mt-1 text-[10px] lowercase tracking-[0.16em] text-white/50">
@@ -282,7 +276,7 @@ export default function AcceptStaffInvitationPage() {
               </p>
             </div>
           </div>
-          <h1 className="mt-6 font-[family-name:var(--font-display)] text-3xl tracking-[-0.03em]">
+          <h1 className="mt-6 text-3xl font-bold">
             {isManager ? "branch manager access" : "activate access"}
           </h1>
         </div>

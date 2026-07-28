@@ -12,6 +12,7 @@ import { Loader2, MoreVertical, RefreshCw, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AgentDetailDrawer } from "../../components/app/agent-detail-drawer";
 import { AppShell } from "../../components/app/app-shell";
+import { AppBootSkeleton, TableSkeleton } from "../../components/app/skeleton";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import {
   RembehBranch,
@@ -344,12 +345,7 @@ export default function AgentsPage() {
     : null;
 
   if (!session) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">
-        <Loader2 className="mr-2 size-4 animate-spin" />
-        Loading…
-      </div>
-    );
+    return <AppBootSkeleton />;
   }
 
   return (
@@ -509,10 +505,7 @@ export default function AgentsPage() {
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
         {loading && agents.length === 0 ? (
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <Loader2 className="size-4 animate-spin" />
-            Loading agents…
-          </div>
+          <TableSkeleton rows={6} columns={8} />
         ) : !canRead ? (
           <p className="panel px-4 py-6 text-sm text-slate-500">
             You do not have permission to view agents.
@@ -598,15 +591,6 @@ export default function AgentsPage() {
                           ? "Not given"
                           : formatAmount(agent.floatToday)}
                       </p>
-                      {canManage ? (
-                        <button
-                          type="button"
-                          className="mt-1 text-[10px] font-semibold text-[var(--midnight-navy)] hover:underline"
-                          onClick={() => openFloatForAgent(agent)}
-                        >
-                          {agent.floatToday == null ? "Set" : "Edit"}
-                        </button>
-                      ) : null}
                     </td>
                     <td className="px-2 py-2.5 text-right tabular-nums">
                       <p className="truncate font-bold text-[var(--midnight-navy)]">
@@ -706,6 +690,16 @@ export default function AgentsPage() {
                 label="Activate"
               />
             ) : null}
+            <ActionMenuItem
+              disabled={statusBusyId === actionMenuAgent.id}
+              onClick={() => {
+                setActionMenu(null);
+                openFloatForAgent(actionMenuAgent);
+              }}
+              label={
+                actionMenuAgent.floatToday == null ? "Set float" : "Edit float"
+              }
+            />
             {actionMenuAgent.status !== "INACTIVE" ? (
               <ActionMenuItem
                 disabled={statusBusyId === actionMenuAgent.id}

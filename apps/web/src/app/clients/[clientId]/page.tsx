@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   ExternalLink,
   FileText,
-  Loader2,
   MoreVertical,
   RefreshCw,
   X,
@@ -13,6 +12,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../../components/app/app-shell";
+import { AppBootSkeleton, SkeletonBlock } from "../../../components/app/skeleton";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../../lib/api";
 import {
   RembehBranch,
@@ -193,12 +193,7 @@ export default function ClientDetailPage() {
   );
 
   if (!session) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">
-        <Loader2 className="mr-2 size-4 animate-spin" />
-        loading…
-      </div>
-    );
+    return <AppBootSkeleton />;
   }
 
   return (
@@ -238,10 +233,7 @@ export default function ClientDetailPage() {
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
         {loading && !client ? (
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <Loader2 className="size-4 animate-spin" />
-            loading borrower…
-          </div>
+          <BorrowerDetailSkeleton />
         ) : client ? (
           <>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -297,32 +289,32 @@ export default function ClientDetailPage() {
                     no loans recorded for this client.
                   </p>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[780px] table-fixed text-left text-[11px]">
+                  <div className="overflow-hidden">
+                    <table className="w-full table-fixed text-left text-[10px] xl:text-[11px]">
                       <thead className="border-b border-[var(--line)] bg-[#f7faf8] text-[9px] lowercase tracking-[0.06em] text-slate-500">
                         <tr>
-                          <th className="w-[12%] px-3 py-2.5 font-semibold">
+                          <th className="w-[12%] px-2 py-2.5 font-semibold">
                             loan id
                           </th>
-                          <th className="w-[16%] px-3 py-2.5 font-semibold">
+                          <th className="hidden w-[16%] px-2 py-2.5 font-semibold md:table-cell">
                             loan type
                           </th>
-                          <th className="w-[12%] px-3 py-2.5 font-semibold">
+                          <th className="w-[13%] px-2 py-2.5 font-semibold">
                             status
                           </th>
-                          <th className="w-[15%] px-3 py-2.5 font-semibold">
+                          <th className="hidden w-[14%] px-2 py-2.5 font-semibold lg:table-cell">
                             collateral
                           </th>
-                          <th className="w-[13%] px-3 py-2.5 text-right font-semibold">
+                          <th className="hidden w-[13%] px-2 py-2.5 text-right font-semibold sm:table-cell">
                             principal
                           </th>
-                          <th className="w-[12%] px-3 py-2.5 text-right font-semibold">
+                          <th className="hidden w-[12%] px-2 py-2.5 text-right font-semibold xl:table-cell">
                             paid
                           </th>
-                          <th className="w-[16%] px-3 py-2.5 text-right font-semibold">
+                          <th className="w-[18%] px-2 py-2.5 text-right font-semibold sm:w-[15%]">
                             balance
                           </th>
-                          <th className="w-[4%] px-3 py-2.5 text-right font-semibold">
+                          <th className="w-[8%] px-2 py-2.5 text-right font-semibold">
                             actions
                           </th>
                         </tr>
@@ -330,17 +322,17 @@ export default function ClientDetailPage() {
                       <tbody className="divide-y divide-[var(--line)]">
                         {client.loans.map((loan) => (
                           <tr key={loan.id} className="odd:bg-white even:bg-[#fbfdfc]">
-                            <td className="px-3 py-3 font-semibold text-[var(--midnight-navy)]">
+                            <td className="px-2 py-3 font-semibold text-[var(--midnight-navy)]">
                               <span className="block truncate">
                                 {shortId(loan.id)}
                               </span>
                             </td>
-                            <td className="px-3 py-3 text-slate-600">
+                            <td className="hidden px-2 py-3 text-slate-600 md:table-cell">
                               <span className="block truncate">
                                 {loan.loanTypeName || "standard loan"}
                               </span>
                             </td>
-                            <td className="px-3 py-3 text-slate-600">
+                            <td className="px-2 py-3 text-slate-600">
                               <span
                                 className={`inline-flex border px-1.5 py-0.5 text-[9px] font-bold lowercase tracking-[0.04em] ${loanStatusTone(loan)}`}
                               >
@@ -354,30 +346,30 @@ export default function ClientDetailPage() {
                               <span className="block truncate text-[10px] text-slate-500">
                                 {loan.lastPaymentAt
                                   ? `last ${formatDateTime(loan.lastPaymentAt)}`
-                                  : "no payments"}
+                                : "no payments"}
                               </span>
                             </td>
-                            <td className="px-3 py-3 text-slate-600">
+                            <td className="hidden px-2 py-3 text-slate-600 lg:table-cell">
                               <span className="block truncate">
                                 {loan.collateralType || "—"}
                               </span>
                             </td>
-                            <td className="px-3 py-3 text-right tabular-nums">
-                              <span className="block whitespace-nowrap">
+                            <td className="hidden px-2 py-3 text-right tabular-nums sm:table-cell">
+                              <span className="block break-words">
                                 {formatMoney(loan.principal)}
                               </span>
                             </td>
-                            <td className="px-3 py-3 text-right tabular-nums text-[var(--forest-emerald)]">
-                              <span className="block whitespace-nowrap">
+                            <td className="hidden px-2 py-3 text-right tabular-nums text-[var(--forest-emerald)] xl:table-cell">
+                              <span className="block break-words">
                                 {formatMoney(loan.paidAmount)}
                               </span>
                             </td>
-                            <td className="px-3 py-3 text-right font-bold tabular-nums text-[var(--midnight-navy)]">
-                              <span className="block whitespace-nowrap">
+                            <td className="px-2 py-3 text-right font-bold tabular-nums text-[var(--midnight-navy)]">
+                              <span className="block break-words">
                                 {formatMoney(loan.balance)}
                               </span>
                             </td>
-                            <td className="px-3 py-3 text-right">
+                            <td className="px-2 py-3 text-right">
                               <button
                                 type="button"
                                 className="inline-grid size-8 place-items-center border border-[var(--line)] bg-white text-slate-600 transition hover:bg-[var(--soft-mist)] hover:text-[var(--midnight-navy)]"
@@ -552,6 +544,42 @@ function StatCard({
       <p className={`mt-1 text-lg font-bold tabular-nums ${valueClass}`}>
         {value}
       </p>
+    </div>
+  );
+}
+
+function BorrowerDetailSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div key={index} className="panel bg-white p-3">
+            <SkeletonBlock className="h-2.5 w-20" />
+            <SkeletonBlock className="mt-3 h-5 w-28" />
+          </div>
+        ))}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-[330px_minmax(0,1fr)]">
+        <div className="panel bg-white p-4">
+          {Array.from({ length: 7 }).map((_, index) => (
+            <SkeletonBlock key={index} className="mb-3 h-4 last:mb-0" />
+          ))}
+        </div>
+        <div className="panel bg-white p-4">
+          <SkeletonBlock className="h-3 w-20" />
+          {Array.from({ length: 4 }).map((_, index) => (
+            <SkeletonBlock key={index} className="mt-4 h-5 w-full" />
+          ))}
+        </div>
+      </div>
+      <div className="panel bg-white p-4">
+        <SkeletonBlock className="h-3 w-32" />
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 2 }).map((_, index) => (
+            <SkeletonBlock key={index} className="h-40 w-full" />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

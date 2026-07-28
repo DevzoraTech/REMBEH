@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { AuthShell } from "../../components/auth/auth-shell";
+import { AuthPageSkeleton } from "../../components/app/skeleton";
 import {
   FormError,
   OtpInput,
@@ -318,11 +319,7 @@ export default function RegisterPage() {
   }
 
   if (checkingSession) {
-    return (
-      <main className="grid min-h-screen place-items-center">
-        <div className="size-8 animate-spin rounded-full border-2 border-[var(--line)] border-t-[var(--forest-emerald)]" />
-      </main>
-    );
+    return <AuthPageSkeleton />;
   }
 
   return (
@@ -353,7 +350,7 @@ export default function RegisterPage() {
             <p className="text-xs font-semibold lowercase tracking-[0.18em] text-[var(--forest-emerald)]">
               email verification
             </p>
-            <h2 className="mt-2 font-[family-name:var(--font-display)] text-3xl tracking-[-0.03em] text-[var(--midnight-navy)]">
+            <h2 className="mt-2 text-3xl font-bold text-[var(--midnight-navy)]">
               enter your code
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-500">
@@ -428,7 +425,7 @@ export default function RegisterPage() {
             <p className="text-xs font-semibold lowercase tracking-[0.18em] text-[var(--forest-emerald)]">
               company registration
             </p>
-            <h2 className="mt-2 font-[family-name:var(--font-display)] text-3xl tracking-[-0.03em] text-[var(--midnight-navy)]">
+            <h2 className="mt-2 text-3xl font-bold text-[var(--midnight-navy)]">
               set up your account
             </h2>
           </div>

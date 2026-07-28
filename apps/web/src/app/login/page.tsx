@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, Suspense, useEffect, useState } from "react";
 import { AuthShell } from "../../components/auth/auth-shell";
+import { AuthPageSkeleton } from "../../components/app/skeleton";
 import {
   FormError,
   PasswordField,
@@ -33,11 +34,7 @@ type LoginResponse = {
 export default function LoginPage() {
   return (
     <Suspense
-      fallback={
-        <main className="grid min-h-screen place-items-center">
-          <div className="size-8 animate-spin rounded-full border-2 border-[var(--line)] border-t-[var(--forest-emerald)]" />
-        </main>
-      }
+      fallback={<AuthPageSkeleton />}
     >
       <LoginForm />
     </Suspense>
@@ -107,11 +104,7 @@ function LoginForm() {
   }
 
   if (checkingSession) {
-    return (
-      <main className="grid min-h-screen place-items-center">
-        <div className="size-8 animate-spin rounded-full border-2 border-[var(--line)] border-t-[var(--forest-emerald)]" />
-      </main>
-    );
+    return <AuthPageSkeleton />;
   }
 
   return (
@@ -135,7 +128,7 @@ function LoginForm() {
           <p className="text-xs font-semibold lowercase tracking-[0.18em] text-[var(--forest-emerald)]">
             sign in
           </p>
-          <h2 className="mt-2 font-[family-name:var(--font-display)] text-3xl tracking-[-0.03em] text-[var(--midnight-navy)]">
+          <h2 className="mt-2 text-3xl font-bold text-[var(--midnight-navy)]">
             welcome back
           </h2>
         </div>

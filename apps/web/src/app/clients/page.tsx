@@ -1,10 +1,11 @@
 "use client";
 
-import { Loader2, RefreshCw, Search } from "lucide-react";
-import Link from "next/link";
+import { RefreshCw, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/app/app-shell";
+import { RowActions } from "../../components/app/row-actions";
+import { AppBootSkeleton, TableSkeleton } from "../../components/app/skeleton";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import {
   RembehBranch,
@@ -113,12 +114,7 @@ export default function ClientsPage() {
   }, [clients, search]);
 
   if (!session) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">
-        <Loader2 className="mr-2 size-4 animate-spin" />
-        Loading…
-      </div>
-    );
+    return <AppBootSkeleton />;
   }
 
   return (
@@ -165,32 +161,29 @@ export default function ClientsPage() {
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
         {loading && clients.length === 0 ? (
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <Loader2 className="size-4 animate-spin" />
-            Loading borrowers…
-          </div>
+          <TableSkeleton rows={6} columns={6} />
         ) : filteredClients.length === 0 ? (
           <p className="panel px-4 py-6 text-sm text-slate-500">
             No borrowers found.
           </p>
         ) : (
           <div className="panel overflow-hidden shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
-            <table className="w-full table-fixed text-left text-[12px]">
+            <table className="w-full table-fixed text-left text-[11px]">
               <thead className="border-b border-[var(--line)] bg-[#e5ece8] text-[9px] lowercase tracking-[0.06em] text-slate-500">
                 <tr>
-                  <th className="w-[22%] px-2.5 py-2.5 font-semibold">name</th>
-                  <th className="w-[15%] px-2.5 py-2.5 font-semibold">phone</th>
-                  <th className="w-[17%] px-2.5 py-2.5 font-semibold">
+                  <th className="w-[24%] px-2 py-2.5 font-semibold">name</th>
+                  <th className="hidden w-[15%] px-2 py-2.5 font-semibold sm:table-cell">phone</th>
+                  <th className="w-[18%] px-2 py-2.5 font-semibold">
                     collateral
                   </th>
-                  <th className="w-[16%] px-2.5 py-2.5 font-semibold">
+                  <th className="hidden w-[17%] px-2 py-2.5 font-semibold md:table-cell">
                     national id
                   </th>
-                  <th className="w-[12%] px-2.5 py-2.5 font-semibold">city</th>
-                  <th className="w-[10%] px-2.5 py-2.5 font-semibold">
+                  <th className="hidden w-[12%] px-2 py-2.5 font-semibold lg:table-cell">city</th>
+                  <th className="w-[13%] px-2 py-2.5 font-semibold">
                     status
                   </th>
-                  <th className="w-[8%] px-2.5 py-2.5 text-right font-semibold">
+                  <th className="w-[8%] px-2 py-2.5 text-right font-semibold">
                     actions
                   </th>
                 </tr>
@@ -202,7 +195,7 @@ export default function ClientsPage() {
                     className="cursor-pointer bg-white transition odd:bg-white even:bg-[#fbfdfc] hover:bg-[var(--soft-mist)]"
                     onClick={() => router.push(`/clients/${client.id}`)}
                   >
-                    <td className="px-2.5 py-3">
+                    <td className="px-2 py-3">
                       <p className="truncate font-semibold text-[var(--midnight-navy)]">
                         {client.fullName}
                       </p>
@@ -210,25 +203,25 @@ export default function ClientsPage() {
                         {client.loanCount} loan{client.loanCount === 1 ? "" : "s"}
                       </p>
                     </td>
-                    <td className="px-2.5 py-3 text-[11px] text-slate-600">
+                    <td className="hidden px-2 py-3 text-[11px] text-slate-600 sm:table-cell">
                       <span className="block truncate">{client.phone}</span>
                     </td>
-                    <td className="px-2.5 py-3 text-[11px] text-slate-600">
+                    <td className="px-2 py-3 text-[11px] text-slate-600">
                       <span className="block truncate">
                         {client.collateralType || "—"}
                       </span>
                     </td>
-                    <td className="px-2.5 py-3 text-[11px] text-slate-600">
+                    <td className="hidden px-2 py-3 text-[11px] text-slate-600 md:table-cell">
                       <span className="block truncate">
                         {client.nationalId || "—"}
                       </span>
                     </td>
-                    <td className="px-2.5 py-3 text-[11px] text-slate-600">
+                    <td className="hidden px-2 py-3 text-[11px] text-slate-600 lg:table-cell">
                       <span className="block truncate">
                         {client.city || "—"}
                       </span>
                     </td>
-                    <td className="px-2.5 py-3 text-[9px] font-bold lowercase tracking-[0.04em]">
+                    <td className="px-2 py-3 text-[9px] font-bold lowercase tracking-[0.04em]">
                       <span
                         className={`inline-flex border px-1.5 py-0.5 ${
                           client.verifiedAt
@@ -239,16 +232,16 @@ export default function ClientsPage() {
                         {client.verifiedAt ? "verified" : "registered"}
                       </span>
                     </td>
-                    <td
-                      className="px-2.5 py-3 text-right"
-                      onClick={(event) => event.stopPropagation()}
-                    >
-                      <Link
-                        href={`/clients/${client.id}`}
-                        className="btn btn-ghost h-8 px-2 text-[11px]"
-                      >
-                        view
-                      </Link>
+                    <td className="px-2 py-3 text-right">
+                      <RowActions
+                        label={`Open actions for ${client.fullName}`}
+                        items={[
+                          {
+                            label: "View borrower",
+                            href: `/clients/${client.id}`,
+                          },
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}

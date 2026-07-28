@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import type { MouseEvent } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/app/app-shell";
+import { AppBootSkeleton, SkeletonBlock, TableSkeleton } from "../../components/app/skeleton";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import {
   RembehBranch,
@@ -320,12 +321,7 @@ export default function BlacklistWatchlistPage() {
   }
 
   if (!session) {
-    return (
-      <div className="flex min-h-screen items-center justify-center text-sm text-slate-500">
-        <Loader2 className="mr-2 size-4 animate-spin" />
-        Loading…
-      </div>
-    );
+    return <AppBootSkeleton />;
   }
 
   return (
@@ -418,39 +414,35 @@ export default function BlacklistWatchlistPage() {
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
         {loading && entries.length === 0 ? (
-          <div className="flex items-center gap-2 text-sm text-slate-500">
-            <Loader2 className="size-4 animate-spin" />
-            Loading list…
-          </div>
+          <TableSkeleton rows={5} columns={6} />
         ) : filteredEntries.length === 0 ? (
           <p className="panel px-4 py-6 text-sm text-slate-500">
             No borrowers found.
           </p>
         ) : (
           <div className="panel overflow-hidden shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[920px] table-fixed text-left text-[12px]">
+              <table className="w-full table-fixed text-left text-[11px]">
                 <thead className="border-b border-[var(--line)] bg-[#e5ece8] text-[9px] lowercase tracking-[0.06em] text-slate-500">
                   <tr>
-                    <th className="w-[18%] px-2.5 py-2.5 font-semibold">
+                    <th className="w-[21%] px-2 py-2.5 font-semibold">
                       borrower
                     </th>
-                    <th className="w-[15%] px-2.5 py-2.5 font-semibold">
+                    <th className="w-[17%] px-2 py-2.5 font-semibold">
                       national id
                     </th>
-                    <th className="w-[13%] px-2.5 py-2.5 font-semibold">
+                    <th className="hidden w-[13%] px-2 py-2.5 font-semibold md:table-cell">
                       phone
                     </th>
-                    <th className="w-[12%] px-2.5 py-2.5 font-semibold">
+                    <th className="w-[12%] px-2 py-2.5 font-semibold">
                       list
                     </th>
-                    <th className="w-[24%] px-2.5 py-2.5 font-semibold">
+                    <th className="hidden w-[24%] px-2 py-2.5 font-semibold sm:table-cell">
                       reason
                     </th>
-                    <th className="w-[10%] px-2.5 py-2.5 font-semibold">
+                    <th className="hidden w-[9%] px-2 py-2.5 font-semibold lg:table-cell">
                       updated
                     </th>
-                    <th className="w-[8%] px-2.5 py-2.5 text-right font-semibold">
+                    <th className="w-[8%] px-2 py-2.5 text-right font-semibold">
                       actions
                     </th>
                   </tr>
@@ -461,22 +453,22 @@ export default function BlacklistWatchlistPage() {
                       key={entry.id}
                       className="bg-white transition odd:bg-white even:bg-[#fbfdfc] hover:bg-[var(--soft-mist)]"
                     >
-                      <td className="px-2.5 py-3">
+                      <td className="px-2 py-3">
                         <p className="truncate font-semibold text-[var(--midnight-navy)]">
                           {entry.borrowerName || "—"}
                         </p>
                       </td>
-                      <td className="px-2.5 py-3 text-[11px] font-semibold text-slate-700">
+                      <td className="px-2 py-3 text-[11px] font-semibold text-slate-700">
                         <span className="block truncate">
                           {entry.nationalId}
                         </span>
                       </td>
-                      <td className="px-2.5 py-3 text-[11px] text-slate-600">
+                      <td className="hidden px-2 py-3 text-[11px] text-slate-600 md:table-cell">
                         <span className="block truncate">
                           {entry.phone || "—"}
                         </span>
                       </td>
-                      <td className="px-2.5 py-3 text-[9px] font-bold lowercase tracking-[0.04em]">
+                      <td className="px-2 py-3 text-[9px] font-bold lowercase tracking-[0.04em]">
                         <span
                           className={`inline-flex border px-1.5 py-0.5 ${listTone(
                             entry.type,
@@ -485,15 +477,15 @@ export default function BlacklistWatchlistPage() {
                           {listLabel(entry.type)}
                         </span>
                       </td>
-                      <td className="px-2.5 py-3 text-[11px] text-slate-600">
+                      <td className="hidden px-2 py-3 text-[11px] text-slate-600 sm:table-cell">
                         <span className="line-clamp-2">
                           {entry.reason || "—"}
                         </span>
                       </td>
-                      <td className="px-2.5 py-3 text-[11px] text-slate-500">
+                      <td className="hidden px-2 py-3 text-[11px] text-slate-500 lg:table-cell">
                         {formatDate(entry.updatedAt)}
                       </td>
-                      <td className="px-2.5 py-3 text-right">
+                      <td className="px-2 py-3 text-right">
                         {canManage ? (
                           <button
                             type="button"
@@ -522,7 +514,6 @@ export default function BlacklistWatchlistPage() {
                   ))}
                 </tbody>
               </table>
-            </div>
           </div>
         )}
       </div>
@@ -623,10 +614,11 @@ export default function BlacklistWatchlistPage() {
               </label>
 
               {borrowersLoading ? (
-                <p className="flex items-center gap-2 text-sm text-slate-500">
-                  <Loader2 className="size-4 animate-spin" />
-                  Loading borrowers…
-                </p>
+                <div className="space-y-2">
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <SkeletonBlock key={index} className="h-12 w-full" />
+                  ))}
+                </div>
               ) : filteredBorrowers.length > 0 ? (
                 <div className="max-h-56 overflow-y-auto border border-[var(--line)] bg-white">
                   {filteredBorrowers.map((borrower) => (

@@ -11,14 +11,13 @@ import {
 } from "react";
 import {
   Check,
-  Copy,
   Loader2,
-  Pencil,
   Plus,
-  Trash2,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "../../components/app/app-shell";
+import { RowActions } from "../../components/app/row-actions";
+import { AppBootSkeleton, TableSkeleton } from "../../components/app/skeleton";
 import {
   FormError,
   SelectField,
@@ -313,9 +312,7 @@ export default function SettingsPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center">
-          <Loader2 className="size-6 animate-spin text-[var(--forest-emerald)]" />
-        </div>
+        <AppBootSkeleton />
       }
     >
       <SettingsPageContent />
@@ -683,11 +680,7 @@ function SettingsPageContent() {
   const currentWizard = WIZARD_STEPS[wizardStep];
 
   if (!session) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="size-6 animate-spin text-[var(--forest-emerald)]" />
-      </div>
-    );
+    return <AppBootSkeleton />;
   }
 
   return (
@@ -734,10 +727,7 @@ function SettingsPageContent() {
 
           <section className="panel min-w-0 p-4">
             {loading ? (
-              <div className="flex items-center gap-2 text-sm text-slate-500">
-                <Loader2 className="size-4 animate-spin" />
-                Loading settings…
-              </div>
+              <TableSkeleton rows={5} columns={5} />
             ) : null}
 
             {!loading && section === "loan-products" ? (
@@ -769,18 +759,18 @@ function SettingsPageContent() {
                     No loan types yet. Create one so agents can choose it when giving loans.
                   </p>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[720px] border-collapse text-left text-xs">
+                  <div className="overflow-hidden">
+                    <table className="w-full table-fixed border-collapse text-left text-[11px]">
                       <thead>
                         <tr className="border-b border-[var(--line)] text-[10px] lowercase tracking-[0.08em] text-slate-500">
-                          <th className="py-2 pr-3 font-semibold">name</th>
-                          <th className="py-2 pr-3 font-semibold">rate</th>
-                          <th className="py-2 pr-3 font-semibold">term</th>
-                          <th className="py-2 pr-3 font-semibold">
+                          <th className="w-[30%] py-2 pr-2 font-semibold">name</th>
+                          <th className="w-[17%] py-2 pr-2 font-semibold">rate</th>
+                          <th className="hidden w-[15%] py-2 pr-2 font-semibold sm:table-cell">term</th>
+                          <th className="hidden w-[16%] py-2 pr-2 font-semibold md:table-cell">
                             frequency
                           </th>
-                          <th className="py-2 pr-3 font-semibold">status</th>
-                          <th className="py-2 font-semibold text-right">
+                          <th className="w-[14%] py-2 pr-2 font-semibold">status</th>
+                          <th className="w-[8%] py-2 font-semibold text-right">
                             actions
                           </th>
                         </tr>
@@ -791,34 +781,34 @@ function SettingsPageContent() {
                             key={template.id}
                             className="border-b border-[var(--line)] last:border-0"
                           >
-                            <td className="py-2.5 pr-3 align-middle">
-                              <p className="font-semibold text-[var(--midnight-navy)]">
+                            <td className="py-2.5 pr-2 align-middle">
+                              <p className="truncate font-semibold text-[var(--midnight-navy)]">
                                 {template.name}
                               </p>
-                              <p className="mt-0.5 text-[11px] text-slate-500">
+                              <p className="mt-0.5 line-clamp-2 text-[10px] text-slate-500">
                                 Fee {template.processingFeePercent}% · Penalty{" "}
                                 {template.penaltyRatePercent}% /{" "}
                                 {template.finePeriodDays}d · Start{" "}
                                 {paymentStartLabel(template)}
                               </p>
                             </td>
-                            <td className="py-2.5 pr-3 align-middle font-semibold text-[var(--midnight-navy)]">
+                            <td className="py-2.5 pr-2 align-middle font-semibold text-[var(--midnight-navy)]">
                               {template.interestRatePercent}%{" "}
-                              <span className="font-normal text-slate-500">
+                              <span className="block truncate font-normal text-slate-500">
                                 {interestTypeLabel(template.interestType)}
                               </span>
                             </td>
-                            <td className="py-2.5 pr-3 align-middle text-[var(--midnight-navy)]">
+                            <td className="hidden py-2.5 pr-2 align-middle text-[var(--midnight-navy)] sm:table-cell">
                               {template.termValue}{" "}
                               {termLabel(template.termUnit)}
-                              <span className="ml-1 text-slate-500">
+                              <span className="block text-slate-500">
                                 ({template.durationDays}d)
                               </span>
                             </td>
-                            <td className="py-2.5 pr-3 align-middle text-[var(--midnight-navy)]">
+                            <td className="hidden py-2.5 pr-2 align-middle text-[var(--midnight-navy)] md:table-cell">
                               {frequencyLabel(template.repaymentFrequency)}
                             </td>
-                            <td className="py-2.5 pr-3 align-middle">
+                            <td className="py-2.5 pr-2 align-middle">
                               <span
                                 className={`inline-block px-1.5 py-0.5 text-[10px] font-bold lowercase tracking-[0.06em] ${
                                   template.isActive
@@ -830,40 +820,28 @@ function SettingsPageContent() {
                               </span>
                             </td>
                             <td className="py-2.5 align-middle">
-                              <div className="flex justify-end gap-1">
-                                <button
-                                  type="button"
-                                  className="btn btn-ghost h-7 px-2 text-[11px]"
-                                  onClick={() => openEdit(template)}
-                                  disabled={saving}
-                                  title="Edit"
-                                >
-                                  <Pencil className="size-3" />
-                                  Edit
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn btn-ghost h-7 px-2 text-[11px]"
-                                  onClick={() =>
-                                    void duplicateTemplate(template.id)
-                                  }
-                                  disabled={saving}
-                                  title="Duplicate"
-                                >
-                                  <Copy className="size-3" />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn btn-ghost h-7 px-2 text-[11px] text-red-600"
-                                  onClick={() =>
-                                    void deleteTemplate(template.id)
-                                  }
-                                  disabled={saving || !template.isActive}
-                                  title="Deactivate"
-                                >
-                                  <Trash2 className="size-3" />
-                                </button>
-                              </div>
+                              <RowActions
+                                label={`Open actions for ${template.name}`}
+                                busy={saving}
+                                items={[
+                                  {
+                                    label: "Edit",
+                                    onSelect: () => openEdit(template),
+                                  },
+                                  {
+                                    label: "Duplicate",
+                                    onSelect: () =>
+                                      void duplicateTemplate(template.id),
+                                  },
+                                  {
+                                    label: "Deactivate",
+                                    danger: true,
+                                    disabled: !template.isActive,
+                                    onSelect: () =>
+                                      void deleteTemplate(template.id),
+                                  },
+                                ]}
+                              />
                             </td>
                           </tr>
                         ))}

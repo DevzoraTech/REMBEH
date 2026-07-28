@@ -1,12 +1,14 @@
 "use client";
 
-import { Building2, Loader2, Smartphone, UserPlus } from "lucide-react";
+import { Building2, Smartphone } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/app/app-shell";
 import { LiveApplicationsPanel } from "../../components/app/live-applications-panel";
 import { LivePaymentsPanel } from "../../components/app/live-payments-panel";
+import { RowActions } from "../../components/app/row-actions";
+import { AppBootSkeleton, TableSkeleton } from "../../components/app/skeleton";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import {
   RembehBranch,
@@ -256,13 +258,7 @@ export default function DashboardPage() {
     }
   }, [branches.length, isLoading, operatorRole, router, session]);
 
-  if (!session || isLoading) {
-    return (
-      <main className="grid min-h-screen place-items-center">
-        <Loader2 className="size-6 animate-spin text-[var(--forest-emerald)]" />
-      </main>
-    );
-  }
+  if (!session) return <AppBootSkeleton />;
 
   const shellBranch =
     branch ??
@@ -282,20 +278,22 @@ export default function DashboardPage() {
       branch={shellBranch}
     >
       <div className="mx-auto max-w-5xl space-y-3 animate-rise">
+        {isLoading ? <DashboardSkeleton /> : null}
+
         {error ? (
           <div className="border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
           </div>
         ) : null}
 
-        {operatorRole === "owner" ? (
+        {!isLoading && operatorRole === "owner" ? (
           <OwnerView
             branches={branches}
             customerCount={customerCount}
             stats={stats}
             session={session}
           />
-        ) : operatorRole === "manager" ? (
+        ) : !isLoading && operatorRole === "manager" ? (
           <ManagerView
             branch={
               branches[0] ??
@@ -311,11 +309,27 @@ export default function DashboardPage() {
             stats={stats}
             session={session}
           />
-        ) : (
+        ) : !isLoading ? (
           <StaffView />
-        )}
+        ) : null}
       </div>
     </AppShell>
+  );
+}
+
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div key={index} className="panel bg-white p-3">
+            <div className="h-2.5 w-20 animate-pulse bg-[#e6ece8]" />
+            <div className="mt-3 h-5 w-28 animate-pulse bg-[#e6ece8]" />
+          </div>
+        ))}
+      </div>
+      <TableSkeleton rows={4} columns={5} />
+    </div>
   );
 }
 
@@ -541,13 +555,15 @@ function OwnerBranchesTable({ branches }: { branches: Branch[] }) {
                   {item.staffSummary?.pendingInvites ?? 0}
                 </td>
                 <td className="px-2 py-3 text-right">
-                  <Link
-                    href={`/branches?invite=manager&branchId=${item.id}`}
-                    className="btn btn-ghost h-8 px-2 text-[11px]"
-                  >
-                    <UserPlus className="size-3.5" />
-                    {item.manager ? "Edit" : "Assign"}
-                  </Link>
+                  <RowActions
+                    label={`Open actions for ${item.name}`}
+                    items={[
+                      {
+                        label: item.manager ? "Edit manager" : "Assign manager",
+                        href: `/branches?invite=manager&branchId=${item.id}`,
+                      },
+                    ]}
+                  />
                 </td>
               </tr>
             ))}

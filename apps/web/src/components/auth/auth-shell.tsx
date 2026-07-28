@@ -34,7 +34,7 @@ export function AuthShell({
                 priority
               />
               <div>
-                <p className="font-[family-name:var(--font-display)] text-3xl leading-none tracking-[-0.03em]">
+                <p className="text-2xl font-bold leading-none">
                   REMBEH
                 </p>
                 <p className="mt-1 text-[11px] font-medium lowercase tracking-[0.16em] text-white/55">
@@ -47,7 +47,7 @@ export function AuthShell({
               <p className="text-[11px] font-semibold lowercase tracking-[0.18em] text-[var(--warm-gold)]">
                 {eyebrow.toLowerCase()}
               </p>
-              <h1 className="mt-3 font-[family-name:var(--font-display)] text-4xl leading-[1.08] tracking-[-0.03em] sm:text-[2.75rem]">
+              <h1 className="mt-3 text-4xl font-bold leading-[1.08] sm:text-[2.75rem]">
                 {title}
               </h1>
               {description ? (
