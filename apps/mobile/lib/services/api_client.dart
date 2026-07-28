@@ -41,14 +41,15 @@ class ApiClient {
     final extension = mimeType.contains('png')
         ? 'png'
         : mimeType.contains('webp')
-        ? 'webp'
-        : 'jpg';
-    final presignUri = Uri.parse(
-      '$rembehApiBaseUrl/auth/profile-photo/presign',
-    );
+            ? 'webp'
+            : 'jpg';
+    final presignUri = Uri.parse('$rembehApiBaseUrl/auth/profile-photo/presign');
     final presignResponse = await http.post(
       presignUri,
-      headers: {..._authHeaders(session), 'Content-Type': 'application/json'},
+      headers: {
+        ..._authHeaders(session),
+        'Content-Type': 'application/json',
+      },
       body: jsonEncode({
         'mimeType': mimeType,
         'extension': extension,
@@ -56,7 +57,8 @@ class ApiClient {
       }),
     );
     final presignBody = _decode(presignResponse);
-    if (presignResponse.statusCode < 200 || presignResponse.statusCode >= 300) {
+    if (presignResponse.statusCode < 200 ||
+        presignResponse.statusCode >= 300) {
       throw ApiException(
         _failureMessage(presignBody, presignResponse.statusCode, presignUri),
       );
@@ -79,12 +81,14 @@ class ApiClient {
       );
     }
 
-    final confirmUri = Uri.parse(
-      '$rembehApiBaseUrl/auth/profile-photo/confirm',
-    );
+    final confirmUri =
+        Uri.parse('$rembehApiBaseUrl/auth/profile-photo/confirm');
     final confirmResponse = await http.post(
       confirmUri,
-      headers: {..._authHeaders(session), 'Content-Type': 'application/json'},
+      headers: {
+        ..._authHeaders(session),
+        'Content-Type': 'application/json',
+      },
       body: jsonEncode({
         'storageKey': storageKey,
         'mimeType': mimeType,
@@ -92,7 +96,8 @@ class ApiClient {
       }),
     );
     final confirmBody = _decode(confirmResponse);
-    if (confirmResponse.statusCode < 200 || confirmResponse.statusCode >= 300) {
+    if (confirmResponse.statusCode < 200 ||
+        confirmResponse.statusCode >= 300) {
       throw ApiException(
         _failureMessage(confirmBody, confirmResponse.statusCode, confirmUri),
       );
@@ -130,14 +135,11 @@ class ApiClient {
     final updated = current.copyWith(
       accessToken: sessionPayload['accessToken'] as String,
       expiresAt: sessionPayload['expiresAt'] as String,
-      refreshToken:
-          sessionPayload['refreshToken'] as String? ?? current.refreshToken,
-      refreshExpiresAt:
-          sessionPayload['refreshExpiresAt'] as String? ??
+      refreshToken: sessionPayload['refreshToken'] as String? ?? current.refreshToken,
+      refreshExpiresAt: sessionPayload['refreshExpiresAt'] as String? ??
           current.refreshExpiresAt,
       tokenType: sessionPayload['tokenType'] as String? ?? current.tokenType,
-      permissions:
-          (sessionPayload['permissions'] as List<dynamic>?)
+      permissions: (sessionPayload['permissions'] as List<dynamic>?)
               ?.map((item) => item.toString())
               .toList() ??
           current.permissions,
@@ -146,9 +148,7 @@ class ApiClient {
     return updated;
   }
 
-  Future<List<Map<String, dynamic>>> listCustomers(
-    RembehSession session,
-  ) async {
+  Future<List<Map<String, dynamic>>> listCustomers(RembehSession session) async {
     final response = await http.get(
       Uri.parse('$rembehApiBaseUrl/customers'),
       headers: _authHeaders(session),
@@ -161,36 +161,6 @@ class ApiClient {
     return customers.cast<Map<String, dynamic>>();
   }
 
-  Future<Map<String, dynamic>> getCustomer({
-    required RembehSession session,
-    required String customerId,
-  }) async {
-    final response = await http.get(
-      Uri.parse('$rembehApiBaseUrl/customers/$customerId'),
-      headers: _authHeaders(session),
-    );
-    final body = _decode(response);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ApiException(_message(body));
-    }
-    return body;
-  }
-
-  Future<Map<String, dynamic>> getMyAgentDetail({
-    required RembehSession session,
-    String? date,
-  }) async {
-    final uri = Uri.parse('$rembehApiBaseUrl/agents/me').replace(
-      queryParameters: {if (date != null && date.isNotEmpty) 'date': date},
-    );
-    final response = await http.get(uri, headers: _authHeaders(session));
-    final body = _decode(response);
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ApiException(_message(body));
-    }
-    return body;
-  }
-
   Future<Map<String, dynamic>> createCustomer({
     required RembehSession session,
     required String fullName,
@@ -199,7 +169,10 @@ class ApiClient {
   }) async {
     final response = await http.post(
       Uri.parse('$rembehApiBaseUrl/customers'),
-      headers: {..._authHeaders(session), 'Content-Type': 'application/json'},
+      headers: {
+        ..._authHeaders(session),
+        'Content-Type': 'application/json',
+      },
       body: jsonEncode({
         'fullName': fullName.trim(),
         'phone': phone.trim(),
@@ -241,8 +214,7 @@ class ApiClient {
       branchName: branch?['name'] as String?,
       branchAddress: branch?['address'] as String?,
       publicId: user['publicId'] as String?,
-      hasProfilePhoto:
-          user['hasProfilePhoto'] as bool? ??
+      hasProfilePhoto: user['hasProfilePhoto'] as bool? ??
           (user['profilePhotoStorageKey'] as String?)?.isNotEmpty == true,
       profilePhotoUrl: user['profilePhotoUrl'] as String?,
       profilePhotoStorageKey: user['profilePhotoStorageKey'] as String?,
@@ -250,8 +222,8 @@ class ApiClient {
   }
 
   Map<String, String> _authHeaders(RembehSession session) => {
-    'Authorization': '${session.tokenType} ${session.accessToken}',
-  };
+        'Authorization': '${session.tokenType} ${session.accessToken}',
+      };
 
   Map<String, dynamic> _decode(http.Response response) {
     if (response.body.isEmpty) return <String, dynamic>{};
@@ -267,7 +239,11 @@ class ApiClient {
     return 'Request failed.';
   }
 
-  String _failureMessage(Map<String, dynamic> body, int statusCode, Uri uri) {
+  String _failureMessage(
+    Map<String, dynamic> body,
+    int statusCode,
+    Uri uri,
+  ) {
     final message = _message(body);
     if (statusCode == 404 || message.startsWith('Cannot POST')) {
       return '$message → $uri';

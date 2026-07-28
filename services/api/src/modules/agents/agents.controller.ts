@@ -34,11 +34,6 @@ export class AgentsController {
     return this.agentsService.listAgents(user, search, date);
   }
 
-  @Get('me')
-  getMe(@CurrentUser() user: AuthenticatedUser, @Query('date') date?: string) {
-    return this.agentsService.getAgentDetail(user, user.userId, date);
-  }
-
   @Get('floats')
   listFloats(
     @CurrentUser() user: AuthenticatedUser,

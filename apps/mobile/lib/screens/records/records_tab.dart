@@ -18,8 +18,6 @@ class RecordsTab extends StatefulWidget {
     required this.filter,
     required this.onSectionChanged,
     required this.onFilterChanged,
-    this.title = 'Records',
-    this.onBack,
   });
 
   final RembehSession session;
@@ -27,8 +25,6 @@ class RecordsTab extends StatefulWidget {
   final RecordsFilter filter;
   final ValueChanged<RecordsSection> onSectionChanged;
   final ValueChanged<RecordsFilter> onFilterChanged;
-  final String title;
-  final VoidCallback? onBack;
 
   @override
   State<RecordsTab> createState() => _RecordsTabState();
@@ -60,8 +56,7 @@ class _RecordsTabState extends State<RecordsTab> {
     if (mounted) setState(() {});
   }
 
-  List<RecordsFilter> get _filters =>
-      widget.section == RecordsSection.repayments
+  List<RecordsFilter> get _filters => widget.section == RecordsSection.repayments
       ? repaymentFilters
       : applicationFilters;
 
@@ -131,8 +126,7 @@ class _RecordsTabState extends State<RecordsTab> {
         context: context,
         firstDate: DateTime(2020),
         lastDate: DateTime.now().add(const Duration(days: 1)),
-        initialDateRange:
-            _repayStore.customRange ??
+        initialDateRange: _repayStore.customRange ??
             DateTimeRange(
               start: DateTime.now().subtract(const Duration(days: 7)),
               end: DateTime.now(),
@@ -198,17 +192,10 @@ class _RecordsTabState extends State<RecordsTab> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
             child: Row(
               children: [
-                if (widget.onBack != null) ...[
-                  IconButton(
-                    onPressed: widget.onBack,
-                    icon: const Icon(Icons.arrow_back, color: midnightNavy),
-                  ),
-                  const SizedBox(width: 2),
-                ],
-                Expanded(
+                const Expanded(
                   child: Text(
-                    widget.title,
-                    style: const TextStyle(
+                    'Records',
+                    style: TextStyle(
                       color: midnightNavy,
                       fontSize: 26,
                       fontWeight: FontWeight.w800,
@@ -617,130 +604,130 @@ class _RecordCard extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 11),
-          decoration: BoxDecoration(
-            border: Border.all(color: line),
-            borderRadius: rembehBorderRadius(rembehRadiusLg),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                alignment: Alignment.center,
-                decoration: const BoxDecoration(
-                  color: sage,
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  initials,
-                  style: const TextStyle(
-                    color: forestEmerald,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
-                  ),
-                ),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 11),
+      decoration: BoxDecoration(
+        border: Border.all(color: line),
+        borderRadius: rembehBorderRadius(rembehRadiusLg),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: sage,
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              initials,
+              style: const TextStyle(
+                color: forestEmerald,
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            name,
-                            style: const TextStyle(
-                              color: midnightNavy,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 15,
-                            ),
-                          ),
+                    Expanded(
+                      child: Text(
+                        name,
+                        style: const TextStyle(
+                          color: midnightNavy,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
                         ),
-                        const SizedBox(width: 8),
-                        Text(
-                          timestamp,
-                          style: const TextStyle(
-                            color: slateText,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text.rich(
-                      TextSpan(
-                        style: const TextStyle(fontSize: 12),
-                        children: [
-                          TextSpan(
-                            text: phone,
-                            style: const TextStyle(color: slateText),
-                          ),
-                          const TextSpan(
-                            text: '  •  ',
-                            style: TextStyle(
-                              color: forestEmerald,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          TextSpan(
-                            text: primaryAmount,
-                            style: const TextStyle(
-                              color: forestEmerald,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          TextSpan(
-                            text: '  |  ',
-                            style: TextStyle(
-                              color: secondaryColor.withValues(alpha: 0.7),
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          TextSpan(
-                            text: secondaryValue,
-                            style: TextStyle(
-                              color: secondaryColor,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 6),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            synced ? Icons.check_circle : Icons.cloud_outlined,
-                            size: 14,
-                            color: synced ? forestEmerald : warmGold,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            synced ? 'Uploaded' : pendingLabel,
-                            style: TextStyle(
-                              color: synced ? forestEmerald : warmGold,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
+                    const SizedBox(width: 8),
+                    Text(
+                      timestamp,
+                      style: const TextStyle(
+                        color: slateText,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 6),
+                Text.rich(
+                  TextSpan(
+                    style: const TextStyle(fontSize: 12),
+                    children: [
+                      TextSpan(
+                        text: phone,
+                        style: const TextStyle(color: slateText),
+                      ),
+                      const TextSpan(
+                        text: '  •  ',
+                        style: TextStyle(
+                          color: forestEmerald,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      TextSpan(
+                        text: primaryAmount,
+                        style: const TextStyle(
+                          color: forestEmerald,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      TextSpan(
+                        text: '  |  ',
+                        style: TextStyle(
+                          color: secondaryColor.withValues(alpha: 0.7),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      TextSpan(
+                        text: secondaryValue,
+                        style: TextStyle(
+                          color: secondaryColor,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        synced ? Icons.check_circle : Icons.cloud_outlined,
+                        size: 14,
+                        color: synced ? forestEmerald : warmGold,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        synced ? 'Uploaded' : pendingLabel,
+                        style: TextStyle(
+                          color: synced ? forestEmerald : warmGold,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
+        ],
+      ),
         ),
       ),
     );

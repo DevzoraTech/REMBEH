@@ -4,12 +4,11 @@ import '../models/field_records.dart';
 import '../services/session_activity.dart';
 import '../services/session_store.dart';
 import '../theme.dart';
-import 'customers/customers_tab.dart';
 import 'home/home_tab.dart';
 import 'login_screen.dart';
-import 'operations/operations_tab.dart';
 import 'profile/agent_profile_screen.dart';
-import 'tasks/tasks_tab.dart';
+import 'records/records_tab.dart';
+import 'search/search_tab.dart';
 
 class AgentShell extends StatefulWidget {
   const AgentShell({super.key, required this.session});
@@ -22,11 +21,10 @@ class AgentShell extends StatefulWidget {
 
 class _AgentShellState extends State<AgentShell> {
   int _index = 0;
-  OperationsMode _operationsMode = OperationsMode.overview;
   RecordsSection _recordsSection = RecordsSection.repayments;
   RecordsFilter _recordsFilter = RecordsFilter.all;
-  bool _customersAutofocus = false;
-  int _customersFocusToken = 0;
+  bool _searchAutofocus = false;
+  int _searchFocusToken = 0;
   late final SessionActivityController _activity;
 
   @override
@@ -64,21 +62,18 @@ class _AgentShellState extends State<AgentShell> {
   }) {
     unawaitedTouch();
     setState(() {
-      _index = 2;
-      _operationsMode = section == RecordsSection.repayments
-          ? OperationsMode.collections
-          : OperationsMode.loans;
+      _index = 1;
       _recordsSection = section;
       _recordsFilter = filter;
     });
   }
 
-  void _openCustomers({bool autofocus = true}) {
+  void _openSearch({bool autofocus = true}) {
     unawaitedTouch();
     setState(() {
-      _index = 1;
-      _customersAutofocus = autofocus;
-      _customersFocusToken += 1;
+      _index = 2;
+      _searchAutofocus = autofocus;
+      _searchFocusToken += 1;
     });
   }
 
@@ -109,34 +104,26 @@ class _AgentShellState extends State<AgentShell> {
             HomeTab(
               session: widget.session,
               onOpenProfile: _openProfile,
-              onOpenSearch: () => _openCustomers(autofocus: true),
+              onOpenSearch: () => _openSearch(autofocus: true),
               onOpenRecords: _openRecords,
             ),
-            CustomersTab(
+            RecordsTab(
               session: widget.session,
-              autofocus: _customersAutofocus,
-              focusToken: _customersFocusToken,
-            ),
-            OperationsTab(
-              session: widget.session,
-              mode: _operationsMode,
-              recordsSection: _recordsSection,
-              recordsFilter: _recordsFilter,
-              onModeChanged: (mode) {
-                unawaitedTouch();
-                setState(() => _operationsMode = mode);
-              },
-              onRecordsSectionChanged: (section) {
+              section: _recordsSection,
+              filter: _recordsFilter,
+              onSectionChanged: (section) {
                 unawaitedTouch();
                 setState(() => _recordsSection = section);
               },
-              onRecordsFilterChanged: (filter) {
+              onFilterChanged: (filter) {
                 unawaitedTouch();
                 setState(() => _recordsFilter = filter);
               },
             ),
-            const TasksTab(),
-            AgentProfileScreen(session: widget.session),
+            SearchTab(
+              autofocus: _searchAutofocus,
+              focusToken: _searchFocusToken,
+            ),
           ],
         ),
         bottomNavigationBar: Container(
@@ -154,15 +141,13 @@ class _AgentShellState extends State<AgentShell> {
               labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
               onDestinationSelected: (value) {
                 unawaitedTouch();
+                if (value == 2) {
+                  _openSearch(autofocus: true);
+                  return;
+                }
                 setState(() {
                   _index = value;
-                  if (value != 1) {
-                    _customersAutofocus = false;
-                  }
-                  if (value == 2 &&
-                      _operationsMode != OperationsMode.overview) {
-                    _operationsMode = OperationsMode.overview;
-                  }
+                  _searchAutofocus = false;
                 });
               },
               destinations: const [
@@ -172,27 +157,14 @@ class _AgentShellState extends State<AgentShell> {
                   label: 'Home',
                 ),
                 NavigationDestination(
-                  icon: Icon(Icons.groups_outlined),
-                  selectedIcon: Icon(Icons.groups, color: forestEmerald),
-                  label: 'Customers',
+                  icon: Icon(Icons.description_outlined),
+                  selectedIcon: Icon(Icons.description, color: forestEmerald),
+                  label: 'Records',
                 ),
                 NavigationDestination(
-                  icon: Icon(Icons.account_balance_wallet_outlined),
-                  selectedIcon: Icon(
-                    Icons.account_balance_wallet,
-                    color: forestEmerald,
-                  ),
-                  label: 'Operations',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.task_alt_outlined),
-                  selectedIcon: Icon(Icons.task_alt, color: forestEmerald),
-                  label: 'Tasks',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.person_outline),
-                  selectedIcon: Icon(Icons.person, color: forestEmerald),
-                  label: 'Profile',
+                  icon: Icon(Icons.search),
+                  selectedIcon: Icon(Icons.search, color: forestEmerald),
+                  label: 'Search',
                 ),
               ],
             ),

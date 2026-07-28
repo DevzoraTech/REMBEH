@@ -1,4 +1,4 @@
-// Group items by local calendar day for chronological list UIs.
+/// Group items by local calendar day for chronological list UIs.
 
 class DateGroup<T> {
   const DateGroup({
@@ -49,8 +49,7 @@ List<DateGroup<T>> groupByLocalDate<T>(
   DateTime Function(T item) getDate, {
   bool newestFirst = true,
 }) {
-  final sorted = [...items]
-    ..sort((a, b) {
+  final sorted = [...items]..sort((a, b) {
       final cmp = getDate(a).compareTo(getDate(b));
       return newestFirst ? -cmp : cmp;
     });
@@ -65,7 +64,11 @@ List<DateGroup<T>> groupByLocalDate<T>(
     if (existing == null) {
       indexByKey[key] = groups.length;
       groups.add(
-        DateGroup(key: key, label: dayGroupLabel(local), items: [item]),
+        DateGroup(
+          key: key,
+          label: dayGroupLabel(local),
+          items: [item],
+        ),
       );
     } else {
       groups[existing].items.add(item);

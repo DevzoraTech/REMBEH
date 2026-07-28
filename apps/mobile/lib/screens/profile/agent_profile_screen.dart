@@ -26,7 +26,9 @@ class AgentProfileScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: softIvory,
-      appBar: AppBar(title: const Text('Profile')),
+      appBar: AppBar(
+        title: const Text('Profile'),
+      ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -39,16 +41,16 @@ class AgentProfileScreen extends StatelessWidget {
             child: Row(
               children: [
                 ClipOval(
-                  child:
-                      session.profilePhotoUrl != null &&
+                  child: session.profilePhotoUrl != null &&
                           session.profilePhotoUrl!.isNotEmpty
                       ? Image.network(
                           session.profilePhotoUrl!,
                           width: 56,
                           height: 56,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, _, _) =>
-                              _InitialsAvatar(initials: initials),
+                          errorBuilder: (_, _, _) => _InitialsAvatar(
+                            initials: initials,
+                          ),
                         )
                       : _InitialsAvatar(initials: initials),
                 ),
@@ -68,7 +70,10 @@ class AgentProfileScreen extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         session.roleName ?? 'Agent',
-                        style: const TextStyle(color: slateText, fontSize: 13),
+                        style: const TextStyle(
+                          color: slateText,
+                          fontSize: 13,
+                        ),
                       ),
                     ],
                   ),
@@ -83,7 +88,7 @@ class AgentProfileScreen extends StatelessWidget {
               _InfoRow(label: 'Email', value: session.userEmail),
               if (session.publicId != null && session.publicId!.isNotEmpty)
                 _InfoRow(label: 'Agent ID', value: session.publicId!),
-              _InfoRow(label: 'Account', value: session.workspaceName),
+              _InfoRow(label: 'Workspace', value: session.workspaceName),
               _InfoRow(
                 label: 'Branch',
                 value: session.branchName ?? 'Unassigned',
@@ -132,9 +137,7 @@ class AgentProfileScreen extends StatelessWidget {
         .toList();
     if (parts.isEmpty) return 'A';
     if (parts.length == 1) {
-      return parts.first
-          .substring(0, parts.first.length.clamp(0, 2))
-          .toUpperCase();
+      return parts.first.substring(0, parts.first.length.clamp(0, 2)).toUpperCase();
     }
     return ('${parts.first[0]}${parts.last[0]}').toUpperCase();
   }
@@ -268,7 +271,10 @@ class _SettingRow extends StatelessWidget {
               ),
             ),
           ),
-          Text(value, style: const TextStyle(color: slateText, fontSize: 12)),
+          Text(
+            value,
+            style: const TextStyle(color: slateText, fontSize: 12),
+          ),
         ],
       ),
     );
