@@ -382,6 +382,17 @@ export class AgentsService {
       this.decimalToNumber(appsToday._sum.principalAmount) ?? 0;
     const amountCollected = this.decimalToNumber(repayToday._sum.amount) ?? 0;
 
+    if (agent.branchId) {
+      this.operationsService.broadcastFloatUpdated({
+        tenantId: scope.tenantId,
+        branchId: agent.branchId,
+        agentId,
+        floatId: floatRow.id,
+        operationDate: dateLabel,
+        amountGiven,
+      });
+    }
+
     return {
       float: this.toFloatContract(floatRow),
       accountability: {

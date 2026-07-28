@@ -467,6 +467,29 @@ export class OperationsRepository {
     });
   }
 
+  sumLoansIssuedForAgent(input: {
+    tenantId: string;
+    branchId: string;
+    agentId: string;
+    dayStart: Date;
+    dayEnd: Date;
+  }) {
+    return this.prisma.loanApplication.aggregate({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        officerUserId: input.agentId,
+        status: { not: LoanApplicationStatus.DRAFT },
+        submittedAt: {
+          gte: input.dayStart,
+          lte: input.dayEnd,
+        },
+      },
+      _sum: { principalAmount: true },
+      _count: { _all: true },
+    });
+  }
+
   sumCollections(input: {
     tenantId: string;
     branchId: string;
@@ -477,6 +500,28 @@ export class OperationsRepository {
       where: {
         tenantId: input.tenantId,
         branchId: input.branchId,
+        paidAt: {
+          gte: input.dayStart,
+          lte: input.dayEnd,
+        },
+      },
+      _sum: { amount: true },
+      _count: { _all: true },
+    });
+  }
+
+  sumCollectionsForAgent(input: {
+    tenantId: string;
+    branchId: string;
+    agentId: string;
+    dayStart: Date;
+    dayEnd: Date;
+  }) {
+    return this.prisma.repayment.aggregate({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        recordedByUserId: input.agentId,
         paidAt: {
           gte: input.dayStart,
           lte: input.dayEnd,

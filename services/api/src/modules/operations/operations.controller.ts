@@ -16,6 +16,11 @@ import { OPERATIONS_PERMISSIONS } from './operations.permissions';
 export class OperationsController {
   constructor(private readonly operationsService: OperationsService) {}
 
+  @Get('agent-today')
+  getAgentToday(@CurrentUser() user: AuthenticatedUser) {
+    return this.operationsService.getAgentToday(user);
+  }
+
   @Get('today')
   @RequirePermissions(OPERATIONS_PERMISSIONS.read)
   getToday(

@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../features/agent_day/data/agent_day_status_store.dart';
+import '../models/agent_day_status.dart';
 import '../models/field_records.dart';
+import '../services/session_cleanup.dart';
 import '../services/session_activity.dart';
 import '../services/session_store.dart';
 import '../theme.dart';
+import '../utils/money.dart';
 import 'home/home_tab.dart';
 import 'login_screen.dart';
 import 'profile/agent_profile_screen.dart';
@@ -25,6 +29,7 @@ class _AgentShellState extends State<AgentShell> {
   RecordsFilter _recordsFilter = RecordsFilter.all;
   bool _searchAutofocus = false;
   int _searchFocusToken = 0;
+  final _dayStore = AgentDayStatusStore.instance;
   late final SessionActivityController _activity;
 
   @override
@@ -34,13 +39,29 @@ class _AgentShellState extends State<AgentShell> {
       sessionStore: SessionStore(),
       onIdleLogout: _handleIdleLogout,
     );
+    _dayStore.addListener(_onDayChanged);
+    // ignore: discarded_futures
+    _dayStore.start(widget.session);
     _activity.start();
   }
 
   @override
   void dispose() {
+    _dayStore.removeListener(_onDayChanged);
     _activity.dispose();
     super.dispose();
+  }
+
+  void _onDayChanged() {
+    if (!mounted) return;
+    setState(() {});
+    final status = _dayStore.status;
+    if (status != null && !status.canUseApp) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      });
+    }
   }
 
   Future<void> _handleIdleLogout() async {
@@ -82,6 +103,22 @@ class _AgentShellState extends State<AgentShell> {
     _activity.touch();
   }
 
+  Future<void> _refreshDayStatus() async {
+    unawaitedTouch();
+    await _dayStore.refresh();
+  }
+
+  Future<void> _signOut() async {
+    unawaitedTouch();
+    await clearTenantScopedClientState();
+    await SessionStore().clear();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (_) => false,
+    );
+  }
+
   Future<void> _openProfile() async {
     unawaitedTouch();
     await Navigator.of(context).push(
@@ -94,6 +131,32 @@ class _AgentShellState extends State<AgentShell> {
 
   @override
   Widget build(BuildContext context) {
+    final dayStatus = _dayStore.status;
+    if (dayStatus == null) {
+      return SessionActivityListener(
+        controller: _activity,
+        child: _AgentDayCheckingScreen(
+          loading: _dayStore.loading,
+          error: _dayStore.error,
+          onRefresh: _refreshDayStatus,
+          onSignOut: _signOut,
+        ),
+      );
+    }
+
+    if (!dayStatus.canUseApp) {
+      return SessionActivityListener(
+        controller: _activity,
+        child: _AgentDayLockedScreen(
+          status: dayStatus,
+          loading: _dayStore.loading,
+          error: _dayStore.error,
+          onRefresh: _refreshDayStatus,
+          onSignOut: _signOut,
+        ),
+      );
+    }
+
     return SessionActivityListener(
       controller: _activity,
       child: Scaffold(
@@ -103,6 +166,8 @@ class _AgentShellState extends State<AgentShell> {
           children: [
             HomeTab(
               session: widget.session,
+              dayStatus: dayStatus,
+              onRefreshDayStatus: _refreshDayStatus,
               onOpenProfile: _openProfile,
               onOpenSearch: () => _openSearch(autofocus: true),
               onOpenRecords: _openRecords,
@@ -170,6 +235,270 @@ class _AgentShellState extends State<AgentShell> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _AgentDayCheckingScreen extends StatelessWidget {
+  const _AgentDayCheckingScreen({
+    required this.loading,
+    required this.error,
+    required this.onRefresh,
+    required this.onSignOut,
+  });
+
+  final bool loading;
+  final String? error;
+  final Future<void> Function() onRefresh;
+  final Future<void> Function() onSignOut;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: softIvory,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 360),
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: line),
+                borderRadius: rembehBorderRadius(rembehRadiusLg),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (loading && error == null)
+                    const CircularProgressIndicator(color: forestEmerald)
+                  else
+                    const Icon(
+                      Icons.lock_clock_outlined,
+                      color: warmGold,
+                      size: 34,
+                    ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Checking branch day',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: midnightNavy,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    error ??
+                        'Please wait while REMBEH confirms that your branch is open for today.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: slateText,
+                      fontSize: 13,
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: onSignOut,
+                          child: const Text('Sign out'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: loading ? null : onRefresh,
+                          child: const Text('Refresh'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AgentDayLockedScreen extends StatelessWidget {
+  const _AgentDayLockedScreen({
+    required this.status,
+    required this.loading,
+    required this.error,
+    required this.onRefresh,
+    required this.onSignOut,
+  });
+
+  final AgentDayStatus status;
+  final bool loading;
+  final String? error;
+  final Future<void> Function() onRefresh;
+  final Future<void> Function() onSignOut;
+
+  @override
+  Widget build(BuildContext context) {
+    final branchName = status.branch?.name ?? 'Your branch';
+    return Scaffold(
+      backgroundColor: softIvory,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 380),
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: line),
+                borderRadius: rembehBorderRadius(rembehRadiusLg),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: warmGold.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.lock_outline,
+                      color: warmGold,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    status.lockTitle ?? 'Agent app closed',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: midnightNavy,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    branchName,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: forestEmerald,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    error ??
+                        status.lockMessage ??
+                        'You cannot use the app now.',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: slateText,
+                      fontSize: 13,
+                      height: 1.4,
+                    ),
+                  ),
+                  if (status.float.amountReceived > 0 ||
+                      status.float.expectedHandover > 0) ...[
+                    const SizedBox(height: 16),
+                    _LockedMoneyLine(
+                      label: 'Float received',
+                      value: status.float.amountReceived,
+                    ),
+                    _LockedMoneyLine(
+                      label: 'Expected handover',
+                      value: status.float.expectedHandover,
+                      strong: true,
+                    ),
+                    if (status.float.amountReturned != null)
+                      _LockedMoneyLine(
+                        label: 'Handover recorded',
+                        value: status.float.amountReturned!,
+                      ),
+                  ],
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: onSignOut,
+                          child: const Text('Sign out'),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: loading ? null : onRefresh,
+                          child: const Text('Refresh'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LockedMoneyLine extends StatelessWidget {
+  const _LockedMoneyLine({
+    required this.label,
+    required this.value,
+    this.strong = false,
+  });
+
+  final String label;
+  final int value;
+  final bool strong;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: strong ? sage : softIvory,
+        border: Border.all(color: strong ? forestEmerald : line),
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: slateText,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Text(
+            'UGX ${formatMoney(value)}',
+            style: TextStyle(
+              color: strong ? forestEmerald : midnightNavy,
+              fontWeight: FontWeight.w900,
+              fontSize: 13,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -17,18 +17,24 @@ import { OpenBranchOperationDto } from './dto/open-branch-operation.dto';
 import { RecordAgentReturnDto } from './dto/record-agent-return.dto';
 import { RecordOperationExpenseDto } from './dto/record-operation-expense.dto';
 import {
+  AgentDailyOperationResponseContract,
   DailyOperationAgentReturnContract,
   DailyOperationContract,
   DailyOperationResponseContract,
 } from './operations.contracts';
+import { OPERATIONS_EVENTS } from './operations.events';
 import { OPERATIONS_PERMISSIONS } from './operations.permissions';
 import { OperationsRepository } from './operations.repository';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 
 @Injectable()
 export class OperationsService {
   private readonly businessUtcOffsetMinutes = 180;
 
-  constructor(private readonly repository: OperationsRepository) {}
+  constructor(
+    private readonly repository: OperationsRepository,
+    private readonly realtime: RealtimeGateway,
+  ) {}
 
   async getToday(
     user: AuthenticatedUser,
@@ -73,6 +79,159 @@ export class OperationsService {
       operation: operation
         ? await this.toContract(operation, bounds.dayStart, bounds.dayEnd)
         : null,
+    };
+  }
+
+  async getAgentToday(
+    user: AuthenticatedUser,
+  ): Promise<AgentDailyOperationResponseContract> {
+    this.assertTenant(user);
+    const bounds = this.parseDayBounds();
+    const emptyFloat = this.emptyAgentFloatSummary();
+
+    if (!user.branchId) {
+      return {
+        date: bounds.dateLabel,
+        branch: null,
+        branchStatus: null,
+        canUseApp: false,
+        lockReason: 'NO_BRANCH',
+        lockTitle: 'No branch assigned',
+        lockMessage:
+          'Your account is not assigned to a branch. Contact your manager.',
+        float: emptyFloat,
+      };
+    }
+
+    const branch = await this.repository.findBranch({
+      tenantId: user.tenantId,
+      branchId: user.branchId,
+    });
+    if (!branch) {
+      return {
+        date: bounds.dateLabel,
+        branch: null,
+        branchStatus: null,
+        canUseApp: false,
+        lockReason: 'NO_BRANCH',
+        lockTitle: 'Branch not found',
+        lockMessage:
+          'Your branch could not be found. Contact your manager before using the app.',
+        float: emptyFloat,
+      };
+    }
+
+    const branchContract = {
+      id: branch.id,
+      name: branch.name,
+      address: branch.address,
+    };
+
+    const operation = await this.repository.findOperationForDay({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateOnly,
+    });
+    if (!operation) {
+      return {
+        date: bounds.dateLabel,
+        branch: branchContract,
+        branchStatus: null,
+        canUseApp: false,
+        lockReason: 'BRANCH_NOT_OPEN',
+        lockTitle: 'Branch not opened',
+        lockMessage:
+          'Your branch has not been opened for today. Wait for your manager to open the day.',
+        float: emptyFloat,
+      };
+    }
+
+    const [float, loansAgg, collectionsAgg] = await Promise.all([
+      this.repository.findAgentFloatForDay({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        agentId: user.userId,
+        floatDate: operation.operationDate,
+      }),
+      this.repository.sumLoansIssuedForAgent({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        agentId: user.userId,
+        dayStart: bounds.dayStart,
+        dayEnd: bounds.dayEnd,
+      }),
+      this.repository.sumCollectionsForAgent({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        agentId: user.userId,
+        dayStart: bounds.dayStart,
+        dayEnd: bounds.dayEnd,
+      }),
+    ]);
+
+    const amountReceived = this.decimalToNumber(float?.amountGiven);
+    const amountDisbursed = this.decimalToNumber(loansAgg._sum.principalAmount);
+    const amountCollected = this.decimalToNumber(collectionsAgg._sum.amount);
+    const unusedFloat = this.roundMoney(amountReceived - amountDisbursed);
+    const expectedHandover = this.roundMoney(unusedFloat + amountCollected);
+    const returnedAt = float?.returnedAt?.toISOString() ?? null;
+    const amountReturned =
+      float?.amountReturned == null
+        ? null
+        : this.decimalToNumber(float.amountReturned);
+
+    const floatSummary = {
+      amountReceived,
+      amountDisbursed,
+      amountCollected,
+      unusedFloat,
+      expectedHandover,
+      amountReturned,
+      returnedAt,
+    };
+
+    if (operation.status !== 'OPEN') {
+      return {
+        date: bounds.dateLabel,
+        branch: branchContract,
+        branchStatus: operation.status,
+        canUseApp: false,
+        lockReason: 'BRANCH_CLOSED',
+        lockTitle:
+          operation.status === 'CLOSING'
+            ? 'Branch is closing'
+            : 'Branch closed',
+        lockMessage:
+          operation.status === 'CLOSING'
+            ? 'Your branch is closing for today. You cannot continue field work.'
+            : 'Your branch has closed for today. You cannot use the agent app again today.',
+        float: floatSummary,
+      };
+    }
+
+    if (returnedAt) {
+      return {
+        date: bounds.dateLabel,
+        branch: branchContract,
+        branchStatus: operation.status,
+        canUseApp: false,
+        lockReason: 'AGENT_DAY_CLOSED',
+        lockTitle: 'Your day is closed',
+        lockMessage:
+          'Your cash handover has been recorded for today. You cannot use the agent app again today.',
+        float: floatSummary,
+      };
+    }
+
+    return {
+      date: bounds.dateLabel,
+      branch: branchContract,
+      branchStatus: operation.status,
+      canUseApp: true,
+      lockReason: null,
+      lockTitle: null,
+      lockMessage: null,
+      float: floatSummary,
     };
   }
 
@@ -124,7 +283,7 @@ export class OperationsService {
       );
     }
 
-    await this.repository
+    const operation = await this.repository
       .openBranch({
         tenantId: user.tenantId,
         branchId: branch.id,
@@ -150,6 +309,13 @@ export class OperationsService {
         }
         throw error;
       });
+    this.broadcastOperationEvent(OPERATIONS_EVENTS.branchOpened, {
+      operationId: operation.id,
+      tenantId: operation.tenantId,
+      branchId: operation.branchId,
+      operationDate: bounds.dateLabel,
+      status: operation.status,
+    });
 
     return this.getToday(user, { branchId: branch.id, date: bounds.dateLabel });
   }
@@ -263,7 +429,7 @@ export class OperationsService {
       );
     }
 
-    await this.repository.recordAgentReturn({
+    const returnedFloat = await this.repository.recordAgentReturn({
       tenantId: user.tenantId,
       branchId: branch.id,
       agentId: dto.agentId,
@@ -274,6 +440,16 @@ export class OperationsService {
       notes: dto.notes?.trim() || null,
       operationId: operation.id,
       operationDate: operation.operationDate,
+    });
+    this.broadcastOperationEvent(OPERATIONS_EVENTS.agentFloatReturned, {
+      operationId: operation.id,
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateLabel,
+      status: operation.status,
+      agentId: dto.agentId,
+      floatId: returnedFloat.id,
+      amountReturned: this.decimalToNumber(returnedFloat.amountReturned),
     });
 
     return this.getToday(user, { branchId: branch.id, date: bounds.dateLabel });
@@ -325,7 +501,7 @@ export class OperationsService {
       );
     }
 
-    await this.repository.closeBranch({
+    const closedOperation = await this.repository.closeBranch({
       tenantId: user.tenantId,
       branchId: branch.id,
       operationId: operation.id,
@@ -337,8 +513,35 @@ export class OperationsService {
       expectedClosingBalance: contract.expectedClosingBalance,
       variance,
     });
+    this.broadcastOperationEvent(OPERATIONS_EVENTS.branchClosed, {
+      operationId: closedOperation.id,
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateLabel,
+      status: closedOperation.status,
+    });
 
     return this.getToday(user, { branchId: branch.id, date: bounds.dateLabel });
+  }
+
+  broadcastFloatUpdated(input: {
+    tenantId: string;
+    branchId: string;
+    agentId: string;
+    floatId: string;
+    operationDate: string;
+    amountGiven: number;
+  }) {
+    this.broadcastOperationEvent(OPERATIONS_EVENTS.branchFloatUpdated, {
+      operationId: null,
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      operationDate: input.operationDate,
+      status: 'OPEN',
+      agentId: input.agentId,
+      floatId: input.floatId,
+      amountGiven: input.amountGiven,
+    });
   }
 
   async requireOpenBranch(input: {
@@ -648,6 +851,18 @@ export class OperationsService {
     return this.roundMoney(setAside);
   }
 
+  private emptyAgentFloatSummary() {
+    return {
+      amountReceived: 0,
+      amountDisbursed: 0,
+      amountCollected: 0,
+      unusedFloat: 0,
+      expectedHandover: 0,
+      amountReturned: null,
+      returnedAt: null,
+    };
+  }
+
   private toAgentReturnContracts(
     agentFloats: Awaited<
       ReturnType<OperationsRepository['listAgentFloatsForOperation']>
@@ -788,6 +1003,17 @@ export class OperationsService {
     if (!user.tenantId?.trim()) {
       throw new ForbiddenException('Tenant scope is required.');
     }
+  }
+
+  private broadcastOperationEvent(
+    event: string,
+    payload: Record<string, unknown>,
+  ) {
+    const tenantId = payload.tenantId;
+    const branchId = payload.branchId;
+    if (typeof tenantId !== 'string' || typeof branchId !== 'string') return;
+    this.realtime.emitToBranch(tenantId, branchId, event, payload);
+    this.realtime.emitToTenant(tenantId, event, payload);
   }
 
   private parseDayBounds(date?: string) {

@@ -90,3 +90,27 @@ export type DailyOperationResponseContract = {
   openingBalance: number | null;
   operation: DailyOperationContract | null;
 };
+
+export type AgentDailyAccessReasonContract =
+  'NO_BRANCH' | 'BRANCH_NOT_OPEN' | 'BRANCH_CLOSED' | 'AGENT_DAY_CLOSED' | null;
+
+export type AgentDailyFloatSummaryContract = {
+  amountReceived: number;
+  amountDisbursed: number;
+  amountCollected: number;
+  unusedFloat: number;
+  expectedHandover: number;
+  amountReturned: number | null;
+  returnedAt: string | null;
+};
+
+export type AgentDailyOperationResponseContract = {
+  date: string;
+  branch: DailyOperationBranchContract | null;
+  branchStatus: BranchOperationStatusContract | null;
+  canUseApp: boolean;
+  lockReason: AgentDailyAccessReasonContract;
+  lockTitle: string | null;
+  lockMessage: string | null;
+  float: AgentDailyFloatSummaryContract;
+};

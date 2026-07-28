@@ -50,19 +50,35 @@ class RealtimeClient {
           if (session.branchId != null) 'branchId': session.branchId,
         });
       })
-      ..on('loan_application.submitted', (data) => _dispatch(
-            'loan_application.submitted',
-            data,
-          ))
-      ..on('loan_application.updated', (data) => _dispatch(
-            'loan_application.updated',
-            data,
-          ))
-      ..on('loan_application.media_uploaded', (data) => _dispatch(
-            'loan_application.media_uploaded',
-            data,
-          ))
+      ..on(
+        'loan_application.submitted',
+        (data) => _dispatch('loan_application.submitted', data),
+      )
+      ..on(
+        'loan_application.updated',
+        (data) => _dispatch('loan_application.updated', data),
+      )
+      ..on(
+        'loan_application.media_uploaded',
+        (data) => _dispatch('loan_application.media_uploaded', data),
+      )
       ..on('payment.made', (data) => _dispatch('payment.made', data))
+      ..on(
+        'operation.branch_opened',
+        (data) => _dispatch('operation.branch_opened', data),
+      )
+      ..on(
+        'operation.branch_closed',
+        (data) => _dispatch('operation.branch_closed', data),
+      )
+      ..on(
+        'operation.float_updated',
+        (data) => _dispatch('operation.float_updated', data),
+      )
+      ..on(
+        'operation.float_returned',
+        (data) => _dispatch('operation.float_returned', data),
+      )
       ..connect();
   }
 
