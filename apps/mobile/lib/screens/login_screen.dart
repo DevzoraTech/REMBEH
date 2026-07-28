@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../services/api_client.dart';
 import '../services/session_store.dart';
 import '../theme.dart';
+import '../utils/friendly_errors.dart';
 import 'agent_shell.dart';
 import 'profile/agent_selfie_capture_screen.dart';
 
@@ -57,9 +58,9 @@ class _LoginScreenState extends State<LoginScreen>
     if (message != null && message.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(message)));
       });
     }
   }
@@ -119,11 +120,11 @@ class _LoginScreenState extends State<LoginScreen>
       final next = session.isAgent && !session.hasProfilePhoto
           ? AgentSelfieCaptureScreen(session: session)
           : AgentShell(session: session);
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => next),
-      );
+      Navigator.of(
+        context,
+      ).pushReplacement(MaterialPageRoute(builder: (_) => next));
     } catch (error) {
-      setState(() => _error = error.toString());
+      setState(() => _error = friendlyErrorMessage(error));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -166,7 +167,8 @@ class _LoginScreenState extends State<LoginScreen>
                       ),
                       child: ConstrainedBox(
                         constraints: BoxConstraints(
-                          minHeight: constraints.maxHeight -
+                          minHeight:
+                              constraints.maxHeight -
                               (bottomInset > 0 ? 24 : 32),
                         ),
                         child: Center(
@@ -179,7 +181,9 @@ class _LoginScreenState extends State<LoginScreen>
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 const _LoginBrandHeader(),
-                                SizedBox(height: short || bottomInset > 0 ? 14 : 20),
+                                SizedBox(
+                                  height: short || bottomInset > 0 ? 14 : 20,
+                                ),
                                 _LoginCard(
                                   email: _email,
                                   password: _password,
@@ -199,7 +203,9 @@ class _LoginScreenState extends State<LoginScreen>
                                   onForgotPassword: _onForgotPassword,
                                   onSubmit: _loading ? null : _submit,
                                 ),
-                                SizedBox(height: short || bottomInset > 0 ? 14 : 20),
+                                SizedBox(
+                                  height: short || bottomInset > 0 ? 14 : 20,
+                                ),
                                 _LoginFooter(versionLabel: _versionLabel),
                               ],
                             ),
@@ -424,10 +430,7 @@ class _LoginCard extends StatelessWidget {
               ),
               child: Text(
                 error!,
-                style: const TextStyle(
-                  color: Color(0xFFB71C1C),
-                  fontSize: 12,
-                ),
+                style: const TextStyle(color: Color(0xFFB71C1C), fontSize: 12),
               ),
             ),
           ],
@@ -476,10 +479,7 @@ class _LoginCard extends StatelessWidget {
                 ),
                 child: const Text(
                   'Forgot password?',
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
                 ),
               ),
             ],

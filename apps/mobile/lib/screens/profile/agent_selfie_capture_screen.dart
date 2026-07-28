@@ -6,6 +6,7 @@ import '../../services/api_client.dart';
 import '../../services/session_store.dart';
 import '../../shared/camera_capture/camera_capture.dart';
 import '../../theme.dart';
+import '../../utils/friendly_errors.dart';
 import '../agent_shell.dart';
 
 /// Mandatory professional selfie on first mobile login (or when missing).
@@ -72,7 +73,7 @@ class _AgentSelfieCaptureScreenState extends State<AgentSelfieCaptureScreen> {
       );
     } catch (error) {
       if (!mounted) return;
-      setState(() => _error = error.toString());
+      setState(() => _error = friendlyErrorMessage(error));
     } finally {
       if (mounted) setState(() => _uploading = false);
     }
@@ -104,7 +105,11 @@ class _AgentSelfieCaptureScreenState extends State<AgentSelfieCaptureScreen> {
                 const SizedBox(height: 8),
                 const Text(
                   'Take a professional selfie once. It is attached to loans and repayments you record.',
-                  style: TextStyle(color: slateText, fontSize: 14, height: 1.35),
+                  style: TextStyle(
+                    color: slateText,
+                    fontSize: 14,
+                    height: 1.35,
+                  ),
                 ),
                 const SizedBox(height: 18),
                 Expanded(
@@ -152,7 +157,9 @@ class _AgentSelfieCaptureScreenState extends State<AgentSelfieCaptureScreen> {
                         ? Icons.photo_camera_outlined
                         : Icons.refresh,
                   ),
-                  label: Text(preview == null ? 'Open camera' : 'Retake selfie'),
+                  label: Text(
+                    preview == null ? 'Open camera' : 'Retake selfie',
+                  ),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: forestEmerald,
                     side: const BorderSide(color: forestEmerald),
@@ -253,7 +260,11 @@ class _TipRow extends StatelessWidget {
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(color: slateText, fontSize: 12.5, height: 1.3),
+            style: const TextStyle(
+              color: slateText,
+              fontSize: 12.5,
+              height: 1.3,
+            ),
           ),
         ),
       ],

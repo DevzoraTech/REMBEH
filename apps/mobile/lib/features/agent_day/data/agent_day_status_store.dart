@@ -4,6 +4,7 @@ import '../../../core/network/realtime_client.dart';
 import '../../../models/agent_day_status.dart';
 import '../../../services/api_client.dart';
 import '../../../services/session_store.dart';
+import '../../../utils/friendly_errors.dart';
 
 class AgentDayStatusStore extends ChangeNotifier {
   AgentDayStatusStore._();
@@ -58,7 +59,10 @@ class AgentDayStatusStore extends ChangeNotifier {
       _status = await _api.getAgentDayStatus(session);
       _error = null;
     } catch (error) {
-      _error = error.toString();
+      _error = friendlyErrorMessage(
+        error,
+        fallback: 'We could not check your branch day. Please refresh.',
+      );
     } finally {
       _loading = false;
       notifyListeners();

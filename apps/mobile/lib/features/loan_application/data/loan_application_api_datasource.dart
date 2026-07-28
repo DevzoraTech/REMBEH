@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../../../config.dart';
 import '../../../services/api_client.dart';
 import '../../../services/session_store.dart';
+import '../../../utils/friendly_errors.dart';
 
 class LoanApplicationApiDatasource {
   LoanApplicationApiDatasource(this._sessionStore);
@@ -30,14 +31,14 @@ class LoanApplicationApiDatasource {
     return _decodeOk(response);
   }
 
-  Future<Map<String, dynamic>> update(String id, Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> update(
+    String id,
+    Map<String, dynamic> body,
+  ) async {
     final session = await _requireSession();
     final response = await http.patch(
       Uri.parse('$rembehApiBaseUrl/loan-applications/$id'),
-      headers: {
-        ..._headers(session),
-        'Content-Type': 'application/json',
-      },
+      headers: {..._headers(session), 'Content-Type': 'application/json'},
       body: jsonEncode(body),
     );
     return _decodeOk(response);
@@ -50,10 +51,7 @@ class LoanApplicationApiDatasource {
     final session = await _requireSession();
     final response = await http.post(
       Uri.parse('$rembehApiBaseUrl/loan-applications/$id/verify-applicant'),
-      headers: {
-        ..._headers(session),
-        'Content-Type': 'application/json',
-      },
+      headers: {..._headers(session), 'Content-Type': 'application/json'},
       body: jsonEncode(body),
     );
     return _decodeOk(response);
@@ -66,10 +64,7 @@ class LoanApplicationApiDatasource {
     final session = await _requireSession();
     final response = await http.post(
       Uri.parse('$rembehApiBaseUrl/loan-applications/$id/media/presign'),
-      headers: {
-        ..._headers(session),
-        'Content-Type': 'application/json',
-      },
+      headers: {..._headers(session), 'Content-Type': 'application/json'},
       body: jsonEncode(body),
     );
     return _decodeOk(response);
@@ -86,7 +81,7 @@ class LoanApplicationApiDatasource {
       body: bytes,
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ApiException('Media upload failed (${response.statusCode}).');
+      throw ApiException('Media upload failed. Please try again.');
     }
   }
 
@@ -97,10 +92,7 @@ class LoanApplicationApiDatasource {
     final session = await _requireSession();
     final response = await http.post(
       Uri.parse('$rembehApiBaseUrl/loan-applications/$id/media/confirm'),
-      headers: {
-        ..._headers(session),
-        'Content-Type': 'application/json',
-      },
+      headers: {..._headers(session), 'Content-Type': 'application/json'},
       body: jsonEncode(body),
     );
     return _decodeOk(response);
@@ -113,10 +105,7 @@ class LoanApplicationApiDatasource {
     final session = await _requireSession();
     final response = await http.post(
       Uri.parse('$rembehApiBaseUrl/loan-applications/$id/signatures/presign'),
-      headers: {
-        ..._headers(session),
-        'Content-Type': 'application/json',
-      },
+      headers: {..._headers(session), 'Content-Type': 'application/json'},
       body: jsonEncode(body),
     );
     return _decodeOk(response);
@@ -129,10 +118,7 @@ class LoanApplicationApiDatasource {
     final session = await _requireSession();
     final response = await http.post(
       Uri.parse('$rembehApiBaseUrl/loan-applications/$id/signatures/confirm'),
-      headers: {
-        ..._headers(session),
-        'Content-Type': 'application/json',
-      },
+      headers: {..._headers(session), 'Content-Type': 'application/json'},
       body: jsonEncode(body),
     );
     return _decodeOk(response);
@@ -181,8 +167,8 @@ class LoanApplicationApiDatasource {
   }
 
   Map<String, String> _headers(RembehSession session) => {
-        'Authorization': '${session.tokenType} ${session.accessToken}',
-      };
+    'Authorization': '${session.tokenType} ${session.accessToken}',
+  };
 
   Map<String, dynamic> _decodeOk(http.Response response) {
     final body = response.body.isEmpty
@@ -191,10 +177,10 @@ class LoanApplicationApiDatasource {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final message = body['message'];
       if (message is List) {
-        throw ApiException(message.join(' '));
+        throw ApiException(friendlyErrorMessage(message.join(' ')));
       }
       if (message is String) {
-        throw ApiException(message);
+        throw ApiException(friendlyErrorMessage(message));
       }
       throw ApiException('Request failed.');
     }

@@ -5,6 +5,7 @@ import '../../../core/di/repayment_locator.dart';
 import '../../../core/network/realtime_client.dart';
 import '../../../models/field_records.dart';
 import '../../../services/session_store.dart';
+import '../../../utils/friendly_errors.dart';
 import '../domain/entities/client_loan_detail.dart';
 
 /// Live collections store — replaces mock FieldRecordsStore for repayments.
@@ -92,7 +93,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
         ..addAll(results[1] as List<FieldRepayment>);
       _error = null;
     } catch (error) {
-      _error = error.toString();
+      _error = friendlyErrorMessage(error);
     } finally {
       _loading = false;
       notifyListeners();
@@ -140,8 +141,9 @@ class RepaymentsLiveStore extends ChangeNotifier {
         case RecordsFilter.custom:
           if (customRange == null) return true;
           return !item.recordedAt.isBefore(customRange.start) &&
-              !item.recordedAt
-                  .isAfter(customRange.end.add(const Duration(days: 1)));
+              !item.recordedAt.isAfter(
+                customRange.end.add(const Duration(days: 1)),
+              );
       }
     }).toList();
     filtered.sort((a, b) => b.recordedAt.compareTo(a.recordedAt));
@@ -161,7 +163,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
   }
 
   Future<({FieldRepayment repayment, ClientLoanDetail detail})>
-      recordRepayment({
+  recordRepayment({
     required String loanId,
     required int amount,
     String? note,
@@ -235,7 +237,9 @@ class RepaymentsLiveStore extends ChangeNotifier {
   }
 
   String _recentPrefsKey(String? tenantId) {
-    final scope = (tenantId != null && tenantId.isNotEmpty) ? tenantId : 'unknown';
+    final scope = (tenantId != null && tenantId.isNotEmpty)
+        ? tenantId
+        : 'unknown';
     return '${_recentKeyPrefix}_$scope';
   }
 
@@ -263,7 +267,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
       loanAmount: ((payload['loanAmount'] as num?) ?? 0).round(),
       recordedAt:
           DateTime.tryParse(payload['recordedAt'] as String? ?? '') ??
-              DateTime.now(),
+          DateTime.now(),
       synced: payload['synced'] as bool? ?? true,
       dueToday: true,
     );
@@ -282,10 +286,13 @@ class RepaymentsLiveStore extends ChangeNotifier {
 
     // Soft-refresh summary aggregates without clearing the list.
     // ignore: unawaited_futures
-    _locator.getSummary().then((summary) {
-      _summary = summary;
-      notifyListeners();
-    }).catchError((_) {});
+    _locator
+        .getSummary()
+        .then((summary) {
+          _summary = summary;
+          notifyListeners();
+        })
+        .catchError((_) {});
 
     notifyListeners();
   }

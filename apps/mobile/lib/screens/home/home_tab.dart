@@ -736,7 +736,7 @@ void _showExpectedHandoverSheet(
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      'Unused float + collected money = UGX ${formatMoney(float.unusedFloat)} + UGX ${formatMoney(float.amountCollected)}',
+                      'Unused float + collected money + processing fees = UGX ${formatMoney(float.unusedFloat)} + UGX ${formatMoney(float.amountCollected)} + UGX ${formatMoney(float.processingFees)}',
                       style: const TextStyle(
                         color: midnightNavy,
                         fontSize: 12,
@@ -764,6 +764,16 @@ void _showExpectedHandoverSheet(
               _HandoverBreakdownLine(
                 label: 'Collected money',
                 value: float.amountCollected,
+                strong: true,
+              ),
+              _HandoverBreakdownLine(
+                label: 'Loan processing fees',
+                value: float.processingFees,
+                strong: true,
+              ),
+              _HandoverBreakdownLine(
+                label: 'Total expected handover',
+                value: float.expectedHandover,
                 strong: true,
               ),
               const SizedBox(height: 14),

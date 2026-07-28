@@ -4,6 +4,7 @@ import '../../../core/di/loan_application_locator.dart';
 import '../../../core/network/realtime_client.dart';
 import '../../../models/field_records.dart';
 import '../../../services/session_store.dart';
+import '../../../utils/friendly_errors.dart';
 import '../../loan_application/domain/entities/loan_application.dart';
 
 /// Live Applications list for Records tab — UI shape unchanged.
@@ -57,8 +58,7 @@ class ApplicationsLiveStore extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final items =
-          await LoanApplicationLocator.instance.listApplications();
+      final items = await LoanApplicationLocator.instance.listApplications();
       _applications
         ..clear()
         ..addAll(
@@ -68,7 +68,7 @@ class ApplicationsLiveStore extends ChangeNotifier {
         );
       _error = null;
     } catch (error) {
-      _error = error.toString();
+      _error = friendlyErrorMessage(error);
     } finally {
       _loading = false;
       notifyListeners();
@@ -115,8 +115,9 @@ class ApplicationsLiveStore extends ChangeNotifier {
         case RecordsFilter.custom:
           if (customRange == null) return true;
           return !item.registeredAt.isBefore(customRange.start) &&
-              !item.registeredAt
-                  .isAfter(customRange.end.add(const Duration(days: 1)));
+              !item.registeredAt.isAfter(
+                customRange.end.add(const Duration(days: 1)),
+              );
       }
     }).toList();
     filtered.sort((a, b) => b.registeredAt.compareTo(a.registeredAt));
@@ -139,11 +140,11 @@ class ApplicationsLiveStore extends ChangeNotifier {
       clientName: payload['clientName'] as String? ?? '',
       phone: payload['phone'] as String? ?? '',
       amountRequested: ((payload['amountRequested'] as num?) ?? 0).round(),
-      interestRatePercent:
-          ((payload['interestRatePercent'] as num?) ?? 0).round(),
+      interestRatePercent: ((payload['interestRatePercent'] as num?) ?? 0)
+          .round(),
       registeredAt:
           DateTime.tryParse(payload['registeredAt'] as String? ?? '') ??
-              DateTime.now(),
+          DateTime.now(),
       synced: payload['synced'] as bool? ?? true,
     );
 

@@ -7,6 +7,7 @@ import '../../features/repayment/data/repayment_repository_impl.dart';
 import '../../features/repayment/data/repayments_live_store.dart';
 import '../../models/client_detail.dart';
 import '../../theme.dart';
+import '../../utils/friendly_errors.dart';
 import '../../utils/money.dart';
 import '../../widgets/client_details_sheet.dart';
 
@@ -117,7 +118,7 @@ class _SearchTabState extends State<SearchTab> {
       if (!mounted) return;
       setState(() {
         _searching = false;
-        _searchError = error.toString();
+        _searchError = friendlyErrorMessage(error);
         _results = const [];
       });
     }
@@ -279,8 +280,10 @@ class _SearchTabState extends State<SearchTab> {
                         Expanded(
                           child: Text.rich(
                             TextSpan(
-                              style:
-                                  TextStyle(color: midnightNavy, fontSize: 12),
+                              style: TextStyle(
+                                color: midnightNavy,
+                                fontSize: 12,
+                              ),
                               children: [
                                 TextSpan(
                                   text:
@@ -288,8 +291,7 @@ class _SearchTabState extends State<SearchTab> {
                                 ),
                                 TextSpan(
                                   text: 'Search to find any client.',
-                                  style:
-                                      TextStyle(fontWeight: FontWeight.w800),
+                                  style: TextStyle(fontWeight: FontWeight.w800),
                                 ),
                               ],
                             ),
@@ -332,7 +334,10 @@ class _SearchTabState extends State<SearchTab> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: rembehBorderRadius(rembehRadiusMd),
-                  borderSide: const BorderSide(color: forestEmerald, width: 1.6),
+                  borderSide: const BorderSide(
+                    color: forestEmerald,
+                    width: 1.6,
+                  ),
                 ),
               ),
             ),
@@ -344,10 +349,7 @@ class _SearchTabState extends State<SearchTab> {
 }
 
 class _ClientList extends StatelessWidget {
-  const _ClientList({
-    required this.clients,
-    required this.onTap,
-  });
+  const _ClientList({required this.clients, required this.onTap});
 
   final List<ClientDetail> clients;
   final ValueChanged<ClientDetail> onTap;
@@ -434,7 +436,11 @@ class _ClientList extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(width: 6),
-                      const Icon(Icons.chevron_right, color: slateText, size: 18),
+                      const Icon(
+                        Icons.chevron_right,
+                        color: slateText,
+                        size: 18,
+                      ),
                     ],
                   ),
                 ),

@@ -38,6 +38,7 @@ export type DailyOperationAgentReturnContract = {
   agentPublicId: string | null;
   amountGiven: number;
   amountDisbursed: number;
+  processingFees: number;
   amountCollected: number;
   expectedReturn: number;
   amountReturned: number | null;
@@ -63,6 +64,7 @@ export type DailyOperationContract = {
   floatIssued: number;
   floatSetAside: number;
   floatRemaining: number;
+  processingFeesTotal: number;
   cashReturnedByAgents: number;
   agentsWithFloatCount: number;
   agentsReturnedCount: number;
@@ -97,6 +99,7 @@ export type AgentDailyAccessReasonContract =
 export type AgentDailyFloatSummaryContract = {
   amountReceived: number;
   amountDisbursed: number;
+  processingFees: number;
   amountCollected: number;
   unusedFloat: number;
   expectedHandover: number;

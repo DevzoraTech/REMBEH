@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../features/repayment/data/repayments_live_store.dart';
 import '../models/client_detail.dart';
 import '../theme.dart';
+import '../utils/friendly_errors.dart';
 import '../utils/money.dart';
 
 Future<void> showRecordRepaymentSheet(
@@ -126,9 +127,9 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
       );
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -148,9 +149,7 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Center(
-                child: Container(width: 40, height: 4, color: line),
-              ),
+              Center(child: Container(width: 40, height: 4, color: line)),
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -204,7 +203,10 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
                         ),
                         Text(
                           detail.phone,
-                          style: const TextStyle(color: slateText, fontSize: 12),
+                          style: const TextStyle(
+                            color: slateText,
+                            fontSize: 12,
+                          ),
                         ),
                       ],
                     ),
@@ -280,11 +282,17 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
                         ),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: rembehBorderRadius(rembehRadiusMd),
-                    borderSide: const BorderSide(color: forestEmerald, width: 1.4),
+                    borderSide: const BorderSide(
+                      color: forestEmerald,
+                      width: 1.4,
+                    ),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: rembehBorderRadius(rembehRadiusMd),
-                    borderSide: const BorderSide(color: forestEmerald, width: 1.6),
+                    borderSide: const BorderSide(
+                      color: forestEmerald,
+                      width: 1.6,
+                    ),
                   ),
                 ),
               ),
@@ -330,10 +338,7 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
                 ),
                 items: [
                   for (final method in _methods)
-                    DropdownMenuItem(
-                      value: method.$1,
-                      child: Text(method.$2),
-                    ),
+                    DropdownMenuItem(value: method.$1, child: Text(method.$2)),
                 ],
                 onChanged: _saving
                     ? null
@@ -458,10 +463,7 @@ class _MiniCard extends StatelessWidget {
         children: [
           Icon(icon, size: 18, color: iconColor),
           const SizedBox(height: 6),
-          Text(
-            label,
-            style: const TextStyle(color: slateText, fontSize: 11),
-          ),
+          Text(label, style: const TextStyle(color: slateText, fontSize: 11)),
           const SizedBox(height: 4),
           Text(
             value,

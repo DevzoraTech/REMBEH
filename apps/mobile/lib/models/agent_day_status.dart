@@ -60,6 +60,7 @@ class AgentDayFloatSummary {
   const AgentDayFloatSummary({
     required this.amountReceived,
     required this.amountDisbursed,
+    required this.processingFees,
     required this.amountCollected,
     required this.unusedFloat,
     required this.expectedHandover,
@@ -69,6 +70,7 @@ class AgentDayFloatSummary {
 
   final int amountReceived;
   final int amountDisbursed;
+  final int processingFees;
   final int amountCollected;
   final int unusedFloat;
   final int expectedHandover;
@@ -79,6 +81,7 @@ class AgentDayFloatSummary {
     return AgentDayFloatSummary(
       amountReceived: _asMoney(json['amountReceived']),
       amountDisbursed: _asMoney(json['amountDisbursed']),
+      processingFees: _asMoney(json['processingFees']),
       amountCollected: _asMoney(json['amountCollected']),
       unusedFloat: _asMoney(json['unusedFloat']),
       expectedHandover: _asMoney(json['expectedHandover']),

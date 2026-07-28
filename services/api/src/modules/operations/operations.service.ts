@@ -171,9 +171,12 @@ export class OperationsService {
 
     const amountReceived = this.decimalToNumber(float?.amountGiven);
     const amountDisbursed = this.decimalToNumber(loansAgg._sum.principalAmount);
+    const processingFees = this.decimalToNumber(loansAgg._sum.processingFee);
     const amountCollected = this.decimalToNumber(collectionsAgg._sum.amount);
     const unusedFloat = this.roundMoney(amountReceived - amountDisbursed);
-    const expectedHandover = this.roundMoney(unusedFloat + amountCollected);
+    const expectedHandover = this.roundMoney(
+      unusedFloat + amountCollected + processingFees,
+    );
     const returnedAt = float?.returnedAt?.toISOString() ?? null;
     const amountReturned =
       float?.amountReturned == null
@@ -183,6 +186,7 @@ export class OperationsService {
     const floatSummary = {
       amountReceived,
       amountDisbursed,
+      processingFees,
       amountCollected,
       unusedFloat,
       expectedHandover,
@@ -737,6 +741,9 @@ export class OperationsService {
     const loansIssuedPrincipal = this.decimalToNumber(
       loansAgg._sum.principalAmount,
     );
+    const processingFeesTotal = this.decimalToNumber(
+      loansAgg._sum.processingFee,
+    );
     const collectionsReceived = this.decimalToNumber(
       collectionsAgg._sum.amount,
     );
@@ -769,6 +776,7 @@ export class OperationsService {
     const expectedClosingBalance = this.roundMoney(
       cashAvailableAtOpening -
         loansIssuedPrincipal +
+        processingFeesTotal +
         collectionsReceived -
         expensesTotal,
     );
@@ -791,6 +799,7 @@ export class OperationsService {
       floatIssued,
       floatSetAside,
       floatRemaining,
+      processingFeesTotal,
       cashReturnedByAgents,
       agentsWithFloatCount: agentReturns.length,
       agentsReturnedCount: agentReturns.filter(
@@ -855,6 +864,7 @@ export class OperationsService {
     return {
       amountReceived: 0,
       amountDisbursed: 0,
+      processingFees: 0,
       amountCollected: 0,
       unusedFloat: 0,
       expectedHandover: 0,
@@ -880,6 +890,12 @@ export class OperationsService {
         this.decimalToNumber(row._sum.principalAmount),
       ]),
     );
+    const feesByAgent = new Map(
+      loansByAgentRows.map((row) => [
+        row.officerUserId,
+        this.decimalToNumber(row._sum.processingFee),
+      ]),
+    );
     const collectionsByAgent = new Map(
       collectionsByAgentRows.map((row) => [
         row.recordedByUserId,
@@ -890,9 +906,10 @@ export class OperationsService {
     return agentFloats.map((float) => {
       const amountGiven = this.decimalToNumber(float.amountGiven);
       const amountDisbursed = loansByAgent.get(float.agentId) ?? 0;
+      const processingFees = feesByAgent.get(float.agentId) ?? 0;
       const amountCollected = collectionsByAgent.get(float.agentId) ?? 0;
       const expectedReturn = this.roundMoney(
-        amountGiven - amountDisbursed + amountCollected,
+        amountGiven - amountDisbursed + amountCollected + processingFees,
       );
       const amountReturned =
         float.amountReturned == null
@@ -918,6 +935,7 @@ export class OperationsService {
         agentPublicId: float.agent.publicId ?? null,
         amountGiven,
         amountDisbursed,
+        processingFees,
         amountCollected,
         expectedReturn,
         amountReturned,

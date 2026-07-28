@@ -438,7 +438,7 @@ export class OperationsRepository {
           lte: input.dayEnd,
         },
       },
-      _sum: { principalAmount: true },
+      _sum: { principalAmount: true, processingFee: true },
       _count: { _all: true },
     });
   }
@@ -462,7 +462,7 @@ export class OperationsRepository {
           lte: input.dayEnd,
         },
       },
-      _sum: { principalAmount: true },
+      _sum: { principalAmount: true, processingFee: true },
       _count: { _all: true },
     });
   }
@@ -485,7 +485,7 @@ export class OperationsRepository {
           lte: input.dayEnd,
         },
       },
-      _sum: { principalAmount: true },
+      _sum: { principalAmount: true, processingFee: true },
       _count: { _all: true },
     });
   }

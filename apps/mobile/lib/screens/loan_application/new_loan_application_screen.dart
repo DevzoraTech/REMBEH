@@ -10,6 +10,7 @@ import '../../shared/permissions/rembeh_permission_gate.dart';
 import '../../features/loan_application/domain/entities/loan_application.dart';
 import '../../shared/signature_pad/electronic_signature_screen.dart';
 import '../../theme.dart';
+import '../../utils/friendly_errors.dart';
 import '../../utils/money.dart';
 import 'loan_application_draft.dart';
 import 'loan_form_controls.dart';
@@ -82,11 +83,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   }
 
   void _applyTemplate(LoanProductTemplateOption template) {
-    final principal =
-        double.tryParse(_principal.text.replaceAll(',', '')) ?? 0;
+    final principal = double.tryParse(_principal.text.replaceAll(',', '')) ?? 0;
     final fee = principal > 0
         ? (principal * (template.processingFeePercent / 100) * 100).round() /
-            100
+              100
         : 0.0;
     final paymentStart = template.computePaymentStartDate();
     setState(() {
@@ -107,12 +107,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   void _recomputeFeeFromTemplate() {
     final template = _selectedTemplate();
     if (template == null) return;
-    final principal =
-        double.tryParse(_principal.text.replaceAll(',', '')) ?? 0;
+    final principal = double.tryParse(_principal.text.replaceAll(',', '')) ?? 0;
     if (principal <= 0) return;
     final fee =
-        (principal * (template.processingFeePercent / 100) * 100).round() /
-            100;
+        (principal * (template.processingFeePercent / 100) * 100).round() / 100;
     _processingFee.text = fee.toStringAsFixed(0);
     _draft.processingFee = _processingFee.text;
   }
@@ -129,7 +127,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       if (!mounted) return;
       setState(() {
         _bootstrapping = false;
-        _bootError = error.toString();
+        _bootError = friendlyErrorMessage(error);
       });
     }
   }
@@ -298,7 +296,9 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         nin.isEmpty ||
         gender == null ||
         dob == null) {
-      setState(() => _draft.verifyError = 'Fill all required fields to verify.');
+      setState(
+        () => _draft.verifyError = 'Fill all required fields to verify.',
+      );
       return;
     }
 
@@ -339,7 +339,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         _draft.verified = false;
         _draft.verifyError = error is LoanApplicationFailure
             ? error.message
-            : error.toString();
+            : friendlyErrorMessage(error);
       });
     }
   }
@@ -427,25 +427,20 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   }
 
   Map<String, double>? _pricingPreview() {
-    final principal =
-        double.tryParse(_principal.text.replaceAll(',', '')) ?? 0;
+    final principal = double.tryParse(_principal.text.replaceAll(',', '')) ?? 0;
     final template = _selectedTemplate();
-    final fee =
-        double.tryParse(_processingFee.text.replaceAll(',', '')) ?? 0;
+    final fee = double.tryParse(_processingFee.text.replaceAll(',', '')) ?? 0;
     if (template == null || principal <= 0) return null;
     final interest =
         (principal * (template.interestRatePercent / 100) * 100).round() / 100;
     final total = ((principal + interest + fee) * 100).round() / 100;
-    return {
-      'interest': interest,
-      'total': total,
-    };
+    return {'interest': interest, 'total': total};
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   Future<void> _captureAndUpload(String mediaType) async {
@@ -471,9 +466,9 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       });
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -506,8 +501,8 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       final mimeType = file.extension?.toLowerCase() == 'pdf'
           ? 'application/pdf'
           : file.extension?.toLowerCase() == 'png'
-              ? 'image/png'
-              : 'image/jpeg';
+          ? 'image/png'
+          : 'image/jpeg';
 
       final application = await _locator.uploadMedia(
         id: id,
@@ -532,9 +527,9 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       });
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -570,9 +565,9 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       });
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -658,7 +653,9 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
 
     if (!_canContinue()) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Complete the required fields to continue.')),
+        const SnackBar(
+          content: Text('Complete the required fields to continue.'),
+        ),
       );
       return;
     }
@@ -686,9 +683,9 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       setState(() => _step += 1);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -717,9 +714,9 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       Navigator.of(context).pop(true);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.toString())),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -789,10 +786,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
             ),
           ),
           actions: [
-            IconButton(
-              onPressed: _handleClose,
-              icon: const Icon(Icons.close),
-            ),
+            IconButton(onPressed: _handleClose, icon: const Icon(Icons.close)),
           ],
           bottom: PreferredSize(
             preferredSize: const Size.fromHeight(40),
@@ -828,9 +822,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-                children: [
-                  ..._buildStepBody(),
-                ],
+                children: [..._buildStepBody()],
               ),
             ),
             Container(
@@ -936,7 +928,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
                     children: [
                       const TextSpan(
                         text: 'Applicant verified\n',
-                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                        ),
                       ),
                       TextSpan(
                         text:
@@ -1123,7 +1118,8 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       ),
       const SizedBox(height: 14),
       const LoanInfoBanner(
-        text: 'Ensure all photos are clear, well lit and all details are readable.',
+        text:
+            'Ensure all photos are clear, well lit and all details are readable.',
       ),
     ];
   }
@@ -1135,8 +1131,8 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     final rangeHint = selected == null
         ? null
         : selected.minLoanAmount == null && selected.maxLoanAmount == null
-            ? null
-            : 'Allowed: ${selected.minLoanAmount?.toStringAsFixed(0) ?? '—'} – ${selected.maxLoanAmount?.toStringAsFixed(0) ?? '—'}';
+        ? null
+        : 'Allowed: ${selected.minLoanAmount?.toStringAsFixed(0) ?? '—'} – ${selected.maxLoanAmount?.toStringAsFixed(0) ?? '—'}';
 
     return [
       const Text(
@@ -1240,10 +1236,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       ),
       if (rangeHint != null) ...[
         const SizedBox(height: 6),
-        Text(
-          rangeHint,
-          style: const TextStyle(color: slateText, fontSize: 12),
-        ),
+        Text(rangeHint, style: const TextStyle(color: slateText, fontSize: 12)),
       ],
       const SizedBox(height: 14),
       const LoanFieldLabel(label: 'Loan Processing Fee'),
@@ -1364,7 +1357,8 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       ),
       const SizedBox(height: 14),
       const LoanInfoBanner(
-        text: 'Ensure all guarantor information is accurate and documents are clear.',
+        text:
+            'Ensure all guarantor information is accurate and documents are clear.',
       ),
     ];
   }
@@ -1377,8 +1371,14 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
             width: 40,
             height: 40,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(color: sage, shape: BoxShape.circle),
-            child: const Icon(Icons.verified_user_outlined, color: forestEmerald),
+            decoration: const BoxDecoration(
+              color: sage,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.verified_user_outlined,
+              color: forestEmerald,
+            ),
           ),
           const SizedBox(width: 10),
           const Expanded(
@@ -1440,7 +1440,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
             width: 40,
             height: 40,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(color: sage, shape: BoxShape.circle),
+            decoration: const BoxDecoration(
+              color: sage,
+              shape: BoxShape.circle,
+            ),
             child: const Icon(Icons.draw_outlined, color: forestEmerald),
           ),
           const SizedBox(width: 10),
@@ -1535,14 +1538,9 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   }
 
   List<Widget> _stepReview() {
-    final principal = int.tryParse(
-          _draft.principalAmount.replaceAll(',', ''),
-        ) ??
-        0;
-    final fee = int.tryParse(
-          _draft.processingFee.replaceAll(',', ''),
-        ) ??
-        0;
+    final principal =
+        int.tryParse(_draft.principalAmount.replaceAll(',', '')) ?? 0;
+    final fee = int.tryParse(_draft.processingFee.replaceAll(',', '')) ?? 0;
 
     return [
       Row(
@@ -1551,7 +1549,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
             width: 40,
             height: 40,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(color: sage, shape: BoxShape.circle),
+            decoration: const BoxDecoration(
+              color: sage,
+              shape: BoxShape.circle,
+            ),
             child: const Icon(Icons.fact_check_outlined, color: forestEmerald),
           ),
           const SizedBox(width: 10),
@@ -1586,11 +1587,11 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
           ('Phone Number', _draft.phone),
           (
             'Location',
-            '${_draft.district ?? '—'} – ${_draft.subCounty ?? '—'}'
+            '${_draft.district ?? '—'} – ${_draft.subCounty ?? '—'}',
           ),
           (
             'Address',
-            'LC1: ${_draft.village ?? '—'}, Parish: ${_draft.parish ?? '—'}'
+            'LC1: ${_draft.village ?? '—'}, Parish: ${_draft.parish ?? '—'}',
           ),
         ],
       ),
@@ -1617,9 +1618,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
           ('Phone Number', _guarantorPhone.text.trim()),
           (
             'National ID',
-            (_draft.guarantorNinFrontCaptured && _draft.guarantorNinBackCaptured)
+            (_draft.guarantorNinFrontCaptured &&
+                    _draft.guarantorNinBackCaptured)
                 ? 'Front & Back uploaded'
-                : 'Incomplete'
+                : 'Incomplete',
           ),
           (
             'Photos',
@@ -1627,7 +1629,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
                     _draft.ninFrontCaptured &&
                     _draft.ninBackCaptured)
                 ? 'Identity photos uploaded'
-                : 'Incomplete'
+                : 'Incomplete',
           ),
         ],
       ),
@@ -1641,17 +1643,17 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
             'Collateral Document',
             _draft.collateralDocUploaded
                 ? _draft.collateralDocName
-                : 'Not uploaded'
+                : 'Not uploaded',
           ),
           (
             'Supporting Document',
             _draft.supportingDocUploaded
                 ? _draft.supportingDocName
-                : 'Not uploaded'
+                : 'Not uploaded',
           ),
           (
             'Other Document',
-            _draft.otherDocUploaded ? _draft.otherDocName : 'Not uploaded'
+            _draft.otherDocUploaded ? _draft.otherDocName : 'Not uploaded',
           ),
         ],
       ),

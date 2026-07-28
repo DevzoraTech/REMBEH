@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../core/di/loan_application_locator.dart';
 import '../features/loan_application/domain/entities/loan_application.dart';
 import '../theme.dart';
+import '../utils/friendly_errors.dart';
 import '../utils/money.dart';
 
 /// Opens loan-application detail (not repayment client detail).
@@ -79,7 +80,7 @@ class _ApplicationDetailsSheetState extends State<ApplicationDetailsSheet> {
     } catch (error) {
       if (!mounted) return;
       setState(() {
-        _error = error.toString();
+        _error = friendlyErrorMessage(error);
         _loading = false;
       });
     }
@@ -88,9 +89,9 @@ class _ApplicationDetailsSheetState extends State<ApplicationDetailsSheet> {
   Future<void> _copyPhone(String phone) async {
     await Clipboard.setData(ClipboardData(text: phone));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Copied $phone')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Copied $phone')));
   }
 
   @override
@@ -100,14 +101,16 @@ class _ApplicationDetailsSheetState extends State<ApplicationDetailsSheet> {
     final name = (app?.fullName.isNotEmpty == true)
         ? app!.fullName
         : (widget.fallbackName?.trim().isNotEmpty == true
-            ? widget.fallbackName!.trim()
-            : 'Applicant');
+              ? widget.fallbackName!.trim()
+              : 'Applicant');
     final phone = (app?.phone?.trim().isNotEmpty == true)
         ? app!.phone!.trim()
         : (widget.fallbackPhone ?? '—');
     final amount = app?.principalAmount?.round() ?? widget.fallbackAmount ?? 0;
     final interest =
-        app?.interestRatePercent?.round() ?? widget.fallbackInterestPercent ?? 0;
+        app?.interestRatePercent?.round() ??
+        widget.fallbackInterestPercent ??
+        0;
     final status = app?.status ?? 'SUBMITTED';
     final initials = _initials(name);
 
@@ -273,25 +276,23 @@ class _ApplicationDetailsSheetState extends State<ApplicationDetailsSheet> {
                             const SizedBox(height: 10),
                             _DetailRow(
                               label: 'Location',
-                              value: [
-                                app?.district,
-                                app?.subCounty,
-                                app?.parish,
-                                app?.village,
-                              ]
-                                  .whereType<String>()
-                                  .map((part) => part.trim())
-                                  .where((part) => part.isNotEmpty)
-                                  .join(' · ')
-                                  .ifEmpty('—'),
+                              value:
+                                  [
+                                        app?.district,
+                                        app?.subCounty,
+                                        app?.parish,
+                                        app?.village,
+                                      ]
+                                      .whereType<String>()
+                                      .map((part) => part.trim())
+                                      .where((part) => part.isNotEmpty)
+                                      .join(' · ')
+                                      .ifEmpty('—'),
                             ),
                             const SizedBox(height: 10),
                             _DetailRow(
                               label: 'Guarantor',
-                              value: [
-                                app?.guarantorName,
-                                app?.guarantorPhone,
-                              ]
+                              value: [app?.guarantorName, app?.guarantorPhone]
                                   .whereType<String>()
                                   .map((part) => part.trim())
                                   .where((part) => part.isNotEmpty)
@@ -311,8 +312,8 @@ class _ApplicationDetailsSheetState extends State<ApplicationDetailsSheet> {
                               value: app == null || app.signatures.isEmpty
                                   ? '—'
                                   : app.signatures
-                                      .map((s) => s.signerRole)
-                                      .join(', '),
+                                        .map((s) => s.signerRole)
+                                        .join(', '),
                             ),
                             const SizedBox(height: 10),
                             _DetailRow(
@@ -352,7 +353,9 @@ class _ApplicationDetailsSheetState extends State<ApplicationDetailsSheet> {
         .toList();
     if (parts.isEmpty) return 'AP';
     if (parts.length == 1) {
-      return parts.first.substring(0, parts.first.length.clamp(0, 2)).toUpperCase();
+      return parts.first
+          .substring(0, parts.first.length.clamp(0, 2))
+          .toUpperCase();
     }
     return ('${parts.first[0]}${parts.last[0]}').toUpperCase();
   }

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../config.dart';
 import '../models/agent_day_status.dart';
+import '../utils/friendly_errors.dart';
 import 'session_store.dart';
 
 class ApiClient {
@@ -75,9 +76,7 @@ class ApiClient {
       body: bytes,
     );
     if (putResponse.statusCode < 200 || putResponse.statusCode >= 300) {
-      throw ApiException(
-        'Profile photo upload failed (${putResponse.statusCode}).',
-      );
+      throw ApiException('Profile photo upload failed. Please try again.');
     }
 
     final confirmUri = Uri.parse(
@@ -250,15 +249,21 @@ class ApiClient {
 
   String _failureMessage(Map<String, dynamic> body, int statusCode, Uri uri) {
     final message = _message(body);
-    if (statusCode == 404 || message.startsWith('Cannot POST')) {
-      return '$message → $uri';
+    if (statusCode == 401) {
+      return 'Your session has expired. Please sign in again.';
     }
-    return message;
+    if (statusCode == 403) {
+      return 'You do not have access to do that. Contact your manager.';
+    }
+    if (statusCode == 404 || message.toLowerCase().startsWith('cannot ')) {
+      return 'We could not complete that request. Please refresh and try again.';
+    }
+    return friendlyErrorMessage(message);
   }
 }
 
 class ApiException implements Exception {
-  ApiException(this.message);
+  ApiException(String message) : message = friendlyErrorMessage(message);
   final String message;
 
   @override

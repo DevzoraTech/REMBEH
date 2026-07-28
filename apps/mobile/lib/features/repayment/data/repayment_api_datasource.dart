@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../../../config.dart';
 import '../../../services/api_client.dart';
 import '../../../services/session_store.dart';
+import '../../../utils/friendly_errors.dart';
 
 class RepaymentApiDatasource {
   RepaymentApiDatasource(this._sessionStore);
@@ -42,8 +43,9 @@ class RepaymentApiDatasource {
 
   Future<Map<String, dynamic>> searchClients(String query) async {
     final session = await _requireSession();
-    final uri = Uri.parse('$rembehApiBaseUrl/collections/clients/search')
-        .replace(queryParameters: {'q': query});
+    final uri = Uri.parse(
+      '$rembehApiBaseUrl/collections/clients/search',
+    ).replace(queryParameters: {'q': query});
     final response = await http.get(uri, headers: _headers(session));
     return _decodeOk(response);
   }
@@ -67,10 +69,7 @@ class RepaymentApiDatasource {
     final session = await _requireSession();
     final response = await http.post(
       Uri.parse('$rembehApiBaseUrl/collections/repayments'),
-      headers: {
-        ..._headers(session),
-        'Content-Type': 'application/json',
-      },
+      headers: {..._headers(session), 'Content-Type': 'application/json'},
       body: jsonEncode({
         'loanId': loanId,
         'amount': amount,
@@ -83,9 +82,9 @@ class RepaymentApiDatasource {
   }
 
   Map<String, String> _headers(RembehSession session) => {
-        'Authorization': '${session.tokenType} ${session.accessToken}',
-        'Accept': 'application/json',
-      };
+    'Authorization': '${session.tokenType} ${session.accessToken}',
+    'Accept': 'application/json',
+  };
 
   Future<RembehSession> _requireSession() async {
     var session = await _sessionStore.read();
@@ -120,9 +119,13 @@ class RepaymentApiDatasource {
 
   String _message(Map<String, dynamic> body) {
     final message = body['message'];
-    if (message is String && message.isNotEmpty) return message;
+    if (message is String && message.isNotEmpty) {
+      return friendlyErrorMessage(message);
+    }
     if (message is List && message.isNotEmpty) {
-      return message.map((item) => item.toString()).join(', ');
+      return friendlyErrorMessage(
+        message.map((item) => item.toString()).join(', '),
+      );
     }
     return 'Request failed.';
   }

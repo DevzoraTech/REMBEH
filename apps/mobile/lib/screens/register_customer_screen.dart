@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../services/api_client.dart';
 import '../services/session_store.dart';
+import '../utils/friendly_errors.dart';
 
 class RegisterCustomerScreen extends StatefulWidget {
   const RegisterCustomerScreen({super.key, required this.session});
@@ -55,7 +56,7 @@ class _RegisterCustomerScreenState extends State<RegisterCustomerScreen> {
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } catch (error) {
-      setState(() => _error = error.toString());
+      setState(() => _error = friendlyErrorMessage(error));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -81,14 +82,19 @@ class _RegisterCustomerScreenState extends State<RegisterCustomerScreen> {
           const SizedBox(height: 12),
           TextField(
             controller: _nationalId,
-            decoration: const InputDecoration(labelText: 'National ID (optional)'),
+            decoration: const InputDecoration(
+              labelText: 'National ID (optional)',
+            ),
           ),
           if (_error != null) ...[
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(10),
               color: const Color(0xFFFFEBEE),
-              child: Text(_error!, style: const TextStyle(color: Color(0xFFB71C1C))),
+              child: Text(
+                _error!,
+                style: const TextStyle(color: Color(0xFFB71C1C)),
+              ),
             ),
           ],
           const SizedBox(height: 16),
@@ -98,7 +104,10 @@ class _RegisterCustomerScreenState extends State<RegisterCustomerScreen> {
                 ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
                   )
                 : const Text('Save customer'),
           ),

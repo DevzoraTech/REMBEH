@@ -7,6 +7,7 @@ import '../domain/entities/loan_application.dart';
 import '../domain/entities/signature_capture.dart';
 import '../domain/failures.dart';
 import '../domain/repositories/loan_application_repository.dart';
+import '../../../utils/friendly_errors.dart';
 import 'loan_application_api_datasource.dart';
 
 class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
@@ -20,7 +21,7 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
       final body = await _api.createDraft();
       return _mapApplication(body['application'] as Map<String, dynamic>);
     } catch (error) {
-      throw LoanApplicationFailure(error.toString());
+      throw LoanApplicationFailure(friendlyErrorMessage(error));
     }
   }
 
@@ -30,7 +31,7 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
       final body = await _api.getById(id);
       return _mapApplication(body['application'] as Map<String, dynamic>);
     } catch (error) {
-      throw LoanApplicationFailure(error.toString());
+      throw LoanApplicationFailure(friendlyErrorMessage(error));
     }
   }
 
@@ -43,7 +44,7 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
       final body = await _api.update(id, payload);
       return _mapApplication(body['application'] as Map<String, dynamic>);
     } catch (error) {
-      throw LoanApplicationFailure(error.toString());
+      throw LoanApplicationFailure(friendlyErrorMessage(error));
     }
   }
 
@@ -69,7 +70,7 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
       });
       return _mapApplication(body['application'] as Map<String, dynamic>);
     } catch (error) {
-      throw LoanApplicationFailure(error.toString());
+      throw LoanApplicationFailure(friendlyErrorMessage(error));
     }
   }
 
@@ -112,7 +113,7 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
 
       return _mapApplication(confirmed['application'] as Map<String, dynamic>);
     } catch (error) {
-      throw LoanApplicationFailure(error.toString());
+      throw LoanApplicationFailure(friendlyErrorMessage(error));
     }
   }
 
@@ -175,7 +176,7 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
 
       return _mapApplication(confirmed['application'] as Map<String, dynamic>);
     } catch (error) {
-      throw LoanApplicationFailure(error.toString());
+      throw LoanApplicationFailure(friendlyErrorMessage(error));
     }
   }
 
@@ -185,7 +186,7 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
       final body = await _api.submit(id);
       return _mapApplication(body['application'] as Map<String, dynamic>);
     } catch (error) {
-      throw LoanApplicationFailure(error.toString());
+      throw LoanApplicationFailure(friendlyErrorMessage(error));
     }
   }
 
@@ -199,7 +200,7 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
           .map(_mapListItem)
           .toList(growable: false);
     } catch (error) {
-      throw LoanApplicationFailure(error.toString());
+      throw LoanApplicationFailure(friendlyErrorMessage(error));
     }
   }
 
