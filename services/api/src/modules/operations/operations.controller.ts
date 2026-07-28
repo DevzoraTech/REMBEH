@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RequirePermissions } from '../../common/auth/permissions.decorator';
 import { PermissionsGuard } from '../../common/auth/permissions.guard';
 import { OpenBranchOperationDto } from './dto/open-branch-operation.dto';
+import { RecordOperationExpenseDto } from './dto/record-operation-expense.dto';
 import { OperationsService } from './operations.service';
 import { OPERATIONS_PERMISSIONS } from './operations.permissions';
 
@@ -30,5 +31,14 @@ export class OperationsController {
     @Body() dto: OpenBranchOperationDto,
   ) {
     return this.operationsService.openBranch(user, dto);
+  }
+
+  @Post('expenses')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.expenseCreate)
+  recordExpense(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: RecordOperationExpenseDto,
+  ) {
+    return this.operationsService.recordExpense(user, dto);
   }
 }

@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { BranchOperationStatus, Prisma } from '@prisma/client';
+import {
+  BranchOperationExpenseCategory,
+  BranchOperationStatus,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { OPERATIONS_EVENTS } from './operations.events';
 import { OPERATIONS_PERMISSIONS } from './operations.permissions';
@@ -131,6 +135,77 @@ export class OperationsRepository {
     });
   }
 
+  recordExpense(input: {
+    tenantId: string;
+    branchId: string;
+    operationId: string;
+    category: BranchOperationExpenseCategory;
+    amount: Prisma.Decimal;
+    description: string | null;
+    incurredAt: Date;
+    recordedByUserId: string;
+    operationDate: Date;
+    status: BranchOperationStatus;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const expense = await tx.branchOperationExpense.create({
+        data: {
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+          operationId: input.operationId,
+          category: input.category,
+          amount: input.amount,
+          description: input.description,
+          incurredAt: input.incurredAt,
+          recordedByUserId: input.recordedByUserId,
+        },
+        include: {
+          recordedBy: { select: { id: true, displayName: true } },
+          approvedBy: { select: { id: true, displayName: true } },
+        },
+      });
+
+      await tx.outboxEvent.create({
+        data: {
+          tenantId: input.tenantId,
+          topic: OPERATIONS_EVENTS.expenseRecorded,
+          aggregateType: 'branch_operation_expense',
+          aggregateId: expense.id,
+          payload: {
+            expenseId: expense.id,
+            operationId: input.operationId,
+            tenantId: input.tenantId,
+            branchId: input.branchId,
+            operationDate: this.formatDateLabel(input.operationDate),
+            category: input.category,
+            amount: input.amount.toString(),
+            status: input.status,
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.recordedByUserId,
+          action: OPERATIONS_PERMISSIONS.expenseCreate,
+          entityType: 'branch_operation_expense',
+          entityId: expense.id,
+          newValue: {
+            operationId: input.operationId,
+            branchId: input.branchId,
+            operationDate: this.formatDateLabel(input.operationDate),
+            category: input.category,
+            amount: input.amount.toString(),
+            description: input.description,
+          },
+        },
+      });
+
+      return expense;
+    });
+  }
+
   sumFloatIssued(input: {
     tenantId: string;
     branchId: string;
@@ -197,6 +272,31 @@ export class OperationsRepository {
           gte: input.dayStart,
           lte: input.dayEnd,
         },
+      },
+      _sum: { amount: true },
+      _count: { _all: true },
+    });
+  }
+
+  listExpensesForOperation(input: { tenantId: string; operationId: string }) {
+    return this.prisma.branchOperationExpense.findMany({
+      where: {
+        tenantId: input.tenantId,
+        operationId: input.operationId,
+      },
+      include: {
+        recordedBy: { select: { id: true, displayName: true } },
+        approvedBy: { select: { id: true, displayName: true } },
+      },
+      orderBy: [{ incurredAt: 'desc' }, { createdAt: 'desc' }],
+    });
+  }
+
+  sumExpensesForOperation(input: { tenantId: string; operationId: string }) {
+    return this.prisma.branchOperationExpense.aggregate({
+      where: {
+        tenantId: input.tenantId,
+        operationId: input.operationId,
       },
       _sum: { amount: true },
       _count: { _all: true },

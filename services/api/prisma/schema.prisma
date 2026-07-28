@@ -107,6 +107,18 @@ enum BranchOperationStatus {
   CLOSED
 }
 
+enum BranchOperationExpenseCategory {
+  TRANSPORT
+  FUEL
+  MEALS
+  AIRTIME
+  MOBILE_MONEY_CHARGES
+  STATIONERY
+  REPAIRS
+  UTILITIES
+  OTHER
+}
+
 /// When repayments begin relative to loan go-live (submit / disbursement).
 /// Anchor = disbursedAt ?? approvedAt ?? submittedAt ?? createdAt.
 enum PaymentStartPolicyType {
@@ -176,6 +188,7 @@ model Tenant {
   otpChallenges            OtpChallenge[]
   agentDailyFloats         AgentDailyFloat[]
   branchDailyOperations    BranchDailyOperation[]
+  branchOperationExpenses  BranchOperationExpense[]
 
   @@map("tenants")
 }
@@ -206,6 +219,7 @@ model Branch {
   loanFines                LoanFine[]
   agentDailyFloats         AgentDailyFloat[]
   dailyOperations          BranchDailyOperation[]
+  operationExpenses        BranchOperationExpense[]
 
   @@unique([tenantId, name])
   @@index([tenantId, name])
@@ -375,37 +389,39 @@ model Department {
 }
 
 model User {
-  id                     String                 @id @default(uuid()) @db.Uuid
-  tenantId               String                 @map("tenant_id") @db.Uuid
-  branchId               String?                @map("branch_id") @db.Uuid
-  departmentId           String?                @map("department_id") @db.Uuid
-  email                  String                 @unique
-  phone                  String?                @unique
+  id                        String                   @id @default(uuid()) @db.Uuid
+  tenantId                  String                   @map("tenant_id") @db.Uuid
+  branchId                  String?                  @map("branch_id") @db.Uuid
+  departmentId              String?                  @map("department_id") @db.Uuid
+  email                     String                   @unique
+  phone                     String?                  @unique
   /// Short human-reportable id for fraud reports (e.g. A-48291). Not the UUID.
-  publicId               String?                @unique @map("public_id")
-  displayName            String                 @map("display_name")
-  passwordHash           String?                @map("password_hash")
+  publicId                  String?                  @unique @map("public_id")
+  displayName               String                   @map("display_name")
+  passwordHash              String?                  @map("password_hash")
   /// Agent professional selfie (S3 key under tenants/{tenantId}/agents/...).
-  profilePhotoStorageKey String?                @map("profile_photo_storage_key")
-  profilePhotoMimeType   String?                @map("profile_photo_mime_type")
-  profilePhotoUpdatedAt  DateTime?              @map("profile_photo_updated_at")
-  emailVerified          Boolean                @default(false) @map("email_verified")
-  phoneVerified          Boolean                @default(false) @map("phone_verified")
-  status                 UserStatus             @default(INVITED)
-  createdAt              DateTime               @default(now()) @map("created_at")
-  updatedAt              DateTime               @updatedAt @map("updated_at")
-  tenant                 Tenant                 @relation(fields: [tenantId], references: [id])
-  branch                 Branch?                @relation(fields: [branchId], references: [id])
-  department             Department?            @relation(fields: [departmentId], references: [id])
-  roles                  UserRole[]
-  auditLogs              AuditLog[]
-  otpChallenges          OtpChallenge[]
-  loanApplications       LoanApplication[]      @relation("LoanApplicationOfficer")
-  repaymentsRecorded     Repayment[]            @relation("RepaymentRecorder")
-  dailyFloats            AgentDailyFloat[]      @relation("AgentDailyFloatAgent")
-  dailyFloatsRecorded    AgentDailyFloat[]      @relation("AgentDailyFloatRecorder")
-  branchOperationsOpened BranchDailyOperation[] @relation("BranchDailyOperationOpenedBy")
-  branchOperationsClosed BranchDailyOperation[] @relation("BranchDailyOperationClosedBy")
+  profilePhotoStorageKey    String?                  @map("profile_photo_storage_key")
+  profilePhotoMimeType      String?                  @map("profile_photo_mime_type")
+  profilePhotoUpdatedAt     DateTime?                @map("profile_photo_updated_at")
+  emailVerified             Boolean                  @default(false) @map("email_verified")
+  phoneVerified             Boolean                  @default(false) @map("phone_verified")
+  status                    UserStatus               @default(INVITED)
+  createdAt                 DateTime                 @default(now()) @map("created_at")
+  updatedAt                 DateTime                 @updatedAt @map("updated_at")
+  tenant                    Tenant                   @relation(fields: [tenantId], references: [id])
+  branch                    Branch?                  @relation(fields: [branchId], references: [id])
+  department                Department?              @relation(fields: [departmentId], references: [id])
+  roles                     UserRole[]
+  auditLogs                 AuditLog[]
+  otpChallenges             OtpChallenge[]
+  loanApplications          LoanApplication[]        @relation("LoanApplicationOfficer")
+  repaymentsRecorded        Repayment[]              @relation("RepaymentRecorder")
+  dailyFloats               AgentDailyFloat[]        @relation("AgentDailyFloatAgent")
+  dailyFloatsRecorded       AgentDailyFloat[]        @relation("AgentDailyFloatRecorder")
+  branchOperationsOpened    BranchDailyOperation[]   @relation("BranchDailyOperationOpenedBy")
+  branchOperationsClosed    BranchDailyOperation[]   @relation("BranchDailyOperationClosedBy")
+  operationExpensesRecorded BranchOperationExpense[] @relation("BranchOperationExpenseRecordedBy")
+  operationExpensesApproved BranchOperationExpense[] @relation("BranchOperationExpenseApprovedBy")
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
@@ -439,33 +455,59 @@ model AgentDailyFloat {
 
 /// Daily branch operating session. Opening this record starts the day's cash controls.
 model BranchDailyOperation {
-  id                     String                @id @default(uuid()) @db.Uuid
-  tenantId               String                @map("tenant_id") @db.Uuid
-  branchId               String                @map("branch_id") @db.Uuid
-  operationDate          DateTime              @map("operation_date") @db.Date
-  status                 BranchOperationStatus @default(OPEN)
-  openedAt               DateTime              @map("opened_at")
-  openedByUserId         String                @map("opened_by_user_id") @db.Uuid
-  closedAt               DateTime?             @map("closed_at")
-  closedByUserId         String?               @map("closed_by_user_id") @db.Uuid
-  cashInVault            Decimal               @map("cash_in_vault") @db.Decimal(18, 2)
-  cashInSafe             Decimal               @map("cash_in_safe") @db.Decimal(18, 2)
-  cashAddedToday         Decimal               @default(0) @map("cash_added_today") @db.Decimal(18, 2)
-  openingFloatAvailable  Decimal               @map("opening_float_available") @db.Decimal(18, 2)
-  previousClosingBalance Decimal               @map("previous_closing_balance") @db.Decimal(18, 2)
-  closingBalance         Decimal?              @map("closing_balance") @db.Decimal(18, 2)
+  id                     String                   @id @default(uuid()) @db.Uuid
+  tenantId               String                   @map("tenant_id") @db.Uuid
+  branchId               String                   @map("branch_id") @db.Uuid
+  operationDate          DateTime                 @map("operation_date") @db.Date
+  status                 BranchOperationStatus    @default(OPEN)
+  openedAt               DateTime                 @map("opened_at")
+  openedByUserId         String                   @map("opened_by_user_id") @db.Uuid
+  closedAt               DateTime?                @map("closed_at")
+  closedByUserId         String?                  @map("closed_by_user_id") @db.Uuid
+  cashInVault            Decimal                  @map("cash_in_vault") @db.Decimal(18, 2)
+  cashInSafe             Decimal                  @map("cash_in_safe") @db.Decimal(18, 2)
+  cashAddedToday         Decimal                  @default(0) @map("cash_added_today") @db.Decimal(18, 2)
+  openingFloatAvailable  Decimal                  @map("opening_float_available") @db.Decimal(18, 2)
+  previousClosingBalance Decimal                  @map("previous_closing_balance") @db.Decimal(18, 2)
+  closingBalance         Decimal?                 @map("closing_balance") @db.Decimal(18, 2)
   notes                  String?
-  createdAt              DateTime              @default(now()) @map("created_at")
-  updatedAt              DateTime              @updatedAt @map("updated_at")
-  tenant                 Tenant                @relation(fields: [tenantId], references: [id])
-  branch                 Branch                @relation(fields: [branchId], references: [id])
-  openedBy               User                  @relation("BranchDailyOperationOpenedBy", fields: [openedByUserId], references: [id])
-  closedBy               User?                 @relation("BranchDailyOperationClosedBy", fields: [closedByUserId], references: [id])
+  createdAt              DateTime                 @default(now()) @map("created_at")
+  updatedAt              DateTime                 @updatedAt @map("updated_at")
+  tenant                 Tenant                   @relation(fields: [tenantId], references: [id])
+  branch                 Branch                   @relation(fields: [branchId], references: [id])
+  openedBy               User                     @relation("BranchDailyOperationOpenedBy", fields: [openedByUserId], references: [id])
+  closedBy               User?                    @relation("BranchDailyOperationClosedBy", fields: [closedByUserId], references: [id])
+  expenses               BranchOperationExpense[]
 
   @@unique([tenantId, branchId, operationDate])
   @@index([tenantId, operationDate])
   @@index([tenantId, branchId, status])
   @@map("branch_daily_operations")
+}
+
+model BranchOperationExpense {
+  id               String                         @id @default(uuid()) @db.Uuid
+  tenantId         String                         @map("tenant_id") @db.Uuid
+  branchId         String                         @map("branch_id") @db.Uuid
+  operationId      String                         @map("operation_id") @db.Uuid
+  category         BranchOperationExpenseCategory
+  amount           Decimal                        @db.Decimal(18, 2)
+  description      String?
+  incurredAt       DateTime                       @default(now()) @map("incurred_at")
+  recordedByUserId String                         @map("recorded_by_user_id") @db.Uuid
+  approvedAt       DateTime?                      @map("approved_at")
+  approvedByUserId String?                        @map("approved_by_user_id") @db.Uuid
+  createdAt        DateTime                       @default(now()) @map("created_at")
+  updatedAt        DateTime                       @updatedAt @map("updated_at")
+  tenant           Tenant                         @relation(fields: [tenantId], references: [id])
+  branch           Branch                         @relation(fields: [branchId], references: [id])
+  operation        BranchDailyOperation           @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  recordedBy       User                           @relation("BranchOperationExpenseRecordedBy", fields: [recordedByUserId], references: [id])
+  approvedBy       User?                          @relation("BranchOperationExpenseApprovedBy", fields: [approvedByUserId], references: [id])
+
+  @@index([tenantId, branchId, incurredAt])
+  @@index([tenantId, operationId])
+  @@map("branch_operation_expenses")
 }
 
 model Role {

@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Loader2,
   LockKeyhole,
+  ReceiptText,
   RefreshCw,
   Send,
   ShieldCheck,
@@ -49,6 +50,9 @@ type DailyOperation = {
   cashAvailableAtOpening: number;
   floatIssued: number;
   floatSetAside: number;
+  expensesCount: number;
+  expensesTotal: number;
+  expenses: DailyOperationExpense[];
   branchCashRemaining: number;
   closingBalance: number | null;
   loansIssuedCount: number;
@@ -56,6 +60,28 @@ type DailyOperation = {
   collectionsCount: number;
   collectionsReceived: number;
   notes: string | null;
+};
+
+type ExpenseCategory =
+  | "TRANSPORT"
+  | "FUEL"
+  | "MEALS"
+  | "AIRTIME"
+  | "MOBILE_MONEY_CHARGES"
+  | "STATIONERY"
+  | "REPAIRS"
+  | "UTILITIES"
+  | "OTHER";
+
+type DailyOperationExpense = {
+  id: string;
+  category: ExpenseCategory;
+  amount: number;
+  description: string | null;
+  incurredAt: string;
+  recordedByName: string;
+  approvedAt: string | null;
+  approvedByName: string | null;
 };
 
 type OperationResponse = {
@@ -72,17 +98,49 @@ type OpeningForm = {
   notes: string;
 };
 
+type ExpenseForm = {
+  category: ExpenseCategory;
+  amount: string;
+  description: string;
+};
+
 const emptyOpeningForm: OpeningForm = {
   openingBalance: "",
   cashAddedToday: "",
   notes: "",
 };
 
+const emptyExpenseForm: ExpenseForm = {
+  category: "TRANSPORT",
+  amount: "",
+  description: "",
+};
+
+const expenseCategoryOptions: ExpenseCategory[] = [
+  "TRANSPORT",
+  "FUEL",
+  "MEALS",
+  "AIRTIME",
+  "MOBILE_MONEY_CHARGES",
+  "STATIONERY",
+  "REPAIRS",
+  "UTILITIES",
+  "OTHER",
+];
+
 function todayInputValue() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Kampala",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const byType = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
+  const year = byType.year;
+  const month = byType.month;
+  const day = byType.day;
   return `${year}-${month}-${day}`;
 }
 
@@ -95,15 +153,21 @@ export default function OperationsPage() {
   const [date, setDate] = useState(todayInputValue);
   const [data, setData] = useState<OperationResponse | null>(null);
   const [form, setForm] = useState<OpeningForm>(emptyOpeningForm);
+  const [expenseForm, setExpenseForm] = useState<ExpenseForm>(emptyExpenseForm);
   const [loading, setLoading] = useState(true);
   const [opening, setOpening] = useState(false);
+  const [recordingExpense, setRecordingExpense] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const canOpen = Boolean(session?.permissions.includes("operation.open"));
+  const canRecordExpense = Boolean(
+    session?.permissions.includes("operation.expense.create"),
+  );
   const activeBranch = data?.branch;
   const operation = data?.operation;
   const suggestedOpeningBalance = data?.openingBalance ?? null;
+  const isToday = date === todayInputValue();
 
   const loadOperation = useCallback(
     async (activeSession: RembehSession, selectedDate: string) => {
@@ -185,6 +249,10 @@ export default function OperationsPage() {
 
   async function openBranch() {
     if (!session || !activeBranch || opening) return;
+    if (!isToday) {
+      setError("Only today's records can be changed.");
+      return;
+    }
     setOpening(true);
     setError(null);
     setNotice(null);
@@ -219,6 +287,46 @@ export default function OperationsPage() {
     }
   }
 
+  async function recordExpense() {
+    if (!session || !activeBranch || recordingExpense) return;
+    if (!isToday) {
+      setError("Only today's records can be changed.");
+      return;
+    }
+    setRecordingExpense(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`${apiBaseUrl}/operations/expenses`, {
+        method: "POST",
+        headers: {
+          Authorization: `${session.tokenType} ${session.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          branchId: activeBranch.id,
+          date,
+          category: expenseForm.category,
+          amount: Number(expenseForm.amount),
+          description: expenseForm.description.trim() || undefined,
+        }),
+      });
+      const payload = await readApiJson<OperationResponse>(response);
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      setData(payload);
+      setExpenseForm(emptyExpenseForm);
+      setNotice("Expense recorded.");
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not record expense.",
+      );
+    } finally {
+      setRecordingExpense(false);
+    }
+  }
+
   if (!session) {
     return <AppBootSkeleton />;
   }
@@ -248,7 +356,9 @@ export default function OperationsPage() {
                 value={date}
                 onChange={(event) => {
                   setNotice(null);
+                  setError(null);
                   setForm(emptyOpeningForm);
+                  setExpenseForm(emptyExpenseForm);
                   setDate(event.target.value);
                 }}
                 className="bg-transparent outline-none"
@@ -286,11 +396,20 @@ export default function OperationsPage() {
             Create a branch before starting daily operations.
           </div>
         ) : operation ? (
-          <OpenOperationView operation={operation} />
+          <OpenOperationView
+            operation={operation}
+            editable={isToday && operation.status === "OPEN"}
+            canRecordExpense={canRecordExpense}
+            expenseForm={expenseForm}
+            recordingExpense={recordingExpense}
+            setExpenseForm={setExpenseForm}
+            onRecordExpense={() => void recordExpense()}
+          />
         ) : (
           <OpeningView
             branch={activeBranch}
             canOpen={canOpen}
+            editableDate={isToday}
             form={form}
             opening={opening}
             openingTotal={openingTotal}
@@ -307,6 +426,7 @@ export default function OperationsPage() {
 function OpeningView({
   branch,
   canOpen,
+  editableDate,
   form,
   opening,
   openingTotal,
@@ -316,6 +436,7 @@ function OpeningView({
 }: {
   branch: OperationBranch;
   canOpen: boolean;
+  editableDate: boolean;
   form: OpeningForm;
   opening: boolean;
   openingTotal: number;
@@ -324,6 +445,7 @@ function OpeningView({
   onOpen: () => void;
 }) {
   const valid =
+    editableDate &&
     Number(form.openingBalance) >= 0 &&
     Number(form.cashAddedToday) >= 0 &&
     form.openingBalance !== "" &&
@@ -342,23 +464,25 @@ function OpeningView({
           <MoneyField
             label="Opening balance"
             value={form.openingBalance}
-            locked={suggestedOpeningBalance != null}
+            locked={!editableDate || suggestedOpeningBalance != null}
             onChange={(value) => setForm({ ...form, openingBalance: value })}
           />
           <MoneyField
             label="Cash added today"
             value={form.cashAddedToday}
+            locked={!editableDate}
             onChange={(value) => setForm({ ...form, cashAddedToday: value })}
           />
           <label className="sm:col-span-2">
             <span className="text-xs font-bold text-slate-600">Notes</span>
             <textarea
               value={form.notes}
+              disabled={!editableDate}
               onChange={(event) =>
                 setForm({ ...form, notes: event.target.value })
               }
               rows={3}
-              className="mt-1 w-full border border-[var(--line)] bg-white px-3 py-2 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)]"
+              className="mt-1 w-full border border-[var(--line)] bg-white px-3 py-2 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
             />
           </label>
         </div>
@@ -370,7 +494,7 @@ function OpeningView({
             type="button"
             className="btn btn-primary h-9 text-xs"
             onClick={onOpen}
-            disabled={!canOpen || !valid || opening}
+            disabled={!canOpen || !editableDate || !valid || opening}
           >
             {opening ? (
               <Loader2 className="size-3.5 animate-spin" />
@@ -385,8 +509,8 @@ function OpeningView({
       <aside className="space-y-3">
         <StatusPanel
           icon={<LockKeyhole className="size-4" />}
-          title="Branch not open"
-          value="Float locked"
+          title={editableDate ? "Branch not open" : "Past day"}
+          value={editableDate ? "Float locked" : "View only"}
           tone="warn"
         />
         <StatusPanel
@@ -400,7 +524,31 @@ function OpeningView({
   );
 }
 
-function OpenOperationView({ operation }: { operation: DailyOperation }) {
+function OpenOperationView({
+  operation,
+  editable,
+  canRecordExpense,
+  expenseForm,
+  recordingExpense,
+  setExpenseForm,
+  onRecordExpense,
+}: {
+  operation: DailyOperation;
+  editable: boolean;
+  canRecordExpense: boolean;
+  expenseForm: ExpenseForm;
+  recordingExpense: boolean;
+  setExpenseForm: (next: ExpenseForm) => void;
+  onRecordExpense: () => void;
+}) {
+  const expenseAmount = Number(expenseForm.amount);
+  const validExpense =
+    canRecordExpense &&
+    editable &&
+    expenseForm.amount !== "" &&
+    expenseAmount > 0 &&
+    expenseAmount <= operation.branchCashRemaining;
+
   return (
     <div className="space-y-4">
       <section className="grid grid-cols-6 gap-1 sm:gap-1.5 xl:gap-2">
@@ -423,16 +571,17 @@ function OpenOperationView({ operation }: { operation: DailyOperation }) {
           tone="warn"
         />
         <OperationStat
-          label="Remaining cash"
-          value={formatMoney(operation.branchCashRemaining)}
-          hint="After float"
-          tone="blue"
+          label="Expenses"
+          value={formatMoney(operation.expensesTotal)}
+          hint={`${operation.expensesCount} recorded`}
+          tone="bad"
+          icon={<ReceiptText className="size-4" />}
         />
         <OperationStat
-          label="Loans issued"
-          value={String(operation.loansIssuedCount)}
-          hint={formatMoney(operation.loansIssuedPrincipal)}
-          tone="bad"
+          label="Remaining cash"
+          value={formatMoney(operation.branchCashRemaining)}
+          hint="After float + expenses"
+          tone="blue"
         />
         <OperationStat
           label="Collections"
@@ -474,6 +623,16 @@ function OpenOperationView({ operation }: { operation: DailyOperation }) {
               label="Float set aside"
               value={formatMoney(operation.floatSetAside)}
             />
+            <DetailRow
+              label="Expenses"
+              value={formatMoney(operation.expensesTotal)}
+            />
+            <DetailRow
+              label="Loans issued"
+              value={`${operation.loansIssuedCount} · ${formatMoney(
+                operation.loansIssuedPrincipal,
+              )}`}
+            />
           </div>
           {operation.notes ? (
             <div className="border-t border-[var(--line)] px-4 py-3 text-sm text-slate-600">
@@ -483,20 +642,39 @@ function OpenOperationView({ operation }: { operation: DailyOperation }) {
         </section>
 
         <aside className="space-y-3">
-          <Link
-            href="/agents"
-            className="panel flex items-center justify-between gap-3 bg-white px-4 py-3 hover:bg-[var(--soft-mist)]"
-          >
-            <span>
-              <span className="block text-sm font-bold text-[var(--midnight-navy)]">
-                Assign float
+          {editable ? (
+            <Link
+              href="/agents"
+              className="panel flex items-center justify-between gap-3 bg-white px-4 py-3 hover:bg-[var(--soft-mist)]"
+            >
+              <span>
+                <span className="block text-sm font-bold text-[var(--midnight-navy)]">
+                  Assign float
+                </span>
+                <span className="mt-0.5 block text-xs text-slate-500">
+                  Remaining cash: {formatMoney(operation.branchCashRemaining)}
+                </span>
               </span>
-              <span className="mt-0.5 block text-xs text-slate-500">
-                Remaining cash: {formatMoney(operation.branchCashRemaining)}
-              </span>
-            </span>
-            <Send className="size-4 text-[var(--forest-emerald)]" />
-          </Link>
+              <Send className="size-4 text-[var(--forest-emerald)]" />
+            </Link>
+          ) : (
+            <StatusPanel
+              icon={<LockKeyhole className="size-4" />}
+              title="Past day"
+              value="View only"
+              tone="warn"
+            />
+          )}
+          <ExpenseFormCard
+            canRecordExpense={canRecordExpense}
+            editable={editable}
+            form={expenseForm}
+            operation={operation}
+            recording={recordingExpense}
+            setForm={setExpenseForm}
+            valid={validExpense}
+            onRecord={onRecordExpense}
+          />
           <StatusPanel
             icon={<WalletCards className="size-4" />}
             title="Field work"
@@ -511,7 +689,159 @@ function OpenOperationView({ operation }: { operation: DailyOperation }) {
           />
         </aside>
       </div>
+
+      <ExpenseList operation={operation} />
     </div>
+  );
+}
+
+function ExpenseFormCard({
+  canRecordExpense,
+  editable,
+  form,
+  operation,
+  recording,
+  setForm,
+  valid,
+  onRecord,
+}: {
+  canRecordExpense: boolean;
+  editable: boolean;
+  form: ExpenseForm;
+  operation: DailyOperation;
+  recording: boolean;
+  setForm: (next: ExpenseForm) => void;
+  valid: boolean;
+  onRecord: () => void;
+}) {
+  return (
+    <section className="panel bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
+      <header className="border-b border-[var(--line)] px-4 py-3">
+        <p className="text-sm font-bold text-[var(--midnight-navy)]">
+          Record expense
+        </p>
+        <p className="mt-0.5 text-xs text-slate-500">
+          Remaining cash: {formatMoney(operation.branchCashRemaining)}
+        </p>
+      </header>
+      <div className="space-y-3 p-4">
+        {!editable ? (
+          <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+            Past days can be viewed only.
+          </p>
+        ) : !canRecordExpense ? (
+          <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+            Your account cannot record expenses.
+          </p>
+        ) : null}
+        <label>
+          <span className="text-xs font-bold text-slate-600">Category</span>
+          <select
+            value={form.category}
+            disabled={!editable || !canRecordExpense}
+            onChange={(event) =>
+              setForm({
+                ...form,
+                category: event.target.value as ExpenseCategory,
+              })
+            }
+            className="mt-1 h-10 w-full border border-[var(--line)] bg-white px-3 text-sm font-semibold text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
+          >
+            {expenseCategoryOptions.map((category) => (
+              <option key={category} value={category}>
+                {categoryLabel(category)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <MoneyField
+          label="Amount"
+          value={form.amount}
+          locked={!editable || !canRecordExpense}
+          onChange={(value) => setForm({ ...form, amount: value })}
+        />
+        <label>
+          <span className="text-xs font-bold text-slate-600">Description</span>
+          <textarea
+            value={form.description}
+            disabled={!editable || !canRecordExpense}
+            onChange={(event) =>
+              setForm({ ...form, description: event.target.value })
+            }
+            rows={3}
+            className="mt-1 w-full border border-[var(--line)] bg-white px-3 py-2 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
+          />
+        </label>
+      </div>
+      <footer className="border-t border-[var(--line)] bg-[var(--soft-mist)] px-4 py-3">
+        <button
+          type="button"
+          className="btn btn-primary h-9 w-full text-xs"
+          disabled={!valid || recording}
+          onClick={onRecord}
+        >
+          {recording ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <ReceiptText className="size-3.5" />
+          )}
+          Record expense
+        </button>
+      </footer>
+    </section>
+  );
+}
+
+function ExpenseList({ operation }: { operation: DailyOperation }) {
+  return (
+    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
+      <header className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-4 py-3">
+        <p className="text-sm font-bold text-[var(--midnight-navy)]">
+          Expenses
+        </p>
+        <span className="text-xs font-bold tabular-nums text-[var(--midnight-navy)]">
+          {formatMoney(operation.expensesTotal)}
+        </span>
+      </header>
+      {operation.expenses.length === 0 ? (
+        <div className="px-4 py-6 text-sm text-slate-500">
+          No expenses recorded for this day.
+        </div>
+      ) : (
+        <div className="divide-y divide-[var(--line)]">
+          <div className="hidden grid-cols-[minmax(0,1.25fr)_120px_140px_160px] gap-3 bg-[#e5ece8] px-4 py-2.5 text-[10px] font-semibold text-slate-500 sm:grid">
+            <span>Category</span>
+            <span className="text-right">Amount</span>
+            <span>Recorded by</span>
+            <span>Time</span>
+          </div>
+          {operation.expenses.map((expense) => (
+            <div
+              key={expense.id}
+              className="grid grid-cols-[minmax(0,1fr)_96px] gap-3 px-4 py-3 text-sm text-[var(--midnight-navy)] sm:grid-cols-[minmax(0,1.25fr)_120px_140px_160px]"
+            >
+              <span className="min-w-0">
+                <span className="block truncate font-bold">
+                  {categoryLabel(expense.category)}
+                </span>
+                <span className="mt-0.5 block truncate text-xs text-slate-500">
+                  {expense.description || "No description"}
+                </span>
+              </span>
+              <span className="text-right font-bold tabular-nums">
+                {formatMoney(expense.amount)}
+              </span>
+              <span className="truncate text-xs text-slate-600">
+                {expense.recordedByName}
+              </span>
+              <span className="text-xs text-slate-600">
+                {formatDateTime(expense.incurredAt)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -543,11 +873,13 @@ function MoneyField({
 }
 
 function OperationStat({
+  icon,
   label,
   value,
   hint,
   tone,
 }: {
+  icon?: ReactNode;
   label: string;
   value: string;
   hint: string;
@@ -567,7 +899,7 @@ function OperationStat({
       <span
         className={`hidden size-7 shrink-0 place-items-center border md:grid xl:size-8 ${toneClass}`}
       >
-        <Banknote className="size-4" />
+        {icon ?? <Banknote className="size-4" />}
       </span>
       <div className="min-w-0">
         <p className="truncate text-[8px] font-semibold tracking-[0.06em] text-slate-500 sm:text-[9px] xl:text-[10px]">
@@ -647,6 +979,14 @@ function operationLabel(status: string) {
   if (status === "CLOSING") return "Closing";
   if (status === "CLOSED") return "Closed";
   return status;
+}
+
+function categoryLabel(category: ExpenseCategory) {
+  return category
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function formatMoney(value: number) {

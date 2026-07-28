@@ -6,6 +6,28 @@ export type DailyOperationBranchContract = {
   address: string;
 };
 
+export type DailyOperationExpenseCategoryContract =
+  | 'TRANSPORT'
+  | 'FUEL'
+  | 'MEALS'
+  | 'AIRTIME'
+  | 'MOBILE_MONEY_CHARGES'
+  | 'STATIONERY'
+  | 'REPAIRS'
+  | 'UTILITIES'
+  | 'OTHER';
+
+export type DailyOperationExpenseContract = {
+  id: string;
+  category: DailyOperationExpenseCategoryContract;
+  amount: number;
+  description: string | null;
+  incurredAt: string;
+  recordedByName: string;
+  approvedAt: string | null;
+  approvedByName: string | null;
+};
+
 export type DailyOperationContract = {
   id: string;
   branchId: string;
@@ -20,6 +42,9 @@ export type DailyOperationContract = {
   cashAvailableAtOpening: number;
   floatIssued: number;
   floatSetAside: number;
+  expensesCount: number;
+  expensesTotal: number;
+  expenses: DailyOperationExpenseContract[];
   branchCashRemaining: number;
   closingBalance: number | null;
   loansIssuedCount: number;

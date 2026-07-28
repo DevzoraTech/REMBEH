@@ -13,14 +13,18 @@ import {
 } from '../../common/database/prisma-errors';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import { OpenBranchOperationDto } from './dto/open-branch-operation.dto';
+import { RecordOperationExpenseDto } from './dto/record-operation-expense.dto';
 import {
   DailyOperationContract,
   DailyOperationResponseContract,
 } from './operations.contracts';
+import { OPERATIONS_PERMISSIONS } from './operations.permissions';
 import { OperationsRepository } from './operations.repository';
 
 @Injectable()
 export class OperationsService {
+  private readonly businessUtcOffsetMinutes = 180;
+
   constructor(private readonly repository: OperationsRepository) {}
 
   async getToday(
@@ -80,6 +84,7 @@ export class OperationsService {
     }
 
     const bounds = this.parseDayBounds(dto.date);
+    this.assertCanChangeDay(bounds.dateOnly);
     const existing = await this.repository.findOperationForDay({
       tenantId: user.tenantId,
       branchId: branch.id,
@@ -138,6 +143,71 @@ export class OperationsService {
     return this.getToday(user, { branchId: branch.id, date: bounds.dateLabel });
   }
 
+  async recordExpense(
+    user: AuthenticatedUser,
+    dto: RecordOperationExpenseDto,
+  ): Promise<DailyOperationResponseContract> {
+    this.assertCanCreateExpense(user);
+    const branch = await this.resolveBranch(user, dto.branchId);
+    if (!branch) {
+      throw new NotFoundException('Branch was not found.');
+    }
+
+    const bounds = this.parseDayBounds(dto.date);
+    this.assertCanChangeDay(bounds.dateOnly);
+    const operation = await this.repository.findOperationForDay({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateOnly,
+    });
+
+    if (!operation || operation.status !== 'OPEN') {
+      throw new BadRequestException(
+        'Open the branch before recording expenses.',
+      );
+    }
+
+    const [floatAgg, expensesAgg] = await Promise.all([
+      this.repository.sumFloatIssued({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        floatDate: operation.operationDate,
+      }),
+      this.repository.sumExpensesForOperation({
+        tenantId: user.tenantId,
+        operationId: operation.id,
+      }),
+    ]);
+
+    const availableCash = this.cashAvailableAtOpening(operation);
+    const floatIssued = this.decimalToNumber(floatAgg._sum.amountGiven);
+    const expensesTotal = this.decimalToNumber(expensesAgg._sum.amount);
+    const remainingBeforeExpense = this.roundMoney(
+      availableCash - floatIssued - expensesTotal,
+    );
+
+    if (dto.amount > remainingBeforeExpense) {
+      throw new BadRequestException(
+        `Expense exceeds remaining branch cash. Available: ${remainingBeforeExpense}.`,
+      );
+    }
+
+    await this.repository.recordExpense({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationId: operation.id,
+      category: dto.category,
+      amount: new Prisma.Decimal(dto.amount),
+      description: dto.description?.trim() || null,
+      incurredAt: new Date(),
+      recordedByUserId: user.userId,
+      operationDate: operation.operationDate,
+      status: operation.status,
+    });
+
+    return this.getToday(user, { branchId: branch.id, date: bounds.dateLabel });
+  }
+
   async requireOpenBranch(input: {
     tenantId: string;
     branchId: string | null | undefined;
@@ -147,6 +217,7 @@ export class OperationsService {
       throw new ForbiddenException('Branch scope is required.');
     }
     const bounds = this.parseDayBounds(input.date);
+    this.assertCanChangeDay(bounds.dateOnly);
     const operation = await this.repository.findOperationForDay({
       tenantId: input.tenantId,
       branchId: input.branchId,
@@ -172,6 +243,7 @@ export class OperationsService {
     }
 
     const bounds = this.parseDayBounds(input.date);
+    this.assertCanChangeDay(bounds.dateOnly);
     const operation = await this.repository.findOperationForDay({
       tenantId: input.tenantId,
       branchId: input.branchId,
@@ -182,7 +254,7 @@ export class OperationsService {
       throw new BadRequestException('Open the branch before assigning float.');
     }
 
-    const [floatAgg, existingFloat] = await Promise.all([
+    const [floatAgg, existingFloat, expensesAgg] = await Promise.all([
       this.repository.sumFloatIssued({
         tenantId: input.tenantId,
         branchId: input.branchId,
@@ -194,13 +266,21 @@ export class OperationsService {
         agentId: input.agentId,
         floatDate: operation.operationDate,
       }),
+      this.repository.sumExpensesForOperation({
+        tenantId: input.tenantId,
+        operationId: operation.id,
+      }),
     ]);
 
     const cashAvailableAtOpening = this.cashAvailableAtOpening(operation);
     const totalAlreadyIssued = this.decimalToNumber(floatAgg._sum.amountGiven);
     const currentAgentFloat = this.decimalToNumber(existingFloat?.amountGiven);
+    const expensesTotal = this.decimalToNumber(expensesAgg._sum.amount);
     const availableForThisAgent = this.roundMoney(
-      cashAvailableAtOpening - totalAlreadyIssued + currentAgentFloat,
+      cashAvailableAtOpening -
+        expensesTotal -
+        totalAlreadyIssued +
+        currentAgentFloat,
     );
 
     if (input.amountGiven > availableForThisAgent) {
@@ -219,25 +299,34 @@ export class OperationsService {
     dayStart: Date,
     dayEnd: Date,
   ): Promise<DailyOperationContract> {
-    const [floatAgg, loansAgg, collectionsAgg] = await Promise.all([
-      this.repository.sumFloatIssued({
-        tenantId: operation.tenantId,
-        branchId: operation.branchId,
-        floatDate: operation.operationDate,
-      }),
-      this.repository.sumLoansIssued({
-        tenantId: operation.tenantId,
-        branchId: operation.branchId,
-        dayStart,
-        dayEnd,
-      }),
-      this.repository.sumCollections({
-        tenantId: operation.tenantId,
-        branchId: operation.branchId,
-        dayStart,
-        dayEnd,
-      }),
-    ]);
+    const [floatAgg, loansAgg, collectionsAgg, expensesAgg, expenses] =
+      await Promise.all([
+        this.repository.sumFloatIssued({
+          tenantId: operation.tenantId,
+          branchId: operation.branchId,
+          floatDate: operation.operationDate,
+        }),
+        this.repository.sumLoansIssued({
+          tenantId: operation.tenantId,
+          branchId: operation.branchId,
+          dayStart,
+          dayEnd,
+        }),
+        this.repository.sumCollections({
+          tenantId: operation.tenantId,
+          branchId: operation.branchId,
+          dayStart,
+          dayEnd,
+        }),
+        this.repository.sumExpensesForOperation({
+          tenantId: operation.tenantId,
+          operationId: operation.id,
+        }),
+        this.repository.listExpensesForOperation({
+          tenantId: operation.tenantId,
+          operationId: operation.id,
+        }),
+      ]);
 
     const openingBalance = this.decimalToNumber(
       operation.previousClosingBalance,
@@ -245,8 +334,9 @@ export class OperationsService {
     const cashAddedToday = this.decimalToNumber(operation.cashAddedToday);
     const cashAvailableAtOpening = this.cashAvailableAtOpening(operation);
     const floatIssued = this.decimalToNumber(floatAgg._sum.amountGiven);
+    const expensesTotal = this.decimalToNumber(expensesAgg._sum.amount);
     const branchCashRemaining = this.roundMoney(
-      cashAvailableAtOpening - floatIssued,
+      cashAvailableAtOpening - floatIssued - expensesTotal,
     );
     const loansIssuedPrincipal = this.decimalToNumber(
       loansAgg._sum.principalAmount,
@@ -269,6 +359,18 @@ export class OperationsService {
       cashAvailableAtOpening,
       floatIssued,
       floatSetAside: floatIssued,
+      expensesCount: expensesAgg._count._all,
+      expensesTotal,
+      expenses: expenses.map((expense) => ({
+        id: expense.id,
+        category: expense.category,
+        amount: this.decimalToNumber(expense.amount),
+        description: expense.description,
+        incurredAt: expense.incurredAt.toISOString(),
+        recordedByName: expense.recordedBy.displayName,
+        approvedAt: expense.approvedAt?.toISOString() ?? null,
+        approvedByName: expense.approvedBy?.displayName ?? null,
+      })),
       branchCashRemaining,
       closingBalance: operation.closingBalance
         ? this.decimalToNumber(operation.closingBalance)
@@ -327,15 +429,28 @@ export class OperationsService {
 
   private assertCanRead(user: AuthenticatedUser) {
     this.assertTenant(user);
-    if (!user.permissions.includes('operation.read')) {
+    if (!user.permissions.includes(OPERATIONS_PERMISSIONS.read)) {
       throw new ForbiddenException('Missing permission to view operations.');
     }
   }
 
   private assertCanOpen(user: AuthenticatedUser) {
     this.assertTenant(user);
-    if (!user.permissions.includes('operation.open')) {
+    if (!user.permissions.includes(OPERATIONS_PERMISSIONS.open)) {
       throw new ForbiddenException('Missing permission to open branch.');
+    }
+  }
+
+  private assertCanCreateExpense(user: AuthenticatedUser) {
+    this.assertTenant(user);
+    if (!user.permissions.includes(OPERATIONS_PERMISSIONS.expenseCreate)) {
+      throw new ForbiddenException('Missing permission to record expenses.');
+    }
+  }
+
+  private assertCanChangeDay(dateOnly: Date) {
+    if (this.formatDateLabel(dateOnly) !== this.currentBusinessDateLabel()) {
+      throw new BadRequestException("Only today's records can be changed.");
     }
   }
 
@@ -346,20 +461,20 @@ export class OperationsService {
   }
 
   private parseDayBounds(date?: string) {
-    const base = date?.trim() ? this.parseDateInput(date.trim()) : new Date();
-    const dayStart = new Date(
-      base.getFullYear(),
-      base.getMonth(),
-      base.getDate(),
+    const base = this.parseDateInput(
+      date?.trim() ? date.trim() : this.currentBusinessDateLabel(),
     );
-    const dayEnd = new Date(dayStart);
-    dayEnd.setDate(dayEnd.getDate() + 1);
-    dayEnd.setMilliseconds(dayEnd.getMilliseconds() - 1);
+    const dateOnly = this.toDateOnly(base);
+    const dayStart = new Date(
+      Date.UTC(base.getFullYear(), base.getMonth(), base.getDate()) -
+        this.businessUtcOffsetMinutes * 60 * 1000,
+    );
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
     return {
       dayStart,
       dayEnd,
-      dateLabel: this.formatDateLabel(dayStart),
-      dateOnly: this.toDateOnly(dayStart),
+      dateLabel: this.formatDateLabel(dateOnly),
+      dateOnly,
     };
   }
 
@@ -384,6 +499,16 @@ export class OperationsService {
     return new Date(
       Date.UTC(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate()),
     );
+  }
+
+  private currentBusinessDateLabel() {
+    const shifted = new Date(
+      Date.now() + this.businessUtcOffsetMinutes * 60 * 1000,
+    );
+    const year = shifted.getUTCFullYear();
+    const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(shifted.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   private formatDateLabel(value: Date) {
