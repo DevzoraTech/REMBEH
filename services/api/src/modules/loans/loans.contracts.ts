@@ -10,6 +10,7 @@ export type LoanListItemContract = {
   principal: number;
   balance: number;
   paidAmount: number;
+  installmentAmount: number;
   currency: string;
   officerName: string | null;
   officerPublicId: string | null;

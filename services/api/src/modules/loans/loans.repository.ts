@@ -26,6 +26,11 @@ const loanListInclude = {
       },
     },
   },
+  wallet: {
+    select: {
+      openingBalance: true,
+    },
+  },
   repayments: {
     select: { amount: true },
   },

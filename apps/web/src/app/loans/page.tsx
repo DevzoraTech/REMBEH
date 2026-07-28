@@ -55,6 +55,7 @@ type LoanRow = {
   principal: number;
   balance: number;
   paidAmount: number;
+  installmentAmount: number;
   currency: string;
   officerName: string | null;
   officerPublicId: string | null;
@@ -317,7 +318,6 @@ export default function LoansPage() {
             <h1 className="text-xl font-bold text-[var(--midnight-navy)]">
               Loans
             </h1>
-            <p className="mt-1 text-sm text-slate-500">{loans.length} total</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -354,7 +354,7 @@ export default function LoansPage() {
           </p>
         ) : null}
 
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <section className="grid grid-cols-5 gap-2">
           <LoanStatCard
             icon={<WalletCards className="size-4" />}
             label="active loans"
@@ -431,7 +431,7 @@ export default function LoansPage() {
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
         {loading && loans.length === 0 ? (
-          <TableSkeleton rows={6} columns={8} />
+          <TableSkeleton rows={6} columns={9} />
         ) : filteredLoans.length === 0 ? (
           <p className="panel px-4 py-6 text-sm text-slate-500">
             No loans found.
@@ -441,29 +441,32 @@ export default function LoansPage() {
             <table className="w-full table-fixed text-left text-[11px]">
               <thead className="border-b border-[var(--line)] bg-[#e5ece8] text-[9px] capitalize tracking-[0.06em] text-slate-500">
                 <tr>
-                  <th className="w-[11%] px-2 py-2.5 font-semibold">loan id</th>
-                  <th className="w-[19%] px-2 py-2.5 font-semibold">
+                  <th className="w-[10%] px-2 py-2.5 font-semibold">loan id</th>
+                  <th className="w-[17%] px-2 py-2.5 font-semibold">
                     borrower
                   </th>
-                  <th className="hidden w-[13%] px-2 py-2.5 font-semibold md:table-cell">
+                  <th className="hidden w-[12%] px-2 py-2.5 font-semibold md:table-cell">
                     loan type
                   </th>
-                  <th className="hidden w-[11%] px-2 py-2.5 text-right font-semibold sm:table-cell">
+                  <th className="hidden w-[10%] px-2 py-2.5 text-right font-semibold sm:table-cell">
                     principal
                   </th>
-                  <th className="hidden w-[9%] px-2 py-2.5 text-right font-semibold lg:table-cell">
+                  <th className="hidden w-[10%] px-2 py-2.5 text-right font-semibold md:table-cell">
+                    installment
+                  </th>
+                  <th className="hidden w-[8%] px-2 py-2.5 text-right font-semibold lg:table-cell">
                     paid
                   </th>
-                  <th className="w-[13%] px-2 py-2.5 text-right font-semibold">
+                  <th className="w-[12%] px-2 py-2.5 text-right font-semibold">
                     balance
                   </th>
-                  <th className="hidden w-[11%] px-2 py-2.5 font-semibold lg:table-cell">
+                  <th className="hidden w-[10%] px-2 py-2.5 font-semibold lg:table-cell">
                     next due
                   </th>
-                  <th className="hidden w-[8%] px-2 py-2.5 font-semibold xl:table-cell">
+                  <th className="hidden w-[7%] px-2 py-2.5 font-semibold xl:table-cell">
                     officer
                   </th>
-                  <th className="w-[5%] px-2 py-2.5 text-right font-semibold">
+                  <th className="w-[4%] px-2 py-2.5 text-right font-semibold">
                     actions
                   </th>
                 </tr>
@@ -504,6 +507,9 @@ export default function LoansPage() {
                     </td>
                     <td className="hidden px-2 py-3 text-right text-[11px] font-bold tabular-nums text-[var(--midnight-navy)] sm:table-cell">
                       {formatMoney(loan.principal, loan.currency)}
+                    </td>
+                    <td className="hidden px-2 py-3 text-right text-[11px] font-bold tabular-nums text-[var(--midnight-navy)] md:table-cell">
+                      {formatMoney(loan.installmentAmount, loan.currency)}
                     </td>
                     <td className="hidden px-2 py-3 text-right text-[11px] font-bold tabular-nums text-[var(--forest-emerald)] lg:table-cell">
                       {formatMoney(loan.paidAmount, loan.currency)}
@@ -780,17 +786,17 @@ function LoanStatCard({
           : "border-rose-100 bg-rose-50 text-rose-700";
 
   return (
-    <article className="panel flex min-h-[92px] items-start gap-3 bg-white px-3 py-3 shadow-[0_8px_22px_rgba(20,33,61,0.05)]">
+    <article className="panel flex min-h-[84px] min-w-0 items-start gap-2 bg-white px-2 py-2 shadow-[0_8px_22px_rgba(20,33,61,0.05)] sm:px-3 sm:py-3">
       <span
-        className={`grid size-9 shrink-0 place-items-center border ${toneClass}`}
+        className={`hidden size-8 shrink-0 place-items-center border sm:grid xl:size-9 ${toneClass}`}
       >
         {icon}
       </span>
       <div className="min-w-0">
-        <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
+        <p className="truncate text-[9px] font-semibold capitalize tracking-[0.08em] text-slate-500 sm:text-[10px]">
           {label}
         </p>
-        <p className="mt-1 truncate text-lg font-bold tabular-nums text-[var(--midnight-navy)]">
+        <p className="mt-1 truncate text-sm font-bold tabular-nums text-[var(--midnight-navy)] sm:text-base xl:text-lg">
           {value}
         </p>
         <p className="mt-0.5 truncate text-[11px] text-slate-500">{hint}</p>

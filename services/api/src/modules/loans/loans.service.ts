@@ -57,6 +57,14 @@ export class LoansService {
       paymentStartDate && durationDays != null
         ? this.addDays(paymentStartDate, durationDays)
         : null;
+    const principal = this.decimalToNumber(loan.principal) ?? 0;
+    const balance = this.decimalToNumber(loan.balance) ?? 0;
+    const paidAmount = this.roundMoney(
+      loan.repayments.reduce(
+        (sum, repayment) => sum + (this.decimalToNumber(repayment.amount) ?? 0),
+        0,
+      ),
+    );
 
     return {
       id: loan.id,
@@ -67,15 +75,15 @@ export class LoansService {
       nationalId: loan.customer.nationalId,
       loanTypeName: this.loanTypeName(loan),
       status: loan.status,
-      principal: this.decimalToNumber(loan.principal) ?? 0,
-      balance: this.decimalToNumber(loan.balance) ?? 0,
-      paidAmount: this.roundMoney(
-        loan.repayments.reduce(
-          (sum, repayment) =>
-            sum + (this.decimalToNumber(repayment.amount) ?? 0),
-          0,
-        ),
-      ),
+      principal,
+      balance,
+      paidAmount,
+      installmentAmount: this.installmentAmount({
+        openingBalance: this.decimalToNumber(loan.wallet?.openingBalance),
+        currentBalance: balance,
+        paidAmount,
+        durationDays,
+      }),
       currency: loan.currency,
       officerName: loan.application?.officer.displayName ?? null,
       officerPublicId: loan.application?.officer.publicId ?? null,
@@ -114,5 +122,17 @@ export class LoansService {
     const next = new Date(date);
     next.setDate(next.getDate() + Math.max(0, days));
     return next;
+  }
+
+  private installmentAmount(input: {
+    openingBalance: number | null;
+    currentBalance: number;
+    paidAmount: number;
+    durationDays: number | null;
+  }) {
+    if (!input.durationDays || input.durationDays < 1) return 0;
+    const totalRepayable =
+      input.openingBalance ?? input.currentBalance + input.paidAmount;
+    return this.roundMoney(totalRepayable / input.durationDays);
   }
 }
