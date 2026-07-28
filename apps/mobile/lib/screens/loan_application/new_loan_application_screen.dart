@@ -55,8 +55,13 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     super.initState();
     _dayStore.addListener(_onDayStatusChanged);
     // Refresh today's float for immediate loan amount validation.
-    // ignore: discarded_futures
-    _dayStore.start(widget.session);
+    if (_dayStore.status == null) {
+      // ignore: discarded_futures
+      _dayStore.start(widget.session);
+    } else {
+      // ignore: discarded_futures
+      _dayStore.refresh();
+    }
     _bootstrapDraft();
     _loadLoanProducts();
   }
