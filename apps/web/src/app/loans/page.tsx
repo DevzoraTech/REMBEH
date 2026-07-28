@@ -92,6 +92,16 @@ type LoanFilter =
   | "overdue"
   | "closedThisMonth";
 
+const LOAN_FILTER_OPTIONS: Array<{ value: LoanFilter; label: string }> = [
+  { value: "today", label: "Today's loans" },
+  { value: "all", label: "All loans" },
+  { value: "active", label: "Active loans" },
+  { value: "completed", label: "Completed loans" },
+  { value: "dueToday", label: "Due today" },
+  { value: "overdue", label: "Overdue loans" },
+  { value: "closedThisMonth", label: "Closed this month" },
+];
+
 const ACTIVE_LOAN_STATUSES = new Set([
   "SUBMITTED",
   "APPROVED",
@@ -236,6 +246,9 @@ export default function LoansPage() {
     [filteredLoans, page, pageSize],
   );
 
+  const activeFilterLabel = loanFilterLabel(filter);
+  const trimmedSearch = search.trim();
+
   const filteredBorrowers = useMemo(() => {
     const q = borrowerSearch.trim().toLowerCase();
     if (!q) return borrowers.slice(0, 8);
@@ -354,7 +367,7 @@ export default function LoansPage() {
           </p>
         ) : null}
 
-        <section className="grid grid-cols-5 gap-2">
+        <section className="grid w-full min-w-0 grid-cols-5 gap-1.5 sm:gap-2">
           <LoanStatCard
             icon={<WalletCards className="size-4" />}
             label="active loans"
@@ -392,40 +405,61 @@ export default function LoansPage() {
           />
         </section>
 
-        <div className="panel flex flex-wrap items-center justify-between gap-3 bg-white/95 px-3 py-2.5 shadow-[0_8px_22px_rgba(20,33,61,0.05)]">
-          <label className="flex min-w-[220px] flex-1 items-center gap-2">
-            <Search className="size-4 shrink-0 text-slate-400" />
-            <input
-              type="search"
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value);
-                setPage(1);
-              }}
-              placeholder="Search by loan id, borrower, phone or agent"
-              className="min-w-[160px] flex-1 bg-transparent py-1.5 text-sm text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
-            />
-          </label>
-          <label className="flex h-9 min-w-[190px] items-center gap-2 border border-[var(--line)] bg-white px-2 text-xs font-bold text-[var(--midnight-navy)]">
-            <SlidersHorizontal className="size-3.5 text-slate-400" />
-            <select
-              value={filter}
-              onChange={(event) => {
-                setFilter(event.target.value as LoanFilter);
-                setPage(1);
-              }}
-              className="min-w-0 flex-1 bg-transparent outline-none"
-              aria-label="loan filter"
-            >
-              <option value="today">today&apos;s loans</option>
-              <option value="all">all loans</option>
-              <option value="active">active loans</option>
-              <option value="completed">completed loans</option>
-              <option value="dueToday">due today</option>
-              <option value="overdue">overdue loans</option>
-              <option value="closedThisMonth">closed this month</option>
-            </select>
-          </label>
+        <div className="panel border-[var(--forest-emerald)] bg-white/95 px-3 py-2.5 shadow-[0_10px_26px_rgba(15,138,108,0.08)]">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 border-b border-emerald-100 pb-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 bg-emerald-50 px-2 py-1 text-[11px] font-bold text-[var(--forest-emerald)]">
+                <SlidersHorizontal className="size-3.5" />
+                Showing {activeFilterLabel}
+              </span>
+              {trimmedSearch ? (
+                <span className="inline-flex max-w-full items-center gap-1 bg-[var(--soft-mist)] px-2 py-1 text-[11px] font-semibold text-slate-600">
+                  Search:{" "}
+                  <span className="max-w-[180px] truncate">
+                    {trimmedSearch}
+                  </span>
+                </span>
+              ) : null}
+            </div>
+            <span className="text-[11px] font-semibold text-slate-500">
+              {filteredLoans.length} shown
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <label className="flex min-w-[220px] flex-1 items-center gap-2">
+              <Search className="size-4 shrink-0 text-slate-400" />
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(1);
+                }}
+                placeholder="Search by loan id, borrower, phone or agent"
+                className="min-w-[160px] flex-1 bg-transparent py-1.5 text-sm text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
+              />
+            </label>
+            <label className="flex h-9 min-w-[210px] items-center gap-2 border border-[var(--forest-emerald)] bg-emerald-50/70 px-2 text-xs font-bold text-[var(--midnight-navy)] shadow-[inset_3px_0_0_var(--forest-emerald)]">
+              <span className="text-[10px] font-bold text-[var(--forest-emerald)]">
+                Filter
+              </span>
+              <select
+                value={filter}
+                onChange={(event) => {
+                  setFilter(event.target.value as LoanFilter);
+                  setPage(1);
+                }}
+                className="min-w-0 flex-1 bg-transparent outline-none"
+                aria-label="loan filter"
+              >
+                {LOAN_FILTER_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
 
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
@@ -433,9 +467,28 @@ export default function LoansPage() {
         {loading && loans.length === 0 ? (
           <TableSkeleton rows={6} columns={9} />
         ) : filteredLoans.length === 0 ? (
-          <p className="panel px-4 py-6 text-sm text-slate-500">
-            No loans found.
-          </p>
+          <LoanEmptyState
+            filter={filter}
+            filterLabel={activeFilterLabel}
+            hasAnyLoans={loans.length > 0}
+            search={trimmedSearch}
+            onClearSearch={
+              trimmedSearch
+                ? () => {
+                    setSearch("");
+                    setPage(1);
+                  }
+                : undefined
+            }
+            onShowAll={
+              filter !== "all"
+                ? () => {
+                    setFilter("all");
+                    setPage(1);
+                  }
+                : undefined
+            }
+          />
         ) : (
           <div className="panel overflow-hidden shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
             <table className="w-full table-fixed text-left text-[11px]">
@@ -763,6 +816,64 @@ function ChoiceButton({
   );
 }
 
+function LoanEmptyState({
+  filter,
+  filterLabel,
+  hasAnyLoans,
+  search,
+  onClearSearch,
+  onShowAll,
+}: {
+  filter: LoanFilter;
+  filterLabel: string;
+  hasAnyLoans: boolean;
+  search: string;
+  onClearSearch?: () => void;
+  onShowAll?: () => void;
+}) {
+  const emptyCopy = loanFilterEmptyCopy(filter);
+  const title = !hasAnyLoans
+    ? "No loans yet"
+    : search
+      ? `No results in ${filterLabel.toLowerCase()}`
+      : emptyCopy.title;
+  const detail = !hasAnyLoans
+    ? "New loans will appear here after they are given."
+    : search
+      ? `Nothing matches "${search}". Clear the search or change the filter.`
+      : emptyCopy.detail;
+
+  return (
+    <div className="panel flex flex-wrap items-center justify-between gap-3 border-emerald-100 bg-white px-4 py-5 shadow-[0_8px_22px_rgba(20,33,61,0.04)]">
+      <div className="min-w-0">
+        <p className="text-sm font-bold text-[var(--midnight-navy)]">{title}</p>
+        <p className="mt-1 text-xs text-slate-500">{detail}</p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {onClearSearch ? (
+          <button
+            type="button"
+            className="btn btn-ghost h-9 text-xs"
+            onClick={onClearSearch}
+          >
+            <X className="size-3.5" />
+            Clear search
+          </button>
+        ) : null}
+        {onShowAll ? (
+          <button
+            type="button"
+            className="btn btn-primary h-9 text-xs"
+            onClick={onShowAll}
+          >
+            All loans
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function LoanStatCard({
   icon,
   label,
@@ -851,6 +962,53 @@ function matchesLoanFilter(loan: LoanRow, filter: LoanFilter) {
       return isClosedInMonth(loan, new Date());
     default:
       return true;
+  }
+}
+
+function loanFilterLabel(filter: LoanFilter) {
+  return (
+    LOAN_FILTER_OPTIONS.find((option) => option.value === filter)?.label ??
+    "All loans"
+  );
+}
+
+function loanFilterEmptyCopy(filter: LoanFilter) {
+  switch (filter) {
+    case "today":
+      return {
+        title: "No loans for today",
+        detail: "Change the filter to see loans from another day.",
+      };
+    case "active":
+      return {
+        title: "No active loans",
+        detail: "Loans still being paid will appear here.",
+      };
+    case "completed":
+      return {
+        title: "No completed loans",
+        detail: "Fully paid loans will appear here.",
+      };
+    case "dueToday":
+      return {
+        title: "No loans due today",
+        detail: "Loans with a payment due today will appear here.",
+      };
+    case "overdue":
+      return {
+        title: "No overdue loans",
+        detail: "Loans past their payment date will appear here.",
+      };
+    case "closedThisMonth":
+      return {
+        title: "No loans closed this month",
+        detail: "Loans closed this month will appear here.",
+      };
+    default:
+      return {
+        title: "No loans to show",
+        detail: "Loans will appear here after they are given.",
+      };
   }
 }
 
