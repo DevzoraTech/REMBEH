@@ -168,7 +168,7 @@ export class AgentsRepository {
       where: {
         tenantId: input.tenantId,
         officerUserId: input.agentId,
-        status: { not: LoanApplicationStatus.DRAFT },
+        status: LoanApplicationStatus.SUBMITTED,
         ...(input.from || input.to
           ? {
               submittedAt: {

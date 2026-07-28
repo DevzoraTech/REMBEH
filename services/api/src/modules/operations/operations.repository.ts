@@ -458,7 +458,7 @@ export class OperationsRepository {
       where: {
         tenantId: input.tenantId,
         branchId: input.branchId,
-        status: { not: LoanApplicationStatus.DRAFT },
+        status: LoanApplicationStatus.SUBMITTED,
         submittedAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
@@ -482,7 +482,7 @@ export class OperationsRepository {
         tenantId: input.tenantId,
         branchId: input.branchId,
         officerUserId: { in: input.agentIds },
-        status: { not: LoanApplicationStatus.DRAFT },
+        status: LoanApplicationStatus.SUBMITTED,
         submittedAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
@@ -505,7 +505,7 @@ export class OperationsRepository {
         tenantId: input.tenantId,
         branchId: input.branchId,
         officerUserId: input.agentId,
-        status: { not: LoanApplicationStatus.DRAFT },
+        status: LoanApplicationStatus.SUBMITTED,
         submittedAt: {
           gte: input.dayStart,
           lte: input.dayEnd,

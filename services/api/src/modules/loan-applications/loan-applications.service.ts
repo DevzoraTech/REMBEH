@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import {
   ApplicantGender,
+  BranchOperationStatus,
   LoanApplicationMediaType,
   LoanApplicationSignerRole,
   LoanApplicationStatus,
@@ -21,6 +22,7 @@ import {
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import { BorrowerListsService } from '../borrower-lists/borrower-lists.service';
 import { IdentityVerificationService } from '../identity-verification/identity-verification.service';
+import { OPERATIONS_PERMISSIONS } from '../operations/operations.permissions';
 import { REALTIME_EVENTS } from '../realtime/realtime.events';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { ObjectStorageService } from '../storage/object-storage.service';
@@ -95,6 +97,7 @@ const AGREEMENT_LOAN_ISSUE_DATE_VERSION = 2;
 @Injectable()
 export class LoanApplicationsService {
   private readonly logger = new Logger(LoanApplicationsService.name);
+  private readonly businessUtcOffsetMinutes = 180;
 
   constructor(
     private readonly repository: LoanApplicationsRepository,
@@ -756,6 +759,7 @@ export class LoanApplicationsService {
       );
     }
     this.assertReadyForSubmit(application);
+    await this.assertAgentFloatCanCoverLoan(user, application);
 
     const goLiveAt = new Date();
     const paymentStartDate = await this.loanProducts.resolvePaymentStartDate({
@@ -849,6 +853,84 @@ export class LoanApplicationsService {
     if (missing.length > 0) {
       throw new BadRequestException(
         `Application is incomplete. Missing: ${missing.join(', ')}.`,
+      );
+    }
+  }
+
+  private async assertAgentFloatCanCoverLoan(
+    user: AuthenticatedUser,
+    application: LoanApplicationRecord,
+  ) {
+    if (user.permissions.includes(OPERATIONS_PERMISSIONS.floatManage)) {
+      return;
+    }
+
+    const branchId = application.branchId;
+    if (!branchId) {
+      throw new BadRequestException('Branch access is required.');
+    }
+
+    const principal = this.decimalToNumber(application.principalAmount) ?? 0;
+    if (principal <= 0) {
+      throw new BadRequestException('Enter a valid loan amount.');
+    }
+
+    const bounds = this.currentBusinessDayBounds();
+    const operation = await this.repository.findBranchOperationForDay({
+      tenantId: application.tenantId,
+      branchId,
+      operationDate: bounds.dateOnly,
+    });
+
+    if (!operation) {
+      throw new BadRequestException(
+        'Your branch day is not open. Ask your manager to open today first.',
+      );
+    }
+
+    if (operation.status !== BranchOperationStatus.OPEN) {
+      throw new BadRequestException(
+        'Your branch day is closed. New loans cannot be issued today.',
+      );
+    }
+
+    const float = await this.repository.findAgentFloatForDay({
+      tenantId: application.tenantId,
+      branchId,
+      agentId: user.userId,
+      floatDate: bounds.dateOnly,
+    });
+
+    if (!float) {
+      throw new BadRequestException(
+        'You need float assigned before issuing a loan.',
+      );
+    }
+
+    if (float.returnedAt || float.amountReturned != null) {
+      throw new BadRequestException(
+        'Your float has already been handed over for today.',
+      );
+    }
+
+    const issued = await this.repository.sumSubmittedPrincipalForOfficer({
+      tenantId: application.tenantId,
+      branchId,
+      officerUserId: user.userId,
+      dayStart: bounds.dayStart,
+      dayEnd: bounds.dayEnd,
+    });
+
+    const assignedFloat = this.decimalToNumber(float.amountGiven) ?? 0;
+    const alreadyIssued =
+      this.decimalToNumber(issued._sum.principalAmount) ?? 0;
+    const remainingFloat = this.roundMoney(assignedFloat - alreadyIssued);
+
+    if (principal > remainingFloat) {
+      throw new BadRequestException(
+        `Loan amount exceeds your remaining float. Available: UGX ${this.formatMoney(
+          remainingFloat,
+        )}.`,
       );
     }
   }
@@ -1438,6 +1520,32 @@ export class LoanApplicationsService {
       paymentStartDelayDays: application?.paymentStartDelayDays,
       allowAgentDatePick: true,
     });
+  }
+
+  private currentBusinessDayBounds() {
+    const shifted = new Date(
+      Date.now() + this.businessUtcOffsetMinutes * 60 * 1000,
+    );
+    const dateOnly = new Date(
+      Date.UTC(
+        shifted.getUTCFullYear(),
+        shifted.getUTCMonth(),
+        shifted.getUTCDate(),
+      ),
+    );
+    const dayStart = new Date(
+      dateOnly.getTime() - this.businessUtcOffsetMinutes * 60 * 1000,
+    );
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
+    return { dateOnly, dayStart, dayEnd };
+  }
+
+  private roundMoney(value: number) {
+    return Math.round(value * 100) / 100;
+  }
+
+  private formatMoney(value: number) {
+    return Math.max(0, Math.round(value)).toLocaleString('en-US');
   }
 
   private parseDateOnly(raw: string): Date {

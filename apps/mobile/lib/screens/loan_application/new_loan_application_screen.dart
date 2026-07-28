@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/di/loan_application_locator.dart';
 import '../../core/network/phone_normalize.dart';
+import '../../features/agent_day/data/agent_day_status_store.dart';
 import '../../features/loan_application/domain/failures.dart';
 import '../../services/session_store.dart';
 import '../../shared/camera_capture/camera_capture.dart';
@@ -113,6 +114,29 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         (principal * (template.processingFeePercent / 100) * 100).round() / 100;
     _processingFee.text = fee.toStringAsFixed(0);
     _draft.processingFee = _processingFee.text;
+  }
+
+  double _currentPrincipalAmount() {
+    return double.tryParse(_principal.text.replaceAll(',', '')) ?? 0;
+  }
+
+  int? _remainingFloatForLoan() {
+    final status = AgentDayStatusStore.instance.status;
+    if (status == null) return null;
+    return status.float.unusedFloat < 0 ? 0 : status.float.unusedFloat;
+  }
+
+  String? _floatMessageForPrincipal(double principal) {
+    final status = AgentDayStatusStore.instance.status;
+    if (status == null || principal <= 0) return null;
+    if (status.float.amountReceived <= 0) {
+      return 'You need float assigned before issuing a loan.';
+    }
+    final remaining = _remainingFloatForLoan() ?? 0;
+    if (principal > remaining) {
+      return 'Only UGX ${formatMoney(remaining)} is left from your float.';
+    }
+    return null;
   }
 
   Future<void> _bootstrapDraft() async {
@@ -384,6 +408,11 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         _showSnack(
           'Principal must be at most ${template.maxLoanAmount!.toStringAsFixed(0)}.',
         );
+        return;
+      }
+      final floatMessage = _floatMessageForPrincipal(principal);
+      if (floatMessage != null) {
+        _showSnack(floatMessage);
         return;
       }
       await _locator.saveStep(
@@ -702,6 +731,12 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   Future<void> _submit() async {
     final id = _applicationId;
     if (id == null) return;
+
+    final floatMessage = _floatMessageForPrincipal(_currentPrincipalAmount());
+    if (floatMessage != null) {
+      _showSnack(floatMessage);
+      return;
+    }
 
     setState(() => _busy = true);
     try {
@@ -1133,6 +1168,9 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         : selected.minLoanAmount == null && selected.maxLoanAmount == null
         ? null
         : 'Allowed: ${selected.minLoanAmount?.toStringAsFixed(0) ?? '—'} – ${selected.maxLoanAmount?.toStringAsFixed(0) ?? '—'}';
+    final principal = _currentPrincipalAmount();
+    final remainingFloat = _remainingFloatForLoan();
+    final floatMessage = _floatMessageForPrincipal(principal);
 
     return [
       const Text(
@@ -1237,6 +1275,48 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       if (rangeHint != null) ...[
         const SizedBox(height: 6),
         Text(rangeHint, style: const TextStyle(color: slateText, fontSize: 12)),
+      ],
+      if (remainingFloat != null) ...[
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: floatMessage == null
+                ? forestEmerald.withValues(alpha: 0.08)
+                : warmGold.withValues(alpha: 0.12),
+            border: Border.all(
+              color: floatMessage == null
+                  ? forestEmerald.withValues(alpha: 0.28)
+                  : warmGold.withValues(alpha: 0.35),
+            ),
+            borderRadius: rembehBorderRadius(rembehRadiusMd),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                floatMessage == null
+                    ? Icons.account_balance_wallet_outlined
+                    : Icons.info_outline,
+                color: floatMessage == null ? forestEmerald : warmGold,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  floatMessage ??
+                      'Float left: UGX ${formatMoney(remainingFloat)}',
+                  style: TextStyle(
+                    color: floatMessage == null ? forestEmerald : midnightNavy,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ],
       const SizedBox(height: 14),
       const LoanFieldLabel(label: 'Loan Processing Fee'),

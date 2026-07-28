@@ -189,6 +189,68 @@ export class LoanApplicationsRepository {
     });
   }
 
+  findBranchOperationForDay(input: {
+    tenantId: string;
+    branchId: string;
+    operationDate: Date;
+  }) {
+    return this.prisma.branchDailyOperation.findUnique({
+      where: {
+        tenantId_branchId_operationDate: {
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+          operationDate: input.operationDate,
+        },
+      },
+      select: { id: true, status: true },
+    });
+  }
+
+  findAgentFloatForDay(input: {
+    tenantId: string;
+    branchId: string;
+    agentId: string;
+    floatDate: Date;
+  }) {
+    return this.prisma.agentDailyFloat.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        agentId: input.agentId,
+        floatDate: input.floatDate,
+      },
+      select: {
+        id: true,
+        amountGiven: true,
+        amountReturned: true,
+        returnedAt: true,
+      },
+    });
+  }
+
+  sumSubmittedPrincipalForOfficer(input: {
+    tenantId: string;
+    branchId: string;
+    officerUserId: string;
+    dayStart: Date;
+    dayEnd: Date;
+  }) {
+    return this.prisma.loanApplication.aggregate({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        officerUserId: input.officerUserId,
+        status: LoanApplicationStatus.SUBMITTED,
+        submittedAt: {
+          gte: input.dayStart,
+          lte: input.dayEnd,
+        },
+      },
+      _sum: { principalAmount: true },
+      _count: { _all: true },
+    });
+  }
+
   upsertGuarantor(input: {
     applicationId: string;
     fullName?: string | null;

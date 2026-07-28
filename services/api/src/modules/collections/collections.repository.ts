@@ -303,7 +303,7 @@ export class CollectionsRepository {
     return this.prisma.loanApplication.findMany({
       where: {
         ...this.branchScope(input),
-        status: { not: LoanApplicationStatus.DRAFT },
+        status: LoanApplicationStatus.SUBMITTED,
         submittedAt: { gte: input.dayStart, lte: input.dayEnd },
         ...(input.officerUserId ? { officerUserId: input.officerUserId } : {}),
       },
