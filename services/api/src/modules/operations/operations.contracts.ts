@@ -15,23 +15,23 @@ export type DailyOperationContract = {
   openedAt: string;
   openedByName: string;
   closedAt: string | null;
-  cashInVault: number;
-  cashInSafe: number;
-  openingFloatAvailable: number;
-  previousClosingBalance: number;
-  totalOpeningCash: number;
+  openingBalance: number;
+  cashAddedToday: number;
+  cashAvailableAtOpening: number;
   floatIssued: number;
-  cashRemainingForFloat: number;
+  floatSetAside: number;
+  branchCashRemaining: number;
+  closingBalance: number | null;
   loansIssuedCount: number;
   loansIssuedPrincipal: number;
   collectionsCount: number;
   collectionsReceived: number;
-  expectedCashNow: number;
   notes: string | null;
 };
 
 export type DailyOperationResponseContract = {
   date: string;
   branch: DailyOperationBranchContract | null;
+  openingBalance: number | null;
   operation: DailyOperationContract | null;
 };

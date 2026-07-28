@@ -43,16 +43,31 @@ export class OperationsRepository {
     });
   }
 
+  findLatestClosedBefore(input: {
+    tenantId: string;
+    branchId: string;
+    beforeDate: Date;
+  }) {
+    return this.prisma.branchDailyOperation.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        operationDate: { lt: input.beforeDate },
+        closingBalance: { not: null },
+      },
+      orderBy: { operationDate: 'desc' },
+    });
+  }
+
   openBranch(input: {
     tenantId: string;
     branchId: string;
     operationDate: Date;
     openedAt: Date;
     openedByUserId: string;
-    cashInVault: Prisma.Decimal;
-    cashInSafe: Prisma.Decimal;
-    openingFloatAvailable: Prisma.Decimal;
-    previousClosingBalance: Prisma.Decimal;
+    openingBalance: Prisma.Decimal;
+    cashAddedToday: Prisma.Decimal;
+    cashAvailableAtOpening: Prisma.Decimal;
     notes: string | null;
   }) {
     return this.prisma.$transaction(async (tx) => {
@@ -64,10 +79,11 @@ export class OperationsRepository {
           status: BranchOperationStatus.OPEN,
           openedAt: input.openedAt,
           openedByUserId: input.openedByUserId,
-          cashInVault: input.cashInVault,
-          cashInSafe: input.cashInSafe,
-          openingFloatAvailable: input.openingFloatAvailable,
-          previousClosingBalance: input.previousClosingBalance,
+          cashInVault: input.cashAddedToday,
+          cashInSafe: new Prisma.Decimal(0),
+          cashAddedToday: input.cashAddedToday,
+          openingFloatAvailable: input.cashAvailableAtOpening,
+          previousClosingBalance: input.openingBalance,
           notes: input.notes,
         },
         include: {
@@ -104,10 +120,9 @@ export class OperationsRepository {
             branchId: operation.branchId,
             operationDate: this.formatDateLabel(operation.operationDate),
             status: operation.status,
-            cashInVault: operation.cashInVault.toString(),
-            cashInSafe: operation.cashInSafe.toString(),
-            openingFloatAvailable: operation.openingFloatAvailable.toString(),
-            previousClosingBalance: operation.previousClosingBalance.toString(),
+            openingBalance: operation.previousClosingBalance.toString(),
+            cashAddedToday: operation.cashAddedToday.toString(),
+            cashAvailableAtOpening: operation.openingFloatAvailable.toString(),
           },
         },
       });
@@ -129,6 +144,22 @@ export class OperationsRepository {
       },
       _sum: { amountGiven: true },
       _count: { _all: true },
+    });
+  }
+
+  findAgentFloatForDay(input: {
+    tenantId: string;
+    branchId: string;
+    agentId: string;
+    floatDate: Date;
+  }) {
+    return this.prisma.agentDailyFloat.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        agentId: input.agentId,
+        floatDate: input.floatDate,
+      },
     });
   }
 

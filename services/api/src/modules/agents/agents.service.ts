@@ -334,12 +334,14 @@ export class AgentsService {
     const { dayStart, dayEnd, dateLabel, floatDate } = this.parseDayBounds(
       dto.date,
     );
-    await this.operationsService.requireOpenBranch({
+    const amount = new Prisma.Decimal(dto.amountGiven);
+    await this.operationsService.assertFloatCanBeAssigned({
       tenantId: scope.tenantId,
       branchId: agent.branchId,
+      agentId,
+      amountGiven: this.decimalToNumber(amount) ?? 0,
       date: dateLabel,
     });
-    const amount = new Prisma.Decimal(dto.amountGiven);
     const floatRow = await this.repository.upsertFloat({
       tenantId: scope.tenantId,
       branchId: agent.branchId,

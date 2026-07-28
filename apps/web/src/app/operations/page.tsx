@@ -44,41 +44,37 @@ type DailyOperation = {
   openedAt: string;
   openedByName: string;
   closedAt: string | null;
-  cashInVault: number;
-  cashInSafe: number;
-  openingFloatAvailable: number;
-  previousClosingBalance: number;
-  totalOpeningCash: number;
+  openingBalance: number;
+  cashAddedToday: number;
+  cashAvailableAtOpening: number;
   floatIssued: number;
-  cashRemainingForFloat: number;
+  floatSetAside: number;
+  branchCashRemaining: number;
+  closingBalance: number | null;
   loansIssuedCount: number;
   loansIssuedPrincipal: number;
   collectionsCount: number;
   collectionsReceived: number;
-  expectedCashNow: number;
   notes: string | null;
 };
 
 type OperationResponse = {
   date: string;
   branch: OperationBranch | null;
+  openingBalance: number | null;
   operation: DailyOperation | null;
   message?: string | string[];
 };
 
 type OpeningForm = {
-  cashInVault: string;
-  cashInSafe: string;
-  openingFloatAvailable: string;
-  previousClosingBalance: string;
+  openingBalance: string;
+  cashAddedToday: string;
   notes: string;
 };
 
 const emptyOpeningForm: OpeningForm = {
-  cashInVault: "",
-  cashInSafe: "",
-  openingFloatAvailable: "",
-  previousClosingBalance: "",
+  openingBalance: "",
+  cashAddedToday: "",
   notes: "",
 };
 
@@ -107,6 +103,7 @@ export default function OperationsPage() {
   const canOpen = Boolean(session?.permissions.includes("operation.open"));
   const activeBranch = data?.branch;
   const operation = data?.operation;
+  const suggestedOpeningBalance = data?.openingBalance ?? null;
 
   const loadOperation = useCallback(
     async (activeSession: RembehSession, selectedDate: string) => {
@@ -126,6 +123,16 @@ export default function OperationsPage() {
           throw new Error(formatApiError(payload.message));
         }
         setData(payload);
+        if (!payload.operation && payload.openingBalance != null) {
+          setForm((current) =>
+            current.openingBalance
+              ? current
+              : {
+                  ...current,
+                  openingBalance: String(payload.openingBalance),
+                },
+          );
+        }
       } catch (caught) {
         setError(
           caught instanceof Error
@@ -172,8 +179,8 @@ export default function OperationsPage() {
   }, [router, date, loadOperation]);
 
   const openingTotal = useMemo(
-    () => Number(form.cashInVault || 0) + Number(form.cashInSafe || 0),
-    [form.cashInSafe, form.cashInVault],
+    () => Number(form.openingBalance || 0) + Number(form.cashAddedToday || 0),
+    [form.cashAddedToday, form.openingBalance],
   );
 
   async function openBranch() {
@@ -191,10 +198,8 @@ export default function OperationsPage() {
         body: JSON.stringify({
           branchId: activeBranch.id,
           date,
-          cashInVault: Number(form.cashInVault),
-          cashInSafe: Number(form.cashInSafe),
-          openingFloatAvailable: Number(form.openingFloatAvailable),
-          previousClosingBalance: Number(form.previousClosingBalance),
+          openingBalance: Number(form.openingBalance),
+          cashAddedToday: Number(form.cashAddedToday),
           notes: form.notes.trim() || undefined,
         }),
       });
@@ -243,6 +248,7 @@ export default function OperationsPage() {
                 value={date}
                 onChange={(event) => {
                   setNotice(null);
+                  setForm(emptyOpeningForm);
                   setDate(event.target.value);
                 }}
                 className="bg-transparent outline-none"
@@ -288,6 +294,7 @@ export default function OperationsPage() {
             form={form}
             opening={opening}
             openingTotal={openingTotal}
+            suggestedOpeningBalance={suggestedOpeningBalance}
             setForm={setForm}
             onOpen={() => void openBranch()}
           />
@@ -303,6 +310,7 @@ function OpeningView({
   form,
   opening,
   openingTotal,
+  suggestedOpeningBalance,
   setForm,
   onOpen,
 }: {
@@ -311,18 +319,15 @@ function OpeningView({
   form: OpeningForm;
   opening: boolean;
   openingTotal: number;
+  suggestedOpeningBalance: number | null;
   setForm: (next: OpeningForm) => void;
   onOpen: () => void;
 }) {
   const valid =
-    Number(form.cashInVault) >= 0 &&
-    Number(form.cashInSafe) >= 0 &&
-    Number(form.openingFloatAvailable) >= 0 &&
-    Number(form.previousClosingBalance) >= 0 &&
-    form.cashInVault !== "" &&
-    form.cashInSafe !== "" &&
-    form.openingFloatAvailable !== "" &&
-    form.previousClosingBalance !== "";
+    Number(form.openingBalance) >= 0 &&
+    Number(form.cashAddedToday) >= 0 &&
+    form.openingBalance !== "" &&
+    form.cashAddedToday !== "";
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
@@ -335,28 +340,15 @@ function OpeningView({
         </header>
         <div className="grid gap-3 p-4 sm:grid-cols-2">
           <MoneyField
-            label="Cash in vault"
-            value={form.cashInVault}
-            onChange={(value) => setForm({ ...form, cashInVault: value })}
+            label="Opening balance"
+            value={form.openingBalance}
+            locked={suggestedOpeningBalance != null}
+            onChange={(value) => setForm({ ...form, openingBalance: value })}
           />
           <MoneyField
-            label="Cash in safe"
-            value={form.cashInSafe}
-            onChange={(value) => setForm({ ...form, cashInSafe: value })}
-          />
-          <MoneyField
-            label="Opening float available"
-            value={form.openingFloatAvailable}
-            onChange={(value) =>
-              setForm({ ...form, openingFloatAvailable: value })
-            }
-          />
-          <MoneyField
-            label="Previous closing balance"
-            value={form.previousClosingBalance}
-            onChange={(value) =>
-              setForm({ ...form, previousClosingBalance: value })
-            }
+            label="Cash added today"
+            value={form.cashAddedToday}
+            onChange={(value) => setForm({ ...form, cashAddedToday: value })}
           />
           <label className="sm:col-span-2">
             <span className="text-xs font-bold text-slate-600">Notes</span>
@@ -372,7 +364,7 @@ function OpeningView({
         </div>
         <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line)] bg-[var(--soft-mist)] px-4 py-3">
           <p className="text-sm font-bold tabular-nums text-[var(--midnight-navy)]">
-            Opening cash: {formatMoney(openingTotal)}
+            Available cash: {formatMoney(openingTotal)}
           </p>
           <button
             type="button"
@@ -399,8 +391,8 @@ function OpeningView({
         />
         <StatusPanel
           icon={<ShieldCheck className="size-4" />}
-          title="Cash control"
-          value="Opening required"
+          title="Opening formula"
+          value="Balance + cash"
           tone="good"
         />
       </aside>
@@ -419,16 +411,22 @@ function OpenOperationView({ operation }: { operation: DailyOperation }) {
           tone="good"
         />
         <OperationStat
-          label="Opening cash"
-          value={formatMoney(operation.totalOpeningCash)}
-          hint="Vault + safe"
+          label="Available cash"
+          value={formatMoney(operation.cashAvailableAtOpening)}
+          hint="Opening + added"
           tone="blue"
         />
         <OperationStat
           label="Float issued"
-          value={formatMoney(operation.floatIssued)}
-          hint={`${formatMoney(operation.cashRemainingForFloat)} left`}
+          value={formatMoney(operation.floatSetAside)}
+          hint="Set aside for agents"
           tone="warn"
+        />
+        <OperationStat
+          label="Remaining cash"
+          value={formatMoney(operation.branchCashRemaining)}
+          hint="After float"
+          tone="blue"
         />
         <OperationStat
           label="Loans issued"
@@ -441,12 +439,6 @@ function OpenOperationView({ operation }: { operation: DailyOperation }) {
           value={formatMoney(operation.collectionsReceived)}
           hint={`${operation.collectionsCount} payments`}
           tone="good"
-        />
-        <OperationStat
-          label="Cash at branch"
-          value={formatMoney(operation.expectedCashNow)}
-          hint="Opening - float issued"
-          tone="blue"
         />
       </section>
 
@@ -467,20 +459,20 @@ function OpenOperationView({ operation }: { operation: DailyOperation }) {
               value={formatDateTime(operation.openedAt)}
             />
             <DetailRow
-              label="Cash in vault"
-              value={formatMoney(operation.cashInVault)}
+              label="Opening balance"
+              value={formatMoney(operation.openingBalance)}
             />
             <DetailRow
-              label="Cash in safe"
-              value={formatMoney(operation.cashInSafe)}
+              label="Cash added today"
+              value={formatMoney(operation.cashAddedToday)}
             />
             <DetailRow
-              label="Opening float"
-              value={formatMoney(operation.openingFloatAvailable)}
+              label="Available at opening"
+              value={formatMoney(operation.cashAvailableAtOpening)}
             />
             <DetailRow
-              label="Previous balance"
-              value={formatMoney(operation.previousClosingBalance)}
+              label="Float set aside"
+              value={formatMoney(operation.floatSetAside)}
             />
           </div>
           {operation.notes ? (
@@ -500,7 +492,7 @@ function OpenOperationView({ operation }: { operation: DailyOperation }) {
                 Assign float
               </span>
               <span className="mt-0.5 block text-xs text-slate-500">
-                Float remaining: {formatMoney(operation.cashRemainingForFloat)}
+                Remaining cash: {formatMoney(operation.branchCashRemaining)}
               </span>
             </span>
             <Send className="size-4 text-[var(--forest-emerald)]" />
@@ -514,7 +506,7 @@ function OpenOperationView({ operation }: { operation: DailyOperation }) {
           <StatusPanel
             icon={<Banknote className="size-4" />}
             title="Cash position"
-            value={formatMoney(operation.expectedCashNow)}
+            value={formatMoney(operation.branchCashRemaining)}
             tone="blue"
           />
         </aside>
@@ -526,10 +518,12 @@ function OpenOperationView({ operation }: { operation: DailyOperation }) {
 function MoneyField({
   label,
   value,
+  locked = false,
   onChange,
 }: {
   label: string;
   value: string;
+  locked?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
@@ -540,8 +534,9 @@ function MoneyField({
         min="0"
         step="100"
         value={value}
+        disabled={locked}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 h-10 w-full border border-[var(--line)] bg-white px-3 text-sm font-semibold tabular-nums text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)]"
+        className="mt-1 h-10 w-full border border-[var(--line)] bg-white px-3 text-sm font-semibold tabular-nums text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
       />
     </label>
   );

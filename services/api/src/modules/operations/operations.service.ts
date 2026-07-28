@@ -35,15 +35,23 @@ export class OperationsService {
       return {
         date: bounds.dateLabel,
         branch: null,
+        openingBalance: null,
         operation: null,
       };
     }
 
-    const operation = await this.repository.findOperationForDay({
-      tenantId: user.tenantId,
-      branchId: branch.id,
-      operationDate: bounds.dateOnly,
-    });
+    const [operation, previousClosed] = await Promise.all([
+      this.repository.findOperationForDay({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        operationDate: bounds.dateOnly,
+      }),
+      this.repository.findLatestClosedBefore({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        beforeDate: bounds.dateOnly,
+      }),
+    ]);
 
     return {
       date: bounds.dateLabel,
@@ -52,6 +60,9 @@ export class OperationsService {
         name: branch.name,
         address: branch.address,
       },
+      openingBalance: previousClosed
+        ? this.decimalToNumber(previousClosed.closingBalance)
+        : null,
       operation: operation
         ? await this.toContract(operation, bounds.dayStart, bounds.dayEnd)
         : null,
@@ -79,6 +90,25 @@ export class OperationsService {
       throw new ConflictException('This branch is already open for this day.');
     }
 
+    const previousClosed = await this.repository.findLatestClosedBefore({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      beforeDate: bounds.dateOnly,
+    });
+    const openingBalance = previousClosed
+      ? this.decimalToNumber(previousClosed.closingBalance)
+      : dto.openingBalance;
+
+    if (openingBalance == null || Number.isNaN(openingBalance)) {
+      throw new BadRequestException(
+        'Enter the opening balance for the first operating day.',
+      );
+    }
+
+    const cashAvailableAtOpening = this.roundMoney(
+      openingBalance + dto.cashAddedToday,
+    );
+
     await this.repository
       .openBranch({
         tenantId: user.tenantId,
@@ -86,10 +116,9 @@ export class OperationsService {
         operationDate: bounds.dateOnly,
         openedAt: new Date(),
         openedByUserId: user.userId,
-        cashInVault: new Prisma.Decimal(dto.cashInVault),
-        cashInSafe: new Prisma.Decimal(dto.cashInSafe),
-        openingFloatAvailable: new Prisma.Decimal(dto.openingFloatAvailable),
-        previousClosingBalance: new Prisma.Decimal(dto.previousClosingBalance),
+        openingBalance: new Prisma.Decimal(openingBalance),
+        cashAddedToday: new Prisma.Decimal(dto.cashAddedToday),
+        cashAvailableAtOpening: new Prisma.Decimal(cashAvailableAtOpening),
         notes: dto.notes?.trim() || null,
       })
       .catch((error: unknown) => {
@@ -131,6 +160,58 @@ export class OperationsService {
     return operation;
   }
 
+  async assertFloatCanBeAssigned(input: {
+    tenantId: string;
+    branchId: string | null | undefined;
+    agentId: string;
+    amountGiven: number;
+    date?: string;
+  }) {
+    if (!input.branchId) {
+      throw new ForbiddenException('Branch scope is required.');
+    }
+
+    const bounds = this.parseDayBounds(input.date);
+    const operation = await this.repository.findOperationForDay({
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      operationDate: bounds.dateOnly,
+    });
+
+    if (!operation || operation.status !== 'OPEN') {
+      throw new BadRequestException('Open the branch before assigning float.');
+    }
+
+    const [floatAgg, existingFloat] = await Promise.all([
+      this.repository.sumFloatIssued({
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        floatDate: operation.operationDate,
+      }),
+      this.repository.findAgentFloatForDay({
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        agentId: input.agentId,
+        floatDate: operation.operationDate,
+      }),
+    ]);
+
+    const cashAvailableAtOpening = this.cashAvailableAtOpening(operation);
+    const totalAlreadyIssued = this.decimalToNumber(floatAgg._sum.amountGiven);
+    const currentAgentFloat = this.decimalToNumber(existingFloat?.amountGiven);
+    const availableForThisAgent = this.roundMoney(
+      cashAvailableAtOpening - totalAlreadyIssued + currentAgentFloat,
+    );
+
+    if (input.amountGiven > availableForThisAgent) {
+      throw new BadRequestException(
+        `Float exceeds available branch cash. Available: ${availableForThisAgent}.`,
+      );
+    }
+
+    return operation;
+  }
+
   private async toContract(
     operation: NonNullable<
       Awaited<ReturnType<OperationsRepository['findOperationForDay']>>
@@ -158,16 +239,15 @@ export class OperationsService {
       }),
     ]);
 
-    const cashInVault = this.decimalToNumber(operation.cashInVault);
-    const cashInSafe = this.decimalToNumber(operation.cashInSafe);
-    const openingFloatAvailable = this.decimalToNumber(
-      operation.openingFloatAvailable,
-    );
-    const previousClosingBalance = this.decimalToNumber(
+    const openingBalance = this.decimalToNumber(
       operation.previousClosingBalance,
     );
-    const totalOpeningCash = this.roundMoney(cashInVault + cashInSafe);
+    const cashAddedToday = this.decimalToNumber(operation.cashAddedToday);
+    const cashAvailableAtOpening = this.cashAvailableAtOpening(operation);
     const floatIssued = this.decimalToNumber(floatAgg._sum.amountGiven);
+    const branchCashRemaining = this.roundMoney(
+      cashAvailableAtOpening - floatIssued,
+    );
     const loansIssuedPrincipal = this.decimalToNumber(
       loansAgg._sum.principalAmount,
     );
@@ -184,22 +264,37 @@ export class OperationsService {
       openedAt: operation.openedAt.toISOString(),
       openedByName: operation.openedBy.displayName,
       closedAt: operation.closedAt?.toISOString() ?? null,
-      cashInVault,
-      cashInSafe,
-      openingFloatAvailable,
-      previousClosingBalance,
-      totalOpeningCash,
+      openingBalance,
+      cashAddedToday,
+      cashAvailableAtOpening,
       floatIssued,
-      cashRemainingForFloat: this.roundMoney(
-        openingFloatAvailable - floatIssued,
-      ),
+      floatSetAside: floatIssued,
+      branchCashRemaining,
+      closingBalance: operation.closingBalance
+        ? this.decimalToNumber(operation.closingBalance)
+        : null,
       loansIssuedCount: loansAgg._count._all,
       loansIssuedPrincipal,
       collectionsCount: collectionsAgg._count._all,
       collectionsReceived,
-      expectedCashNow: this.roundMoney(totalOpeningCash - floatIssued),
       notes: operation.notes,
     };
+  }
+
+  private cashAvailableAtOpening(operation: {
+    previousClosingBalance: Prisma.Decimal | number | null;
+    cashAddedToday?: Prisma.Decimal | number | null;
+    openingFloatAvailable: Prisma.Decimal | number | null;
+  }) {
+    const openingBalance = this.decimalToNumber(
+      operation.previousClosingBalance,
+    );
+    const cashAddedToday = this.decimalToNumber(operation.cashAddedToday);
+    const legacyAvailable = this.decimalToNumber(
+      operation.openingFloatAvailable,
+    );
+    const computed = this.roundMoney(openingBalance + cashAddedToday);
+    return computed > 0 || legacyAvailable === 0 ? computed : legacyAvailable;
   }
 
   private async resolveBranch(

@@ -20,29 +20,19 @@ export class OpenBranchOperationDto {
   @Length(10, 10)
   date?: string;
 
+  /** Required only when there is no previous closing balance yet. */
+  @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @Max(10_000_000_000)
   @Type(() => Number)
-  cashInVault!: number;
+  openingBalance?: number;
 
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @Max(10_000_000_000)
   @Type(() => Number)
-  cashInSafe!: number;
-
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  @Max(10_000_000_000)
-  @Type(() => Number)
-  openingFloatAvailable!: number;
-
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  @Max(10_000_000_000)
-  @Type(() => Number)
-  previousClosingBalance!: number;
+  cashAddedToday!: number;
 
   @IsOptional()
   @IsString()

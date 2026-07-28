@@ -450,8 +450,10 @@ model BranchDailyOperation {
   closedByUserId         String?               @map("closed_by_user_id") @db.Uuid
   cashInVault            Decimal               @map("cash_in_vault") @db.Decimal(18, 2)
   cashInSafe             Decimal               @map("cash_in_safe") @db.Decimal(18, 2)
+  cashAddedToday         Decimal               @default(0) @map("cash_added_today") @db.Decimal(18, 2)
   openingFloatAvailable  Decimal               @map("opening_float_available") @db.Decimal(18, 2)
   previousClosingBalance Decimal               @map("previous_closing_balance") @db.Decimal(18, 2)
+  closingBalance         Decimal?              @map("closing_balance") @db.Decimal(18, 2)
   notes                  String?
   createdAt              DateTime              @default(now()) @map("created_at")
   updatedAt              DateTime              @updatedAt @map("updated_at")
