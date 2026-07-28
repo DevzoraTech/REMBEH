@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CheckCircle2,
   Clock3,
+  FileSpreadsheet,
   Loader2,
   Plus,
   RefreshCw,
@@ -138,6 +139,7 @@ export default function LoansPage() {
   const [loading, setLoading] = useState(true);
   const [borrowersLoading, setBorrowersLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -314,6 +316,236 @@ export default function LoansPage() {
     }
   }
 
+  async function exportFilteredLoans() {
+    if (exporting || filteredLoans.length === 0) return;
+    setExporting(true);
+    setNotice(null);
+    setError(null);
+
+    try {
+      const { Workbook } = await import("exceljs");
+      const workbook = new Workbook();
+      const worksheet = workbook.addWorksheet("Loans");
+      const currency = filteredLoans[0]?.currency ?? loanStats.currency;
+      const exportedAt = new Date();
+      const headers = [
+        "Loan Id",
+        "Borrower",
+        "Phone",
+        "National Id",
+        "Loan Type",
+        "Status",
+        "Principal",
+        "Installment",
+        "Paid",
+        "Balance",
+        "Next Due",
+        "Officer",
+        "Issued At",
+      ];
+
+      workbook.creator = "REMBEH";
+      workbook.created = exportedAt;
+      workbook.modified = exportedAt;
+
+      worksheet.addRow(["REMBEH Loans Report"]);
+      worksheet.mergeCells(1, 1, 1, headers.length);
+      worksheet.addRow([
+        `${workspace?.name ?? "Account"}${branch?.name ? ` · ${branch.name}` : ""}`,
+      ]);
+      worksheet.mergeCells(2, 1, 2, headers.length);
+      worksheet.addRow([
+        `Showing: ${activeFilterLabel}${trimmedSearch ? ` · Search: ${trimmedSearch}` : ""} · Exported: ${formatDateTime(exportedAt)}`,
+      ]);
+      worksheet.mergeCells(3, 1, 3, headers.length);
+      worksheet.addRow([
+        "Loans",
+        filteredLoans.length,
+        "Principal",
+        sumMoney(filteredLoans, "principal"),
+        "Installments",
+        sumMoney(filteredLoans, "installmentAmount"),
+        "Paid",
+        sumMoney(filteredLoans, "paidAmount"),
+        "Balance",
+        sumMoney(filteredLoans, "balance"),
+      ]);
+      worksheet.addRow([]);
+
+      const headerRow = worksheet.addRow(headers);
+
+      filteredLoans.forEach((loan) => {
+        worksheet.addRow([
+          loan.id.toUpperCase(),
+          loan.borrowerName,
+          loan.phone,
+          loan.nationalId ?? "",
+          loan.loanTypeName || "Standard Loan",
+          loanStatusLabel(loan.status),
+          loan.principal,
+          loan.installmentAmount,
+          loan.paidAmount,
+          loan.balance,
+          parseDate(loan.dueDate) ?? "",
+          loan.officerName || "",
+          loanDate(loan) ?? "",
+        ]);
+      });
+
+      const totalsRow = worksheet.addRow([
+        "",
+        "",
+        "",
+        "",
+        "",
+        "Totals",
+        sumMoney(filteredLoans, "principal"),
+        sumMoney(filteredLoans, "installmentAmount"),
+        sumMoney(filteredLoans, "paidAmount"),
+        sumMoney(filteredLoans, "balance"),
+      ]);
+
+      worksheet.columns = [
+        { width: 18 },
+        { width: 24 },
+        { width: 17 },
+        { width: 18 },
+        { width: 20 },
+        { width: 14 },
+        { width: 16 },
+        { width: 16 },
+        { width: 16 },
+        { width: 16 },
+        { width: 15 },
+        { width: 18 },
+        { width: 15 },
+      ];
+      worksheet.views = [{ state: "frozen", ySplit: headerRow.number }];
+      worksheet.autoFilter = {
+        from: { row: headerRow.number, column: 1 },
+        to: { row: headerRow.number, column: headers.length },
+      };
+
+      worksheet.getRow(1).height = 24;
+      worksheet.getRow(1).font = {
+        bold: true,
+        color: { argb: "FFFFFFFF" },
+        size: 16,
+      };
+      worksheet.getRow(1).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FF14213D" },
+      };
+      worksheet.getRow(1).alignment = {
+        horizontal: "center",
+        vertical: "middle",
+      };
+
+      [2, 3].forEach((rowNumber) => {
+        const row = worksheet.getRow(rowNumber);
+        row.font = {
+          bold: rowNumber === 2,
+          color: { argb: rowNumber === 2 ? "FF14213D" : "FF516171" },
+          size: rowNumber === 2 ? 12 : 10,
+        };
+        row.alignment = { horizontal: "center" };
+      });
+
+      const summaryRow = worksheet.getRow(4);
+      summaryRow.height = 22;
+      summaryRow.eachCell((cell, columnNumber) => {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: columnNumber % 2 === 1 ? "FFE8EEEB" : "FFFFFFFF" },
+        };
+        cell.border = excelBorder();
+        cell.font = {
+          bold: true,
+          color: { argb: "FF14213D" },
+          size: 10,
+        };
+        if ([4, 6, 8, 10].includes(columnNumber)) {
+          cell.numFmt = `"${currency}" #,##0`;
+        }
+      });
+
+      headerRow.height = 24;
+      headerRow.eachCell((cell) => {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FF0F8A6C" },
+        };
+        cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+        cell.border = excelBorder();
+      });
+
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber <= headerRow.number) return;
+        row.eachCell((cell, columnNumber) => {
+          cell.border = excelBorder();
+          cell.alignment = {
+            vertical: "middle",
+            horizontal:
+              columnNumber >= 7 && columnNumber <= 10 ? "right" : "left",
+          };
+          if ([7, 8, 9, 10].includes(columnNumber)) {
+            cell.numFmt = `"${currency}" #,##0`;
+          }
+          if ([11, 13].includes(columnNumber) && cell.value instanceof Date) {
+            cell.numFmt = "d mmm yyyy";
+          }
+          if (rowNumber % 2 === 0 && rowNumber !== totalsRow.number) {
+            cell.fill = {
+              type: "pattern",
+              pattern: "solid",
+              fgColor: { argb: "FFFBFDFC" },
+            };
+          }
+        });
+      });
+
+      totalsRow.eachCell((cell, columnNumber) => {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFE8EEEB" },
+        };
+        cell.font = {
+          bold: true,
+          color: { argb: "FF14213D" },
+          size: 10,
+        };
+        if ([7, 8, 9, 10].includes(columnNumber)) {
+          cell.numFmt = `"${currency}" #,##0`;
+        }
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer as BlobPart], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${safeFileName(`${workspace?.name ?? "rembeh"}-${activeFilterLabel}-loans-${formatFileDate(exportedAt)}`)}.xlsx`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setNotice("Loans exported.");
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not export loans.",
+      );
+    } finally {
+      setExporting(false);
+    }
+  }
+
   if (!session) {
     return <AppBootSkeleton />;
   }
@@ -367,7 +599,17 @@ export default function LoansPage() {
           </p>
         ) : null}
 
-        <section className="grid w-full min-w-0 grid-cols-5 gap-1.5 sm:gap-2">
+        <section className="grid w-full min-w-0 grid-cols-6 gap-1 sm:gap-1.5 xl:gap-2">
+          <LoanStatCard
+            icon={<Plus className="size-4" />}
+            label="loans issued today"
+            value={String(loanStats.issuedToday)}
+            hint={formatMoney(
+              loanStats.issuedTodayPrincipal,
+              loanStats.currency,
+            )}
+            tone="good"
+          />
           <LoanStatCard
             icon={<WalletCards className="size-4" />}
             label="active loans"
@@ -405,61 +647,57 @@ export default function LoansPage() {
           />
         </section>
 
-        <div className="panel border-[var(--forest-emerald)] bg-white/95 px-3 py-2.5 shadow-[0_10px_26px_rgba(15,138,108,0.08)]">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 border-b border-emerald-100 pb-2">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 bg-emerald-50 px-2 py-1 text-[11px] font-bold text-[var(--forest-emerald)]">
-                <SlidersHorizontal className="size-3.5" />
-                Showing {activeFilterLabel}
-              </span>
-              {trimmedSearch ? (
-                <span className="inline-flex max-w-full items-center gap-1 bg-[var(--soft-mist)] px-2 py-1 text-[11px] font-semibold text-slate-600">
-                  Search:{" "}
-                  <span className="max-w-[180px] truncate">
-                    {trimmedSearch}
-                  </span>
-                </span>
-              ) : null}
-            </div>
-            <span className="text-[11px] font-semibold text-slate-500">
-              {filteredLoans.length} shown
+        <div className="panel grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2 border-[var(--forest-emerald)] bg-white/95 p-2 shadow-[0_8px_20px_rgba(15,138,108,0.07)]">
+          <label className="flex h-9 min-w-0 items-center gap-2 px-2">
+            <Search className="size-4 shrink-0 text-slate-400" />
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setPage(1);
+              }}
+              placeholder="Search by loan id, borrower, phone or agent"
+              className="min-w-0 flex-1 bg-transparent py-1.5 text-sm text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
+            />
+          </label>
+          <span className="hidden whitespace-nowrap text-[11px] font-semibold text-slate-500 md:inline">
+            {filteredLoans.length} shown
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost h-9 shrink-0 px-2 text-xs sm:px-3"
+            onClick={() => void exportFilteredLoans()}
+            disabled={exporting || filteredLoans.length === 0}
+          >
+            {exporting ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="size-3.5" />
+            )}
+            <span className="hidden sm:inline">Export</span>
+          </button>
+          <label className="flex h-9 min-w-0 shrink-0 items-center gap-1.5 border border-[var(--forest-emerald)] bg-emerald-50/80 px-2 text-xs font-bold text-[var(--midnight-navy)] shadow-[inset_3px_0_0_var(--forest-emerald)] sm:min-w-[210px]">
+            <SlidersHorizontal className="size-3.5 shrink-0 text-[var(--forest-emerald)]" />
+            <span className="text-[10px] font-bold text-[var(--forest-emerald)]">
+              Showing
             </span>
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <label className="flex min-w-[220px] flex-1 items-center gap-2">
-              <Search className="size-4 shrink-0 text-slate-400" />
-              <input
-                type="search"
-                value={search}
-                onChange={(event) => {
-                  setSearch(event.target.value);
-                  setPage(1);
-                }}
-                placeholder="Search by loan id, borrower, phone or agent"
-                className="min-w-[160px] flex-1 bg-transparent py-1.5 text-sm text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
-              />
-            </label>
-            <label className="flex h-9 min-w-[210px] items-center gap-2 border border-[var(--forest-emerald)] bg-emerald-50/70 px-2 text-xs font-bold text-[var(--midnight-navy)] shadow-[inset_3px_0_0_var(--forest-emerald)]">
-              <span className="text-[10px] font-bold text-[var(--forest-emerald)]">
-                Filter
-              </span>
-              <select
-                value={filter}
-                onChange={(event) => {
-                  setFilter(event.target.value as LoanFilter);
-                  setPage(1);
-                }}
-                className="min-w-0 flex-1 bg-transparent outline-none"
-                aria-label="loan filter"
-              >
-                {LOAN_FILTER_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+            <select
+              value={filter}
+              onChange={(event) => {
+                setFilter(event.target.value as LoanFilter);
+                setPage(1);
+              }}
+              className="min-w-0 flex-1 bg-transparent outline-none"
+              aria-label="loan filter"
+            >
+              {LOAN_FILTER_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
@@ -897,20 +1135,22 @@ function LoanStatCard({
           : "border-rose-100 bg-rose-50 text-rose-700";
 
   return (
-    <article className="panel flex min-h-[84px] min-w-0 items-start gap-2 bg-white px-2 py-2 shadow-[0_8px_22px_rgba(20,33,61,0.05)] sm:px-3 sm:py-3">
+    <article className="panel flex min-h-[76px] min-w-0 items-start gap-1.5 bg-white px-1.5 py-2 shadow-[0_8px_20px_rgba(20,33,61,0.05)] sm:gap-2 sm:px-2 xl:px-3">
       <span
-        className={`hidden size-8 shrink-0 place-items-center border sm:grid xl:size-9 ${toneClass}`}
+        className={`hidden size-7 shrink-0 place-items-center border md:grid xl:size-8 ${toneClass}`}
       >
         {icon}
       </span>
       <div className="min-w-0">
-        <p className="truncate text-[9px] font-semibold capitalize tracking-[0.08em] text-slate-500 sm:text-[10px]">
+        <p className="truncate text-[8px] font-semibold capitalize tracking-[0.06em] text-slate-500 sm:text-[9px] xl:text-[10px]">
           {label}
         </p>
-        <p className="mt-1 truncate text-sm font-bold tabular-nums text-[var(--midnight-navy)] sm:text-base xl:text-lg">
+        <p className="mt-1 truncate text-xs font-bold tabular-nums text-[var(--midnight-navy)] sm:text-sm xl:text-base">
           {value}
         </p>
-        <p className="mt-0.5 truncate text-[11px] text-slate-500">{hint}</p>
+        <p className="mt-0.5 truncate text-[9px] text-slate-500 sm:text-[10px] xl:text-[11px]">
+          {hint}
+        </p>
       </div>
     </article>
   );
@@ -918,6 +1158,9 @@ function LoanStatCard({
 
 function buildLoanStats(loans: LoanRow[]) {
   const currency = loans[0]?.currency ?? "UGX";
+  const issuedTodayLoans = loans.filter((loan) =>
+    isSameLocalDay(loanDate(loan), new Date()),
+  );
   const activeLoans = loans.filter(isLoanActive);
   const outstandingLoans = activeLoans.filter((loan) => loan.balance > 0);
   const dueTodayLoans = loans.filter(isLoanDueToday);
@@ -933,6 +1176,8 @@ function buildLoanStats(loans: LoanRow[]) {
 
   return {
     currency,
+    issuedToday: issuedTodayLoans.length,
+    issuedTodayPrincipal: sumMoney(issuedTodayLoans, "principal"),
     activeLoans: activeLoans.length,
     activeOutstanding: sumMoney(activeLoans, "balance"),
     outstanding: sumMoney(outstandingLoans, "balance"),
@@ -1099,6 +1344,30 @@ function formatDate(value: string | null) {
   });
 }
 
+function formatDateTime(value: Date) {
+  return value.toLocaleString("en-UG", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatFileDate(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function safeFileName(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function parseDate(value: string | null | undefined) {
   if (!value) return null;
   const date = new Date(value);
@@ -1125,8 +1394,20 @@ function startOfLocalDay(date: Date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
-function sumMoney(loans: LoanRow[], field: "balance" | "principal") {
+function sumMoney(
+  loans: LoanRow[],
+  field: "balance" | "principal" | "installmentAmount" | "paidAmount",
+) {
   return (
     Math.round(loans.reduce((sum, loan) => sum + loan[field], 0) * 100) / 100
   );
+}
+
+function excelBorder() {
+  return {
+    top: { style: "thin" as const, color: { argb: "FFD5DDD9" } },
+    left: { style: "thin" as const, color: { argb: "FFD5DDD9" } },
+    bottom: { style: "thin" as const, color: { argb: "FFD5DDD9" } },
+    right: { style: "thin" as const, color: { argb: "FFD5DDD9" } },
+  };
 }
