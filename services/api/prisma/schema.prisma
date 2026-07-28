@@ -475,6 +475,7 @@ model BranchDailyOperation {
   cashAddedToday         Decimal                  @default(0) @map("cash_added_today") @db.Decimal(18, 2)
   openingFloatAvailable  Decimal                  @map("opening_float_available") @db.Decimal(18, 2)
   previousClosingBalance Decimal                  @map("previous_closing_balance") @db.Decimal(18, 2)
+  floatSetAsideAmount    Decimal                  @default(0) @map("float_set_aside") @db.Decimal(18, 2)
   closingBalance         Decimal?                 @map("closing_balance") @db.Decimal(18, 2)
   closingNotes           String?                  @map("closing_notes")
   notes                  String?

@@ -20,6 +20,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import rembehIcon from "../../assets/rembeh-icon.png";
+import { apiBaseUrl, readApiJson } from "../../lib/api";
 import {
   RembehBranch,
   RembehSession,
@@ -35,6 +36,11 @@ type AppShellProps = {
   workspace: RembehWorkspace | null;
   user: RembehUser | null;
   branch?: RembehBranch | null;
+};
+
+type OperationOpenCheck = {
+  branch: { id: string; name: string } | null;
+  operation: { id: string; status: string } | null;
 };
 
 export function AppShell({
@@ -137,6 +143,46 @@ export function AppShell({
     document.addEventListener("mousedown", onPointerDown);
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, []);
+
+  useEffect(() => {
+    if (
+      operatorRole === "staff" ||
+      pathname === "/operations" ||
+      pathname.startsWith("/operations/") ||
+      !session.permissions.includes("operation.read")
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBaseUrl}/operations/today`, {
+          headers: {
+            Authorization: `${session.tokenType} ${session.accessToken}`,
+          },
+        });
+        const payload = await readApiJson<OperationOpenCheck>(response);
+        if (cancelled || !response.ok) return;
+        if (payload.branch && !payload.operation) {
+          router.replace("/operations?prompt=open");
+        }
+      } catch {
+        // Navigation should not fail just because the prompt check could not run.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    operatorRole,
+    pathname,
+    router,
+    session.accessToken,
+    session.permissions,
+    session.tokenType,
+  ]);
 
   function handleLogout() {
     clearAuthState();

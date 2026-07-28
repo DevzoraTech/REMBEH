@@ -62,6 +62,19 @@ type AgentsResponse = {
   };
 };
 
+type OperationSummaryResponse = {
+  branch: { id: string; name: string } | null;
+  operation: {
+    id: string;
+    status: "OPEN" | "CLOSING" | "CLOSED";
+    floatSetAside: number;
+    floatIssued: number;
+    floatRemaining: number;
+    branchCashRemaining: number;
+  } | null;
+  message?: string | string[];
+};
+
 type ActionMenuState = {
   agentId: string;
   top: number;
@@ -82,6 +95,8 @@ export default function AgentsPage() {
   const [branch, setBranch] = useState<RembehBranch | null>(null);
   const [agents, setAgents] = useState<AgentRow[]>([]);
   const [counts, setCounts] = useState<AgentsResponse["counts"] | null>(null);
+  const [operationSummary, setOperationSummary] =
+    useState<OperationSummaryResponse | null>(null);
   const [selectedDate, setSelectedDate] = useState(todayInputValue);
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
@@ -99,6 +114,7 @@ export default function AgentsPage() {
     notes: "",
   });
   const [savingFloat, setSavingFloat] = useState(false);
+  const operationRequestId = useRef(0);
 
   const canRead = Boolean(
     session?.permissions.includes("branch.staff.read") ||
@@ -109,6 +125,9 @@ export default function AgentsPage() {
     session?.permissions.includes("branch.staff.invite") ||
     session?.permissions.includes("user.activate") ||
     session?.permissions.includes("branch.create"),
+  );
+  const canManageFloat = Boolean(
+    session?.permissions.includes("operation.float.manage"),
   );
 
   const loadAgents = useCallback(
@@ -157,6 +176,38 @@ export default function AgentsPage() {
     [],
   );
 
+  const loadOperationSummary = useCallback(
+    async (activeSession: RembehSession, activeDate: string) => {
+      if (!activeSession.permissions.includes("operation.read")) {
+        setOperationSummary(null);
+        return;
+      }
+
+      const requestId = operationRequestId.current + 1;
+      operationRequestId.current = requestId;
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/operations/today?date=${encodeURIComponent(activeDate)}`,
+          {
+            headers: {
+              Authorization: `${activeSession.tokenType} ${activeSession.accessToken}`,
+            },
+          },
+        );
+        const payload = await readApiJson<OperationSummaryResponse>(response);
+        if (!response.ok) {
+          throw new Error(formatApiError(payload.message));
+        }
+        if (requestId !== operationRequestId.current) return;
+        setOperationSummary(payload);
+      } catch {
+        if (requestId !== operationRequestId.current) return;
+        setOperationSummary(null);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     const boot = window.setTimeout(() => {
       const auth = readAuthState();
@@ -188,11 +239,14 @@ export default function AgentsPage() {
         return;
       }
 
-      void loadAgents(auth.session, query, selectedDate);
+      void Promise.all([
+        loadAgents(auth.session, query, selectedDate),
+        loadOperationSummary(auth.session, selectedDate),
+      ]);
     }, 0);
 
     return () => window.clearTimeout(boot);
-  }, [router, query, selectedDate, loadAgents]);
+  }, [router, query, selectedDate, loadAgents, loadOperationSummary]);
 
   useEffect(() => {
     const searchSync = window.setTimeout(() => setQuery(search), 250);
@@ -262,6 +316,26 @@ export default function AgentsPage() {
       setError("Enter a valid float amount.");
       return;
     }
+    if (!isSelectedDateToday) {
+      setError("Only today's records can be changed.");
+      return;
+    }
+    if (
+      !operationSummary?.operation ||
+      operationSummary.operation.status !== "OPEN"
+    ) {
+      setError("Open today's branch before assigning float.");
+      router.replace("/operations?prompt=open");
+      return;
+    }
+    if (amount > availableFloatForSelectedAgent) {
+      setError(
+        `Float exceeds amount set aside. Available: UGX ${formatAmount(
+          availableFloatForSelectedAgent,
+        )}.`,
+      );
+      return;
+    }
 
     setSavingFloat(true);
     setError(null);
@@ -287,7 +361,10 @@ export default function AgentsPage() {
       if (!response.ok) {
         throw new Error(formatApiError(payload.message));
       }
-      await loadAgents(session, query, selectedDate);
+      await Promise.all([
+        loadAgents(session, query, selectedDate),
+        loadOperationSummary(session, selectedDate),
+      ]);
       setFloatForm((current) => ({ ...current, notes: "" }));
     } catch (caught) {
       setError(
@@ -346,6 +423,28 @@ export default function AgentsPage() {
     () => agents.find((agent) => agent.id === floatForm.agentId) ?? null,
     [agents, floatForm.agentId],
   );
+  const isSelectedDateToday = selectedDate === todayInputValue();
+  const operationForSelectedDate = operationSummary?.operation ?? null;
+  const selectedAgentCurrentFloat = selectedFloatAgent?.floatToday ?? 0;
+  const availableFloatForSelectedAgent = operationForSelectedDate
+    ? Math.max(
+        operationForSelectedDate.floatRemaining + selectedAgentCurrentFloat,
+        0,
+      )
+    : 0;
+  const floatAmount = Number(floatForm.amount);
+  const floatAmountValid =
+    floatForm.amount !== "" && Number.isFinite(floatAmount) && floatAmount >= 0;
+  const floatAmountExceedsSetAside =
+    floatAmountValid && floatAmount > availableFloatForSelectedAgent;
+  const canSubmitFloat =
+    canManageFloat &&
+    Boolean(selectedFloatAgent) &&
+    Boolean(operationForSelectedDate) &&
+    operationForSelectedDate?.status === "OPEN" &&
+    isSelectedDateToday &&
+    floatAmountValid &&
+    !floatAmountExceedsSetAside;
   const actionMenuAgent = actionMenu
     ? (agents.find((agent) => agent.id === actionMenu.agentId) ?? null)
     : null;
@@ -432,7 +531,7 @@ export default function AgentsPage() {
             <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
               given
             </p>
-            <p className="text-lg font-bold tabular-nums text-[var(--forest-emerald)]">
+            <p className="break-words text-[clamp(0.68rem,1.4vw,1.125rem)] font-bold leading-tight tabular-nums text-[var(--forest-emerald)]">
               {floatStats.given}
             </p>
           </div>
@@ -440,12 +539,22 @@ export default function AgentsPage() {
             <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
               missing
             </p>
-            <p className="text-lg font-bold tabular-nums text-amber-700">
+            <p className="break-words text-[clamp(0.68rem,1.4vw,1.125rem)] font-bold leading-tight tabular-nums text-amber-700">
               {floatStats.missing}
             </p>
           </div>
+          <div className="grid min-w-[150px] gap-1">
+            <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
+              float left
+            </p>
+            <p className="break-words text-[clamp(0.68rem,1.4vw,1.125rem)] font-bold leading-tight tabular-nums text-[var(--midnight-navy)]">
+              {operationForSelectedDate
+                ? formatAmount(operationForSelectedDate.floatRemaining)
+                : "0"}
+            </p>
+          </div>
 
-          {canManage ? (
+          {canManageFloat ? (
             <div className="grid flex-1 gap-2 md:grid-cols-[minmax(180px,1fr)_140px_minmax(180px,1fr)_auto]">
               <select
                 value={floatForm.agentId}
@@ -493,7 +602,7 @@ export default function AgentsPage() {
               <button
                 type="button"
                 className="btn btn-primary h-9 px-3 text-xs"
-                disabled={savingFloat || !selectedFloatAgent}
+                disabled={savingFloat || !canSubmitFloat}
                 onClick={() => void saveFloat()}
               >
                 {savingFloat ? (
@@ -502,6 +611,20 @@ export default function AgentsPage() {
                 Save float
               </button>
             </div>
+          ) : null}
+          {canManageFloat && !isSelectedDateToday ? (
+            <p className="w-full text-xs font-semibold text-amber-700">
+              Past days can be viewed only.
+            </p>
+          ) : canManageFloat && !operationForSelectedDate ? (
+            <p className="w-full text-xs font-semibold text-amber-700">
+              Open today's branch before assigning float.
+            </p>
+          ) : canManageFloat && floatAmountExceedsSetAside ? (
+            <p className="w-full text-xs font-semibold text-red-600">
+              Float exceeds amount set aside. Available: UGX{" "}
+              {formatAmount(availableFloatForSelectedAgent)}.
+            </p>
           ) : null}
         </div>
 
@@ -717,16 +840,20 @@ export default function AgentsPage() {
                 label="Activate"
               />
             ) : null}
-            <ActionMenuItem
-              disabled={statusBusyId === actionMenuAgent.id}
-              onClick={() => {
-                setActionMenu(null);
-                openFloatForAgent(actionMenuAgent);
-              }}
-              label={
-                actionMenuAgent.floatToday == null ? "Set float" : "Edit float"
-              }
-            />
+            {canManageFloat ? (
+              <ActionMenuItem
+                disabled={statusBusyId === actionMenuAgent.id}
+                onClick={() => {
+                  setActionMenu(null);
+                  openFloatForAgent(actionMenuAgent);
+                }}
+                label={
+                  actionMenuAgent.floatToday == null
+                    ? "Set float"
+                    : "Edit float"
+                }
+              />
+            ) : null}
             {actionMenuAgent.status !== "INACTIVE" ? (
               <ActionMenuItem
                 disabled={statusBusyId === actionMenuAgent.id}
@@ -772,11 +899,13 @@ function StatCard({
           : "text-[var(--midnight-navy)]";
 
   return (
-    <div className="panel px-3 py-3 shadow-[0_1px_0_rgba(20,33,61,0.03)]">
+    <div className="panel min-w-0 px-3 py-3 shadow-[0_1px_0_rgba(20,33,61,0.03)]">
       <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
         {label}
       </p>
-      <p className={`mt-1 text-lg font-bold tabular-nums ${valueClass}`}>
+      <p
+        className={`mt-1 break-words text-[clamp(0.68rem,1.4vw,1.125rem)] font-bold leading-tight tabular-nums ${valueClass}`}
+      >
         {value}
       </p>
     </div>
@@ -822,10 +951,18 @@ function expectedCashForAgent(agent: AgentRow) {
 }
 
 function todayInputValue() {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Kampala",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const byType = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
+  const year = byType.year;
+  const month = byType.month;
+  const day = byType.day;
   return `${year}-${month}-${day}`;
 }
 

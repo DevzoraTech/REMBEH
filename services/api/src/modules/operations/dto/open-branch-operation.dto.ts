@@ -35,6 +35,13 @@ export class OpenBranchOperationDto {
   cashAddedToday!: number;
 
   @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(10_000_000_000)
+  @Type(() => Number)
+  floatSetAside?: number;
+
+  @IsOptional()
   @IsString()
   @Length(0, 500)
   notes?: string;

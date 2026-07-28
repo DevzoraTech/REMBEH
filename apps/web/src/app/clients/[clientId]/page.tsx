@@ -587,7 +587,9 @@ function StatCard({
       <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
         {label}
       </p>
-      <p className={`mt-1 text-lg font-bold tabular-nums ${valueClass}`}>
+      <p
+        className={`mt-1 break-words text-[clamp(0.8rem,1.6vw,1.125rem)] font-bold leading-tight tabular-nums ${valueClass}`}
+      >
         {value}
       </p>
     </div>

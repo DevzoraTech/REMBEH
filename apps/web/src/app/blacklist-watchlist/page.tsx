@@ -795,11 +795,11 @@ function ActionMenuItem({
 
 function SmallStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="panel border-l-4 border-l-[var(--midnight-navy)] bg-white px-3 py-2.5 shadow-[0_8px_22px_rgba(20,33,61,0.05)]">
+    <div className="panel min-w-0 border-l-4 border-l-[var(--midnight-navy)] bg-white px-3 py-2.5 shadow-[0_8px_22px_rgba(20,33,61,0.05)]">
       <p className="text-[10px] font-semibold capitalize tracking-[0.1em] text-slate-500">
         {label}
       </p>
-      <p className="mt-0.5 text-xl font-bold text-[var(--midnight-navy)]">
+      <p className="mt-0.5 break-words text-[clamp(0.72rem,1.45vw,1.25rem)] font-bold leading-tight text-[var(--midnight-navy)]">
         {value}
       </p>
     </div>

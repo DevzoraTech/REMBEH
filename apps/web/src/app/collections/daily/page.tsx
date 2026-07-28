@@ -518,12 +518,12 @@ function StatCard({
   emphasize?: boolean;
 }) {
   return (
-    <div className="panel px-3 py-3">
+    <div className="panel min-w-0 px-3 py-3">
       <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
         {label}
       </p>
       <p
-        className={`mt-1 text-lg font-bold tabular-nums ${
+        className={`mt-1 break-words text-[clamp(0.68rem,1.4vw,1.125rem)] font-bold leading-tight tabular-nums ${
           emphasize
             ? "text-[var(--forest-emerald)]"
             : "text-[var(--midnight-navy)]"

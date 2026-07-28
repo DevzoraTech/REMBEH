@@ -1142,13 +1142,13 @@ function LoanStatCard({
         {icon}
       </span>
       <div className="min-w-0">
-        <p className="truncate text-[8px] font-semibold capitalize tracking-[0.06em] text-slate-500 sm:text-[9px] xl:text-[10px]">
+        <p className="text-[8px] font-semibold capitalize tracking-[0.06em] text-slate-500 sm:text-[9px] xl:text-[10px]">
           {label}
         </p>
-        <p className="mt-1 truncate text-xs font-bold tabular-nums text-[var(--midnight-navy)] sm:text-sm xl:text-base">
+        <p className="mt-1 break-words text-[clamp(0.55rem,1.15vw,1rem)] font-bold leading-tight tabular-nums text-[var(--midnight-navy)]">
           {value}
         </p>
-        <p className="mt-0.5 truncate text-[9px] text-slate-500 sm:text-[10px] xl:text-[11px]">
+        <p className="mt-0.5 break-words text-[clamp(0.5rem,0.9vw,0.7rem)] leading-tight text-slate-500">
           {hint}
         </p>
       </div>

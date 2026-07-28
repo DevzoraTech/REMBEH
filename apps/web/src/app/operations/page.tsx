@@ -50,6 +50,7 @@ type DailyOperation = {
   cashAvailableAtOpening: number;
   floatIssued: number;
   floatSetAside: number;
+  floatRemaining: number;
   cashReturnedByAgents: number;
   agentsWithFloatCount: number;
   agentsReturnedCount: number;
@@ -123,6 +124,7 @@ type OperationResponse = {
 type OpeningForm = {
   openingBalance: string;
   cashAddedToday: string;
+  floatSetAside: string;
   notes: string;
 };
 
@@ -146,6 +148,7 @@ type ClosingForm = {
 const emptyOpeningForm: OpeningForm = {
   openingBalance: "",
   cashAddedToday: "",
+  floatSetAside: "",
   notes: "",
 };
 
@@ -228,6 +231,13 @@ export default function OperationsPage() {
   const suggestedOpeningBalance = data?.openingBalance ?? null;
   const isToday = date === todayInputValue();
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("prompt") === "open") {
+      setNotice("Open today's branch before continuing.");
+    }
+  }, []);
+
   const loadOperation = useCallback(
     async (activeSession: RembehSession, selectedDate: string) => {
       setLoading(true);
@@ -255,6 +265,20 @@ export default function OperationsPage() {
                   openingBalance: String(payload.openingBalance),
                 },
           );
+        }
+        if (!payload.operation && payload.openingBalance != null) {
+          setForm((current) => {
+            if (current.floatSetAside || current.cashAddedToday === "") {
+              return current;
+            }
+            return {
+              ...current,
+              floatSetAside: String(
+                Number(current.openingBalance || payload.openingBalance) +
+                  Number(current.cashAddedToday || 0),
+              ),
+            };
+          });
         }
       } catch (caught) {
         setError(
@@ -327,6 +351,7 @@ export default function OperationsPage() {
           date,
           openingBalance: Number(form.openingBalance),
           cashAddedToday: Number(form.cashAddedToday),
+          floatSetAside: Number(form.floatSetAside),
           notes: form.notes.trim() || undefined,
         }),
       });
@@ -600,8 +625,11 @@ function OpeningView({
     editableDate &&
     Number(form.openingBalance) >= 0 &&
     Number(form.cashAddedToday) >= 0 &&
+    Number(form.floatSetAside) >= 0 &&
+    Number(form.floatSetAside) <= openingTotal &&
     form.openingBalance !== "" &&
-    form.cashAddedToday !== "";
+    form.cashAddedToday !== "" &&
+    form.floatSetAside !== "";
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
@@ -617,13 +645,41 @@ function OpeningView({
             label="Opening balance"
             value={form.openingBalance}
             locked={!editableDate || suggestedOpeningBalance != null}
-            onChange={(value) => setForm({ ...form, openingBalance: value })}
+            onChange={(value) =>
+              setForm({
+                ...form,
+                openingBalance: value,
+                floatSetAside:
+                  form.floatSetAside === ""
+                    ? String(
+                        Number(value || 0) + Number(form.cashAddedToday || 0),
+                      )
+                    : form.floatSetAside,
+              })
+            }
           />
           <MoneyField
             label="Cash added today"
             value={form.cashAddedToday}
             locked={!editableDate}
-            onChange={(value) => setForm({ ...form, cashAddedToday: value })}
+            onChange={(value) =>
+              setForm({
+                ...form,
+                cashAddedToday: value,
+                floatSetAside:
+                  form.floatSetAside === ""
+                    ? String(
+                        Number(form.openingBalance || 0) + Number(value || 0),
+                      )
+                    : form.floatSetAside,
+              })
+            }
+          />
+          <MoneyField
+            label="Float set aside"
+            value={form.floatSetAside}
+            locked={!editableDate}
+            onChange={(value) => setForm({ ...form, floatSetAside: value })}
           />
           <label className="sm:col-span-2">
             <span className="text-xs font-bold text-slate-600">Notes</span>
@@ -639,9 +695,17 @@ function OpeningView({
           </label>
         </div>
         <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line)] bg-[var(--soft-mist)] px-4 py-3">
-          <p className="text-sm font-bold tabular-nums text-[var(--midnight-navy)]">
-            Available cash: {formatMoney(openingTotal)}
-          </p>
+          <div>
+            <p className="text-sm font-bold tabular-nums text-[var(--midnight-navy)]">
+              Available cash: {formatMoney(openingTotal)}
+            </p>
+            {form.floatSetAside !== "" &&
+            Number(form.floatSetAside) > openingTotal ? (
+              <p className="mt-1 text-xs font-semibold text-red-600">
+                Float set aside cannot be more than available cash.
+              </p>
+            ) : null}
+          </div>
           <button
             type="button"
             className="btn btn-primary h-9 text-xs"
@@ -745,9 +809,9 @@ function OpenOperationView({
           tone="blue"
         />
         <OperationStat
-          label="Float issued"
+          label="Float set aside"
           value={formatMoney(operation.floatSetAside)}
-          hint="Set aside for agents"
+          hint={`${formatMoney(operation.floatIssued)} issued`}
           tone="warn"
         />
         <OperationStat
@@ -804,6 +868,14 @@ function OpenOperationView({
               value={formatMoney(operation.floatSetAside)}
             />
             <DetailRow
+              label="Float remaining"
+              value={formatMoney(operation.floatRemaining)}
+            />
+            <DetailRow
+              label="Float issued"
+              value={formatMoney(operation.floatIssued)}
+            />
+            <DetailRow
               label="Cash returned"
               value={formatMoney(operation.cashReturnedByAgents)}
             />
@@ -852,7 +924,7 @@ function OpenOperationView({
                   Assign float
                 </span>
                 <span className="mt-0.5 block text-xs text-slate-500">
-                  Remaining cash: {formatMoney(operation.branchCashRemaining)}
+                  Float left: {formatMoney(operation.floatRemaining)}
                 </span>
               </span>
               <Send className="size-4 text-[var(--forest-emerald)]" />
@@ -1444,13 +1516,13 @@ function OperationStat({
         {icon ?? <Banknote className="size-4" />}
       </span>
       <div className="min-w-0">
-        <p className="truncate text-[8px] font-semibold tracking-[0.06em] text-slate-500 sm:text-[9px] xl:text-[10px]">
+        <p className="text-[8px] font-semibold tracking-[0.06em] text-slate-500 sm:text-[9px] xl:text-[10px]">
           {label}
         </p>
-        <p className="mt-1 truncate text-xs font-bold tabular-nums text-[var(--midnight-navy)] sm:text-sm xl:text-base">
+        <p className="mt-1 break-words text-[clamp(0.55rem,1.15vw,1rem)] font-bold leading-tight tabular-nums text-[var(--midnight-navy)]">
           {value}
         </p>
-        <p className="mt-0.5 truncate text-[9px] text-slate-500 sm:text-[10px] xl:text-[11px]">
+        <p className="mt-0.5 break-words text-[clamp(0.5rem,0.9vw,0.7rem)] leading-tight text-slate-500">
           {hint}
         </p>
       </div>

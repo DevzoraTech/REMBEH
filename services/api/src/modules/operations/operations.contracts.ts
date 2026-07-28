@@ -62,6 +62,7 @@ export type DailyOperationContract = {
   cashAvailableAtOpening: number;
   floatIssued: number;
   floatSetAside: number;
+  floatRemaining: number;
   cashReturnedByAgents: number;
   agentsWithFloatCount: number;
   agentsReturnedCount: number;

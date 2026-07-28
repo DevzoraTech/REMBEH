@@ -73,6 +73,7 @@ export class OperationsRepository {
     openingBalance: Prisma.Decimal;
     cashAddedToday: Prisma.Decimal;
     cashAvailableAtOpening: Prisma.Decimal;
+    floatSetAside: Prisma.Decimal;
     notes: string | null;
   }) {
     return this.prisma.$transaction(async (tx) => {
@@ -89,6 +90,7 @@ export class OperationsRepository {
           cashAddedToday: input.cashAddedToday,
           openingFloatAvailable: input.cashAvailableAtOpening,
           previousClosingBalance: input.openingBalance,
+          floatSetAsideAmount: input.floatSetAside,
           notes: input.notes,
         },
         include: {
@@ -128,6 +130,7 @@ export class OperationsRepository {
             openingBalance: operation.previousClosingBalance.toString(),
             cashAddedToday: operation.cashAddedToday.toString(),
             cashAvailableAtOpening: operation.openingFloatAvailable.toString(),
+            floatSetAside: operation.floatSetAsideAmount.toString(),
           },
         },
       });

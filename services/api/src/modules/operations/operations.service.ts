@@ -116,6 +116,15 @@ export class OperationsService {
     const cashAvailableAtOpening = this.roundMoney(
       openingBalance + dto.cashAddedToday,
     );
+    const floatSetAside = this.roundMoney(
+      dto.floatSetAside ?? cashAvailableAtOpening,
+    );
+
+    if (floatSetAside > cashAvailableAtOpening) {
+      throw new BadRequestException(
+        'Float set aside cannot be more than available cash.',
+      );
+    }
 
     await this.repository
       .openBranch({
@@ -127,6 +136,7 @@ export class OperationsService {
         openingBalance: new Prisma.Decimal(openingBalance),
         cashAddedToday: new Prisma.Decimal(dto.cashAddedToday),
         cashAvailableAtOpening: new Prisma.Decimal(cashAvailableAtOpening),
+        floatSetAside: new Prisma.Decimal(floatSetAside),
         notes: dto.notes?.trim() || null,
       })
       .catch((error: unknown) => {
@@ -410,21 +420,34 @@ export class OperationsService {
     }
 
     const cashAvailableAtOpening = this.cashAvailableAtOpening(operation);
+    const floatSetAside = this.floatSetAsideAmount(operation);
     const totalAlreadyIssued = this.decimalToNumber(floatAgg._sum.amountGiven);
     const currentAgentFloat = this.decimalToNumber(existingFloat?.amountGiven);
     const expensesTotal = this.decimalToNumber(expensesAgg._sum.amount);
     const cashReturnedByAgents = this.decimalToNumber(
       returnedAgg._sum.amountReturned,
     );
-    const availableForThisAgent = this.roundMoney(
+    const branchCashAvailableForThisAgent = this.roundMoney(
       cashAvailableAtOpening -
         expensesTotal -
         totalAlreadyIssued +
         cashReturnedByAgents +
         currentAgentFloat,
     );
+    const setAsideAvailableForThisAgent = this.roundMoney(
+      floatSetAside - totalAlreadyIssued + currentAgentFloat,
+    );
+    const availableForThisAgent = Math.max(
+      0,
+      Math.min(branchCashAvailableForThisAgent, setAsideAvailableForThisAgent),
+    );
 
     if (input.amountGiven > availableForThisAgent) {
+      if (setAsideAvailableForThisAgent <= branchCashAvailableForThisAgent) {
+        throw new BadRequestException(
+          `Float exceeds amount set aside. Available: ${availableForThisAgent}.`,
+        );
+      }
       throw new BadRequestException(
         `Float exceeds available branch cash. Available: ${availableForThisAgent}.`,
       );
@@ -506,7 +529,11 @@ export class OperationsService {
     );
     const cashAddedToday = this.decimalToNumber(operation.cashAddedToday);
     const cashAvailableAtOpening = this.cashAvailableAtOpening(operation);
+    const floatSetAside = this.floatSetAsideAmount(operation);
     const floatIssued = this.decimalToNumber(floatAgg._sum.amountGiven);
+    const floatRemaining = this.roundMoney(
+      Math.max(floatSetAside - floatIssued, 0),
+    );
     const expensesTotal = this.decimalToNumber(expensesAgg._sum.amount);
     const loansIssuedPrincipal = this.decimalToNumber(
       loansAgg._sum.principalAmount,
@@ -563,7 +590,8 @@ export class OperationsService {
       cashAddedToday,
       cashAvailableAtOpening,
       floatIssued,
-      floatSetAside: floatIssued,
+      floatSetAside,
+      floatRemaining,
       cashReturnedByAgents,
       agentsWithFloatCount: agentReturns.length,
       agentsReturnedCount: agentReturns.filter(
@@ -614,6 +642,14 @@ export class OperationsService {
     );
     const computed = this.roundMoney(openingBalance + cashAddedToday);
     return computed > 0 || legacyAvailable === 0 ? computed : legacyAvailable;
+  }
+
+  private floatSetAsideAmount(operation: {
+    floatSetAsideAmount?: Prisma.Decimal | number | null;
+    openingFloatAvailable: Prisma.Decimal | number | null;
+  }) {
+    const setAside = this.decimalToNumber(operation.floatSetAsideAmount);
+    return this.roundMoney(setAside);
   }
 
   private toAgentReturnContracts(

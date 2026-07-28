@@ -469,7 +469,7 @@ function Stat({ label, value }: { label: string; value: string }) {
       <p className="text-[10px] font-semibold capitalize tracking-[0.1em] text-slate-500">
         {label}
       </p>
-      <p className="mt-0.5 text-xl font-bold text-[var(--midnight-navy)]">
+      <p className="mt-0.5 break-words text-[clamp(0.9rem,2vw,1.25rem)] font-bold leading-tight text-[var(--midnight-navy)]">
         {value}
       </p>
     </div>
