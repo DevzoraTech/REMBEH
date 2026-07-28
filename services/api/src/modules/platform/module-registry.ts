@@ -141,6 +141,7 @@ export const REMBEH_MODULES: RembehModuleDefinition[] = [
     events: [
       OPERATIONS_EVENTS.branchOpened,
       OPERATIONS_EVENTS.branchFloatUpdated,
+      OPERATIONS_EVENTS.agentFloatReturned,
       OPERATIONS_EVENTS.expenseRecorded,
       OPERATIONS_EVENTS.expenseApproved,
       OPERATIONS_EVENTS.branchClosingStarted,

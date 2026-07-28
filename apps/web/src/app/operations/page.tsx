@@ -50,11 +50,20 @@ type DailyOperation = {
   cashAvailableAtOpening: number;
   floatIssued: number;
   floatSetAside: number;
+  cashReturnedByAgents: number;
+  agentsWithFloatCount: number;
+  agentsReturnedCount: number;
+  expectedAgentReturnTotal: number;
+  agentReturnVariance: number;
+  agentReturns: DailyOperationAgentReturn[];
   expensesCount: number;
   expensesTotal: number;
   expenses: DailyOperationExpense[];
   branchCashRemaining: number;
+  expectedClosingBalance: number;
   closingBalance: number | null;
+  closingVariance: number | null;
+  closingNotes: string | null;
   loansIssuedCount: number;
   loansIssuedPrincipal: number;
   collectionsCount: number;
@@ -84,6 +93,25 @@ type DailyOperationExpense = {
   approvedByName: string | null;
 };
 
+type AgentReturnStatus = "PENDING" | "RETURNED" | "SHORT" | "OVER";
+
+type DailyOperationAgentReturn = {
+  floatId: string;
+  agentId: string;
+  agentName: string;
+  agentPublicId: string | null;
+  amountGiven: number;
+  amountDisbursed: number;
+  amountCollected: number;
+  expectedReturn: number;
+  amountReturned: number | null;
+  variance: number | null;
+  returnedAt: string | null;
+  returnedByName: string | null;
+  notes: string | null;
+  status: AgentReturnStatus;
+};
+
 type OperationResponse = {
   date: string;
   branch: OperationBranch | null;
@@ -104,6 +132,17 @@ type ExpenseForm = {
   description: string;
 };
 
+type AgentReturnForm = {
+  agentId: string;
+  amountReturned: string;
+  notes: string;
+};
+
+type ClosingForm = {
+  countedCash: string;
+  notes: string;
+};
+
 const emptyOpeningForm: OpeningForm = {
   openingBalance: "",
   cashAddedToday: "",
@@ -114,6 +153,17 @@ const emptyExpenseForm: ExpenseForm = {
   category: "TRANSPORT",
   amount: "",
   description: "",
+};
+
+const emptyAgentReturnForm: AgentReturnForm = {
+  agentId: "",
+  amountReturned: "",
+  notes: "",
+};
+
+const emptyClosingForm: ClosingForm = {
+  countedCash: "",
+  notes: "",
 };
 
 const expenseCategoryOptions: ExpenseCategory[] = [
@@ -154,16 +204,25 @@ export default function OperationsPage() {
   const [data, setData] = useState<OperationResponse | null>(null);
   const [form, setForm] = useState<OpeningForm>(emptyOpeningForm);
   const [expenseForm, setExpenseForm] = useState<ExpenseForm>(emptyExpenseForm);
+  const [agentReturnForm, setAgentReturnForm] =
+    useState<AgentReturnForm>(emptyAgentReturnForm);
+  const [closingForm, setClosingForm] = useState<ClosingForm>(emptyClosingForm);
   const [loading, setLoading] = useState(true);
   const [opening, setOpening] = useState(false);
   const [recordingExpense, setRecordingExpense] = useState(false);
+  const [recordingAgentReturn, setRecordingAgentReturn] = useState(false);
+  const [closing, setClosing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const canOpen = Boolean(session?.permissions.includes("operation.open"));
+  const canRecordReturn = Boolean(
+    session?.permissions.includes("operation.float.return"),
+  );
   const canRecordExpense = Boolean(
     session?.permissions.includes("operation.expense.create"),
   );
+  const canClose = Boolean(session?.permissions.includes("operation.close"));
   const activeBranch = data?.branch;
   const operation = data?.operation;
   const suggestedOpeningBalance = data?.openingBalance ?? null;
@@ -327,6 +386,87 @@ export default function OperationsPage() {
     }
   }
 
+  async function recordAgentReturn() {
+    if (!session || !activeBranch || recordingAgentReturn) return;
+    if (!isToday) {
+      setError("Only today's records can be changed.");
+      return;
+    }
+    setRecordingAgentReturn(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`${apiBaseUrl}/operations/agent-returns`, {
+        method: "POST",
+        headers: {
+          Authorization: `${session.tokenType} ${session.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          branchId: activeBranch.id,
+          date,
+          agentId: agentReturnForm.agentId,
+          amountReturned: Number(agentReturnForm.amountReturned),
+          notes: agentReturnForm.notes.trim() || undefined,
+        }),
+      });
+      const payload = await readApiJson<OperationResponse>(response);
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      setData(payload);
+      setAgentReturnForm(emptyAgentReturnForm);
+      setNotice("Agent return recorded.");
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not record agent return.",
+      );
+    } finally {
+      setRecordingAgentReturn(false);
+    }
+  }
+
+  async function closeBranch() {
+    if (!session || !activeBranch || closing) return;
+    if (!isToday) {
+      setError("Only today's records can be changed.");
+      return;
+    }
+    setClosing(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`${apiBaseUrl}/operations/close`, {
+        method: "POST",
+        headers: {
+          Authorization: `${session.tokenType} ${session.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          branchId: activeBranch.id,
+          date,
+          countedCash: Number(closingForm.countedCash),
+          notes: closingForm.notes.trim() || undefined,
+        }),
+      });
+      const payload = await readApiJson<OperationResponse>(response);
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      setData(payload);
+      setClosingForm(emptyClosingForm);
+      setNotice("Branch closed.");
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not close branch.",
+      );
+    } finally {
+      setClosing(false);
+    }
+  }
+
   if (!session) {
     return <AppBootSkeleton />;
   }
@@ -359,6 +499,8 @@ export default function OperationsPage() {
                   setError(null);
                   setForm(emptyOpeningForm);
                   setExpenseForm(emptyExpenseForm);
+                  setAgentReturnForm(emptyAgentReturnForm);
+                  setClosingForm(emptyClosingForm);
                   setDate(event.target.value);
                 }}
                 className="bg-transparent outline-none"
@@ -399,10 +541,20 @@ export default function OperationsPage() {
           <OpenOperationView
             operation={operation}
             editable={isToday && operation.status === "OPEN"}
+            canRecordReturn={canRecordReturn}
             canRecordExpense={canRecordExpense}
+            canClose={canClose}
+            agentReturnForm={agentReturnForm}
+            closing={closing}
+            closingForm={closingForm}
             expenseForm={expenseForm}
+            recordingAgentReturn={recordingAgentReturn}
             recordingExpense={recordingExpense}
+            setAgentReturnForm={setAgentReturnForm}
+            setClosingForm={setClosingForm}
             setExpenseForm={setExpenseForm}
+            onClose={() => void closeBranch()}
+            onRecordAgentReturn={() => void recordAgentReturn()}
             onRecordExpense={() => void recordExpense()}
           />
         ) : (
@@ -527,18 +679,38 @@ function OpeningView({
 function OpenOperationView({
   operation,
   editable,
+  canRecordReturn,
   canRecordExpense,
+  canClose,
+  agentReturnForm,
+  closing,
+  closingForm,
   expenseForm,
+  recordingAgentReturn,
   recordingExpense,
+  setAgentReturnForm,
+  setClosingForm,
   setExpenseForm,
+  onClose,
+  onRecordAgentReturn,
   onRecordExpense,
 }: {
   operation: DailyOperation;
   editable: boolean;
+  canRecordReturn: boolean;
   canRecordExpense: boolean;
+  canClose: boolean;
+  agentReturnForm: AgentReturnForm;
+  closing: boolean;
+  closingForm: ClosingForm;
   expenseForm: ExpenseForm;
+  recordingAgentReturn: boolean;
   recordingExpense: boolean;
+  setAgentReturnForm: (next: AgentReturnForm) => void;
+  setClosingForm: (next: ClosingForm) => void;
   setExpenseForm: (next: ExpenseForm) => void;
+  onClose: () => void;
+  onRecordAgentReturn: () => void;
   onRecordExpense: () => void;
 }) {
   const expenseAmount = Number(expenseForm.amount);
@@ -548,6 +720,14 @@ function OpenOperationView({
     expenseForm.amount !== "" &&
     expenseAmount > 0 &&
     expenseAmount <= operation.branchCashRemaining;
+  const allReturnsRecorded =
+    operation.agentsReturnedCount === operation.agentsWithFloatCount;
+  const cashPosition =
+    operation.closingBalance ?? operation.branchCashRemaining;
+  const cashPositionHint =
+    operation.status === "CLOSED"
+      ? "Closing balance"
+      : "Float, returns, expenses";
 
   return (
     <div className="space-y-4">
@@ -571,6 +751,12 @@ function OpenOperationView({
           tone="warn"
         />
         <OperationStat
+          label="Returned cash"
+          value={formatMoney(operation.cashReturnedByAgents)}
+          hint={`${operation.agentsReturnedCount}/${operation.agentsWithFloatCount} agents`}
+          tone="good"
+        />
+        <OperationStat
           label="Expenses"
           value={formatMoney(operation.expensesTotal)}
           hint={`${operation.expensesCount} recorded`}
@@ -579,15 +765,9 @@ function OpenOperationView({
         />
         <OperationStat
           label="Remaining cash"
-          value={formatMoney(operation.branchCashRemaining)}
-          hint="After float + expenses"
+          value={formatMoney(cashPosition)}
+          hint={cashPositionHint}
           tone="blue"
-        />
-        <OperationStat
-          label="Collections"
-          value={formatMoney(operation.collectionsReceived)}
-          hint={`${operation.collectionsCount} payments`}
-          tone="good"
         />
       </section>
 
@@ -624,8 +804,18 @@ function OpenOperationView({
               value={formatMoney(operation.floatSetAside)}
             />
             <DetailRow
+              label="Cash returned"
+              value={formatMoney(operation.cashReturnedByAgents)}
+            />
+            <DetailRow
               label="Expenses"
               value={formatMoney(operation.expensesTotal)}
+            />
+            <DetailRow
+              label="Collections"
+              value={`${operation.collectionsCount} · ${formatMoney(
+                operation.collectionsReceived,
+              )}`}
             />
             <DetailRow
               label="Loans issued"
@@ -633,6 +823,16 @@ function OpenOperationView({
                 operation.loansIssuedPrincipal,
               )}`}
             />
+            <DetailRow
+              label="Expected close"
+              value={formatMoney(operation.expectedClosingBalance)}
+            />
+            {operation.closingBalance != null ? (
+              <DetailRow
+                label="Closing balance"
+                value={formatMoney(operation.closingBalance)}
+              />
+            ) : null}
           </div>
           {operation.notes ? (
             <div className="border-t border-[var(--line)] px-4 py-3 text-sm text-slate-600">
@@ -675,6 +875,16 @@ function OpenOperationView({
             valid={validExpense}
             onRecord={onRecordExpense}
           />
+          <CloseDayCard
+            allReturnsRecorded={allReturnsRecorded}
+            canClose={canClose}
+            closing={closing}
+            editable={editable}
+            form={closingForm}
+            operation={operation}
+            setForm={setClosingForm}
+            onClose={onClose}
+          />
           <StatusPanel
             icon={<WalletCards className="size-4" />}
             title="Field work"
@@ -684,14 +894,325 @@ function OpenOperationView({
           <StatusPanel
             icon={<Banknote className="size-4" />}
             title="Cash position"
-            value={formatMoney(operation.branchCashRemaining)}
+            value={formatMoney(cashPosition)}
             tone="blue"
           />
         </aside>
       </div>
 
+      <AgentReturnsPanel
+        canRecordReturn={canRecordReturn}
+        editable={editable}
+        form={agentReturnForm}
+        operation={operation}
+        recording={recordingAgentReturn}
+        setForm={setAgentReturnForm}
+        onRecord={onRecordAgentReturn}
+      />
       <ExpenseList operation={operation} />
     </div>
+  );
+}
+
+function AgentReturnsPanel({
+  canRecordReturn,
+  editable,
+  form,
+  operation,
+  recording,
+  setForm,
+  onRecord,
+}: {
+  canRecordReturn: boolean;
+  editable: boolean;
+  form: AgentReturnForm;
+  operation: DailyOperation;
+  recording: boolean;
+  setForm: (next: AgentReturnForm) => void;
+  onRecord: () => void;
+}) {
+  const selectedReturn = operation.agentReturns.find(
+    (agentReturn) => agentReturn.agentId === form.agentId,
+  );
+  const canSubmitReturn =
+    editable &&
+    canRecordReturn &&
+    Boolean(selectedReturn) &&
+    form.amountReturned !== "" &&
+    Number(form.amountReturned) >= 0;
+
+  return (
+    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line)] px-4 py-3">
+        <div>
+          <p className="text-sm font-bold text-[var(--midnight-navy)]">
+            Agent returns
+          </p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {operation.agentsReturnedCount} of {operation.agentsWithFloatCount}{" "}
+            returned
+          </p>
+        </div>
+        <span className="text-xs font-bold tabular-nums text-[var(--midnight-navy)]">
+          {formatMoney(operation.cashReturnedByAgents)}
+        </span>
+      </header>
+      {operation.agentReturns.length === 0 ? (
+        <div className="px-4 py-6 text-sm text-slate-500">
+          No float has been assigned for this day.
+        </div>
+      ) : (
+        <div className="divide-y divide-[var(--line)]">
+          <div className="hidden grid-cols-[minmax(0,1.1fr)_100px_100px_100px_110px_96px] gap-3 bg-[#e5ece8] px-4 py-2.5 text-[10px] font-semibold text-slate-500 lg:grid">
+            <span>Agent</span>
+            <span className="text-right">Float</span>
+            <span className="text-right">Loans</span>
+            <span className="text-right">Collections</span>
+            <span className="text-right">Expected</span>
+            <span className="text-right">Return</span>
+          </div>
+          {operation.agentReturns.map((agentReturn) => {
+            const selected = form.agentId === agentReturn.agentId;
+            const returned = agentReturn.amountReturned != null;
+            return (
+              <div
+                key={agentReturn.floatId}
+                className="grid gap-3 px-4 py-3 text-sm text-[var(--midnight-navy)] lg:grid-cols-[minmax(0,1.1fr)_100px_100px_100px_110px_96px] lg:items-center"
+              >
+                <div className="min-w-0">
+                  <p className="truncate font-bold">{agentReturn.agentName}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {agentReturn.agentPublicId ?? "No agent id"} ·{" "}
+                    {returnStatusLabel(agentReturn.status)}
+                  </p>
+                </div>
+                <MoneyCell value={agentReturn.amountGiven} />
+                <MoneyCell value={agentReturn.amountDisbursed} />
+                <MoneyCell value={agentReturn.amountCollected} />
+                <MoneyCell value={agentReturn.expectedReturn} strong />
+                <div className="flex items-center justify-between gap-2 lg:justify-end">
+                  {returned ? (
+                    <span className="text-right">
+                      <span className="block font-bold tabular-nums">
+                        {formatCompactMoney(agentReturn.amountReturned ?? 0)}
+                      </span>
+                      <span
+                        className={`mt-0.5 block text-[10px] font-semibold ${
+                          (agentReturn.variance ?? 0) < 0
+                            ? "text-red-600"
+                            : (agentReturn.variance ?? 0) > 0
+                              ? "text-amber-700"
+                              : "text-[var(--forest-emerald)]"
+                        }`}
+                      >
+                        {formatVariance(agentReturn.variance)}
+                      </span>
+                    </span>
+                  ) : editable && canRecordReturn ? (
+                    <button
+                      type="button"
+                      className="btn btn-ghost h-8 px-3 text-xs"
+                      onClick={() =>
+                        setForm({
+                          agentId: agentReturn.agentId,
+                          amountReturned: String(agentReturn.expectedReturn),
+                          notes: "",
+                        })
+                      }
+                    >
+                      Record
+                    </button>
+                  ) : (
+                    <span className="text-xs font-semibold text-slate-500">
+                      Pending
+                    </span>
+                  )}
+                </div>
+                {selected && !returned ? (
+                  <div className="grid gap-2 border-t border-[var(--line)] pt-3 lg:col-span-6 lg:grid-cols-[160px_minmax(0,1fr)_110px]">
+                    <MoneyField
+                      label="Returned cash"
+                      value={form.amountReturned}
+                      locked={!editable || !canRecordReturn}
+                      onChange={(value) =>
+                        setForm({ ...form, amountReturned: value })
+                      }
+                    />
+                    <label>
+                      <span className="text-xs font-bold text-slate-600">
+                        Notes
+                      </span>
+                      <input
+                        value={form.notes}
+                        disabled={!editable || !canRecordReturn}
+                        onChange={(event) =>
+                          setForm({ ...form, notes: event.target.value })
+                        }
+                        className="mt-1 h-10 w-full border border-[var(--line)] bg-white px-3 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="btn btn-primary mt-5 h-10 text-xs lg:mt-6"
+                      disabled={!canSubmitReturn || recording}
+                      onClick={onRecord}
+                    >
+                      {recording ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="size-3.5" />
+                      )}
+                      Save
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CloseDayCard({
+  allReturnsRecorded,
+  canClose,
+  closing,
+  editable,
+  form,
+  operation,
+  setForm,
+  onClose,
+}: {
+  allReturnsRecorded: boolean;
+  canClose: boolean;
+  closing: boolean;
+  editable: boolean;
+  form: ClosingForm;
+  operation: DailyOperation;
+  setForm: (next: ClosingForm) => void;
+  onClose: () => void;
+}) {
+  const countedCash = Number(form.countedCash || 0);
+  const variance =
+    form.countedCash === ""
+      ? null
+      : Math.round((countedCash - operation.expectedClosingBalance) * 100) /
+        100;
+  const needsNote = variance != null && variance !== 0;
+  const canSubmit =
+    editable &&
+    canClose &&
+    allReturnsRecorded &&
+    form.countedCash !== "" &&
+    (!needsNote || form.notes.trim().length > 0);
+
+  if (operation.status === "CLOSED") {
+    return (
+      <section className="panel bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
+        <header className="border-b border-[var(--line)] px-4 py-3">
+          <p className="text-sm font-bold text-[var(--midnight-navy)]">
+            Closed
+          </p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {operation.closedAt ? formatDateTime(operation.closedAt) : ""}
+          </p>
+        </header>
+        <div className="space-y-2 p-4">
+          <DetailRow
+            label="Closing balance"
+            value={formatMoney(operation.closingBalance ?? 0)}
+          />
+          <DetailRow
+            label="Variance"
+            value={formatVariance(operation.closingVariance)}
+          />
+          {operation.closingNotes ? (
+            <p className="text-xs text-slate-600">{operation.closingNotes}</p>
+          ) : null}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="panel bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
+      <header className="border-b border-[var(--line)] px-4 py-3">
+        <p className="text-sm font-bold text-[var(--midnight-navy)]">
+          Close day
+        </p>
+        <p className="mt-0.5 text-xs text-slate-500">
+          Expected: {formatMoney(operation.expectedClosingBalance)}
+        </p>
+      </header>
+      <div className="space-y-3 p-4">
+        {!allReturnsRecorded ? (
+          <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+            Record all agent returns first.
+          </p>
+        ) : null}
+        <MoneyField
+          label="Counted cash"
+          value={form.countedCash}
+          locked={!editable || !canClose}
+          onChange={(value) => setForm({ ...form, countedCash: value })}
+        />
+        <button
+          type="button"
+          className="btn btn-ghost h-8 w-full text-xs"
+          disabled={!editable || !canClose}
+          onClick={() =>
+            setForm({
+              ...form,
+              countedCash: String(operation.expectedClosingBalance),
+            })
+          }
+        >
+          Use expected cash
+        </button>
+        {variance != null ? (
+          <p
+            className={`text-xs font-bold ${
+              variance === 0
+                ? "text-[var(--forest-emerald)]"
+                : variance < 0
+                  ? "text-red-600"
+                  : "text-amber-700"
+            }`}
+          >
+            Variance: {formatVariance(variance)}
+          </p>
+        ) : null}
+        <label>
+          <span className="text-xs font-bold text-slate-600">Notes</span>
+          <textarea
+            value={form.notes}
+            disabled={!editable || !canClose}
+            onChange={(event) =>
+              setForm({ ...form, notes: event.target.value })
+            }
+            rows={2}
+            className="mt-1 w-full border border-[var(--line)] bg-white px-3 py-2 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
+          />
+        </label>
+      </div>
+      <footer className="border-t border-[var(--line)] bg-[var(--soft-mist)] px-4 py-3">
+        <button
+          type="button"
+          className="btn btn-primary h-9 w-full text-xs"
+          disabled={!canSubmit || closing}
+          onClick={onClose}
+        >
+          {closing ? (
+            <Loader2 className="size-3.5 animate-spin" />
+          ) : (
+            <CheckCircle2 className="size-3.5" />
+          )}
+          Close day
+        </button>
+      </footer>
+    </section>
   );
 }
 
@@ -872,6 +1393,27 @@ function MoneyField({
   );
 }
 
+function MoneyCell({
+  value,
+  strong = false,
+}: {
+  value: number;
+  strong?: boolean;
+}) {
+  return (
+    <span
+      className={`flex justify-between gap-2 tabular-nums lg:block lg:text-right ${
+        strong ? "font-bold" : "font-semibold"
+      }`}
+    >
+      <span className="text-xs text-slate-500 lg:hidden">
+        {strong ? "Expected" : "Amount"}
+      </span>
+      {formatCompactMoney(value)}
+    </span>
+  );
+}
+
 function OperationStat({
   icon,
   label,
@@ -981,6 +1523,14 @@ function operationLabel(status: string) {
   return status;
 }
 
+function returnStatusLabel(status: AgentReturnStatus) {
+  if (status === "PENDING") return "Pending";
+  if (status === "RETURNED") return "Returned";
+  if (status === "SHORT") return "Short";
+  if (status === "OVER") return "Over";
+  return status;
+}
+
 function categoryLabel(category: ExpenseCategory) {
   return category
     .toLowerCase()
@@ -989,10 +1539,21 @@ function categoryLabel(category: ExpenseCategory) {
     .join(" ");
 }
 
-function formatMoney(value: number) {
-  return `UGX ${new Intl.NumberFormat("en-UG", {
+function formatCompactMoney(value: number) {
+  return new Intl.NumberFormat("en-UG", {
     maximumFractionDigits: 0,
-  }).format(value)}`;
+  }).format(value);
+}
+
+function formatMoney(value: number) {
+  return `UGX ${formatCompactMoney(value)}`;
+}
+
+function formatVariance(value: number | null) {
+  if (value == null) return "Not set";
+  if (value === 0) return "Balanced";
+  const absolute = formatMoney(Math.abs(value));
+  return value < 0 ? `Short ${absolute}` : `Over ${absolute}`;
 }
 
 function formatClock(value: string) {

@@ -70,6 +70,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'operation.read',
     'operation.open',
     'operation.float.manage',
+    'operation.float.return',
     'operation.expense.create',
     'operation.expense.approve',
     'operation.close',
@@ -116,6 +117,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'cashdrawer.reconcile',
     'cashier.read',
     'operation.read',
+    'operation.float.return',
     'operation.expense.create',
   ],
   'Recovery Officer': [

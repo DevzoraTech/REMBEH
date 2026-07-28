@@ -28,6 +28,26 @@ export type DailyOperationExpenseContract = {
   approvedByName: string | null;
 };
 
+export type DailyOperationAgentReturnStatusContract =
+  'PENDING' | 'RETURNED' | 'SHORT' | 'OVER';
+
+export type DailyOperationAgentReturnContract = {
+  floatId: string;
+  agentId: string;
+  agentName: string;
+  agentPublicId: string | null;
+  amountGiven: number;
+  amountDisbursed: number;
+  amountCollected: number;
+  expectedReturn: number;
+  amountReturned: number | null;
+  variance: number | null;
+  returnedAt: string | null;
+  returnedByName: string | null;
+  notes: string | null;
+  status: DailyOperationAgentReturnStatusContract;
+};
+
 export type DailyOperationContract = {
   id: string;
   branchId: string;
@@ -42,11 +62,20 @@ export type DailyOperationContract = {
   cashAvailableAtOpening: number;
   floatIssued: number;
   floatSetAside: number;
+  cashReturnedByAgents: number;
+  agentsWithFloatCount: number;
+  agentsReturnedCount: number;
+  expectedAgentReturnTotal: number;
+  agentReturnVariance: number;
+  agentReturns: DailyOperationAgentReturnContract[];
   expensesCount: number;
   expensesTotal: number;
   expenses: DailyOperationExpenseContract[];
   branchCashRemaining: number;
+  expectedClosingBalance: number;
   closingBalance: number | null;
+  closingVariance: number | null;
+  closingNotes: string | null;
   loansIssuedCount: number;
   loansIssuedPrincipal: number;
   collectionsCount: number;

@@ -2,6 +2,7 @@ export const OPERATIONS_PERMISSIONS = {
   read: 'operation.read',
   open: 'operation.open',
   floatManage: 'operation.float.manage',
+  floatReturn: 'operation.float.return',
   expenseCreate: 'operation.expense.create',
   expenseApprove: 'operation.expense.approve',
   close: 'operation.close',

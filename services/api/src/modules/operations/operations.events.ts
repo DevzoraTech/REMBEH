@@ -1,6 +1,7 @@
 export const OPERATIONS_EVENTS = {
   branchOpened: 'operation.branch_opened',
   branchFloatUpdated: 'operation.float_updated',
+  agentFloatReturned: 'operation.float_returned',
   expenseRecorded: 'operation.expense_recorded',
   expenseApproved: 'operation.expense_approved',
   branchClosingStarted: 'operation.closing_started',

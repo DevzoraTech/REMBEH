@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import {
   BranchOperationExpenseCategory,
   BranchOperationStatus,
+  LoanApplicationStatus,
   Prisma,
 } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
@@ -206,6 +207,150 @@ export class OperationsRepository {
     });
   }
 
+  recordAgentReturn(input: {
+    tenantId: string;
+    branchId: string;
+    agentId: string;
+    floatDate: Date;
+    amountReturned: Prisma.Decimal;
+    returnedAt: Date;
+    returnedByUserId: string;
+    notes: string | null;
+    operationId: string;
+    operationDate: Date;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const float = await tx.agentDailyFloat.update({
+        where: {
+          tenantId_agentId_floatDate: {
+            tenantId: input.tenantId,
+            agentId: input.agentId,
+            floatDate: input.floatDate,
+          },
+        },
+        data: {
+          amountReturned: input.amountReturned,
+          returnedAt: input.returnedAt,
+          returnedByUserId: input.returnedByUserId,
+          returnNotes: input.notes,
+        },
+        include: {
+          agent: { select: { id: true, displayName: true, publicId: true } },
+          recordedBy: { select: { id: true, displayName: true } },
+          returnedBy: { select: { id: true, displayName: true } },
+        },
+      });
+
+      await tx.outboxEvent.create({
+        data: {
+          tenantId: input.tenantId,
+          topic: OPERATIONS_EVENTS.agentFloatReturned,
+          aggregateType: 'agent_daily_float',
+          aggregateId: float.id,
+          payload: {
+            floatId: float.id,
+            operationId: input.operationId,
+            tenantId: input.tenantId,
+            branchId: input.branchId,
+            agentId: input.agentId,
+            operationDate: this.formatDateLabel(input.operationDate),
+            amountReturned: input.amountReturned.toString(),
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.returnedByUserId,
+          action: OPERATIONS_PERMISSIONS.floatReturn,
+          entityType: 'agent_daily_float',
+          entityId: float.id,
+          newValue: {
+            operationId: input.operationId,
+            branchId: input.branchId,
+            agentId: input.agentId,
+            operationDate: this.formatDateLabel(input.operationDate),
+            amountReturned: input.amountReturned.toString(),
+            notes: input.notes,
+          },
+        },
+      });
+
+      return float;
+    });
+  }
+
+  closeBranch(input: {
+    tenantId: string;
+    branchId: string;
+    operationId: string;
+    closedAt: Date;
+    closedByUserId: string;
+    closingBalance: Prisma.Decimal;
+    closingNotes: string | null;
+    operationDate: Date;
+    expectedClosingBalance: number;
+    variance: number;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const operation = await tx.branchDailyOperation.update({
+        where: { id: input.operationId },
+        data: {
+          status: BranchOperationStatus.CLOSED,
+          closedAt: input.closedAt,
+          closedByUserId: input.closedByUserId,
+          closingBalance: input.closingBalance,
+          closingNotes: input.closingNotes,
+        },
+        include: {
+          branch: true,
+          openedBy: { select: { id: true, displayName: true } },
+          closedBy: { select: { id: true, displayName: true } },
+        },
+      });
+
+      await tx.outboxEvent.create({
+        data: {
+          tenantId: input.tenantId,
+          topic: OPERATIONS_EVENTS.branchClosed,
+          aggregateType: 'branch_daily_operation',
+          aggregateId: operation.id,
+          payload: {
+            operationId: operation.id,
+            tenantId: input.tenantId,
+            branchId: input.branchId,
+            operationDate: this.formatDateLabel(input.operationDate),
+            status: operation.status,
+            closingBalance: input.closingBalance.toString(),
+            expectedClosingBalance: input.expectedClosingBalance,
+            variance: input.variance,
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.closedByUserId,
+          action: OPERATIONS_PERMISSIONS.close,
+          entityType: 'branch_daily_operation',
+          entityId: operation.id,
+          newValue: {
+            branchId: input.branchId,
+            operationDate: this.formatDateLabel(input.operationDate),
+            closingBalance: input.closingBalance.toString(),
+            expectedClosingBalance: input.expectedClosingBalance,
+            variance: input.variance,
+            notes: input.closingNotes,
+          },
+        },
+      });
+
+      return operation;
+    });
+  }
+
   sumFloatIssued(input: {
     tenantId: string;
     branchId: string;
@@ -219,6 +364,22 @@ export class OperationsRepository {
       },
       _sum: { amountGiven: true },
       _count: { _all: true },
+    });
+  }
+
+  sumFloatReturned(input: {
+    tenantId: string;
+    branchId: string;
+    floatDate: Date;
+  }) {
+    return this.prisma.agentDailyFloat.aggregate({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        floatDate: input.floatDate,
+      },
+      _sum: { amountReturned: true },
+      _count: { amountReturned: true },
     });
   }
 
@@ -238,6 +399,26 @@ export class OperationsRepository {
     });
   }
 
+  listAgentFloatsForOperation(input: {
+    tenantId: string;
+    branchId: string;
+    floatDate: Date;
+  }) {
+    return this.prisma.agentDailyFloat.findMany({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        floatDate: input.floatDate,
+      },
+      include: {
+        agent: { select: { id: true, displayName: true, publicId: true } },
+        recordedBy: { select: { id: true, displayName: true } },
+        returnedBy: { select: { id: true, displayName: true } },
+      },
+      orderBy: [{ agent: { displayName: 'asc' } }, { createdAt: 'asc' }],
+    });
+  }
+
   sumLoansIssued(input: {
     tenantId: string;
     branchId: string;
@@ -248,6 +429,31 @@ export class OperationsRepository {
       where: {
         tenantId: input.tenantId,
         branchId: input.branchId,
+        status: { not: LoanApplicationStatus.DRAFT },
+        submittedAt: {
+          gte: input.dayStart,
+          lte: input.dayEnd,
+        },
+      },
+      _sum: { principalAmount: true },
+      _count: { _all: true },
+    });
+  }
+
+  sumLoansIssuedByAgent(input: {
+    tenantId: string;
+    branchId: string;
+    agentIds: string[];
+    dayStart: Date;
+    dayEnd: Date;
+  }) {
+    return this.prisma.loanApplication.groupBy({
+      by: ['officerUserId'],
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        officerUserId: { in: input.agentIds },
+        status: { not: LoanApplicationStatus.DRAFT },
         submittedAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
@@ -268,6 +474,29 @@ export class OperationsRepository {
       where: {
         tenantId: input.tenantId,
         branchId: input.branchId,
+        paidAt: {
+          gte: input.dayStart,
+          lte: input.dayEnd,
+        },
+      },
+      _sum: { amount: true },
+      _count: { _all: true },
+    });
+  }
+
+  sumCollectionsByAgent(input: {
+    tenantId: string;
+    branchId: string;
+    agentIds: string[];
+    dayStart: Date;
+    dayEnd: Date;
+  }) {
+    return this.prisma.repayment.groupBy({
+      by: ['recordedByUserId'],
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        recordedByUserId: { in: input.agentIds },
         paidAt: {
           gte: input.dayStart,
           lte: input.dayEnd,

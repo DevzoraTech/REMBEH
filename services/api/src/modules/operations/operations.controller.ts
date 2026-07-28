@@ -4,7 +4,9 @@ import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RequirePermissions } from '../../common/auth/permissions.decorator';
 import { PermissionsGuard } from '../../common/auth/permissions.guard';
+import { CloseBranchOperationDto } from './dto/close-branch-operation.dto';
 import { OpenBranchOperationDto } from './dto/open-branch-operation.dto';
+import { RecordAgentReturnDto } from './dto/record-agent-return.dto';
 import { RecordOperationExpenseDto } from './dto/record-operation-expense.dto';
 import { OperationsService } from './operations.service';
 import { OPERATIONS_PERMISSIONS } from './operations.permissions';
@@ -40,5 +42,23 @@ export class OperationsController {
     @Body() dto: RecordOperationExpenseDto,
   ) {
     return this.operationsService.recordExpense(user, dto);
+  }
+
+  @Post('agent-returns')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.floatReturn)
+  recordAgentReturn(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: RecordAgentReturnDto,
+  ) {
+    return this.operationsService.recordAgentReturn(user, dto);
+  }
+
+  @Post('close')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.close)
+  closeBranch(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CloseBranchOperationDto,
+  ) {
+    return this.operationsService.closeBranch(user, dto);
   }
 }

@@ -418,6 +418,7 @@ model User {
   repaymentsRecorded        Repayment[]              @relation("RepaymentRecorder")
   dailyFloats               AgentDailyFloat[]        @relation("AgentDailyFloatAgent")
   dailyFloatsRecorded       AgentDailyFloat[]        @relation("AgentDailyFloatRecorder")
+  dailyFloatsReturned       AgentDailyFloat[]        @relation("AgentDailyFloatReturnedBy")
   branchOperationsOpened    BranchDailyOperation[]   @relation("BranchDailyOperationOpenedBy")
   branchOperationsClosed    BranchDailyOperation[]   @relation("BranchDailyOperationClosedBy")
   operationExpensesRecorded BranchOperationExpense[] @relation("BranchOperationExpenseRecordedBy")
@@ -431,21 +432,26 @@ model User {
 
 /// Cash float given to a field agent at the start of a working day for new loans.
 model AgentDailyFloat {
-  id               String   @id @default(uuid()) @db.Uuid
-  tenantId         String   @map("tenant_id") @db.Uuid
-  branchId         String?  @map("branch_id") @db.Uuid
-  agentId          String   @map("agent_id") @db.Uuid
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  branchId         String?   @map("branch_id") @db.Uuid
+  agentId          String    @map("agent_id") @db.Uuid
   /// Calendar day the float covers (tenant-local date stored as UTC date).
-  floatDate        DateTime @map("float_date") @db.Date
-  amountGiven      Decimal  @map("amount_given") @db.Decimal(14, 2)
-  recordedByUserId String   @map("recorded_by_user_id") @db.Uuid
+  floatDate        DateTime  @map("float_date") @db.Date
+  amountGiven      Decimal   @map("amount_given") @db.Decimal(14, 2)
+  recordedByUserId String    @map("recorded_by_user_id") @db.Uuid
+  amountReturned   Decimal?  @map("amount_returned") @db.Decimal(14, 2)
+  returnedAt       DateTime? @map("returned_at")
+  returnedByUserId String?   @map("returned_by_user_id") @db.Uuid
+  returnNotes      String?   @map("return_notes")
   notes            String?
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
-  tenant           Tenant   @relation(fields: [tenantId], references: [id])
-  branch           Branch?  @relation(fields: [branchId], references: [id])
-  agent            User     @relation("AgentDailyFloatAgent", fields: [agentId], references: [id])
-  recordedBy       User     @relation("AgentDailyFloatRecorder", fields: [recordedByUserId], references: [id])
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+  tenant           Tenant    @relation(fields: [tenantId], references: [id])
+  branch           Branch?   @relation(fields: [branchId], references: [id])
+  agent            User      @relation("AgentDailyFloatAgent", fields: [agentId], references: [id])
+  recordedBy       User      @relation("AgentDailyFloatRecorder", fields: [recordedByUserId], references: [id])
+  returnedBy       User?     @relation("AgentDailyFloatReturnedBy", fields: [returnedByUserId], references: [id])
 
   @@unique([tenantId, agentId, floatDate])
   @@index([tenantId, floatDate])
@@ -470,6 +476,7 @@ model BranchDailyOperation {
   openingFloatAvailable  Decimal                  @map("opening_float_available") @db.Decimal(18, 2)
   previousClosingBalance Decimal                  @map("previous_closing_balance") @db.Decimal(18, 2)
   closingBalance         Decimal?                 @map("closing_balance") @db.Decimal(18, 2)
+  closingNotes           String?                  @map("closing_notes")
   notes                  String?
   createdAt              DateTime                 @default(now()) @map("created_at")
   updatedAt              DateTime                 @updatedAt @map("updated_at")
