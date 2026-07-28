@@ -8,6 +8,7 @@ import { Prisma, UserStatus } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import { ObjectStorageService } from '../storage/object-storage.service';
+import { OperationsService } from '../operations/operations.service';
 import {
   AGENT_MANAGE_PERMISSIONS,
   AGENT_READ_PERMISSIONS,
@@ -34,6 +35,7 @@ export class AgentsService {
     private readonly repository: AgentsRepository,
     private readonly prisma: PrismaService,
     private readonly objectStorage: ObjectStorageService,
+    private readonly operationsService: OperationsService,
   ) {}
 
   async listAgents(
@@ -325,10 +327,18 @@ export class AgentsService {
     if (!agent) {
       throw new NotFoundException('Agent not found.');
     }
+    if (!user.permissions.includes('operation.float.manage')) {
+      throw new ForbiddenException('Missing permission to assign float.');
+    }
 
     const { dayStart, dayEnd, dateLabel, floatDate } = this.parseDayBounds(
       dto.date,
     );
+    await this.operationsService.requireOpenBranch({
+      tenantId: scope.tenantId,
+      branchId: agent.branchId,
+      date: dateLabel,
+    });
     const amount = new Prisma.Decimal(dto.amountGiven);
     const floatRow = await this.repository.upsertFloat({
       tenantId: scope.tenantId,

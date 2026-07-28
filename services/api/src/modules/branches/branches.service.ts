@@ -67,6 +67,10 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'loan.product.manage',
     'collection.create',
     'collection.read',
+    'operation.read',
+    'operation.open',
+    'operation.float.manage',
+    'operation.close',
     'report.read',
   ],
   Supervisor: [
@@ -79,6 +83,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'loan.read',
     'collection.create',
     'collection.read',
+    'operation.read',
   ],
   'Loan Officer': [
     'branch.read',
@@ -108,6 +113,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'cashdrawer.close',
     'cashdrawer.reconcile',
     'cashier.read',
+    'operation.read',
   ],
   'Recovery Officer': [
     'branch.read',

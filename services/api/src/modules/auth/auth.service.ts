@@ -63,6 +63,7 @@ const DEFAULT_ENABLED_MODULES = [
   'customers',
   'loans',
   'collections',
+  'operations',
   'cashiers',
   'reports',
   'notifications',

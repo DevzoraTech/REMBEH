@@ -14,6 +14,7 @@ import { IdentityVerificationModule } from './modules/identity-verification/iden
 import { LoanApplicationsModule } from './modules/loan-applications/loan-applications.module';
 import { LoansModule } from './modules/loans/loans.module';
 import { LoanProductsModule } from './modules/loan-products/loan-products.module';
+import { OperationsModule } from './modules/operations/operations.module';
 import { AppUpdateModule } from './modules/app-update/app-update.module';
 import { PlatformModule } from './modules/platform/platform.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
@@ -39,6 +40,7 @@ import { StorageModule } from './modules/storage/storage.module';
     LoanApplicationsModule,
     LoansModule,
     LoanProductsModule,
+    OperationsModule,
     PlatformModule,
     AppUpdateModule,
   ],

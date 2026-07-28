@@ -1,5 +1,7 @@
 import { BRANCH_EVENTS } from '../branches/branches.events';
 import { BRANCH_PERMISSION_LIST } from '../branches/branches.permissions';
+import { OPERATIONS_EVENTS } from '../operations/operations.events';
+import { OPERATIONS_PERMISSION_LIST } from '../operations/operations.permissions';
 
 export type RembehModuleCategory =
   'core' | 'lending' | 'finance' | 'communication' | 'ai' | 'enterprise';
@@ -127,6 +129,22 @@ export const REMBEH_MODULES: RembehModuleDefinition[] = [
     ],
     menu: [{ label: 'Collections', route: '/collections', surface: 'both' }],
     events: ['payment.made', 'receipt.issued', 'arrears.flagged'],
+  },
+  {
+    key: 'operations',
+    name: 'Daily Operations',
+    category: 'finance',
+    description:
+      'Branch opening, float controls, field operations, reconciliation, reports, and approval.',
+    permissions: OPERATIONS_PERMISSION_LIST,
+    menu: [{ label: 'Daily Operations', route: '/operations', surface: 'web' }],
+    events: [
+      OPERATIONS_EVENTS.branchOpened,
+      OPERATIONS_EVENTS.branchFloatUpdated,
+      OPERATIONS_EVENTS.branchClosingStarted,
+      OPERATIONS_EVENTS.branchClosed,
+      OPERATIONS_EVENTS.branchApproved,
+    ],
   },
   {
     key: 'cashiers',

@@ -110,12 +110,12 @@ export function AppShell({
           Boolean(session.permissions.includes("collection.read")),
       },
       {
-        href: "/collections/daily",
-        label: "Close the day",
+        href: "/operations",
+        label: "Daily Operations",
         icon: CalendarDays,
         enabled:
           operatorRole !== "staff" &&
-          Boolean(session.permissions.includes("collection.read")),
+          Boolean(session.permissions.includes("operation.read")),
       },
     ].filter((item) => item.enabled);
 
