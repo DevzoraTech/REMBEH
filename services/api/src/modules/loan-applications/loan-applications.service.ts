@@ -90,6 +90,8 @@ const SIGNER_ROLE_TO_MEDIA: Record<
     LoanApplicationMediaType.SIGNATURE_OFFICER,
 };
 
+const AGREEMENT_LOAN_ISSUE_DATE_VERSION = 2;
+
 @Injectable()
 export class LoanApplicationsService {
   private readonly logger = new Logger(LoanApplicationsService.name);
@@ -211,7 +213,11 @@ export class LoanApplicationsService {
   ): Promise<{ pdfBytes: Buffer; fileName: string; contentHash: string }> {
     const application = await this.requireAccessibleApplication(user, id);
 
-    if (application.signedAgreementKey) {
+    const storedUsesIssueDate =
+      (application.signedAgreementVersion ?? 0) >=
+      AGREEMENT_LOAN_ISSUE_DATE_VERSION;
+
+    if (application.signedAgreementKey && storedUsesIssueDate) {
       const storedPdf = await this.objectStorage.getObjectBytes(
         application.signedAgreementKey,
       );
@@ -224,6 +230,10 @@ export class LoanApplicationsService {
       }
       this.logger.warn(
         `Stored loan agreement PDF missing for ${application.id}; regenerating.`,
+      );
+    } else if (application.signedAgreementKey) {
+      this.logger.warn(
+        `Stored loan agreement PDF for ${application.id} predates loan issue-date agreement version; regenerating.`,
       );
     }
 
@@ -711,7 +721,10 @@ export class LoanApplicationsService {
       throw new NotFoundException('Loan application not found.');
     }
 
-    if (this.hasAllLockedSignatures(fresh)) {
+    if (
+      fresh.status === LoanApplicationStatus.SUBMITTED &&
+      this.hasAllLockedSignatures(fresh)
+    ) {
       const generated = await this.generateAndStoreSignedAgreement(fresh);
       fresh = generated.application;
     }
@@ -763,7 +776,7 @@ export class LoanApplicationsService {
       paymentStartDate,
     });
 
-    const submitted = await this.repository.submitWithCustomerLoanAndOutbox({
+    let submitted = await this.repository.submitWithCustomerLoanAndOutbox({
       application,
       actorUserId: user.userId,
       currency: 'UGX',
@@ -771,6 +784,11 @@ export class LoanApplicationsService {
       goLiveAt,
       paymentStartDate,
     });
+
+    if (this.hasAllLockedSignatures(submitted)) {
+      const generated = await this.generateAndStoreSignedAgreement(submitted);
+      submitted = generated.application;
+    }
 
     this.realtimeGateway.broadcastLoanApplication(
       REALTIME_EVENTS.loanApplicationSubmitted,
@@ -924,7 +942,17 @@ export class LoanApplicationsService {
   }> {
     const latestByRole = this.latestLockedSignatures(application.signatures);
 
-    const agreementVersion = (application.signedAgreementVersion ?? 0) + 1;
+    const loanMadeAt = this.loanIssuedAt(application);
+    if (!loanMadeAt) {
+      throw new BadRequestException(
+        'Loan agreement is available after the loan has been issued.',
+      );
+    }
+
+    const agreementVersion = Math.max(
+      (application.signedAgreementVersion ?? 0) + 1,
+      AGREEMENT_LOAN_ISSUE_DATE_VERSION,
+    );
 
     const parties = await Promise.all(
       latestByRole.map(async (sig) => {
@@ -961,8 +989,6 @@ export class LoanApplicationsService {
             application.finePeriodDays === 1 ? '' : 's'
           }`
         : null;
-    const loanMadeAt = application.submittedAt ?? application.createdAt;
-
     const { pdfBytes, contentHash, source } = await buildSignedLoanAgreementPdf(
       {
         applicationId: application.id,
@@ -1020,6 +1046,15 @@ export class LoanApplicationsService {
     });
 
     return { application: updated, pdfBytes, contentHash };
+  }
+
+  private loanIssuedAt(application: LoanApplicationRecord) {
+    return (
+      application.loan?.disbursedAt ??
+      application.loan?.approvedAt ??
+      application.submittedAt ??
+      null
+    );
   }
 
   private async requireAccessibleApplication(

@@ -30,6 +30,7 @@ export const loanApplicationInclude = {
   },
   tenant: { select: { id: true, name: true } },
   branch: { select: { id: true, name: true, address: true, phone: true } },
+  loan: { select: { id: true, approvedAt: true, disbursedAt: true } },
 } satisfies Prisma.LoanApplicationInclude;
 
 export type LoanApplicationRecord = Prisma.LoanApplicationGetPayload<{

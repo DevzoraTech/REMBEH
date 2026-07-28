@@ -5,8 +5,8 @@
  *
  * | Placeholder                 | System field                                      |
  * |----------------------------|---------------------------------------------------|
- * | <<day>> <<month>> <<year>> | Agreement date (generate time / submit)           |
- * | <<current_date>>           | Agreement date (footer; same as date label)       |
+ * | <<day>> <<month>> <<year>> | Loan issue date                                   |
+ * | <<current_date>>           | Loan issue date (footer; same as date label)      |
  * | <<company_name>>           | Tenant name                                       |
  * | <<company_address>>        | Branch address                                    |
  * | <<company_contact>>        | Branch phone                                      |
