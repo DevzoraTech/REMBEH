@@ -266,12 +266,7 @@ class _HomeTabState extends State<HomeTab> {
                     ),
                   ),
                   const Divider(height: 1, color: line),
-                  _HandoverStrip(
-                    status: widget.dayStatus,
-                    repayments: _store.filtered(
-                      filter: RecordsFilter.collectedToday,
-                    ),
-                  ),
+                  _HandoverStrip(status: widget.dayStatus),
                 ],
               ),
             ),
@@ -534,10 +529,9 @@ class _SummaryMetric extends StatelessWidget {
 }
 
 class _HandoverStrip extends StatelessWidget {
-  const _HandoverStrip({required this.status, required this.repayments});
+  const _HandoverStrip({required this.status});
 
   final AgentDayStatus status;
-  final List<FieldRepayment> repayments;
 
   @override
   Widget build(BuildContext context) {
@@ -560,11 +554,7 @@ class _HandoverStrip extends StatelessWidget {
               value: status.float.expectedHandover,
               icon: Icons.outbox_outlined,
               iconColor: warmGold,
-              onTap: () => _showExpectedHandoverSheet(
-                context,
-                status: status,
-                repayments: repayments,
-              ),
+              onTap: () => _showExpectedHandoverSheet(context, status: status),
             ),
           ),
         ],
@@ -681,7 +671,6 @@ class _HandoverMetric extends StatelessWidget {
 void _showExpectedHandoverSheet(
   BuildContext context, {
   required AgentDayStatus status,
-  required List<FieldRepayment> repayments,
 }) {
   showModalBottomSheet<void>(
     context: context,
@@ -690,145 +679,47 @@ void _showExpectedHandoverSheet(
     shape: RoundedRectangleBorder(borderRadius: rembehSheetRadius()),
     builder: (_) {
       final float = status.float;
-      final now = DateTime.now();
       return DraggableScrollableSheet(
         expand: false,
-        initialChildSize: 0.72,
-        minChildSize: 0.45,
+        initialChildSize: 0.76,
+        minChildSize: 0.58,
         maxChildSize: 0.92,
         builder: (context, controller) {
           return ListView(
             controller: controller,
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+            padding: const EdgeInsets.fromLTRB(22, 16, 22, 28),
             children: [
               Center(
                 child: Container(
                   width: 38,
-                  height: 4,
+                  height: 5,
                   decoration: BoxDecoration(
-                    color: line,
+                    color: line.withValues(alpha: 0.78),
                     borderRadius: rembehBorderRadius(20),
                   ),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 28),
               const Text(
                 'Expected handover',
                 style: TextStyle(
                   color: midnightNavy,
                   fontWeight: FontWeight.w900,
-                  fontSize: 20,
+                  fontSize: 28,
+                  height: 1.08,
                 ),
               ),
-              const SizedBox(height: 4),
-              Text(
-                status.branch?.name ?? 'Today',
-                style: const TextStyle(
-                  color: forestEmerald,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 13,
-                ),
+              const SizedBox(height: 28),
+              _ExpectedHandoverTotalCard(amount: float.expectedHandover),
+              const SizedBox(height: 22),
+              _HandoverBreakdownCard(
+                floatReceived: float.amountReceived,
+                loansIssued: float.amountDisbursed,
+                unusedFloat: float.unusedFloat,
+                collectedRepayments: float.amountCollected,
+                processingFees: float.processingFees,
+                expectedHandover: float.expectedHandover,
               ),
-              const SizedBox(height: 14),
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: sage,
-                  border: Border.all(color: forestEmerald),
-                  borderRadius: rembehBorderRadius(rembehRadiusLg),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Amount to hand over',
-                      style: TextStyle(
-                        color: slateText,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'UGX ${formatMoney(float.expectedHandover)}',
-                      style: const TextStyle(
-                        color: forestEmerald,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      'Unused float + collected money + processing fees = UGX ${formatMoney(float.unusedFloat)} + UGX ${formatMoney(float.amountCollected)} + UGX ${formatMoney(float.processingFees)}',
-                      style: const TextStyle(
-                        color: midnightNavy,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              _HandoverBreakdownLine(
-                label: 'Float received',
-                value: float.amountReceived,
-              ),
-              _HandoverBreakdownLine(
-                label: 'Loans issued',
-                value: float.amountDisbursed,
-                subtract: true,
-              ),
-              _HandoverBreakdownLine(
-                label: 'Unused float',
-                value: float.unusedFloat,
-                strong: true,
-              ),
-              _HandoverBreakdownLine(
-                label: 'Collected money',
-                value: float.amountCollected,
-                strong: true,
-              ),
-              _HandoverBreakdownLine(
-                label: 'Loan processing fees',
-                value: float.processingFees,
-                strong: true,
-              ),
-              _HandoverBreakdownLine(
-                label: 'Total expected handover',
-                value: float.expectedHandover,
-                strong: true,
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Collected money records',
-                      style: TextStyle(
-                        color: midnightNavy,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 15,
-                      ),
-                    ),
-                  ),
-                  Text(
-                    '${repayments.length}',
-                    style: const TextStyle(
-                      color: slateText,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              if (repayments.isEmpty)
-                const _HandoverEmptyRecords()
-              else
-                ...repayments.map(
-                  (repayment) =>
-                      _HandoverRepaymentRow(repayment: repayment, now: now),
-                ),
             ],
           );
         },
@@ -837,124 +728,70 @@ void _showExpectedHandoverSheet(
   );
 }
 
-class _HandoverBreakdownLine extends StatelessWidget {
-  const _HandoverBreakdownLine({
-    required this.label,
-    required this.value,
-    this.subtract = false,
-    this.strong = false,
-  });
+class _ExpectedHandoverTotalCard extends StatelessWidget {
+  const _ExpectedHandoverTotalCard({required this.amount});
 
-  final String label;
-  final int value;
-  final bool subtract;
-  final bool strong;
+  final int amount;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      constraints: const BoxConstraints(minHeight: 132),
+      padding: const EdgeInsets.fromLTRB(18, 20, 18, 20),
       decoration: BoxDecoration(
-        color: strong ? softIvory : Colors.white,
-        border: Border.all(color: strong ? forestEmerald : line),
-        borderRadius: rembehBorderRadius(rembehRadiusMd),
+        color: softIvory,
+        borderRadius: rembehBorderRadius(18),
       ),
       child: Row(
         children: [
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: slateText,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-          Text(
-            '${subtract ? '- ' : ''}UGX ${formatMoney(value)}',
-            style: TextStyle(
-              color: strong ? forestEmerald : midnightNavy,
-              fontWeight: FontWeight.w900,
-              fontSize: 13,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HandoverRepaymentRow extends StatelessWidget {
-  const _HandoverRepaymentRow({required this.repayment, required this.now});
-
-  final FieldRepayment repayment;
-  final DateTime now;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: line),
-        borderRadius: rembehBorderRadius(rembehRadiusMd),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              color: sage,
-              shape: BoxShape.circle,
-            ),
-            child: Text(
-              repayment.initials,
-              style: const TextStyle(
-                color: forestEmerald,
-                fontWeight: FontWeight.w800,
-                fontSize: 11,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
           Expanded(
             child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  repayment.clientName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                const Text(
+                  'Expected to hand over',
+                  style: TextStyle(
                     color: midnightNavy,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                    height: 1.1,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  formatActivityTime(repayment.recordedAt, now),
-                  style: const TextStyle(
-                    color: slateText,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'UGX ${formatMoney(amount)}',
+                      maxLines: 1,
+                      style: const TextStyle(
+                        color: forestEmerald,
+                        fontSize: 39,
+                        fontWeight: FontWeight.w900,
+                        height: 0.95,
+                      ),
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          Text(
-            'UGX ${formatMoney(repayment.amount)}',
-            style: const TextStyle(
+          const SizedBox(width: 16),
+          Container(
+            width: 76,
+            height: 76,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(
+              color: sage,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.account_balance_wallet_outlined,
               color: forestEmerald,
-              fontWeight: FontWeight.w900,
-              fontSize: 12,
+              size: 42,
             ),
           ),
         ],
@@ -963,21 +800,235 @@ class _HandoverRepaymentRow extends StatelessWidget {
   }
 }
 
-class _HandoverEmptyRecords extends StatelessWidget {
-  const _HandoverEmptyRecords();
+class _HandoverBreakdownCard extends StatelessWidget {
+  const _HandoverBreakdownCard({
+    required this.floatReceived,
+    required this.loansIssued,
+    required this.unusedFloat,
+    required this.collectedRepayments,
+    required this.processingFees,
+    required this.expectedHandover,
+  });
+
+  final int floatReceived;
+  final int loansIssued;
+  final int unusedFloat;
+  final int collectedRepayments;
+  final int processingFees;
+  final int expectedHandover;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.fromLTRB(16, 22, 16, 0),
       decoration: BoxDecoration(
-        color: softIvory,
-        border: Border.all(color: line),
-        borderRadius: rembehBorderRadius(rembehRadiusMd),
+        color: Colors.white,
+        borderRadius: rembehBorderRadius(16),
+        boxShadow: [
+          BoxShadow(
+            color: midnightNavy.withValues(alpha: 0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
-      child: const Text(
-        'No collections recorded today.',
-        style: TextStyle(color: slateText, fontSize: 13),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(bottom: 16),
+            child: Text(
+              'Handover breakdown',
+              style: TextStyle(
+                color: midnightNavy,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                height: 1.1,
+              ),
+            ),
+          ),
+          _HandoverBreakdownLine(
+            icon: Icons.file_download_outlined,
+            label: 'Float received',
+            value: floatReceived,
+            iconColor: forestEmerald,
+          ),
+          _HandoverBreakdownLine(
+            icon: Icons.open_in_new_rounded,
+            label: 'Loans issued',
+            value: loansIssued,
+            iconColor: warmGold,
+            subtract: true,
+          ),
+          const _HandoverDivider(),
+          _HandoverBreakdownLine(
+            icon: Icons.account_balance_wallet_outlined,
+            label: 'Unused float',
+            value: unusedFloat,
+            iconColor: forestEmerald,
+            valueColor: forestEmerald,
+          ),
+          _HandoverBreakdownLine(
+            icon: Icons.payments_outlined,
+            label: 'Collected repayments',
+            value: collectedRepayments,
+            iconColor: forestEmerald,
+          ),
+          _HandoverBreakdownLine(
+            icon: Icons.percent_rounded,
+            label: 'Processing fees',
+            value: processingFees,
+            iconColor: forestEmerald,
+          ),
+          const _HandoverDivider(),
+          _HandoverTotalLine(value: expectedHandover),
+        ],
+      ),
+    );
+  }
+}
+
+class _HandoverBreakdownLine extends StatelessWidget {
+  const _HandoverBreakdownLine({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.iconColor,
+    this.valueColor = midnightNavy,
+    this.subtract = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final int value;
+  final Color iconColor;
+  final Color valueColor;
+  final bool subtract;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 22),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: iconColor, size: 19),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            flex: 5,
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: midnightNavy,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                height: 1.1,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          _FittedMoneyText(
+            value: value,
+            color: valueColor,
+            subtract: subtract,
+            fontSize: 18,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HandoverDivider extends StatelessWidget {
+  const _HandoverDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 1,
+      margin: const EdgeInsets.only(left: 0, right: 0, bottom: 26),
+      color: line.withValues(alpha: 0.62),
+    );
+  }
+}
+
+class _HandoverTotalLine extends StatelessWidget {
+  const _HandoverTotalLine({required this.value});
+
+  final int value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 22),
+      child: Row(
+        children: [
+          const Expanded(
+            flex: 5,
+            child: Text(
+              'Expected handover',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: midnightNavy,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                height: 1.1,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          _FittedMoneyText(value: value, color: forestEmerald, fontSize: 21),
+        ],
+      ),
+    );
+  }
+}
+
+class _FittedMoneyText extends StatelessWidget {
+  const _FittedMoneyText({
+    required this.value,
+    required this.color,
+    required this.fontSize,
+    this.subtract = false,
+  });
+
+  final int value;
+  final Color color;
+  final double fontSize;
+  final bool subtract;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      flex: 4,
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerRight,
+          child: Text(
+            '${subtract ? '- ' : ''}UGX ${formatMoney(value)}',
+            maxLines: 1,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w900,
+              fontSize: fontSize,
+              height: 1.05,
+            ),
+          ),
+        ),
       ),
     );
   }
