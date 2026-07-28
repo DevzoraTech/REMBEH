@@ -13,7 +13,16 @@ import { useRouter } from "next/navigation";
 import type { MouseEvent } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/app/app-shell";
-import { AppBootSkeleton, SkeletonBlock, TableSkeleton } from "../../components/app/skeleton";
+import {
+  DEFAULT_PAGE_SIZE,
+  PaginationControls,
+  paginateItems,
+} from "../../components/app/pagination";
+import {
+  AppBootSkeleton,
+  SkeletonBlock,
+  TableSkeleton,
+} from "../../components/app/skeleton";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import {
   RembehBranch,
@@ -59,6 +68,8 @@ export default function BlacklistWatchlistPage() {
   const [borrowers, setBorrowers] = useState<BorrowerRow[]>([]);
   const [tab, setTab] = useState<ListTab>("all");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [panelOpen, setPanelOpen] = useState(false);
   const [listType, setListType] = useState<ListType>("WATCHLIST");
   const [borrowerSearch, setBorrowerSearch] = useState("");
@@ -171,6 +182,11 @@ export default function BlacklistWatchlistPage() {
       ].some((value) => value.toLowerCase().includes(q));
     });
   }, [entries, search, tab]);
+
+  const pagedEntries = useMemo(
+    () => paginateItems(filteredEntries, page, pageSize),
+    [filteredEntries, page, pageSize],
+  );
 
   const filteredBorrowers = useMemo(() => {
     const q = borrowerSearch.trim().toLowerCase();
@@ -388,7 +404,10 @@ export default function BlacklistWatchlistPage() {
             <input
               type="search"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                setPage(1);
+              }}
               placeholder="Search borrowers"
               className="min-w-[160px] flex-1 bg-transparent py-1.5 text-sm text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
             />
@@ -403,7 +422,10 @@ export default function BlacklistWatchlistPage() {
                     ? "bg-[var(--midnight-navy)] text-white"
                     : "border border-[var(--line)] bg-white text-slate-600"
                 }`}
-                onClick={() => setTab(value)}
+                onClick={() => {
+                  setTab(value);
+                  setPage(1);
+                }}
               >
                 {value === "all" ? "All" : listLabel(value)}
               </button>
@@ -421,99 +443,104 @@ export default function BlacklistWatchlistPage() {
           </p>
         ) : (
           <div className="panel overflow-hidden shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
-              <table className="w-full table-fixed text-left text-[11px]">
-                <thead className="border-b border-[var(--line)] bg-[#e5ece8] text-[9px] lowercase tracking-[0.06em] text-slate-500">
-                  <tr>
-                    <th className="w-[21%] px-2 py-2.5 font-semibold">
-                      borrower
-                    </th>
-                    <th className="w-[17%] px-2 py-2.5 font-semibold">
-                      national id
-                    </th>
-                    <th className="hidden w-[13%] px-2 py-2.5 font-semibold md:table-cell">
-                      phone
-                    </th>
-                    <th className="w-[12%] px-2 py-2.5 font-semibold">
-                      list
-                    </th>
-                    <th className="hidden w-[24%] px-2 py-2.5 font-semibold sm:table-cell">
-                      reason
-                    </th>
-                    <th className="hidden w-[9%] px-2 py-2.5 font-semibold lg:table-cell">
-                      updated
-                    </th>
-                    <th className="w-[8%] px-2 py-2.5 text-right font-semibold">
-                      actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[var(--line)]">
-                  {filteredEntries.map((entry) => (
-                    <tr
-                      key={entry.id}
-                      className="bg-white transition odd:bg-white even:bg-[#fbfdfc] hover:bg-[var(--soft-mist)]"
-                    >
-                      <td className="px-2 py-3">
-                        <p className="truncate font-semibold text-[var(--midnight-navy)]">
-                          {entry.borrowerName || "—"}
-                        </p>
-                      </td>
-                      <td className="px-2 py-3 text-[11px] font-semibold text-slate-700">
-                        <span className="block truncate">
-                          {entry.nationalId}
-                        </span>
-                      </td>
-                      <td className="hidden px-2 py-3 text-[11px] text-slate-600 md:table-cell">
-                        <span className="block truncate">
-                          {entry.phone || "—"}
-                        </span>
-                      </td>
-                      <td className="px-2 py-3 text-[9px] font-bold lowercase tracking-[0.04em]">
-                        <span
-                          className={`inline-flex border px-1.5 py-0.5 ${listTone(
-                            entry.type,
-                          )}`}
+            <table className="w-full table-fixed text-left text-[11px]">
+              <thead className="border-b border-[var(--line)] bg-[#e5ece8] text-[9px] capitalize tracking-[0.06em] text-slate-500">
+                <tr>
+                  <th className="w-[21%] px-2 py-2.5 font-semibold">
+                    borrower
+                  </th>
+                  <th className="w-[17%] px-2 py-2.5 font-semibold">
+                    national id
+                  </th>
+                  <th className="hidden w-[13%] px-2 py-2.5 font-semibold md:table-cell">
+                    phone
+                  </th>
+                  <th className="w-[12%] px-2 py-2.5 font-semibold">list</th>
+                  <th className="hidden w-[24%] px-2 py-2.5 font-semibold sm:table-cell">
+                    reason
+                  </th>
+                  <th className="hidden w-[9%] px-2 py-2.5 font-semibold lg:table-cell">
+                    updated
+                  </th>
+                  <th className="w-[8%] px-2 py-2.5 text-right font-semibold">
+                    actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--line)]">
+                {pagedEntries.items.map((entry) => (
+                  <tr
+                    key={entry.id}
+                    className="bg-white transition odd:bg-white even:bg-[#fbfdfc] hover:bg-[var(--soft-mist)]"
+                  >
+                    <td className="px-2 py-3">
+                      <p className="truncate font-semibold text-[var(--midnight-navy)]">
+                        {entry.borrowerName || "—"}
+                      </p>
+                    </td>
+                    <td className="px-2 py-3 text-[11px] font-semibold text-slate-700">
+                      <span className="block truncate">{entry.nationalId}</span>
+                    </td>
+                    <td className="hidden px-2 py-3 text-[11px] text-slate-600 md:table-cell">
+                      <span className="block truncate">
+                        {entry.phone || "—"}
+                      </span>
+                    </td>
+                    <td className="px-2 py-3 text-[9px] font-bold capitalize tracking-[0.04em]">
+                      <span
+                        className={`inline-flex border px-1.5 py-0.5 ${listTone(
+                          entry.type,
+                        )}`}
+                      >
+                        {listLabel(entry.type)}
+                      </span>
+                    </td>
+                    <td className="hidden px-2 py-3 text-[11px] text-slate-600 sm:table-cell">
+                      <span className="line-clamp-2">
+                        {entry.reason || "—"}
+                      </span>
+                    </td>
+                    <td className="hidden px-2 py-3 text-[11px] text-slate-500 lg:table-cell">
+                      {formatDate(entry.updatedAt)}
+                    </td>
+                    <td className="px-2 py-3 text-right">
+                      {canManage ? (
+                        <button
+                          type="button"
+                          className="ml-auto grid size-8 place-items-center border border-[var(--line)] bg-white text-[var(--midnight-navy)] transition hover:bg-[var(--soft-mist)] disabled:opacity-50"
+                          aria-label={`Open actions for ${
+                            entry.borrowerName || entry.nationalId
+                          }`}
+                          aria-haspopup="menu"
+                          aria-expanded={actionMenu?.entryId === entry.id}
+                          disabled={busyId === entry.id}
+                          onClick={(event) => toggleActionMenu(entry.id, event)}
                         >
-                          {listLabel(entry.type)}
-                        </span>
-                      </td>
-                      <td className="hidden px-2 py-3 text-[11px] text-slate-600 sm:table-cell">
-                        <span className="line-clamp-2">
-                          {entry.reason || "—"}
-                        </span>
-                      </td>
-                      <td className="hidden px-2 py-3 text-[11px] text-slate-500 lg:table-cell">
-                        {formatDate(entry.updatedAt)}
-                      </td>
-                      <td className="px-2 py-3 text-right">
-                        {canManage ? (
-                          <button
-                            type="button"
-                            className="ml-auto grid size-8 place-items-center border border-[var(--line)] bg-white text-[var(--midnight-navy)] transition hover:bg-[var(--soft-mist)] disabled:opacity-50"
-                            aria-label={`Open actions for ${
-                              entry.borrowerName || entry.nationalId
-                            }`}
-                            aria-haspopup="menu"
-                            aria-expanded={actionMenu?.entryId === entry.id}
-                            disabled={busyId === entry.id}
-                            onClick={(event) =>
-                              toggleActionMenu(entry.id, event)
-                            }
-                          >
-                            {busyId === entry.id ? (
-                              <Loader2 className="size-3.5 animate-spin" />
-                            ) : (
-                              <MoreVertical className="size-4" />
-                            )}
-                          </button>
-                        ) : (
-                          <span className="text-[11px] text-slate-400">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                          {busyId === entry.id ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <MoreVertical className="size-4" />
+                          )}
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-slate-400">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <PaginationControls
+              page={pagedEntries.currentPage}
+              pageSize={pageSize}
+              total={filteredEntries.length}
+              itemLabel="borrowers"
+              onPageChange={setPage}
+              onPageSizeChange={(nextPageSize) => {
+                setPageSize(nextPageSize);
+                setPage(1);
+              }}
+            />
           </div>
         )}
       </div>
@@ -650,11 +677,7 @@ export default function BlacklistWatchlistPage() {
               ) : null}
 
               <div className="grid gap-3">
-                <Field
-                  label="name"
-                  value={fullName}
-                  onChange={setFullName}
-                />
+                <Field label="name" value={fullName} onChange={setFullName} />
                 <Field
                   label="national id"
                   value={nationalId}
@@ -662,7 +685,7 @@ export default function BlacklistWatchlistPage() {
                   required
                 />
                 <Field label="phone" value={phone} onChange={setPhone} />
-                <label className="grid gap-1 text-xs font-semibold text-slate-600">
+                <label className="grid gap-1 text-xs font-semibold capitalize text-slate-600">
                   reason
                   <textarea
                     value={reason}
@@ -708,7 +731,7 @@ function Field({
   required?: boolean;
 }) {
   return (
-    <label className="grid gap-1 text-xs font-semibold text-slate-600">
+    <label className="grid gap-1 text-xs font-semibold capitalize text-slate-600">
       {label}
       <input
         value={value}
@@ -773,7 +796,7 @@ function ActionMenuItem({
 function SmallStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="panel border-l-4 border-l-[var(--midnight-navy)] bg-white px-3 py-2.5 shadow-[0_8px_22px_rgba(20,33,61,0.05)]">
-      <p className="text-[10px] font-semibold lowercase tracking-[0.1em] text-slate-500">
+      <p className="text-[10px] font-semibold capitalize tracking-[0.1em] text-slate-500">
         {label}
       </p>
       <p className="mt-0.5 text-xl font-bold text-[var(--midnight-navy)]">

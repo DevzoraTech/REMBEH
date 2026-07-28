@@ -197,7 +197,9 @@ export function LoanApplicationFormDrawer({
           ? ""
           : String(application.principalAmount),
       processingFee:
-        application.processingFee == null ? "" : String(application.processingFee),
+        application.processingFee == null
+          ? ""
+          : String(application.processingFee),
       loanPurpose: application.loanPurpose ?? "",
       collateralType: application.collateralType ?? "",
       district: application.district ?? "",
@@ -243,7 +245,9 @@ export function LoanApplicationFormDrawer({
 
       const application = applicationPayload.application ?? null;
       setDetail(application);
-      setTemplates((productsPayload.templates ?? []).filter((item) => item.isActive));
+      setTemplates(
+        (productsPayload.templates ?? []).filter((item) => item.isActive),
+      );
       if (application) syncForm(application);
     } catch (caught) {
       setError(
@@ -271,8 +275,9 @@ export function LoanApplicationFormDrawer({
 
   const selectedTemplate = useMemo(
     () =>
-      templates.find((template) => template.id === form.loanProductTemplateId) ??
-      null,
+      templates.find(
+        (template) => template.id === form.loanProductTemplateId,
+      ) ?? null,
     [form.loanProductTemplateId, templates],
   );
 
@@ -303,10 +308,7 @@ export function LoanApplicationFormDrawer({
         (item) => item.id === current.loanProductTemplateId,
       );
       if (template) {
-        next.processingFee = feeForPrincipal(
-          next.principalAmount,
-          template,
-        );
+        next.processingFee = feeForPrincipal(next.principalAmount, template);
       }
       return next;
     });
@@ -369,7 +371,9 @@ export function LoanApplicationFormDrawer({
       setStep("loan");
     } catch (caught) {
       setError(
-        caught instanceof Error ? caught.message : "Could not verify applicant.",
+        caught instanceof Error
+          ? caught.message
+          : "Could not verify applicant.",
       );
     } finally {
       setBusy(null);
@@ -395,38 +399,41 @@ export function LoanApplicationFormDrawer({
         [form.guarantorPhone, "guarantor phone"],
       ]);
 
-      const response = await fetch(`${apiBaseUrl}/loan-applications/${applicationId}`, {
-        method: "PATCH",
-        headers: {
-          Authorization: authHeader,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          surname: form.surname.trim(),
-          givenNames: form.givenNames.trim(),
-          phone: form.phone.trim(),
-          nationalId: form.nationalId.trim(),
-          gender: form.gender,
-          dateOfBirth: form.dateOfBirth || undefined,
-          loanProductTemplateId: form.loanProductTemplateId,
-          principalAmount: Number(form.principalAmount),
-          processingFee: form.processingFee
-            ? Number(form.processingFee)
-            : undefined,
-          loanPurpose: form.loanPurpose.trim() || undefined,
-          collateralType: form.collateralType.trim(),
-          district: form.district.trim(),
-          subCounty: form.subCounty.trim(),
-          parish: form.parish.trim(),
-          village: form.village.trim(),
-          paymentStartDate: form.paymentStartDate || undefined,
-          termsConfirmed: form.termsConfirmed,
-          guarantor: {
-            fullName: form.guarantorName.trim(),
-            phone: form.guarantorPhone.trim(),
+      const response = await fetch(
+        `${apiBaseUrl}/loan-applications/${applicationId}`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: authHeader,
+            "Content-Type": "application/json",
           },
-        }),
-      });
+          body: JSON.stringify({
+            surname: form.surname.trim(),
+            givenNames: form.givenNames.trim(),
+            phone: form.phone.trim(),
+            nationalId: form.nationalId.trim(),
+            gender: form.gender,
+            dateOfBirth: form.dateOfBirth || undefined,
+            loanProductTemplateId: form.loanProductTemplateId,
+            principalAmount: Number(form.principalAmount),
+            processingFee: form.processingFee
+              ? Number(form.processingFee)
+              : undefined,
+            loanPurpose: form.loanPurpose.trim() || undefined,
+            collateralType: form.collateralType.trim(),
+            district: form.district.trim(),
+            subCounty: form.subCounty.trim(),
+            parish: form.parish.trim(),
+            village: form.village.trim(),
+            paymentStartDate: form.paymentStartDate || undefined,
+            termsConfirmed: form.termsConfirmed,
+            guarantor: {
+              fullName: form.guarantorName.trim(),
+              phone: form.guarantorPhone.trim(),
+            },
+          }),
+        },
+      );
       const payload = await readApiJson<{
         application?: LoanApplicationDetail;
         message?: string | string[];
@@ -564,9 +571,12 @@ export function LoanApplicationFormDrawer({
         signerRole: input.role,
         timestamp: signedAt,
       };
-      const strokesBlob = new Blob([JSON.stringify({ strokes: input.strokes })], {
-        type: "application/json",
-      });
+      const strokesBlob = new Blob(
+        [JSON.stringify({ strokes: input.strokes })],
+        {
+          type: "application/json",
+        },
+      );
       const metadataBlob = new Blob([JSON.stringify(metadata)], {
         type: "application/json",
       });
@@ -670,7 +680,7 @@ export function LoanApplicationFormDrawer({
             </h2>
             <p className="truncate text-xs text-slate-500">
               {detail?.clientName || "loan application"} ·{" "}
-              {detail?.status?.toLowerCase() || "draft"}
+              {detail?.status ? displayLabel(detail.status) : "Draft"}
             </p>
           </div>
           <button
@@ -724,11 +734,27 @@ export function LoanApplicationFormDrawer({
             {step === "applicant" ? (
               <Section title="applicant">
                 <div className="grid gap-3 md:grid-cols-2">
-                  <Field label="surname" value={form.surname} onChange={(value) => setField("surname", value)} />
-                  <Field label="given names" value={form.givenNames} onChange={(value) => setField("givenNames", value)} />
-                  <Field label="phone" value={form.phone} onChange={(value) => setField("phone", value)} />
-                  <Field label="national id" value={form.nationalId} onChange={(value) => setField("nationalId", value)} />
-                  <label className="grid gap-1 text-xs font-semibold text-slate-600">
+                  <Field
+                    label="surname"
+                    value={form.surname}
+                    onChange={(value) => setField("surname", value)}
+                  />
+                  <Field
+                    label="given names"
+                    value={form.givenNames}
+                    onChange={(value) => setField("givenNames", value)}
+                  />
+                  <Field
+                    label="phone"
+                    value={form.phone}
+                    onChange={(value) => setField("phone", value)}
+                  />
+                  <Field
+                    label="national id"
+                    value={form.nationalId}
+                    onChange={(value) => setField("nationalId", value)}
+                  />
+                  <label className="grid gap-1 text-xs font-semibold capitalize text-slate-600">
                     gender
                     <select
                       value={form.gender}
@@ -763,7 +789,13 @@ export function LoanApplicationFormDrawer({
                     )}
                     Verify applicant
                   </button>
-                  <StatusPill ok={detail?.status === "VERIFIED" || detail?.status === "SUBMITTED"} label="verified" />
+                  <StatusPill
+                    ok={
+                      detail?.status === "VERIFIED" ||
+                      detail?.status === "SUBMITTED"
+                    }
+                    label="verified"
+                  />
                 </div>
               </Section>
             ) : null}
@@ -771,7 +803,7 @@ export function LoanApplicationFormDrawer({
             {step === "loan" ? (
               <Section title="loan">
                 <div className="grid gap-3 md:grid-cols-2">
-                  <label className="grid gap-1 text-xs font-semibold text-slate-600">
+                  <label className="grid gap-1 text-xs font-semibold capitalize text-slate-600">
                     loan type
                     <select
                       value={form.loanProductTemplateId}
@@ -817,9 +849,15 @@ export function LoanApplicationFormDrawer({
                 </div>
                 {selectedTemplate ? (
                   <div className="mt-3 grid gap-2 text-xs text-slate-600 sm:grid-cols-3">
-                    <Mini label="rate" value={`${selectedTemplate.interestRatePercent}%`} />
+                    <Mini
+                      label="rate"
+                      value={`${selectedTemplate.interestRatePercent}%`}
+                    />
                     <Mini label="period" value={termLabel(selectedTemplate)} />
-                    <Mini label="repayment" value={selectedTemplate.repaymentFrequency.toLowerCase().replaceAll("_", " ")} />
+                    <Mini
+                      label="repayment"
+                      value={displayLabel(selectedTemplate.repaymentFrequency)}
+                    />
                   </div>
                 ) : null}
               </Section>
@@ -828,10 +866,26 @@ export function LoanApplicationFormDrawer({
             {step === "location" ? (
               <Section title="location">
                 <div className="grid gap-3 md:grid-cols-2">
-                  <Field label="district" value={form.district} onChange={(value) => setField("district", value)} />
-                  <Field label="sub-county" value={form.subCounty} onChange={(value) => setField("subCounty", value)} />
-                  <Field label="parish" value={form.parish} onChange={(value) => setField("parish", value)} />
-                  <Field label="village" value={form.village} onChange={(value) => setField("village", value)} />
+                  <Field
+                    label="district"
+                    value={form.district}
+                    onChange={(value) => setField("district", value)}
+                  />
+                  <Field
+                    label="sub-county"
+                    value={form.subCounty}
+                    onChange={(value) => setField("subCounty", value)}
+                  />
+                  <Field
+                    label="parish"
+                    value={form.parish}
+                    onChange={(value) => setField("parish", value)}
+                  />
+                  <Field
+                    label="village"
+                    value={form.village}
+                    onChange={(value) => setField("village", value)}
+                  />
                 </div>
               </Section>
             ) : null}
@@ -839,8 +893,16 @@ export function LoanApplicationFormDrawer({
             {step === "guarantor" ? (
               <Section title="guarantor">
                 <div className="grid gap-3 md:grid-cols-2">
-                  <Field label="name" value={form.guarantorName} onChange={(value) => setField("guarantorName", value)} />
-                  <Field label="phone" value={form.guarantorPhone} onChange={(value) => setField("guarantorPhone", value)} />
+                  <Field
+                    label="name"
+                    value={form.guarantorName}
+                    onChange={(value) => setField("guarantorName", value)}
+                  />
+                  <Field
+                    label="phone"
+                    value={form.guarantorPhone}
+                    onChange={(value) => setField("guarantorPhone", value)}
+                  />
                 </div>
               </Section>
             ) : null}
@@ -894,9 +956,23 @@ export function LoanApplicationFormDrawer({
                     terms confirmed
                   </label>
                   <div className="grid gap-2 sm:grid-cols-3">
-                    <StatusPill ok={detail?.status === "VERIFIED" || detail?.status === "SUBMITTED"} label="applicant verified" />
-                    <StatusPill ok={DOCUMENTS.every((doc) => mediaByType.has(doc.type))} label="documents ready" />
-                    <StatusPill ok={SIGNERS.every((signer) => signatureByRole.has(signer.role))} label="signatures ready" />
+                    <StatusPill
+                      ok={
+                        detail?.status === "VERIFIED" ||
+                        detail?.status === "SUBMITTED"
+                      }
+                      label="applicant verified"
+                    />
+                    <StatusPill
+                      ok={DOCUMENTS.every((doc) => mediaByType.has(doc.type))}
+                      label="documents ready"
+                    />
+                    <StatusPill
+                      ok={SIGNERS.every((signer) =>
+                        signatureByRole.has(signer.role),
+                      )}
+                      label="signatures ready"
+                    />
                   </div>
                 </div>
               </Section>
@@ -937,13 +1013,7 @@ export function LoanApplicationFormDrawer({
   );
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="panel bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
       <header className="border-b border-[var(--line)] bg-[#eef3f0] px-4 py-3">
@@ -968,7 +1038,7 @@ function Field({
   type?: string;
 }) {
   return (
-    <label className="grid gap-1 text-xs font-semibold text-slate-600">
+    <label className="grid gap-1 text-xs font-semibold capitalize text-slate-600">
       {label}
       <input
         type={type}
@@ -983,7 +1053,7 @@ function Field({
 function Mini({ label, value }: { label: string; value: string }) {
   return (
     <div className="border border-[var(--line)] bg-[#fbfdfc] px-3 py-2">
-      <p className="text-[10px] font-semibold lowercase tracking-[0.08em] text-slate-500">
+      <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
         {label}
       </p>
       <p className="mt-1 font-bold text-[var(--midnight-navy)]">{value}</p>
@@ -994,7 +1064,7 @@ function Mini({ label, value }: { label: string; value: string }) {
 function StatusPill({ ok, label }: { ok: boolean; label: string }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 border px-2 py-1 text-[10px] font-bold lowercase tracking-[0.04em] ${
+      className={`inline-flex items-center gap-1 border px-2 py-1 text-[10px] font-bold capitalize tracking-[0.04em] ${
         ok
           ? "border-emerald-200 bg-emerald-50 text-[var(--forest-emerald)]"
           : "border-[var(--line)] bg-[var(--soft-mist)] text-slate-500"
@@ -1161,9 +1231,7 @@ function SignaturePad({
   return (
     <div className="border border-[var(--line)] bg-[#fbfdfc]">
       <div className="border-b border-[var(--line)] px-3 py-2">
-        <p className="text-sm font-bold text-[var(--midnight-navy)]">
-          {label}
-        </p>
+        <p className="text-sm font-bold text-[var(--midnight-navy)]">{label}</p>
         <p className="text-[11px] text-slate-500">
           {existing ? `saved v${existing.version}` : "not signed"}
         </p>
@@ -1185,7 +1253,11 @@ function SignaturePad({
           onPointerCancel={end}
         />
         <div className="mt-2 flex gap-2">
-          <button type="button" className="btn btn-ghost h-8 flex-1 text-[11px]" onClick={clear}>
+          <button
+            type="button"
+            className="btn btn-ghost h-8 flex-1 text-[11px]"
+            onClick={clear}
+          >
             Clear
           </button>
           <button
@@ -1223,8 +1295,15 @@ function feeForPrincipal(principal: string, template: LoanTemplate) {
 }
 
 function termLabel(template: LoanTemplate) {
-  const unit = template.termUnit.toLowerCase();
+  const unit = displayLabel(template.termUnit);
   return `${template.termValue} ${unit}`;
+}
+
+function displayLabel(value: string) {
+  return value
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function defaultSignerName(role: string, form: FormState) {
@@ -1261,7 +1340,10 @@ async function putBlob(url: string, blob: Blob, mimeType: string) {
 }
 
 async function hashBlob(blob: Blob) {
-  const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    await blob.arrayBuffer(),
+  );
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");

@@ -12,7 +12,15 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../../components/app/app-shell";
-import { AppBootSkeleton, SkeletonBlock } from "../../../components/app/skeleton";
+import {
+  DEFAULT_PAGE_SIZE,
+  PaginationControls,
+  paginateItems,
+} from "../../../components/app/pagination";
+import {
+  AppBootSkeleton,
+  SkeletonBlock,
+} from "../../../components/app/skeleton";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../../lib/api";
 import {
   RembehBranch,
@@ -107,6 +115,10 @@ export default function ClientDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null);
+  const [loanPage, setLoanPage] = useState(1);
+  const [loanPageSize, setLoanPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const [paymentPage, setPaymentPage] = useState(1);
+  const [paymentPageSize, setPaymentPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [documentPreview, setDocumentPreview] = useState<ClientDocument | null>(
     null,
   );
@@ -186,10 +198,19 @@ export default function ClientDetailPage() {
 
   const selectedLoanDocuments = useMemo(
     () =>
-      selectedLoan
-        ? loanDocuments(client?.documents ?? [], selectedLoan)
-        : [],
+      selectedLoan ? loanDocuments(client?.documents ?? [], selectedLoan) : [],
     [client, selectedLoan],
+  );
+
+  const pagedLoans = useMemo(
+    () => paginateItems(client?.loans ?? [], loanPage, loanPageSize),
+    [client?.loans, loanPage, loanPageSize],
+  );
+
+  const pagedPayments = useMemo(
+    () =>
+      paginateItems(client?.recentPayments ?? [], paymentPage, paymentPageSize),
+    [client?.recentPayments, paymentPage, paymentPageSize],
   );
 
   if (!session) {
@@ -271,10 +292,7 @@ export default function ClientDetailPage() {
                     label="registered"
                     value={formatDate(client.createdAt)}
                   />
-                  <InfoRow
-                    label="status"
-                    value={clientStatusLabel(client)}
-                  />
+                  <InfoRow label="status" value={clientStatusLabel(client)} />
                 </dl>
               </section>
 
@@ -291,7 +309,7 @@ export default function ClientDetailPage() {
                 ) : (
                   <div className="overflow-hidden">
                     <table className="w-full table-fixed text-left text-[10px] xl:text-[11px]">
-                      <thead className="border-b border-[var(--line)] bg-[#f7faf8] text-[9px] lowercase tracking-[0.06em] text-slate-500">
+                      <thead className="border-b border-[var(--line)] bg-[#f7faf8] text-[9px] capitalize tracking-[0.06em] text-slate-500">
                         <tr>
                           <th className="w-[12%] px-2 py-2.5 font-semibold">
                             loan id
@@ -320,8 +338,11 @@ export default function ClientDetailPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[var(--line)]">
-                        {client.loans.map((loan) => (
-                          <tr key={loan.id} className="odd:bg-white even:bg-[#fbfdfc]">
+                        {pagedLoans.items.map((loan) => (
+                          <tr
+                            key={loan.id}
+                            className="odd:bg-white even:bg-[#fbfdfc]"
+                          >
                             <td className="px-2 py-3 font-semibold text-[var(--midnight-navy)]">
                               <span className="block truncate">
                                 {shortId(loan.id)}
@@ -334,7 +355,7 @@ export default function ClientDetailPage() {
                             </td>
                             <td className="px-2 py-3 text-slate-600">
                               <span
-                                className={`inline-flex border px-1.5 py-0.5 text-[9px] font-bold lowercase tracking-[0.04em] ${loanStatusTone(loan)}`}
+                                className={`inline-flex border px-1.5 py-0.5 text-[9px] font-bold capitalize tracking-[0.04em] ${loanStatusTone(loan)}`}
                               >
                                 {loanStatusLabel(loan)}
                                 {loan.isFined ? (
@@ -346,7 +367,7 @@ export default function ClientDetailPage() {
                               <span className="block truncate text-[10px] text-slate-500">
                                 {loan.lastPaymentAt
                                   ? `last ${formatDateTime(loan.lastPaymentAt)}`
-                                : "no payments"}
+                                  : "no payments"}
                               </span>
                             </td>
                             <td className="hidden px-2 py-3 text-slate-600 lg:table-cell">
@@ -383,6 +404,17 @@ export default function ClientDetailPage() {
                         ))}
                       </tbody>
                     </table>
+                    <PaginationControls
+                      page={pagedLoans.currentPage}
+                      pageSize={loanPageSize}
+                      total={client.loans.length}
+                      itemLabel="loans"
+                      onPageChange={setLoanPage}
+                      onPageSizeChange={(nextPageSize) => {
+                        setLoanPageSize(nextPageSize);
+                        setLoanPage(1);
+                      }}
+                    />
                   </div>
                 )}
               </section>
@@ -393,7 +425,7 @@ export default function ClientDetailPage() {
                 <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
                   borrower id images
                 </h2>
-                <span className="text-[10px] font-bold lowercase tracking-[0.06em] text-slate-500">
+                <span className="text-[10px] font-bold capitalize tracking-[0.06em] text-slate-500">
                   {clientIdentityDocuments.length} file
                   {clientIdentityDocuments.length === 1 ? "" : "s"}
                 </span>
@@ -428,7 +460,7 @@ export default function ClientDetailPage() {
               ) : (
                 <div className="overflow-hidden">
                   <table className="w-full table-fixed text-left text-[11px]">
-                    <thead className="border-b border-[var(--line)] bg-[#f7faf8] text-[9px] lowercase tracking-[0.06em] text-slate-500">
+                    <thead className="border-b border-[var(--line)] bg-[#f7faf8] text-[9px] capitalize tracking-[0.06em] text-slate-500">
                       <tr>
                         <th className="w-[16%] px-3 py-2.5 font-semibold">
                           date
@@ -448,8 +480,11 @@ export default function ClientDetailPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[var(--line)]">
-                      {client.recentPayments.map((payment) => (
-                        <tr key={payment.id} className="odd:bg-white even:bg-[#fbfdfc]">
+                      {pagedPayments.items.map((payment) => (
+                        <tr
+                          key={payment.id}
+                          className="odd:bg-white even:bg-[#fbfdfc]"
+                        >
                           <td className="px-3 py-3 text-slate-600">
                             <span className="block truncate">
                               {formatDateTime(payment.paidAt)}
@@ -482,6 +517,17 @@ export default function ClientDetailPage() {
                       ))}
                     </tbody>
                   </table>
+                  <PaginationControls
+                    page={pagedPayments.currentPage}
+                    pageSize={paymentPageSize}
+                    total={client.recentPayments.length}
+                    itemLabel="payments"
+                    onPageChange={setPaymentPage}
+                    onPageSizeChange={(nextPageSize) => {
+                      setPaymentPageSize(nextPageSize);
+                      setPaymentPage(1);
+                    }}
+                  />
                 </div>
               )}
             </section>
@@ -538,8 +584,8 @@ function StatCard({
     <div
       className={`panel border-l-4 px-3 py-3 shadow-[0_8px_22px_rgba(20,33,61,0.05)] ${toneClass}`}
     >
-      <p className="text-[10px] font-semibold lowercase tracking-[0.08em] text-slate-500">
-        {label.toLowerCase()}
+      <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
+        {label}
       </p>
       <p className={`mt-1 text-lg font-bold tabular-nums ${valueClass}`}>
         {value}
@@ -593,8 +639,8 @@ function InfoRow({
 }) {
   return (
     <div className="grid grid-cols-[108px_minmax(0,1fr)] gap-3 py-2.5 text-xs">
-      <dt className="font-semibold lowercase tracking-[0.06em] text-slate-500">
-        {label.toLowerCase()}
+      <dt className="font-semibold capitalize tracking-[0.06em] text-slate-500">
+        {label}
       </dt>
       <dd className="min-w-0 truncate font-medium text-[var(--midnight-navy)]">
         {value?.trim() || "—"}
@@ -625,7 +671,7 @@ function LoanDetailPanel({
       <aside className="relative z-10 flex h-full w-full max-w-xl flex-col border-l border-[var(--line)] bg-[var(--soft-ivory)] shadow-xl">
         <header className="flex items-start justify-between gap-3 border-b border-[var(--line)] px-4 py-3">
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold lowercase tracking-[0.08em] text-slate-500">
+            <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
               loan details
             </p>
             <h2 className="mt-1 truncate text-lg font-bold text-[var(--midnight-navy)]">
@@ -647,11 +693,14 @@ function LoanDetailPanel({
 
         <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
           <section className="panel bg-white px-3 py-3">
-            <h3 className="mb-2 text-xs font-bold lowercase tracking-[0.08em] text-slate-500">
+            <h3 className="mb-2 text-xs font-bold capitalize tracking-[0.08em] text-slate-500">
               summary
             </h3>
             <dl className="divide-y divide-[var(--line)]">
-              <InfoRow label="loan type" value={loan.loanTypeName || "standard loan"} />
+              <InfoRow
+                label="loan type"
+                value={loan.loanTypeName || "standard loan"}
+              />
               <InfoRow label="status" value={loanStatusLabel(loan)} />
               <InfoRow label="collateral" value={loan.collateralType} />
               <InfoRow label="principal" value={formatMoney(loan.principal)} />
@@ -674,7 +723,7 @@ function LoanDetailPanel({
           </section>
 
           <section className="panel bg-white px-3 py-3">
-            <h3 className="mb-2 text-xs font-bold lowercase tracking-[0.08em] text-slate-500">
+            <h3 className="mb-2 text-xs font-bold capitalize tracking-[0.08em] text-slate-500">
               dates
             </h3>
             <dl className="divide-y divide-[var(--line)]">
@@ -693,7 +742,7 @@ function LoanDetailPanel({
           </section>
 
           <section className="panel bg-white px-3 py-3">
-            <h3 className="mb-2 text-xs font-bold lowercase tracking-[0.08em] text-slate-500">
+            <h3 className="mb-2 text-xs font-bold capitalize tracking-[0.08em] text-slate-500">
               field officer
             </h3>
             <dl className="divide-y divide-[var(--line)]">
@@ -704,10 +753,10 @@ function LoanDetailPanel({
 
           <section className="panel overflow-hidden bg-white">
             <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] bg-[#eef3f0] px-3 py-2.5">
-              <h3 className="text-xs font-bold lowercase tracking-[0.08em] text-slate-500">
+              <h3 className="text-xs font-bold capitalize tracking-[0.08em] text-slate-500">
                 loan documents
               </h3>
-              <span className="text-[10px] font-bold lowercase tracking-[0.06em] text-slate-500">
+              <span className="text-[10px] font-bold capitalize tracking-[0.06em] text-slate-500">
                 {documents.length} file{documents.length === 1 ? "" : "s"}
               </span>
             </div>
@@ -741,7 +790,8 @@ function DocumentCard({
   onPreview: (document: ClientDocument) => void;
 }) {
   const label = documentLabel(document.type);
-  const canPreviewImage = Boolean(document.downloadUrl) && isImageDocument(document);
+  const canPreviewImage =
+    Boolean(document.downloadUrl) && isImageDocument(document);
   const canPreviewPdf =
     Boolean(document.downloadUrl) && document.mimeType === "application/pdf";
 
@@ -917,7 +967,9 @@ function loanDocuments(documents: ClientDocument[], loan: ClientLoan) {
   return documents.filter((document) => {
     if (isClientIdentityDocument(document.type)) return false;
     if (document.loanId) return document.loanId === loan.id;
-    return Boolean(loan.applicationId && document.applicationId === loan.applicationId);
+    return Boolean(
+      loan.applicationId && document.applicationId === loan.applicationId,
+    );
   });
 }
 
@@ -931,26 +983,25 @@ function shortId(id: string) {
 
 function documentLabel(type: string) {
   const labels: Record<string, string> = {
-    PASSPORT: "applicant photo",
-    NIN_FRONT: "national id front",
-    NIN_BACK: "national id back",
-    GUARANTOR_NIN_FRONT: "guarantor id front",
-    GUARANTOR_NIN_BACK: "guarantor id back",
-    COLLATERAL_DOC: "collateral document",
-    SUPPORTING_DOC: "supporting document",
-    OTHER_DOC: "other document",
-    SIGNATURE_APPLICANT: "applicant signature",
-    SIGNATURE_GUARANTOR: "guarantor signature",
-    SIGNATURE_OFFICER: "officer signature",
+    PASSPORT: "Applicant photo",
+    NIN_FRONT: "National id front",
+    NIN_BACK: "National id back",
+    GUARANTOR_NIN_FRONT: "Guarantor id front",
+    GUARANTOR_NIN_BACK: "Guarantor id back",
+    COLLATERAL_DOC: "Collateral document",
+    SUPPORTING_DOC: "Supporting document",
+    OTHER_DOC: "Other document",
+    SIGNATURE_APPLICANT: "Applicant signature",
+    SIGNATURE_GUARANTOR: "Guarantor signature",
+    SIGNATURE_OFFICER: "Officer signature",
   };
 
   return (
     labels[type] ??
     type
+      .replaceAll("_", " ")
       .toLowerCase()
-      .split("_")
-      .map((word) => word)
-      .join(" ")
+      .replace(/\b\w/g, (letter) => letter.toUpperCase())
   );
 }
 

@@ -12,6 +12,11 @@ import { Loader2, MoreVertical, RefreshCw, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AgentDetailDrawer } from "../../components/app/agent-detail-drawer";
 import { AppShell } from "../../components/app/app-shell";
+import {
+  DEFAULT_PAGE_SIZE,
+  PaginationControls,
+  paginateItems,
+} from "../../components/app/pagination";
 import { AppBootSkeleton, TableSkeleton } from "../../components/app/skeleton";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import {
@@ -80,6 +85,8 @@ export default function AgentsPage() {
   const [selectedDate, setSelectedDate] = useState(todayInputValue);
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -95,13 +102,13 @@ export default function AgentsPage() {
 
   const canRead = Boolean(
     session?.permissions.includes("branch.staff.read") ||
-      session?.permissions.includes("user.read") ||
-      session?.permissions.includes("collection.read"),
+    session?.permissions.includes("user.read") ||
+    session?.permissions.includes("collection.read"),
   );
   const canManage = Boolean(
     session?.permissions.includes("branch.staff.invite") ||
-      session?.permissions.includes("user.activate") ||
-      session?.permissions.includes("branch.create"),
+    session?.permissions.includes("user.activate") ||
+    session?.permissions.includes("branch.create"),
   );
 
   const loadAgents = useCallback(
@@ -132,17 +139,16 @@ export default function AgentsPage() {
         setFloatForm((current) => ({
           ...current,
           agentId:
-            current.agentId && nextAgents.some((agent) => agent.id === current.agentId)
+            current.agentId &&
+            nextAgents.some((agent) => agent.id === current.agentId)
               ? current.agentId
-              : nextAgents[0]?.id ?? "",
+              : (nextAgents[0]?.id ?? ""),
         }));
         setCounts(payload.counts ?? null);
       } catch (caught) {
         if (requestId !== agentsRequestId.current) return;
         setError(
-          caught instanceof Error
-            ? caught.message
-            : "Could not load agents.",
+          caught instanceof Error ? caught.message : "Could not load agents.",
         );
       } finally {
         if (requestId === agentsRequestId.current) setLoading(false);
@@ -222,17 +228,14 @@ export default function AgentsPage() {
     setStatusBusyId(agentId);
     setError(null);
     try {
-      const response = await fetch(
-        `${apiBaseUrl}/agents/${agentId}/status`,
-        {
-          method: "PATCH",
-          headers: {
-            Authorization: `${session.tokenType} ${session.accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ status }),
+      const response = await fetch(`${apiBaseUrl}/agents/${agentId}/status`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `${session.tokenType} ${session.accessToken}`,
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({ status }),
+      });
       const payload = await readApiJson<{ message?: string | string[] }>(
         response,
       );
@@ -322,7 +325,10 @@ export default function AgentsPage() {
             top: rect.bottom + 6,
             left: Math.max(
               8,
-              Math.min(window.innerWidth - menuWidth - 8, rect.right - menuWidth),
+              Math.min(
+                window.innerWidth - menuWidth - 8,
+                rect.right - menuWidth,
+              ),
             ),
           },
     );
@@ -341,8 +347,13 @@ export default function AgentsPage() {
     [agents, floatForm.agentId],
   );
   const actionMenuAgent = actionMenu
-    ? agents.find((agent) => agent.id === actionMenu.agentId) ?? null
+    ? (agents.find((agent) => agent.id === actionMenu.agentId) ?? null)
     : null;
+
+  const pagedAgents = useMemo(
+    () => paginateItems(agents, page, pageSize),
+    [agents, page, pageSize],
+  );
 
   if (!session) {
     return <AppBootSkeleton />;
@@ -410,12 +421,15 @@ export default function AgentsPage() {
             <input
               type="date"
               value={selectedDate}
-              onChange={(event) => setSelectedDate(event.target.value)}
+              onChange={(event) => {
+                setSelectedDate(event.target.value);
+                setPage(1);
+              }}
               className="h-9 border border-[var(--line)] bg-white px-2 text-sm text-[var(--midnight-navy)]"
             />
           </label>
           <div className="grid min-w-[120px] gap-1">
-            <p className="text-[10px] font-semibold lowercase tracking-[0.08em] text-slate-500">
+            <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
               given
             </p>
             <p className="text-lg font-bold tabular-nums text-[var(--forest-emerald)]">
@@ -423,7 +437,7 @@ export default function AgentsPage() {
             </p>
           </div>
           <div className="grid min-w-[120px] gap-1">
-            <p className="text-[10px] font-semibold lowercase tracking-[0.08em] text-slate-500">
+            <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
               missing
             </p>
             <p className="text-lg font-bold tabular-nums text-amber-700">
@@ -496,7 +510,10 @@ export default function AgentsPage() {
           <input
             type="search"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
             placeholder="Search agents"
             className="min-w-[200px] flex-1 bg-transparent py-1.5 text-sm text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
           />
@@ -517,11 +534,9 @@ export default function AgentsPage() {
         ) : (
           <div className="panel overflow-hidden shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
             <table className="w-full table-fixed text-left text-[11px]">
-              <thead className="border-b border-[var(--line)] bg-[#e5ece8] text-[9px] lowercase tracking-[0.06em] text-slate-500">
+              <thead className="border-b border-[var(--line)] bg-[#e5ece8] text-[9px] capitalize tracking-[0.06em] text-slate-500">
                 <tr>
-                  <th className="w-[9%] px-2 py-2.5 font-semibold">
-                    agent id
-                  </th>
+                  <th className="w-[9%] px-2 py-2.5 font-semibold">agent id</th>
                   <th className="w-[14%] px-2 py-2.5 font-semibold">name</th>
                   <th className="w-[15%] px-2 py-2.5 font-semibold">contact</th>
                   <th className="w-[9%] px-2 py-2.5 text-right font-semibold">
@@ -550,7 +565,7 @@ export default function AgentsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--line)]">
-                {agents.map((agent) => (
+                {pagedAgents.items.map((agent) => (
                   <tr
                     key={agent.id}
                     className="cursor-pointer bg-white transition odd:bg-white even:bg-[#fbfdfc] hover:bg-[var(--soft-mist)]"
@@ -607,8 +622,7 @@ export default function AgentsPage() {
                     </td>
                     <td className="px-2 py-2.5 text-right tabular-nums">
                       <p className="font-semibold text-[var(--midnight-navy)]">
-                        {agent.applicationsToday} /{" "}
-                        {agent.applicationsLifetime}
+                        {agent.applicationsToday} / {agent.applicationsLifetime}
                       </p>
                       <p className="text-[10px] text-slate-500">
                         today / total
@@ -643,7 +657,9 @@ export default function AgentsPage() {
                             aria-haspopup="menu"
                             aria-expanded={actionMenu?.agentId === agent.id}
                             disabled={statusBusyId === agent.id}
-                            onClick={(event) => toggleActionMenu(agent.id, event)}
+                            onClick={(event) =>
+                              toggleActionMenu(agent.id, event)
+                            }
                           >
                             {statusBusyId === agent.id ? (
                               <Loader2 className="size-3.5 animate-spin" />
@@ -658,6 +674,17 @@ export default function AgentsPage() {
                 ))}
               </tbody>
             </table>
+            <PaginationControls
+              page={pagedAgents.currentPage}
+              pageSize={pageSize}
+              total={agents.length}
+              itemLabel="agents"
+              onPageChange={setPage}
+              onPageSizeChange={(nextPageSize) => {
+                setPageSize(nextPageSize);
+                setPage(1);
+              }}
+            />
           </div>
         )}
       </div>
@@ -703,7 +730,9 @@ export default function AgentsPage() {
             {actionMenuAgent.status !== "INACTIVE" ? (
               <ActionMenuItem
                 disabled={statusBusyId === actionMenuAgent.id}
-                onClick={() => void updateStatus(actionMenuAgent.id, "INACTIVE")}
+                onClick={() =>
+                  void updateStatus(actionMenuAgent.id, "INACTIVE")
+                }
                 label="Inactivate"
               />
             ) : null}
@@ -744,8 +773,8 @@ function StatCard({
 
   return (
     <div className="panel px-3 py-3 shadow-[0_1px_0_rgba(20,33,61,0.03)]">
-      <p className="text-[10px] font-semibold lowercase tracking-[0.08em] text-slate-500">
-        {label.toLowerCase()}
+      <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
+        {label}
       </p>
       <p className={`mt-1 text-lg font-bold tabular-nums ${valueClass}`}>
         {value}
@@ -775,7 +804,7 @@ function ActionMenuItem({
         danger ? "text-red-700" : "text-[var(--midnight-navy)]"
       } disabled:opacity-50`}
     >
-      {label.toLowerCase()}
+      {label}
     </button>
   );
 }
@@ -812,9 +841,9 @@ function StatusBadge({ status }: { status: string }) {
 
   return (
     <span
-      className={`mt-1 inline-flex h-5 items-center border px-1.5 text-[9px] font-bold lowercase ${className}`}
+      className={`mt-1 inline-flex h-5 items-center border px-1.5 text-[9px] font-bold capitalize ${className}`}
     >
-      {status.toLowerCase()}
+      {status.replaceAll("_", " ")}
     </span>
   );
 }

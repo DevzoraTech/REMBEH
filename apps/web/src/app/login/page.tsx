@@ -33,9 +33,7 @@ type LoginResponse = {
 
 export default function LoginPage() {
   return (
-    <Suspense
-      fallback={<AuthPageSkeleton />}
-    >
+    <Suspense fallback={<AuthPageSkeleton />}>
       <LoginForm />
     </Suspense>
   );
@@ -125,7 +123,7 @@ function LoginForm() {
     >
       <form className="space-y-5" onSubmit={handleLogin}>
         <div>
-          <p className="text-xs font-semibold lowercase tracking-[0.18em] text-[var(--forest-emerald)]">
+          <p className="text-xs font-semibold capitalize tracking-[0.18em] text-[var(--forest-emerald)]">
             sign in
           </p>
           <h2 className="mt-2 text-3xl font-bold text-[var(--midnight-navy)]">

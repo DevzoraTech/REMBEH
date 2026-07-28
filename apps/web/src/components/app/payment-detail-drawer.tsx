@@ -111,7 +111,7 @@ export function PaymentDetailDrawer({
       <aside className="relative z-10 flex h-full w-full max-w-xl flex-col bg-[var(--soft-ivory)] shadow-xl">
         <header className="flex items-start justify-between gap-3 border-b border-[var(--line)] px-4 py-3">
           <div>
-            <p className="text-[10px] font-semibold lowercase tracking-[0.08em] text-slate-500">
+            <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
               payment
             </p>
             <h2 className="text-lg font-bold text-[var(--midnight-navy)]">
@@ -184,15 +184,9 @@ export function PaymentDetailDrawer({
                       : "—"
                   }
                 />
-                <Row
-                  label="fined"
-                  value={detail.isFined ? "yes" : "no"}
-                />
+                <Row label="fined" value={detail.isFined ? "yes" : "no"} />
                 <Row label="status" value={detail.loanStatus || "—"} />
-                <Row
-                  label="loan id"
-                  value={shortId(detail.loanId)}
-                />
+                <Row label="loan id" value={shortId(detail.loanId)} />
               </Section>
 
               <Section title="field agent">
@@ -227,17 +221,11 @@ export function PaymentDetailDrawer({
   );
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
-      <h3 className="mb-2 text-xs font-bold lowercase tracking-[0.08em] text-slate-500">
-        {title.toLowerCase()}
+      <h3 className="mb-2 text-xs font-bold capitalize tracking-[0.08em] text-slate-500">
+        {title}
       </h3>
       <div className="space-y-1.5">{children}</div>
     </section>
@@ -247,7 +235,7 @@ function Section({
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-3 text-sm">
-      <span className="text-slate-500">{label.toLowerCase()}</span>
+      <span className="text-slate-500 capitalize">{label}</span>
       <span className="max-w-[60%] text-right font-medium text-[var(--midnight-navy)]">
         {value}
       </span>

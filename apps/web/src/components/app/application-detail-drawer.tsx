@@ -81,6 +81,29 @@ export function ApplicationDetailDrawer({
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
+  async function refreshDetailAfterAgreement() {
+    if (!applicationId) return;
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/loan-applications/${applicationId}`,
+        {
+          headers: {
+            Authorization: `${tokenType} ${accessToken}`,
+          },
+        },
+      );
+      const payload = await readApiJson<{
+        application?: ApplicationDetail;
+        message?: string | string[];
+      }>(response);
+      if (response.ok) {
+        setDetail(payload.application ?? null);
+      }
+    } catch {
+      // The download already completed; the stored link can be refreshed later.
+    }
+  }
+
   async function downloadAgreementPdf() {
     if (!applicationId || downloadingPdf) return;
     setDownloadingPdf(true);
@@ -117,6 +140,7 @@ export function ApplicationDetailDrawer({
       anchor.click();
       anchor.remove();
       URL.revokeObjectURL(objectUrl);
+      await refreshDetailAfterAgreement();
     } catch (caught) {
       setDownloadError(
         caught instanceof Error
@@ -193,7 +217,7 @@ export function ApplicationDetailDrawer({
       <aside className="relative z-10 flex h-full w-full max-w-xl flex-col bg-[var(--soft-ivory)] shadow-xl">
         <header className="flex items-start justify-between gap-3 border-b border-[var(--line)] px-4 py-3">
           <div>
-            <p className="text-[10px] font-semibold lowercase tracking-[0.08em] text-slate-500">
+            <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
               application
             </p>
             <h2 className="text-lg font-bold text-[var(--midnight-navy)]">
@@ -301,17 +325,11 @@ export function ApplicationDetailDrawer({
                   label="total repayable"
                   value={formatAmount(detail.pricing?.totalRepayable ?? null)}
                 />
-                <Row
-                  label="collateral"
-                  value={detail.collateralType || "—"}
-                />
+                <Row label="collateral" value={detail.collateralType || "—"} />
               </Section>
 
               <Section title="guarantor">
-                <Row
-                  label="name"
-                  value={detail.guarantor?.fullName || "—"}
-                />
+                <Row label="name" value={detail.guarantor?.fullName || "—"} />
                 <Row label="phone" value={detail.guarantor?.phone || "—"} />
               </Section>
 
@@ -350,7 +368,8 @@ export function ApplicationDetailDrawer({
                               className="h-16 w-full object-contain"
                               onError={(event) => {
                                 event.currentTarget.style.display = "none";
-                                const fallback = event.currentTarget.nextElementSibling;
+                                const fallback =
+                                  event.currentTarget.nextElementSibling;
                                 if (fallback instanceof HTMLElement) {
                                   fallback.style.display = "block";
                                 }
@@ -387,7 +406,8 @@ export function ApplicationDetailDrawer({
                         <p className="truncate text-[11px] text-slate-500">
                           {item.fileName || item.mimeType}
                         </p>
-                        {item.downloadUrl && item.mimeType.startsWith("image/") ? (
+                        {item.downloadUrl &&
+                        item.mimeType.startsWith("image/") ? (
                           <button
                             type="button"
                             className="mt-2 block w-full cursor-zoom-in bg-slate-50"
@@ -426,32 +446,35 @@ export function ApplicationDetailDrawer({
               </Section>
 
               <Section title="loan agreement">
-                <button
-                  type="button"
-                  onClick={() => void downloadAgreementPdf()}
-                  disabled={downloadingPdf}
-                  className="text-sm font-semibold text-[var(--forest-emerald)] disabled:opacity-60"
-                >
-                  {downloadingPdf ? "preparing pdf…" : "download pdf"}
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  {detail.signedAgreementDownloadUrl ? (
+                    <a
+                      href={detail.signedAgreementDownloadUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn btn-ghost h-9 text-xs"
+                    >
+                      View loan agreement
+                    </a>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => void downloadAgreementPdf()}
+                    disabled={downloadingPdf}
+                    className="btn btn-primary h-9 text-xs disabled:opacity-60"
+                  >
+                    {downloadingPdf
+                      ? "preparing pdf…"
+                      : "download loan agreement"}
+                  </button>
+                </div>
                 {downloadError ? (
                   <p className="mt-2 text-xs text-rose-600">{downloadError}</p>
                 ) : (
                   <p className="mt-2 text-xs text-slate-500">
-                    filled from the loan-agreement docx template using this
-                    application&apos;s latest data.
+                    The saved agreement is reused when viewed or downloaded.
                   </p>
                 )}
-                {detail.signedAgreementDownloadUrl ? (
-                  <a
-                    href={detail.signedAgreementDownloadUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-2 inline-block text-xs text-slate-500 underline"
-                  >
-                    open last stored copy
-                  </a>
-                ) : null}
               </Section>
             </div>
           ) : null}
@@ -488,17 +511,11 @@ export function ApplicationDetailDrawer({
   );
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
-      <h3 className="mb-2 text-xs font-bold lowercase tracking-[0.08em] text-slate-500">
-        {title.toLowerCase()}
+      <h3 className="mb-2 text-xs font-bold capitalize tracking-[0.08em] text-slate-500">
+        {title}
       </h3>
       <div className="space-y-1.5">{children}</div>
     </section>
@@ -508,7 +525,7 @@ function Section({
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-3 text-sm">
-      <span className="text-slate-500">{label.toLowerCase()}</span>
+      <span className="text-slate-500 capitalize">{label}</span>
       <span className="max-w-[60%] text-right font-medium text-[var(--midnight-navy)]">
         {value}
       </span>
@@ -529,8 +546,15 @@ function formatGender(value: ApplicationDetail["gender"]) {
 }
 
 function mediaLabel(type: string) {
-  if (type === "PASSPORT") return "applicant photo";
-  return type.toLowerCase().replaceAll("_", " ");
+  if (type === "PASSPORT") return "Applicant photo";
+  return toTitleLabel(type);
+}
+
+function toTitleLabel(value: string) {
+  return value
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function formatDateOfBirth(value: string | null | undefined) {

@@ -367,9 +367,7 @@ export default function BranchesPage() {
           headers: {
             Authorization: `${session.tokenType} ${session.accessToken}`,
           },
-        }).then((response) =>
-          readApiJson<{ branches?: Branch[] }>(response),
-        );
+        }).then((response) => readApiJson<{ branches?: Branch[] }>(response));
         const created =
           refreshed.branches?.find((item) => item.id === payload.branch?.id) ??
           payload.branch;
@@ -473,7 +471,7 @@ export default function BranchesPage() {
       <div className="mx-auto max-w-5xl space-y-3 animate-rise">
         <section className="flex flex-col gap-2 border-b border-[var(--line)] pb-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-[11px] font-semibold lowercase tracking-[0.12em] text-[var(--forest-emerald)]">
+            <p className="text-[11px] font-semibold capitalize tracking-[0.12em] text-[var(--forest-emerald)]">
               branches
             </p>
             <h2 className="font-[family-name:var(--font-display)] text-xl tracking-[-0.02em] text-[var(--midnight-navy)]">
@@ -515,7 +513,9 @@ export default function BranchesPage() {
                 <button
                   type="button"
                   className="btn btn-ghost h-7 text-xs"
-                  onClick={() => void navigator.clipboard.writeText(devAcceptUrl)}
+                  onClick={() =>
+                    void navigator.clipboard.writeText(devAcceptUrl)
+                  }
                 >
                   <Copy className="size-3.5" />
                   Copy
@@ -551,7 +551,7 @@ export default function BranchesPage() {
           </section>
         ) : (
           <section className="panel overflow-hidden">
-            <div className="hidden grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,1fr)_72px_72px_auto] gap-3 border-b border-[var(--line)] bg-[var(--soft-mist)] px-3 py-2 text-[10px] font-semibold lowercase tracking-[0.1em] text-slate-500 md:grid">
+            <div className="hidden grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,1fr)_72px_72px_auto] gap-3 border-b border-[var(--line)] bg-[var(--soft-mist)] px-3 py-2 text-[10px] font-semibold capitalize tracking-[0.1em] text-slate-500 md:grid">
               <span>branch</span>
               <span>manager</span>
               <span>status</span>
@@ -647,7 +647,7 @@ export default function BranchesPage() {
 
                     {team.length > 0 ? (
                       <div className="mt-2 border-t border-[var(--line)] pt-2">
-                        <p className="mb-1 text-[10px] font-semibold lowercase tracking-[0.1em] text-slate-500">
+                        <p className="mb-1 text-[10px] font-semibold capitalize tracking-[0.1em] text-slate-500">
                           team · {team.length}
                         </p>
                         <div className="flex flex-wrap gap-1.5">
@@ -863,9 +863,7 @@ function StatusBadge({
   return (
     <span
       className={`inline-flex items-center gap-1 border font-semibold ${
-        compact
-          ? "px-1.5 py-0.5 text-[10px]"
-          : "px-2 py-1 text-xs"
+        compact ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-1 text-xs"
       } ${config.className}`}
     >
       <Icon className={compact ? "size-3" : "size-3.5"} />

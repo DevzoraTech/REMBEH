@@ -27,13 +27,13 @@ export default function Error({
             <p className="font-[family-name:var(--font-display)] text-2xl leading-none tracking-[-0.03em] text-[var(--midnight-navy)]">
               REMBEH
             </p>
-            <p className="mt-1 text-[11px] font-medium lowercase tracking-[0.16em] text-[var(--slate-text)]/55">
+            <p className="mt-1 text-[11px] font-medium capitalize tracking-[0.16em] text-[var(--slate-text)]/55">
               by ANTIKRA Mechanism
             </p>
           </div>
         </Link>
 
-        <p className="mt-8 text-[11px] font-semibold lowercase tracking-[0.18em] text-[var(--warm-gold)]">
+        <p className="mt-8 text-[11px] font-semibold capitalize tracking-[0.18em] text-[var(--warm-gold)]">
           temporary interruption
         </p>
         <h1 className="mt-3 font-[family-name:var(--font-display)] text-3xl leading-[1.12] tracking-[-0.03em] text-[var(--midnight-navy)]">
@@ -50,7 +50,7 @@ export default function Error({
             className="btn btn-primary h-11 px-4 text-sm"
             onClick={() => reset()}
           >
-          try again
+            try again
           </button>
           <Link href="/" className="btn btn-ghost h-11 px-4 text-sm">
             go to home

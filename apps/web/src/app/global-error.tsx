@@ -52,7 +52,7 @@ export default function GlobalError({
               fontSize: "0.6875rem",
               fontWeight: 600,
               letterSpacing: "0.16em",
-              textTransform: "lowercase",
+              textTransform: "capitalize",
               color: "rgba(31, 41, 51, 0.55)",
             }}
           >
@@ -64,7 +64,7 @@ export default function GlobalError({
               fontSize: "0.6875rem",
               fontWeight: 700,
               letterSpacing: "0.18em",
-              textTransform: "lowercase",
+              textTransform: "capitalize",
               color: "#c4922a",
             }}
           >
@@ -94,7 +94,14 @@ export default function GlobalError({
             REMBEH hit an unexpected error. Please try again. If the problem
             continues, contact your account administrator.
           </p>
-          <div style={{ marginTop: "1.75rem", display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
+          <div
+            style={{
+              marginTop: "1.75rem",
+              display: "flex",
+              gap: "0.65rem",
+              flexWrap: "wrap",
+            }}
+          >
             <button
               type="button"
               onClick={() => reset()}
@@ -109,7 +116,7 @@ export default function GlobalError({
                 cursor: "pointer",
               }}
             >
-            try again
+              try again
             </button>
             <a
               href="https://rembeh.antikra.com/"

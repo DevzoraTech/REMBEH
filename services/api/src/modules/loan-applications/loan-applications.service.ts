@@ -202,29 +202,37 @@ export class LoanApplicationsService {
   }
 
   /**
-   * Always regenerates the loan agreement PDF from the DOCX template + latest
-   * application data, stores it, and returns bytes for download.
+   * Generates the loan agreement once, then serves the stored PDF on later
+   * downloads so the agreement remains identical after signing.
    */
   async getAgreementPdf(
     user: AuthenticatedUser,
     id: string,
   ): Promise<{ pdfBytes: Buffer; fileName: string; contentHash: string }> {
     const application = await this.requireAccessibleApplication(user, id);
-    const {
-      pdfBytes,
-      contentHash,
-      application: updated,
-    } = await this.generateAndStoreSignedAgreement(application);
 
-    const safeName = (updated.surname || updated.givenNames || 'loan')
-      .toString()
-      .replace(/[^a-zA-Z0-9_-]+/g, '-')
-      .slice(0, 40);
+    if (application.signedAgreementKey) {
+      const storedPdf = await this.objectStorage.getObjectBytes(
+        application.signedAgreementKey,
+      );
+      if (storedPdf) {
+        return {
+          pdfBytes: Buffer.from(storedPdf),
+          fileName: this.agreementFileName(application),
+          contentHash: application.signedAgreementHash ?? '',
+        };
+      }
+      this.logger.warn(
+        `Stored loan agreement PDF missing for ${application.id}; regenerating.`,
+      );
+    }
+
+    const generated = await this.generateAndStoreSignedAgreement(application);
 
     return {
-      pdfBytes: Buffer.from(pdfBytes),
-      fileName: `REMBEH-Loan-Agreement-${safeName}-${updated.id.slice(0, 8)}.pdf`,
-      contentHash,
+      pdfBytes: Buffer.from(generated.pdfBytes),
+      fileName: this.agreementFileName(generated.application),
+      contentHash: generated.contentHash,
     };
   }
 
@@ -856,12 +864,55 @@ export class LoanApplicationsService {
   }
 
   private hasAllLockedSignatures(application: LoanApplicationRecord) {
-    return REQUIRED_SIGNATURE_ROLES.every((role) => {
-      const latest = application.signatures
-        .filter((item) => item.signerRole === role)
-        .sort((a, b) => b.version - a.version)[0];
-      return Boolean(latest?.locked);
-    });
+    return REQUIRED_SIGNATURE_ROLES.every((role) =>
+      Boolean(
+        this.latestSignatureForRole(application.signatures, role)?.locked,
+      ),
+    );
+  }
+
+  private latestSignatureForRole(
+    signatures: LoanApplicationRecord['signatures'],
+    role: LoanApplicationSignerRole,
+    lockedOnly = false,
+  ) {
+    return signatures
+      .filter(
+        (item) =>
+          item.signerRole === role && (!lockedOnly || item.locked === true),
+      )
+      .sort((a, b) => b.version - a.version)[0];
+  }
+
+  private latestSignaturesForDisplay(
+    signatures: LoanApplicationRecord['signatures'],
+  ) {
+    return REQUIRED_SIGNATURE_ROLES.map((role) =>
+      this.latestSignatureForRole(signatures, role),
+    ).filter(
+      (signature): signature is NonNullable<(typeof signatures)[number]> =>
+        Boolean(signature),
+    );
+  }
+
+  private latestLockedSignatures(
+    signatures: LoanApplicationRecord['signatures'],
+  ) {
+    return REQUIRED_SIGNATURE_ROLES.map((role) =>
+      this.latestSignatureForRole(signatures, role, true),
+    ).filter(
+      (signature): signature is NonNullable<(typeof signatures)[number]> =>
+        Boolean(signature),
+    );
+  }
+
+  private agreementFileName(application: LoanApplicationRecord) {
+    const safeName = (application.surname || application.givenNames || 'loan')
+      .toString()
+      .replace(/[^a-zA-Z0-9_-]+/g, '-')
+      .slice(0, 40);
+
+    return `REMBEH-Loan-Agreement-${safeName}-${application.id.slice(0, 8)}.pdf`;
   }
 
   private async generateAndStoreSignedAgreement(
@@ -871,15 +922,7 @@ export class LoanApplicationsService {
     pdfBytes: Uint8Array;
     contentHash: string;
   }> {
-    const latestByRole = REQUIRED_SIGNATURE_ROLES.map((role) => {
-      const latest = application.signatures
-        .filter((item) => item.signerRole === role && item.locked)
-        .sort((a, b) => b.version - a.version)[0];
-      return latest ?? null;
-    }).filter(
-      (sig): sig is NonNullable<(typeof application.signatures)[number]> =>
-        sig != null,
-    );
+    const latestByRole = this.latestLockedSignatures(application.signatures);
 
     const agreementVersion = (application.signedAgreementVersion ?? 0) + 1;
 
@@ -918,6 +961,7 @@ export class LoanApplicationsService {
             application.finePeriodDays === 1 ? '' : 's'
           }`
         : null;
+    const loanMadeAt = application.submittedAt ?? application.createdAt;
 
     const { pdfBytes, contentHash, source } = await buildSignedLoanAgreementPdf(
       {
@@ -943,8 +987,8 @@ export class LoanApplicationsService {
         companyAddress: application.branch?.address ?? null,
         companyContact: application.branch?.phone ?? null,
         agentName: application.officer?.displayName ?? null,
-        agreementDate: new Date(),
-        dateLoanTaken: application.submittedAt ?? new Date(),
+        agreementDate: loanMadeAt,
+        dateLoanTaken: loanMadeAt,
         fineAmount,
         finePeriodLabel,
         version: agreementVersion,
@@ -1181,24 +1225,26 @@ export class LoanApplicationsService {
         fileName: item.fileName,
         createdAt: item.createdAt.toISOString(),
       })),
-      signatures: application.signatures.map((item) => ({
-        id: item.id,
-        signerRole: item.signerRole,
-        version: item.version,
-        locked: item.locked,
-        signerName: item.signerName,
-        signedAt: item.signedAt.toISOString(),
-        signatureStorageKey: item.signatureStorageKey,
-        strokesStorageKey: item.strokesStorageKey,
-        metadataStorageKey: item.metadataStorageKey,
-        pngContentHash: item.pngContentHash,
-        strokesContentHash: item.strokesContentHash,
-        metadata:
-          item.metadata && typeof item.metadata === 'object'
-            ? (item.metadata as Record<string, unknown>)
-            : {},
-        createdAt: item.createdAt.toISOString(),
-      })),
+      signatures: this.latestSignaturesForDisplay(application.signatures).map(
+        (item) => ({
+          id: item.id,
+          signerRole: item.signerRole,
+          version: item.version,
+          locked: item.locked,
+          signerName: item.signerName,
+          signedAt: item.signedAt.toISOString(),
+          signatureStorageKey: item.signatureStorageKey,
+          strokesStorageKey: item.strokesStorageKey,
+          metadataStorageKey: item.metadataStorageKey,
+          pngContentHash: item.pngContentHash,
+          strokesContentHash: item.strokesContentHash,
+          metadata:
+            item.metadata && typeof item.metadata === 'object'
+              ? (item.metadata as Record<string, unknown>)
+              : {},
+          createdAt: item.createdAt.toISOString(),
+        }),
+      ),
       signedAgreementKey: application.signedAgreementKey,
       signedAgreementHash: application.signedAgreementHash,
       signedAgreementVersion: application.signedAgreementVersion,

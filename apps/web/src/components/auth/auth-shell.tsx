@@ -34,18 +34,16 @@ export function AuthShell({
                 priority
               />
               <div>
-                <p className="text-2xl font-bold leading-none">
-                  REMBEH
-                </p>
-                <p className="mt-1 text-[11px] font-medium lowercase tracking-[0.16em] text-white/55">
+                <p className="text-2xl font-bold leading-none">REMBEH</p>
+                <p className="mt-1 text-[11px] font-medium capitalize tracking-[0.16em] text-white/55">
                   lending operations platform
                 </p>
               </div>
             </Link>
 
             <div className="mt-auto max-w-lg pb-2 pt-14 lg:pt-20">
-              <p className="text-[11px] font-semibold lowercase tracking-[0.18em] text-[var(--warm-gold)]">
-                {eyebrow.toLowerCase()}
+              <p className="text-[11px] font-semibold capitalize tracking-[0.18em] text-[var(--warm-gold)]">
+                {eyebrow}
               </p>
               <h1 className="mt-3 text-4xl font-bold leading-[1.08] sm:text-[2.75rem]">
                 {title}

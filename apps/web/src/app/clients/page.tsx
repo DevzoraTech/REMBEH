@@ -4,6 +4,11 @@ import { RefreshCw, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/app/app-shell";
+import {
+  DEFAULT_PAGE_SIZE,
+  PaginationControls,
+  paginateItems,
+} from "../../components/app/pagination";
 import { RowActions } from "../../components/app/row-actions";
 import { AppBootSkeleton, TableSkeleton } from "../../components/app/skeleton";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
@@ -45,6 +50,8 @@ export default function ClientsPage() {
   const [branch, setBranch] = useState<RembehBranch | null>(null);
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -113,6 +120,11 @@ export default function ClientsPage() {
     );
   }, [clients, search]);
 
+  const pagedClients = useMemo(
+    () => paginateItems(filteredClients, page, pageSize),
+    [filteredClients, page, pageSize],
+  );
+
   if (!session) {
     return <AppBootSkeleton />;
   }
@@ -152,7 +164,10 @@ export default function ClientsPage() {
           <input
             type="search"
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setPage(1);
+            }}
             placeholder="Search borrowers"
             className="min-w-[200px] flex-1 bg-transparent py-1.5 text-sm text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
           />
@@ -169,27 +184,29 @@ export default function ClientsPage() {
         ) : (
           <div className="panel overflow-hidden shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
             <table className="w-full table-fixed text-left text-[11px]">
-              <thead className="border-b border-[var(--line)] bg-[#e5ece8] text-[9px] lowercase tracking-[0.06em] text-slate-500">
+              <thead className="border-b border-[var(--line)] bg-[#e5ece8] text-[9px] capitalize tracking-[0.06em] text-slate-500">
                 <tr>
                   <th className="w-[24%] px-2 py-2.5 font-semibold">name</th>
-                  <th className="hidden w-[15%] px-2 py-2.5 font-semibold sm:table-cell">phone</th>
+                  <th className="hidden w-[15%] px-2 py-2.5 font-semibold sm:table-cell">
+                    phone
+                  </th>
                   <th className="w-[18%] px-2 py-2.5 font-semibold">
                     collateral
                   </th>
                   <th className="hidden w-[17%] px-2 py-2.5 font-semibold md:table-cell">
                     national id
                   </th>
-                  <th className="hidden w-[12%] px-2 py-2.5 font-semibold lg:table-cell">city</th>
-                  <th className="w-[13%] px-2 py-2.5 font-semibold">
-                    status
+                  <th className="hidden w-[12%] px-2 py-2.5 font-semibold lg:table-cell">
+                    city
                   </th>
+                  <th className="w-[13%] px-2 py-2.5 font-semibold">status</th>
                   <th className="w-[8%] px-2 py-2.5 text-right font-semibold">
                     actions
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--line)]">
-                {filteredClients.map((client) => (
+                {pagedClients.items.map((client) => (
                   <tr
                     key={client.id}
                     className="cursor-pointer bg-white transition odd:bg-white even:bg-[#fbfdfc] hover:bg-[var(--soft-mist)]"
@@ -200,7 +217,8 @@ export default function ClientsPage() {
                         {client.fullName}
                       </p>
                       <p className="truncate text-[10px] text-slate-500">
-                        {client.loanCount} loan{client.loanCount === 1 ? "" : "s"}
+                        {client.loanCount} loan
+                        {client.loanCount === 1 ? "" : "s"}
                       </p>
                     </td>
                     <td className="hidden px-2 py-3 text-[11px] text-slate-600 sm:table-cell">
@@ -221,7 +239,7 @@ export default function ClientsPage() {
                         {client.city || "—"}
                       </span>
                     </td>
-                    <td className="px-2 py-3 text-[9px] font-bold lowercase tracking-[0.04em]">
+                    <td className="px-2 py-3 text-[9px] font-bold capitalize tracking-[0.04em]">
                       <span
                         className={`inline-flex border px-1.5 py-0.5 ${
                           client.verifiedAt
@@ -247,6 +265,17 @@ export default function ClientsPage() {
                 ))}
               </tbody>
             </table>
+            <PaginationControls
+              page={pagedClients.currentPage}
+              pageSize={pageSize}
+              total={filteredClients.length}
+              itemLabel="borrowers"
+              onPageChange={setPage}
+              onPageSizeChange={(nextPageSize) => {
+                setPageSize(nextPageSize);
+                setPage(1);
+              }}
+            />
           </div>
         )}
       </div>

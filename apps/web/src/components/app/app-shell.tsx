@@ -73,8 +73,8 @@ export function AppShell({
           operatorRole !== "staff" &&
           Boolean(
             session.permissions.includes("branch.staff.read") ||
-              session.permissions.includes("user.read") ||
-              session.permissions.includes("collection.read"),
+            session.permissions.includes("user.read") ||
+            session.permissions.includes("collection.read"),
           ),
       },
       {
@@ -159,7 +159,11 @@ export function AppShell({
                 REMBEH
               </p>
             </div>
-            <button type="button" onClick={handleLogout} className="btn btn-ghost h-9 text-xs">
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="btn btn-ghost h-9 text-xs"
+            >
               <LogOut className="size-3.5" />
               sign out
             </button>
@@ -190,7 +194,7 @@ export function AppShell({
                 <p className="font-[family-name:var(--font-display)] text-lg leading-none tracking-[-0.03em] text-white">
                   REMBEH
                 </p>
-                <p className="mt-1 text-[10px] lowercase tracking-[0.12em] text-white/45">
+                <p className="mt-1 text-[10px] capitalize tracking-[0.12em] text-white/45">
                   {operatorRole === "owner" ? "Owner" : "Manager"}
                 </p>
               </div>
@@ -289,7 +293,7 @@ export function AppShell({
                 </p>
                 <h1 className="truncate text-sm font-bold text-[var(--midnight-navy)]">
                   {operatorRole === "manager"
-                    ? branch?.name ?? "branch"
+                    ? (branch?.name ?? "branch")
                     : "account"}
                 </h1>
               </div>
@@ -347,9 +351,11 @@ export function AppShell({
                     ) : (
                       <ProfileLine
                         label="Market"
-                        value={[workspace?.country, workspace?.currency]
-                          .filter(Boolean)
-                          .join(" · ") || "—"}
+                        value={
+                          [workspace?.country, workspace?.currency]
+                            .filter(Boolean)
+                            .join(" · ") || "—"
+                        }
                       />
                     )}
                   </div>
@@ -376,7 +382,7 @@ export function AppShell({
 function ProfileLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-3">
-      <span className="text-slate-500">{label.toLowerCase()}</span>
+      <span className="text-slate-500 capitalize">{label}</span>
       <span className="max-w-[160px] truncate text-right font-semibold text-[var(--midnight-navy)]">
         {value}
       </span>

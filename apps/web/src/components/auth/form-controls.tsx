@@ -41,9 +41,9 @@ export function FieldLabel({
       className={`flex items-end justify-between gap-3 ${compact ? "mb-1" : "mb-2"}`}
     >
       <span
-        className={`font-semibold text-[var(--midnight-navy)] ${compact ? "text-xs" : "text-sm"}`}
+        className={`font-semibold capitalize text-[var(--midnight-navy)] ${compact ? "text-xs" : "text-sm"}`}
       >
-        {label.toLowerCase()}
+        {label}
       </span>
       {hint ? <span className="text-xs text-slate-500">{hint}</span> : null}
     </div>
@@ -205,7 +205,7 @@ export function PhoneField({
           value={countryCode}
           onChange={(event) => onCountryCodeChange(event.target.value)}
           className="h-11 border-r border-[var(--line)] bg-[var(--soft-mist)] px-2 text-sm font-semibold outline-none"
-        aria-label={`${label.toLowerCase()} country code`}
+          aria-label={`${label} country code`}
         >
           {PHONE_COUNTRIES.map((country) => (
             <option key={country.code} value={country.dialCode}>
@@ -306,7 +306,10 @@ export function OtpInput({
     inputsRef.current[focusIndex]?.focus();
   }
 
-  function handleKeyDown(index: number, event: KeyboardEvent<HTMLInputElement>) {
+  function handleKeyDown(
+    index: number,
+    event: KeyboardEvent<HTMLInputElement>,
+  ) {
     if (event.key === "Backspace" && !digits[index] && index > 0) {
       inputsRef.current[index - 1]?.focus();
     }
@@ -323,7 +326,10 @@ export function OtpInput({
       return;
     }
 
-    const nextDigits = Array.from({ length }, (_, index) => pasted[index] ?? "");
+    const nextDigits = Array.from(
+      { length },
+      (_, index) => pasted[index] ?? "",
+    );
     commit(nextDigits);
     inputsRef.current[Math.min(pasted.length, length) - 1]?.focus();
   }

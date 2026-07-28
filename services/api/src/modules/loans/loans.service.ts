@@ -50,6 +50,14 @@ export class LoansService {
   }
 
   private toContract(loan: LoanListRecord): LoanListItemContract {
+    const paymentStartDate =
+      loan.paymentStartDate ?? loan.application?.paymentStartDate ?? null;
+    const durationDays = loan.application?.durationDays ?? null;
+    const dueDate =
+      paymentStartDate && durationDays != null
+        ? this.addDays(paymentStartDate, durationDays)
+        : null;
+
     return {
       id: loan.id,
       applicationId: loan.application?.id ?? null,
@@ -72,6 +80,9 @@ export class LoansService {
       officerName: loan.application?.officer.displayName ?? null,
       officerPublicId: loan.application?.officer.publicId ?? null,
       branchId: loan.branchId,
+      paymentStartDate: paymentStartDate?.toISOString() ?? null,
+      durationDays,
+      dueDate: dueDate?.toISOString() ?? null,
       createdAt: loan.createdAt.toISOString(),
       disbursedAt: loan.disbursedAt?.toISOString() ?? null,
       updatedAt: loan.updatedAt.toISOString(),
@@ -97,5 +108,11 @@ export class LoansService {
 
   private roundMoney(value: number) {
     return Math.round(value * 100) / 100;
+  }
+
+  private addDays(date: Date, days: number) {
+    const next = new Date(date);
+    next.setDate(next.getDate() + Math.max(0, days));
+    return next;
   }
 }

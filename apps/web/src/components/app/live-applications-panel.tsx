@@ -4,10 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Socket } from "socket.io-client";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import { formatClock, groupByLocalDate } from "../../lib/date-groups";
-import {
-  connectRealtime,
-  type LoanApplicationEvent,
-} from "../../lib/realtime";
+import { connectRealtime, type LoanApplicationEvent } from "../../lib/realtime";
 import { ApplicationDetailDrawer } from "./application-detail-drawer";
 import { DateGroupHeader } from "./date-group-header";
 
@@ -136,7 +133,7 @@ export function LiveApplicationsPanel({
               live from field agents · grouped by date · tap for detail
             </p>
           </div>
-          <span className="text-[10px] font-semibold lowercase tracking-[0.08em] text-[var(--forest-emerald)]">
+          <span className="text-[10px] font-semibold capitalize tracking-[0.08em] text-[var(--forest-emerald)]">
             live
           </span>
         </div>

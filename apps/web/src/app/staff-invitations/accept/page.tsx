@@ -167,7 +167,10 @@ export default function AcceptStaffInvitationPage() {
       return;
     }
 
-    const phone = formatInternationalPhone(phoneCountryCode, phoneNationalNumber);
+    const phone = formatInternationalPhone(
+      phoneCountryCode,
+      phoneNationalNumber,
+    );
     if (!phone) {
       setError("Enter a valid international phone number.");
       return;
@@ -235,7 +238,7 @@ export default function AcceptStaffInvitationPage() {
     return (
       <InviteFrame>
         <div className="border border-[var(--line)] bg-white p-6">
-          <p className="text-[11px] font-semibold lowercase tracking-[0.14em] text-red-600">
+          <p className="text-[11px] font-semibold capitalize tracking-[0.14em] text-red-600">
             invitation unavailable
           </p>
           <h1 className="mt-2 text-2xl font-bold text-[var(--midnight-navy)]">
@@ -268,10 +271,8 @@ export default function AcceptStaffInvitationPage() {
               priority
             />
             <div>
-              <p className="text-2xl font-bold leading-none">
-                REMBEH
-              </p>
-              <p className="mt-1 text-[10px] lowercase tracking-[0.16em] text-white/50">
+              <p className="text-2xl font-bold leading-none">REMBEH</p>
+              <p className="mt-1 text-[10px] capitalize tracking-[0.16em] text-white/50">
                 staff access
               </p>
             </div>
@@ -282,7 +283,11 @@ export default function AcceptStaffInvitationPage() {
         </div>
 
         <div className="grid border-b border-[var(--line)] sm:grid-cols-3">
-          <StepTab label="1. review" active={step === "review"} done={step !== "review"} />
+          <StepTab
+            label="1. review"
+            active={step === "review"}
+            done={step !== "review"}
+          />
           <StepTab
             label="2. credentials"
             active={step === "credentials" || step === "activating"}
@@ -302,11 +307,7 @@ export default function AcceptStaffInvitationPage() {
               />
               <InfoRow label="role" value={invitation.roleName} />
               <InfoRow label="invited email" value={invitation.email} />
-              <InfoRow
-                label="expires"
-                value={expiresAt ?? "soon"}
-                last
-              />
+              <InfoRow label="expires" value={expiresAt ?? "soon"} last />
             </div>
 
             {isManager ? (
@@ -324,7 +325,7 @@ export default function AcceptStaffInvitationPage() {
         {step === "credentials" || step === "activating" ? (
           <form className="space-y-4 p-5" onSubmit={handleAccept}>
             <div>
-              <p className="text-[11px] font-semibold lowercase tracking-[0.14em] text-[var(--forest-emerald)]">
+              <p className="text-[11px] font-semibold capitalize tracking-[0.14em] text-[var(--forest-emerald)]">
                 create credentials
               </p>
               <h2 className="mt-1 text-lg font-bold text-[var(--midnight-navy)]">
@@ -417,7 +418,7 @@ function StepTab({
     >
       <span className="inline-flex items-center gap-1.5">
         {done ? <CheckCircle2 className="size-3.5" /> : null}
-        {label.toLowerCase()}
+        {label}
       </span>
     </div>
   );
@@ -440,7 +441,7 @@ function InfoRow({
         last ? "" : "border-b border-[var(--line)]"
       }`}
     >
-      <span className="text-slate-500">{label.toLowerCase()}</span>
+      <span className="text-slate-500 capitalize">{label}</span>
       <div className="text-right">
         <p className="font-semibold text-[var(--midnight-navy)]">{value}</p>
         {note ? <p className="mt-0.5 text-xs text-slate-500">{note}</p> : null}

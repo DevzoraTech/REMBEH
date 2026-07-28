@@ -53,7 +53,10 @@ export function RowActions({ label, items, busy = false }: RowActionsProps) {
             top: rect.bottom + 6,
             left: Math.max(
               8,
-              Math.min(window.innerWidth - menuWidth - 8, rect.right - menuWidth),
+              Math.min(
+                window.innerWidth - menuWidth - 8,
+                rect.right - menuWidth,
+              ),
             ),
           },
     );
@@ -62,7 +65,10 @@ export function RowActions({ label, items, busy = false }: RowActionsProps) {
   const visibleItems = items.filter((item) => item.href || item.onSelect);
 
   return (
-    <div className="flex justify-end" onClick={(event) => event.stopPropagation()}>
+    <div
+      className="flex justify-end"
+      onClick={(event) => event.stopPropagation()}
+    >
       <button
         type="button"
         className="grid size-8 place-items-center border border-[var(--line)] bg-white text-[var(--midnight-navy)] transition hover:bg-[var(--soft-mist)] disabled:opacity-50"
@@ -103,7 +109,7 @@ export function RowActions({ label, items, busy = false }: RowActionsProps) {
                   } ${item.disabled ? "pointer-events-none opacity-50" : ""}`}
                   onClick={() => setMenu(null)}
                 >
-                  {item.label.toLowerCase()}
+                  {item.label}
                 </Link>
               ) : (
                 <button
@@ -119,7 +125,7 @@ export function RowActions({ label, items, busy = false }: RowActionsProps) {
                     item.onSelect?.();
                   }}
                 >
-                  {item.label.toLowerCase()}
+                  {item.label}
                 </button>
               ),
             )}

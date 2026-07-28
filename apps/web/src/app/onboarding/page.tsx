@@ -44,7 +44,9 @@ export default function OnboardingPage() {
 
   const activeBranch = useMemo(() => {
     if (branch?.id) {
-      return branches.find((item) => item.id === branch.id) ?? branches[0] ?? null;
+      return (
+        branches.find((item) => item.id === branch.id) ?? branches[0] ?? null
+      );
     }
     return branches[0] ?? null;
   }, [branch, branches]);
@@ -116,9 +118,7 @@ export default function OnboardingPage() {
       setStep(3);
     } catch (caughtError) {
       setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "Invite failed.",
+        caughtError instanceof Error ? caughtError.message : "Invite failed.",
       );
     } finally {
       setIsInviting(false);
@@ -227,15 +227,7 @@ export default function OnboardingPage() {
   );
 }
 
-function Tab({
-  n,
-  current,
-  label,
-}: {
-  n: Step;
-  current: Step;
-  label: string;
-}) {
+function Tab({ n, current, label }: { n: Step; current: Step; label: string }) {
   const active = current === n;
   return (
     <div
@@ -245,7 +237,7 @@ function Tab({
           : "text-slate-400"
       }`}
     >
-      {n}. {label.toLowerCase()}
+      {n}. {label}
     </div>
   );
 }

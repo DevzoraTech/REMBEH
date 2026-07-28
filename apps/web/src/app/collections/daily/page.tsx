@@ -1,12 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ChevronDown,
-  ChevronRight,
-  Loader2,
-  RefreshCw,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Socket } from "socket.io-client";
@@ -270,7 +265,7 @@ export default function DailyCollectionsPage() {
       <div className="mx-auto max-w-5xl space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-[11px] font-semibold lowercase tracking-[0.12em] text-[var(--forest-emerald)]">
+            <p className="text-[11px] font-semibold capitalize tracking-[0.12em] text-[var(--forest-emerald)]">
               collections
             </p>
             <h1 className="text-xl font-bold text-[var(--midnight-navy)]">
@@ -334,9 +329,7 @@ export default function DailyCollectionsPage() {
           </div>
         ) : null}
 
-        {error ? (
-          <p className="text-sm text-red-600">{error}</p>
-        ) : null}
+        {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
         {loading && !summary ? (
           <div className="flex items-center gap-2 text-sm text-slate-500">
@@ -410,7 +403,8 @@ export default function DailyCollectionsPage() {
 
                   {open ? (
                     <div className="border-t border-[var(--line)] bg-white px-3 py-3">
-                      {detailLoading && detail?.agent.agentId !== agent.agentId ? (
+                      {detailLoading &&
+                      detail?.agent.agentId !== agent.agentId ? (
                         <div className="flex items-center gap-2 text-sm text-slate-500">
                           <Loader2 className="size-4 animate-spin" />
                           Loading…
@@ -418,7 +412,7 @@ export default function DailyCollectionsPage() {
                       ) : detail?.agent.agentId === agent.agentId ? (
                         <div className="grid gap-4 md:grid-cols-2">
                           <div>
-                            <h3 className="mb-2 text-xs font-bold lowercase tracking-[0.08em] text-slate-500">
+                            <h3 className="mb-2 text-xs font-bold capitalize tracking-[0.08em] text-slate-500">
                               applications ({detail.applications.length})
                             </h3>
                             {detail.applications.length === 0 ? (
@@ -459,7 +453,7 @@ export default function DailyCollectionsPage() {
                             )}
                           </div>
                           <div>
-                            <h3 className="mb-2 text-xs font-bold lowercase tracking-[0.08em] text-slate-500">
+                            <h3 className="mb-2 text-xs font-bold capitalize tracking-[0.08em] text-slate-500">
                               payments ({detail.payments.length})
                             </h3>
                             {detail.payments.length === 0 ? (
@@ -497,7 +491,6 @@ export default function DailyCollectionsPage() {
           </ul>
         )}
       </div>
-
     </AppShell>
   );
 }
@@ -526,8 +519,8 @@ function StatCard({
 }) {
   return (
     <div className="panel px-3 py-3">
-      <p className="text-[10px] font-semibold lowercase tracking-[0.08em] text-slate-500">
-        {label.toLowerCase()}
+      <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
+        {label}
       </p>
       <p
         className={`mt-1 text-lg font-bold tabular-nums ${
@@ -546,8 +539,8 @@ function StatCard({
 function MiniStat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[10px] lowercase tracking-[0.06em] text-slate-500">
-        {label.toLowerCase()}
+      <p className="text-[10px] capitalize tracking-[0.06em] text-slate-500">
+        {label}
       </p>
       <p className="text-sm font-bold tabular-nums text-[var(--midnight-navy)]">
         {value}

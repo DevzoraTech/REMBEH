@@ -12,7 +12,7 @@
   --slate-text: #1f2933;
   --surface: #ffffff;
   --line: #cfd8d3;
-  --radius: 0px;
+  --radius: 8px;
 }
 
 @theme inline {
@@ -37,6 +37,19 @@ textarea {
   letter-spacing: 0;
 }
 
+button:not(.rounded-full),
+input,
+select,
+textarea {
+  border-radius: var(--radius);
+}
+
+button,
+select,
+option {
+  text-transform: capitalize;
+}
+
 ::selection {
   background: rgba(15, 138, 108, 0.18);
 }
@@ -55,7 +68,11 @@ textarea {
   inset: auto -20% -30% auto;
   width: 55%;
   height: 55%;
-  background: radial-gradient(circle, rgba(15, 138, 108, 0.35), transparent 70%);
+  background: radial-gradient(
+    circle,
+    rgba(15, 138, 108, 0.35),
+    transparent 70%
+  );
   filter: blur(8px);
 }
 
@@ -129,7 +146,10 @@ textarea {
   padding: 0 0.9rem;
   font-size: 0.8125rem;
   font-weight: 700;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  text-transform: capitalize;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease;
 }
 
 .btn-primary {

@@ -9,13 +9,14 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
-import {
-  Check,
-  Loader2,
-  Plus,
-} from "lucide-react";
+import { Check, Loader2, Plus } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "../../components/app/app-shell";
+import {
+  DEFAULT_PAGE_SIZE,
+  PaginationControls,
+  paginateItems,
+} from "../../components/app/pagination";
 import { RowActions } from "../../components/app/row-actions";
 import { AppBootSkeleton, TableSkeleton } from "../../components/app/skeleton";
 import {
@@ -47,12 +48,7 @@ type LoanTemplate = {
   termValue: number;
   termUnit: "DAYS" | "WEEKS" | "MONTHS" | "YEARS";
   durationDays: number;
-  repaymentFrequency:
-    | "DAILY"
-    | "WEEKLY"
-    | "BIWEEKLY"
-    | "MONTHLY"
-    | "LUMP_SUM";
+  repaymentFrequency: "DAILY" | "WEEKLY" | "BIWEEKLY" | "MONTHLY" | "LUMP_SUM";
   processingFeePercent: number;
   penaltyRatePercent: number;
   finePeriodDays: number;
@@ -73,12 +69,7 @@ type TemplateForm = {
   interestType: "FLAT" | "REDUCING_BALANCE" | "COMPOUND";
   termValue: string;
   termUnit: "DAYS" | "WEEKS" | "MONTHS";
-  repaymentFrequency:
-    | "DAILY"
-    | "WEEKLY"
-    | "BIWEEKLY"
-    | "MONTHLY"
-    | "LUMP_SUM";
+  repaymentFrequency: "DAILY" | "WEEKLY" | "BIWEEKLY" | "MONTHLY" | "LUMP_SUM";
   processingFeePercent: string;
   penaltyRatePercent: string;
   finePeriodDays: string;
@@ -91,12 +82,7 @@ type TemplateForm = {
 };
 
 type WizardStepId =
-  | "basics"
-  | "interest"
-  | "term"
-  | "payment-start"
-  | "fines"
-  | "review";
+  "basics" | "interest" | "term" | "payment-start" | "fines" | "review";
 
 const WIZARD_STEPS: { id: WizardStepId; label: string }[] = [
   { id: "basics", label: "basics" },
@@ -180,10 +166,9 @@ function parseSection(value: string | null): SettingsSection {
   return "loan-products";
 }
 
-function paymentStartLabel(template: Pick<
-  LoanTemplate,
-  "paymentStartPolicy" | "paymentStartDelayDays"
->) {
+function paymentStartLabel(
+  template: Pick<LoanTemplate, "paymentStartPolicy" | "paymentStartDelayDays">,
+) {
   switch (template.paymentStartPolicy) {
     case "SAME_DAY":
       return "Same day";
@@ -246,7 +231,7 @@ function SectionHeader({
     <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--line)] pb-3">
       <div className="min-w-0">
         <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
-          {title.toLowerCase()}
+          {title}
         </h2>
         <p className="mt-0.5 text-xs text-slate-500">{description}</p>
       </div>
@@ -258,19 +243,15 @@ function SectionHeader({
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="grid gap-0.5 border-b border-[var(--line)] py-2.5 last:border-0 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-3">
-      <dt className="text-[11px] font-semibold lowercase tracking-[0.06em] text-slate-500">
-        {label.toLowerCase()}
+      <dt className="text-[11px] font-semibold capitalize tracking-[0.06em] text-slate-500">
+        {label}
       </dt>
       <dd className="text-sm text-[var(--midnight-navy)]">{value || "—"}</dd>
     </div>
   );
 }
 
-function WizardStepIndicator({
-  stepIndex,
-}: {
-  stepIndex: number;
-}) {
+function WizardStepIndicator({ stepIndex }: { stepIndex: number }) {
   return (
     <ol className="mb-3 flex flex-wrap gap-1.5">
       {WIZARD_STEPS.map((step, index) => {
@@ -279,7 +260,7 @@ function WizardStepIndicator({
         return (
           <li
             key={step.id}
-            className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-semibold lowercase tracking-[0.06em] ${
+            className={`inline-flex items-center gap-1 px-2 py-1 text-[10px] font-semibold capitalize tracking-[0.06em] ${
               active
                 ? "bg-[var(--midnight-navy)] text-white"
                 : done
@@ -300,7 +281,7 @@ function WizardStepIndicator({
 function ReviewLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3 border-b border-[var(--line)] py-1.5 text-xs last:border-0">
-      <span className="text-slate-500">{label.toLowerCase()}</span>
+      <span className="text-slate-500 capitalize">{label}</span>
       <span className="text-right font-semibold text-[var(--midnight-navy)]">
         {value}
       </span>
@@ -310,11 +291,7 @@ function ReviewLine({ label, value }: { label: string; value: string }) {
 
 export default function SettingsPage() {
   return (
-    <Suspense
-      fallback={
-        <AppBootSkeleton />
-      }
-    >
+    <Suspense fallback={<AppBootSkeleton />}>
       <SettingsPageContent />
     </Suspense>
   );
@@ -331,6 +308,8 @@ function SettingsPageContent() {
   const [branch, setBranch] = useState<RembehBranch | null>(null);
 
   const [templates, setTemplates] = useState<LoanTemplate[]>([]);
+  const [templatePage, setTemplatePage] = useState(1);
+  const [templatePageSize, setTemplatePageSize] = useState(DEFAULT_PAGE_SIZE);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -586,9 +565,7 @@ function SettingsPageContent() {
       await refreshCatalog(session);
     } catch (caught) {
       setWizardError(
-        caught instanceof Error
-          ? caught.message
-          : "Could not save loan type.",
+        caught instanceof Error ? caught.message : "Could not save loan type.",
       );
     } finally {
       setSaving(false);
@@ -674,6 +651,11 @@ function SettingsPageContent() {
     [templates],
   );
 
+  const pagedTemplates = useMemo(
+    () => paginateItems(sortedTemplates, templatePage, templatePageSize),
+    [sortedTemplates, templatePage, templatePageSize],
+  );
+
   const canManageProducts =
     session?.permissions.includes("loan.product.manage") ?? false;
   const isLastWizardStep = wizardStep >= WIZARD_STEPS.length - 1;
@@ -726,9 +708,7 @@ function SettingsPageContent() {
           </aside>
 
           <section className="panel min-w-0 p-4">
-            {loading ? (
-              <TableSkeleton rows={5} columns={5} />
-            ) : null}
+            {loading ? <TableSkeleton rows={5} columns={5} /> : null}
 
             {!loading && section === "loan-products" ? (
               <div className="space-y-3">
@@ -756,27 +736,36 @@ function SettingsPageContent() {
                   </p>
                 ) : sortedTemplates.length === 0 ? (
                   <p className="py-8 text-center text-sm text-slate-500">
-                    No loan types yet. Create one so agents can choose it when giving loans.
+                    No loan types yet. Create one so agents can choose it when
+                    giving loans.
                   </p>
                 ) : (
                   <div className="overflow-hidden">
                     <table className="w-full table-fixed border-collapse text-left text-[11px]">
                       <thead>
-                        <tr className="border-b border-[var(--line)] text-[10px] lowercase tracking-[0.08em] text-slate-500">
-                          <th className="w-[30%] py-2 pr-2 font-semibold">name</th>
-                          <th className="w-[17%] py-2 pr-2 font-semibold">rate</th>
-                          <th className="hidden w-[15%] py-2 pr-2 font-semibold sm:table-cell">term</th>
+                        <tr className="border-b border-[var(--line)] text-[10px] capitalize tracking-[0.08em] text-slate-500">
+                          <th className="w-[30%] py-2 pr-2 font-semibold">
+                            name
+                          </th>
+                          <th className="w-[17%] py-2 pr-2 font-semibold">
+                            rate
+                          </th>
+                          <th className="hidden w-[15%] py-2 pr-2 font-semibold sm:table-cell">
+                            term
+                          </th>
                           <th className="hidden w-[16%] py-2 pr-2 font-semibold md:table-cell">
                             frequency
                           </th>
-                          <th className="w-[14%] py-2 pr-2 font-semibold">status</th>
+                          <th className="w-[14%] py-2 pr-2 font-semibold">
+                            status
+                          </th>
                           <th className="w-[8%] py-2 font-semibold text-right">
                             actions
                           </th>
                         </tr>
                       </thead>
                       <tbody>
-                        {sortedTemplates.map((template) => (
+                        {pagedTemplates.items.map((template) => (
                           <tr
                             key={template.id}
                             className="border-b border-[var(--line)] last:border-0"
@@ -810,7 +799,7 @@ function SettingsPageContent() {
                             </td>
                             <td className="py-2.5 pr-2 align-middle">
                               <span
-                                className={`inline-block px-1.5 py-0.5 text-[10px] font-bold lowercase tracking-[0.06em] ${
+                                className={`inline-block px-1.5 py-0.5 text-[10px] font-bold capitalize tracking-[0.06em] ${
                                   template.isActive
                                     ? "bg-[rgba(15,138,108,0.12)] text-[var(--forest-emerald)]"
                                     : "bg-slate-100 text-slate-500"
@@ -847,6 +836,17 @@ function SettingsPageContent() {
                         ))}
                       </tbody>
                     </table>
+                    <PaginationControls
+                      page={pagedTemplates.currentPage}
+                      pageSize={templatePageSize}
+                      total={sortedTemplates.length}
+                      itemLabel="loan types"
+                      onPageChange={setTemplatePage}
+                      onPageSizeChange={(nextPageSize) => {
+                        setTemplatePageSize(nextPageSize);
+                        setTemplatePage(1);
+                      }}
+                    />
                   </div>
                 )}
               </div>
@@ -859,22 +859,13 @@ function SettingsPageContent() {
                   description={activeSection.hint}
                 />
                 <dl>
-                  <InfoRow
-                    label="company"
-                    value={workspace?.name ?? "—"}
-                  />
-                  <InfoRow
-                    label="country"
-                    value={workspace?.country ?? "—"}
-                  />
+                  <InfoRow label="company" value={workspace?.name ?? "—"} />
+                  <InfoRow label="country" value={workspace?.country ?? "—"} />
                   <InfoRow
                     label="currency"
                     value={workspace?.currency ?? "—"}
                   />
-                  <InfoRow
-                    label="status"
-                    value={workspace?.status ?? "—"}
-                  />
+                  <InfoRow label="status" value={workspace?.status ?? "—"} />
                   <InfoRow label="signed-in as" value={user?.name ?? "—"} />
                   <InfoRow label="email" value={user?.email ?? "—"} />
                   <InfoRow label="phone" value={user?.phone ?? "—"} />
@@ -934,9 +925,7 @@ function SettingsPageContent() {
                 className="btn btn-primary h-9 px-4 text-xs"
                 disabled={saving}
               >
-                {saving ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : null}
+                {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
                 {editingId ? "Save changes" : "Create loan type"}
               </button>
             )}

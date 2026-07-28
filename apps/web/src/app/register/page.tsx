@@ -68,11 +68,13 @@ type ResendOtpResponse = {
 
 type VerificationResponse = {
   workspace: RembehWorkspace;
-  owner: RembehUser & {
-    phone?: string;
-    emailVerified: boolean;
-    phoneVerified: boolean;
-  } | null;
+  owner:
+    | (RembehUser & {
+        phone?: string;
+        emailVerified: boolean;
+        phoneVerified: boolean;
+      })
+    | null;
   verification: {
     emailVerified: boolean;
     phoneVerified: boolean;
@@ -153,7 +155,9 @@ export default function RegisterPage() {
   }, [registration]);
 
   function syncCountryCurrency(countryName: string) {
-    const match = PHONE_COUNTRIES.find((country) => country.name === countryName);
+    const match = PHONE_COUNTRIES.find(
+      (country) => country.name === countryName,
+    );
 
     setFormData((current) => ({
       ...current,
@@ -228,14 +232,17 @@ export default function RegisterPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(`${apiBaseUrl}/auth/workspace/verify-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          challengeId: registration.emailChallenge.id,
-          code: emailOtpCode,
-        }),
-      });
+      const response = await fetch(
+        `${apiBaseUrl}/auth/workspace/verify-email`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            challengeId: registration.emailChallenge.id,
+            code: emailOtpCode,
+          }),
+        },
+      );
 
       const payload = await readApiJson<VerificationResponse>(response);
 
@@ -244,7 +251,9 @@ export default function RegisterPage() {
       }
 
       if (!payload.session || !payload.verification.activated) {
-        throw new Error("Account verification completed, but no session was issued.");
+        throw new Error(
+          "Account verification completed, but no session was issued.",
+        );
       }
 
       persistAuthState({
@@ -347,7 +356,7 @@ export default function RegisterPage() {
               <StepPill active label="1. details" done />
               <StepPill active label="2. verify" />
             </div>
-            <p className="text-xs font-semibold lowercase tracking-[0.18em] text-[var(--forest-emerald)]">
+            <p className="text-xs font-semibold capitalize tracking-[0.18em] text-[var(--forest-emerald)]">
               email verification
             </p>
             <h2 className="mt-2 text-3xl font-bold text-[var(--midnight-navy)]">
@@ -408,7 +417,9 @@ export default function RegisterPage() {
               className="inline-flex items-center gap-2 text-sm font-bold text-[var(--forest-emerald)] disabled:cursor-not-allowed disabled:opacity-50"
               onClick={handleResendEmailOtp}
             >
-              <RefreshCw className={`size-3.5 ${isResending ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`size-3.5 ${isResending ? "animate-spin" : ""}`}
+              />
               {resendSeconds > 0
                 ? `resend in ${resendSeconds}s`
                 : "resend code"}
@@ -422,7 +433,7 @@ export default function RegisterPage() {
               <StepPill active label="1. details" />
               <StepPill label="2. verify" />
             </div>
-            <p className="text-xs font-semibold lowercase tracking-[0.18em] text-[var(--forest-emerald)]">
+            <p className="text-xs font-semibold capitalize tracking-[0.18em] text-[var(--forest-emerald)]">
               company registration
             </p>
             <h2 className="mt-2 text-3xl font-bold text-[var(--midnight-navy)]">
@@ -544,7 +555,7 @@ function StepPill({
           : "border-[var(--line)] bg-[var(--soft-mist)] text-slate-500"
       }`}
     >
-      {label.toLowerCase()}
+      {label}
     </span>
   );
 }

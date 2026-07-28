@@ -14,6 +14,9 @@ export type LoanListItemContract = {
   officerName: string | null;
   officerPublicId: string | null;
   branchId: string;
+  paymentStartDate: string | null;
+  durationDays: number | null;
+  dueDate: string | null;
   createdAt: string;
   disbursedAt: string | null;
   updatedAt: string;

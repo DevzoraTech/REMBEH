@@ -133,7 +133,7 @@ export function LivePaymentsPanel({
               field repayments · newest first by date
             </p>
           </div>
-          <span className="text-[10px] font-semibold lowercase tracking-[0.08em] text-[var(--forest-emerald)]">
+          <span className="text-[10px] font-semibold capitalize tracking-[0.08em] text-[var(--forest-emerald)]">
             live
           </span>
         </div>

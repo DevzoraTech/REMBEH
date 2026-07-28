@@ -15,6 +15,8 @@ const loanListInclude = {
     select: {
       id: true,
       templateName: true,
+      durationDays: true,
+      paymentStartDate: true,
       loanProductTemplate: { select: { name: true } },
       officer: {
         select: {

@@ -7,6 +7,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/app/app-shell";
 import { LiveApplicationsPanel } from "../../components/app/live-applications-panel";
 import { LivePaymentsPanel } from "../../components/app/live-payments-panel";
+import {
+  DEFAULT_PAGE_SIZE,
+  PaginationControls,
+  paginateItems,
+} from "../../components/app/pagination";
 import { RowActions } from "../../components/app/row-actions";
 import { AppBootSkeleton, TableSkeleton } from "../../components/app/skeleton";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
@@ -223,8 +228,7 @@ export default function DashboardPage() {
                 }
                 setStats((current) => ({
                   ...current,
-                  collectedToday:
-                    payload.summary?.amountCollectedToday ?? null,
+                  collectedToday: payload.summary?.amountCollectedToday ?? null,
                   dueToday: payload.summary?.dueTodayCount ?? null,
                   repaymentsToday:
                     payload.summary?.repaymentsTodayCount ?? null,
@@ -348,14 +352,8 @@ function OwnerView({
     <>
       <section className="grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
         <Stat label="branches" value={String(branches.length)} />
-        <Stat
-          label="borrowers"
-          value={numberStat(customerCount)}
-        />
-        <Stat
-          label="active loans"
-          value={numberStat(stats.activeLoans)}
-        />
+        <Stat label="borrowers" value={numberStat(customerCount)} />
+        <Stat label="active loans" value={numberStat(stats.activeLoans)} />
         <Stat
           label="outstanding"
           value={moneyStat(stats.outstanding, stats.currency)}
@@ -401,10 +399,7 @@ function ManagerView({
   return (
     <>
       <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat
-          label="borrowers"
-          value={numberStat(customerCount)}
-        />
+        <Stat label="borrowers" value={numberStat(customerCount)} />
         <Stat label="active loans" value={numberStat(stats.activeLoans)} />
         <Stat
           label="completed loans"
@@ -471,8 +466,8 @@ function StaffView() {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="panel border-l-4 border-l-[var(--midnight-navy)] bg-white px-3 py-2.5 shadow-[0_8px_22px_rgba(20,33,61,0.05)]">
-      <p className="text-[10px] font-semibold lowercase tracking-[0.1em] text-slate-500">
-        {label.toLowerCase()}
+      <p className="text-[10px] font-semibold capitalize tracking-[0.1em] text-slate-500">
+        {label}
       </p>
       <p className="mt-0.5 text-xl font-bold text-[var(--midnight-navy)]">
         {value}
@@ -498,6 +493,13 @@ function roundMoney(value: number) {
 }
 
 function OwnerBranchesTable({ branches }: { branches: Branch[] }) {
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
+  const pagedBranches = useMemo(
+    () => paginateItems(branches, page, pageSize),
+    [branches, page, pageSize],
+  );
+
   return (
     <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
       <div className="flex items-center justify-between border-b border-[var(--line)] bg-[#eef3f0] px-3 py-2.5">
@@ -511,64 +513,81 @@ function OwnerBranchesTable({ branches }: { branches: Branch[] }) {
       {branches.length === 0 ? (
         <p className="px-3 py-5 text-sm text-slate-500">No branches yet.</p>
       ) : (
-        <table className="w-full table-fixed text-left text-[12px]">
-          <thead className="border-b border-[var(--line)] bg-[#f7faf8] text-[9px] lowercase tracking-[0.06em] text-slate-500">
-            <tr>
-              <th className="w-[24%] px-3 py-2.5 font-semibold">branch</th>
-              <th className="w-[23%] px-3 py-2.5 font-semibold">address</th>
-              <th className="w-[20%] px-3 py-2.5 font-semibold">manager</th>
-              <th className="w-[10%] px-3 py-2.5 text-right font-semibold">
-                staff
-              </th>
-              <th className="w-[11%] px-3 py-2.5 text-right font-semibold">
-                pending
-              </th>
-              <th className="w-[12%] px-3 py-2.5 text-right font-semibold">
-                action
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--line)]">
-            {branches.map((item) => (
-              <tr
-                key={item.id}
-                className="odd:bg-white even:bg-[#fbfdfc] hover:bg-[var(--soft-mist)]"
-              >
-                <td className="px-3 py-3">
-                  <p className="truncate font-semibold text-[var(--midnight-navy)]">
-                    {item.name}
-                  </p>
-                </td>
-                <td className="px-3 py-3 text-slate-600">
-                  <span className="block truncate">{item.address || "—"}</span>
-                </td>
-                <td className="px-3 py-3">
-                  <p className="truncate font-semibold text-[var(--midnight-navy)]">
-                    {item.manager?.name ?? "No manager"}
-                  </p>
-                  <ManagerStatusBadge status={item.manager?.inviteStatus} />
-                </td>
-                <td className="px-3 py-3 text-right font-bold tabular-nums text-[var(--midnight-navy)]">
-                  {item.staffSummary?.active ?? 0}
-                </td>
-                <td className="px-3 py-3 text-right font-bold tabular-nums text-amber-700">
-                  {item.staffSummary?.pendingInvites ?? 0}
-                </td>
-                <td className="px-2 py-3 text-right">
-                  <RowActions
-                    label={`Open actions for ${item.name}`}
-                    items={[
-                      {
-                        label: item.manager ? "Edit manager" : "Assign manager",
-                        href: `/branches?invite=manager&branchId=${item.id}`,
-                      },
-                    ]}
-                  />
-                </td>
+        <>
+          <table className="w-full table-fixed text-left text-[12px]">
+            <thead className="border-b border-[var(--line)] bg-[#f7faf8] text-[9px] capitalize tracking-[0.06em] text-slate-500">
+              <tr>
+                <th className="w-[24%] px-3 py-2.5 font-semibold">branch</th>
+                <th className="w-[23%] px-3 py-2.5 font-semibold">address</th>
+                <th className="w-[20%] px-3 py-2.5 font-semibold">manager</th>
+                <th className="w-[10%] px-3 py-2.5 text-right font-semibold">
+                  staff
+                </th>
+                <th className="w-[11%] px-3 py-2.5 text-right font-semibold">
+                  pending
+                </th>
+                <th className="w-[12%] px-3 py-2.5 text-right font-semibold">
+                  action
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-[var(--line)]">
+              {pagedBranches.items.map((item) => (
+                <tr
+                  key={item.id}
+                  className="odd:bg-white even:bg-[#fbfdfc] hover:bg-[var(--soft-mist)]"
+                >
+                  <td className="px-3 py-3">
+                    <p className="truncate font-semibold text-[var(--midnight-navy)]">
+                      {item.name}
+                    </p>
+                  </td>
+                  <td className="px-3 py-3 text-slate-600">
+                    <span className="block truncate">
+                      {item.address || "—"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3">
+                    <p className="truncate font-semibold text-[var(--midnight-navy)]">
+                      {item.manager?.name ?? "No manager"}
+                    </p>
+                    <ManagerStatusBadge status={item.manager?.inviteStatus} />
+                  </td>
+                  <td className="px-3 py-3 text-right font-bold tabular-nums text-[var(--midnight-navy)]">
+                    {item.staffSummary?.active ?? 0}
+                  </td>
+                  <td className="px-3 py-3 text-right font-bold tabular-nums text-amber-700">
+                    {item.staffSummary?.pendingInvites ?? 0}
+                  </td>
+                  <td className="px-2 py-3 text-right">
+                    <RowActions
+                      label={`Open actions for ${item.name}`}
+                      items={[
+                        {
+                          label: item.manager
+                            ? "Edit manager"
+                            : "Assign manager",
+                          href: `/branches?invite=manager&branchId=${item.id}`,
+                        },
+                      ]}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <PaginationControls
+            page={pagedBranches.currentPage}
+            pageSize={pageSize}
+            total={branches.length}
+            itemLabel="branches"
+            onPageChange={setPage}
+            onPageSizeChange={(nextPageSize) => {
+              setPageSize(nextPageSize);
+              setPage(1);
+            }}
+          />
+        </>
       )}
     </section>
   );
@@ -577,7 +596,7 @@ function OwnerBranchesTable({ branches }: { branches: Branch[] }) {
 function ManagerStatusBadge({ status }: { status?: string | null }) {
   if (!status) {
     return (
-      <span className="mt-1 inline-flex border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold lowercase tracking-[0.04em] text-amber-700">
+      <span className="mt-1 inline-flex border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[9px] font-bold capitalize tracking-[0.04em] text-amber-700">
         not assigned
       </span>
     );
@@ -592,7 +611,7 @@ function ManagerStatusBadge({ status }: { status?: string | null }) {
 
   return (
     <span
-      className={`mt-1 inline-flex border px-1.5 py-0.5 text-[9px] font-bold lowercase tracking-[0.04em] ${className}`}
+      className={`mt-1 inline-flex border px-1.5 py-0.5 text-[9px] font-bold capitalize tracking-[0.04em] ${className}`}
     >
       {statusLabel(status)}
     </span>
