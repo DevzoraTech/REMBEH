@@ -7,7 +7,7 @@
 #     --apk /path/to/app-release.apk \
 #     --version 1.0.0 \
 #     --build 1 \
-#     [--message "..."]
+#     [--message "..."] [--changelog "item one,item two"] [--force] [--min-build 1]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -16,6 +16,9 @@ APK=""
 VERSION=""
 BUILD=""
 MESSAGE="First production APK"
+CHANGELOG_CSV=""
+FORCE_UPDATE="false"
+MIN_BUILD="1"
 APP_NAME="mobile"
 PLATFORM="android"
 API_URL="${REMBEH_API_URL:-https://rembeh-api.antikra.com/api/v1}"
@@ -26,6 +29,9 @@ while [[ $# -gt 0 ]]; do
     --version|-v) VERSION="$2"; shift 2 ;;
     --build|-b) BUILD="$2"; shift 2 ;;
     --message|-m) MESSAGE="$2"; shift 2 ;;
+    --changelog|-c) CHANGELOG_CSV="$2"; shift 2 ;;
+    --force) FORCE_UPDATE="true"; shift ;;
+    --min-build) MIN_BUILD="$2"; shift 2 ;;
     *) echo "Unknown arg: $1" >&2; exit 1 ;;
   esac
 done
@@ -50,6 +56,11 @@ fi
 S3_KEY="releases/${APP_NAME}/${PLATFORM}/build-${BUILD}/rembeh-v${VERSION}.apk"
 HASH="$(shasum -a 256 "$APK" | awk '{print $1}')"
 SIZE="$(wc -c <"$APK" | tr -d ' ')"
+if [[ -n "$CHANGELOG_CSV" ]]; then
+  CHANGELOG_JSON=$(python3 -c "import json,sys; print(json.dumps([x.strip() for x in sys.argv[1].split(',') if x.strip()]))" "$CHANGELOG_CSV")
+else
+  CHANGELOG_JSON='[]'
+fi
 
 echo "==> Uploading $APK → s3://${S3_BUCKET:-rembeh-prod-bucket}/$S3_KEY"
 APK_PATH="$APK" APK_HASH="$HASH" S3_KEY="$S3_KEY" APP_NAME="$APP_NAME" VERSION="$VERSION" BUILD="$BUILD" \
@@ -101,7 +112,7 @@ main().catch((e) => {
 NODE
 
 echo "==> Registering release in Postgres via Prisma..."
-APK_PATH="$APK" APK_HASH="$HASH" S3_KEY="$S3_KEY" APP_NAME="$APP_NAME" VERSION="$VERSION" BUILD="$BUILD" MESSAGE="$MESSAGE" PLATFORM="$PLATFORM" \
+APK_PATH="$APK" APK_HASH="$HASH" S3_KEY="$S3_KEY" APP_NAME="$APP_NAME" VERSION="$VERSION" BUILD="$BUILD" MESSAGE="$MESSAGE" PLATFORM="$PLATFORM" FORCE_UPDATE="$FORCE_UPDATE" MIN_BUILD="$MIN_BUILD" CHANGELOG_JSON="$CHANGELOG_JSON" \
 node <<'NODE'
 const { PrismaClient } = require('@prisma/client');
 const { PrismaPg } = require('@prisma/adapter-pg');
@@ -112,6 +123,8 @@ async function main() {
   const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
   try {
     const buildNumber = parseInt(process.env.BUILD, 10);
+    const minSupportedBuild = parseInt(process.env.MIN_BUILD || '1', 10);
+    const changelog = JSON.parse(process.env.CHANGELOG_JSON || '[]');
     const existing = await prisma.appRelease.findFirst({
       where: {
         appName: process.env.APP_NAME,
@@ -125,11 +138,11 @@ async function main() {
       version: process.env.VERSION,
       buildNumber,
       updateMode: 'full',
-      forceUpdate: false,
-      minSupportedBuild: 1,
+      forceUpdate: process.env.FORCE_UPDATE === 'true',
+      minSupportedBuild,
       apkUrl: process.env.S3_KEY,
       apkHash: process.env.APK_HASH,
-      changelog: ['First production APK'],
+      changelog: changelog.length ? changelog : ['Mobile app update'],
       message: process.env.MESSAGE || null,
       isActive: true,
     };
@@ -141,6 +154,8 @@ async function main() {
         id: row.id,
         version: row.version,
         buildNumber: row.buildNumber,
+        forceUpdate: row.forceUpdate,
+        minSupportedBuild: row.minSupportedBuild,
         s3Key: row.apkUrl,
       }),
     );
