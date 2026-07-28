@@ -590,57 +590,80 @@ class _HandoverMetric extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final content = Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: softIvory,
-        border: Border.all(color: line),
-        borderRadius: rembehBorderRadius(rembehRadiusMd),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: iconColor.withValues(alpha: 0.12),
-              borderRadius: rembehBorderRadius(rembehRadiusSm),
-            ),
-            child: Icon(icon, color: iconColor, size: 18),
+    final content = LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 170;
+        final iconSize = compact ? 31.0 : 34.0;
+
+        return Container(
+          constraints: const BoxConstraints(minHeight: 82),
+          padding: EdgeInsets.all(compact ? 8 : 10),
+          decoration: BoxDecoration(
+            color: softIvory,
+            border: Border.all(color: line),
+            borderRadius: rembehBorderRadius(rembehRadiusMd),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: slateText,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    height: 1.1,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: iconSize,
+                    height: iconSize,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: iconColor.withValues(alpha: 0.12),
+                      borderRadius: rembehBorderRadius(rembehRadiusSm),
+                    ),
+                    child: Icon(
+                      icon,
+                      color: iconColor,
+                      size: compact ? 17 : 18,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        style: TextStyle(
+                          color: slateText,
+                          fontSize: compact ? 12 : 13,
+                          fontWeight: FontWeight.w800,
+                          height: 1.1,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'UGX ${formatMoney(value)}',
+                    maxLines: 1,
+                    style: const TextStyle(
+                      color: midnightNavy,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      height: 1.05,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  'UGX ${formatMoney(value)}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: midnightNavy,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
 
     if (onTap == null) return content;

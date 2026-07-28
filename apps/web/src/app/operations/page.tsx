@@ -51,6 +51,7 @@ type DailyOperation = {
   floatIssued: number;
   floatSetAside: number;
   floatRemaining: number;
+  processingFeesTotal: number;
   cashReturnedByAgents: number;
   agentsWithFloatCount: number;
   agentsReturnedCount: number;
@@ -104,6 +105,7 @@ type DailyOperationAgentReturn = {
   amountGiven: number;
   amountDisbursed: number;
   amountCollected: number;
+  processingFees: number;
   expectedReturn: number;
   amountReturned: number | null;
   variance: number | null;
@@ -763,7 +765,7 @@ function OpenOperationView({
         <OperationStat
           label="Expected closing"
           value={formatMoney(operation.expectedClosingBalance)}
-          hint="After agent returns"
+          hint="Includes fees"
           tone="good"
           icon={<ShieldCheck className="size-4" />}
           featured
@@ -860,6 +862,10 @@ function OpenOperationView({
               value={`${operation.loansIssuedCount} · ${formatMoney(
                 operation.loansIssuedPrincipal,
               )}`}
+            />
+            <DetailRow
+              label="Loan processing fees"
+              value={formatMoney(operation.processingFeesTotal)}
             />
             <DetailRow
               label="Expected closing"
@@ -1001,11 +1007,12 @@ function AgentReturnsPanel({
         </div>
       ) : (
         <div className="divide-y divide-[var(--line)]">
-          <div className="hidden grid-cols-[minmax(0,1.1fr)_100px_100px_100px_110px_96px] gap-3 bg-[#e5ece8] px-4 py-2.5 text-[10px] font-semibold text-slate-500 lg:grid">
+          <div className="hidden grid-cols-[minmax(0,1.1fr)_96px_96px_96px_90px_110px_90px] gap-3 bg-[#e5ece8] px-4 py-2.5 text-[10px] font-semibold text-slate-500 lg:grid">
             <span>Agent</span>
             <span className="text-right">Float</span>
             <span className="text-right">Loans</span>
             <span className="text-right">Collections</span>
+            <span className="text-right">Fees</span>
             <span className="text-right">Expected</span>
             <span className="text-right">Return</span>
           </div>
@@ -1015,7 +1022,7 @@ function AgentReturnsPanel({
             return (
               <div
                 key={agentReturn.floatId}
-                className="grid gap-3 px-4 py-3 text-sm text-[var(--midnight-navy)] lg:grid-cols-[minmax(0,1.1fr)_100px_100px_100px_110px_96px] lg:items-center"
+                className="grid gap-3 px-4 py-3 text-sm text-[var(--midnight-navy)] lg:grid-cols-[minmax(0,1.1fr)_96px_96px_96px_90px_110px_90px] lg:items-center"
               >
                 <div className="min-w-0">
                   <p className="truncate font-bold">{agentReturn.agentName}</p>
@@ -1027,6 +1034,7 @@ function AgentReturnsPanel({
                 <MoneyCell value={agentReturn.amountGiven} />
                 <MoneyCell value={agentReturn.amountDisbursed} />
                 <MoneyCell value={agentReturn.amountCollected} />
+                <MoneyCell value={agentReturn.processingFees} />
                 <MoneyCell value={agentReturn.expectedReturn} strong />
                 <div className="flex items-center justify-between gap-2 lg:justify-end">
                   {returned ? (
@@ -1067,7 +1075,7 @@ function AgentReturnsPanel({
                   )}
                 </div>
                 {selected && !returned ? (
-                  <div className="grid gap-2 border-t border-[var(--line)] pt-3 lg:col-span-6 lg:grid-cols-[160px_minmax(0,1fr)_110px]">
+                  <div className="grid gap-2 border-t border-[var(--line)] pt-3 lg:col-span-7 lg:grid-cols-[160px_minmax(0,1fr)_110px]">
                     <MoneyField
                       label="Returned cash"
                       value={form.amountReturned}
@@ -1182,6 +1190,9 @@ function CloseDayCard({
         </p>
         <p className="mt-0.5 text-xs text-slate-500">
           Expected: {formatMoney(operation.expectedClosingBalance)}
+        </p>
+        <p className="mt-0.5 text-xs text-slate-500">
+          Loan processing fees: {formatMoney(operation.processingFeesTotal)}
         </p>
       </header>
       <div className="space-y-3 p-4">

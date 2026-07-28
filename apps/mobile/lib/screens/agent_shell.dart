@@ -306,15 +306,15 @@ class _AgentDayCheckingScreen extends StatelessWidget {
                     children: [
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: onSignOut,
-                          child: const Text('Sign out'),
+                          onPressed: loading ? null : onSignOut,
+                          child: const Text('Signout'),
                         ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: FilledButton(
-                          onPressed: loading ? null : onRefresh,
-                          child: const Text('Refresh'),
+                        child: _CheckAgainButton(
+                          loading: loading,
+                          onPressed: onRefresh,
                         ),
                       ),
                     ],
@@ -347,6 +347,16 @@ class _AgentDayLockedScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final branchName = status.branch?.name ?? 'Your branch';
+    final isBranchNotOpen = status.lockReason == 'BRANCH_NOT_OPEN';
+    final title = isBranchNotOpen
+        ? 'Branch Not Open!'
+        : status.lockTitle ?? 'Agent app closed';
+    final message =
+        error ??
+        (isBranchNotOpen
+            ? 'Your branch manager has not opened today’s operations yet.'
+            : status.lockMessage ?? 'You cannot use the app now.');
+
     return Scaffold(
       backgroundColor: softIvory,
       body: SafeArea(
@@ -381,7 +391,7 @@ class _AgentDayLockedScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    status.lockTitle ?? 'Agent app closed',
+                    title,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: midnightNavy,
@@ -389,21 +399,21 @@ class _AgentDayLockedScreen extends StatelessWidget {
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    branchName,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: forestEmerald,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
+                  if (!isBranchNotOpen) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      branchName,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: forestEmerald,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                  ),
+                  ],
                   const SizedBox(height: 10),
                   Text(
-                    error ??
-                        status.lockMessage ??
-                        'You cannot use the app now.',
+                    message,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: slateText,
@@ -434,15 +444,15 @@ class _AgentDayLockedScreen extends StatelessWidget {
                     children: [
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: onSignOut,
-                          child: const Text('Sign out'),
+                          onPressed: loading ? null : onSignOut,
+                          child: const Text('Signout'),
                         ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
-                        child: FilledButton(
-                          onPressed: loading ? null : onRefresh,
-                          child: const Text('Refresh'),
+                        child: _CheckAgainButton(
+                          loading: loading,
+                          onPressed: onRefresh,
                         ),
                       ),
                     ],
@@ -453,6 +463,38 @@ class _AgentDayLockedScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _CheckAgainButton extends StatelessWidget {
+  const _CheckAgainButton({required this.loading, required this.onPressed});
+
+  final bool loading;
+  final Future<void> Function() onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilledButton(
+      onPressed: loading ? null : onPressed,
+      child: loading
+          ? const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: forestEmerald,
+                  ),
+                ),
+                SizedBox(width: 8),
+                Text('Checking…'),
+              ],
+            )
+          : const Text('Check again'),
     );
   }
 }

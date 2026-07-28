@@ -139,9 +139,9 @@ export class OperationsService {
         branchStatus: null,
         canUseApp: false,
         lockReason: 'BRANCH_NOT_OPEN',
-        lockTitle: 'Branch not opened',
+        lockTitle: 'Branch Not Open!',
         lockMessage:
-          'Your branch has not been opened for today. Wait for your manager to open the day.',
+          'Your branch manager has not opened today’s operations yet.',
         float: emptyFloat,
       };
     }
