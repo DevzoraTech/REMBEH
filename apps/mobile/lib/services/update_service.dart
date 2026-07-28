@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -65,6 +66,9 @@ class UpdateCheckResult {
 
 class UpdateService {
   static const String _appName = 'mobile';
+  static const MethodChannel _installerChannel = MethodChannel(
+    'com.antikra.rembeh/update_installer',
+  );
 
   /// Check backend for updates. Returns null on network errors (non-blocking).
   static Future<UpdateCheckResult?> checkForUpdate() async {
@@ -153,17 +157,73 @@ class UpdateService {
     }
   }
 
-  static Future<bool> installApk(String filePath) async {
+  static Future<bool> canInstallApks() async {
+    if (!Platform.isAndroid) return false;
     try {
-      if (!Platform.isAndroid) return false;
+      return await _installerChannel.invokeMethod<bool>('canInstallApks') ??
+          false;
+    } on MissingPluginException {
+      return true;
+    } catch (e) {
+      debugPrint('[UpdateService] Install permission check failed: $e');
+      return false;
+    }
+  }
+
+  static Future<InstallPermissionResult> requestInstallPermission() async {
+    if (!Platform.isAndroid) return InstallPermissionResult.failed;
+    try {
+      final nativeResult = await _installerChannel.invokeMethod<String>(
+        'requestInstallPermission',
+      );
+      switch (nativeResult) {
+        case 'already_allowed':
+          return InstallPermissionResult.alreadyAllowed;
+        case 'permission_required':
+          return InstallPermissionResult.permissionScreenOpened;
+        case 'failed':
+          return InstallPermissionResult.failed;
+      }
+    } on MissingPluginException {
+      return InstallPermissionResult.alreadyAllowed;
+    } catch (e) {
+      debugPrint('[UpdateService] Install permission request failed: $e');
+    }
+    return InstallPermissionResult.failed;
+  }
+
+  static Future<ApkInstallResult> installApk(String filePath) async {
+    try {
+      if (!Platform.isAndroid) return ApkInstallResult.failed;
+      final nativeResult = await _installerChannel.invokeMethod<String>(
+        'installApk',
+        {'path': filePath},
+      );
+      switch (nativeResult) {
+        case 'installer_opened':
+          return ApkInstallResult.installerOpened;
+        case 'permission_required':
+          return ApkInstallResult.permissionRequired;
+        case 'failed':
+          return ApkInstallResult.failed;
+      }
+    } on MissingPluginException {
+      // Older local builds can still use the generic Android file opener.
+    } catch (e) {
+      debugPrint('[UpdateService] Native install launch failed: $e');
+    }
+
+    try {
       final result = await OpenFilex.open(
         filePath,
         type: 'application/vnd.android.package-archive',
       );
-      return result.type == ResultType.done;
+      return result.type == ResultType.done
+          ? ApkInstallResult.installerOpened
+          : ApkInstallResult.failed;
     } catch (e) {
       debugPrint('[UpdateService] Install failed: $e');
-      return false;
+      return ApkInstallResult.failed;
     }
   }
 
@@ -182,6 +242,10 @@ class UpdateService {
     } catch (_) {}
   }
 }
+
+enum InstallPermissionResult { alreadyAllowed, permissionScreenOpened, failed }
+
+enum ApkInstallResult { installerOpened, permissionRequired, failed }
 
 class AccumulatorSink<T> implements Sink<T> {
   final List<T> events = [];

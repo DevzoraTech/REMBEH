@@ -681,37 +681,37 @@ void _showExpectedHandoverSheet(
       final float = status.float;
       return DraggableScrollableSheet(
         expand: false,
-        initialChildSize: 0.76,
-        minChildSize: 0.58,
-        maxChildSize: 0.92,
+        initialChildSize: 0.62,
+        minChildSize: 0.44,
+        maxChildSize: 0.82,
         builder: (context, controller) {
           return ListView(
             controller: controller,
-            padding: const EdgeInsets.fromLTRB(22, 16, 22, 28),
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 20),
             children: [
               Center(
                 child: Container(
-                  width: 38,
-                  height: 5,
+                  width: 34,
+                  height: 4,
                   decoration: BoxDecoration(
                     color: line.withValues(alpha: 0.78),
                     borderRadius: rembehBorderRadius(20),
                   ),
                 ),
               ),
-              const SizedBox(height: 28),
+              const SizedBox(height: 18),
               const Text(
                 'Expected handover',
                 style: TextStyle(
                   color: midnightNavy,
                   fontWeight: FontWeight.w900,
-                  fontSize: 28,
+                  fontSize: 23,
                   height: 1.08,
                 ),
               ),
-              const SizedBox(height: 28),
+              const SizedBox(height: 16),
               _ExpectedHandoverTotalCard(amount: float.expectedHandover),
-              const SizedBox(height: 22),
+              const SizedBox(height: 14),
               _HandoverBreakdownCard(
                 floatReceived: float.amountReceived,
                 loansIssued: float.amountDisbursed,
@@ -736,11 +736,11 @@ class _ExpectedHandoverTotalCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints: const BoxConstraints(minHeight: 132),
-      padding: const EdgeInsets.fromLTRB(18, 20, 18, 20),
+      constraints: const BoxConstraints(minHeight: 96),
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
       decoration: BoxDecoration(
         color: softIvory,
-        borderRadius: rembehBorderRadius(18),
+        borderRadius: rembehBorderRadius(16),
       ),
       child: Row(
         children: [
@@ -753,12 +753,12 @@ class _ExpectedHandoverTotalCard extends StatelessWidget {
                   'Expected to hand over',
                   style: TextStyle(
                     color: midnightNavy,
-                    fontSize: 17,
+                    fontSize: 14,
                     fontWeight: FontWeight.w900,
                     height: 1.1,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 9),
                 SizedBox(
                   width: double.infinity,
                   child: FittedBox(
@@ -769,7 +769,7 @@ class _ExpectedHandoverTotalCard extends StatelessWidget {
                       maxLines: 1,
                       style: const TextStyle(
                         color: forestEmerald,
-                        fontSize: 39,
+                        fontSize: 31,
                         fontWeight: FontWeight.w900,
                         height: 0.95,
                       ),
@@ -779,10 +779,10 @@ class _ExpectedHandoverTotalCard extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 10),
           Container(
-            width: 76,
-            height: 76,
+            width: 58,
+            height: 58,
             alignment: Alignment.center,
             decoration: const BoxDecoration(
               color: sage,
@@ -791,7 +791,7 @@ class _ExpectedHandoverTotalCard extends StatelessWidget {
             child: const Icon(
               Icons.account_balance_wallet_outlined,
               color: forestEmerald,
-              size: 42,
+              size: 31,
             ),
           ),
         ],
@@ -820,15 +820,15 @@ class _HandoverBreakdownCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 22, 16, 0),
+      padding: const EdgeInsets.fromLTRB(14, 16, 14, 0),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: rembehBorderRadius(16),
+        borderRadius: rembehBorderRadius(14),
         boxShadow: [
           BoxShadow(
             color: midnightNavy.withValues(alpha: 0.06),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
@@ -836,12 +836,12 @@ class _HandoverBreakdownCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Padding(
-            padding: EdgeInsets.only(bottom: 16),
+            padding: EdgeInsets.only(bottom: 12),
             child: Text(
               'Handover breakdown',
               style: TextStyle(
                 color: midnightNavy,
-                fontSize: 20,
+                fontSize: 17,
                 fontWeight: FontWeight.w900,
                 height: 1.1,
               ),
@@ -908,40 +908,40 @@ class _HandoverBreakdownLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 22),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Row(
         children: [
           Container(
-            width: 32,
-            height: 32,
+            width: 28,
+            height: 28,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: iconColor.withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, color: iconColor, size: 19),
+            child: Icon(icon, color: iconColor, size: 17),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           Expanded(
-            flex: 5,
+            flex: 6,
             child: Text(
               label,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: midnightNavy,
-                fontSize: 16,
+                fontSize: 14,
                 fontWeight: FontWeight.w600,
                 height: 1.1,
               ),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 8),
           _FittedMoneyText(
             value: value,
             color: valueColor,
             subtract: subtract,
-            fontSize: 18,
+            fontSize: 15,
           ),
         ],
       ),
@@ -956,7 +956,7 @@ class _HandoverDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 1,
-      margin: const EdgeInsets.only(left: 0, right: 0, bottom: 26),
+      margin: const EdgeInsets.only(left: 0, right: 0, bottom: 16),
       color: line.withValues(alpha: 0.62),
     );
   }
@@ -970,25 +970,25 @@ class _HandoverTotalLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 22),
+      padding: const EdgeInsets.only(bottom: 16),
       child: Row(
         children: [
           const Expanded(
-            flex: 5,
+            flex: 6,
             child: Text(
               'Expected handover',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: midnightNavy,
-                fontSize: 20,
+                fontSize: 16,
                 fontWeight: FontWeight.w900,
                 height: 1.1,
               ),
             ),
           ),
-          const SizedBox(width: 12),
-          _FittedMoneyText(value: value, color: forestEmerald, fontSize: 21),
+          const SizedBox(width: 8),
+          _FittedMoneyText(value: value, color: forestEmerald, fontSize: 17),
         ],
       ),
     );

@@ -7,11 +7,7 @@ class ForceUpdateScreen extends StatefulWidget {
   final UpdateCheckResult updateResult;
   final VoidCallback? onSkip;
 
-  const ForceUpdateScreen({
-    super.key,
-    required this.updateResult,
-    this.onSkip,
-  });
+  const ForceUpdateScreen({super.key, required this.updateResult, this.onSkip});
 
   @override
   State<ForceUpdateScreen> createState() => _ForceUpdateScreenState();
@@ -20,6 +16,7 @@ class ForceUpdateScreen extends StatefulWidget {
 class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
   bool _isDownloading = false;
   bool _downloadFailed = false;
+  bool _needsInstallPermission = false;
   double _progress = 0.0;
   String? _downloadedPath;
   String _statusText = '';
@@ -36,9 +33,29 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
       return;
     }
 
+    final canInstall = await UpdateService.canInstallApks();
+    if (!mounted) return;
+
+    if (!canInstall) {
+      final permissionResult = await UpdateService.requestInstallPermission();
+      if (!mounted) return;
+
+      setState(() {
+        _isDownloading = false;
+        _downloadFailed = permissionResult == InstallPermissionResult.failed;
+        _needsInstallPermission =
+            permissionResult != InstallPermissionResult.alreadyAllowed;
+        _statusText = permissionResult == InstallPermissionResult.failed
+            ? 'Open your phone settings and allow installs from REMBEH, then try again.'
+            : 'Allow installs from REMBEH, then return and tap Continue update.';
+      });
+      return;
+    }
+
     setState(() {
       _isDownloading = true;
       _downloadFailed = false;
+      _needsInstallPermission = false;
       _progress = 0.0;
       _statusText = 'Downloading update…';
     });
@@ -67,12 +84,41 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
       _statusText = 'Download complete. Installing…';
     });
 
-    await UpdateService.installApk(path);
+    await _openInstaller();
+  }
+
+  Future<void> _openInstaller() async {
+    final path = _downloadedPath;
+    if (path == null) return;
+
+    setState(() {
+      _downloadFailed = false;
+      _needsInstallPermission = false;
+      _statusText = 'Opening installer…';
+    });
+
+    final result = await UpdateService.installApk(path);
 
     if (mounted) {
       setState(() {
         _isDownloading = false;
-        _statusText = 'Install prompted. Follow the system installer.';
+        switch (result) {
+          case ApkInstallResult.installerOpened:
+            _downloadFailed = false;
+            _statusText = 'Install prompted. Follow the system installer.';
+            break;
+          case ApkInstallResult.permissionRequired:
+            _downloadFailed = false;
+            _needsInstallPermission = true;
+            _statusText =
+                'Allow installs from REMBEH, then return and tap Install now again.';
+            break;
+          case ApkInstallResult.failed:
+            _downloadFailed = true;
+            _needsInstallPermission = false;
+            _statusText = 'Could not open the installer. Please try again.';
+            break;
+        }
       });
     }
   }
@@ -179,7 +225,9 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          ...r.changelog.take(8).map(
+                          ...r.changelog
+                              .take(8)
+                              .map(
                                 (item) => Padding(
                                   padding: const EdgeInsets.only(bottom: 4),
                                   child: Row(
@@ -215,8 +263,7 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
                         value: _progress,
                         minHeight: 8,
                         backgroundColor: line,
-                        valueColor:
-                            const AlwaysStoppedAnimation(forestEmerald),
+                        valueColor: const AlwaysStoppedAnimation(forestEmerald),
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -237,28 +284,55 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
                     ),
                     const SizedBox(height: 12),
                   ],
+                  if (_needsInstallPermission) ...[
+                    Text(
+                      _statusText,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF92400E),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (!_isDownloading &&
+                      !_downloadFailed &&
+                      !_needsInstallPermission &&
+                      _downloadedPath != null &&
+                      _statusText.isNotEmpty) ...[
+                    Text(
+                      _statusText,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 13, color: slateText),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   if (!_isDownloading)
                     SizedBox(
                       width: double.infinity,
                       height: 52,
                       child: ElevatedButton.icon(
                         onPressed: _downloadedPath != null
-                            ? () => UpdateService.installApk(_downloadedPath!)
+                            ? _openInstaller
                             : _startUpdate,
                         icon: Icon(
                           _downloadedPath != null
                               ? Icons.install_mobile_rounded
-                              : (_downloadFailed
-                                  ? Icons.refresh_rounded
-                                  : Icons.download_rounded),
+                              : (_needsInstallPermission
+                                    ? Icons.verified_user_rounded
+                                    : (_downloadFailed
+                                          ? Icons.refresh_rounded
+                                          : Icons.download_rounded)),
                           size: 20,
                         ),
                         label: Text(
                           _downloadedPath != null
                               ? 'Install now'
-                              : (_downloadFailed
-                                  ? 'Retry download'
-                                  : 'Update now'),
+                              : (_needsInstallPermission
+                                    ? 'Continue update'
+                                    : (_downloadFailed
+                                          ? 'Retry download'
+                                          : 'Update now')),
                           style: const TextStyle(
                             fontWeight: FontWeight.w700,
                             fontSize: 15,
