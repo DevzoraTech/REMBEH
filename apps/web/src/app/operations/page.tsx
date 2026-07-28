@@ -266,20 +266,6 @@ export default function OperationsPage() {
                 },
           );
         }
-        if (!payload.operation && payload.openingBalance != null) {
-          setForm((current) => {
-            if (current.floatSetAside || current.cashAddedToday === "") {
-              return current;
-            }
-            return {
-              ...current,
-              floatSetAside: String(
-                Number(current.openingBalance || payload.openingBalance) +
-                  Number(current.cashAddedToday || 0),
-              ),
-            };
-          });
-        }
       } catch (caught) {
         setError(
           caught instanceof Error
@@ -645,38 +631,16 @@ function OpeningView({
             label="Opening balance"
             value={form.openingBalance}
             locked={!editableDate || suggestedOpeningBalance != null}
-            onChange={(value) =>
-              setForm({
-                ...form,
-                openingBalance: value,
-                floatSetAside:
-                  form.floatSetAside === ""
-                    ? String(
-                        Number(value || 0) + Number(form.cashAddedToday || 0),
-                      )
-                    : form.floatSetAside,
-              })
-            }
+            onChange={(value) => setForm({ ...form, openingBalance: value })}
           />
           <MoneyField
             label="Cash added today"
             value={form.cashAddedToday}
             locked={!editableDate}
-            onChange={(value) =>
-              setForm({
-                ...form,
-                cashAddedToday: value,
-                floatSetAside:
-                  form.floatSetAside === ""
-                    ? String(
-                        Number(form.openingBalance || 0) + Number(value || 0),
-                      )
-                    : form.floatSetAside,
-              })
-            }
+            onChange={(value) => setForm({ ...form, cashAddedToday: value })}
           />
           <MoneyField
-            label="Float set aside"
+            label="Assignable float limit"
             value={form.floatSetAside}
             locked={!editableDate}
             onChange={(value) => setForm({ ...form, floatSetAside: value })}
@@ -702,7 +666,7 @@ function OpeningView({
             {form.floatSetAside !== "" &&
             Number(form.floatSetAside) > openingTotal ? (
               <p className="mt-1 text-xs font-semibold text-red-600">
-                Float set aside cannot be more than available cash.
+                Assignable float limit cannot be more than available cash.
               </p>
             ) : null}
           </div>
@@ -809,9 +773,9 @@ function OpenOperationView({
           tone="blue"
         />
         <OperationStat
-          label="Float set aside"
+          label="Float limit"
           value={formatMoney(operation.floatSetAside)}
-          hint={`${formatMoney(operation.floatIssued)} issued`}
+          hint={`${formatMoney(operation.floatIssued)} assigned`}
           tone="warn"
         />
         <OperationStat
@@ -864,15 +828,15 @@ function OpenOperationView({
               value={formatMoney(operation.cashAvailableAtOpening)}
             />
             <DetailRow
-              label="Float set aside"
+              label="Assignable float limit"
               value={formatMoney(operation.floatSetAside)}
             />
             <DetailRow
-              label="Float remaining"
+              label="Float left for assigning"
               value={formatMoney(operation.floatRemaining)}
             />
             <DetailRow
-              label="Float issued"
+              label="Float assigned"
               value={formatMoney(operation.floatIssued)}
             />
             <DetailRow
@@ -924,7 +888,7 @@ function OpenOperationView({
                   Assign float
                 </span>
                 <span className="mt-0.5 block text-xs text-slate-500">
-                  Float left: {formatMoney(operation.floatRemaining)}
+                  Assignable left: {formatMoney(operation.floatRemaining)}
                 </span>
               </span>
               <Send className="size-4 text-[var(--forest-emerald)]" />

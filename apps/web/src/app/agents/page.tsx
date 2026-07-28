@@ -333,7 +333,7 @@ export default function AgentsPage() {
     }
     if (amount > floatLeftFromOperations) {
       setError(
-        `Float exceeds amount set aside. Available: UGX ${formatAmount(
+        `Float exceeds assignable float limit. Available: UGX ${formatAmount(
           floatLeftFromOperations,
         )}.`,
       );
@@ -523,7 +523,7 @@ export default function AgentsPage() {
           className="panel flex flex-wrap items-end gap-3 px-3 py-3"
         >
           <label className="grid min-w-[150px] gap-1 text-xs font-semibold text-slate-500">
-            <span>float day</span>
+            <span>Float day</span>
             <input
               type="date"
               value={selectedDate}
@@ -536,7 +536,7 @@ export default function AgentsPage() {
           </label>
           <div className="grid min-w-[120px] gap-1">
             <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
-              given
+              Given
             </p>
             <p className="break-words text-[clamp(0.68rem,1.4vw,1.125rem)] font-bold leading-tight tabular-nums text-[var(--forest-emerald)]">
               {floatStats.given}
@@ -544,7 +544,7 @@ export default function AgentsPage() {
           </div>
           <div className="grid min-w-[120px] gap-1">
             <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
-              missing
+              Missing
             </p>
             <p className="break-words text-[clamp(0.68rem,1.4vw,1.125rem)] font-bold leading-tight tabular-nums text-amber-700">
               {floatStats.missing}
@@ -552,7 +552,7 @@ export default function AgentsPage() {
           </div>
           <div className="grid min-w-[150px] gap-1">
             <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
-              float left
+              Assignable float left
             </p>
             <p className="break-words text-[clamp(0.68rem,1.4vw,1.125rem)] font-bold leading-tight tabular-nums text-[var(--midnight-navy)]">
               {operationForSelectedDate
@@ -638,7 +638,7 @@ export default function AgentsPage() {
             </p>
           ) : canManageFloat && floatAmountExceedsSetAside ? (
             <p className="w-full text-xs font-semibold text-red-600">
-              Float exceeds amount set aside. Available: UGX{" "}
+              Float exceeds assignable float limit. Available: UGX{" "}
               {formatAmount(floatLeftFromOperations)}.
             </p>
           ) : canManageFloat &&
@@ -653,7 +653,7 @@ export default function AgentsPage() {
             operationForSelectedDate.status === "OPEN" &&
             floatLeftFromOperations <= 0 ? (
             <p className="w-full text-xs font-semibold text-amber-700">
-              No float left from the amount set aside.
+              No assignable float left for this day.
             </p>
           ) : null}
         </div>

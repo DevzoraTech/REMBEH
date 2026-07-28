@@ -116,13 +116,11 @@ export class OperationsService {
     const cashAvailableAtOpening = this.roundMoney(
       openingBalance + dto.cashAddedToday,
     );
-    const floatSetAside = this.roundMoney(
-      dto.floatSetAside ?? cashAvailableAtOpening,
-    );
+    const floatSetAside = this.roundMoney(dto.floatSetAside);
 
     if (floatSetAside > cashAvailableAtOpening) {
       throw new BadRequestException(
-        'Float set aside cannot be more than available cash.',
+        'Assignable float limit cannot be more than available cash.',
       );
     }
 
@@ -443,7 +441,7 @@ export class OperationsService {
     if (input.amountGiven > availableForThisAgent) {
       if (setAsideAvailableForThisAgent <= branchCashAvailableForThisAgent) {
         throw new BadRequestException(
-          `Float exceeds amount set aside. Available: ${availableForThisAgent}.`,
+          `Float exceeds assignable float limit. Available: ${availableForThisAgent}.`,
         );
       }
       throw new BadRequestException(
