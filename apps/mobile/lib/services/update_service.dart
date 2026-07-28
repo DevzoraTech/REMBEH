@@ -74,7 +74,7 @@ class UpdateService {
       final currentVersion = packageInfo.version;
       final platform = Platform.isAndroid ? 'android' : 'ios';
 
-      final uri = Uri.parse('${rembehApiBaseUrl}/app/check-update').replace(
+      final uri = Uri.parse('$rembehApiBaseUrl/app/check-update').replace(
         queryParameters: {
           'app': _appName,
           'currentBuild': currentBuild.toString(),
@@ -135,8 +135,9 @@ class UpdateService {
       final computedHash = hashSink.events.first.toString();
 
       if (expectedHash != null && expectedHash.isNotEmpty) {
-        final normalizedExpected =
-            expectedHash.replaceFirst('sha256:', '').toLowerCase();
+        final normalizedExpected = expectedHash
+            .replaceFirst('sha256:', '')
+            .toLowerCase();
         if (computedHash.toLowerCase() != normalizedExpected) {
           debugPrint('[UpdateService] HASH MISMATCH');
           await file.delete();
@@ -170,7 +171,7 @@ class UpdateService {
     try {
       final packageInfo = await PackageInfo.fromPlatform();
       await http.post(
-        Uri.parse('${rembehApiBaseUrl}/app/track-download'),
+        Uri.parse('$rembehApiBaseUrl/app/track-download'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'app': _appName,
