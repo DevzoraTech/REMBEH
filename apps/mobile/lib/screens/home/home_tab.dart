@@ -187,14 +187,16 @@ class _HomeTabState extends State<HomeTab> {
             const SizedBox(height: 14),
             Container(
               decoration: BoxDecoration(
-                color: const Color(0xFFE8F3EE),
-                border: Border.all(color: forestEmerald.withValues(alpha: 0.1)),
+                color: const Color(0xFF0B6A3B),
+                border: Border.all(
+                  color: forestEmerald.withValues(alpha: 0.22),
+                ),
                 borderRadius: rembehBorderRadius(rembehRadiusLg),
                 boxShadow: [
                   BoxShadow(
-                    color: midnightNavy.withValues(alpha: 0.04),
-                    blurRadius: 16,
-                    offset: const Offset(0, 8),
+                    color: forestEmerald.withValues(alpha: 0.18),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
                   ),
                 ],
               ),
@@ -207,7 +209,7 @@ class _HomeTabState extends State<HomeTab> {
                     child: Text(
                       'Today’s Summary',
                       style: TextStyle(
-                        color: midnightNavy,
+                        color: Colors.white,
                         fontWeight: FontWeight.w800,
                         fontSize: 14,
                       ),
@@ -223,7 +225,7 @@ class _HomeTabState extends State<HomeTab> {
                             iconColor: forestEmerald,
                             label: 'Collected',
                             value: formatMoney(_summary.amountCollectedToday),
-                            valueColor: forestEmerald,
+                            valueColor: Colors.white,
                             onTap: () => widget.onOpenRecords(
                               section: RecordsSection.repayments,
                               filter: RecordsFilter.collectedToday,
@@ -236,7 +238,7 @@ class _HomeTabState extends State<HomeTab> {
                             iconColor: forestEmerald,
                             label: 'Repayments',
                             value: '${_summary.repaymentsTodayCount}',
-                            valueColor: forestEmerald,
+                            valueColor: Colors.white,
                             onTap: () => widget.onOpenRecords(
                               section: RecordsSection.repayments,
                               filter: RecordsFilter.collectedToday,
@@ -249,7 +251,7 @@ class _HomeTabState extends State<HomeTab> {
                             iconColor: warmGold,
                             label: 'Due Today',
                             value: '${_summary.dueTodayCount}',
-                            valueColor: warmGold,
+                            valueColor: Colors.white,
                             onTap: () => widget.onOpenRecords(
                               section: RecordsSection.repayments,
                               filter: RecordsFilter.dueToday,
@@ -262,7 +264,7 @@ class _HomeTabState extends State<HomeTab> {
                             iconColor: midnightNavy,
                             label: 'Applications',
                             value: '${_summary.newApplicationsTodayCount}',
-                            valueColor: midnightNavy,
+                            valueColor: Colors.white,
                             onTap: () => widget.onOpenRecords(
                               section: RecordsSection.applications,
                               filter: RecordsFilter.today,
@@ -489,55 +491,64 @@ class _SummaryMetric extends StatelessWidget {
         borderRadius: rembehBorderRadius(rembehRadiusMd),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
-          child: Column(
-            children: [
-              Container(
-                width: 24,
-                height: 24,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.72),
-                  borderRadius: rembehBorderRadius(rembehRadiusSm),
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 58),
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.12),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+              borderRadius: rembehBorderRadius(rembehRadiusMd),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  width: 23,
+                  height: 23,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    borderRadius: rembehBorderRadius(rembehRadiusSm),
+                  ),
+                  child: Icon(icon, size: 13, color: iconColor),
                 ),
-                child: Icon(icon, size: 14, color: iconColor),
-              ),
-              const SizedBox(height: 4),
-              SizedBox(
-                width: double.infinity,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    label,
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    style: const TextStyle(
-                      color: slateText,
-                      fontSize: 9,
-                      height: 1.1,
-                      fontWeight: FontWeight.w700,
+                const SizedBox(height: 4),
+                SizedBox(
+                  width: double.infinity,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.78),
+                        fontSize: 9,
+                        height: 1.1,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 3),
-              SizedBox(
-                width: double.infinity,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Text(
-                    value,
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    style: TextStyle(
-                      color: valueColor,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w900,
-                      height: 1.05,
+                const SizedBox(height: 3),
+                SizedBox(
+                  width: double.infinity,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      value,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: valueColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        height: 1.05,
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1068,120 +1079,163 @@ class _DueClientCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
+      color: const Color(0xFFFCFEFD),
       borderRadius: rembehBorderRadius(rembehRadiusLg),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         borderRadius: rembehBorderRadius(rembehRadiusLg),
         child: Container(
-          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            border: Border.all(color: line),
+            border: Border.all(color: forestEmerald.withValues(alpha: 0.12)),
             borderRadius: rembehBorderRadius(rembehRadiusLg),
+            boxShadow: [
+              BoxShadow(
+                color: midnightNavy.withValues(alpha: 0.03),
+                blurRadius: 14,
+                offset: const Offset(0, 8),
+              ),
+            ],
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
             children: [
-              Container(
-                width: 40,
-                height: 40,
-                alignment: Alignment.center,
-                decoration: const BoxDecoration(
-                  color: sage,
-                  shape: BoxShape.circle,
-                ),
-                child: Text(
-                  client.initials,
-                  style: const TextStyle(
-                    color: forestEmerald,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
-                  ),
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                child: Container(
+                  width: 4,
+                  color: warmGold.withValues(alpha: 0.75),
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            client.fullName,
+                    Container(
+                      width: 34,
+                      height: 34,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: sage,
+                        borderRadius: rembehBorderRadius(rembehRadiusMd),
+                      ),
+                      child: Text(
+                        client.initials,
+                        style: const TextStyle(
+                          color: forestEmerald,
+                          fontWeight: FontWeight.w900,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  client.fullName,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: midnightNavy,
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 13.5,
+                                    height: 1.12,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 7,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: sage.withValues(alpha: 0.8),
+                                  borderRadius: rembehBorderRadius(
+                                    rembehRadiusSm,
+                                  ),
+                                ),
+                                child: Text(
+                                  formatActivityTime(
+                                    client.lastActivityAt,
+                                    now,
+                                  ),
+                                  maxLines: 1,
+                                  style: const TextStyle(
+                                    color: slateText,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w800,
+                                    height: 1,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            client.phone,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              color: midnightNavy,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 14,
+                              color: slateText,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
+                          const SizedBox(height: 7),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _ClientAmountLine(
+                                  label: 'Paid',
+                                  value: client.amountPaid,
+                                  color: forestEmerald,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _ClientAmountLine(
+                                  label: 'Due',
+                                  value: client.loanAmount,
+                                  color: warmGold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          client.synced
+                              ? Icons.check_circle
+                              : Icons.cloud_outlined,
+                          size: 15,
+                          color: client.synced ? forestEmerald : warmGold,
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(height: 3),
                         Text(
-                          formatActivityTime(client.lastActivityAt, now),
+                          client.synced ? 'Uploaded' : 'Pending',
                           style: const TextStyle(
                             color: slateText,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w800,
                           ),
                         ),
                       ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text.rich(
-                      TextSpan(
-                        style: const TextStyle(fontSize: 12),
-                        children: [
-                          TextSpan(
-                            text: '${client.phone} • ',
-                            style: const TextStyle(color: slateText),
-                          ),
-                          TextSpan(
-                            text:
-                                'Paid ${formatCompactMoney(client.amountPaid)}',
-                            style: const TextStyle(
-                              color: forestEmerald,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          TextSpan(
-                            text: ' · ${formatCompactMoney(client.loanAmount)}',
-                            style: const TextStyle(
-                              color: warmGold,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ],
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 6),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            client.synced
-                                ? Icons.check_circle
-                                : Icons.cloud_outlined,
-                            size: 14,
-                            color: client.synced ? forestEmerald : warmGold,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            client.synced ? 'Uploaded' : 'Pending',
-                            style: TextStyle(
-                              color: client.synced ? forestEmerald : warmGold,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
                     ),
                   ],
                 ),
@@ -1190,6 +1244,53 @@ class _DueClientCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ClientAmountLine extends StatelessWidget {
+  const _ClientAmountLine({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final int value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '$label ',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: slateText,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        Expanded(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              formatCompactMoney(value),
+              maxLines: 1,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+                height: 1,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
