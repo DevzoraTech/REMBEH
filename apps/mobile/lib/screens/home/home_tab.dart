@@ -187,27 +187,34 @@ class _HomeTabState extends State<HomeTab> {
             const SizedBox(height: 14),
             Container(
               decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border.all(color: line),
+                color: const Color(0xFFE8F3EE),
+                border: Border.all(color: forestEmerald.withValues(alpha: 0.1)),
                 borderRadius: rembehBorderRadius(rembehRadiusLg),
+                boxShadow: [
+                  BoxShadow(
+                    color: midnightNavy.withValues(alpha: 0.04),
+                    blurRadius: 16,
+                    offset: const Offset(0, 8),
+                  ),
+                ],
               ),
               clipBehavior: Clip.antiAlias,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Padding(
-                    padding: EdgeInsets.fromLTRB(12, 12, 12, 8),
+                    padding: EdgeInsets.fromLTRB(12, 12, 12, 4),
                     child: Text(
                       'Today’s Summary',
                       style: TextStyle(
                         color: midnightNavy,
                         fontWeight: FontWeight.w800,
-                        fontSize: 15,
+                        fontSize: 14,
                       ),
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 7),
                     child: Row(
                       children: [
                         Expanded(
@@ -265,7 +272,6 @@ class _HomeTabState extends State<HomeTab> {
                       ],
                     ),
                   ),
-                  const Divider(height: 1, color: line),
                   _HandoverStrip(status: widget.dayStatus),
                 ],
               ),
@@ -480,44 +486,55 @@ class _SummaryMetric extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
           child: Column(
             children: [
               Container(
-                width: 34,
-                height: 34,
+                width: 24,
+                height: 24,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: iconColor.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
+                  color: Colors.white.withValues(alpha: 0.72),
+                  borderRadius: rembehBorderRadius(rembehRadiusSm),
                 ),
-                child: Icon(icon, size: 17, color: iconColor),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: slateText,
-                  fontSize: 10,
-                  height: 1.15,
-                  fontWeight: FontWeight.w600,
-                ),
+                child: Icon(icon, size: 14, color: iconColor),
               ),
               const SizedBox(height: 4),
-              Text(
-                value,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: valueColor,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  height: 1.15,
+              SizedBox(
+                width: double.infinity,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    style: const TextStyle(
+                      color: slateText,
+                      fontSize: 9,
+                      height: 1.1,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 3),
+              SizedBox(
+                width: double.infinity,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    value,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: valueColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      height: 1.05,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -536,7 +553,7 @@ class _HandoverStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(9, 8, 9, 9),
+      padding: const EdgeInsets.fromLTRB(8, 2, 8, 8),
       child: Row(
         children: [
           Expanded(
@@ -583,17 +600,17 @@ class _HandoverMetric extends StatelessWidget {
     final content = LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 170;
-        final iconSize = compact ? 25.0 : 27.0;
+        final iconSize = compact ? 22.0 : 24.0;
 
         return Container(
-          constraints: const BoxConstraints(minHeight: 62),
+          constraints: const BoxConstraints(minHeight: 52),
           padding: EdgeInsets.symmetric(
-            horizontal: compact ? 7 : 8,
-            vertical: compact ? 7 : 8,
+            horizontal: compact ? 7 : 9,
+            vertical: compact ? 6 : 7,
           ),
           decoration: BoxDecoration(
-            color: softIvory,
-            border: Border.all(color: line),
+            color: Colors.white.withValues(alpha: 0.7),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.58)),
             borderRadius: rembehBorderRadius(rembehRadiusMd),
           ),
           child: Column(
@@ -613,7 +630,7 @@ class _HandoverMetric extends StatelessWidget {
                     child: Icon(
                       icon,
                       color: iconColor,
-                      size: compact ? 14 : 15,
+                      size: compact ? 13 : 14,
                     ),
                   ),
                   const SizedBox(width: 5),
@@ -626,7 +643,7 @@ class _HandoverMetric extends StatelessWidget {
                         maxLines: 1,
                         style: TextStyle(
                           color: slateText,
-                          fontSize: compact ? 10 : 11,
+                          fontSize: compact ? 9.5 : 10,
                           fontWeight: FontWeight.w800,
                           height: 1.1,
                         ),
@@ -646,7 +663,7 @@ class _HandoverMetric extends StatelessWidget {
                     maxLines: 1,
                     style: const TextStyle(
                       color: midnightNavy,
-                      fontSize: 14,
+                      fontSize: 13,
                       fontWeight: FontWeight.w900,
                       height: 1.05,
                     ),
