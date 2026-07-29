@@ -408,6 +408,93 @@ export class AgentsService {
     };
   }
 
+  async topUpFloat(
+    user: AuthenticatedUser,
+    agentId: string,
+    dto: RecordAgentFloatDto,
+  ): Promise<{
+    float: AgentDailyFloatContract;
+    accountability: AgentAccountabilityContract;
+  }> {
+    this.assertCanManage(user);
+    const scope = this.scope(user);
+    const agent = await this.repository.findAgentById({
+      ...scope,
+      agentId,
+    });
+    if (!agent) {
+      throw new NotFoundException('Agent not found.');
+    }
+    if (!user.permissions.includes('operation.float.manage')) {
+      throw new ForbiddenException('Missing permission to assign float.');
+    }
+
+    const { dayStart, dayEnd, dateLabel, floatDate } = this.parseDayBounds(
+      dto.date,
+    );
+    const amount = new Prisma.Decimal(dto.amountGiven);
+    await this.operationsService.assertFloatCanBeAssigned({
+      tenantId: scope.tenantId,
+      branchId: agent.branchId,
+      agentId,
+      amountGiven: this.decimalToNumber(amount) ?? 0,
+      date: dateLabel,
+      mode: 'additional',
+    });
+    const floatRow = await this.repository.increaseFloat({
+      tenantId: scope.tenantId,
+      agentId,
+      floatDate,
+      amountGiven: amount,
+      notes: dto.notes?.trim() || null,
+    });
+
+    const [appsToday, repayToday] = await Promise.all([
+      this.repository.sumApplicationPrincipal({
+        tenantId: scope.tenantId,
+        agentId,
+        from: dayStart,
+        to: dayEnd,
+      }),
+      this.repository.sumRepayments({
+        tenantId: scope.tenantId,
+        agentId,
+        from: dayStart,
+        to: dayEnd,
+      }),
+    ]);
+
+    const amountGiven = this.decimalToNumber(floatRow.amountGiven) ?? 0;
+    const amountDisbursed =
+      this.decimalToNumber(appsToday._sum.principalAmount) ?? 0;
+    const amountCollected = this.decimalToNumber(repayToday._sum.amount) ?? 0;
+
+    if (agent.branchId) {
+      this.operationsService.broadcastFloatUpdated({
+        tenantId: scope.tenantId,
+        branchId: agent.branchId,
+        agentId,
+        floatId: floatRow.id,
+        operationDate: dateLabel,
+        amountGiven,
+      });
+    }
+
+    return {
+      float: this.toFloatContract(floatRow),
+      accountability: {
+        date: dateLabel,
+        amountGiven,
+        amountDisbursed,
+        amountCollected,
+        expectedCash: this.roundMoney(
+          amountGiven - amountDisbursed + amountCollected,
+        ),
+        formula: ACCOUNTABILITY_FORMULA,
+      },
+    };
+  }
+
   async listFloatsForDay(user: AuthenticatedUser, date?: string) {
     this.assertCanRead(user);
     const scope = this.scope(user);

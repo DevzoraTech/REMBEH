@@ -126,6 +126,20 @@ export class OperationsRepository {
         },
       });
 
+      if (input.cashAddedToday.gt(0)) {
+        await tx.branchOperationTopUp.create({
+          data: {
+            tenantId: input.tenantId,
+            branchId: input.branchId,
+            operationId: operation.id,
+            amount: input.cashAddedToday,
+            description: 'Opening cash added',
+            addedAt: input.openedAt,
+            recordedByUserId: input.openedByUserId,
+          },
+        });
+      }
+
       await tx.outboxEvent.create({
         data: {
           tenantId: input.tenantId,
@@ -233,6 +247,81 @@ export class OperationsRepository {
       });
 
       return expense;
+    });
+  }
+
+  recordTopUp(input: {
+    tenantId: string;
+    branchId: string;
+    operationId: string;
+    amount: Prisma.Decimal;
+    description: string | null;
+    addedAt: Date;
+    recordedByUserId: string;
+    operationDate: Date;
+    status: BranchOperationStatus;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const topUp = await tx.branchOperationTopUp.create({
+        data: {
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+          operationId: input.operationId,
+          amount: input.amount,
+          description: input.description,
+          addedAt: input.addedAt,
+          recordedByUserId: input.recordedByUserId,
+        },
+        include: {
+          recordedBy: { select: { id: true, displayName: true } },
+        },
+      });
+
+      await tx.branchDailyOperation.update({
+        where: { id: input.operationId },
+        data: {
+          cashInVault: { increment: input.amount },
+          cashAddedToday: { increment: input.amount },
+          openingFloatAvailable: { increment: input.amount },
+        },
+      });
+
+      await tx.outboxEvent.create({
+        data: {
+          tenantId: input.tenantId,
+          topic: OPERATIONS_EVENTS.cashTopUpRecorded,
+          aggregateType: 'branch_operation_topup',
+          aggregateId: topUp.id,
+          payload: {
+            topUpId: topUp.id,
+            operationId: input.operationId,
+            tenantId: input.tenantId,
+            branchId: input.branchId,
+            operationDate: this.formatDateLabel(input.operationDate),
+            amount: input.amount.toString(),
+            status: input.status,
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.recordedByUserId,
+          action: OPERATIONS_PERMISSIONS.cashTopUp,
+          entityType: 'branch_operation_topup',
+          entityId: topUp.id,
+          newValue: {
+            operationId: input.operationId,
+            branchId: input.branchId,
+            operationDate: this.formatDateLabel(input.operationDate),
+            amount: input.amount.toString(),
+            description: input.description,
+          },
+        },
+      });
+
+      return topUp;
     });
   }
 
@@ -445,6 +534,19 @@ export class OperationsRepository {
         returnedBy: { select: { id: true, displayName: true } },
       },
       orderBy: [{ agent: { displayName: 'asc' } }, { createdAt: 'asc' }],
+    });
+  }
+
+  listTopUpsForOperation(input: { tenantId: string; operationId: string }) {
+    return this.prisma.branchOperationTopUp.findMany({
+      where: {
+        tenantId: input.tenantId,
+        operationId: input.operationId,
+      },
+      include: {
+        recordedBy: { select: { id: true, displayName: true } },
+      },
+      orderBy: { addedAt: 'desc' },
     });
   }
 

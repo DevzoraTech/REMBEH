@@ -189,6 +189,7 @@ model Tenant {
   agentDailyFloats         AgentDailyFloat[]
   branchDailyOperations    BranchDailyOperation[]
   branchOperationExpenses  BranchOperationExpense[]
+  branchOperationTopUps    BranchOperationTopUp[]
 
   @@map("tenants")
 }
@@ -220,6 +221,7 @@ model Branch {
   agentDailyFloats         AgentDailyFloat[]
   dailyOperations          BranchDailyOperation[]
   operationExpenses        BranchOperationExpense[]
+  operationTopUps          BranchOperationTopUp[]
 
   @@unique([tenantId, name])
   @@index([tenantId, name])
@@ -423,6 +425,7 @@ model User {
   branchOperationsClosed    BranchDailyOperation[]   @relation("BranchDailyOperationClosedBy")
   operationExpensesRecorded BranchOperationExpense[] @relation("BranchOperationExpenseRecordedBy")
   operationExpensesApproved BranchOperationExpense[] @relation("BranchOperationExpenseApprovedBy")
+  operationTopUpsRecorded   BranchOperationTopUp[]   @relation("BranchOperationTopUpRecordedBy")
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
@@ -486,6 +489,7 @@ model BranchDailyOperation {
   openedBy               User                     @relation("BranchDailyOperationOpenedBy", fields: [openedByUserId], references: [id])
   closedBy               User?                    @relation("BranchDailyOperationClosedBy", fields: [closedByUserId], references: [id])
   expenses               BranchOperationExpense[]
+  topUps                 BranchOperationTopUp[]
 
   @@unique([tenantId, branchId, operationDate])
   @@index([tenantId, operationDate])
@@ -516,6 +520,27 @@ model BranchOperationExpense {
   @@index([tenantId, branchId, incurredAt])
   @@index([tenantId, operationId])
   @@map("branch_operation_expenses")
+}
+
+model BranchOperationTopUp {
+  id               String               @id @default(uuid()) @db.Uuid
+  tenantId         String               @map("tenant_id") @db.Uuid
+  branchId         String               @map("branch_id") @db.Uuid
+  operationId      String               @map("operation_id") @db.Uuid
+  amount           Decimal              @db.Decimal(18, 2)
+  description      String?
+  addedAt          DateTime             @default(now()) @map("added_at")
+  recordedByUserId String               @map("recorded_by_user_id") @db.Uuid
+  createdAt        DateTime             @default(now()) @map("created_at")
+  updatedAt        DateTime             @updatedAt @map("updated_at")
+  tenant           Tenant               @relation(fields: [tenantId], references: [id])
+  branch           Branch               @relation(fields: [branchId], references: [id])
+  operation        BranchDailyOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  recordedBy       User                 @relation("BranchOperationTopUpRecordedBy", fields: [recordedByUserId], references: [id])
+
+  @@index([tenantId, branchId, addedAt])
+  @@index([tenantId, operationId])
+  @@map("branch_operation_topups")
 }
 
 model Role {

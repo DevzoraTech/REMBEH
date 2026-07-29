@@ -8,6 +8,7 @@ import { CloseBranchOperationDto } from './dto/close-branch-operation.dto';
 import { OpenBranchOperationDto } from './dto/open-branch-operation.dto';
 import { RecordAgentReturnDto } from './dto/record-agent-return.dto';
 import { RecordOperationExpenseDto } from './dto/record-operation-expense.dto';
+import { RecordOperationTopUpDto } from './dto/record-operation-top-up.dto';
 import { OperationsService } from './operations.service';
 import { OPERATIONS_PERMISSIONS } from './operations.permissions';
 
@@ -47,6 +48,14 @@ export class OperationsController {
     @Body() dto: RecordOperationExpenseDto,
   ) {
     return this.operationsService.recordExpense(user, dto);
+  }
+
+  @Post('top-ups')
+  recordTopUp(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: RecordOperationTopUpDto,
+  ) {
+    return this.operationsService.recordTopUp(user, dto);
   }
 
   @Post('agent-returns')

@@ -4,15 +4,21 @@ import {
   Banknote,
   CalendarDays,
   CheckCircle2,
+  CircleDollarSign,
+  ClipboardCheck,
+  Landmark,
   Loader2,
   LockKeyhole,
+  PlusCircle,
   ReceiptText,
   RefreshCw,
+  RotateCcw,
   Send,
   ShieldCheck,
+  UserRoundPlus,
   WalletCards,
+  X,
 } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -58,6 +64,9 @@ type DailyOperation = {
   expectedAgentReturnTotal: number;
   agentReturnVariance: number;
   agentReturns: DailyOperationAgentReturn[];
+  topUpsCount: number;
+  topUpsTotal: number;
+  topUps: DailyOperationTopUp[];
   expensesCount: number;
   expensesTotal: number;
   expenses: DailyOperationExpense[];
@@ -104,6 +113,14 @@ type DailyOperationExpense = {
   approvedByName: string | null;
 };
 
+type DailyOperationTopUp = {
+  id: string;
+  amount: number;
+  description: string | null;
+  addedAt: string;
+  recordedByName: string;
+};
+
 type AgentReturnStatus = "PENDING" | "RETURNED" | "SHORT" | "OVER";
 
 type DailyOperationAgentReturn = {
@@ -135,6 +152,21 @@ type OperationResponse = {
   message?: string | string[];
 };
 
+type OperationAgentRow = {
+  id: string;
+  publicId: string | null;
+  name: string;
+  email: string;
+  phone: string | null;
+  status: string;
+  floatToday: number | null;
+};
+
+type AgentsResponse = {
+  agents: OperationAgentRow[];
+  message?: string | string[];
+};
+
 type OpeningForm = {
   openingBalance: string;
   cashAddedToday: string;
@@ -142,10 +174,21 @@ type OpeningForm = {
   notes: string;
 };
 
+type TopUpForm = {
+  amount: string;
+  description: string;
+};
+
 type ExpenseForm = {
   category: ExpenseCategory;
   amount: string;
   description: string;
+};
+
+type FloatForm = {
+  agentId: string;
+  amount: string;
+  notes: string;
 };
 
 type AgentReturnForm = {
@@ -158,6 +201,15 @@ type ClosingForm = {
   countedCash: string;
   notes: string;
 };
+
+type OperationActionPanel =
+  | "top-up"
+  | "expense"
+  | "issue-float"
+  | "add-float"
+  | "agent-return"
+  | "close-day"
+  | null;
 
 const emptyOpeningForm: OpeningForm = {
   openingBalance: "",
@@ -172,9 +224,20 @@ const emptyExpenseForm: ExpenseForm = {
   description: "",
 };
 
+const emptyTopUpForm: TopUpForm = {
+  amount: "",
+  description: "",
+};
+
 const emptyAgentReturnForm: AgentReturnForm = {
   agentId: "",
   amountReturned: "",
+  notes: "",
+};
+
+const emptyFloatForm: FloatForm = {
+  agentId: "",
+  amount: "",
   notes: "",
 };
 
@@ -229,13 +292,23 @@ export default function OperationsPage() {
   const [branch, setBranch] = useState<RembehBranch | null>(null);
   const [date, setDate] = useState(initialOperationDate);
   const [data, setData] = useState<OperationResponse | null>(null);
+  const [agents, setAgents] = useState<OperationAgentRow[]>([]);
   const [form, setForm] = useState<OpeningForm>(emptyOpeningForm);
+  const [topUpForm, setTopUpForm] = useState<TopUpForm>(emptyTopUpForm);
   const [expenseForm, setExpenseForm] = useState<ExpenseForm>(emptyExpenseForm);
+  const [floatForm, setFloatForm] = useState<FloatForm>(emptyFloatForm);
+  const [floatTopUpForm, setFloatTopUpForm] =
+    useState<FloatForm>(emptyFloatForm);
   const [agentReturnForm, setAgentReturnForm] =
     useState<AgentReturnForm>(emptyAgentReturnForm);
   const [closingForm, setClosingForm] = useState<ClosingForm>(emptyClosingForm);
+  const [activePanel, setActivePanel] = useState<OperationActionPanel>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingAgents, setLoadingAgents] = useState(false);
   const [opening, setOpening] = useState(false);
+  const [recordingTopUp, setRecordingTopUp] = useState(false);
+  const [savingFloat, setSavingFloat] = useState(false);
+  const [savingFloatTopUp, setSavingFloatTopUp] = useState(false);
   const [recordingExpense, setRecordingExpense] = useState(false);
   const [recordingAgentReturn, setRecordingAgentReturn] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -248,6 +321,13 @@ export default function OperationsPage() {
   );
   const canRecordExpense = Boolean(
     session?.permissions.includes("operation.expense.create"),
+  );
+  const canRecordTopUp = Boolean(
+    session?.permissions.includes("operation.cash.topup") ||
+    session?.permissions.includes("operation.open"),
+  );
+  const canManageFloat = Boolean(
+    session?.permissions.includes("operation.float.manage"),
   );
   const canClose = Boolean(session?.permissions.includes("operation.close"));
   const activeBranch = data?.branch;
@@ -273,6 +353,45 @@ export default function OperationsPage() {
       setNotice("Open today's branch before continuing.");
     }
   }, []);
+
+  const loadAgentsForDay = useCallback(
+    async (activeSession: RembehSession, selectedDate: string) => {
+      setLoadingAgents(true);
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/agents?date=${encodeURIComponent(selectedDate)}`,
+          {
+            headers: {
+              Authorization: `${activeSession.tokenType} ${activeSession.accessToken}`,
+            },
+          },
+        );
+        const payload = await readApiJson<AgentsResponse>(response);
+        if (!response.ok) {
+          throw new Error(formatApiError(payload.message));
+        }
+        const nextAgents = payload.agents ?? [];
+        setAgents(nextAgents);
+        setFloatForm((current) => ({
+          ...current,
+          agentId:
+            current.agentId &&
+            nextAgents.some(
+              (agent) =>
+                agent.id === current.agentId && agent.floatToday == null,
+            )
+              ? current.agentId
+              : (nextAgents.find((agent) => agent.floatToday == null)?.id ??
+                ""),
+        }));
+      } catch {
+        setAgents([]);
+      } finally {
+        setLoadingAgents(false);
+      }
+    },
+    [],
+  );
 
   const loadOperation = useCallback(
     async (activeSession: RembehSession, selectedDate: string) => {
@@ -344,16 +463,97 @@ export default function OperationsPage() {
         return;
       }
 
-      void loadOperation(auth.session, date);
+      void Promise.all([
+        loadOperation(auth.session, date),
+        loadAgentsForDay(auth.session, date),
+      ]);
     }, 0);
 
     return () => window.clearTimeout(boot);
-  }, [router, date, loadOperation]);
+  }, [router, date, loadOperation, loadAgentsForDay]);
 
   const openingTotal = useMemo(
     () => Number(form.openingBalance || 0) + Number(form.cashAddedToday || 0),
     [form.cashAddedToday, form.openingBalance],
   );
+
+  const pendingAgentReturns = useMemo(
+    () =>
+      (operation?.agentReturns ?? []).filter(
+        (agentReturn) => agentReturn.amountReturned == null,
+      ),
+    [operation?.agentReturns],
+  );
+  const addFloatOptions = pendingAgentReturns.filter(
+    (agentReturn) => agentReturn.amountGiven > 0,
+  );
+  const assignableAgents = useMemo(
+    () =>
+      agents.filter(
+        (agent) => agent.floatToday == null && agent.status === "ACTIVE",
+      ),
+    [agents],
+  );
+  const floatAmount = Number(floatForm.amount);
+  const extraFloatAmount = Number(floatTopUpForm.amount);
+  const floatAmountValid =
+    floatForm.amount !== "" && Number.isFinite(floatAmount) && floatAmount > 0;
+  const extraFloatAmountValid =
+    floatTopUpForm.amount !== "" &&
+    Number.isFinite(extraFloatAmount) &&
+    extraFloatAmount > 0;
+  const canSubmitFloat =
+    canManageFloat &&
+    canFinishOpenOperation &&
+    Boolean(floatForm.agentId) &&
+    floatAmountValid &&
+    Boolean(operation) &&
+    floatAmount <= (operation?.floatRemaining ?? 0);
+  const canSubmitFloatTopUp =
+    canManageFloat &&
+    canFinishOpenOperation &&
+    Boolean(floatTopUpForm.agentId) &&
+    extraFloatAmountValid &&
+    Boolean(operation) &&
+    extraFloatAmount <= (operation?.floatRemaining ?? 0);
+
+  function openActionPanel(panel: Exclude<OperationActionPanel, null>) {
+    setError(null);
+    setNotice(null);
+    if (panel === "issue-float") {
+      setFloatForm((current) => ({
+        ...current,
+        agentId:
+          current.agentId ||
+          assignableAgents.find((agent) => agent.status === "ACTIVE")?.id ||
+          assignableAgents[0]?.id ||
+          "",
+      }));
+    }
+    if (panel === "add-float") {
+      setFloatTopUpForm((current) => ({
+        ...current,
+        agentId: current.agentId || addFloatOptions[0]?.agentId || "",
+      }));
+    }
+    if (panel === "agent-return") {
+      const first = pendingAgentReturns[0];
+      setAgentReturnForm((current) => ({
+        ...current,
+        agentId: current.agentId || first?.agentId || "",
+        amountReturned:
+          current.amountReturned || (first ? String(first.expectedReturn) : ""),
+      }));
+    }
+    if (panel === "close-day" && operation) {
+      setClosingForm((current) => ({
+        ...current,
+        countedCash:
+          current.countedCash || String(operation.expectedClosingBalance),
+      }));
+    }
+    setActivePanel(panel);
+  }
 
   async function openBranch() {
     if (!session || !activeBranch || opening) return;
@@ -396,6 +596,125 @@ export default function OperationsPage() {
     }
   }
 
+  async function recordTopUp() {
+    if (!session || !activeBranch || recordingTopUp) return;
+    if (!canFinishOpenOperation) {
+      setError("Only an open branch day can be changed.");
+      return;
+    }
+    const amount = Number(topUpForm.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError("Enter a valid top-up amount.");
+      return;
+    }
+    setRecordingTopUp(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`${apiBaseUrl}/operations/top-ups`, {
+        method: "POST",
+        headers: {
+          Authorization: `${session.tokenType} ${session.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          branchId: activeBranch.id,
+          date,
+          amount,
+          description: topUpForm.description.trim() || undefined,
+        }),
+      });
+      const payload = await readApiJson<OperationResponse>(response);
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      setData(payload);
+      setTopUpForm(emptyTopUpForm);
+      setActivePanel(null);
+      setNotice("Top-up added.");
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not add cash.",
+      );
+    } finally {
+      setRecordingTopUp(false);
+    }
+  }
+
+  async function saveFloat(mode: "issue" | "add") {
+    if (!session || savingFloat || savingFloatTopUp) return;
+    if (!canFinishOpenOperation) {
+      setError("Only an open branch day can be changed.");
+      return;
+    }
+    const targetForm = mode === "issue" ? floatForm : floatTopUpForm;
+    if (!targetForm.agentId) {
+      setError("Choose an agent.");
+      return;
+    }
+    const amount = Number(targetForm.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError("Enter a valid float amount.");
+      return;
+    }
+    if (operation && amount > operation.floatRemaining) {
+      setError(
+        `Float exceeds assignable float left. Available: ${formatMoney(
+          operation.floatRemaining,
+        )}.`,
+      );
+      return;
+    }
+
+    const savingSetter =
+      mode === "issue" ? setSavingFloat : setSavingFloatTopUp;
+    savingSetter(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const path =
+        mode === "issue"
+          ? `${apiBaseUrl}/agents/${targetForm.agentId}/floats`
+          : `${apiBaseUrl}/agents/${targetForm.agentId}/floats/top-ups`;
+      const response = await fetch(path, {
+        method: "POST",
+        headers: {
+          Authorization: `${session.tokenType} ${session.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amountGiven: amount,
+          date,
+          notes: targetForm.notes.trim() || undefined,
+        }),
+      });
+      const payload = await readApiJson<{ message?: string | string[] }>(
+        response,
+      );
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      await Promise.all([
+        loadOperation(session, date),
+        loadAgentsForDay(session, date),
+      ]);
+      if (mode === "issue") {
+        setFloatForm(emptyFloatForm);
+        setNotice("Float issued.");
+      } else {
+        setFloatTopUpForm(emptyFloatForm);
+        setNotice("More float added.");
+      }
+      setActivePanel(null);
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not save float.",
+      );
+    } finally {
+      savingSetter(false);
+    }
+  }
+
   async function recordExpense() {
     if (!session || !activeBranch || recordingExpense) return;
     if (!canFinishOpenOperation) {
@@ -426,6 +745,7 @@ export default function OperationsPage() {
       }
       setData(payload);
       setExpenseForm(emptyExpenseForm);
+      setActivePanel(null);
       setNotice("Expense recorded.");
     } catch (caught) {
       setError(
@@ -466,6 +786,7 @@ export default function OperationsPage() {
       }
       setData(payload);
       setAgentReturnForm(emptyAgentReturnForm);
+      setActivePanel(null);
       setNotice("Agent return recorded.");
     } catch (caught) {
       setError(
@@ -507,6 +828,7 @@ export default function OperationsPage() {
       }
       setData(payload);
       setClosingForm(emptyClosingForm);
+      setActivePanel(null);
       setNotice("Branch closed.");
     } catch (caught) {
       setError(
@@ -564,9 +886,13 @@ export default function OperationsPage() {
                   setNotice(null);
                   setError(null);
                   setForm(emptyOpeningForm);
+                  setTopUpForm(emptyTopUpForm);
                   setExpenseForm(emptyExpenseForm);
+                  setFloatForm(emptyFloatForm);
+                  setFloatTopUpForm(emptyFloatForm);
                   setAgentReturnForm(emptyAgentReturnForm);
                   setClosingForm(emptyClosingForm);
+                  setActivePanel(null);
                   setDate(event.target.value);
                 }}
                 className="bg-transparent outline-none"
@@ -575,7 +901,12 @@ export default function OperationsPage() {
             <button
               type="button"
               className="btn btn-ghost h-9 text-xs"
-              onClick={() => void loadOperation(session, date)}
+              onClick={() =>
+                void Promise.all([
+                  loadOperation(session, date),
+                  loadAgentsForDay(session, date),
+                ])
+              }
               disabled={loading}
             >
               <RefreshCw
@@ -607,21 +938,16 @@ export default function OperationsPage() {
           <OpenOperationView
             operation={operation}
             editable={canFinishOpenOperation}
+            canRecordTopUp={canRecordTopUp}
             canRecordReturn={canRecordReturn}
             canRecordExpense={canRecordExpense}
+            canManageFloat={canManageFloat}
             canClose={canClose}
-            agentReturnForm={agentReturnForm}
-            closing={closing}
-            closingForm={closingForm}
-            expenseForm={expenseForm}
-            recordingAgentReturn={recordingAgentReturn}
-            recordingExpense={recordingExpense}
-            setAgentReturnForm={setAgentReturnForm}
-            setClosingForm={setClosingForm}
-            setExpenseForm={setExpenseForm}
-            onClose={() => void closeBranch()}
-            onRecordAgentReturn={() => void recordAgentReturn()}
-            onRecordExpense={() => void recordExpense()}
+            loadingAgents={loadingAgents}
+            pendingReturnsCount={pendingAgentReturns.length}
+            assignableAgentsCount={assignableAgents.length}
+            addFloatAgentsCount={addFloatOptions.length}
+            onAction={openActionPanel}
           />
         ) : pendingClosureOperation ? (
           <PendingClosureView
@@ -642,6 +968,46 @@ export default function OperationsPage() {
             onOpen={() => void openBranch()}
           />
         )}
+        <OperationActionDrawer
+          panel={activePanel}
+          operation={operation}
+          assignableAgents={assignableAgents}
+          addFloatOptions={addFloatOptions}
+          pendingAgentReturns={pendingAgentReturns}
+          editable={canFinishOpenOperation}
+          canRecordTopUp={canRecordTopUp}
+          canRecordExpense={canRecordExpense}
+          canManageFloat={canManageFloat}
+          canRecordReturn={canRecordReturn}
+          canClose={canClose}
+          topUpForm={topUpForm}
+          expenseForm={expenseForm}
+          floatForm={floatForm}
+          floatTopUpForm={floatTopUpForm}
+          agentReturnForm={agentReturnForm}
+          closingForm={closingForm}
+          recordingTopUp={recordingTopUp}
+          recordingExpense={recordingExpense}
+          savingFloat={savingFloat}
+          savingFloatTopUp={savingFloatTopUp}
+          recordingAgentReturn={recordingAgentReturn}
+          closing={closing}
+          canSubmitFloat={canSubmitFloat}
+          canSubmitFloatTopUp={canSubmitFloatTopUp}
+          onClosePanel={() => setActivePanel(null)}
+          setTopUpForm={setTopUpForm}
+          setExpenseForm={setExpenseForm}
+          setFloatForm={setFloatForm}
+          setFloatTopUpForm={setFloatTopUpForm}
+          setAgentReturnForm={setAgentReturnForm}
+          setClosingForm={setClosingForm}
+          onRecordTopUp={() => void recordTopUp()}
+          onRecordExpense={() => void recordExpense()}
+          onSaveFloat={() => void saveFloat("issue")}
+          onSaveFloatTopUp={() => void saveFloat("add")}
+          onRecordAgentReturn={() => void recordAgentReturn()}
+          onCloseDay={() => void closeBranch()}
+        />
       </div>
     </AppShell>
   );
@@ -819,47 +1185,30 @@ function OpeningView({
 function OpenOperationView({
   operation,
   editable,
+  canRecordTopUp,
   canRecordReturn,
   canRecordExpense,
+  canManageFloat,
   canClose,
-  agentReturnForm,
-  closing,
-  closingForm,
-  expenseForm,
-  recordingAgentReturn,
-  recordingExpense,
-  setAgentReturnForm,
-  setClosingForm,
-  setExpenseForm,
-  onClose,
-  onRecordAgentReturn,
-  onRecordExpense,
+  loadingAgents,
+  pendingReturnsCount,
+  assignableAgentsCount,
+  addFloatAgentsCount,
+  onAction,
 }: {
   operation: DailyOperation;
   editable: boolean;
+  canRecordTopUp: boolean;
   canRecordReturn: boolean;
   canRecordExpense: boolean;
+  canManageFloat: boolean;
   canClose: boolean;
-  agentReturnForm: AgentReturnForm;
-  closing: boolean;
-  closingForm: ClosingForm;
-  expenseForm: ExpenseForm;
-  recordingAgentReturn: boolean;
-  recordingExpense: boolean;
-  setAgentReturnForm: (next: AgentReturnForm) => void;
-  setClosingForm: (next: ClosingForm) => void;
-  setExpenseForm: (next: ExpenseForm) => void;
-  onClose: () => void;
-  onRecordAgentReturn: () => void;
-  onRecordExpense: () => void;
+  loadingAgents: boolean;
+  pendingReturnsCount: number;
+  assignableAgentsCount: number;
+  addFloatAgentsCount: number;
+  onAction: (panel: Exclude<OperationActionPanel, null>) => void;
 }) {
-  const expenseAmount = Number(expenseForm.amount);
-  const validExpense =
-    canRecordExpense &&
-    editable &&
-    expenseForm.amount !== "" &&
-    expenseAmount > 0 &&
-    expenseAmount <= operation.branchCashRemaining;
   const allReturnsRecorded =
     operation.agentsReturnedCount === operation.agentsWithFloatCount;
   const cashPosition =
@@ -868,202 +1217,1185 @@ function OpenOperationView({
     operation.status === "CLOSED"
       ? "Closing balance"
       : "Float, returns, expenses";
+  const unresolvedExpenses = operation.expenses.filter(
+    (expense) => expense.approvedAt == null,
+  ).length;
+  const attentionItems = [
+    pendingReturnsCount > 0
+      ? `${pendingReturnsCount} agent${pendingReturnsCount === 1 ? "" : "s"} not yet returned`
+      : null,
+    operation.floatRemaining > 0
+      ? `${formatMoney(operation.floatRemaining)} float still assignable`
+      : null,
+    unresolvedExpenses > 0
+      ? `${unresolvedExpenses} expense${unresolvedExpenses === 1 ? "" : "s"} pending approval`
+      : null,
+  ].filter(Boolean) as string[];
 
   return (
     <div className="space-y-4">
+      <div className="flex flex-wrap justify-end gap-2">
+        <ActionButton
+          icon={<PlusCircle className="size-4" />}
+          label="Add Top-up"
+          disabled={!editable || !canRecordTopUp}
+          onClick={() => onAction("top-up")}
+        />
+        <ActionButton
+          icon={<ReceiptText className="size-4" />}
+          label="Record Expense"
+          disabled={!editable || !canRecordExpense}
+          onClick={() => onAction("expense")}
+        />
+        <ActionButton
+          icon={<LockKeyhole className="size-4" />}
+          label="Close Day"
+          primary
+          disabled={!editable || !canClose || !allReturnsRecorded}
+          onClick={() => onAction("close-day")}
+        />
+      </div>
+
       <section className="grid grid-cols-6 gap-1 sm:gap-1.5 xl:gap-2">
         <OperationStat
-          label="Expected closing"
-          value={formatMoney(operation.expectedClosingBalance)}
-          hint="Includes fees"
-          tone="good"
-          icon={<ShieldCheck className="size-4" />}
-          featured
-        />
-        <OperationStat
-          label="Available cash"
+          label="Total opening balance"
           value={formatMoney(operation.cashAvailableAtOpening)}
-          hint="Opening + added"
-          tone="blue"
-        />
-        <OperationStat
-          label="Float limit"
-          value={formatMoney(operation.floatSetAside)}
-          hint={`${formatMoney(operation.floatIssued)} assigned`}
-          tone="warn"
-        />
-        <OperationStat
-          label="Returned cash"
-          value={formatMoney(operation.cashReturnedByAgents)}
-          hint={`${operation.agentsReturnedCount}/${operation.agentsWithFloatCount} agents`}
+          hint="Cash at start"
           tone="good"
+          icon={<WalletCards className="size-4" />}
         />
         <OperationStat
-          label="Expenses"
+          label="Float distributed"
+          value={formatMoney(operation.floatIssued)}
+          hint="Given to agents"
+          tone="warn"
+          icon={<UserRoundPlus className="size-4" />}
+        />
+        <OperationStat
+          label="Branch cash available"
+          value={formatMoney(cashPosition)}
+          hint={cashPositionHint}
+          tone="blue"
+          icon={<Landmark className="size-4" />}
+        />
+        <OperationStat
+          label="Expenses today"
           value={formatMoney(operation.expensesTotal)}
           hint={`${operation.expensesCount} recorded`}
           tone="bad"
           icon={<ReceiptText className="size-4" />}
         />
         <OperationStat
-          label="Remaining cash"
-          value={formatMoney(cashPosition)}
-          hint={cashPositionHint}
+          label="Cash returned by agents"
+          value={formatMoney(operation.cashReturnedByAgents)}
+          hint={`${operation.agentsReturnedCount}/${operation.agentsWithFloatCount} returned`}
           tone="blue"
+          icon={<RotateCcw className="size-4" />}
+        />
+        <OperationStat
+          label="Expected closing balance"
+          value={formatMoney(operation.expectedClosingBalance)}
+          hint="Projected cash"
+          tone="good"
+          icon={<ShieldCheck className="size-4" />}
+          featured
         />
       </section>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_340px]">
-        <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
-          <header className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
-            <p className="text-sm font-bold text-[var(--midnight-navy)]">
-              Opening record
-            </p>
-            <span className="border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-[var(--forest-emerald)]">
-              {operationLabel(operation.status)}
-            </span>
-          </header>
-          <div className="grid gap-0 p-4 sm:grid-cols-2">
-            <DetailRow label="Opened by" value={operation.openedByName} />
-            <DetailRow
-              label="Opened at"
-              value={formatDateTime(operation.openedAt)}
-            />
-            <DetailRow
-              label="Opening balance"
-              value={formatMoney(operation.openingBalance)}
-            />
-            <DetailRow
-              label="Cash added today"
-              value={formatMoney(operation.cashAddedToday)}
-            />
-            <DetailRow
-              label="Available at opening"
-              value={formatMoney(operation.cashAvailableAtOpening)}
-            />
-            <DetailRow
-              label="Assignable float limit"
-              value={formatMoney(operation.floatSetAside)}
-            />
-            <DetailRow
-              label="Float left for assigning"
-              value={formatMoney(operation.floatRemaining)}
-            />
-            <DetailRow
-              label="Float assigned"
-              value={formatMoney(operation.floatIssued)}
-            />
-            <DetailRow
-              label="Cash returned"
-              value={formatMoney(operation.cashReturnedByAgents)}
-            />
-            <DetailRow
-              label="Expenses"
-              value={formatMoney(operation.expensesTotal)}
-            />
-            <DetailRow
-              label="Collections"
-              value={`${operation.collectionsCount} · ${formatMoney(
-                operation.collectionsReceived,
-              )}`}
-            />
-            <DetailRow
-              label="Loans issued"
-              value={`${operation.loansIssuedCount} · ${formatMoney(
-                operation.loansIssuedPrincipal,
-              )}`}
-            />
-            <DetailRow
-              label="Loan processing fees"
-              value={formatMoney(operation.processingFeesTotal)}
-            />
-            <DetailRow
-              label="Expected closing"
-              value={formatMoney(operation.expectedClosingBalance)}
-            />
-            {operation.closingBalance != null ? (
-              <DetailRow
-                label="Closing balance"
-                value={formatMoney(operation.closingBalance)}
+      <div className="grid gap-4 xl:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.45fr)]">
+        <div className="space-y-3">
+          <OpeningCashPanel
+            operation={operation}
+            onTopUp={() => onAction("top-up")}
+          />
+          <CashPositionPanel operation={operation} />
+          <RecentExpensesPanel
+            operation={operation}
+            onRecordExpense={() => onAction("expense")}
+          />
+        </div>
+
+        <div className="space-y-3">
+          <AgentFloatStatusPanel operation={operation} />
+          <QuickActionsPanel
+            editable={editable}
+            canManageFloat={canManageFloat}
+            canRecordReturn={canRecordReturn}
+            loadingAgents={loadingAgents}
+            assignableAgentsCount={assignableAgentsCount}
+            addFloatAgentsCount={addFloatAgentsCount}
+            pendingReturnsCount={pendingReturnsCount}
+            operation={operation}
+            onAction={onAction}
+          />
+          <AttentionPanel
+            items={attentionItems}
+            closed={!editable && operation.status === "CLOSED"}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ActionButton({
+  icon,
+  label,
+  disabled,
+  primary = false,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  disabled?: boolean;
+  primary?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`${primary ? "btn btn-primary" : "btn btn-ghost"} h-10 min-w-[136px] text-xs shadow-[0_8px_20px_rgba(20,33,61,0.05)]`}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function OpeningCashPanel({
+  operation,
+  onTopUp,
+}: {
+  operation: DailyOperation;
+  onTopUp: () => void;
+}) {
+  const latestTopUps = operation.topUps.slice(0, 3);
+  return (
+    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
+      <RecordHeader
+        icon={<WalletCards className="size-4" />}
+        title="Opening Cash"
+      />
+      <div className="space-y-2 px-4 pb-4 pt-3">
+        <StatementRow
+          label="Previous closing balance"
+          value={formatMoney(operation.openingBalance)}
+        />
+        <StatementRow
+          label="Top-ups added today"
+          value={formatMoney(operation.topUpsTotal ?? operation.cashAddedToday)}
+        />
+        <StatementRow label="Opened by" value={operation.openedByName} muted />
+        <StatementRow
+          label="Opened at"
+          value={formatDateTime(operation.openedAt)}
+          muted
+        />
+        <div className="border-t border-[var(--line)] pt-3">
+          <StatementRow
+            label="Total opening balance"
+            value={formatMoney(operation.cashAvailableAtOpening)}
+            strong
+          />
+        </div>
+        <button
+          type="button"
+          className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-[var(--forest-emerald)]"
+          onClick={onTopUp}
+        >
+          View top-ups
+          <span aria-hidden>›</span>
+        </button>
+        {latestTopUps.length > 0 ? (
+          <div className="mt-2 space-y-1.5 border-t border-[var(--line)] pt-3">
+            {latestTopUps.map((topUp) => (
+              <MiniRecord
+                key={topUp.id}
+                label={topUp.description || "Cash top-up"}
+                value={formatMoney(topUp.amount)}
+                meta={formatClock(topUp.addedAt)}
               />
-            ) : null}
+            ))}
           </div>
-          {operation.notes ? (
-            <div className="border-t border-[var(--line)] px-4 py-3 text-sm text-slate-600">
-              {operation.notes}
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function CashPositionPanel({ operation }: { operation: DailyOperation }) {
+  return (
+    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
+      <RecordHeader
+        icon={<Landmark className="size-4" />}
+        title="Today's Cash Position"
+      />
+      <div className="space-y-2 px-4 pb-4 pt-3">
+        <StatementRow
+          label="Float distributed"
+          value={formatMoney(operation.floatIssued)}
+        />
+        <StatementRow
+          label="Branch expenses"
+          value={formatMoney(operation.expensesTotal)}
+        />
+        <StatementRow
+          label="Cash returned by agents"
+          value={formatMoney(operation.cashReturnedByAgents)}
+        />
+        <StatementRow
+          label="Branch repayments"
+          value={formatMoney(operation.collectionsReceived)}
+        />
+        <StatementRow
+          label="Loan processing fees"
+          value={formatMoney(operation.processingFeesTotal)}
+        />
+        <StatementRow
+          label="Loans issued"
+          value={formatMoney(operation.loansIssuedPrincipal)}
+          danger
+        />
+        <div className="border-t border-[var(--line)] pt-3">
+          <StatementRow
+            label="Expected closing balance"
+            value={formatMoney(operation.expectedClosingBalance)}
+            strong
+          />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RecentExpensesPanel({
+  operation,
+  onRecordExpense,
+}: {
+  operation: DailyOperation;
+  onRecordExpense: () => void;
+}) {
+  const latestExpenses = operation.expenses.slice(0, 3);
+  return (
+    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
+      <RecordHeader
+        icon={<ReceiptText className="size-4" />}
+        title="Recent Expenses"
+        end={formatMoney(operation.expensesTotal)}
+      />
+      <div className="px-4 pb-4 pt-3">
+        {latestExpenses.length === 0 ? (
+          <p className="py-3 text-sm text-slate-500">
+            No expenses recorded for this day.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {latestExpenses.map((expense) => (
+              <MiniRecord
+                key={expense.id}
+                label={categoryLabel(expense.category)}
+                value={formatMoney(expense.amount)}
+                meta={formatClock(expense.incurredAt)}
+                status="Recorded"
+              />
+            ))}
+          </div>
+        )}
+        <button
+          type="button"
+          className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-[var(--forest-emerald)]"
+          onClick={onRecordExpense}
+        >
+          View all expenses
+          <span aria-hidden>›</span>
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function AgentFloatStatusPanel({ operation }: { operation: DailyOperation }) {
+  return (
+    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
+      <RecordHeader
+        icon={<UserRoundPlus className="size-4" />}
+        title="Agent Float Status"
+      />
+      {operation.agentReturns.length === 0 ? (
+        <div className="px-4 py-8 text-sm text-slate-500">
+          No agent has received float for this day.
+        </div>
+      ) : (
+        <table className="w-full table-fixed text-left text-[11px]">
+          <thead className="border-y border-[var(--line)] bg-[#e5ece8] text-[9px] font-semibold text-slate-500">
+            <tr>
+              <th className="w-[22%] px-3 py-2">Agent</th>
+              <th className="w-[15%] px-2 py-2 text-right">Float Received</th>
+              <th className="w-[14%] px-2 py-2 text-right">Loans Issued</th>
+              <th className="w-[14%] px-2 py-2 text-right">Collections</th>
+              <th className="w-[14%] px-2 py-2 text-right">Fees</th>
+              <th className="w-[14%] px-2 py-2 text-right">Handover</th>
+              <th className="w-[7%] px-2 py-2 text-right">Status</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--line)]">
+            {operation.agentReturns.map((agentReturn) => (
+              <tr
+                key={agentReturn.floatId}
+                className="bg-white even:bg-[#fbfdfc]"
+              >
+                <td className="px-3 py-2.5">
+                  <p className="truncate font-bold text-[var(--midnight-navy)]">
+                    {agentReturn.agentName}
+                  </p>
+                  <p className="truncate text-[10px] text-slate-500">
+                    {agentReturn.agentPublicId ?? "No agent id"}
+                  </p>
+                </td>
+                <TableMoney value={agentReturn.amountGiven} />
+                <TableMoney value={agentReturn.amountDisbursed} />
+                <TableMoney value={agentReturn.amountCollected} />
+                <TableMoney value={agentReturn.processingFees} />
+                <TableMoney value={agentReturn.expectedReturn} strong />
+                <td className="px-2 py-2.5 text-right">
+                  <ReturnBadge status={agentReturn.status} />
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+function QuickActionsPanel({
+  editable,
+  canManageFloat,
+  canRecordReturn,
+  loadingAgents,
+  assignableAgentsCount,
+  addFloatAgentsCount,
+  pendingReturnsCount,
+  operation,
+  onAction,
+}: {
+  editable: boolean;
+  canManageFloat: boolean;
+  canRecordReturn: boolean;
+  loadingAgents: boolean;
+  assignableAgentsCount: number;
+  addFloatAgentsCount: number;
+  pendingReturnsCount: number;
+  operation: DailyOperation;
+  onAction: (panel: Exclude<OperationActionPanel, null>) => void;
+}) {
+  return (
+    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
+      <RecordHeader icon={<Send className="size-4" />} title="Quick Actions" />
+      <div className="grid gap-2 p-3 sm:grid-cols-3">
+        <QuickActionButton
+          icon={<UserRoundPlus className="size-4" />}
+          label="Issue Float"
+          hint={
+            loadingAgents
+              ? "Loading agents"
+              : `${assignableAgentsCount} available`
+          }
+          disabled={
+            !editable ||
+            !canManageFloat ||
+            loadingAgents ||
+            assignableAgentsCount === 0 ||
+            operation.floatRemaining <= 0
+          }
+          onClick={() => onAction("issue-float")}
+        />
+        <QuickActionButton
+          icon={<CircleDollarSign className="size-4" />}
+          label="Add More Float"
+          hint={`${formatMoney(operation.floatRemaining)} left`}
+          disabled={
+            !editable ||
+            !canManageFloat ||
+            addFloatAgentsCount === 0 ||
+            operation.floatRemaining <= 0
+          }
+          onClick={() => onAction("add-float")}
+        />
+        <QuickActionButton
+          icon={<RotateCcw className="size-4" />}
+          label="Record Agent Return"
+          hint={`${pendingReturnsCount} pending`}
+          disabled={!editable || !canRecordReturn || pendingReturnsCount === 0}
+          onClick={() => onAction("agent-return")}
+        />
+      </div>
+    </section>
+  );
+}
+
+function AttentionPanel({
+  items,
+  closed,
+}: {
+  items: string[];
+  closed: boolean;
+}) {
+  return (
+    <section className="panel border-amber-200 bg-amber-50/70 p-4">
+      <div className="flex items-start gap-3">
+        <span className="grid size-9 shrink-0 place-items-center border border-amber-200 bg-white text-amber-700">
+          <ClipboardCheck className="size-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold text-[var(--midnight-navy)]">
+            Attention Needed
+          </p>
+          {closed ? (
+            <p className="mt-1 text-xs font-semibold text-[var(--forest-emerald)]">
+              This day is closed.
+            </p>
+          ) : items.length === 0 ? (
+            <p className="mt-1 text-xs font-semibold text-[var(--forest-emerald)]">
+              No attention needed right now.
+            </p>
+          ) : (
+            <ul className="mt-2 space-y-1 text-xs font-semibold text-amber-800">
+              {items.map((item) => (
+                <li key={item} className="flex gap-2">
+                  <span className="mt-1 size-1.5 shrink-0 rounded-full bg-amber-500" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function OperationActionDrawer({
+  panel,
+  operation,
+  assignableAgents,
+  addFloatOptions,
+  pendingAgentReturns,
+  editable,
+  canRecordTopUp,
+  canRecordExpense,
+  canManageFloat,
+  canRecordReturn,
+  canClose,
+  topUpForm,
+  expenseForm,
+  floatForm,
+  floatTopUpForm,
+  agentReturnForm,
+  closingForm,
+  recordingTopUp,
+  recordingExpense,
+  savingFloat,
+  savingFloatTopUp,
+  recordingAgentReturn,
+  closing,
+  canSubmitFloat,
+  canSubmitFloatTopUp,
+  onClosePanel,
+  setTopUpForm,
+  setExpenseForm,
+  setFloatForm,
+  setFloatTopUpForm,
+  setAgentReturnForm,
+  setClosingForm,
+  onRecordTopUp,
+  onRecordExpense,
+  onSaveFloat,
+  onSaveFloatTopUp,
+  onRecordAgentReturn,
+  onCloseDay,
+}: {
+  panel: OperationActionPanel;
+  operation: DailyOperation | null | undefined;
+  assignableAgents: OperationAgentRow[];
+  addFloatOptions: DailyOperationAgentReturn[];
+  pendingAgentReturns: DailyOperationAgentReturn[];
+  editable: boolean;
+  canRecordTopUp: boolean;
+  canRecordExpense: boolean;
+  canManageFloat: boolean;
+  canRecordReturn: boolean;
+  canClose: boolean;
+  topUpForm: TopUpForm;
+  expenseForm: ExpenseForm;
+  floatForm: FloatForm;
+  floatTopUpForm: FloatForm;
+  agentReturnForm: AgentReturnForm;
+  closingForm: ClosingForm;
+  recordingTopUp: boolean;
+  recordingExpense: boolean;
+  savingFloat: boolean;
+  savingFloatTopUp: boolean;
+  recordingAgentReturn: boolean;
+  closing: boolean;
+  canSubmitFloat: boolean;
+  canSubmitFloatTopUp: boolean;
+  onClosePanel: () => void;
+  setTopUpForm: (next: TopUpForm) => void;
+  setExpenseForm: (next: ExpenseForm) => void;
+  setFloatForm: (next: FloatForm) => void;
+  setFloatTopUpForm: (next: FloatForm) => void;
+  setAgentReturnForm: (next: AgentReturnForm) => void;
+  setClosingForm: (next: ClosingForm) => void;
+  onRecordTopUp: () => void;
+  onRecordExpense: () => void;
+  onSaveFloat: () => void;
+  onSaveFloatTopUp: () => void;
+  onRecordAgentReturn: () => void;
+  onCloseDay: () => void;
+}) {
+  if (!panel || !operation) return null;
+
+  const title =
+    panel === "top-up"
+      ? "Add Top-up"
+      : panel === "expense"
+        ? "Record Expense"
+        : panel === "issue-float"
+          ? "Issue Float"
+          : panel === "add-float"
+            ? "Add More Float"
+            : panel === "agent-return"
+              ? "Record Agent Return"
+              : "Close Day";
+  const expenseAmount = Number(expenseForm.amount);
+  const validExpense =
+    canRecordExpense &&
+    editable &&
+    expenseForm.amount !== "" &&
+    expenseAmount > 0 &&
+    expenseAmount <= operation.branchCashRemaining;
+  const topUpAmount = Number(topUpForm.amount);
+  const validTopUp =
+    canRecordTopUp &&
+    editable &&
+    topUpForm.amount !== "" &&
+    Number.isFinite(topUpAmount) &&
+    topUpAmount > 0;
+  const selectedReturn = pendingAgentReturns.find(
+    (agentReturn) => agentReturn.agentId === agentReturnForm.agentId,
+  );
+  const canSubmitReturn =
+    editable &&
+    canRecordReturn &&
+    Boolean(selectedReturn) &&
+    agentReturnForm.amountReturned !== "" &&
+    Number(agentReturnForm.amountReturned) >= 0;
+  const allReturnsRecorded =
+    operation.agentsReturnedCount === operation.agentsWithFloatCount;
+  const countedCash = Number(closingForm.countedCash || 0);
+  const variance =
+    closingForm.countedCash === ""
+      ? null
+      : Math.round((countedCash - operation.expectedClosingBalance) * 100) /
+        100;
+  const needsCloseNote = variance != null && variance !== 0;
+  const canSubmitClose =
+    editable &&
+    canClose &&
+    allReturnsRecorded &&
+    closingForm.countedCash !== "" &&
+    (!needsCloseNote || closingForm.notes.trim().length > 0);
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/35">
+      <button
+        type="button"
+        className="hidden flex-1 cursor-default bg-transparent sm:block"
+        aria-label="Close panel"
+        onClick={onClosePanel}
+      />
+      <aside className="flex h-full w-full max-w-md flex-col bg-white shadow-2xl">
+        <header className="flex items-start justify-between gap-4 border-b border-[var(--line)] px-5 py-4">
+          <div>
+            <p className="text-xs font-semibold tracking-[0.12em] text-[var(--forest-emerald)]">
+              Daily Operations
+            </p>
+            <h2 className="mt-1 text-lg font-bold text-[var(--midnight-navy)]">
+              {title}
+            </h2>
+          </div>
+          <button
+            type="button"
+            className="grid size-8 place-items-center border border-[var(--line)] bg-white text-[var(--midnight-navy)] hover:bg-[var(--soft-mist)]"
+            aria-label="Close panel"
+            onClick={onClosePanel}
+          >
+            <X className="size-4" />
+          </button>
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          {panel === "top-up" ? (
+            <div className="space-y-4">
+              <PanelHint
+                label="Available cash"
+                value={formatMoney(operation.branchCashRemaining)}
+              />
+              <MoneyField
+                label="Top-up amount"
+                value={topUpForm.amount}
+                locked={!editable || !canRecordTopUp}
+                onChange={(value) =>
+                  setTopUpForm({ ...topUpForm, amount: value })
+                }
+              />
+              <TextAreaField
+                label="Description"
+                value={topUpForm.description}
+                locked={!editable || !canRecordTopUp}
+                onChange={(value) =>
+                  setTopUpForm({ ...topUpForm, description: value })
+                }
+              />
+              <TopUpList operation={operation} />
             </div>
           ) : null}
-        </section>
 
-        <aside className="space-y-3">
-          {editable ? (
-            <Link
-              href="/agents"
-              className="panel flex items-center justify-between gap-3 bg-white px-4 py-3 hover:bg-[var(--soft-mist)]"
-            >
-              <span>
-                <span className="block text-sm font-bold text-[var(--midnight-navy)]">
-                  Assign float
+          {panel === "expense" ? (
+            <div className="space-y-4">
+              <PanelHint
+                label="Remaining cash"
+                value={formatMoney(operation.branchCashRemaining)}
+              />
+              <label>
+                <span className="text-xs font-bold text-slate-600">
+                  Category
                 </span>
-                <span className="mt-0.5 block text-xs text-slate-500">
-                  Assignable left: {formatMoney(operation.floatRemaining)}
-                </span>
-              </span>
-              <Send className="size-4 text-[var(--forest-emerald)]" />
-            </Link>
-          ) : (
-            <StatusPanel
-              icon={<LockKeyhole className="size-4" />}
-              title="Past day"
-              value="View only"
-              tone="warn"
+                <select
+                  value={expenseForm.category}
+                  disabled={!editable || !canRecordExpense}
+                  onChange={(event) =>
+                    setExpenseForm({
+                      ...expenseForm,
+                      category: event.target.value as ExpenseCategory,
+                    })
+                  }
+                  className="mt-1 h-10 w-full border border-[var(--line)] bg-white px-3 text-sm font-semibold text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
+                >
+                  {expenseCategoryOptions.map((category) => (
+                    <option key={category} value={category}>
+                      {categoryLabel(category)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <MoneyField
+                label="Amount"
+                value={expenseForm.amount}
+                locked={!editable || !canRecordExpense}
+                onChange={(value) =>
+                  setExpenseForm({ ...expenseForm, amount: value })
+                }
+              />
+              <TextAreaField
+                label="Description"
+                value={expenseForm.description}
+                locked={!editable || !canRecordExpense}
+                onChange={(value) =>
+                  setExpenseForm({ ...expenseForm, description: value })
+                }
+              />
+              {expenseForm.amount !== "" &&
+              expenseAmount > operation.branchCashRemaining ? (
+                <p className="text-xs font-semibold text-red-600">
+                  Expense is more than remaining branch cash.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {panel === "issue-float" ? (
+            <FloatPanelForm
+              form={floatForm}
+              options={assignableAgents.map((agent) => ({
+                id: agent.id,
+                label: `${agent.name}${agent.publicId ? ` · ${agent.publicId}` : ""}`,
+              }))}
+              amountLeft={operation.floatRemaining}
+              emptyMessage="All agents have float for this day."
+              locked={!editable || !canManageFloat}
+              onChange={setFloatForm}
             />
-          )}
-          <ExpenseFormCard
-            canRecordExpense={canRecordExpense}
-            editable={editable}
-            form={expenseForm}
-            operation={operation}
-            recording={recordingExpense}
-            setForm={setExpenseForm}
-            valid={validExpense}
-            onRecord={onRecordExpense}
-          />
-          <CloseDayCard
-            allReturnsRecorded={allReturnsRecorded}
-            canClose={canClose}
-            closing={closing}
-            editable={editable}
-            form={closingForm}
-            operation={operation}
-            setForm={setClosingForm}
-            onClose={onClose}
-          />
-          <StatusPanel
-            icon={<WalletCards className="size-4" />}
-            title="Field work"
-            value="Ready"
-            tone="good"
-          />
-          <StatusPanel
-            icon={<Banknote className="size-4" />}
-            title="Cash position"
-            value={formatMoney(cashPosition)}
-            tone="blue"
-          />
-        </aside>
-      </div>
+          ) : null}
 
-      <AgentReturnsPanel
-        canRecordReturn={canRecordReturn}
-        editable={editable}
-        form={agentReturnForm}
-        operation={operation}
-        recording={recordingAgentReturn}
-        setForm={setAgentReturnForm}
-        onRecord={onRecordAgentReturn}
+          {panel === "add-float" ? (
+            <FloatPanelForm
+              form={floatTopUpForm}
+              options={addFloatOptions.map((agentReturn) => ({
+                id: agentReturn.agentId,
+                label: `${agentReturn.agentName}${
+                  agentReturn.agentPublicId
+                    ? ` · ${agentReturn.agentPublicId}`
+                    : ""
+                }`,
+              }))}
+              amountLeft={operation.floatRemaining}
+              emptyMessage="No active float can receive more right now."
+              locked={!editable || !canManageFloat}
+              onChange={setFloatTopUpForm}
+            />
+          ) : null}
+
+          {panel === "agent-return" ? (
+            <div className="space-y-4">
+              <PanelHint
+                label="Expected agent handover"
+                value={formatMoney(operation.expectedAgentReturnTotal)}
+              />
+              <label>
+                <span className="text-xs font-bold text-slate-600">Agent</span>
+                <select
+                  value={agentReturnForm.agentId}
+                  disabled={!editable || !canRecordReturn}
+                  onChange={(event) => {
+                    const next = pendingAgentReturns.find(
+                      (agentReturn) =>
+                        agentReturn.agentId === event.target.value,
+                    );
+                    setAgentReturnForm({
+                      ...agentReturnForm,
+                      agentId: event.target.value,
+                      amountReturned: next ? String(next.expectedReturn) : "",
+                    });
+                  }}
+                  className="mt-1 h-10 w-full border border-[var(--line)] bg-white px-3 text-sm font-semibold text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
+                >
+                  {pendingAgentReturns.length === 0 ? (
+                    <option value="">All agents returned</option>
+                  ) : null}
+                  {pendingAgentReturns.map((agentReturn) => (
+                    <option
+                      key={agentReturn.floatId}
+                      value={agentReturn.agentId}
+                    >
+                      {agentReturn.agentName}
+                      {agentReturn.agentPublicId
+                        ? ` · ${agentReturn.agentPublicId}`
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {selectedReturn ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <PanelHint
+                    label="Float received"
+                    value={formatMoney(selectedReturn.amountGiven)}
+                  />
+                  <PanelHint
+                    label="Expected handover"
+                    value={formatMoney(selectedReturn.expectedReturn)}
+                  />
+                </div>
+              ) : null}
+              <MoneyField
+                label="Cash received"
+                value={agentReturnForm.amountReturned}
+                locked={!editable || !canRecordReturn}
+                onChange={(value) =>
+                  setAgentReturnForm({
+                    ...agentReturnForm,
+                    amountReturned: value,
+                  })
+                }
+              />
+              <TextAreaField
+                label="Notes"
+                value={agentReturnForm.notes}
+                locked={!editable || !canRecordReturn}
+                onChange={(value) =>
+                  setAgentReturnForm({ ...agentReturnForm, notes: value })
+                }
+              />
+            </div>
+          ) : null}
+
+          {panel === "close-day" ? (
+            <div className="space-y-4">
+              {!allReturnsRecorded ? (
+                <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                  Record all agent returns before closing.
+                </p>
+              ) : null}
+              <PanelHint
+                label="Expected closing balance"
+                value={formatMoney(operation.expectedClosingBalance)}
+              />
+              <MoneyField
+                label="Counted cash"
+                value={closingForm.countedCash}
+                locked={!editable || !canClose}
+                onChange={(value) =>
+                  setClosingForm({ ...closingForm, countedCash: value })
+                }
+              />
+              {variance != null ? (
+                <p
+                  className={`text-xs font-bold ${
+                    variance === 0
+                      ? "text-[var(--forest-emerald)]"
+                      : variance < 0
+                        ? "text-red-600"
+                        : "text-amber-700"
+                  }`}
+                >
+                  Variance: {formatVariance(variance)}
+                </p>
+              ) : null}
+              <TextAreaField
+                label={needsCloseNote ? "Notes required" : "Notes"}
+                value={closingForm.notes}
+                locked={!editable || !canClose}
+                onChange={(value) =>
+                  setClosingForm({ ...closingForm, notes: value })
+                }
+              />
+            </div>
+          ) : null}
+        </div>
+
+        <footer className="border-t border-[var(--line)] bg-[var(--soft-mist)] px-5 py-4">
+          <button
+            type="button"
+            className="btn btn-primary h-10 w-full text-xs"
+            disabled={
+              panel === "top-up"
+                ? !validTopUp || recordingTopUp
+                : panel === "expense"
+                  ? !validExpense || recordingExpense
+                  : panel === "issue-float"
+                    ? !canSubmitFloat || savingFloat
+                    : panel === "add-float"
+                      ? !canSubmitFloatTopUp || savingFloatTopUp
+                      : panel === "agent-return"
+                        ? !canSubmitReturn || recordingAgentReturn
+                        : !canSubmitClose || closing
+            }
+            onClick={() => {
+              if (panel === "top-up") onRecordTopUp();
+              if (panel === "expense") onRecordExpense();
+              if (panel === "issue-float") onSaveFloat();
+              if (panel === "add-float") onSaveFloatTopUp();
+              if (panel === "agent-return") onRecordAgentReturn();
+              if (panel === "close-day") onCloseDay();
+            }}
+          >
+            {recordingTopUp ||
+            recordingExpense ||
+            savingFloat ||
+            savingFloatTopUp ||
+            recordingAgentReturn ||
+            closing ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : null}
+            {title}
+          </button>
+        </footer>
+      </aside>
+    </div>
+  );
+}
+
+function RecordHeader({
+  icon,
+  title,
+  end,
+}: {
+  icon: ReactNode;
+  title: string;
+  end?: string;
+}) {
+  return (
+    <header className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-4 py-3">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="grid size-8 shrink-0 place-items-center border border-emerald-100 bg-emerald-50 text-[var(--forest-emerald)]">
+          {icon}
+        </span>
+        <p className="truncate text-sm font-bold text-[var(--midnight-navy)]">
+          {title}
+        </p>
+      </div>
+      {end ? (
+        <span className="shrink-0 text-xs font-bold tabular-nums text-[var(--midnight-navy)]">
+          {end}
+        </span>
+      ) : null}
+    </header>
+  );
+}
+
+function StatementRow({
+  label,
+  value,
+  strong = false,
+  muted = false,
+  danger = false,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+  muted?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 text-sm">
+      <span
+        className={`min-w-0 truncate ${
+          strong
+            ? "font-bold text-[var(--midnight-navy)]"
+            : muted
+              ? "text-slate-500"
+              : "text-[var(--midnight-navy)]"
+        }`}
+      >
+        {label}
+      </span>
+      <span
+        className={`shrink-0 text-right font-bold tabular-nums ${
+          strong
+            ? "text-[var(--forest-emerald)]"
+            : danger
+              ? "text-amber-700"
+              : "text-[var(--midnight-navy)]"
+        }`}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function MiniRecord({
+  label,
+  value,
+  meta,
+  status,
+}: {
+  label: string;
+  value: string;
+  meta: string;
+  status?: string;
+}) {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_105px_58px_auto] items-center gap-2 text-sm">
+      <span className="truncate text-[var(--midnight-navy)]">{label}</span>
+      <span className="text-right font-bold tabular-nums text-[var(--midnight-navy)]">
+        {value}
+      </span>
+      <span className="text-right text-xs text-slate-500">{meta}</span>
+      {status ? (
+        <span className="border border-emerald-200 bg-emerald-50 px-2 py-1 text-right text-[10px] font-bold text-[var(--forest-emerald)]">
+          {status}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function TableMoney({
+  value,
+  strong = false,
+}: {
+  value: number;
+  strong?: boolean;
+}) {
+  return (
+    <td
+      className={`px-2 py-2.5 text-right tabular-nums ${
+        strong ? "font-bold text-[var(--midnight-navy)]" : "font-semibold"
+      }`}
+    >
+      {formatCompactMoney(value)}
+    </td>
+  );
+}
+
+function ReturnBadge({ status }: { status: AgentReturnStatus }) {
+  const label = returnStatusLabel(status);
+  const className =
+    status === "RETURNED"
+      ? "border-emerald-200 bg-emerald-50 text-[var(--forest-emerald)]"
+      : status === "PENDING"
+        ? "border-amber-200 bg-amber-50 text-amber-700"
+        : status === "SHORT"
+          ? "border-red-200 bg-red-50 text-red-700"
+          : "border-sky-200 bg-sky-50 text-sky-700";
+  return (
+    <span
+      className={`inline-flex px-2 py-1 text-[10px] font-bold ${className}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+function QuickActionButton({
+  icon,
+  label,
+  hint,
+  disabled,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  hint: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="flex min-h-16 items-center gap-3 border border-[var(--line)] bg-white px-3 py-3 text-left transition hover:bg-[var(--soft-mist)] disabled:cursor-not-allowed disabled:opacity-50"
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <span className="grid size-9 shrink-0 place-items-center border border-emerald-100 bg-emerald-50 text-[var(--forest-emerald)]">
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-xs font-bold text-[var(--midnight-navy)]">
+          {label}
+        </span>
+        <span className="mt-0.5 block truncate text-[10px] font-semibold text-slate-500">
+          {hint}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function PanelHint({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border border-[var(--line)] bg-[var(--soft-mist)] px-3 py-3">
+      <p className="text-[10px] font-semibold text-slate-500">{label}</p>
+      <p className="mt-1 text-base font-bold tabular-nums text-[var(--midnight-navy)]">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function TextAreaField({
+  label,
+  value,
+  locked = false,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  locked?: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label>
+      <span className="text-xs font-bold text-slate-600">{label}</span>
+      <textarea
+        value={value}
+        disabled={locked}
+        onChange={(event) => onChange(event.target.value)}
+        rows={3}
+        className="mt-1 w-full border border-[var(--line)] bg-white px-3 py-2 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
       />
-      <ExpenseList operation={operation} />
+    </label>
+  );
+}
+
+function FloatPanelForm({
+  form,
+  options,
+  amountLeft,
+  emptyMessage,
+  locked,
+  onChange,
+}: {
+  form: FloatForm;
+  options: { id: string; label: string }[];
+  amountLeft: number;
+  emptyMessage: string;
+  locked: boolean;
+  onChange: (next: FloatForm) => void;
+}) {
+  const amount = Number(form.amount);
+  const exceeds = form.amount !== "" && amount > amountLeft;
+  return (
+    <div className="space-y-4">
+      <PanelHint
+        label="Assignable float left"
+        value={formatMoney(amountLeft)}
+      />
+      <label>
+        <span className="text-xs font-bold text-slate-600">Agent</span>
+        <select
+          value={form.agentId}
+          disabled={locked || options.length === 0}
+          onChange={(event) =>
+            onChange({ ...form, agentId: event.target.value })
+          }
+          className="mt-1 h-10 w-full border border-[var(--line)] bg-white px-3 text-sm font-semibold text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
+        >
+          {options.length === 0 ? (
+            <option value="">{emptyMessage}</option>
+          ) : null}
+          {options.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <MoneyField
+        label="Amount"
+        value={form.amount}
+        locked={locked || options.length === 0}
+        onChange={(value) => onChange({ ...form, amount: value })}
+      />
+      {exceeds ? (
+        <p className="text-xs font-semibold text-red-600">
+          Float is more than the assignable amount left.
+        </p>
+      ) : null}
+      <TextAreaField
+        label="Notes"
+        value={form.notes}
+        locked={locked || options.length === 0}
+        onChange={(value) => onChange({ ...form, notes: value })}
+      />
+    </div>
+  );
+}
+
+function TopUpList({ operation }: { operation: DailyOperation }) {
+  return (
+    <div className="border-t border-[var(--line)] pt-4">
+      <p className="text-xs font-bold text-[var(--midnight-navy)]">Top-ups</p>
+      {operation.topUps.length === 0 ? (
+        <p className="mt-2 text-sm text-slate-500">No top-ups recorded yet.</p>
+      ) : (
+        <div className="mt-2 space-y-2">
+          {operation.topUps.map((topUp) => (
+            <MiniRecord
+              key={topUp.id}
+              label={topUp.description || "Cash top-up"}
+              value={formatMoney(topUp.amount)}
+              meta={formatClock(topUp.addedAt)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

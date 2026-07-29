@@ -81,4 +81,13 @@ export class AgentsController {
   ) {
     return this.agentsService.recordFloat(user, agentId, dto);
   }
+
+  @Post(':agentId/floats/top-ups')
+  topUpFloat(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('agentId', ParseUUIDPipe) agentId: string,
+    @Body() dto: RecordAgentFloatDto,
+  ) {
+    return this.agentsService.topUpFloat(user, agentId, dto);
+  }
 }

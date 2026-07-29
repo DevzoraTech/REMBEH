@@ -28,6 +28,14 @@ export type DailyOperationExpenseContract = {
   approvedByName: string | null;
 };
 
+export type DailyOperationTopUpContract = {
+  id: string;
+  amount: number;
+  description: string | null;
+  addedAt: string;
+  recordedByName: string;
+};
+
 export type DailyOperationAgentReturnStatusContract =
   'PENDING' | 'RETURNED' | 'SHORT' | 'OVER';
 
@@ -71,6 +79,9 @@ export type DailyOperationContract = {
   expectedAgentReturnTotal: number;
   agentReturnVariance: number;
   agentReturns: DailyOperationAgentReturnContract[];
+  topUpsCount: number;
+  topUpsTotal: number;
+  topUps: DailyOperationTopUpContract[];
   expensesCount: number;
   expensesTotal: number;
   expenses: DailyOperationExpenseContract[];

@@ -289,6 +289,31 @@ export class AgentsRepository {
     });
   }
 
+  increaseFloat(input: {
+    tenantId: string;
+    agentId: string;
+    floatDate: Date;
+    amountGiven: Prisma.Decimal;
+    notes: string | null;
+  }) {
+    return this.prisma.agentDailyFloat.update({
+      where: {
+        tenantId_agentId_floatDate: {
+          tenantId: input.tenantId,
+          agentId: input.agentId,
+          floatDate: input.floatDate,
+        },
+      },
+      data: {
+        amountGiven: { increment: input.amountGiven },
+        ...(input.notes ? { notes: input.notes } : {}),
+      },
+      include: {
+        recordedBy: true,
+      },
+    });
+  }
+
   listFloatsForDay(input: {
     tenantId: string;
     branchId: string | null;

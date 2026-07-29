@@ -1,5 +1,6 @@
 export const OPERATIONS_EVENTS = {
   branchOpened: 'operation.branch_opened',
+  cashTopUpRecorded: 'operation.cash_topup_recorded',
   branchFloatUpdated: 'operation.float_updated',
   agentFloatReturned: 'operation.float_returned',
   expenseRecorded: 'operation.expense_recorded',

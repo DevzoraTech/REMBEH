@@ -16,6 +16,7 @@ import { CloseBranchOperationDto } from './dto/close-branch-operation.dto';
 import { OpenBranchOperationDto } from './dto/open-branch-operation.dto';
 import { RecordAgentReturnDto } from './dto/record-agent-return.dto';
 import { RecordOperationExpenseDto } from './dto/record-operation-expense.dto';
+import { RecordOperationTopUpDto } from './dto/record-operation-top-up.dto';
 import {
   AgentDailyOperationResponseContract,
   DailyOperationAgentReturnContract,
@@ -427,6 +428,52 @@ export class OperationsService {
     return this.getToday(user, { branchId: branch.id, date: bounds.dateLabel });
   }
 
+  async recordTopUp(
+    user: AuthenticatedUser,
+    dto: RecordOperationTopUpDto,
+  ): Promise<DailyOperationResponseContract> {
+    this.assertCanTopUp(user);
+    const branch = await this.resolveBranch(user, dto.branchId);
+    if (!branch) {
+      throw new NotFoundException('Branch was not found.');
+    }
+
+    const bounds = this.parseDayBounds(dto.date);
+    this.assertCanChangeDay(bounds.dateOnly);
+    const operation = await this.repository.findOperationForDay({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateOnly,
+    });
+
+    if (!operation || operation.status !== 'OPEN') {
+      throw new BadRequestException('Open the branch before adding more cash.');
+    }
+
+    const topUp = await this.repository.recordTopUp({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationId: operation.id,
+      amount: new Prisma.Decimal(dto.amount),
+      description: dto.description?.trim() || null,
+      addedAt: new Date(),
+      recordedByUserId: user.userId,
+      operationDate: operation.operationDate,
+      status: operation.status,
+    });
+    this.broadcastOperationEvent(OPERATIONS_EVENTS.cashTopUpRecorded, {
+      operationId: operation.id,
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateLabel,
+      status: operation.status,
+      topUpId: topUp.id,
+      amount: this.decimalToNumber(topUp.amount),
+    });
+
+    return this.getToday(user, { branchId: branch.id, date: bounds.dateLabel });
+  }
+
   async recordAgentReturn(
     user: AuthenticatedUser,
     dto: RecordAgentReturnDto,
@@ -605,6 +652,7 @@ export class OperationsService {
     agentId: string;
     amountGiven: number;
     date?: string;
+    mode?: 'new' | 'additional';
   }) {
     if (!input.branchId) {
       throw new ForbiddenException('Branch scope is required.');
@@ -646,9 +694,20 @@ export class OperationsService {
         }),
       ]);
 
-    if (existingFloat) {
+    const mode = input.mode ?? 'new';
+    if (mode === 'new' && existingFloat) {
       throw new BadRequestException(
         'This agent already has float for this day.',
+      );
+    }
+    if (mode === 'additional' && !existingFloat) {
+      throw new BadRequestException(
+        'Issue float to this agent before adding more.',
+      );
+    }
+    if (mode === 'additional' && existingFloat?.amountReturned != null) {
+      throw new BadRequestException(
+        'This agent has already returned cash for this day.',
       );
     }
 
@@ -715,6 +774,7 @@ export class OperationsService {
       collectionsAgg,
       expensesAgg,
       expenses,
+      topUps,
       agentFloats,
     ] = await Promise.all([
       this.repository.sumFloatIssued({
@@ -739,6 +799,10 @@ export class OperationsService {
         operationId: operation.id,
       }),
       this.repository.listExpensesForOperation({
+        tenantId: operation.tenantId,
+        operationId: operation.id,
+      }),
+      this.repository.listTopUpsForOperation({
         tenantId: operation.tenantId,
         operationId: operation.id,
       }),
@@ -851,6 +915,15 @@ export class OperationsService {
       expectedAgentReturnTotal,
       agentReturnVariance,
       agentReturns,
+      topUpsCount: topUps.length,
+      topUpsTotal: cashAddedToday,
+      topUps: topUps.map((topUp) => ({
+        id: topUp.id,
+        amount: this.decimalToNumber(topUp.amount),
+        description: topUp.description,
+        addedAt: topUp.addedAt.toISOString(),
+        recordedByName: topUp.recordedBy.displayName,
+      })),
       expensesCount: expensesAgg._count._all,
       expensesTotal,
       expenses: expenses.map((expense) => ({
@@ -1030,6 +1103,16 @@ export class OperationsService {
     this.assertTenant(user);
     if (!user.permissions.includes(OPERATIONS_PERMISSIONS.open)) {
       throw new ForbiddenException('Missing permission to open branch.');
+    }
+  }
+
+  private assertCanTopUp(user: AuthenticatedUser) {
+    this.assertTenant(user);
+    const allowed =
+      user.permissions.includes(OPERATIONS_PERMISSIONS.cashTopUp) ||
+      user.permissions.includes(OPERATIONS_PERMISSIONS.open);
+    if (!allowed) {
+      throw new ForbiddenException('Missing permission to add cash.');
     }
   }
 
