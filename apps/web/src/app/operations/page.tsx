@@ -6,6 +6,8 @@ import {
   CheckCircle2,
   CircleDollarSign,
   ClipboardCheck,
+  FileSpreadsheet,
+  FileText,
   Landmark,
   Loader2,
   LockKeyhole,
@@ -51,6 +53,7 @@ type DailyOperation = {
   openedAt: string;
   openedByName: string;
   closedAt: string | null;
+  closedByName: string | null;
   openingBalance: number;
   cashAddedToday: number;
   cashAvailableAtOpening: number;
@@ -80,6 +83,28 @@ type DailyOperation = {
   collectionsCount: number;
   collectionsReceived: number;
   notes: string | null;
+};
+
+type OperationReportStatus =
+  "MANAGER_REVIEW" | "SENT_TO_OWNER" | "OWNER_APPROVED" | "RETURNED_TO_MANAGER";
+
+type DailyOperationReport = {
+  id: string;
+  operationId: string;
+  reportNumber: string;
+  operationDate: string;
+  status: OperationReportStatus;
+  generatedAt: string;
+  managerReviewedAt: string | null;
+  managerReviewedByName: string | null;
+  managerNotes: string | null;
+  ownerApprovedAt: string | null;
+  ownerApprovedByName: string | null;
+  ownerNotes: string | null;
+  returnedAt: string | null;
+  returnedByName: string | null;
+  returnNotes: string | null;
+  snapshot: unknown;
 };
 
 type OperationCarryover = {
@@ -149,6 +174,7 @@ type OperationResponse = {
   previousClosedOperation: OperationCarryover | null;
   pendingClosureOperation: OperationCarryover | null;
   operation: DailyOperation | null;
+  report: DailyOperationReport | null;
   message?: string | string[];
 };
 
@@ -302,6 +328,9 @@ export default function OperationsPage() {
   const [agentReturnForm, setAgentReturnForm] =
     useState<AgentReturnForm>(emptyAgentReturnForm);
   const [closingForm, setClosingForm] = useState<ClosingForm>(emptyClosingForm);
+  const [reportView, setReportView] = useState<"report" | "excel">("report");
+  const [managerReportNotes, setManagerReportNotes] = useState("");
+  const [ownerReportNotes, setOwnerReportNotes] = useState("");
   const [activePanel, setActivePanel] = useState<OperationActionPanel>(null);
   const [loading, setLoading] = useState(true);
   const [loadingAgents, setLoadingAgents] = useState(false);
@@ -312,6 +341,8 @@ export default function OperationsPage() {
   const [recordingExpense, setRecordingExpense] = useState(false);
   const [recordingAgentReturn, setRecordingAgentReturn] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [reviewingReport, setReviewingReport] = useState(false);
+  const [approvingReport, setApprovingReport] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -330,8 +361,16 @@ export default function OperationsPage() {
     session?.permissions.includes("operation.float.manage"),
   );
   const canClose = Boolean(session?.permissions.includes("operation.close"));
+  const canReviewReport = Boolean(
+    session?.permissions.includes("operation.report.review"),
+  );
+  const canApproveReport = Boolean(
+    session?.permissions.includes("operation.approve") &&
+    session?.permissions.includes("branch.create"),
+  );
   const activeBranch = data?.branch;
   const operation = data?.operation;
+  const report = data?.report ?? null;
   const pendingClosureOperation = data?.pendingClosureOperation ?? null;
   const previousClosedOperation = data?.previousClosedOperation ?? null;
   const suggestedOpeningBalance = data?.openingBalance ?? null;
@@ -839,6 +878,78 @@ export default function OperationsPage() {
     }
   }
 
+  async function managerConfirmReport() {
+    if (!session || !report || reviewingReport) return;
+    setReviewingReport(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/operations/reports/${report.id}/manager-confirm`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `${session.tokenType} ${session.accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            notes: managerReportNotes.trim() || undefined,
+          }),
+        },
+      );
+      const payload = await readApiJson<OperationResponse>(response);
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      setData(payload);
+      setManagerReportNotes("");
+      setNotice("Report sent to owner.");
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not send report to owner.",
+      );
+    } finally {
+      setReviewingReport(false);
+    }
+  }
+
+  async function ownerApproveReport() {
+    if (!session || !report || approvingReport) return;
+    setApprovingReport(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/operations/reports/${report.id}/owner-approve`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `${session.tokenType} ${session.accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            notes: ownerReportNotes.trim() || undefined,
+          }),
+        },
+      );
+      const payload = await readApiJson<OperationResponse>(response);
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      setData(payload);
+      setOwnerReportNotes("");
+      setNotice("Report approved.");
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not approve report.",
+      );
+    } finally {
+      setApprovingReport(false);
+    }
+  }
+
   function goToPendingClosure() {
     if (!pendingClosureOperation) return;
     setNotice("Close this branch day before opening a new day.");
@@ -892,6 +1003,8 @@ export default function OperationsPage() {
                   setFloatTopUpForm(emptyFloatForm);
                   setAgentReturnForm(emptyAgentReturnForm);
                   setClosingForm(emptyClosingForm);
+                  setManagerReportNotes("");
+                  setOwnerReportNotes("");
                   setActivePanel(null);
                   setDate(event.target.value);
                 }}
@@ -947,6 +1060,19 @@ export default function OperationsPage() {
             pendingReturnsCount={pendingAgentReturns.length}
             assignableAgentsCount={assignableAgents.length}
             addFloatAgentsCount={addFloatOptions.length}
+            report={report}
+            reportView={reportView}
+            canReviewReport={canReviewReport}
+            canApproveReport={canApproveReport}
+            managerReportNotes={managerReportNotes}
+            ownerReportNotes={ownerReportNotes}
+            reviewingReport={reviewingReport}
+            approvingReport={approvingReport}
+            setReportView={setReportView}
+            setManagerReportNotes={setManagerReportNotes}
+            setOwnerReportNotes={setOwnerReportNotes}
+            onManagerConfirmReport={() => void managerConfirmReport()}
+            onOwnerApproveReport={() => void ownerApproveReport()}
             onAction={openActionPanel}
           />
         ) : pendingClosureOperation ? (
@@ -1194,6 +1320,19 @@ function OpenOperationView({
   pendingReturnsCount,
   assignableAgentsCount,
   addFloatAgentsCount,
+  report,
+  reportView,
+  canReviewReport,
+  canApproveReport,
+  managerReportNotes,
+  ownerReportNotes,
+  reviewingReport,
+  approvingReport,
+  setReportView,
+  setManagerReportNotes,
+  setOwnerReportNotes,
+  onManagerConfirmReport,
+  onOwnerApproveReport,
   onAction,
 }: {
   operation: DailyOperation;
@@ -1207,6 +1346,19 @@ function OpenOperationView({
   pendingReturnsCount: number;
   assignableAgentsCount: number;
   addFloatAgentsCount: number;
+  report: DailyOperationReport | null;
+  reportView: "report" | "excel";
+  canReviewReport: boolean;
+  canApproveReport: boolean;
+  managerReportNotes: string;
+  ownerReportNotes: string;
+  reviewingReport: boolean;
+  approvingReport: boolean;
+  setReportView: (view: "report" | "excel") => void;
+  setManagerReportNotes: (value: string) => void;
+  setOwnerReportNotes: (value: string) => void;
+  onManagerConfirmReport: () => void;
+  onOwnerApproveReport: () => void;
   onAction: (panel: Exclude<OperationActionPanel, null>) => void;
 }) {
   const allReturnsRecorded =
@@ -1302,6 +1454,31 @@ function OpenOperationView({
         />
       </section>
 
+      {operation.status === "CLOSED" ? (
+        report ? (
+          <OperationReportSection
+            operation={operation}
+            report={report}
+            view={reportView}
+            canReviewReport={canReviewReport}
+            canApproveReport={canApproveReport}
+            managerNotes={managerReportNotes}
+            ownerNotes={ownerReportNotes}
+            reviewing={reviewingReport}
+            approving={approvingReport}
+            setView={setReportView}
+            setManagerNotes={setManagerReportNotes}
+            setOwnerNotes={setOwnerReportNotes}
+            onManagerConfirm={onManagerConfirmReport}
+            onOwnerApprove={onOwnerApproveReport}
+          />
+        ) : (
+          <section className="panel bg-white p-4 text-sm font-semibold text-slate-500">
+            Preparing close-day report...
+          </section>
+        )
+      ) : null}
+
       <div className="grid gap-4 xl:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.45fr)]">
         <div className="space-y-3">
           <OpeningCashPanel
@@ -1335,6 +1512,642 @@ function OpenOperationView({
         </div>
       </div>
     </div>
+  );
+}
+
+function OperationReportSection({
+  operation,
+  report,
+  view,
+  canReviewReport,
+  canApproveReport,
+  managerNotes,
+  ownerNotes,
+  reviewing,
+  approving,
+  setView,
+  setManagerNotes,
+  setOwnerNotes,
+  onManagerConfirm,
+  onOwnerApprove,
+}: {
+  operation: DailyOperation;
+  report: DailyOperationReport;
+  view: "report" | "excel";
+  canReviewReport: boolean;
+  canApproveReport: boolean;
+  managerNotes: string;
+  ownerNotes: string;
+  reviewing: boolean;
+  approving: boolean;
+  setView: (view: "report" | "excel") => void;
+  setManagerNotes: (value: string) => void;
+  setOwnerNotes: (value: string) => void;
+  onManagerConfirm: () => void;
+  onOwnerApprove: () => void;
+}) {
+  return (
+    <section className="panel overflow-hidden bg-white shadow-[0_12px_30px_rgba(20,33,61,0.08)]">
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--line)] px-4 py-4">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold tracking-[0.12em] text-[var(--forest-emerald)]">
+            Close-Day Report
+          </p>
+          <h2 className="mt-1 text-lg font-bold text-[var(--midnight-navy)]">
+            {report.reportNumber}
+          </h2>
+          <p className="mt-1 text-xs font-semibold text-slate-500">
+            {operation.branchName} · {formatDateOnly(report.operationDate)}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <ReportStatusBadge status={report.status} />
+          <div className="flex border border-[var(--line)] bg-[var(--soft-mist)] p-1">
+            <ReportViewButton
+              active={view === "report"}
+              icon={<FileText className="size-3.5" />}
+              label="Computerised Report"
+              onClick={() => setView("report")}
+            />
+            <ReportViewButton
+              active={view === "excel"}
+              icon={<FileSpreadsheet className="size-3.5" />}
+              label="Excel View"
+              onClick={() => setView("excel")}
+            />
+          </div>
+        </div>
+      </header>
+
+      <div className="grid gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0">
+          {view === "report" ? (
+            <ComputerisedReportView operation={operation} report={report} />
+          ) : (
+            <ExcelReportView operation={operation} />
+          )}
+        </div>
+        <ReportReviewPanel
+          report={report}
+          canReviewReport={canReviewReport}
+          canApproveReport={canApproveReport}
+          managerNotes={managerNotes}
+          ownerNotes={ownerNotes}
+          reviewing={reviewing}
+          approving={approving}
+          setManagerNotes={setManagerNotes}
+          setOwnerNotes={setOwnerNotes}
+          onManagerConfirm={onManagerConfirm}
+          onOwnerApprove={onOwnerApprove}
+        />
+      </div>
+    </section>
+  );
+}
+
+function ReportViewButton({
+  active,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`inline-flex h-8 items-center gap-2 px-3 text-xs font-bold transition ${
+        active
+          ? "bg-white text-[var(--midnight-navy)] shadow-sm"
+          : "text-slate-500 hover:text-[var(--midnight-navy)]"
+      }`}
+      onClick={onClick}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function ComputerisedReportView({
+  operation,
+  report,
+}: {
+  operation: DailyOperation;
+  report: DailyOperationReport;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-2 lg:grid-cols-6">
+        <ReportMetric
+          label="Opening Cash"
+          value={formatMoney(operation.cashAvailableAtOpening)}
+        />
+        <ReportMetric
+          label="Float Distributed"
+          value={formatMoney(operation.floatIssued)}
+        />
+        <ReportMetric
+          label="Returned Cash"
+          value={formatMoney(operation.cashReturnedByAgents)}
+        />
+        <ReportMetric
+          label="Expenses"
+          value={formatMoney(operation.expensesTotal)}
+          danger
+        />
+        <ReportMetric
+          label="Expected Close"
+          value={formatMoney(operation.expectedClosingBalance)}
+          highlight
+        />
+        <ReportMetric
+          label="Counted Cash"
+          value={formatMoney(operation.closingBalance ?? 0)}
+        />
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <ReportBlock title="Opening Cash">
+          <StatementRow
+            label="Previous closing balance"
+            value={formatMoney(operation.openingBalance)}
+          />
+          <StatementRow
+            label="Top-ups added today"
+            value={formatMoney(operation.topUpsTotal)}
+          />
+          <StatementRow
+            label="Total opening balance"
+            value={formatMoney(operation.cashAvailableAtOpening)}
+            strong
+          />
+        </ReportBlock>
+        <ReportBlock title="Closing Result">
+          <StatementRow
+            label="Expected closing balance"
+            value={formatMoney(operation.expectedClosingBalance)}
+            strong
+          />
+          <StatementRow
+            label="Counted cash"
+            value={formatMoney(operation.closingBalance ?? 0)}
+          />
+          <StatementRow
+            label="Variance"
+            value={formatVariance(operation.closingVariance)}
+            danger={(operation.closingVariance ?? 0) !== 0}
+          />
+        </ReportBlock>
+      </div>
+
+      <ReportBlock title="Field Activity">
+        <div className="grid gap-2 sm:grid-cols-4">
+          <ReportMiniStat
+            label="Loans issued"
+            value={`${operation.loansIssuedCount}`}
+            hint={formatMoney(operation.loansIssuedPrincipal)}
+          />
+          <ReportMiniStat
+            label="Collections"
+            value={`${operation.collectionsCount}`}
+            hint={formatMoney(operation.collectionsReceived)}
+          />
+          <ReportMiniStat
+            label="Processing fees"
+            value={formatMoney(operation.processingFeesTotal)}
+            hint="Included in handover"
+          />
+          <ReportMiniStat
+            label="Agents returned"
+            value={`${operation.agentsReturnedCount}/${operation.agentsWithFloatCount}`}
+            hint={formatMoney(operation.expectedAgentReturnTotal)}
+          />
+        </div>
+      </ReportBlock>
+
+      <ReportAgentTable operation={operation} />
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <ReportRecordList
+          title="Top-ups"
+          empty="No top-ups recorded."
+          rows={operation.topUps.map((topUp) => ({
+            id: topUp.id,
+            label: topUp.description || "Cash top-up",
+            meta: `${formatClock(topUp.addedAt)} · ${topUp.recordedByName}`,
+            value: formatMoney(topUp.amount),
+          }))}
+        />
+        <ReportRecordList
+          title="Expenses"
+          empty="No expenses recorded."
+          rows={operation.expenses.map((expense) => ({
+            id: expense.id,
+            label: categoryLabel(expense.category),
+            meta: `${formatClock(expense.incurredAt)} · ${expense.recordedByName}`,
+            value: formatMoney(expense.amount),
+          }))}
+        />
+      </div>
+
+      <div className="grid gap-3 text-xs text-slate-600 sm:grid-cols-3">
+        <ReportDetail label="Opened By" value={operation.openedByName} />
+        <ReportDetail
+          label="Closed By"
+          value={operation.closedByName ?? "Not recorded"}
+        />
+        <ReportDetail
+          label="Generated"
+          value={formatDateTime(report.generatedAt)}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ExcelReportView({ operation }: { operation: DailyOperation }) {
+  const rows = buildExcelRows(operation);
+  return (
+    <div className="overflow-hidden border border-[var(--line)]">
+      <table className="w-full table-fixed text-left text-[11px]">
+        <thead className="bg-[#e5ece8] text-[10px] font-bold text-slate-500">
+          <tr>
+            <th className="w-[16%] px-2 py-2">Section</th>
+            <th className="w-[28%] px-2 py-2">Description</th>
+            <th className="w-[10%] px-2 py-2 text-right">Count</th>
+            <th className="w-[15%] px-2 py-2 text-right">Cash In</th>
+            <th className="w-[15%] px-2 py-2 text-right">Cash Out</th>
+            <th className="w-[16%] px-2 py-2 text-right">Balance</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-[var(--line)]">
+          {rows.map((row) => (
+            <tr key={`${row.section}-${row.description}`} className="bg-white">
+              <td className="px-2 py-2 font-bold text-[var(--midnight-navy)]">
+                {row.section}
+              </td>
+              <td className="px-2 py-2 text-slate-600">{row.description}</td>
+              <td className="px-2 py-2 text-right tabular-nums text-slate-600">
+                {row.count}
+              </td>
+              <td className="px-2 py-2 text-right font-semibold tabular-nums text-[var(--forest-emerald)]">
+                {row.cashIn == null ? "-" : formatCompactMoney(row.cashIn)}
+              </td>
+              <td className="px-2 py-2 text-right font-semibold tabular-nums text-amber-700">
+                {row.cashOut == null ? "-" : formatCompactMoney(row.cashOut)}
+              </td>
+              <td className="px-2 py-2 text-right font-bold tabular-nums text-[var(--midnight-navy)]">
+                {row.balance == null ? "-" : formatCompactMoney(row.balance)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ReportReviewPanel({
+  report,
+  canReviewReport,
+  canApproveReport,
+  managerNotes,
+  ownerNotes,
+  reviewing,
+  approving,
+  setManagerNotes,
+  setOwnerNotes,
+  onManagerConfirm,
+  onOwnerApprove,
+}: {
+  report: DailyOperationReport;
+  canReviewReport: boolean;
+  canApproveReport: boolean;
+  managerNotes: string;
+  ownerNotes: string;
+  reviewing: boolean;
+  approving: boolean;
+  setManagerNotes: (value: string) => void;
+  setOwnerNotes: (value: string) => void;
+  onManagerConfirm: () => void;
+  onOwnerApprove: () => void;
+}) {
+  const waitingForManager =
+    report.status === "MANAGER_REVIEW" ||
+    report.status === "RETURNED_TO_MANAGER";
+  const waitingForOwner = report.status === "SENT_TO_OWNER";
+
+  return (
+    <aside className="border border-[var(--line)] bg-[var(--soft-mist)] p-4">
+      <div className="flex items-start gap-3">
+        <span className="grid size-9 shrink-0 place-items-center border border-emerald-100 bg-white text-[var(--forest-emerald)]">
+          <ClipboardCheck className="size-4" />
+        </span>
+        <div>
+          <p className="text-sm font-bold text-[var(--midnight-navy)]">
+            Review Flow
+          </p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">
+            {reportStatusHelp(report.status)}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        <ReviewStamp
+          label="Manager"
+          name={report.managerReviewedByName}
+          date={report.managerReviewedAt}
+          note={report.managerNotes}
+        />
+        <ReviewStamp
+          label="Owner"
+          name={report.ownerApprovedByName}
+          date={report.ownerApprovedAt}
+          note={report.ownerNotes}
+        />
+      </div>
+
+      {waitingForManager && canReviewReport ? (
+        <div className="mt-4 space-y-3">
+          <TextAreaField
+            label="Manager Notes"
+            value={managerNotes}
+            onChange={setManagerNotes}
+          />
+          <button
+            type="button"
+            className="btn btn-primary h-10 w-full text-xs"
+            disabled={reviewing}
+            onClick={onManagerConfirm}
+          >
+            {reviewing ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Send className="size-3.5" />
+            )}
+            Send To Owner
+          </button>
+        </div>
+      ) : null}
+
+      {waitingForOwner && canApproveReport ? (
+        <div className="mt-4 space-y-3">
+          <TextAreaField
+            label="Owner Notes"
+            value={ownerNotes}
+            onChange={setOwnerNotes}
+          />
+          <button
+            type="button"
+            className="btn btn-primary h-10 w-full text-xs"
+            disabled={approving}
+            onClick={onOwnerApprove}
+          >
+            {approving ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <CheckCircle2 className="size-3.5" />
+            )}
+            Approve Report
+          </button>
+        </div>
+      ) : null}
+    </aside>
+  );
+}
+
+function ReportMetric({
+  label,
+  value,
+  highlight = false,
+  danger = false,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <div
+      className={`border px-2 py-2 ${
+        highlight
+          ? "border-emerald-200 bg-emerald-50"
+          : danger
+            ? "border-amber-200 bg-amber-50"
+            : "border-[var(--line)] bg-[var(--soft-mist)]"
+      }`}
+    >
+      <p className="text-[10px] font-bold text-slate-500">{label}</p>
+      <p
+        className={`mt-1 truncate text-sm font-bold tabular-nums ${
+          highlight
+            ? "text-[var(--forest-emerald)]"
+            : "text-[var(--midnight-navy)]"
+        }`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function ReportBlock({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="border border-[var(--line)]">
+      <header className="border-b border-[var(--line)] bg-[#e5ece8] px-3 py-2">
+        <p className="text-xs font-bold text-[var(--midnight-navy)]">{title}</p>
+      </header>
+      <div className="space-y-2 p-3">{children}</div>
+    </section>
+  );
+}
+
+function ReportMiniStat({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <div>
+      <p className="text-[10px] font-bold text-slate-500">{label}</p>
+      <p className="mt-1 text-sm font-bold tabular-nums text-[var(--midnight-navy)]">
+        {value}
+      </p>
+      <p className="mt-0.5 truncate text-[10px] font-semibold text-slate-500">
+        {hint}
+      </p>
+    </div>
+  );
+}
+
+function ReportAgentTable({ operation }: { operation: DailyOperation }) {
+  return (
+    <ReportBlock title="Agent Handover">
+      {operation.agentReturns.length === 0 ? (
+        <p className="py-2 text-sm text-slate-500">
+          No agent float was issued for this day.
+        </p>
+      ) : (
+        <table className="w-full table-fixed text-left text-[11px]">
+          <thead className="text-[10px] font-bold text-slate-500">
+            <tr>
+              <th className="w-[25%] py-1 pr-2">Agent</th>
+              <th className="w-[15%] px-2 py-1 text-right">Float</th>
+              <th className="w-[15%] px-2 py-1 text-right">Loans</th>
+              <th className="w-[15%] px-2 py-1 text-right">Collected</th>
+              <th className="w-[15%] px-2 py-1 text-right">Fees</th>
+              <th className="w-[15%] pl-2 py-1 text-right">Returned</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--line)]">
+            {operation.agentReturns.map((agentReturn) => (
+              <tr key={agentReturn.floatId}>
+                <td className="py-2 pr-2">
+                  <p className="truncate font-bold text-[var(--midnight-navy)]">
+                    {agentReturn.agentName}
+                  </p>
+                  <p className="truncate text-[10px] text-slate-500">
+                    {returnStatusLabel(agentReturn.status)}
+                  </p>
+                </td>
+                <ReportAmount value={agentReturn.amountGiven} />
+                <ReportAmount value={agentReturn.amountDisbursed} />
+                <ReportAmount value={agentReturn.amountCollected} />
+                <ReportAmount value={agentReturn.processingFees} />
+                <ReportAmount value={agentReturn.amountReturned ?? 0} strong />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </ReportBlock>
+  );
+}
+
+function ReportAmount({
+  value,
+  strong = false,
+}: {
+  value: number;
+  strong?: boolean;
+}) {
+  return (
+    <td
+      className={`px-2 py-2 text-right tabular-nums ${
+        strong ? "font-bold text-[var(--midnight-navy)]" : "font-semibold"
+      }`}
+    >
+      {formatCompactMoney(value)}
+    </td>
+  );
+}
+
+function ReportRecordList({
+  title,
+  empty,
+  rows,
+}: {
+  title: string;
+  empty: string;
+  rows: { id: string; label: string; meta: string; value: string }[];
+}) {
+  return (
+    <ReportBlock title={title}>
+      {rows.length === 0 ? (
+        <p className="py-2 text-sm text-slate-500">{empty}</p>
+      ) : (
+        <div className="space-y-2">
+          {rows.slice(0, 6).map((row) => (
+            <div
+              key={row.id}
+              className="grid grid-cols-[minmax(0,1fr)_110px] gap-3 text-sm"
+            >
+              <span className="min-w-0">
+                <span className="block truncate font-bold text-[var(--midnight-navy)]">
+                  {row.label}
+                </span>
+                <span className="block truncate text-[10px] text-slate-500">
+                  {row.meta}
+                </span>
+              </span>
+              <span className="text-right font-bold tabular-nums text-[var(--midnight-navy)]">
+                {row.value}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </ReportBlock>
+  );
+}
+
+function ReportDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border border-[var(--line)] bg-white px-3 py-2">
+      <p className="text-[10px] font-bold text-slate-500">{label}</p>
+      <p className="mt-1 truncate font-bold text-[var(--midnight-navy)]">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function ReviewStamp({
+  label,
+  name,
+  date,
+  note,
+}: {
+  label: string;
+  name: string | null;
+  date: string | null;
+  note: string | null;
+}) {
+  return (
+    <div className="border-t border-[var(--line)] pt-3">
+      <p className="text-[10px] font-bold text-slate-500">{label}</p>
+      <p className="mt-1 text-sm font-bold text-[var(--midnight-navy)]">
+        {name ?? "Pending"}
+      </p>
+      {date ? (
+        <p className="mt-0.5 text-[10px] font-semibold text-slate-500">
+          {formatDateTime(date)}
+        </p>
+      ) : null}
+      {note ? <p className="mt-2 text-xs text-slate-600">{note}</p> : null}
+    </div>
+  );
+}
+
+function ReportStatusBadge({ status }: { status: OperationReportStatus }) {
+  const label = reportStatusLabel(status);
+  const className =
+    status === "OWNER_APPROVED"
+      ? "border-emerald-200 bg-emerald-50 text-[var(--forest-emerald)]"
+      : status === "SENT_TO_OWNER"
+        ? "border-sky-200 bg-sky-50 text-sky-700"
+        : status === "RETURNED_TO_MANAGER"
+          ? "border-amber-200 bg-amber-50 text-amber-700"
+          : "border-slate-200 bg-[var(--soft-mist)] text-slate-600";
+  return (
+    <span className={`inline-flex px-3 py-2 text-xs font-bold ${className}`}>
+      {label}
+    </span>
   );
 }
 
@@ -3016,6 +3829,133 @@ function OperationsSkeleton() {
       <SkeletonBlock className="h-72" />
     </div>
   );
+}
+
+function buildExcelRows(operation: DailyOperation) {
+  const openingBalance = operation.openingBalance;
+  const afterTopUps = operation.cashAvailableAtOpening;
+  const afterFloat = afterTopUps - operation.floatIssued;
+  const afterReturns = afterFloat + operation.cashReturnedByAgents;
+  const afterExpenses = afterReturns - operation.expensesTotal;
+
+  return [
+    {
+      section: "Opening",
+      description: "Previous closing balance",
+      count: "-",
+      cashIn: openingBalance,
+      cashOut: null,
+      balance: openingBalance,
+    },
+    {
+      section: "Opening",
+      description: "Top-ups added today",
+      count: operation.topUpsCount,
+      cashIn: operation.topUpsTotal,
+      cashOut: null,
+      balance: afterTopUps,
+    },
+    {
+      section: "Float",
+      description: "Float distributed to agents",
+      count: operation.agentsWithFloatCount,
+      cashIn: null,
+      cashOut: operation.floatIssued,
+      balance: afterFloat,
+    },
+    {
+      section: "Field",
+      description: "Cash returned by agents",
+      count: operation.agentsReturnedCount,
+      cashIn: operation.cashReturnedByAgents,
+      cashOut: null,
+      balance: afterReturns,
+    },
+    {
+      section: "Expenses",
+      description: "Expenses recorded",
+      count: operation.expensesCount,
+      cashIn: null,
+      cashOut: operation.expensesTotal,
+      balance: afterExpenses,
+    },
+    {
+      section: "Loans",
+      description: "Principal issued",
+      count: operation.loansIssuedCount,
+      cashIn: null,
+      cashOut: operation.loansIssuedPrincipal,
+      balance: null,
+    },
+    {
+      section: "Collections",
+      description: "Repayments received",
+      count: operation.collectionsCount,
+      cashIn: operation.collectionsReceived,
+      cashOut: null,
+      balance: null,
+    },
+    {
+      section: "Fees",
+      description: "Processing fees received",
+      count: "-",
+      cashIn: operation.processingFeesTotal,
+      cashOut: null,
+      balance: null,
+    },
+    {
+      section: "Closing",
+      description: "Expected closing balance",
+      count: "-",
+      cashIn: null,
+      cashOut: null,
+      balance: operation.expectedClosingBalance,
+    },
+    {
+      section: "Closing",
+      description: "Counted cash",
+      count: "-",
+      cashIn: null,
+      cashOut: null,
+      balance: operation.closingBalance ?? 0,
+    },
+    {
+      section: "Closing",
+      description: "Variance",
+      count: "-",
+      cashIn:
+        (operation.closingVariance ?? 0) > 0 ? operation.closingVariance : null,
+      cashOut:
+        (operation.closingVariance ?? 0) < 0
+          ? Math.abs(operation.closingVariance ?? 0)
+          : null,
+      balance: operation.closingVariance ?? 0,
+    },
+  ];
+}
+
+function reportStatusLabel(status: OperationReportStatus) {
+  if (status === "MANAGER_REVIEW") return "Manager Review";
+  if (status === "SENT_TO_OWNER") return "Sent To Owner";
+  if (status === "OWNER_APPROVED") return "Owner Approved";
+  if (status === "RETURNED_TO_MANAGER") return "Returned To Manager";
+  return status;
+}
+
+function reportStatusHelp(status: OperationReportStatus) {
+  if (status === "MANAGER_REVIEW") {
+    return "Manager should check the figures and send the report to owner.";
+  }
+  if (status === "SENT_TO_OWNER") {
+    return "Waiting for owner approval.";
+  }
+  if (status === "OWNER_APPROVED") {
+    return "This report has been approved.";
+  }
+  if (status === "RETURNED_TO_MANAGER") {
+    return "Manager should review the returned report.";
+  }
+  return "Report review is in progress.";
 }
 
 function operationLabel(status: string) {

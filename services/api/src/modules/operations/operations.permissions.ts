@@ -8,6 +8,7 @@ export const OPERATIONS_PERMISSIONS = {
   expenseApprove: 'operation.expense.approve',
   close: 'operation.close',
   approve: 'operation.approve',
+  reportReview: 'operation.report.review',
 } as const;
 
 export const OPERATIONS_PERMISSION_LIST = Object.values(OPERATIONS_PERMISSIONS);

@@ -74,6 +74,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'operation.expense.create',
     'operation.expense.approve',
     'operation.close',
+    'operation.report.review',
     'report.read',
   ],
   Supervisor: [

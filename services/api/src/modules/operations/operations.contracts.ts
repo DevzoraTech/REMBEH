@@ -1,5 +1,8 @@
 export type BranchOperationStatusContract = 'OPEN' | 'CLOSING' | 'CLOSED';
 
+export type DailyOperationReportStatusContract =
+  'MANAGER_REVIEW' | 'SENT_TO_OWNER' | 'OWNER_APPROVED' | 'RETURNED_TO_MANAGER';
+
 export type DailyOperationBranchContract = {
   id: string;
   name: string;
@@ -66,6 +69,7 @@ export type DailyOperationContract = {
   openedAt: string;
   openedByName: string;
   closedAt: string | null;
+  closedByName: string | null;
   openingBalance: number;
   cashAddedToday: number;
   cashAvailableAtOpening: number;
@@ -97,6 +101,25 @@ export type DailyOperationContract = {
   notes: string | null;
 };
 
+export type DailyOperationReportContract = {
+  id: string;
+  operationId: string;
+  reportNumber: string;
+  operationDate: string;
+  status: DailyOperationReportStatusContract;
+  generatedAt: string;
+  managerReviewedAt: string | null;
+  managerReviewedByName: string | null;
+  managerNotes: string | null;
+  ownerApprovedAt: string | null;
+  ownerApprovedByName: string | null;
+  ownerNotes: string | null;
+  returnedAt: string | null;
+  returnedByName: string | null;
+  returnNotes: string | null;
+  snapshot: unknown;
+};
+
 export type DailyOperationCarryoverContract = {
   id: string;
   branchId: string;
@@ -114,6 +137,7 @@ export type DailyOperationResponseContract = {
   previousClosedOperation: DailyOperationCarryoverContract | null;
   pendingClosureOperation: DailyOperationCarryoverContract | null;
   operation: DailyOperationContract | null;
+  report: DailyOperationReportContract | null;
 };
 
 export type AgentDailyAccessReasonContract =

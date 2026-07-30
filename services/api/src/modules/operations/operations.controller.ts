@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
@@ -9,6 +18,7 @@ import { OpenBranchOperationDto } from './dto/open-branch-operation.dto';
 import { RecordAgentReturnDto } from './dto/record-agent-return.dto';
 import { RecordOperationExpenseDto } from './dto/record-operation-expense.dto';
 import { RecordOperationTopUpDto } from './dto/record-operation-top-up.dto';
+import { ReviewOperationReportDto } from './dto/review-operation-report.dto';
 import { OperationsService } from './operations.service';
 import { OPERATIONS_PERMISSIONS } from './operations.permissions';
 
@@ -74,5 +84,25 @@ export class OperationsController {
     @Body() dto: CloseBranchOperationDto,
   ) {
     return this.operationsService.closeBranch(user, dto);
+  }
+
+  @Post('reports/:reportId/manager-confirm')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.reportReview)
+  managerConfirmReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('reportId', ParseUUIDPipe) reportId: string,
+    @Body() dto: ReviewOperationReportDto,
+  ) {
+    return this.operationsService.managerConfirmReport(user, reportId, dto);
+  }
+
+  @Post('reports/:reportId/owner-approve')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.approve)
+  ownerApproveReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('reportId', ParseUUIDPipe) reportId: string,
+    @Body() dto: ReviewOperationReportDto,
+  ) {
+    return this.operationsService.ownerApproveReport(user, reportId, dto);
   }
 }

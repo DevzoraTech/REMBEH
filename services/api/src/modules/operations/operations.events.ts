@@ -8,6 +8,9 @@ export const OPERATIONS_EVENTS = {
   branchClosingStarted: 'operation.closing_started',
   branchClosed: 'operation.branch_closed',
   branchApproved: 'operation.branch_approved',
+  reportGenerated: 'operation.report_generated',
+  reportManagerReviewed: 'operation.report_manager_reviewed',
+  reportOwnerApproved: 'operation.report_owner_approved',
 } as const;
 
 export type BranchOperationEventPayload = {

@@ -119,6 +119,13 @@ enum BranchOperationExpenseCategory {
   OTHER
 }
 
+enum BranchOperationReportStatus {
+  MANAGER_REVIEW
+  SENT_TO_OWNER
+  OWNER_APPROVED
+  RETURNED_TO_MANAGER
+}
+
 /// When repayments begin relative to loan go-live (submit / disbursement).
 /// Anchor = disbursedAt ?? approvedAt ?? submittedAt ?? createdAt.
 enum PaymentStartPolicyType {
@@ -190,6 +197,7 @@ model Tenant {
   branchDailyOperations    BranchDailyOperation[]
   branchOperationExpenses  BranchOperationExpense[]
   branchOperationTopUps    BranchOperationTopUp[]
+  branchOperationReports   BranchOperationReport[]
 
   @@map("tenants")
 }
@@ -222,6 +230,7 @@ model Branch {
   dailyOperations          BranchDailyOperation[]
   operationExpenses        BranchOperationExpense[]
   operationTopUps          BranchOperationTopUp[]
+  operationReports         BranchOperationReport[]
 
   @@unique([tenantId, name])
   @@index([tenantId, name])
@@ -426,6 +435,9 @@ model User {
   operationExpensesRecorded BranchOperationExpense[] @relation("BranchOperationExpenseRecordedBy")
   operationExpensesApproved BranchOperationExpense[] @relation("BranchOperationExpenseApprovedBy")
   operationTopUpsRecorded   BranchOperationTopUp[]   @relation("BranchOperationTopUpRecordedBy")
+  operationReportsReviewed  BranchOperationReport[]  @relation("BranchOperationReportReviewedBy")
+  operationReportsApproved  BranchOperationReport[]  @relation("BranchOperationReportApprovedBy")
+  operationReportsReturned  BranchOperationReport[]  @relation("BranchOperationReportReturnedBy")
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
@@ -490,6 +502,7 @@ model BranchDailyOperation {
   closedBy               User?                    @relation("BranchDailyOperationClosedBy", fields: [closedByUserId], references: [id])
   expenses               BranchOperationExpense[]
   topUps                 BranchOperationTopUp[]
+  report                 BranchOperationReport?
 
   @@unique([tenantId, branchId, operationDate])
   @@index([tenantId, operationDate])
@@ -541,6 +554,40 @@ model BranchOperationTopUp {
   @@index([tenantId, branchId, addedAt])
   @@index([tenantId, operationId])
   @@map("branch_operation_topups")
+}
+
+model BranchOperationReport {
+  id                  String                      @id @default(uuid()) @db.Uuid
+  tenantId            String                      @map("tenant_id") @db.Uuid
+  branchId            String                      @map("branch_id") @db.Uuid
+  operationId         String                      @unique @map("operation_id") @db.Uuid
+  reportNumber        String                      @map("report_number")
+  operationDate       DateTime                    @map("operation_date") @db.Date
+  status              BranchOperationReportStatus @default(MANAGER_REVIEW)
+  snapshot            Json
+  generatedAt         DateTime                    @default(now()) @map("generated_at")
+  managerReviewedAt   DateTime?                   @map("manager_reviewed_at")
+  managerReviewedById String?                     @map("manager_reviewed_by_id") @db.Uuid
+  managerNotes        String?                     @map("manager_notes")
+  ownerApprovedAt     DateTime?                   @map("owner_approved_at")
+  ownerApprovedById   String?                     @map("owner_approved_by_id") @db.Uuid
+  ownerNotes          String?                     @map("owner_notes")
+  returnedAt          DateTime?                   @map("returned_at")
+  returnedById        String?                     @map("returned_by_id") @db.Uuid
+  returnNotes         String?                     @map("return_notes")
+  createdAt           DateTime                    @default(now()) @map("created_at")
+  updatedAt           DateTime                    @updatedAt @map("updated_at")
+  tenant              Tenant                      @relation(fields: [tenantId], references: [id])
+  branch              Branch                      @relation(fields: [branchId], references: [id])
+  operation           BranchDailyOperation        @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  managerReviewedBy   User?                       @relation("BranchOperationReportReviewedBy", fields: [managerReviewedById], references: [id])
+  ownerApprovedBy     User?                       @relation("BranchOperationReportApprovedBy", fields: [ownerApprovedById], references: [id])
+  returnedBy          User?                       @relation("BranchOperationReportReturnedBy", fields: [returnedById], references: [id])
+
+  @@unique([tenantId, reportNumber])
+  @@index([tenantId, branchId, operationDate])
+  @@index([tenantId, status])
+  @@map("branch_operation_reports")
 }
 
 model Role {

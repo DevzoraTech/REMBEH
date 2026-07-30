@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BranchOperationReportStatus, Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import {
   getPrismaUniqueConstraintTargets,
@@ -17,17 +17,38 @@ import { OpenBranchOperationDto } from './dto/open-branch-operation.dto';
 import { RecordAgentReturnDto } from './dto/record-agent-return.dto';
 import { RecordOperationExpenseDto } from './dto/record-operation-expense.dto';
 import { RecordOperationTopUpDto } from './dto/record-operation-top-up.dto';
+import { ReviewOperationReportDto } from './dto/review-operation-report.dto';
 import {
   AgentDailyOperationResponseContract,
   DailyOperationAgentReturnContract,
   DailyOperationCarryoverContract,
   DailyOperationContract,
+  DailyOperationReportContract,
   DailyOperationResponseContract,
 } from './operations.contracts';
 import { OPERATIONS_EVENTS } from './operations.events';
 import { OPERATIONS_PERMISSIONS } from './operations.permissions';
 import { OperationsRepository } from './operations.repository';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+
+type OperationReportRecord = {
+  id: string;
+  operationId: string;
+  reportNumber: string;
+  operationDate: Date;
+  status: BranchOperationReportStatus;
+  snapshot: Prisma.JsonValue;
+  generatedAt: Date;
+  managerReviewedAt: Date | null;
+  managerReviewedBy: { displayName: string } | null;
+  managerNotes: string | null;
+  ownerApprovedAt: Date | null;
+  ownerApprovedBy: { displayName: string } | null;
+  ownerNotes: string | null;
+  returnedAt: Date | null;
+  returnedBy: { displayName: string } | null;
+  returnNotes: string | null;
+};
 
 @Injectable()
 export class OperationsService {
@@ -55,6 +76,7 @@ export class OperationsService {
         previousClosedOperation: null,
         pendingClosureOperation: null,
         operation: null,
+        report: null,
       };
     }
 
@@ -79,6 +101,18 @@ export class OperationsService {
       ? this.decimalToNumber(previousClosed.closingBalance)
       : null;
 
+    const operationContract = operation
+      ? await this.toContract(operation, bounds.dayStart, bounds.dayEnd)
+      : null;
+    const report =
+      operation && operationContract && operation.status === 'CLOSED'
+        ? await this.ensureReportForClosedOperation(
+            user,
+            operation,
+            operationContract,
+          )
+        : null;
+
     return {
       date: bounds.dateLabel,
       branch: {
@@ -94,9 +128,8 @@ export class OperationsService {
       pendingClosureOperation: pendingClosure
         ? this.toCarryoverContract(pendingClosure)
         : null,
-      operation: operation
-        ? await this.toContract(operation, bounds.dayStart, bounds.dayEnd)
-        : null,
+      operation: operationContract,
+      report: report ? this.toReportContract(report) : null,
     };
   }
 
@@ -603,6 +636,91 @@ export class OperationsService {
     return this.getToday(user, { branchId: branch.id, date: bounds.dateLabel });
   }
 
+  async managerConfirmReport(
+    user: AuthenticatedUser,
+    reportId: string,
+    dto: ReviewOperationReportDto,
+  ): Promise<DailyOperationResponseContract> {
+    this.assertCanReviewReport(user);
+    const report = await this.repository.findReportById({
+      tenantId: user.tenantId,
+      reportId,
+    });
+    if (!report) {
+      throw new NotFoundException('Report was not found.');
+    }
+    await this.resolveBranch(user, report.branchId);
+
+    if (
+      report.status !== BranchOperationReportStatus.MANAGER_REVIEW &&
+      report.status !== BranchOperationReportStatus.RETURNED_TO_MANAGER
+    ) {
+      throw new BadRequestException(
+        'This report is not waiting for manager review.',
+      );
+    }
+
+    const updated = await this.repository.managerConfirmReport({
+      tenantId: user.tenantId,
+      reportId: report.id,
+      reviewedByUserId: user.userId,
+      notes: dto.notes?.trim() || null,
+    });
+    this.broadcastOperationEvent(OPERATIONS_EVENTS.reportManagerReviewed, {
+      operationId: report.operationId,
+      reportId: updated.id,
+      tenantId: user.tenantId,
+      branchId: report.branchId,
+      operationDate: this.formatDateLabel(report.operationDate),
+      status: updated.status,
+    });
+
+    return this.getToday(user, {
+      branchId: report.branchId,
+      date: this.formatDateLabel(report.operationDate),
+    });
+  }
+
+  async ownerApproveReport(
+    user: AuthenticatedUser,
+    reportId: string,
+    dto: ReviewOperationReportDto,
+  ): Promise<DailyOperationResponseContract> {
+    this.assertCanOwnerApproveReport(user);
+    const report = await this.repository.findReportById({
+      tenantId: user.tenantId,
+      reportId,
+    });
+    if (!report) {
+      throw new NotFoundException('Report was not found.');
+    }
+    await this.resolveBranch(user, report.branchId);
+
+    if (report.status !== BranchOperationReportStatus.SENT_TO_OWNER) {
+      throw new BadRequestException('This report has not been sent to owner.');
+    }
+
+    const updated = await this.repository.ownerApproveReport({
+      tenantId: user.tenantId,
+      reportId: report.id,
+      approvedByUserId: user.userId,
+      notes: dto.notes?.trim() || null,
+    });
+    this.broadcastOperationEvent(OPERATIONS_EVENTS.reportOwnerApproved, {
+      operationId: report.operationId,
+      reportId: updated.id,
+      tenantId: user.tenantId,
+      branchId: report.branchId,
+      operationDate: this.formatDateLabel(report.operationDate),
+      status: updated.status,
+    });
+
+    return this.getToday(user, {
+      branchId: report.branchId,
+      date: this.formatDateLabel(report.operationDate),
+    });
+  }
+
   broadcastFloatUpdated(input: {
     tenantId: string;
     branchId: string;
@@ -900,6 +1018,7 @@ export class OperationsService {
       openedAt: operation.openedAt.toISOString(),
       openedByName: operation.openedBy.displayName,
       closedAt: operation.closedAt?.toISOString() ?? null,
+      closedByName: operation.closedBy?.displayName ?? null,
       openingBalance,
       cashAddedToday,
       cashAvailableAtOpening,
@@ -986,6 +1105,134 @@ export class OperationsService {
       expectedHandover: 0,
       amountReturned: null,
       returnedAt: null,
+    };
+  }
+
+  private async ensureReportForClosedOperation(
+    user: AuthenticatedUser,
+    operation: NonNullable<
+      Awaited<ReturnType<OperationsRepository['findOperationForDay']>>
+    >,
+    contract: DailyOperationContract,
+  ): Promise<OperationReportRecord> {
+    const existing = await this.repository.findReportForOperation({
+      tenantId: user.tenantId,
+      operationId: operation.id,
+    });
+    if (existing) return existing;
+
+    const reportNumber = this.buildReportNumber(operation.id, contract);
+    const snapshot = this.buildReportSnapshot(contract);
+    try {
+      return await this.repository.createOperationReport({
+        tenantId: user.tenantId,
+        branchId: operation.branchId,
+        operationId: operation.id,
+        operationDate: operation.operationDate,
+        reportNumber,
+        snapshot,
+        generatedByUserId: operation.closedByUserId,
+      });
+    } catch (error) {
+      if (isPrismaUniqueConstraintError(error)) {
+        const concurrent = await this.repository.findReportForOperation({
+          tenantId: user.tenantId,
+          operationId: operation.id,
+        });
+        if (concurrent) return concurrent;
+      }
+      throw error;
+    }
+  }
+
+  private buildReportNumber(
+    operationId: string,
+    contract: DailyOperationContract,
+  ) {
+    return `DOR-${contract.operationDate.replaceAll('-', '')}-${operationId
+      .slice(0, 8)
+      .toUpperCase()}`;
+  }
+
+  private buildReportSnapshot(
+    operation: DailyOperationContract,
+  ): Prisma.InputJsonObject {
+    return {
+      version: 1,
+      reportType: 'daily_operations_close',
+      operation: {
+        id: operation.id,
+        branchId: operation.branchId,
+        branchName: operation.branchName,
+        operationDate: operation.operationDate,
+        status: operation.status,
+        openedAt: operation.openedAt,
+        openedByName: operation.openedByName,
+        closedAt: operation.closedAt,
+        closedByName: operation.closedByName,
+      },
+      summary: {
+        openingCash: operation.cashAvailableAtOpening,
+        previousClosingBalance: operation.openingBalance,
+        topUpsAdded: operation.topUpsTotal,
+        floatDistributed: operation.floatIssued,
+        floatLeft: operation.floatRemaining,
+        expenses: operation.expensesTotal,
+        cashReturnedByAgents: operation.cashReturnedByAgents,
+        loansIssuedCount: operation.loansIssuedCount,
+        loansIssuedPrincipal: operation.loansIssuedPrincipal,
+        collectionsCount: operation.collectionsCount,
+        collectionsReceived: operation.collectionsReceived,
+        processingFees: operation.processingFeesTotal,
+        expectedClosingBalance: operation.expectedClosingBalance,
+        countedCash: operation.closingBalance,
+        variance: operation.closingVariance,
+      },
+      openingCash: {
+        previousClosingBalance: operation.openingBalance,
+        cashAddedToday: operation.cashAddedToday,
+        totalOpeningBalance: operation.cashAvailableAtOpening,
+        floatSetAside: operation.floatSetAside,
+      },
+      cashPosition: {
+        floatDistributed: operation.floatIssued,
+        branchExpenses: operation.expensesTotal,
+        cashReturnedByAgents: operation.cashReturnedByAgents,
+        branchRepayments: operation.collectionsReceived,
+        loanProcessingFees: operation.processingFeesTotal,
+        loansIssued: operation.loansIssuedPrincipal,
+        expectedClosingBalance: operation.expectedClosingBalance,
+        countedCash: operation.closingBalance,
+        variance: operation.closingVariance,
+      },
+      agentReturns: operation.agentReturns,
+      topUps: operation.topUps,
+      expenses: operation.expenses,
+      closingNotes: operation.closingNotes,
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  private toReportContract(
+    report: OperationReportRecord,
+  ): DailyOperationReportContract {
+    return {
+      id: report.id,
+      operationId: report.operationId,
+      reportNumber: report.reportNumber,
+      operationDate: this.formatDateLabel(report.operationDate),
+      status: report.status,
+      generatedAt: report.generatedAt.toISOString(),
+      managerReviewedAt: report.managerReviewedAt?.toISOString() ?? null,
+      managerReviewedByName: report.managerReviewedBy?.displayName ?? null,
+      managerNotes: report.managerNotes,
+      ownerApprovedAt: report.ownerApprovedAt?.toISOString() ?? null,
+      ownerApprovedByName: report.ownerApprovedBy?.displayName ?? null,
+      ownerNotes: report.ownerNotes,
+      returnedAt: report.returnedAt?.toISOString() ?? null,
+      returnedByName: report.returnedBy?.displayName ?? null,
+      returnNotes: report.returnNotes,
+      snapshot: report.snapshot,
     };
   }
 
@@ -1134,6 +1381,26 @@ export class OperationsService {
     this.assertTenant(user);
     if (!user.permissions.includes(OPERATIONS_PERMISSIONS.close)) {
       throw new ForbiddenException('Missing permission to close branch.');
+    }
+  }
+
+  private assertCanReviewReport(user: AuthenticatedUser) {
+    this.assertTenant(user);
+    const allowed =
+      user.permissions.includes(OPERATIONS_PERMISSIONS.reportReview) ||
+      user.permissions.includes(OPERATIONS_PERMISSIONS.close);
+    if (!allowed) {
+      throw new ForbiddenException('Missing permission to review reports.');
+    }
+  }
+
+  private assertCanOwnerApproveReport(user: AuthenticatedUser) {
+    this.assertTenant(user);
+    const allowed =
+      user.permissions.includes(OPERATIONS_PERMISSIONS.approve) &&
+      user.permissions.includes(BRANCH_PERMISSIONS.create);
+    if (!allowed) {
+      throw new ForbiddenException('Missing permission to approve reports.');
     }
   }
 

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   BranchOperationExpenseCategory,
+  BranchOperationReportStatus,
   BranchOperationStatus,
   LoanApplicationStatus,
   Prisma,
@@ -12,6 +13,12 @@ import { OPERATIONS_PERMISSIONS } from './operations.permissions';
 export type BranchOperationRecord = Awaited<
   ReturnType<OperationsRepository['findOperationForDay']>
 >;
+
+const operationReportInclude = {
+  managerReviewedBy: { select: { id: true, displayName: true } },
+  ownerApprovedBy: { select: { id: true, displayName: true } },
+  returnedBy: { select: { id: true, displayName: true } },
+} satisfies Prisma.BranchOperationReportInclude;
 
 @Injectable()
 export class OperationsRepository {
@@ -466,6 +473,216 @@ export class OperationsRepository {
       });
 
       return operation;
+    });
+  }
+
+  findReportForOperation(input: { tenantId: string; operationId: string }) {
+    return this.prisma.branchOperationReport.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        operationId: input.operationId,
+      },
+      include: operationReportInclude,
+    });
+  }
+
+  findReportById(input: { tenantId: string; reportId: string }) {
+    return this.prisma.branchOperationReport.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        id: input.reportId,
+      },
+      include: {
+        ...operationReportInclude,
+        operation: {
+          include: {
+            branch: true,
+            openedBy: { select: { id: true, displayName: true } },
+            closedBy: { select: { id: true, displayName: true } },
+          },
+        },
+      },
+    });
+  }
+
+  createOperationReport(input: {
+    tenantId: string;
+    branchId: string;
+    operationId: string;
+    operationDate: Date;
+    reportNumber: string;
+    snapshot: Prisma.InputJsonValue;
+    generatedByUserId: string | null;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const report = await tx.branchOperationReport.create({
+        data: {
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+          operationId: input.operationId,
+          operationDate: input.operationDate,
+          reportNumber: input.reportNumber,
+          status: BranchOperationReportStatus.MANAGER_REVIEW,
+          snapshot: input.snapshot,
+        },
+        include: operationReportInclude,
+      });
+
+      await tx.outboxEvent.create({
+        data: {
+          tenantId: input.tenantId,
+          topic: OPERATIONS_EVENTS.reportGenerated,
+          aggregateType: 'branch_operation_report',
+          aggregateId: report.id,
+          payload: {
+            reportId: report.id,
+            reportNumber: report.reportNumber,
+            operationId: input.operationId,
+            tenantId: input.tenantId,
+            branchId: input.branchId,
+            operationDate: this.formatDateLabel(input.operationDate),
+            status: report.status,
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.generatedByUserId,
+          action: 'operation.report.generate',
+          entityType: 'branch_operation_report',
+          entityId: report.id,
+          newValue: {
+            reportNumber: report.reportNumber,
+            operationId: input.operationId,
+            branchId: input.branchId,
+            operationDate: this.formatDateLabel(input.operationDate),
+            status: report.status,
+          },
+        },
+      });
+
+      return report;
+    });
+  }
+
+  managerConfirmReport(input: {
+    tenantId: string;
+    reportId: string;
+    reviewedByUserId: string;
+    notes: string | null;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const report = await tx.branchOperationReport.update({
+        where: { id: input.reportId },
+        data: {
+          status: BranchOperationReportStatus.SENT_TO_OWNER,
+          managerReviewedAt: new Date(),
+          managerReviewedById: input.reviewedByUserId,
+          managerNotes: input.notes,
+          returnedAt: null,
+          returnedById: null,
+          returnNotes: null,
+        },
+        include: operationReportInclude,
+      });
+
+      await tx.outboxEvent.create({
+        data: {
+          tenantId: input.tenantId,
+          topic: OPERATIONS_EVENTS.reportManagerReviewed,
+          aggregateType: 'branch_operation_report',
+          aggregateId: report.id,
+          payload: {
+            reportId: report.id,
+            reportNumber: report.reportNumber,
+            operationId: report.operationId,
+            tenantId: input.tenantId,
+            branchId: report.branchId,
+            operationDate: this.formatDateLabel(report.operationDate),
+            status: report.status,
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.reviewedByUserId,
+          action: OPERATIONS_PERMISSIONS.reportReview,
+          entityType: 'branch_operation_report',
+          entityId: report.id,
+          newValue: {
+            reportNumber: report.reportNumber,
+            operationId: report.operationId,
+            branchId: report.branchId,
+            operationDate: this.formatDateLabel(report.operationDate),
+            status: report.status,
+            notes: input.notes,
+          },
+        },
+      });
+
+      return report;
+    });
+  }
+
+  ownerApproveReport(input: {
+    tenantId: string;
+    reportId: string;
+    approvedByUserId: string;
+    notes: string | null;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const report = await tx.branchOperationReport.update({
+        where: { id: input.reportId },
+        data: {
+          status: BranchOperationReportStatus.OWNER_APPROVED,
+          ownerApprovedAt: new Date(),
+          ownerApprovedById: input.approvedByUserId,
+          ownerNotes: input.notes,
+        },
+        include: operationReportInclude,
+      });
+
+      await tx.outboxEvent.create({
+        data: {
+          tenantId: input.tenantId,
+          topic: OPERATIONS_EVENTS.reportOwnerApproved,
+          aggregateType: 'branch_operation_report',
+          aggregateId: report.id,
+          payload: {
+            reportId: report.id,
+            reportNumber: report.reportNumber,
+            operationId: report.operationId,
+            tenantId: input.tenantId,
+            branchId: report.branchId,
+            operationDate: this.formatDateLabel(report.operationDate),
+            status: report.status,
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.approvedByUserId,
+          action: OPERATIONS_PERMISSIONS.approve,
+          entityType: 'branch_operation_report',
+          entityId: report.id,
+          newValue: {
+            reportNumber: report.reportNumber,
+            operationId: report.operationId,
+            branchId: report.branchId,
+            operationDate: this.formatDateLabel(report.operationDate),
+            status: report.status,
+            notes: input.notes,
+          },
+        },
+      });
+
+      return report;
     });
   }
 
