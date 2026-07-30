@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Bell,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
@@ -32,6 +31,7 @@ import {
   useOwnerSession,
 } from "../owner-common";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../../lib/api";
+import { OwnerHeader, type OwnerNotificationItem } from "../owner-header";
 
 type ReportStatusFilter =
   "all" | "SENT_TO_OWNER" | "OWNER_APPROVED" | "RETURNED_TO_MANAGER";
@@ -176,6 +176,20 @@ export default function OwnerReportsPage() {
   const approvedReports = reports.filter(
     (report) => report.status === "OWNER_APPROVED",
   );
+  const reportNotifications = useMemo<OwnerNotificationItem[]>(() => {
+    if (waitingReports.length === 0) return [];
+    return [
+      {
+        id: "waiting-report-approval",
+        title: `${formatNumber(waitingReports.length)} report${waitingReports.length === 1 ? "" : "s"} waiting`,
+        detail: "Reports sent by managers and waiting for owner approval.",
+        href: "/owner/reports",
+        tone: "gold",
+        icon: "report",
+        time: "Today",
+      },
+    ];
+  }, [waitingReports.length]);
 
   async function approveReport(report: OwnerReport) {
     if (!state.session || approvingId) return;
@@ -220,46 +234,14 @@ export default function OwnerReportsPage() {
       branch={null}
     >
       <div className="mx-auto max-w-[1440px] space-y-4">
-        <header className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 pt-1">
-            <div className="flex items-center gap-2 text-xs font-medium">
-              <span className="text-[var(--forest-emerald)]">Reports</span>
-              <ChevronRight className="size-3.5 text-slate-400" />
-              <span className="text-slate-500">Review</span>
-            </div>
-            <h1 className="mt-2 text-[clamp(1.3rem,1.45vw,1.7rem)] font-bold leading-tight tracking-[-0.02em] text-[#070b18]">
-              Reports
-            </h1>
-            <p className="mt-1 text-xs font-medium text-slate-500">
-              Track and review reports from branches
-            </p>
-          </div>
-          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
-            <label className="flex h-9 min-w-[220px] max-w-[330px] flex-1 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
-              <Search className="size-3.5 shrink-0 text-slate-400" />
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                type="search"
-                placeholder="Search anything..."
-                className="min-w-0 flex-1 bg-transparent text-xs font-medium text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
-              />
-              <span className="hidden rounded-lg border border-[#e8edf2] px-2 py-0.5 text-[11px] font-bold text-slate-400 sm:inline">
-                ⌘K
-              </span>
-            </label>
-            <button
-              type="button"
-              className="relative grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)]"
-              aria-label="Notifications"
-            >
-              <Bell className="size-4" />
-              {waitingReports.length > 0 ? (
-                <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-[#18a76f] text-[10px] font-semibold text-white">
-                  {Math.min(waitingReports.length, 9)}
-                </span>
-              ) : null}
-            </button>
+        <OwnerHeader
+          eyebrow="Reports"
+          title="Reports"
+          search={search}
+          onSearchChange={setSearch}
+          searchTooltip="Search report number, branch, date, status or manager."
+          notifications={reportNotifications}
+          actions={
             <button
               type="button"
               className="flex h-9 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3.5 text-xs font-medium text-white shadow-[0_10px_20px_rgba(0,135,95,0.22)] disabled:opacity-55"
@@ -282,8 +264,8 @@ export default function OwnerReportsPage() {
               Export Report
               <ChevronDown className="size-3.5" />
             </button>
-          </div>
-        </header>
+          }
+        />
 
         {notice ? (
           <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-[var(--forest-emerald)]">

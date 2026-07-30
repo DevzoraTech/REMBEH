@@ -219,6 +219,15 @@ option {
   background: var(--table-head);
 }
 
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 .panel table tbody tr {
   transition:
     background-color 120ms ease,

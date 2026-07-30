@@ -2,7 +2,6 @@
 
 import {
   ArrowUpDown,
-  Bell,
   Building2,
   Check,
   ChevronDown,
@@ -33,6 +32,7 @@ import {
   titleCase,
   useOwnerSession,
 } from "../owner-common";
+import { OwnerHeader, type OwnerNotificationItem } from "../owner-header";
 
 type BorrowerTone = "green" | "blue" | "gold" | "violet";
 type TableMode = "list" | "grid";
@@ -144,6 +144,33 @@ export default function OwnerBorrowersPage() {
     (borrower) => borrower.loanCount > 0,
   ).length;
   const newThisMonthCount = borrowers.filter(isThisMonth).length;
+  const pendingVerificationCount = borrowers.length - verifiedCount;
+  const borrowerNotifications = useMemo<OwnerNotificationItem[]>(() => {
+    const items: OwnerNotificationItem[] = [];
+    if (pendingVerificationCount > 0) {
+      items.push({
+        id: "pending-borrower-verification",
+        title: `${formatNumber(pendingVerificationCount)} pending verification`,
+        detail: "Borrowers waiting for identity and document verification.",
+        href: "/owner/borrowers",
+        tone: "gold",
+        icon: "alert",
+        time: "Today",
+      });
+    }
+    if (newThisMonthCount > 0) {
+      items.push({
+        id: "new-borrowers-this-month",
+        title: `${formatNumber(newThisMonthCount)} new borrower${newThisMonthCount === 1 ? "" : "s"}`,
+        detail: "Borrowers added this month across the account.",
+        href: "/owner/borrowers",
+        tone: "green",
+        icon: "loan",
+        time: "This month",
+      });
+    }
+    return items;
+  }, [newThisMonthCount, pendingVerificationCount]);
 
   const currentPage = Math.min(page, totalPages);
   const pageRows = filtered.slice(
@@ -174,48 +201,15 @@ export default function OwnerBorrowersPage() {
       branch={null}
     >
       <div className="mx-auto max-w-[1440px] space-y-4">
-        <header className="space-y-3">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 text-[11px] font-bold">
-                <span className="text-[#0b936b]">Account Register</span>
-                <ChevronRight className="size-3.5 text-slate-400" />
-                <span className="text-slate-500">Borrowers</span>
-              </div>
-              <h1 className="mt-1.5 text-[clamp(1.45rem,1.75vw,1.8rem)] font-bold leading-tight tracking-[-0.03em] text-[#090f21]">
-                Borrowers
-              </h1>
-              <p className="mt-0.5 text-[13px] font-medium text-slate-500">
-                View and manage all borrowers across your branches
-              </p>
-            </div>
-
-            <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2.5">
-              <label className="flex h-9 min-w-[220px] max-w-[320px] flex-1 items-center gap-2 rounded-xl border border-[#e4e9ef] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
-                <Search className="size-4 shrink-0 text-slate-400" />
-                <input
-                  type="search"
-                  value={search}
-                  onChange={(event) => updateSearch(event.target.value)}
-                  placeholder="Search anything..."
-                  className="min-w-0 flex-1 bg-transparent text-xs font-medium text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
-                />
-                <span className="hidden rounded-md bg-[#f4f6f8] px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 sm:inline">
-                  ⌘K
-                </span>
-              </label>
-              <button
-                type="button"
-                className="relative grid size-9 place-items-center rounded-xl border border-[#e4e9ef] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)]"
-                aria-label="Notifications"
-              >
-                <Bell className="size-4" />
-                {newThisMonthCount > 0 ? (
-                  <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-[#12a36f] text-[10px] font-semibold text-white">
-                    {Math.min(newThisMonthCount, 9)}
-                  </span>
-                ) : null}
-              </button>
+        <OwnerHeader
+          eyebrow="Account Register"
+          title="Borrowers"
+          search={search}
+          onSearchChange={updateSearch}
+          searchTooltip="Search borrowers by name, phone, national ID, branch or collateral."
+          notifications={borrowerNotifications}
+          actions={
+            <>
               <button
                 type="button"
                 onClick={() =>
@@ -227,46 +221,43 @@ export default function OwnerBorrowersPage() {
                 Add Borrower
                 <ChevronDown className="size-4" />
               </button>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <button
-              type="button"
-              disabled={exporting}
-              onClick={() =>
-                void exportBorrowers(
-                  filtered,
+              <button
+                type="button"
+                disabled={exporting}
+                onClick={() =>
+                  void exportBorrowers(
+                    filtered,
+                    {
+                      branch: branchFilter,
+                      status: statusFilter,
+                      collateral: collateralFilter,
+                      search,
+                    },
+                    setExporting,
+                  )
+                }
+                className="flex h-9 items-center gap-2 rounded-xl border border-[#e3e8ee] bg-white px-3 text-xs font-medium text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8fafb] disabled:opacity-60"
+              >
+                <Download className="size-4" />
+                {exporting ? "Exporting" : "Export"}
+              </button>
+              <RowActions
+                label="Borrower page actions"
+                items={[
                   {
-                    branch: branchFilter,
-                    status: statusFilter,
-                    collateral: collateralFilter,
-                    search,
+                    label: "Refresh",
+                    onSelect: () => void loadBorrowers(),
                   },
-                  setExporting,
-                )
-              }
-              className="flex h-9 items-center gap-2 rounded-xl border border-[#e3e8ee] bg-white px-3 text-xs font-medium text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8fafb] disabled:opacity-60"
-            >
-              <Download className="size-4" />
-              {exporting ? "Exporting" : "Export"}
-            </button>
-            <RowActions
-              label="Borrower page actions"
-              items={[
-                {
-                  label: "Refresh",
-                  onSelect: () => void loadBorrowers(),
-                },
-                {
-                  label: "Clear filters",
-                  onSelect: resetFilters,
-                },
-              ]}
-              busy={loading}
-            />
-          </div>
-        </header>
+                  {
+                    label: "Clear filters",
+                    onSelect: resetFilters,
+                  },
+                ]}
+                busy={loading}
+              />
+            </>
+          }
+        />
 
         {error ? (
           <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">

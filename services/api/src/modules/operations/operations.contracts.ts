@@ -169,6 +169,26 @@ export type OwnerOperationReportListResponseContract = {
   reports: OwnerOperationReportListItemContract[];
 };
 
+export type OwnerBranchDailyStatusContract = {
+  branchId: string;
+  branchName: string;
+  operationDate: string;
+  operationId: string | null;
+  operationStatus: BranchOperationStatusContract | null;
+  openedAt: string | null;
+  closedAt: string | null;
+  reportId: string | null;
+  reportNumber: string | null;
+  reportStatus: DailyOperationReportStatusContract | null;
+  reportGeneratedAt: string | null;
+  managerReviewedAt: string | null;
+};
+
+export type OwnerBranchDailyStatusResponseContract = {
+  date: string;
+  statuses: OwnerBranchDailyStatusContract[];
+};
+
 export type AgentDailyAccessReasonContract =
   'NO_BRANCH' | 'BRANCH_NOT_OPEN' | 'BRANCH_CLOSED' | 'AGENT_DAY_CLOSED' | null;
 

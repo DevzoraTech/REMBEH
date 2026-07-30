@@ -25,6 +25,7 @@ import {
   DailyOperationContract,
   DailyOperationReportContract,
   DailyOperationResponseContract,
+  OwnerBranchDailyStatusResponseContract,
   OwnerOperationReportListResponseContract,
 } from './operations.contracts';
 import { OPERATIONS_EVENTS } from './operations.events';
@@ -342,6 +343,40 @@ export class OperationsService {
           expensesTotal: snapshot.expenses,
           cashReturnedByAgents: snapshot.cashReturnedByAgents,
           snapshot: report.snapshot,
+        };
+      }),
+    };
+  }
+
+  async listOwnerBranchDailyStatuses(
+    user: AuthenticatedUser,
+    date?: string,
+  ): Promise<OwnerBranchDailyStatusResponseContract> {
+    this.assertCanOwnerApproveReport(user);
+    const bounds = this.parseDayBounds(date);
+    const branches = await this.repository.listBranchDailyStatuses({
+      tenantId: user.tenantId,
+      operationDate: bounds.dateOnly,
+    });
+
+    return {
+      date: bounds.dateLabel,
+      statuses: branches.map((branch) => {
+        const operation = branch.dailyOperations[0] ?? null;
+        const report = operation?.report ?? null;
+        return {
+          branchId: branch.id,
+          branchName: branch.name,
+          operationDate: bounds.dateLabel,
+          operationId: operation?.id ?? null,
+          operationStatus: operation?.status ?? null,
+          openedAt: operation?.openedAt.toISOString() ?? null,
+          closedAt: operation?.closedAt?.toISOString() ?? null,
+          reportId: report?.id ?? null,
+          reportNumber: report?.reportNumber ?? null,
+          reportStatus: report?.status ?? null,
+          reportGeneratedAt: report?.generatedAt.toISOString() ?? null,
+          managerReviewedAt: report?.managerReviewedAt?.toISOString() ?? null,
         };
       }),
     };

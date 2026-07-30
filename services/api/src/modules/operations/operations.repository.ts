@@ -55,6 +55,30 @@ export class OperationsRepository {
     });
   }
 
+  listBranchDailyStatuses(input: {
+    tenantId: string;
+    operationDate: Date;
+  }) {
+    return this.prisma.branch.findMany({
+      where: {
+        tenantId: input.tenantId,
+        createdAt: { lte: new Date(input.operationDate.getTime() + 24 * 60 * 60 * 1000 - 1) },
+      },
+      orderBy: { name: 'asc' },
+      include: {
+        dailyOperations: {
+          where: {
+            operationDate: input.operationDate,
+          },
+          include: {
+            report: true,
+          },
+          take: 1,
+        },
+      },
+    });
+  }
+
   findLatestClosedBefore(input: {
     tenantId: string;
     branchId: string;

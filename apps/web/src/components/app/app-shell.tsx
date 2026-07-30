@@ -11,6 +11,8 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
   Settings,
   ShieldAlert,
   Users,
@@ -60,6 +62,7 @@ export function AppShell({
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [ownerSidebarCollapsed, setOwnerSidebarCollapsed] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement | null>(null);
   const operatorRole = resolveOperatorRole(session, user);
@@ -318,7 +321,11 @@ export function AppShell({
           pathname={pathname}
           primaryNav={primaryNav}
           user={user}
+          collapsed={ownerSidebarCollapsed}
           onCloseMobile={() => setMobileOpen(false)}
+          onToggleCollapsed={() =>
+            setOwnerSidebarCollapsed((collapsed) => !collapsed)
+          }
           onLogout={handleLogout}
         />
 
@@ -340,7 +347,11 @@ export function AppShell({
           <Menu className="size-4" />
         </button>
 
-        <main className="min-h-screen px-4 py-5 sm:px-5 lg:pl-[268px] lg:pr-5 lg:pt-5">
+        <main
+          className={`min-h-screen px-4 py-5 transition-[padding] duration-300 sm:px-5 lg:pr-5 lg:pt-5 ${
+            ownerSidebarCollapsed ? "lg:pl-[96px]" : "lg:pl-[268px]"
+          }`}
+        >
           {children}
         </main>
       </div>
@@ -560,7 +571,9 @@ function OwnerSidebar({
   pathname,
   primaryNav,
   user,
+  collapsed,
   onCloseMobile,
+  onToggleCollapsed,
   onLogout,
 }: {
   homeHref: string;
@@ -573,38 +586,75 @@ function OwnerSidebar({
     matchPath?: string;
   }>;
   user: RembehUser | null;
+  collapsed: boolean;
   onCloseMobile: () => void;
+  onToggleCollapsed: () => void;
   onLogout: () => void;
 }) {
   return (
     <aside
-      className={`fixed inset-y-0 left-0 z-40 w-[248px] transform overflow-hidden bg-[#003f35] text-white shadow-[18px_0_44px_rgba(0,38,31,0.18)] transition duration-200 lg:translate-x-0 ${
+      className={`fixed inset-y-0 left-0 z-40 w-[248px] transform overflow-visible bg-[#003f35] text-white shadow-[18px_0_44px_rgba(0,38,31,0.18)] transition-[width,transform] duration-300 ease-out lg:translate-x-0 ${
+        collapsed ? "lg:w-[76px]" : "lg:w-[248px]"
+      } ${
         mobileOpen ? "translate-x-0" : "-translate-x-full"
       }`}
     >
       <div className="absolute inset-0 bg-[linear-gradient(180deg,#00473d_0%,#003e35_52%,#002e28_100%)]" />
-      <div className="relative flex h-full min-h-0 flex-col px-5 py-5">
-        <div className="flex items-center justify-between gap-3">
-          <Link
-            href={homeHref}
-            onClick={onCloseMobile}
-            className="flex min-w-0 items-center gap-3"
+      <div
+        className={`relative flex h-full min-h-0 flex-col px-5 py-5 transition-[padding] duration-300 [@media(max-height:720px)]:py-4 ${
+          collapsed ? "lg:px-2" : "lg:px-5"
+        }`}
+      >
+        <div
+          className={`flex h-10 items-center gap-3 ${
+            collapsed ? "lg:justify-between lg:gap-1" : "justify-between"
+          }`}
+        >
+          <OwnerSidebarTooltip label="Go to owner overview">
+            <Link
+              href={homeHref}
+              onClick={onCloseMobile}
+              className={`flex min-w-0 items-center gap-3 ${
+                collapsed ? "lg:justify-center" : ""
+              }`}
+            >
+              <Image
+                src={rembehIcon}
+                alt="REMBEH"
+                className={`rounded-xl object-cover shadow-[0_10px_24px_rgba(0,0,0,0.16)] ${
+                  collapsed ? "size-10 lg:size-8 lg:rounded-lg" : "size-10"
+                }`}
+                priority
+              />
+              <div className={`min-w-0 ${collapsed ? "lg:hidden" : ""}`}>
+                <p className="font-[family-name:var(--font-display)] text-xl font-bold leading-none tracking-[-0.03em] text-white">
+                  REMBEH
+                </p>
+                <p className="mt-1 text-[8px] font-medium uppercase tracking-[0.14em] text-white/72">
+                  Financial Services
+                </p>
+              </div>
+            </Link>
+          </OwnerSidebarTooltip>
+          <OwnerSidebarTooltip
+            label={collapsed ? "Expand navigation" : "Collapse navigation"}
           >
-            <Image
-              src={rembehIcon}
-              alt="REMBEH"
-              className="size-10 rounded-xl object-cover shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
-              priority
-            />
-            <div className="min-w-0">
-              <p className="font-[family-name:var(--font-display)] text-xl font-bold leading-none tracking-[-0.03em] text-white">
-                REMBEH
-              </p>
-              <p className="mt-1 text-[8px] font-medium uppercase tracking-[0.14em] text-white/72">
-                Financial Services
-              </p>
-            </div>
-          </Link>
+            <button
+              type="button"
+              className={`hidden place-items-center border border-white/10 bg-white/10 text-white/82 shadow-[0_10px_22px_rgba(0,21,17,0.18)] transition hover:bg-white/16 hover:text-white lg:grid ${
+                collapsed ? "size-7 rounded-lg" : "size-8 rounded-xl"
+              }`}
+              onClick={onToggleCollapsed}
+              aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
+              aria-pressed={collapsed}
+            >
+              {collapsed ? (
+                <PanelLeftOpen className="size-4" />
+              ) : (
+                <PanelLeftClose className="size-4" />
+              )}
+            </button>
+          </OwnerSidebarTooltip>
           <button
             type="button"
             className="grid size-8 place-items-center rounded-2xl bg-white/10 text-white lg:hidden"
@@ -615,7 +665,7 @@ function OwnerSidebar({
           </button>
         </div>
 
-        <nav className="mt-7 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
+        <nav className="mt-6 min-h-0 flex-1 space-y-1 overflow-hidden pr-0 [@media(max-height:720px)]:mt-4 [@media(max-height:720px)]:space-y-0.5">
           {primaryNav.map((item) => {
             const Icon = item.icon;
             const activePath = item.matchPath ?? item.href;
@@ -624,79 +674,155 @@ function OwnerSidebar({
               (activePath !== "/owner" &&
                 pathname.startsWith(`${activePath}/`));
             return (
-              <Link
+              <OwnerSidebarTooltip
                 key={`${item.href}-${item.label}`}
-                href={item.href}
-                onClick={onCloseMobile}
-                className={`relative flex h-11 items-center gap-3 rounded-xl px-3 text-[13px] font-medium transition ${
-                  active
-                    ? "bg-white/14 text-white ring-1 ring-white/10 shadow-[0_15px_28px_rgba(0,21,17,0.18)] before:absolute before:left-0 before:h-6 before:w-1 before:rounded-r-full before:bg-[#20d08d]"
-                    : "text-white/78 hover:bg-white/9 hover:text-white"
-                }`}
+                label={`Open ${item.label}`}
               >
-                <Icon
-                  className={`size-4 shrink-0 ${
-                    active ? "text-[#7df2bd]" : "text-white/75"
+                <Link
+                  href={item.href}
+                  onClick={onCloseMobile}
+                  className={`relative flex h-10 w-full items-center rounded-xl text-[13px] font-medium transition [@media(max-height:720px)]:h-9 ${
+                    collapsed ? "lg:justify-center lg:px-0" : "gap-3 px-3"
+                  } ${
+                    active
+                      ? `bg-white/14 text-white ring-1 ring-white/10 shadow-[0_15px_28px_rgba(0,21,17,0.18)] ${
+                          collapsed
+                            ? ""
+                            : "before:absolute before:left-0 before:h-6 before:w-1 before:rounded-r-full before:bg-[#20d08d]"
+                        }`
+                      : "text-white/78 hover:bg-white/9 hover:text-white"
                   }`}
-                />
-                <span className="min-w-0 flex-1 truncate">{item.label}</span>
-              </Link>
+                >
+                  <Icon
+                    className={`size-4 shrink-0 ${
+                      active ? "text-[#7df2bd]" : "text-white/75"
+                    }`}
+                  />
+                  <span
+                    className={`min-w-0 flex-1 truncate ${
+                      collapsed ? "lg:hidden" : ""
+                    }`}
+                  >
+                    {item.label}
+                  </span>
+                </Link>
+              </OwnerSidebarTooltip>
             );
           })}
         </nav>
 
-        <div className="mt-3 shrink-0 rounded-2xl border border-white/12 bg-white/[0.045] p-3 shadow-[0_14px_30px_rgba(0,21,17,0.14)] [@media(max-height:760px)]:hidden">
-          <div className="flex items-start gap-2.5">
-            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#d9f7e7] text-[#006b4f]">
-              <Users className="size-[18px]" />
-            </span>
-            <div className="min-w-0">
-              <p className="text-xs font-medium text-white">
-                Scale your lending
-              </p>
-              <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-white/64">
-                Invite managers and agents to grow your portfolio.
-              </p>
+        <div
+          className={`mt-2 shrink-0 rounded-2xl border border-white/12 bg-white/[0.045] shadow-[0_14px_30px_rgba(0,21,17,0.14)] transition-all duration-300 [@media(max-height:720px)]:p-2 ${
+            collapsed ? "p-3 lg:p-2" : "p-3"
+          }`}
+        >
+          {collapsed ? (
+            <>
+              <OwnerSidebarTooltip label="Invite managers and agents">
+                <Link
+                  href="/owner/branches"
+                  onClick={onCloseMobile}
+                  className="hidden h-10 w-full place-items-center rounded-xl bg-[#19a876] text-white shadow-[0_10px_20px_rgba(25,168,118,0.2)] transition hover:bg-[#15986b] lg:grid"
+                  aria-label="Invite team"
+                >
+                  <Users className="size-4" />
+                </Link>
+              </OwnerSidebarTooltip>
+              <div className="lg:hidden">
+                <div className="flex items-start gap-2.5">
+                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#d9f7e7] text-[#006b4f]">
+                    <Users className="size-[18px]" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-white">
+                      Scale your lending
+                    </p>
+                    <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-white/64 [@media(max-height:720px)]:line-clamp-1">
+                      Invite managers and agents to grow your portfolio.
+                    </p>
+                  </div>
+                </div>
+                <OwnerSidebarTooltip label="Invite managers and agents">
+                  <Link
+                    href="/owner/branches"
+                    onClick={onCloseMobile}
+                    className="mt-3 flex h-8 items-center justify-between rounded-xl bg-[#19a876] px-3 text-[11px] font-medium text-white shadow-[0_10px_20px_rgba(25,168,118,0.2)] transition hover:bg-[#15986b] [@media(max-height:720px)]:mt-2 [@media(max-height:720px)]:h-7"
+                  >
+                    Invite Team
+                    <ArrowRight className="size-3.5" />
+                  </Link>
+                </OwnerSidebarTooltip>
+              </div>
+            </>
+          ) : (
+            <div>
+              <div className="flex items-start gap-2.5">
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#d9f7e7] text-[#006b4f]">
+                  <Users className="size-[18px]" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-white">
+                    Scale your lending
+                  </p>
+                  <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-white/64 [@media(max-height:720px)]:line-clamp-1">
+                    Invite managers and agents to grow your portfolio.
+                  </p>
+                </div>
+              </div>
+              <OwnerSidebarTooltip label="Invite managers and agents">
+                <Link
+                  href="/owner/branches"
+                  onClick={onCloseMobile}
+                  className="mt-3 flex h-8 items-center justify-between rounded-xl bg-[#19a876] px-3 text-[11px] font-medium text-white shadow-[0_10px_20px_rgba(25,168,118,0.2)] transition hover:bg-[#15986b] [@media(max-height:720px)]:mt-2 [@media(max-height:720px)]:h-7"
+                >
+                  Invite Team
+                  <ArrowRight className="size-3.5" />
+                </Link>
+              </OwnerSidebarTooltip>
             </div>
-          </div>
-          <Link
-            href="/owner/branches"
-            onClick={onCloseMobile}
-            className="mt-3 flex h-8 items-center justify-between rounded-xl bg-[#19a876] px-3 text-[11px] font-medium text-white shadow-[0_10px_20px_rgba(25,168,118,0.2)] transition hover:bg-[#15986b]"
-          >
-            Invite Team
-            <ArrowRight className="size-3.5" />
-          </Link>
+          )}
         </div>
 
-        <div className="mt-4 shrink-0 border-t border-white/14 pt-4">
-          <div className="flex items-center gap-3">
-            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white/12 text-xs font-medium text-white">
-              {initials(user?.name ?? "Owner")}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium text-white">
-                {user?.name ?? "Owner"}
-              </p>
-              <p className="text-xs font-semibold text-white/62">Owner</p>
-            </div>
-            <Link
-              href="/owner/settings"
-              onClick={onCloseMobile}
-              className="grid size-8 place-items-center rounded-xl text-white/75 transition hover:bg-white/10 hover:text-white"
-              aria-label="Open settings"
+        <div className="mt-3 shrink-0 border-t border-white/14 pt-3 [@media(max-height:720px)]:mt-2 [@media(max-height:720px)]:pt-2">
+          <OwnerSidebarTooltip label={`${user?.name ?? "Owner"} account menu`}>
+            <div
+              className={`flex items-center ${
+                collapsed ? "lg:justify-center" : "gap-3"
+              }`}
             >
-              <ChevronDown className="size-4" />
-            </Link>
-          </div>
-          <button
-            type="button"
-            onClick={onLogout}
-            className="mt-4 flex h-9 w-full items-center gap-2 rounded-xl px-2 text-xs font-semibold text-white/75 transition hover:bg-white/10 hover:text-white"
-          >
-            <LogOut className="size-3.5" />
-            Sign out
-          </button>
+              <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white/12 text-xs font-medium text-white">
+                {initials(user?.name ?? "Owner")}
+              </span>
+              <div className={`min-w-0 flex-1 ${collapsed ? "lg:hidden" : ""}`}>
+                <p className="truncate text-xs font-medium text-white">
+                  {user?.name ?? "Owner"}
+                </p>
+                <p className="text-xs font-semibold text-white/62">Owner</p>
+              </div>
+              <Link
+                href="/owner/settings"
+                onClick={onCloseMobile}
+                className={`grid size-8 place-items-center rounded-xl text-white/75 transition hover:bg-white/10 hover:text-white ${
+                  collapsed ? "lg:hidden" : ""
+                }`}
+                aria-label="Open settings"
+              >
+                <ChevronDown className="size-4" />
+              </Link>
+            </div>
+          </OwnerSidebarTooltip>
+          <OwnerSidebarTooltip label="Sign out of REMBEH">
+            <button
+              type="button"
+              onClick={onLogout}
+              className={`mt-3 flex h-9 w-full items-center rounded-xl text-xs font-semibold text-white/75 transition hover:bg-white/10 hover:text-white [@media(max-height:720px)]:mt-2 [@media(max-height:720px)]:h-8 ${
+                collapsed ? "lg:justify-center lg:px-0" : "gap-2 px-2"
+              }`}
+            >
+              <LogOut className="size-3.5" />
+              <span className={collapsed ? "lg:hidden" : ""}>Sign out</span>
+            </button>
+          </OwnerSidebarTooltip>
         </div>
       </div>
     </aside>
@@ -711,6 +837,23 @@ function ProfileLine({ label, value }: { label: string; value: string }) {
         {value}
       </span>
     </div>
+  );
+}
+
+function OwnerSidebarTooltip({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <span className="group/sidebar-tip relative flex min-w-0">
+      {children}
+      <span className="pointer-events-none absolute left-[calc(100%+10px)] top-1/2 z-50 max-w-[230px] -translate-y-1/2 whitespace-nowrap rounded-lg border border-white/10 bg-[#071611] px-2.5 py-1.5 text-[11px] font-medium text-white opacity-0 shadow-[0_14px_32px_rgba(7,22,17,0.28)] transition duration-150 group-hover/sidebar-tip:translate-x-0 group-hover/sidebar-tip:opacity-100">
+        {label}
+      </span>
+    </span>
   );
 }
 

@@ -59,6 +59,15 @@ export class OperationsController {
     });
   }
 
+  @Get('owner-daily-status')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.approve)
+  listOwnerBranchDailyStatuses(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('date') date?: string,
+  ) {
+    return this.operationsService.listOwnerBranchDailyStatuses(user, date);
+  }
+
   @Post('open')
   @RequirePermissions(OPERATIONS_PERMISSIONS.open)
   openBranch(

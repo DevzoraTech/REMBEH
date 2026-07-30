@@ -75,9 +75,12 @@ export type OwnerLoan = {
   currency: string;
   officerName: string | null;
   branchId: string;
+  paymentStartDate: string | null;
+  durationDays: number | null;
   dueDate: string | null;
   createdAt: string;
   disbursedAt: string | null;
+  updatedAt: string;
 };
 
 export type OwnerBorrower = {
@@ -131,6 +134,26 @@ export type OwnerReport = {
   expensesTotal: number;
   cashReturnedByAgents: number;
   snapshot: unknown;
+};
+
+export type OwnerBranchDailyStatus = {
+  branchId: string;
+  branchName: string;
+  operationDate: string;
+  operationId: string | null;
+  operationStatus: "OPEN" | "CLOSING" | "CLOSED" | null;
+  openedAt: string | null;
+  closedAt: string | null;
+  reportId: string | null;
+  reportNumber: string | null;
+  reportStatus:
+    | "MANAGER_REVIEW"
+    | "SENT_TO_OWNER"
+    | "OWNER_APPROVED"
+    | "RETURNED_TO_MANAGER"
+    | null;
+  reportGeneratedAt: string | null;
+  managerReviewedAt: string | null;
 };
 
 export type OwnerSessionState = {
@@ -392,6 +415,15 @@ export function titleCase(value: string) {
 
 export function todayLabel() {
   return new Date().toISOString().slice(0, 10);
+}
+
+export function previousDateLabel(date = new Date()) {
+  const previous = new Date(date);
+  previous.setDate(previous.getDate() - 1);
+  const year = previous.getFullYear();
+  const month = String(previous.getMonth() + 1).padStart(2, "0");
+  const day = String(previous.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export function sumBy<T>(items: T[], pick: (item: T) => number) {
