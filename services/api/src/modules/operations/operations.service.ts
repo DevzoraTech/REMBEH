@@ -25,6 +25,7 @@ import {
   DailyOperationContract,
   DailyOperationReportContract,
   DailyOperationResponseContract,
+  OwnerOperationReportListResponseContract,
 } from './operations.contracts';
 import { OPERATIONS_EVENTS } from './operations.events';
 import { OPERATIONS_PERMISSIONS } from './operations.permissions';
@@ -287,6 +288,62 @@ export class OperationsService {
       lockTitle: null,
       lockMessage: null,
       float: floatSummary,
+    };
+  }
+
+  async listOwnerReports(
+    user: AuthenticatedUser,
+    options?: {
+      branchId?: string;
+      status?: string;
+      from?: string;
+      to?: string;
+    },
+  ): Promise<OwnerOperationReportListResponseContract> {
+    this.assertCanOwnerApproveReport(user);
+    const status = this.parseOwnerReportStatus(options?.status);
+    const fromDate = options?.from
+      ? this.parseDayBounds(options.from).dateOnly
+      : null;
+    const toDate = options?.to
+      ? this.parseDayBounds(options.to).dateOnly
+      : null;
+    const reports = await this.repository.listOwnerReports({
+      tenantId: user.tenantId,
+      branchId: options?.branchId || null,
+      status,
+      fromDate,
+      toDate,
+    });
+
+    return {
+      reports: reports.map((report) => {
+        const snapshot = this.reportSnapshotSummary(report.snapshot);
+        return {
+          id: report.id,
+          operationId: report.operationId,
+          branchId: report.branchId,
+          branchName: report.branch?.name ?? report.operation.branch.name,
+          reportNumber: report.reportNumber,
+          operationDate: this.formatDateLabel(report.operationDate),
+          status: report.status,
+          generatedAt: report.generatedAt.toISOString(),
+          managerReviewedAt: report.managerReviewedAt?.toISOString() ?? null,
+          managerReviewedByName: report.managerReviewedBy?.displayName ?? null,
+          ownerApprovedAt: report.ownerApprovedAt?.toISOString() ?? null,
+          ownerApprovedByName: report.ownerApprovedBy?.displayName ?? null,
+          expectedClosingBalance: snapshot.expectedClosingBalance,
+          closingBalance: snapshot.countedCash,
+          closingVariance: snapshot.variance,
+          loansIssuedCount: snapshot.loansIssuedCount,
+          loansIssuedPrincipal: snapshot.loansIssuedPrincipal,
+          collectionsReceived: snapshot.collectionsReceived,
+          processingFeesTotal: snapshot.processingFees,
+          expensesTotal: snapshot.expenses,
+          cashReturnedByAgents: snapshot.cashReturnedByAgents,
+          snapshot: report.snapshot,
+        };
+      }),
     };
   }
 
@@ -1236,6 +1293,66 @@ export class OperationsService {
     };
   }
 
+  private parseOwnerReportStatus(value?: string) {
+    if (!value?.trim() || value === 'all') return null;
+    const status = value.trim().toUpperCase();
+    const allowed: BranchOperationReportStatus[] = [
+      BranchOperationReportStatus.SENT_TO_OWNER,
+      BranchOperationReportStatus.OWNER_APPROVED,
+      BranchOperationReportStatus.RETURNED_TO_MANAGER,
+    ];
+    if (!allowed.includes(status as BranchOperationReportStatus)) {
+      throw new BadRequestException('Choose a valid report status.');
+    }
+    return status as BranchOperationReportStatus;
+  }
+
+  private reportSnapshotSummary(snapshot: Prisma.JsonValue) {
+    const root =
+      snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
+        ? (snapshot as Prisma.JsonObject)
+        : {};
+    const summary =
+      root.summary && typeof root.summary === 'object'
+        ? (root.summary as Prisma.JsonObject)
+        : {};
+
+    return {
+      expectedClosingBalance: this.snapshotNumber(
+        summary,
+        'expectedClosingBalance',
+      ),
+      countedCash: this.snapshotNumberOrNull(summary, 'countedCash'),
+      variance: this.snapshotNumberOrNull(summary, 'variance'),
+      loansIssuedCount: this.snapshotNumber(summary, 'loansIssuedCount'),
+      loansIssuedPrincipal: this.snapshotNumber(
+        summary,
+        'loansIssuedPrincipal',
+      ),
+      collectionsReceived: this.snapshotNumber(summary, 'collectionsReceived'),
+      processingFees: this.snapshotNumber(summary, 'processingFees'),
+      expenses: this.snapshotNumber(summary, 'expenses'),
+      cashReturnedByAgents: this.snapshotNumber(
+        summary,
+        'cashReturnedByAgents',
+      ),
+    };
+  }
+
+  private snapshotNumber(source: Prisma.JsonObject, key: string) {
+    return this.snapshotNumberOrNull(source, key) ?? 0;
+  }
+
+  private snapshotNumberOrNull(source: Prisma.JsonObject, key: string) {
+    const value = source[key];
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
+  }
+
   private toAgentReturnContracts(
     agentFloats: Awaited<
       ReturnType<OperationsRepository['listAgentFloatsForOperation']>
@@ -1348,6 +1465,7 @@ export class OperationsService {
 
   private assertCanOpen(user: AuthenticatedUser) {
     this.assertTenant(user);
+    this.assertCanOperateBranch(user);
     if (!user.permissions.includes(OPERATIONS_PERMISSIONS.open)) {
       throw new ForbiddenException('Missing permission to open branch.');
     }
@@ -1355,6 +1473,7 @@ export class OperationsService {
 
   private assertCanTopUp(user: AuthenticatedUser) {
     this.assertTenant(user);
+    this.assertCanOperateBranch(user);
     const allowed =
       user.permissions.includes(OPERATIONS_PERMISSIONS.cashTopUp) ||
       user.permissions.includes(OPERATIONS_PERMISSIONS.open);
@@ -1365,6 +1484,7 @@ export class OperationsService {
 
   private assertCanCreateExpense(user: AuthenticatedUser) {
     this.assertTenant(user);
+    this.assertCanOperateBranch(user);
     if (!user.permissions.includes(OPERATIONS_PERMISSIONS.expenseCreate)) {
       throw new ForbiddenException('Missing permission to record expenses.');
     }
@@ -1372,6 +1492,7 @@ export class OperationsService {
 
   private assertCanReturnFloat(user: AuthenticatedUser) {
     this.assertTenant(user);
+    this.assertCanOperateBranch(user);
     if (!user.permissions.includes(OPERATIONS_PERMISSIONS.floatReturn)) {
       throw new ForbiddenException('Missing permission to record returns.');
     }
@@ -1379,6 +1500,7 @@ export class OperationsService {
 
   private assertCanClose(user: AuthenticatedUser) {
     this.assertTenant(user);
+    this.assertCanOperateBranch(user);
     if (!user.permissions.includes(OPERATIONS_PERMISSIONS.close)) {
       throw new ForbiddenException('Missing permission to close branch.');
     }
@@ -1386,6 +1508,7 @@ export class OperationsService {
 
   private assertCanReviewReport(user: AuthenticatedUser) {
     this.assertTenant(user);
+    this.assertCanOperateBranch(user);
     const allowed =
       user.permissions.includes(OPERATIONS_PERMISSIONS.reportReview) ||
       user.permissions.includes(OPERATIONS_PERMISSIONS.close);
@@ -1401,6 +1524,17 @@ export class OperationsService {
       user.permissions.includes(BRANCH_PERMISSIONS.create);
     if (!allowed) {
       throw new ForbiddenException('Missing permission to approve reports.');
+    }
+  }
+
+  private assertCanOperateBranch(user: AuthenticatedUser) {
+    if (user.permissions.includes(BRANCH_PERMISSIONS.create)) {
+      throw new ForbiddenException(
+        'Branch operations are handled by branch managers.',
+      );
+    }
+    if (!user.branchId) {
+      throw new ForbiddenException('Branch scope is required.');
     }
   }
 

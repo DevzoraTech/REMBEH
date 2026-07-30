@@ -4,6 +4,7 @@ import {
   Building2,
   CalendarDays,
   ChevronDown,
+  ClipboardCheck,
   FileText,
   LayoutDashboard,
   LogOut,
@@ -60,27 +61,67 @@ export function AppShell({
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement | null>(null);
   const operatorRole = resolveOperatorRole(session, user);
+  const homeHref = operatorRole === "owner" ? "/owner" : "/dashboard";
 
   const { primaryNav, settingsEnabled } = useMemo(() => {
-    const primary = [
+    const ownerPrimary = [
+      {
+        href: "/owner",
+        label: "Overview",
+        icon: LayoutDashboard,
+        enabled: operatorRole === "owner",
+      },
+      {
+        href: "/owner/branches",
+        label: "Branches",
+        icon: Building2,
+        enabled: operatorRole === "owner",
+      },
+      {
+        href: "/owner/reports",
+        label: "Sent Reports",
+        icon: ClipboardCheck,
+        enabled: operatorRole === "owner",
+      },
+      {
+        href: "/owner/portfolio",
+        label: "Portfolio",
+        icon: FileText,
+        enabled: operatorRole === "owner",
+      },
+      {
+        href: "/owner/borrowers",
+        label: "Borrowers",
+        icon: UserRound,
+        enabled: operatorRole === "owner",
+      },
+      {
+        href: "/owner/risk",
+        label: "Risk Register",
+        icon: ShieldAlert,
+        enabled: operatorRole === "owner",
+      },
+      {
+        href: "/owner/payments",
+        label: "Payments",
+        icon: Wallet,
+        enabled: operatorRole === "owner",
+      },
+    ];
+
+    const managerPrimary = [
       {
         href: "/dashboard",
         label: "Home",
         icon: LayoutDashboard,
-        enabled: operatorRole !== "staff",
-      },
-      {
-        href: "/branches",
-        label: "Branches",
-        icon: Building2,
-        enabled: operatorRole === "owner",
+        enabled: operatorRole === "manager",
       },
       {
         href: "/agents",
         label: "Agents",
         icon: Users,
         enabled:
-          operatorRole !== "staff" &&
+          operatorRole === "manager" &&
           Boolean(
             session.permissions.includes("branch.staff.read") ||
             session.permissions.includes("user.read") ||
@@ -92,7 +133,7 @@ export function AppShell({
         label: "Loans",
         icon: FileText,
         enabled:
-          operatorRole !== "staff" &&
+          operatorRole === "manager" &&
           Boolean(session.permissions.includes("loan.read")),
       },
       {
@@ -100,7 +141,7 @@ export function AppShell({
         label: "Borrowers",
         icon: UserRound,
         enabled:
-          operatorRole !== "staff" &&
+          operatorRole === "manager" &&
           Boolean(session.permissions.includes("customer.read")),
       },
       {
@@ -108,7 +149,7 @@ export function AppShell({
         label: "Blacklist & Watchlist",
         icon: ShieldAlert,
         enabled:
-          operatorRole !== "staff" &&
+          operatorRole === "manager" &&
           Boolean(session.permissions.includes("customer.read")),
       },
       {
@@ -116,7 +157,7 @@ export function AppShell({
         label: "Payments",
         icon: Wallet,
         enabled:
-          operatorRole !== "staff" &&
+          operatorRole === "manager" &&
           Boolean(session.permissions.includes("collection.read")),
       },
       {
@@ -124,10 +165,14 @@ export function AppShell({
         label: "Daily Operations",
         icon: CalendarDays,
         enabled:
-          operatorRole !== "staff" &&
+          operatorRole === "manager" &&
           Boolean(session.permissions.includes("operation.read")),
       },
-    ].filter((item) => item.enabled);
+    ];
+
+    const primary = (
+      operatorRole === "owner" ? ownerPrimary : managerPrimary
+    ).filter((item) => item.enabled);
 
     const settingsEnabled =
       operatorRole === "owner" ||
@@ -136,6 +181,26 @@ export function AppShell({
 
     return { primaryNav: primary, settingsEnabled };
   }, [operatorRole, session.permissions]);
+
+  useEffect(() => {
+    if (operatorRole !== "owner") return;
+    const redirects: Array<[string, string]> = [
+      ["/dashboard", "/owner"],
+      ["/branches", "/owner/branches"],
+      ["/operations", "/owner/reports"],
+      ["/loans", "/owner/portfolio"],
+      ["/clients", "/owner/borrowers"],
+      ["/blacklist-watchlist", "/owner/risk"],
+      ["/collections/daily", "/owner/payments"],
+      ["/settings", "/owner/settings"],
+    ];
+    const match = redirects.find(
+      ([from]) => pathname === from || pathname.startsWith(`${from}/`),
+    );
+    if (match) {
+      router.replace(match[1]);
+    }
+  }, [operatorRole, pathname, router]);
 
   useEffect(() => {
     function onPointerDown(event: MouseEvent) {
@@ -150,7 +215,7 @@ export function AppShell({
 
   useEffect(() => {
     if (
-      operatorRole === "staff" ||
+      operatorRole !== "manager" ||
       pathname === "/operations" ||
       pathname.startsWith("/operations/") ||
       !session.permissions.includes("operation.read")
@@ -239,7 +304,7 @@ export function AppShell({
       >
         <div className="flex h-full flex-col px-3 py-4">
           <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-3">
-            <Link href="/dashboard" className="flex items-center gap-2">
+            <Link href={homeHref} className="flex items-center gap-2">
               <Image
                 src={rembehIcon}
                 alt="REMBEH"
@@ -272,8 +337,10 @@ export function AppShell({
                 const active =
                   pathname === item.href ||
                   (item.href !== "/dashboard" &&
+                    item.href !== "/owner" &&
                     pathname.startsWith(`${item.href}/`)) ||
-                  (item.href === "/dashboard" && pathname === "/dashboard");
+                  (item.href === "/dashboard" && pathname === "/dashboard") ||
+                  (item.href === "/owner" && pathname === "/owner");
 
                 return (
                   <Link
@@ -296,11 +363,20 @@ export function AppShell({
             <div className="mt-auto space-y-1 border-t border-white/10 pt-3">
               {settingsEnabled ? (
                 <Link
-                  href="/settings"
+                  href={
+                    operatorRole === "owner" ? "/owner/settings" : "/settings"
+                  }
                   onClick={() => setMobileOpen(false)}
                   className={`flex items-center gap-2.5 px-3 py-2 text-sm font-semibold ${
-                    pathname === "/settings" ||
-                    pathname.startsWith("/settings/")
+                    pathname ===
+                      (operatorRole === "owner"
+                        ? "/owner/settings"
+                        : "/settings") ||
+                    pathname.startsWith(
+                      operatorRole === "owner"
+                        ? "/owner/settings/"
+                        : "/settings/",
+                    )
                       ? "bg-[var(--forest-emerald)] text-white"
                       : "text-white/70 hover:bg-white/8 hover:text-white"
                   }`}

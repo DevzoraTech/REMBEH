@@ -69,6 +69,17 @@ const DEFAULT_ENABLED_MODULES = [
   'notifications',
 ];
 
+const OWNER_RESTRICTED_OPERATION_PERMISSIONS = [
+  'operation.open',
+  'operation.float.manage',
+  'operation.float.return',
+  'operation.cash.topup',
+  'operation.expense.create',
+  'operation.expense.approve',
+  'operation.close',
+  'operation.report.review',
+];
+
 type WorkspaceRegistrationEntities = {
   tenant: Tenant;
   owner: User;
@@ -178,7 +189,10 @@ export class AuthService {
         });
 
         const permissions = await tx.permission.findMany({
-          where: { tenantId: tenant.id },
+          where: {
+            tenantId: tenant.id,
+            key: { notIn: OWNER_RESTRICTED_OPERATION_PERMISSIONS },
+          },
           select: { id: true },
         });
 

@@ -9,25 +9,34 @@ import {
   readAuthState,
   refreshAuthSession,
 } from "../lib/auth-session";
+import { resolveOperatorRole } from "../lib/roles";
 
 export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
     void (async () => {
-      const { session } = readAuthState();
+      const { session, user } = readAuthState();
       if (!session) {
         router.replace("/login");
         return;
       }
       if (!isSessionExpired(session)) {
-        router.replace("/dashboard");
+        router.replace(
+          resolveOperatorRole(session, user) === "owner"
+            ? "/owner"
+            : "/dashboard",
+        );
         return;
       }
       if (canRefreshSession(session)) {
         const next = await refreshAuthSession(session, apiBaseUrl);
         if (next) {
-          router.replace("/dashboard");
+          router.replace(
+            resolveOperatorRole(next, user) === "owner"
+              ? "/owner"
+              : "/dashboard",
+          );
           return;
         }
       }

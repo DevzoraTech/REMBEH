@@ -505,6 +505,52 @@ export class OperationsRepository {
     });
   }
 
+  listOwnerReports(input: {
+    tenantId: string;
+    branchId?: string | null;
+    status?: BranchOperationReportStatus | null;
+    fromDate?: Date | null;
+    toDate?: Date | null;
+  }) {
+    const allowedStatuses: BranchOperationReportStatus[] = [
+      BranchOperationReportStatus.SENT_TO_OWNER,
+      BranchOperationReportStatus.OWNER_APPROVED,
+      BranchOperationReportStatus.RETURNED_TO_MANAGER,
+    ];
+
+    return this.prisma.branchOperationReport.findMany({
+      where: {
+        tenantId: input.tenantId,
+        status:
+          input.status && allowedStatuses.includes(input.status)
+            ? input.status
+            : { in: allowedStatuses },
+        ...(input.branchId ? { branchId: input.branchId } : {}),
+        ...(input.fromDate || input.toDate
+          ? {
+              operationDate: {
+                ...(input.fromDate ? { gte: input.fromDate } : {}),
+                ...(input.toDate ? { lte: input.toDate } : {}),
+              },
+            }
+          : {}),
+      },
+      include: {
+        ...operationReportInclude,
+        branch: true,
+        operation: {
+          include: {
+            branch: true,
+            openedBy: { select: { id: true, displayName: true } },
+            closedBy: { select: { id: true, displayName: true } },
+          },
+        },
+      },
+      orderBy: [{ operationDate: 'desc' }, { generatedAt: 'desc' }],
+      take: 250,
+    });
+  }
+
   createOperationReport(input: {
     tenantId: string;
     branchId: string;

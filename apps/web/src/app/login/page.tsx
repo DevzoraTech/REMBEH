@@ -22,6 +22,7 @@ import {
   readAuthState,
   resolveSafeNextPath,
 } from "../../lib/auth-session";
+import { resolveOperatorRole } from "../../lib/roles";
 
 type LoginResponse = {
   workspace: RembehWorkspace;
@@ -52,10 +53,14 @@ function LoginForm() {
 
   useEffect(() => {
     const boot = window.setTimeout(() => {
-      const { session } = readAuthState();
+      const { session, user } = readAuthState();
 
       if (session && !isSessionExpired(session)) {
-        router.replace(resolveSafeNextPath(searchParams.get("next")));
+        const fallback =
+          resolveOperatorRole(session, user) === "owner"
+            ? "/owner"
+            : "/dashboard";
+        router.replace(resolveSafeNextPath(searchParams.get("next"), fallback));
         return;
       }
 
@@ -91,7 +96,11 @@ function LoginForm() {
         user: payload.user,
         branch: payload.branch,
       });
-      router.replace(resolveSafeNextPath(searchParams.get("next")));
+      const fallback =
+        resolveOperatorRole(payload.session, payload.user) === "owner"
+          ? "/owner"
+          : "/dashboard";
+      router.replace(resolveSafeNextPath(searchParams.get("next"), fallback));
     } catch (caughtError) {
       setError(
         caughtError instanceof Error ? caughtError.message : "Login failed.",

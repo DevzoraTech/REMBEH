@@ -42,6 +42,23 @@ export class OperationsController {
     return this.operationsService.getToday(user, { branchId, date });
   }
 
+  @Get('reports')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.approve)
+  listOwnerReports(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('branchId') branchId?: string,
+    @Query('status') status?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.operationsService.listOwnerReports(user, {
+      branchId,
+      status,
+      from,
+      to,
+    });
+  }
+
   @Post('open')
   @RequirePermissions(OPERATIONS_PERMISSIONS.open)
   openBranch(

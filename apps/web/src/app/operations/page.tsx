@@ -2,10 +2,12 @@
 
 import {
   Banknote,
+  Building2,
   CalendarDays,
   CheckCircle2,
   CircleDollarSign,
   ClipboardCheck,
+  Download,
   FileSpreadsheet,
   FileText,
   Landmark,
@@ -22,6 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import type { Worksheet } from "exceljs";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/app/app-shell";
@@ -318,6 +321,8 @@ export default function OperationsPage() {
   const [branch, setBranch] = useState<RembehBranch | null>(null);
   const [date, setDate] = useState(initialOperationDate);
   const [data, setData] = useState<OperationResponse | null>(null);
+  const [reportBranches, setReportBranches] = useState<OperationBranch[]>([]);
+  const [selectedBranchId, setSelectedBranchId] = useState("");
   const [agents, setAgents] = useState<OperationAgentRow[]>([]);
   const [form, setForm] = useState<OpeningForm>(emptyOpeningForm);
   const [topUpForm, setTopUpForm] = useState<TopUpForm>(emptyTopUpForm);
@@ -343,25 +348,38 @@ export default function OperationsPage() {
   const [closing, setClosing] = useState(false);
   const [reviewingReport, setReviewingReport] = useState(false);
   const [approvingReport, setApprovingReport] = useState(false);
+  const [exportingReport, setExportingReport] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const canOpen = Boolean(session?.permissions.includes("operation.open"));
+  const operatorRole = useMemo(
+    () => (session ? resolveOperatorRole(session, user) : "staff"),
+    [session, user],
+  );
+  const canOperateBranch = operatorRole === "manager";
+  const canOpen = Boolean(
+    canOperateBranch && session?.permissions.includes("operation.open"),
+  );
   const canRecordReturn = Boolean(
-    session?.permissions.includes("operation.float.return"),
+    canOperateBranch && session?.permissions.includes("operation.float.return"),
   );
   const canRecordExpense = Boolean(
+    canOperateBranch &&
     session?.permissions.includes("operation.expense.create"),
   );
   const canRecordTopUp = Boolean(
-    session?.permissions.includes("operation.cash.topup") ||
-    session?.permissions.includes("operation.open"),
+    canOperateBranch &&
+    (session?.permissions.includes("operation.cash.topup") ||
+      session?.permissions.includes("operation.open")),
   );
   const canManageFloat = Boolean(
-    session?.permissions.includes("operation.float.manage"),
+    canOperateBranch && session?.permissions.includes("operation.float.manage"),
   );
-  const canClose = Boolean(session?.permissions.includes("operation.close"));
+  const canClose = Boolean(
+    canOperateBranch && session?.permissions.includes("operation.close"),
+  );
   const canReviewReport = Boolean(
+    canOperateBranch &&
     session?.permissions.includes("operation.report.review"),
   );
   const canApproveReport = Boolean(
@@ -371,12 +389,14 @@ export default function OperationsPage() {
   const activeBranch = data?.branch;
   const operation = data?.operation;
   const report = data?.report ?? null;
+  const selectedReportBranch =
+    reportBranches.find((item) => item.id === selectedBranchId) ?? activeBranch;
   const pendingClosureOperation = data?.pendingClosureOperation ?? null;
   const previousClosedOperation = data?.previousClosedOperation ?? null;
   const suggestedOpeningBalance = data?.openingBalance ?? null;
   const isToday = date === todayInputValue();
   const canFinishOpenOperation = Boolean(
-    operation && operation.status === "OPEN",
+    canOperateBranch && operation && operation.status === "OPEN",
   );
 
   useEffect(() => {
@@ -432,13 +452,40 @@ export default function OperationsPage() {
     [],
   );
 
+  const loadBranchesForReports = useCallback(
+    async (activeSession: RembehSession) => {
+      const response = await fetch(`${apiBaseUrl}/branches`, {
+        headers: {
+          Authorization: `${activeSession.tokenType} ${activeSession.accessToken}`,
+        },
+      });
+      const payload = await readApiJson<{
+        branches?: OperationBranch[];
+        message?: string | string[];
+      }>(response);
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      const branches = payload.branches ?? [];
+      setReportBranches(branches);
+      return branches;
+    },
+    [],
+  );
+
   const loadOperation = useCallback(
-    async (activeSession: RembehSession, selectedDate: string) => {
+    async (
+      activeSession: RembehSession,
+      selectedDate: string,
+      branchId?: string,
+    ) => {
       setLoading(true);
       setError(null);
       try {
+        const params = new URLSearchParams({ date: selectedDate });
+        if (branchId) params.set("branchId", branchId);
         const response = await fetch(
-          `${apiBaseUrl}/operations/today?date=${encodeURIComponent(selectedDate)}`,
+          `${apiBaseUrl}/operations/today?${params.toString()}`,
           {
             headers: {
               Authorization: `${activeSession.tokenType} ${activeSession.accessToken}`,
@@ -478,38 +525,74 @@ export default function OperationsPage() {
 
   useEffect(() => {
     const boot = window.setTimeout(() => {
-      const auth = readAuthState();
-      if (!auth.session || isSessionExpired(auth.session)) {
-        clearAuthState();
-        router.replace("/login");
-        return;
-      }
+      void (async () => {
+        const auth = readAuthState();
+        if (!auth.session || isSessionExpired(auth.session)) {
+          clearAuthState();
+          router.replace("/login");
+          return;
+        }
 
-      const role = resolveOperatorRole(auth.session, auth.user);
-      if (role === "staff") {
-        router.replace("/dashboard");
-        return;
-      }
+        const role = resolveOperatorRole(auth.session, auth.user);
+        if (role === "staff") {
+          router.replace("/dashboard");
+          return;
+        }
 
-      setSession(auth.session);
-      setWorkspace(auth.workspace);
-      setUser(auth.user);
-      setBranch(auth.branch);
+        setSession(auth.session);
+        setWorkspace(auth.workspace);
+        setUser(auth.user);
+        setBranch(auth.branch);
 
-      if (!auth.session.permissions.includes("operation.read")) {
-        setError("You do not have access to daily operations.");
-        setLoading(false);
-        return;
-      }
+        if (!auth.session.permissions.includes("operation.read")) {
+          setError("You do not have access to daily operations.");
+          setLoading(false);
+          return;
+        }
 
-      void Promise.all([
-        loadOperation(auth.session, date),
-        loadAgentsForDay(auth.session, date),
-      ]);
+        if (role === "owner") {
+          try {
+            const branches = await loadBranchesForReports(auth.session);
+            const branchId = selectedBranchId || branches[0]?.id || "";
+            if (branchId && branchId !== selectedBranchId) {
+              setSelectedBranchId(branchId);
+            }
+            if (!branchId) {
+              setData(null);
+              setAgents([]);
+              setLoading(false);
+              return;
+            }
+            await loadOperation(auth.session, date, branchId);
+          } catch (caught) {
+            setError(
+              caught instanceof Error
+                ? caught.message
+                : "Could not load operation reports.",
+            );
+            setLoading(false);
+          }
+          return;
+        }
+
+        setReportBranches([]);
+        setSelectedBranchId("");
+        void Promise.all([
+          loadOperation(auth.session, date),
+          loadAgentsForDay(auth.session, date),
+        ]);
+      })();
     }, 0);
 
     return () => window.clearTimeout(boot);
-  }, [router, date, loadOperation, loadAgentsForDay]);
+  }, [
+    router,
+    date,
+    selectedBranchId,
+    loadOperation,
+    loadAgentsForDay,
+    loadBranchesForReports,
+  ]);
 
   const openingTotal = useMemo(
     () => Number(form.openingBalance || 0) + Number(form.cashAddedToday || 0),
@@ -950,6 +1033,210 @@ export default function OperationsPage() {
     }
   }
 
+  async function exportDailyOperationReport() {
+    if (!operation || !report || exportingReport) return;
+    setExportingReport(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const { Workbook } = await import("exceljs");
+      const workbook = new Workbook();
+      const exportedAt = new Date();
+      const currency = workspace?.currency ?? "UGX";
+      const reportRows = buildExcelRows(operation);
+      const headers = [
+        "Section",
+        "Description",
+        "Count",
+        "Cash In",
+        "Cash Out",
+        "Balance",
+        "Notes",
+      ];
+
+      workbook.creator = "REMBEH";
+      workbook.created = exportedAt;
+      workbook.modified = exportedAt;
+
+      const worksheet = workbook.addWorksheet("Daily Report");
+      worksheet.addRow(["REMBEH Daily Operations Report"]);
+      worksheet.mergeCells(1, 1, 1, headers.length);
+      worksheet.addRow([
+        `${workspace?.name ?? "Account"} · ${operation.branchName}`,
+      ]);
+      worksheet.mergeCells(2, 1, 2, headers.length);
+      worksheet.addRow([
+        `${report.reportNumber} · ${formatDateOnly(report.operationDate)} · ${reportStatusLabel(report.status)} · Exported ${formatDateTime(exportedAt.toISOString())}`,
+      ]);
+      worksheet.mergeCells(3, 1, 3, headers.length);
+      worksheet.addRow([
+        "Expected close",
+        operation.expectedClosingBalance,
+        "Counted cash",
+        operation.closingBalance ?? 0,
+        "Variance",
+        operation.closingVariance ?? 0,
+        "Loans issued",
+        operation.loansIssuedCount,
+      ]);
+      worksheet.addRow([]);
+
+      const headerRow = worksheet.addRow(headers);
+      reportRows.forEach((row) => {
+        worksheet.addRow([
+          row.section,
+          row.description,
+          row.count,
+          row.cashIn ?? "",
+          row.cashOut ?? "",
+          row.balance ?? "",
+          row.note,
+        ]);
+      });
+
+      const totalsRow = worksheet.addRow([
+        "Closing",
+        "Final report totals",
+        "",
+        operation.cashReturnedByAgents +
+          operation.collectionsReceived +
+          operation.processingFeesTotal,
+        operation.floatIssued +
+          operation.expensesTotal +
+          operation.loansIssuedPrincipal,
+        operation.expectedClosingBalance,
+        formatVariance(operation.closingVariance),
+      ]);
+
+      worksheet.columns = [
+        { width: 18 },
+        { width: 30 },
+        { width: 12 },
+        { width: 16 },
+        { width: 16 },
+        { width: 16 },
+        { width: 24 },
+      ];
+      worksheet.views = [{ state: "frozen", ySplit: headerRow.number }];
+      worksheet.autoFilter = {
+        from: { row: headerRow.number, column: 1 },
+        to: { row: headerRow.number, column: headers.length },
+      };
+
+      styleReportWorksheet(
+        worksheet,
+        headerRow.number,
+        totalsRow.number,
+        currency,
+      );
+
+      const agentSheet = workbook.addWorksheet("Agent Handover");
+      const agentHeaders = [
+        "Agent",
+        "Agent Id",
+        "Float Received",
+        "Loans Issued",
+        "Collections",
+        "Processing Fees",
+        "Expected Handover",
+        "Returned Cash",
+        "Variance",
+        "Status",
+      ];
+      const agentHeaderRow = agentSheet.addRow(agentHeaders);
+      operation.agentReturns.forEach((agentReturn) => {
+        agentSheet.addRow([
+          agentReturn.agentName,
+          agentReturn.agentPublicId ?? "",
+          agentReturn.amountGiven,
+          agentReturn.amountDisbursed,
+          agentReturn.amountCollected,
+          agentReturn.processingFees,
+          agentReturn.expectedReturn,
+          agentReturn.amountReturned ?? "",
+          agentReturn.variance ?? "",
+          returnStatusLabel(agentReturn.status),
+        ]);
+      });
+      agentSheet.columns = [
+        { width: 24 },
+        { width: 14 },
+        { width: 16 },
+        { width: 16 },
+        { width: 16 },
+        { width: 16 },
+        { width: 18 },
+        { width: 16 },
+        { width: 14 },
+        { width: 14 },
+      ];
+      styleTableSheet(
+        agentSheet,
+        agentHeaderRow.number,
+        currency,
+        [3, 4, 5, 6, 7, 8, 9],
+      );
+
+      const recordsSheet = workbook.addWorksheet("Records");
+      const recordsHeaderRow = recordsSheet.addRow([
+        "Type",
+        "Description",
+        "Amount",
+        "Time",
+        "Recorded By",
+      ]);
+      operation.topUps.forEach((topUp) => {
+        recordsSheet.addRow([
+          "Top-up",
+          topUp.description || "Cash top-up",
+          topUp.amount,
+          formatDateTime(topUp.addedAt),
+          topUp.recordedByName,
+        ]);
+      });
+      operation.expenses.forEach((expense) => {
+        recordsSheet.addRow([
+          "Expense",
+          `${categoryLabel(expense.category)}${expense.description ? ` · ${expense.description}` : ""}`,
+          expense.amount,
+          formatDateTime(expense.incurredAt),
+          expense.recordedByName,
+        ]);
+      });
+      recordsSheet.columns = [
+        { width: 14 },
+        { width: 42 },
+        { width: 16 },
+        { width: 22 },
+        { width: 22 },
+      ];
+      styleTableSheet(recordsSheet, recordsHeaderRow.number, currency, [3]);
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer as BlobPart], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `${safeFileName(
+        `${workspace?.name ?? "rembeh"}-${operation.branchName}-${report.reportNumber}`,
+      )}-${formatFileDate(exportedAt)}.xlsx`;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setNotice("Report exported.");
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not export report.",
+      );
+    } finally {
+      setExportingReport(false);
+    }
+  }
+
   function goToPendingClosure() {
     if (!pendingClosureOperation) return;
     setNotice("Close this branch day before opening a new day.");
@@ -975,19 +1262,45 @@ export default function OperationsPage() {
       session={session}
       workspace={workspace}
       user={user}
-      branch={branch}
+      branch={operatorRole === "manager" ? branch : null}
     >
       <div className="mx-auto max-w-7xl space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="text-[11px] font-semibold tracking-[0.12em] text-[var(--forest-emerald)]">
-              Daily Operations
+              {operatorRole === "owner"
+                ? "Operation Reports"
+                : "Daily Operations"}
             </p>
             <h1 className="text-xl font-bold text-[var(--midnight-navy)]">
-              {activeBranch?.name ?? "Operations Hub"}
+              {selectedReportBranch?.name ?? "Operations Hub"}
             </h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {operatorRole === "owner" ? (
+              <label className="flex h-9 items-center gap-2 border border-[var(--line)] bg-white px-2 text-xs font-bold text-[var(--midnight-navy)]">
+                <Building2 className="size-3.5 text-slate-400" />
+                <select
+                  value={selectedBranchId}
+                  onChange={(event) => {
+                    setNotice(null);
+                    setError(null);
+                    setData(null);
+                    setSelectedBranchId(event.target.value);
+                  }}
+                  className="min-w-[180px] bg-transparent outline-none"
+                >
+                  {reportBranches.length === 0 ? (
+                    <option value="">No branches</option>
+                  ) : null}
+                  {reportBranches.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
             <label className="flex h-9 items-center gap-2 border border-[var(--line)] bg-white px-2 text-xs font-bold text-[var(--midnight-navy)]">
               <CalendarDays className="size-3.5 text-slate-400" />
               <input
@@ -1015,12 +1328,16 @@ export default function OperationsPage() {
               type="button"
               className="btn btn-ghost h-9 text-xs"
               onClick={() =>
-                void Promise.all([
-                  loadOperation(session, date),
-                  loadAgentsForDay(session, date),
-                ])
+                void (operatorRole === "owner"
+                  ? loadOperation(session, date, selectedBranchId)
+                  : Promise.all([
+                      loadOperation(session, date),
+                      loadAgentsForDay(session, date),
+                    ]))
               }
-              disabled={loading}
+              disabled={
+                loading || (operatorRole === "owner" && !selectedBranchId)
+              }
             >
               <RefreshCw
                 className={`size-3.5 ${loading ? "animate-spin" : ""}`}
@@ -1045,11 +1362,20 @@ export default function OperationsPage() {
           <OperationsSkeleton />
         ) : !activeBranch ? (
           <div className="panel bg-white px-4 py-6 text-sm text-slate-500">
-            Create a branch before starting daily operations.
+            {operatorRole === "owner"
+              ? "Create a branch before viewing operation reports."
+              : "Create a branch before starting daily operations."}
           </div>
+        ) : operatorRole === "owner" && !operation ? (
+          <OwnerOperationEmptyView
+            branch={activeBranch}
+            date={date}
+            pendingOperation={pendingClosureOperation}
+          />
         ) : operation ? (
           <OpenOperationView
             operation={operation}
+            canOperateBranch={canOperateBranch}
             editable={canFinishOpenOperation}
             canRecordTopUp={canRecordTopUp}
             canRecordReturn={canRecordReturn}
@@ -1068,11 +1394,13 @@ export default function OperationsPage() {
             ownerReportNotes={ownerReportNotes}
             reviewingReport={reviewingReport}
             approvingReport={approvingReport}
+            exportingReport={exportingReport}
             setReportView={setReportView}
             setManagerReportNotes={setManagerReportNotes}
             setOwnerReportNotes={setOwnerReportNotes}
             onManagerConfirmReport={() => void managerConfirmReport()}
             onOwnerApproveReport={() => void ownerApproveReport()}
+            onExportReport={() => void exportDailyOperationReport()}
             onAction={openActionPanel}
           />
         ) : pendingClosureOperation ? (
@@ -1173,6 +1501,47 @@ function PendingClosureView({
           >
             Close this day
           </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function OwnerOperationEmptyView({
+  branch,
+  date,
+  pendingOperation,
+}: {
+  branch: OperationBranch;
+  date: string;
+  pendingOperation: OperationCarryover | null;
+}) {
+  return (
+    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
+      <div className="grid gap-4 p-5 lg:grid-cols-[1fr_260px] lg:items-center">
+        <div>
+          <p className="text-[11px] font-semibold tracking-[0.12em] text-[var(--forest-emerald)]">
+            Branch Report
+          </p>
+          <h2 className="mt-2 text-xl font-bold text-[var(--midnight-navy)]">
+            No operation report for {formatDateOnly(date)}
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+            {pendingOperation
+              ? `The manager still needs to close ${formatDateOnly(
+                  pendingOperation.operationDate,
+                )} before the next report can be prepared.`
+              : "This branch has not opened operations for the selected day."}
+          </p>
+        </div>
+        <div className="border border-[var(--line)] bg-[var(--soft-mist)] p-4">
+          <p className="text-xs font-bold text-slate-500">Branch</p>
+          <p className="mt-1 text-lg font-bold text-[var(--midnight-navy)]">
+            {branch.name}
+          </p>
+          <p className="mt-1 text-xs font-semibold text-slate-500">
+            {branch.address || "Address not set"}
+          </p>
         </div>
       </div>
     </section>
@@ -1310,6 +1679,7 @@ function OpeningView({
 
 function OpenOperationView({
   operation,
+  canOperateBranch,
   editable,
   canRecordTopUp,
   canRecordReturn,
@@ -1328,14 +1698,17 @@ function OpenOperationView({
   ownerReportNotes,
   reviewingReport,
   approvingReport,
+  exportingReport,
   setReportView,
   setManagerReportNotes,
   setOwnerReportNotes,
   onManagerConfirmReport,
   onOwnerApproveReport,
+  onExportReport,
   onAction,
 }: {
   operation: DailyOperation;
+  canOperateBranch: boolean;
   editable: boolean;
   canRecordTopUp: boolean;
   canRecordReturn: boolean;
@@ -1354,11 +1727,13 @@ function OpenOperationView({
   ownerReportNotes: string;
   reviewingReport: boolean;
   approvingReport: boolean;
+  exportingReport: boolean;
   setReportView: (view: "report" | "excel") => void;
   setManagerReportNotes: (value: string) => void;
   setOwnerReportNotes: (value: string) => void;
   onManagerConfirmReport: () => void;
   onOwnerApproveReport: () => void;
+  onExportReport: () => void;
   onAction: (panel: Exclude<OperationActionPanel, null>) => void;
 }) {
   const allReturnsRecorded =
@@ -1386,27 +1761,29 @@ function OpenOperationView({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap justify-end gap-2">
-        <ActionButton
-          icon={<PlusCircle className="size-4" />}
-          label="Add Top-up"
-          disabled={!editable || !canRecordTopUp}
-          onClick={() => onAction("top-up")}
-        />
-        <ActionButton
-          icon={<ReceiptText className="size-4" />}
-          label="Record Expense"
-          disabled={!editable || !canRecordExpense}
-          onClick={() => onAction("expense")}
-        />
-        <ActionButton
-          icon={<LockKeyhole className="size-4" />}
-          label="Close Day"
-          primary
-          disabled={!editable || !canClose || !allReturnsRecorded}
-          onClick={() => onAction("close-day")}
-        />
-      </div>
+      {canOperateBranch ? (
+        <div className="flex flex-wrap justify-end gap-2">
+          <ActionButton
+            icon={<PlusCircle className="size-4" />}
+            label="Add Top-up"
+            disabled={!editable || !canRecordTopUp}
+            onClick={() => onAction("top-up")}
+          />
+          <ActionButton
+            icon={<ReceiptText className="size-4" />}
+            label="Record Expense"
+            disabled={!editable || !canRecordExpense}
+            onClick={() => onAction("expense")}
+          />
+          <ActionButton
+            icon={<LockKeyhole className="size-4" />}
+            label="Close Day"
+            primary
+            disabled={!editable || !canClose || !allReturnsRecorded}
+            onClick={() => onAction("close-day")}
+          />
+        </div>
+      ) : null}
 
       <section className="grid grid-cols-6 gap-1 sm:gap-1.5 xl:gap-2">
         <OperationStat
@@ -1466,11 +1843,13 @@ function OpenOperationView({
             ownerNotes={ownerReportNotes}
             reviewing={reviewingReport}
             approving={approvingReport}
+            exporting={exportingReport}
             setView={setReportView}
             setManagerNotes={setManagerReportNotes}
             setOwnerNotes={setOwnerReportNotes}
             onManagerConfirm={onManagerConfirmReport}
             onOwnerApprove={onOwnerApproveReport}
+            onExport={onExportReport}
           />
         ) : (
           <section className="panel bg-white p-4 text-sm font-semibold text-slate-500">
@@ -1494,17 +1873,19 @@ function OpenOperationView({
 
         <div className="space-y-3">
           <AgentFloatStatusPanel operation={operation} />
-          <QuickActionsPanel
-            editable={editable}
-            canManageFloat={canManageFloat}
-            canRecordReturn={canRecordReturn}
-            loadingAgents={loadingAgents}
-            assignableAgentsCount={assignableAgentsCount}
-            addFloatAgentsCount={addFloatAgentsCount}
-            pendingReturnsCount={pendingReturnsCount}
-            operation={operation}
-            onAction={onAction}
-          />
+          {canOperateBranch ? (
+            <QuickActionsPanel
+              editable={editable}
+              canManageFloat={canManageFloat}
+              canRecordReturn={canRecordReturn}
+              loadingAgents={loadingAgents}
+              assignableAgentsCount={assignableAgentsCount}
+              addFloatAgentsCount={addFloatAgentsCount}
+              pendingReturnsCount={pendingReturnsCount}
+              operation={operation}
+              onAction={onAction}
+            />
+          ) : null}
           <AttentionPanel
             items={attentionItems}
             closed={!editable && operation.status === "CLOSED"}
@@ -1525,11 +1906,13 @@ function OperationReportSection({
   ownerNotes,
   reviewing,
   approving,
+  exporting,
   setView,
   setManagerNotes,
   setOwnerNotes,
   onManagerConfirm,
   onOwnerApprove,
+  onExport,
 }: {
   operation: DailyOperation;
   report: DailyOperationReport;
@@ -1540,11 +1923,13 @@ function OperationReportSection({
   ownerNotes: string;
   reviewing: boolean;
   approving: boolean;
+  exporting: boolean;
   setView: (view: "report" | "excel") => void;
   setManagerNotes: (value: string) => void;
   setOwnerNotes: (value: string) => void;
   onManagerConfirm: () => void;
   onOwnerApprove: () => void;
+  onExport: () => void;
 }) {
   return (
     <section className="panel overflow-hidden bg-white shadow-[0_12px_30px_rgba(20,33,61,0.08)]">
@@ -1576,6 +1961,19 @@ function OperationReportSection({
               onClick={() => setView("excel")}
             />
           </div>
+          <button
+            type="button"
+            className="btn btn-ghost h-10 text-xs"
+            disabled={exporting}
+            onClick={onExport}
+          >
+            {exporting ? (
+              <Loader2 className="size-3.5 animate-spin" />
+            ) : (
+              <Download className="size-3.5" />
+            )}
+            Export
+          </button>
         </div>
       </header>
 
@@ -1584,7 +1982,7 @@ function OperationReportSection({
           {view === "report" ? (
             <ComputerisedReportView operation={operation} report={report} />
           ) : (
-            <ExcelReportView operation={operation} />
+            <ExcelReportView operation={operation} report={report} />
           )}
         </div>
         <ReportReviewPanel
@@ -1769,45 +2167,245 @@ function ComputerisedReportView({
   );
 }
 
-function ExcelReportView({ operation }: { operation: DailyOperation }) {
+function ExcelReportView({
+  operation,
+  report,
+}: {
+  operation: DailyOperation;
+  report: DailyOperationReport;
+}) {
   const rows = buildExcelRows(operation);
+  const columns = [
+    "Section",
+    "Description",
+    "Count",
+    "Cash In",
+    "Cash Out",
+    "Balance",
+    "Notes",
+  ];
+  const finalRowNumber = rows.length + 6;
+
   return (
-    <div className="overflow-hidden border border-[var(--line)]">
-      <table className="w-full table-fixed text-left text-[11px]">
-        <thead className="bg-[#e5ece8] text-[10px] font-bold text-slate-500">
+    <div className="overflow-hidden border border-[#c6d2cc] bg-[#f3f7f5] shadow-inner">
+      <div className="flex items-center gap-2 border-b border-[#c6d2cc] bg-[#eef3f0] px-3 py-2 text-[11px] font-semibold text-slate-600">
+        <span className="border border-[#c6d2cc] bg-white px-2 py-1 text-[10px] font-bold text-slate-500">
+          fx
+        </span>
+        <span className="min-w-0 truncate">
+          {report.reportNumber} / {operation.branchName} /{" "}
+          {formatDateOnly(report.operationDate)}
+        </span>
+      </div>
+      <table className="w-full table-fixed border-collapse text-left text-[10px]">
+        <thead>
           <tr>
-            <th className="w-[16%] px-2 py-2">Section</th>
-            <th className="w-[28%] px-2 py-2">Description</th>
-            <th className="w-[10%] px-2 py-2 text-right">Count</th>
-            <th className="w-[15%] px-2 py-2 text-right">Cash In</th>
-            <th className="w-[15%] px-2 py-2 text-right">Cash Out</th>
-            <th className="w-[16%] px-2 py-2 text-right">Balance</th>
+            <th className="w-8 border border-[#c6d2cc] bg-[#e6ece8]" />
+            {["A", "B", "C", "D", "E", "F", "G"].map((letter, index) => (
+              <th
+                key={letter}
+                className={`border border-[#c6d2cc] bg-[#e6ece8] px-2 py-1 text-center font-bold text-slate-500 ${
+                  index === 0
+                    ? "w-[13%]"
+                    : index === 1
+                      ? "w-[28%]"
+                      : index === 2
+                        ? "w-[8%]"
+                        : "w-[12.75%]"
+                }`}
+              >
+                {letter}
+              </th>
+            ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-[var(--line)]">
-          {rows.map((row) => (
-            <tr key={`${row.section}-${row.description}`} className="bg-white">
-              <td className="px-2 py-2 font-bold text-[var(--midnight-navy)]">
+        <tbody>
+          <SpreadsheetMergedRow
+            rowNumber={1}
+            value="REMBEH Daily Operations Report"
+            strong
+          />
+          <SpreadsheetMergedRow
+            rowNumber={2}
+            value={`${operation.branchName} · ${formatDateOnly(report.operationDate)}`}
+          />
+          <SpreadsheetMergedRow
+            rowNumber={3}
+            value={`${report.reportNumber} · ${reportStatusLabel(report.status)}`}
+            muted
+          />
+          <tr>
+            <SpreadsheetRowNumber value={4} />
+            <SpreadsheetSummaryCell
+              label="Expected close"
+              value={operation.expectedClosingBalance}
+            />
+            <SpreadsheetSummaryCell
+              label="Counted cash"
+              value={operation.closingBalance ?? 0}
+            />
+            <SpreadsheetSummaryCell
+              label="Variance"
+              value={operation.closingVariance ?? 0}
+            />
+            <td className="border border-[#c6d2cc] bg-white px-2 py-2 font-semibold text-slate-500" />
+          </tr>
+          <tr>
+            <SpreadsheetRowNumber value={5} />
+            {columns.map((column) => (
+              <td
+                key={column}
+                className="border border-[#c6d2cc] bg-[var(--forest-emerald)] px-2 py-2 text-center font-bold text-white"
+              >
+                {column}
+              </td>
+            ))}
+          </tr>
+          {rows.map((row, index) => (
+            <tr
+              key={`${row.section}-${row.description}`}
+              className={index % 2 === 0 ? "bg-white" : "bg-[#fbfdfc]"}
+            >
+              <SpreadsheetRowNumber value={index + 6} />
+              <td className="border border-[#d5ddd9] px-2 py-2 font-bold text-[var(--midnight-navy)]">
                 {row.section}
               </td>
-              <td className="px-2 py-2 text-slate-600">{row.description}</td>
-              <td className="px-2 py-2 text-right tabular-nums text-slate-600">
+              <td className="border border-[#d5ddd9] px-2 py-2 text-slate-600">
+                {row.description}
+              </td>
+              <td className="border border-[#d5ddd9] px-2 py-2 text-right tabular-nums text-slate-600">
                 {row.count}
               </td>
-              <td className="px-2 py-2 text-right font-semibold tabular-nums text-[var(--forest-emerald)]">
-                {row.cashIn == null ? "-" : formatCompactMoney(row.cashIn)}
-              </td>
-              <td className="px-2 py-2 text-right font-semibold tabular-nums text-amber-700">
-                {row.cashOut == null ? "-" : formatCompactMoney(row.cashOut)}
-              </td>
-              <td className="px-2 py-2 text-right font-bold tabular-nums text-[var(--midnight-navy)]">
-                {row.balance == null ? "-" : formatCompactMoney(row.balance)}
+              <SpreadsheetMoneyCell value={row.cashIn} tone="in" />
+              <SpreadsheetMoneyCell value={row.cashOut} tone="out" />
+              <SpreadsheetMoneyCell value={row.balance} tone="balance" />
+              <td className="border border-[#d5ddd9] px-2 py-2 text-slate-600">
+                {row.note}
               </td>
             </tr>
           ))}
+          <tr>
+            <SpreadsheetRowNumber value={finalRowNumber} />
+            <td className="border border-[#c6d2cc] bg-[#e6ece8] px-2 py-2 font-bold text-[var(--midnight-navy)]">
+              Closing
+            </td>
+            <td className="border border-[#c6d2cc] bg-[#e6ece8] px-2 py-2 font-bold text-[var(--midnight-navy)]">
+              Final report totals
+            </td>
+            <td className="border border-[#c6d2cc] bg-[#e6ece8] px-2 py-2 text-right font-bold tabular-nums text-[var(--midnight-navy)]">
+              -
+            </td>
+            <SpreadsheetMoneyCell
+              value={
+                operation.cashReturnedByAgents +
+                operation.collectionsReceived +
+                operation.processingFeesTotal
+              }
+              tone="in"
+              total
+            />
+            <SpreadsheetMoneyCell
+              value={
+                operation.floatIssued +
+                operation.expensesTotal +
+                operation.loansIssuedPrincipal
+              }
+              tone="out"
+              total
+            />
+            <SpreadsheetMoneyCell
+              value={operation.expectedClosingBalance}
+              tone="balance"
+              total
+            />
+            <td className="border border-[#c6d2cc] bg-[#e6ece8] px-2 py-2 font-bold text-[var(--midnight-navy)]">
+              {formatVariance(operation.closingVariance)}
+            </td>
+          </tr>
         </tbody>
       </table>
     </div>
+  );
+}
+
+function SpreadsheetMergedRow({
+  rowNumber,
+  value,
+  strong = false,
+  muted = false,
+}: {
+  rowNumber: number;
+  value: string;
+  strong?: boolean;
+  muted?: boolean;
+}) {
+  return (
+    <tr>
+      <SpreadsheetRowNumber value={rowNumber} />
+      <td
+        colSpan={7}
+        className={`border border-[#c6d2cc] px-2 py-2 text-center ${
+          strong
+            ? "bg-[var(--midnight-navy)] text-sm font-bold text-white"
+            : muted
+              ? "bg-white font-semibold text-slate-500"
+              : "bg-white font-bold text-[var(--midnight-navy)]"
+        }`}
+      >
+        {value}
+      </td>
+    </tr>
+  );
+}
+
+function SpreadsheetRowNumber({ value }: { value: number }) {
+  return (
+    <td className="border border-[#c6d2cc] bg-[#e6ece8] px-1 py-2 text-center text-[9px] font-bold text-slate-500">
+      {value}
+    </td>
+  );
+}
+
+function SpreadsheetSummaryCell({
+  label,
+  value,
+}: {
+  label: string;
+  value: number;
+}) {
+  return (
+    <td colSpan={2} className="border border-[#c6d2cc] bg-white px-2 py-2">
+      <span className="mr-2 font-bold text-slate-500">{label}</span>
+      <span className="font-bold tabular-nums text-[var(--midnight-navy)]">
+        {formatCompactMoney(value)}
+      </span>
+    </td>
+  );
+}
+
+function SpreadsheetMoneyCell({
+  value,
+  tone,
+  total = false,
+}: {
+  value: number | null;
+  tone: "in" | "out" | "balance";
+  total?: boolean;
+}) {
+  const toneClass =
+    tone === "in"
+      ? "text-[var(--forest-emerald)]"
+      : tone === "out"
+        ? "text-amber-700"
+        : "text-[var(--midnight-navy)]";
+  return (
+    <td
+      className={`border border-[#d5ddd9] px-2 py-2 text-right font-bold tabular-nums ${toneClass} ${
+        total ? "bg-[#e6ece8]" : ""
+      }`}
+    >
+      {value == null ? "-" : formatCompactMoney(value)}
+    </td>
   );
 }
 
@@ -3846,6 +4444,7 @@ function buildExcelRows(operation: DailyOperation) {
       cashIn: openingBalance,
       cashOut: null,
       balance: openingBalance,
+      note: "Previous day closing cash",
     },
     {
       section: "Opening",
@@ -3854,6 +4453,7 @@ function buildExcelRows(operation: DailyOperation) {
       cashIn: operation.topUpsTotal,
       cashOut: null,
       balance: afterTopUps,
+      note: "Cash added at opening or during day",
     },
     {
       section: "Float",
@@ -3862,6 +4462,7 @@ function buildExcelRows(operation: DailyOperation) {
       cashIn: null,
       cashOut: operation.floatIssued,
       balance: afterFloat,
+      note: "Cash issued to field agents",
     },
     {
       section: "Field",
@@ -3870,6 +4471,7 @@ function buildExcelRows(operation: DailyOperation) {
       cashIn: operation.cashReturnedByAgents,
       cashOut: null,
       balance: afterReturns,
+      note: "Agent handover received",
     },
     {
       section: "Expenses",
@@ -3878,6 +4480,7 @@ function buildExcelRows(operation: DailyOperation) {
       cashIn: null,
       cashOut: operation.expensesTotal,
       balance: afterExpenses,
+      note: "Branch operating expenses",
     },
     {
       section: "Loans",
@@ -3886,6 +4489,7 @@ function buildExcelRows(operation: DailyOperation) {
       cashIn: null,
       cashOut: operation.loansIssuedPrincipal,
       balance: null,
+      note: "Principal issued to borrowers",
     },
     {
       section: "Collections",
@@ -3894,6 +4498,7 @@ function buildExcelRows(operation: DailyOperation) {
       cashIn: operation.collectionsReceived,
       cashOut: null,
       balance: null,
+      note: "Repayments recorded",
     },
     {
       section: "Fees",
@@ -3902,6 +4507,7 @@ function buildExcelRows(operation: DailyOperation) {
       cashIn: operation.processingFeesTotal,
       cashOut: null,
       balance: null,
+      note: "Loan processing fees recorded",
     },
     {
       section: "Closing",
@@ -3910,6 +4516,7 @@ function buildExcelRows(operation: DailyOperation) {
       cashIn: null,
       cashOut: null,
       balance: operation.expectedClosingBalance,
+      note: "Expected cash after all movement",
     },
     {
       section: "Closing",
@@ -3918,6 +4525,7 @@ function buildExcelRows(operation: DailyOperation) {
       cashIn: null,
       cashOut: null,
       balance: operation.closingBalance ?? 0,
+      note: "Cash counted at closing",
     },
     {
       section: "Closing",
@@ -3930,6 +4538,7 @@ function buildExcelRows(operation: DailyOperation) {
           ? Math.abs(operation.closingVariance ?? 0)
           : null,
       balance: operation.closingVariance ?? 0,
+      note: formatVariance(operation.closingVariance),
     },
   ];
 }
@@ -3979,6 +4588,161 @@ function categoryLabel(category: ExpenseCategory) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function styleReportWorksheet(
+  worksheet: Worksheet,
+  headerRowNumber: number,
+  totalsRowNumber: number,
+  currency: string,
+) {
+  worksheet.getRow(1).height = 24;
+  worksheet.getRow(1).font = {
+    bold: true,
+    color: { argb: "FFFFFFFF" },
+    size: 16,
+  };
+  worksheet.getRow(1).fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF14213D" },
+  };
+  worksheet.getRow(1).alignment = { horizontal: "center", vertical: "middle" };
+
+  [2, 3].forEach((rowNumber) => {
+    const row = worksheet.getRow(rowNumber);
+    row.font = {
+      bold: rowNumber === 2,
+      color: { argb: rowNumber === 2 ? "FF14213D" : "FF516171" },
+      size: rowNumber === 2 ? 12 : 10,
+    };
+    row.alignment = { horizontal: "center" };
+  });
+
+  const summaryRow = worksheet.getRow(4);
+  summaryRow.eachCell((cell, columnNumber) => {
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: columnNumber % 2 === 1 ? "FFE8EEEB" : "FFFFFFFF" },
+    };
+    cell.border = excelBorder();
+    cell.font = { bold: true, color: { argb: "FF14213D" }, size: 10 };
+    if ([2, 4, 6].includes(columnNumber)) {
+      cell.numFmt = `"${currency}" #,##0`;
+    }
+  });
+
+  const headerRow = worksheet.getRow(headerRowNumber);
+  headerRow.height = 24;
+  headerRow.eachCell((cell) => {
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF0F8A6C" },
+    };
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
+    cell.alignment = { horizontal: "center", vertical: "middle" };
+    cell.border = excelBorder();
+  });
+
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber <= headerRowNumber) return;
+    row.eachCell((cell, columnNumber) => {
+      cell.border = excelBorder();
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: columnNumber >= 4 && columnNumber <= 6 ? "right" : "left",
+      };
+      if ([4, 5, 6].includes(columnNumber)) {
+        cell.numFmt = `"${currency}" #,##0`;
+      }
+      if (rowNumber % 2 === 0 && rowNumber !== totalsRowNumber) {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFFBFDFC" },
+        };
+      }
+    });
+  });
+
+  const totalsRow = worksheet.getRow(totalsRowNumber);
+  totalsRow.eachCell((cell, columnNumber) => {
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFE8EEEB" },
+    };
+    cell.font = { bold: true, color: { argb: "FF14213D" }, size: 10 };
+    if ([4, 5, 6].includes(columnNumber)) {
+      cell.numFmt = `"${currency}" #,##0`;
+    }
+  });
+}
+
+function styleTableSheet(
+  worksheet: Worksheet,
+  headerRowNumber: number,
+  currency: string,
+  moneyColumns: number[],
+) {
+  const headerRow = worksheet.getRow(headerRowNumber);
+  headerRow.height = 24;
+  headerRow.eachCell((cell) => {
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF0F8A6C" },
+    };
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 10 };
+    cell.alignment = { horizontal: "center", vertical: "middle" };
+    cell.border = excelBorder();
+  });
+  worksheet.views = [{ state: "frozen", ySplit: headerRowNumber }];
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber <= headerRowNumber) return;
+    row.eachCell((cell, columnNumber) => {
+      cell.border = excelBorder();
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: moneyColumns.includes(columnNumber) ? "right" : "left",
+      };
+      if (moneyColumns.includes(columnNumber)) {
+        cell.numFmt = `"${currency}" #,##0`;
+      }
+      if (rowNumber % 2 === 0) {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFFBFDFC" },
+        };
+      }
+    });
+  });
+}
+
+function excelBorder() {
+  return {
+    top: { style: "thin" as const, color: { argb: "FFD5DDD9" } },
+    left: { style: "thin" as const, color: { argb: "FFD5DDD9" } },
+    bottom: { style: "thin" as const, color: { argb: "FFD5DDD9" } },
+    right: { style: "thin" as const, color: { argb: "FFD5DDD9" } },
+  };
+}
+
+function formatFileDate(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function safeFileName(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function formatCompactMoney(value: number) {

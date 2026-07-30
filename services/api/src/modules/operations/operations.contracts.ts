@@ -140,6 +140,35 @@ export type DailyOperationResponseContract = {
   report: DailyOperationReportContract | null;
 };
 
+export type OwnerOperationReportListItemContract = {
+  id: string;
+  operationId: string;
+  branchId: string;
+  branchName: string;
+  reportNumber: string;
+  operationDate: string;
+  status: DailyOperationReportStatusContract;
+  generatedAt: string;
+  managerReviewedAt: string | null;
+  managerReviewedByName: string | null;
+  ownerApprovedAt: string | null;
+  ownerApprovedByName: string | null;
+  expectedClosingBalance: number;
+  closingBalance: number | null;
+  closingVariance: number | null;
+  loansIssuedCount: number;
+  loansIssuedPrincipal: number;
+  collectionsReceived: number;
+  processingFeesTotal: number;
+  expensesTotal: number;
+  cashReturnedByAgents: number;
+  snapshot: unknown;
+};
+
+export type OwnerOperationReportListResponseContract = {
+  reports: OwnerOperationReportListItemContract[];
+};
+
 export type AgentDailyAccessReasonContract =
   'NO_BRANCH' | 'BRANCH_NOT_OPEN' | 'BRANCH_CLOSED' | 'AGENT_DAY_CLOSED' | null;
 

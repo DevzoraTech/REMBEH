@@ -1,6 +1,12 @@
 "use client";
 
-import { Building2, Smartphone } from "lucide-react";
+import {
+  Building2,
+  CalendarDays,
+  FileText,
+  Smartphone,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -143,6 +149,11 @@ export default function DashboardPage() {
 
         const role = resolveOperatorRole(activeSession, auth.user);
 
+        if (role === "owner") {
+          router.replace("/owner");
+          return;
+        }
+
         if (role === "staff") {
           setIsLoading(false);
           return;
@@ -212,7 +223,6 @@ export default function DashboardPage() {
                 }));
               })
             : Promise.resolve(),
-          role === "manager" &&
           activeSession.permissions.includes("collection.read")
             ? fetch(`${apiBaseUrl}/collections/summary`, {
                 headers: {
@@ -265,14 +275,16 @@ export default function DashboardPage() {
   if (!session) return <AppBootSkeleton />;
 
   const shellBranch =
-    branch ??
-    (branches[0]
-      ? {
-          id: branches[0].id,
-          name: branches[0].name,
-          address: branches[0].address,
-        }
-      : null);
+    operatorRole === "manager"
+      ? (branch ??
+        (branches[0]
+          ? {
+              id: branches[0].id,
+              name: branches[0].name,
+              address: branches[0].address,
+            }
+          : null))
+      : null;
 
   return (
     <AppShell
@@ -281,7 +293,7 @@ export default function DashboardPage() {
       user={user}
       branch={shellBranch}
     >
-      <div className="mx-auto max-w-5xl space-y-3 animate-rise">
+      <div className="mx-auto max-w-6xl space-y-3 animate-rise">
         {isLoading ? <DashboardSkeleton /> : null}
 
         {error ? (
@@ -351,15 +363,37 @@ function OwnerView({
   return (
     <>
       <section className="grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
-        <Stat label="branches" value={String(branches.length)} />
-        <Stat label="borrowers" value={numberStat(customerCount)} />
-        <Stat label="active loans" value={numberStat(stats.activeLoans)} />
+        <Stat label="Branches" value={String(branches.length)} />
+        <Stat label="Borrowers" value={numberStat(customerCount)} />
+        <Stat label="Active loans" value={numberStat(stats.activeLoans)} />
         <Stat
-          label="outstanding"
+          label="Completed loans"
+          value={numberStat(stats.completedLoans)}
+        />
+        <Stat
+          label="Outstanding"
           value={moneyStat(stats.outstanding, stats.currency)}
         />
         <Stat
-          label="pending managers"
+          label="Collected today"
+          value={moneyStat(stats.collectedToday, stats.currency)}
+        />
+        <Stat label="Due today" value={numberStat(stats.dueToday)} />
+        <Stat
+          label="Payments today"
+          value={numberStat(stats.repaymentsToday)}
+        />
+        <Stat
+          label="Active staff"
+          value={String(
+            branches.reduce(
+              (total, item) => total + (item.staffSummary?.active ?? 0),
+              0,
+            ),
+          )}
+        />
+        <Stat
+          label="Pending managers"
           value={String(
             branches.filter(
               (item) => item.manager?.inviteStatus === "INVITE_PENDING",
@@ -398,32 +432,34 @@ function ManagerView({
 }) {
   return (
     <>
+      <ManagerBranchOverview branch={branch} />
+
       <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="borrowers" value={numberStat(customerCount)} />
-        <Stat label="active loans" value={numberStat(stats.activeLoans)} />
+        <Stat label="Borrowers" value={numberStat(customerCount)} />
+        <Stat label="Active loans" value={numberStat(stats.activeLoans)} />
         <Stat
-          label="completed loans"
+          label="Completed loans"
           value={numberStat(stats.completedLoans)}
         />
         <Stat
-          label="outstanding"
+          label="Outstanding"
           value={moneyStat(stats.outstanding, stats.currency)}
         />
         <Stat
-          label="collected today"
+          label="Collected today"
           value={moneyStat(stats.collectedToday, stats.currency)}
         />
-        <Stat label="due today" value={numberStat(stats.dueToday)} />
+        <Stat label="Due today" value={numberStat(stats.dueToday)} />
         <Stat
-          label="payments today"
+          label="Payments today"
           value={numberStat(stats.repaymentsToday)}
         />
         <Stat
-          label="active staff"
+          label="Active staff"
           value={String(branch?.staffSummary?.active ?? 0)}
         />
         <Stat
-          label="pending invites"
+          label="Pending invites"
           value={String(branch?.staffSummary?.pendingInvites ?? 0)}
         />
       </section>
@@ -463,10 +499,44 @@ function StaffView() {
   );
 }
 
+function ManagerBranchOverview({ branch }: { branch: Branch | null }) {
+  return (
+    <section className="panel bg-white p-4 shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold tracking-[0.12em] text-[var(--forest-emerald)]">
+            Branch Overview
+          </p>
+          <h2 className="mt-1 truncate text-lg font-bold text-[var(--midnight-navy)]">
+            {branch?.name ?? "Assigned Branch"}
+          </h2>
+          <p className="mt-1 truncate text-xs font-semibold text-slate-500">
+            {branch?.address || "Branch address not set"}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/operations" className="btn btn-primary h-9 text-xs">
+            <CalendarDays className="size-3.5" />
+            Daily Operations
+          </Link>
+          <Link href="/agents" className="btn btn-ghost h-9 text-xs">
+            <Users className="size-3.5" />
+            Team
+          </Link>
+          <Link href="/loans" className="btn btn-ghost h-9 text-xs">
+            <FileText className="size-3.5" />
+            Loans
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="panel border-l-4 border-l-[var(--midnight-navy)] bg-white px-3 py-2.5 shadow-[0_8px_22px_rgba(20,33,61,0.05)]">
-      <p className="text-[10px] font-semibold capitalize tracking-[0.1em] text-slate-500">
+      <p className="text-[10px] font-semibold tracking-[0.1em] text-slate-500">
         {label}
       </p>
       <p className="mt-0.5 break-words text-[clamp(0.9rem,2vw,1.25rem)] font-bold leading-tight text-[var(--midnight-navy)]">
@@ -504,7 +574,7 @@ function OwnerBranchesTable({ branches }: { branches: Branch[] }) {
     <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
       <div className="flex items-center justify-between border-b border-[var(--line)] bg-[#eef3f0] px-3 py-2.5">
         <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
-          Branches
+          Branch Directory
         </h2>
         <Link href="/branches" className="btn btn-ghost h-8 text-xs">
           Manage

@@ -331,6 +331,11 @@ export class AgentsService {
     if (!user.permissions.includes('operation.float.manage')) {
       throw new ForbiddenException('Missing permission to assign float.');
     }
+    if (user.permissions.includes(BRANCH_PERMISSIONS.create)) {
+      throw new ForbiddenException(
+        'Branch float is handled by branch managers.',
+      );
+    }
 
     const { dayStart, dayEnd, dateLabel, floatDate } = this.parseDayBounds(
       dto.date,
@@ -427,6 +432,11 @@ export class AgentsService {
     }
     if (!user.permissions.includes('operation.float.manage')) {
       throw new ForbiddenException('Missing permission to assign float.');
+    }
+    if (user.permissions.includes(BRANCH_PERMISSIONS.create)) {
+      throw new ForbiddenException(
+        'Branch float is handled by branch managers.',
+      );
     }
 
     const { dayStart, dayEnd, dateLabel, floatDate } = this.parseDayBounds(
