@@ -182,7 +182,7 @@ export default function OwnerBorrowersPage() {
                 <ChevronRight className="size-3.5 text-slate-400" />
                 <span className="text-slate-500">Borrowers</span>
               </div>
-              <h1 className="mt-1.5 text-[clamp(1.45rem,1.75vw,1.8rem)] font-extrabold leading-tight tracking-[-0.03em] text-[#090f21]">
+              <h1 className="mt-1.5 text-[clamp(1.45rem,1.75vw,1.8rem)] font-bold leading-tight tracking-[-0.03em] text-[#090f21]">
                 Borrowers
               </h1>
               <p className="mt-0.5 text-[13px] font-medium text-slate-500">
@@ -198,9 +198,9 @@ export default function OwnerBorrowersPage() {
                   value={search}
                   onChange={(event) => updateSearch(event.target.value)}
                   placeholder="Search anything..."
-                  className="min-w-0 flex-1 bg-transparent text-xs font-semibold text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
+                  className="min-w-0 flex-1 bg-transparent text-xs font-medium text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
                 />
-                <span className="hidden rounded-md bg-[#f4f6f8] px-1.5 py-0.5 text-[10px] font-extrabold text-slate-400 sm:inline">
+                <span className="hidden rounded-md bg-[#f4f6f8] px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 sm:inline">
                   ⌘K
                 </span>
               </label>
@@ -211,7 +211,7 @@ export default function OwnerBorrowersPage() {
               >
                 <Bell className="size-4" />
                 {newThisMonthCount > 0 ? (
-                  <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-[#12a36f] text-[10px] font-extrabold text-white">
+                  <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-[#12a36f] text-[10px] font-semibold text-white">
                     {Math.min(newThisMonthCount, 9)}
                   </span>
                 ) : null}
@@ -221,7 +221,7 @@ export default function OwnerBorrowersPage() {
                 onClick={() =>
                   setNotice("Borrowers are added from a loan application.")
                 }
-                className="flex h-9 items-center gap-2 rounded-xl bg-[#0b936b] px-3 text-xs font-extrabold text-white shadow-[0_10px_22px_rgba(11,147,107,0.2)] transition hover:bg-[#087f5d]"
+                className="flex h-9 items-center gap-2 rounded-xl bg-[#0b936b] px-3 text-xs font-medium text-white shadow-[0_10px_22px_rgba(11,147,107,0.2)] transition hover:bg-[#087f5d]"
               >
                 <Plus className="size-4" />
                 Add Borrower
@@ -246,7 +246,7 @@ export default function OwnerBorrowersPage() {
                   setExporting,
                 )
               }
-              className="flex h-9 items-center gap-2 rounded-xl border border-[#e3e8ee] bg-white px-3 text-xs font-extrabold text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8fafb] disabled:opacity-60"
+              className="flex h-9 items-center gap-2 rounded-xl border border-[#e3e8ee] bg-white px-3 text-xs font-medium text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8fafb] disabled:opacity-60"
             >
               <Download className="size-4" />
               {exporting ? "Exporting" : "Export"}
@@ -337,7 +337,7 @@ export default function OwnerBorrowersPage() {
               <input
                 value={search}
                 onChange={(event) => updateSearch(event.target.value)}
-                className="min-w-0 flex-1 bg-transparent text-xs font-semibold text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
+                className="min-w-0 flex-1 bg-transparent text-xs font-medium text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
                 placeholder="Search by name, phone, national ID or branch..."
               />
             </label>
@@ -388,12 +388,12 @@ export default function OwnerBorrowersPage() {
             </FilterSelect>
             <button
               type="button"
-              className="flex h-9 items-center justify-center gap-2 rounded-xl border border-[#e2e8ee] bg-white px-3 text-xs font-extrabold text-[#111a2e] shadow-[0_7px_16px_rgba(15,23,42,0.03)] transition hover:bg-[#f8fafb]"
+              className="flex h-9 items-center justify-center gap-2 rounded-xl border border-[#e2e8ee] bg-white px-3 text-xs font-medium text-[#111a2e] shadow-[0_7px_16px_rgba(15,23,42,0.03)] transition hover:bg-[#f8fafb]"
             >
               <Filter className="size-4" />
               Filters
               {activeFilterCount > 0 ? (
-                <span className="grid size-5 place-items-center rounded-full bg-[#0b936b] text-[10px] font-extrabold text-white">
+                <span className="grid size-5 place-items-center rounded-full bg-[#0b936b] text-[10px] font-semibold text-white">
                   {activeFilterCount}
                 </span>
               ) : null}
@@ -404,7 +404,7 @@ export default function OwnerBorrowersPage() {
         <section className="overflow-hidden rounded-2xl border border-[#e5ebf0] bg-white shadow-[0_16px_38px_rgba(15,23,42,0.055)]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f4] px-4 py-3.5">
             <div>
-              <h2 className="text-base font-extrabold tracking-[-0.02em] text-[#0b1224]">
+              <h2 className="text-base font-bold tracking-[-0.02em] text-[#0b1224]">
                 Borrower Register
               </h2>
               <span className="mt-2 block h-0.5 w-7 rounded-full bg-[#0b936b]" />
@@ -494,7 +494,7 @@ export default function OwnerBorrowersPage() {
                   setPageSize(Number(event.target.value));
                   setPage(1);
                 }}
-                className="h-9 rounded-xl border border-[#e2e8ee] bg-white px-3 text-xs font-extrabold text-[#0b1224] outline-none"
+                className="h-9 rounded-xl border border-[#e2e8ee] bg-white px-3 text-xs font-medium text-[#0b1224] outline-none"
               >
                 {PAGE_SIZE_OPTIONS.map((option) => (
                   <option key={option} value={option}>
@@ -518,7 +518,7 @@ export default function OwnerBorrowersPage() {
               >
                 <ChevronLeft className="size-4" />
               </button>
-              <span className="grid size-9 place-items-center rounded-xl bg-[#0b936b] text-xs font-extrabold text-white shadow-[0_10px_20px_rgba(11,147,107,0.2)]">
+              <span className="grid size-9 place-items-center rounded-xl bg-[#0b936b] text-xs font-medium text-white shadow-[0_10px_20px_rgba(11,147,107,0.2)]">
                 {currentPage}
               </span>
               <button
@@ -574,16 +574,16 @@ function BorrowerStatCard({
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center justify-between gap-2">
-          <p className="truncate text-xs font-semibold text-[#25314b]">
+          <p className="truncate text-xs font-medium text-[#25314b]">
             {label}
           </p>
           <span
-            className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-extrabold ${styles.badge}`}
+            className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${styles.badge}`}
           >
             {change}
           </span>
         </div>
-        <p className="mt-1.5 break-words text-[clamp(1.18rem,1.55vw,1.55rem)] font-extrabold leading-none tracking-[-0.03em] text-[#090f21] tabular-nums">
+        <p className="mt-1.5 break-words text-[clamp(1.18rem,1.55vw,1.55rem)] font-bold leading-none tracking-[-0.03em] text-[#090f21] tabular-nums">
           {value}
         </p>
         <p className="mt-1.5 truncate text-xs font-medium text-slate-500">
@@ -629,7 +629,7 @@ function FilterSelect({
         value={value}
         aria-label={label}
         onChange={(event) => onChange(event.target.value)}
-        className="min-w-0 flex-1 appearance-none bg-transparent pr-7 text-xs font-extrabold outline-none"
+        className="min-w-0 flex-1 appearance-none bg-transparent pr-7 text-xs font-medium outline-none"
       >
         {children}
       </select>
@@ -649,7 +649,7 @@ function BorrowerTable({
 }) {
   return (
     <div>
-      <div className="hidden grid-cols-[1.45fr_0.9fr_0.95fr_1fr_1fr_0.45fr_0.72fr_0.62fr] items-center gap-3 border-b border-[#edf1f4] bg-[#fbfcfd] px-4 py-2.5 text-[10px] font-extrabold text-slate-500 lg:grid">
+      <div className="hidden grid-cols-[1.45fr_0.9fr_0.95fr_1fr_1fr_0.45fr_0.72fr_0.62fr] items-center gap-3 border-b border-[#edf1f4] bg-[#fbfcfd] px-4 py-2.5 text-[10px] font-medium text-slate-500 lg:grid">
         {[
           "Borrower",
           "Phone",
@@ -701,12 +701,12 @@ function BorrowerListRow({
     <div className="grid gap-3 px-4 py-3 text-[13px] lg:grid-cols-[1.45fr_0.9fr_0.95fr_1fr_1fr_0.45fr_0.72fr_0.62fr] lg:items-center lg:gap-3">
       <div className="flex min-w-0 items-center gap-3">
         <span
-          className={`grid size-9 shrink-0 place-items-center rounded-full text-xs font-extrabold ${avatarTone(index)}`}
+          className={`grid size-9 shrink-0 place-items-center rounded-full text-xs font-medium ${avatarTone(index)}`}
         >
           {initials(borrower.fullName)}
         </span>
         <div className="min-w-0">
-          <p className="truncate text-[13px] font-extrabold text-[#0b1224]">
+          <p className="truncate text-[13px] font-medium text-[#0b1224]">
             {borrower.fullName}
           </p>
           <p className="mt-0.5 truncate text-[11px] font-medium text-slate-500">
@@ -727,7 +727,7 @@ function BorrowerListRow({
       </TableValue>
       <TableValue label="Loans">{formatNumber(borrower.loanCount)}</TableValue>
       <div>
-        <p className="mb-1 text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-400 lg:hidden">
+        <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-slate-400 lg:hidden">
           Status
         </p>
         <BorrowerStatus verified={Boolean(borrower.verifiedAt)} />
@@ -772,12 +772,12 @@ function BorrowerGrid({
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <span
-                className={`grid size-9 shrink-0 place-items-center rounded-full text-xs font-extrabold ${avatarTone(index)}`}
+                className={`grid size-9 shrink-0 place-items-center rounded-full text-xs font-medium ${avatarTone(index)}`}
               >
                 {initials(borrower.fullName)}
               </span>
               <div className="min-w-0">
-                <p className="truncate text-[13px] font-extrabold text-[#0b1224]">
+                <p className="truncate text-[13px] font-medium text-[#0b1224]">
                   {borrower.fullName}
                 </p>
                 <p className="mt-0.5 text-[11px] font-medium text-slate-500">
@@ -793,7 +793,7 @@ function BorrowerGrid({
               ]}
             />
           </div>
-          <div className="mt-3 grid gap-1.5 text-xs font-semibold text-[#17213a]">
+          <div className="mt-3 grid gap-1.5 text-xs font-medium text-[#17213a]">
             <InfoLine label="Phone" value={borrower.phone || "-"} />
             <InfoLine label="National ID" value={borrower.nationalId ?? "-"} />
             <InfoLine
@@ -844,7 +844,7 @@ function EmptyBorrowersState({
       <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-[#eef8f4] text-[#0b936b]">
         <Users className="size-5" />
       </div>
-      <h3 className="mt-3 text-sm font-extrabold text-[#0b1224]">
+      <h3 className="mt-3 text-sm font-medium text-[#0b1224]">
         No borrowers found
       </h3>
       <p className="mx-auto mt-1 max-w-sm text-xs font-medium text-slate-500">
@@ -856,7 +856,7 @@ function EmptyBorrowersState({
         <button
           type="button"
           onClick={onClear}
-          className="mt-3 rounded-xl bg-[#0b936b] px-3 py-2 text-xs font-extrabold text-white"
+          className="mt-3 rounded-xl bg-[#0b936b] px-3 py-2 text-xs font-medium text-white"
         >
           Clear filters
         </button>
@@ -883,10 +883,10 @@ function BorrowerDetailDrawer({
       <aside className="relative h-full w-full max-w-[400px] overflow-y-auto bg-white p-4 shadow-[-18px_0_44px_rgba(15,23,42,0.18)]">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-[#0b936b]">
+            <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-[#0b936b]">
               Borrower Details
             </p>
-            <h2 className="mt-1.5 text-xl font-extrabold tracking-[-0.03em] text-[#0b1224]">
+            <h2 className="mt-1.5 text-xl font-bold tracking-[-0.03em] text-[#0b1224]">
               {borrower.fullName}
             </h2>
           </div>
@@ -901,12 +901,12 @@ function BorrowerDetailDrawer({
         </div>
         <div className="mt-4 rounded-2xl border border-[#e5ebf0] bg-[#fbfcfd] p-3">
           <div className="flex items-center gap-3">
-            <span className="grid size-10 place-items-center rounded-full bg-[#e2f6ec] text-xs font-extrabold text-[#087f5d]">
+            <span className="grid size-10 place-items-center rounded-full bg-[#e2f6ec] text-xs font-medium text-[#087f5d]">
               {initials(borrower.fullName)}
             </span>
             <div className="min-w-0">
               <BorrowerStatus verified={Boolean(borrower.verifiedAt)} />
-              <p className="mt-1.5 text-xs font-semibold text-slate-500">
+              <p className="mt-1.5 text-xs font-medium text-slate-500">
                 {formatNumber(borrower.loanCount)} loan
                 {borrower.loanCount === 1 ? "" : "s"}
               </p>
@@ -943,8 +943,8 @@ function TableValue({
   children: ReactNode;
 }) {
   return (
-    <div className="min-w-0 font-semibold text-[#25314b]">
-      <p className="mb-1 text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-400 lg:hidden">
+    <div className="min-w-0 font-medium text-[#25314b]">
+      <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-slate-400 lg:hidden">
         {label}
       </p>
       <div className="min-w-0 truncate">{children}</div>
@@ -955,7 +955,7 @@ function TableValue({
 function BorrowerStatus({ verified }: { verified: boolean }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-extrabold ${
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
         verified
           ? "bg-[#daf5e8] text-[#087f5d]"
           : "bg-[#fff4df] text-[#b56b00]"
@@ -970,8 +970,8 @@ function BorrowerStatus({ verified }: { verified: boolean }) {
 function InfoLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-xl border border-[#edf1f4] bg-white px-3 py-2.5 text-xs">
-      <span className="font-semibold text-slate-500">{label}</span>
-      <span className="min-w-0 truncate text-right font-extrabold text-[#0b1224]">
+      <span className="font-medium text-slate-500">{label}</span>
+      <span className="min-w-0 truncate text-right font-medium text-[#0b1224]">
         {value}
       </span>
     </div>

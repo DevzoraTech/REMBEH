@@ -104,12 +104,6 @@ export function AppShell({
         enabled: operatorRole === "owner",
       },
       {
-        href: "/owner/sent-reports",
-        label: "Sent Reports",
-        icon: FileText,
-        enabled: operatorRole === "owner",
-      },
-      {
         href: "/owner/risk",
         label: "Risk Register",
         icon: ShieldAlert,
@@ -606,7 +600,7 @@ function OwnerSidebar({
               <p className="font-[family-name:var(--font-display)] text-xl font-bold leading-none tracking-[-0.03em] text-white">
                 REMBEH
               </p>
-              <p className="mt-1 text-[8px] font-extrabold uppercase tracking-[0.14em] text-white/72">
+              <p className="mt-1 text-[8px] font-medium uppercase tracking-[0.14em] text-white/72">
                 Financial Services
               </p>
             </div>
@@ -634,7 +628,7 @@ function OwnerSidebar({
                 key={`${item.href}-${item.label}`}
                 href={item.href}
                 onClick={onCloseMobile}
-                className={`relative flex h-11 items-center gap-3 rounded-xl px-3 text-[13px] font-bold transition ${
+                className={`relative flex h-11 items-center gap-3 rounded-xl px-3 text-[13px] font-medium transition ${
                   active
                     ? "bg-white/14 text-white ring-1 ring-white/10 shadow-[0_15px_28px_rgba(0,21,17,0.18)] before:absolute before:left-0 before:h-6 before:w-1 before:rounded-r-full before:bg-[#20d08d]"
                     : "text-white/78 hover:bg-white/9 hover:text-white"
@@ -657,7 +651,7 @@ function OwnerSidebar({
               <Users className="size-[18px]" />
             </span>
             <div className="min-w-0">
-              <p className="text-xs font-extrabold text-white">
+              <p className="text-xs font-medium text-white">
                 Scale your lending
               </p>
               <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-white/64">
@@ -668,7 +662,7 @@ function OwnerSidebar({
           <Link
             href="/owner/branches"
             onClick={onCloseMobile}
-            className="mt-3 flex h-8 items-center justify-between rounded-xl bg-[#19a876] px-3 text-[11px] font-extrabold text-white shadow-[0_10px_20px_rgba(25,168,118,0.2)] transition hover:bg-[#15986b]"
+            className="mt-3 flex h-8 items-center justify-between rounded-xl bg-[#19a876] px-3 text-[11px] font-medium text-white shadow-[0_10px_20px_rgba(25,168,118,0.2)] transition hover:bg-[#15986b]"
           >
             Invite Team
             <ArrowRight className="size-3.5" />
@@ -677,11 +671,11 @@ function OwnerSidebar({
 
         <div className="mt-4 shrink-0 border-t border-white/14 pt-4">
           <div className="flex items-center gap-3">
-            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white/12 text-xs font-extrabold text-white">
+            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white/12 text-xs font-medium text-white">
               {initials(user?.name ?? "Owner")}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-extrabold text-white">
+              <p className="truncate text-xs font-medium text-white">
                 {user?.name ?? "Owner"}
               </p>
               <p className="text-xs font-semibold text-white/62">Owner</p>

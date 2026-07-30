@@ -50,7 +50,7 @@ export default function OwnerSettingsPage() {
           <OwnerTool
             href="/owner/reports"
             icon={<ShieldCheck className="size-5" />}
-            title="Sent Reports"
+            title="Reports"
             text="Review reports submitted by managers."
           />
           <OwnerTool

@@ -337,7 +337,6 @@ export default function OwnerBranchesPage() {
             value={formatMoney(outstandingTotal, currency)}
             detail="Across portfolio"
             tone="green"
-            change="+ 8.6%"
           />
         </section>
 

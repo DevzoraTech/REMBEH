@@ -74,6 +74,7 @@ export default function OwnerDashboardPage() {
   const [borrowers, setBorrowers] = useState<OwnerBorrower[]>([]);
   const [repayments, setRepayments] = useState<OwnerRepayment[]>([]);
   const [reports, setReports] = useState<OwnerReport[]>([]);
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const currency = state.workspace?.currency ?? "UGX";
@@ -190,6 +191,40 @@ export default function OwnerDashboardPage() {
     todayRepayments.length +
     todayBorrowers.length +
     submittedApplications.length;
+  const query = search.trim().toLowerCase();
+  const visibleBranchPerformance = useMemo(
+    () =>
+      query
+        ? branchPerformance.filter((row) =>
+            [row.branch.name, row.branch.address, row.branch.manager?.name ?? ""]
+              .join(" ")
+              .toLowerCase()
+              .includes(query),
+          )
+        : branchPerformance,
+    [branchPerformance, query],
+  );
+  const visibleActivities = useMemo(
+    () =>
+      query
+        ? activities.filter((item) =>
+            [item.title, item.meta, item.amount ?? ""]
+              .join(" ")
+              .toLowerCase()
+              .includes(query),
+          )
+        : activities,
+    [activities, query],
+  );
+  const visibleAlerts = useMemo(
+    () =>
+      query
+        ? alerts.filter((alert) =>
+            [alert.title, alert.detail].join(" ").toLowerCase().includes(query),
+          )
+        : alerts,
+    [alerts, query],
+  );
 
   if (!state.ready || !state.session) return <AppBootSkeleton />;
 
@@ -206,7 +241,7 @@ export default function OwnerDashboardPage() {
             <p className="text-xs font-semibold text-slate-600">
               {greeting()}, {firstName(state.user?.name ?? "Owner")} 👋
             </p>
-            <h1 className="mt-0.5 text-[clamp(1.18rem,1.35vw,1.48rem)] font-extrabold leading-tight tracking-[-0.02em] text-[#070b18]">
+            <h1 className="mt-0.5 text-[clamp(1.18rem,1.35vw,1.48rem)] font-bold leading-tight tracking-[-0.02em] text-[#070b18]">
               Here&apos;s what&apos;s happening today
             </h1>
           </div>
@@ -214,9 +249,11 @@ export default function OwnerDashboardPage() {
             <label className="flex h-9 min-w-[220px] max-w-[315px] flex-1 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
               <Search className="size-3.5 shrink-0 text-slate-400" />
               <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
                 type="search"
                 placeholder="Search anything..."
-                className="min-w-0 flex-1 bg-transparent text-xs font-semibold text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
+                className="min-w-0 flex-1 bg-transparent text-xs font-medium text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
               />
               <span className="hidden rounded-lg border border-[#e8edf2] px-2 py-0.5 text-[11px] font-bold text-slate-400 sm:inline">
                 ⌘K
@@ -229,16 +266,16 @@ export default function OwnerDashboardPage() {
             >
               <Bell className="size-4" />
               {pendingReports.length > 0 ? (
-                <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-[#18a76f] text-[10px] font-extrabold text-white">
+                <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-[#18a76f] text-[10px] font-semibold text-white">
                   {Math.min(pendingReports.length, 9)}
                 </span>
               ) : null}
             </button>
             <Link
               href="/owner/reports"
-              className="flex h-9 items-center gap-2 rounded-xl bg-[#003f35] px-3.5 text-xs font-extrabold text-white shadow-[0_10px_20px_rgba(0,63,53,0.2)]"
+              className="flex h-9 items-center gap-2 rounded-xl bg-[#003f35] px-3.5 text-xs font-medium text-white shadow-[0_10px_20px_rgba(0,63,53,0.2)]"
             >
-              Export Report
+              Reports
               <ChevronDown className="size-4" />
             </Link>
           </div>
@@ -255,32 +292,28 @@ export default function OwnerDashboardPage() {
             icon={<WalletCards className="size-5" />}
             label="Outstanding Portfolio"
             value={formatMoney(outstanding, currency)}
-            hint="vs yesterday"
-            change="+ 8.6%"
+            hint="Across active loans"
             tone="green"
           />
           <TopStatCard
             icon={<Banknote className="size-5" />}
             label="Collected Today"
             value={formatMoney(collectedToday, currency)}
-            hint="vs yesterday"
-            change={`+ ${formatNumber(todayRepayments.length)}`}
+            hint={`${formatNumber(todayRepayments.length)} payments`}
             tone="green"
           />
           <TopStatCard
             icon={<Folder className="size-5" />}
             label="Active Loans"
             value={formatNumber(activeLoans.length)}
-            hint="vs yesterday"
-            change="0%"
+            hint="Open loans"
             tone="blue"
           />
           <TopStatCard
             icon={<Users className="size-5" />}
             label="Borrowers"
             value={formatNumber(borrowers.length)}
-            hint="vs yesterday"
-            change={`+ ${formatNumber(todayBorrowers.length)}`}
+            hint={`${formatNumber(todayBorrowers.length)} new today`}
             tone="violet"
           />
           <TopStatCard
@@ -299,7 +332,7 @@ export default function OwnerDashboardPage() {
             <section className="grid gap-3 xl:grid-cols-[1.08fr_1fr_0.86fr]">
               <PortfolioPerformanceCard series={series} currency={currency} />
               <BranchPerformanceCard
-                rows={branchPerformance}
+                rows={visibleBranchPerformance}
                 currency={currency}
               />
               <TodayActivityCard
@@ -312,8 +345,8 @@ export default function OwnerDashboardPage() {
             </section>
 
             <section className="grid gap-3 xl:grid-cols-[2fr_1fr]">
-              <RecentActivityCard activities={activities} />
-              <AlertsCard alerts={alerts} />
+              <RecentActivityCard activities={visibleActivities} />
+              <AlertsCard alerts={visibleAlerts} />
             </section>
           </>
         )}
@@ -350,18 +383,18 @@ function TopStatCard({
         {icon}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[11px] font-bold text-slate-500">{label}</p>
+        <p className="truncate text-[11px] font-medium text-slate-500">{label}</p>
         <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
-          <p className="min-w-0 break-words text-[clamp(0.72rem,0.92vw,1rem)] font-extrabold leading-tight tabular-nums text-[#0b1220]">
+          <p className="min-w-0 break-words text-[clamp(0.72rem,0.92vw,1rem)] font-bold leading-tight tabular-nums text-[#0b1220]">
             {value}
           </p>
           {change ? (
-            <span className="rounded-md bg-[#e6f8ee] px-1.5 py-0.5 text-[9px] font-extrabold text-[#0c9b6d]">
+            <span className="rounded-md bg-[#e6f8ee] px-1.5 py-0.5 text-[9px] font-semibold text-[#0c9b6d]">
               {change}
             </span>
           ) : null}
         </div>
-        <p className="mt-1 text-[11px] font-semibold text-slate-500">{hint}</p>
+        <p className="mt-1 text-[11px] font-medium text-slate-500">{hint}</p>
       </div>
     </article>
   );
@@ -392,7 +425,7 @@ function BranchPerformanceCard({
   return (
     <section className="rounded-[14px] border border-[#e6ebf0] bg-white p-3.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
       <PanelHeader title="Branch Performance" href="/owner/branches" />
-      <div className="mt-3 grid grid-cols-[1fr_80px_86px_44px] gap-2 border-b border-[#edf1f5] pb-2 text-[10px] font-bold text-slate-500">
+      <div className="mt-3 grid grid-cols-[1fr_80px_86px_44px] gap-2 border-b border-[#edf1f5] pb-2 text-[10px] font-medium text-slate-500">
         <span>Branch</span>
         <span className="text-right">Loan ({currency})</span>
         <span className="text-right">Collected</span>
@@ -412,22 +445,22 @@ function BranchPerformanceCard({
                   <Building2 className="size-3.5" />
                 </span>
                 <div className="min-w-0">
-                  <p className="truncate text-[11px] font-extrabold text-[#101827]">
+                  <p className="truncate text-[11px] font-medium text-[#101827]">
                     {row.branch.name}
                   </p>
-                  <p className="truncate text-[10px] font-semibold text-slate-500">
+                  <p className="truncate text-[10px] font-normal text-slate-500">
                     {row.branch.address || "Branch location"}
                   </p>
                 </div>
               </div>
-              <p className="break-words text-right text-[11px] font-bold tabular-nums text-[#111827]">
+              <p className="break-words text-right text-[11px] font-medium tabular-nums text-[#111827]">
                 {formatPlainMoney(row.loanTotal, currency)}
               </p>
-              <p className="break-words text-right text-[11px] font-bold tabular-nums text-[#111827]">
+              <p className="break-words text-right text-[11px] font-medium tabular-nums text-[#111827]">
                 {formatPlainMoney(row.collectedToday, currency)}
               </p>
               <span
-                className={`justify-self-end rounded-lg px-1.5 py-0.5 text-[10px] font-extrabold ${
+                className={`justify-self-end rounded-lg px-1.5 py-0.5 text-[10px] font-semibold ${
                   row.par > 5
                     ? "bg-orange-50 text-orange-600"
                     : row.par > 3
@@ -477,10 +510,10 @@ function TodayActivityCard({
           />
           <div className="absolute inset-[18px] rounded-full bg-white" />
           <div className="relative text-center">
-            <p className="text-2xl font-extrabold text-[#070b18]">
+            <p className="text-2xl font-bold text-[#070b18]">
               {formatNumber(total)}
             </p>
-            <p className="mt-0.5 text-xs font-bold text-slate-500">Total</p>
+            <p className="mt-0.5 text-xs font-medium text-slate-500">Total</p>
           </div>
         </div>
         <div className="space-y-2.5">
@@ -493,7 +526,7 @@ function TodayActivityCard({
               <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-600">
                 {item.label}
               </span>
-              <span className="text-xs font-extrabold tabular-nums text-[#111827]">
+              <span className="text-xs font-medium tabular-nums text-[#111827]">
                 {formatNumber(item.value)}
               </span>
               <span className="w-10 text-right text-xs font-semibold text-slate-500">
@@ -519,15 +552,15 @@ function RecentActivityCard({ activities }: { activities: ActivityItem[] }) {
             <div key={item.id} className="flex items-center gap-2.5 py-2">
               <ActivityIcon icon={item.icon} tone={item.tone} />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-extrabold text-[#111827]">
+                <p className="truncate text-xs font-medium text-[#111827]">
                   {item.title}
                 </p>
-                <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500">
+                <p className="mt-0.5 truncate text-[11px] font-normal text-slate-500">
                   {item.meta}
                 </p>
               </div>
               {item.amount ? (
-                <p className="min-w-[94px] break-words text-right text-xs font-extrabold tabular-nums text-[var(--forest-emerald)]">
+                <p className="min-w-[94px] break-words text-right text-xs font-medium tabular-nums text-[var(--forest-emerald)]">
                   {item.amount}
                 </p>
               ) : null}
@@ -569,10 +602,10 @@ function AlertsCard({ alerts }: { alerts: AlertItem[] }) {
               )}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-extrabold text-[#111827]">
+              <p className="truncate text-xs font-medium text-[#111827]">
                 {alert.title}
               </p>
-              <p className="mt-0.5 truncate text-[11px] font-semibold text-slate-500">
+              <p className="mt-0.5 truncate text-[11px] font-normal text-slate-500">
                 {alert.detail}
               </p>
             </div>
@@ -596,18 +629,18 @@ function PanelHeader({
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <h2 className="text-[15px] font-extrabold text-[#0b1220]">{title}</h2>
+      <h2 className="text-[15px] font-bold text-[#0b1220]">{title}</h2>
       {href ? (
         <Link
           href={href}
-          className="rounded-xl border border-[#e6ebf0] px-3 py-1.5 text-[11px] font-extrabold text-[#111827] shadow-[0_8px_16px_rgba(15,23,42,0.04)]"
+          className="rounded-xl border border-[#e6ebf0] px-3 py-1.5 text-[11px] font-medium text-[#111827] shadow-[0_8px_16px_rgba(15,23,42,0.04)]"
         >
           View all
         </Link>
       ) : action ? (
         <button
           type="button"
-          className="flex items-center gap-2 rounded-xl border border-[#e6ebf0] px-3 py-1.5 text-[11px] font-extrabold text-slate-600 shadow-[0_8px_16px_rgba(15,23,42,0.04)]"
+          className="flex items-center gap-2 rounded-xl border border-[#e6ebf0] px-3 py-1.5 text-[11px] font-medium text-slate-600 shadow-[0_8px_16px_rgba(15,23,42,0.04)]"
         >
           {action}
           <ChevronDown className="size-3.5" />

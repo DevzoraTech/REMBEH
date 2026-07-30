@@ -75,7 +75,7 @@ type ReportSnapshot = {
 };
 
 const STATUS_OPTIONS: Array<{ value: ReportStatusFilter; label: string }> = [
-  { value: "all", label: "All sent reports" },
+  { value: "all", label: "All reports" },
   { value: "SENT_TO_OWNER", label: "Waiting approval" },
   { value: "OWNER_APPROVED", label: "Approved" },
   { value: "RETURNED_TO_MANAGER", label: "Returned" },
@@ -222,16 +222,16 @@ export default function OwnerReportsPage() {
       <div className="mx-auto max-w-[1440px] space-y-4">
         <header className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 pt-1">
-            <div className="flex items-center gap-2 text-xs font-extrabold">
+            <div className="flex items-center gap-2 text-xs font-medium">
               <span className="text-[var(--forest-emerald)]">Reports</span>
               <ChevronRight className="size-3.5 text-slate-400" />
-              <span className="text-slate-500">Sent Reports</span>
+              <span className="text-slate-500">Review</span>
             </div>
-            <h1 className="mt-2 text-[clamp(1.3rem,1.45vw,1.7rem)] font-extrabold leading-tight tracking-[-0.02em] text-[#070b18]">
-              Sent Reports
+            <h1 className="mt-2 text-[clamp(1.3rem,1.45vw,1.7rem)] font-bold leading-tight tracking-[-0.02em] text-[#070b18]">
+              Reports
             </h1>
-            <p className="mt-1 text-xs font-semibold text-slate-500">
-              Track and review reports sent from branches
+            <p className="mt-1 text-xs font-medium text-slate-500">
+              Track and review reports from branches
             </p>
           </div>
           <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
@@ -242,7 +242,7 @@ export default function OwnerReportsPage() {
                 onChange={(event) => setSearch(event.target.value)}
                 type="search"
                 placeholder="Search anything..."
-                className="min-w-0 flex-1 bg-transparent text-xs font-semibold text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
+                className="min-w-0 flex-1 bg-transparent text-xs font-medium text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
               />
               <span className="hidden rounded-lg border border-[#e8edf2] px-2 py-0.5 text-[11px] font-bold text-slate-400 sm:inline">
                 ⌘K
@@ -255,14 +255,14 @@ export default function OwnerReportsPage() {
             >
               <Bell className="size-4" />
               {waitingReports.length > 0 ? (
-                <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-[#18a76f] text-[10px] font-extrabold text-white">
+                <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-[#18a76f] text-[10px] font-semibold text-white">
                   {Math.min(waitingReports.length, 9)}
                 </span>
               ) : null}
             </button>
             <button
               type="button"
-              className="flex h-9 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3.5 text-xs font-extrabold text-white shadow-[0_10px_20px_rgba(0,135,95,0.22)] disabled:opacity-55"
+              className="flex h-9 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3.5 text-xs font-medium text-white shadow-[0_10px_20px_rgba(0,135,95,0.22)] disabled:opacity-55"
               disabled={!selectedReport || !selectedSnapshot}
               onClick={() => {
                 if (!selectedReport || !selectedSnapshot) return;
@@ -286,7 +286,7 @@ export default function OwnerReportsPage() {
         </header>
 
         {notice ? (
-          <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-[var(--forest-emerald)]">
+          <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-[var(--forest-emerald)]">
             {notice}
           </p>
         ) : null}
@@ -299,7 +299,7 @@ export default function OwnerReportsPage() {
         <div className="flex justify-end">
           <button
             type="button"
-            className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-extrabold text-[var(--midnight-navy)] shadow-[0_8px_18px_rgba(15,23,42,0.035)] disabled:opacity-55"
+            className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-medium text-[var(--midnight-navy)] shadow-[0_8px_18px_rgba(15,23,42,0.035)] disabled:opacity-55"
             onClick={() => void loadReports()}
             disabled={loading}
           >
@@ -311,7 +311,7 @@ export default function OwnerReportsPage() {
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
           <ReportStat
             icon={<SlidersHorizontal className="size-5" />}
-            label="Sent reports"
+            label="Reports"
             value={formatNumber(reports.length)}
             detail="This month"
             tone="green"
@@ -388,21 +388,21 @@ export default function OwnerReportsPage() {
         <section className="min-w-0 overflow-hidden rounded-[14px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.055)]">
           {!selectedReport || !selectedSnapshot ? (
             <div className="px-4 py-14 text-center">
-              <p className="text-sm font-semibold text-slate-500">
-                Select a sent report to review.
+              <p className="text-sm font-medium text-slate-500">
+                Select a report to review.
               </p>
             </div>
           ) : (
             <>
               <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[#edf1f5] px-5 py-5">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-slate-500">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-slate-500">
                     Close-Day Report
                   </p>
-                  <h2 className="mt-2 text-xl font-extrabold text-[var(--midnight-navy)]">
+                  <h2 className="mt-2 text-xl font-bold text-[var(--midnight-navy)]">
                     {selectedReport.reportNumber}
                   </h2>
-                  <p className="mt-2 text-xs font-semibold text-slate-500">
+                  <p className="mt-2 text-xs font-medium text-slate-500">
                     {selectedReport.branchName} <span className="px-1">·</span>{" "}
                     {formatDate(selectedReport.operationDate)}{" "}
                     <span className="px-1">·</span> Closed by{" "}
@@ -414,7 +414,7 @@ export default function OwnerReportsPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    className="flex h-9 items-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 text-xs font-extrabold text-[var(--forest-emerald)]"
+                    className="flex h-9 items-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 text-xs font-medium text-[var(--forest-emerald)]"
                     onClick={() =>
                       setNotice("This report is already in the owner review queue.")
                     }
@@ -436,7 +436,7 @@ export default function OwnerReportsPage() {
                   />
                   <button
                     type="button"
-                    className="flex h-9 items-center gap-2 rounded-xl bg-[#003f35] px-4 text-xs font-extrabold text-white shadow-[0_10px_20px_rgba(0,63,53,0.2)]"
+                    className="flex h-9 items-center gap-2 rounded-xl bg-[#003f35] px-4 text-xs font-medium text-white shadow-[0_10px_20px_rgba(0,63,53,0.2)]"
                     disabled={exportingId === selectedReport.id}
                     onClick={() =>
                       void exportReport(
@@ -547,23 +547,23 @@ function ReportQueueDropdown({
             <SlidersHorizontal className="size-4" />
           </span>
           <span className="min-w-0">
-            <span className="block text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
+            <span className="block text-[10px] font-medium uppercase tracking-[0.08em] text-slate-500">
               Review Queue
             </span>
-            <span className="mt-1 block truncate text-sm font-extrabold text-[var(--midnight-navy)]">
+            <span className="mt-1 block truncate text-sm font-medium text-[var(--midnight-navy)]">
               {selectedReport
                 ? `${selectedReport.branchName} - ${selectedReport.reportNumber}`
-                : "Choose a sent report"}
+                : "Choose a report"}
             </span>
           </span>
         </button>
         <div className="flex items-center gap-2">
-          <p className="hidden text-xs font-extrabold text-[var(--midnight-navy)] sm:block">
+          <p className="hidden text-xs font-medium text-[var(--midnight-navy)] sm:block">
             {reports.length} shown
           </p>
           <button
             type="button"
-            className="flex h-9 items-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 text-xs font-extrabold text-[var(--forest-emerald)]"
+            className="flex h-9 items-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 text-xs font-medium text-[var(--forest-emerald)]"
             onClick={onSendToOwner}
           >
             <Send className="size-3.5" />
@@ -571,7 +571,7 @@ function ReportQueueDropdown({
           </button>
           <button
             type="button"
-            className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-extrabold text-[var(--midnight-navy)] shadow-[0_8px_18px_rgba(15,23,42,0.035)]"
+            className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-medium text-[var(--midnight-navy)] shadow-[0_8px_18px_rgba(15,23,42,0.035)]"
             onClick={() => setOpen(!open)}
           >
             {open ? "Close Queue" : "Open Queue"}
@@ -589,14 +589,14 @@ function ReportQueueDropdown({
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  className="min-w-0 flex-1 bg-transparent font-semibold outline-none"
+                  className="min-w-0 flex-1 bg-transparent font-medium outline-none"
                   placeholder="Search report, branch or manager"
                 />
               </label>
               <select
                 value={branchId}
                 onChange={(event) => setBranchId(event.target.value)}
-                className="h-9 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-extrabold outline-none"
+                className="h-9 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-medium outline-none"
               >
                 <option value="all">All branches</option>
                 {branches.map((branch) => (
@@ -610,7 +610,7 @@ function ReportQueueDropdown({
                 onChange={(event) =>
                   setStatus(event.target.value as ReportStatusFilter)
                 }
-                className="h-9 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-extrabold outline-none"
+                className="h-9 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-medium outline-none"
               >
                 {STATUS_OPTIONS.map((item) => (
                   <option key={item.value} value={item.value}>
@@ -625,7 +625,7 @@ function ReportQueueDropdown({
               <ReportQueueSkeleton />
             ) : reports.length === 0 ? (
               <p className="px-3 py-8 text-center text-sm text-slate-500">
-                No sent reports match this view.
+                No reports match this view.
               </p>
             ) : (
               reports.map((report) => (
@@ -682,7 +682,7 @@ function ReportStat({
           {label}
         </p>
         <p
-          className={`mt-1.5 break-words text-[clamp(0.82rem,1vw,1.08rem)] font-extrabold leading-tight tabular-nums ${valueClass}`}
+          className={`mt-1.5 break-words text-[clamp(0.82rem,1vw,1.08rem)] font-semibold leading-tight tabular-nums ${valueClass}`}
         >
           {value}
         </p>
@@ -783,7 +783,7 @@ function ReportViewButton({
   return (
     <button
       type="button"
-      className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-extrabold transition ${
+      className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-semibold transition ${
         active
           ? "border-[#dfe8e3] bg-white text-[var(--midnight-navy)] shadow-[0_8px_18px_rgba(15,23,42,0.035)]"
           : "border-[#e6ebf0] bg-white text-slate-600 hover:text-[var(--midnight-navy)]"
@@ -1163,10 +1163,10 @@ function OwnerReviewPanel({
   return (
     <>
       <div className="rounded-xl border border-[#e6ebf0] bg-white p-4">
-        <p className="text-[11px] font-extrabold tracking-[0.08em] text-amber-700">
+        <p className="text-[11px] font-semibold tracking-[0.08em] text-amber-700">
           Review Status
         </p>
-        <h3 className="mt-2 text-base font-extrabold text-[var(--midnight-navy)]">
+        <h3 className="mt-2 text-base font-semibold text-[var(--midnight-navy)]">
           {statusLabel(report.status)}
         </h3>
         <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
@@ -1187,7 +1187,7 @@ function OwnerReviewPanel({
       </div>
       {waiting ? (
         <div className="rounded-xl border border-[#e6ebf0] bg-white p-4">
-          <label className="text-xs font-extrabold text-[var(--midnight-navy)]">
+          <label className="text-xs font-semibold text-[var(--midnight-navy)]">
             Owner Notes
             <textarea
               value={notes}
@@ -1198,7 +1198,7 @@ function OwnerReviewPanel({
           </label>
           <button
             type="button"
-            className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-4 text-xs font-extrabold text-white shadow-[0_10px_20px_rgba(0,135,95,0.18)] disabled:opacity-55"
+            className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-4 text-xs font-semibold text-white shadow-[0_10px_20px_rgba(0,135,95,0.18)] disabled:opacity-55"
             onClick={onApprove}
             disabled={approving}
           >
@@ -1212,7 +1212,7 @@ function OwnerReviewPanel({
         </div>
       ) : (
         <div className="rounded-xl border border-[#e6ebf0] bg-white p-4">
-          <p className="text-xs font-extrabold text-[var(--midnight-navy)]">
+          <p className="text-xs font-semibold text-[var(--midnight-navy)]">
             Owner Notes
           </p>
           <p className="mt-2 text-sm font-semibold text-slate-500">
@@ -1236,7 +1236,7 @@ function ReviewLine({
   return (
     <div className="px-3 text-xs first:pl-0 last:pr-0">
       <span className="font-bold text-slate-500">{label}</span>
-      <p className="mt-1 font-extrabold text-[var(--midnight-navy)]">
+      <p className="mt-1 font-semibold text-[var(--midnight-navy)]">
           {name ?? "Pending"}
       </p>
       <p className="mt-1 text-[11px] text-slate-500">{formatDateTime(date)}</p>
@@ -1279,7 +1279,7 @@ function ReportMetric({
       <div className="min-w-0">
         <p className="truncate text-[10px] font-bold text-slate-500">{label}</p>
         <p
-          className={`mt-1 break-words text-sm font-extrabold tabular-nums ${
+          className={`mt-1 break-words text-sm font-semibold tabular-nums ${
             highlight
               ? "text-[var(--forest-emerald)]"
               : danger
@@ -1303,7 +1303,7 @@ function ReportBlock({
 }) {
   return (
     <section className="overflow-hidden rounded-xl border border-[#e6ebf0] bg-white">
-      <h3 className="border-b border-[#edf1f5] bg-[#f8faf9] px-4 py-3 text-sm font-extrabold text-[var(--midnight-navy)]">
+      <h3 className="border-b border-[#edf1f5] bg-[#f8faf9] px-4 py-3 text-sm font-semibold text-[var(--midnight-navy)]">
         {title}
       </h3>
       <div className="p-4">{children}</div>
@@ -1326,13 +1326,13 @@ function StatementRow({
     <div className="grid grid-cols-[1fr_auto] gap-3 border-b border-[#edf1f5] py-2.5 text-sm last:border-b-0">
       <span
         className={
-          strong ? "font-extrabold text-[var(--midnight-navy)]" : "font-semibold text-slate-600"
+          strong ? "font-semibold text-[var(--midnight-navy)]" : "font-semibold text-slate-600"
         }
       >
         {label}
       </span>
       <span
-        className={`font-extrabold tabular-nums ${
+        className={`font-semibold tabular-nums ${
           danger ? "text-red-700" : "text-[var(--midnight-navy)]"
         }`}
       >
@@ -1360,7 +1360,7 @@ function ReportMiniStat({
         <p className="text-[10px] font-bold text-slate-500">
           {label}
         </p>
-        <p className="mt-1 break-words text-sm font-extrabold leading-tight tabular-nums text-[var(--midnight-navy)]">
+        <p className="mt-1 break-words text-sm font-semibold leading-tight tabular-nums text-[var(--midnight-navy)]">
           {value}
         </p>
         <p className="mt-0.5 truncate text-[11px] leading-tight text-slate-500">
@@ -1403,7 +1403,7 @@ function ReportAgentTable({
               <tr key={row.floatId ?? row.agentId ?? index}>
                 <td className="px-2 py-2">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className="grid size-8 shrink-0 place-items-center rounded-full bg-slate-100 text-[10px] font-extrabold text-slate-600">
+                    <span className="grid size-8 shrink-0 place-items-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">
                       {initials(row.agentName ?? "Agent")}
                     </span>
                     <div className="min-w-0">
@@ -1470,7 +1470,7 @@ function ReportRecordList({
                 </p>
                 <p className="truncate text-xs text-slate-500">{row.meta}</p>
               </div>
-              <p className="text-sm font-extrabold tabular-nums text-[var(--midnight-navy)]">
+              <p className="text-sm font-semibold tabular-nums text-[var(--midnight-navy)]">
                 {row.value}
               </p>
             </div>
@@ -1503,7 +1503,7 @@ function OperationLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="border-b border-[#edf1f5] py-2 first:pt-0 last:border-b-0 last:pb-0">
       <p className="font-semibold text-slate-500">{label}</p>
-      <p className="mt-1 break-words font-extrabold text-[var(--midnight-navy)]">
+      <p className="mt-1 break-words font-semibold text-[var(--midnight-navy)]">
         {value}
       </p>
     </div>
