@@ -5,7 +5,7 @@ type SkeletonBlockProps = {
 export function SkeletonBlock({ className = "" }: SkeletonBlockProps) {
   return (
     <div
-      className={`animate-pulse bg-[linear-gradient(90deg,#e6ece8_0%,#f5f7f6_45%,#e6ece8_100%)] bg-[length:200%_100%] ${className}`}
+      className={`animate-pulse rounded-lg bg-[linear-gradient(90deg,#e1ebe6_0%,#f8fbf9_45%,#e1ebe6_100%)] bg-[length:200%_100%] ${className}`}
     />
   );
 }
@@ -18,9 +18,9 @@ export function TableSkeleton({
   columns?: number;
 }) {
   return (
-    <div className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
+    <div className="panel overflow-hidden bg-white">
       <div
-        className="grid gap-3 border-b border-[var(--line)] bg-[#e5ece8] px-3 py-2.5"
+        className="grid gap-3 border-b border-[var(--line)] bg-[linear-gradient(90deg,var(--soft-mist),#f8fbf9)] px-3 py-2.5"
         style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
       >
         {Array.from({ length: columns }).map((_, index) => (
@@ -59,7 +59,7 @@ export function AppBootSkeleton() {
   return (
     <main className="min-h-screen bg-[var(--background)]">
       <div className="grid min-h-screen md:grid-cols-[80px_minmax(0,1fr)]">
-        <aside className="hidden bg-[#101c34] md:block" />
+        <aside className="hidden bg-[linear-gradient(180deg,#0b172c,#102342_62%,#0f332f)] md:block" />
         <section className="space-y-4 p-4 sm:p-6">
           <div className="flex items-center justify-between border-b border-[var(--line)] pb-3">
             <div className="space-y-2">

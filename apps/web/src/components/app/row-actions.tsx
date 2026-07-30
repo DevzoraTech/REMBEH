@@ -71,7 +71,7 @@ export function RowActions({ label, items, busy = false }: RowActionsProps) {
     >
       <button
         type="button"
-        className="grid size-8 place-items-center border border-[var(--line)] bg-white text-[var(--midnight-navy)] transition hover:bg-[var(--soft-mist)] disabled:opacity-50"
+        className="grid size-8 place-items-center rounded-xl border border-[var(--line)] bg-white text-[var(--midnight-navy)] shadow-[0_6px_14px_rgba(20,33,61,0.06)] transition hover:bg-[var(--soft-mist)] disabled:opacity-50"
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={Boolean(menu)}
@@ -95,7 +95,7 @@ export function RowActions({ label, items, busy = false }: RowActionsProps) {
           />
           <div
             role="menu"
-            className="fixed z-50 w-[164px] border border-[var(--line)] bg-white p-1 text-left shadow-[0_10px_24px_rgba(20,33,61,0.18)]"
+            className="fixed z-50 w-[164px] rounded-xl border border-[var(--line)] bg-white p-1 text-left shadow-[0_16px_34px_rgba(20,33,61,0.18)]"
             style={{ top: menu.top, left: menu.left }}
           >
             {visibleItems.map((item) =>
@@ -104,7 +104,7 @@ export function RowActions({ label, items, busy = false }: RowActionsProps) {
                   key={item.label}
                   href={item.href}
                   role="menuitem"
-                  className={`block w-full px-2.5 py-2 text-left text-[11px] font-semibold transition hover:bg-[var(--soft-mist)] ${
+                  className={`block w-full rounded-lg px-2.5 py-2 text-left text-[11px] font-semibold transition hover:bg-[var(--soft-mist)] ${
                     item.danger ? "text-red-700" : "text-[var(--midnight-navy)]"
                   } ${item.disabled ? "pointer-events-none opacity-50" : ""}`}
                   onClick={() => setMenu(null)}
@@ -116,7 +116,7 @@ export function RowActions({ label, items, busy = false }: RowActionsProps) {
                   key={item.label}
                   type="button"
                   role="menuitem"
-                  className={`block w-full px-2.5 py-2 text-left text-[11px] font-semibold transition hover:bg-[var(--soft-mist)] ${
+                  className={`block w-full rounded-lg px-2.5 py-2 text-left text-[11px] font-semibold transition hover:bg-[var(--soft-mist)] ${
                     item.danger ? "text-red-700" : "text-[var(--midnight-navy)]"
                   } disabled:opacity-50`}
                   disabled={item.disabled}

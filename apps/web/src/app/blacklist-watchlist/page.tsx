@@ -398,7 +398,7 @@ export default function BlacklistWatchlistPage() {
           />
         </section>
 
-        <div className="panel flex flex-wrap items-center justify-between gap-2 bg-white/90 px-3 py-2 shadow-[0_8px_22px_rgba(20,33,61,0.05)]">
+        <div className="soft-toolbar flex flex-wrap items-center justify-between gap-2 border-l-4 border-l-[var(--forest-emerald)] px-3 py-2">
           <div className="flex min-w-[220px] flex-1 items-center gap-2">
             <Search className="size-4 shrink-0 text-slate-400" />
             <input
@@ -795,13 +795,18 @@ function ActionMenuItem({
 
 function SmallStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="panel min-w-0 border-l-4 border-l-[var(--midnight-navy)] bg-white px-3 py-2.5 shadow-[0_8px_22px_rgba(20,33,61,0.05)]">
-      <p className="text-[10px] font-semibold capitalize tracking-[0.1em] text-slate-500">
-        {label}
-      </p>
-      <p className="mt-0.5 break-words text-[clamp(0.72rem,1.45vw,1.25rem)] font-bold leading-tight text-[var(--midnight-navy)]">
-        {value}
-      </p>
+    <div className="panel flex min-h-[76px] min-w-0 items-start gap-1.5 bg-white px-1.5 py-2 shadow-[0_8px_20px_rgba(20,33,61,0.05)] sm:gap-2 sm:px-2 xl:px-3">
+      <span className="hidden size-7 shrink-0 place-items-center border border-slate-200 bg-slate-50 text-slate-600 md:grid xl:size-8">
+        <ShieldAlert className="size-4" />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[8px] font-semibold capitalize tracking-[0.06em] text-slate-500 sm:text-[9px] xl:text-[10px]">
+          {label}
+        </p>
+        <p className="mt-1 break-words text-[clamp(0.55rem,1.15vw,1rem)] font-bold leading-tight tabular-nums text-[var(--midnight-navy)]">
+          {value}
+        </p>
+      </div>
     </div>
   );
 }

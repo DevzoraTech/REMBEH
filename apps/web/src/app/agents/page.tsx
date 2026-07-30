@@ -634,7 +634,7 @@ export default function AgentsPage() {
             </p>
           ) : canManageFloat && !operationForSelectedDate ? (
             <p className="w-full text-xs font-semibold text-amber-700">
-              Open today's branch before assigning float.
+              Open today&apos;s branch before assigning float.
             </p>
           ) : canManageFloat && floatAmountExceedsSetAside ? (
             <p className="w-full text-xs font-semibold text-red-600">
@@ -658,7 +658,7 @@ export default function AgentsPage() {
           ) : null}
         </div>
 
-        <div className="panel flex flex-wrap items-center gap-2 bg-white/90 px-3 py-2 shadow-[0_8px_22px_rgba(20,33,61,0.05)]">
+        <div className="soft-toolbar flex flex-wrap items-center gap-2 border-l-4 border-l-[var(--forest-emerald)] px-3 py-2">
           <Search className="size-4 shrink-0 text-slate-400" />
           <input
             type="search"

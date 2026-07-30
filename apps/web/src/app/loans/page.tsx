@@ -557,10 +557,13 @@ export default function LoansPage() {
       user={user}
       branch={branch}
     >
-      <div className="mx-auto max-w-7xl space-y-4">
-        <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="mx-auto max-w-7xl space-y-5 animate-rise">
+        <div className="panel flex flex-wrap items-end justify-between gap-3 px-4 py-3">
           <div>
-            <h1 className="text-xl font-bold text-[var(--midnight-navy)]">
+            <p className="text-[11px] font-bold tracking-[0.14em] text-[var(--forest-emerald)]">
+              Portfolio
+            </p>
+            <h1 className="mt-0.5 text-2xl font-extrabold text-[var(--midnight-navy)]">
               Loans
             </h1>
           </div>
@@ -602,7 +605,7 @@ export default function LoansPage() {
         <section className="grid w-full min-w-0 grid-cols-6 gap-1 sm:gap-1.5 xl:gap-2">
           <LoanStatCard
             icon={<Plus className="size-4" />}
-            label="loans issued today"
+            label="Loans issued today"
             value={String(loanStats.issuedToday)}
             hint={formatMoney(
               loanStats.issuedTodayPrincipal,
@@ -612,42 +615,42 @@ export default function LoansPage() {
           />
           <LoanStatCard
             icon={<WalletCards className="size-4" />}
-            label="active loans"
+            label="Active loans"
             value={String(loanStats.activeLoans)}
             hint={formatMoney(loanStats.activeOutstanding, loanStats.currency)}
             tone="good"
           />
           <LoanStatCard
             icon={<Clock3 className="size-4" />}
-            label="outstanding loans"
+            label="Outstanding loans"
             value={formatMoney(loanStats.outstanding, loanStats.currency)}
             hint={`${loanStats.outstandingCount} open`}
             tone="blue"
           />
           <LoanStatCard
             icon={<CalendarDays className="size-4" />}
-            label="due today"
+            label="Due today"
             value={String(loanStats.dueToday)}
             hint={formatMoney(loanStats.dueTodayAmount, loanStats.currency)}
             tone="warn"
           />
           <LoanStatCard
             icon={<AlertTriangle className="size-4" />}
-            label="overdue loans"
+            label="Overdue loans"
             value={String(loanStats.overdue)}
             hint={formatMoney(loanStats.overdueAmount, loanStats.currency)}
             tone="bad"
           />
           <LoanStatCard
             icon={<CheckCircle2 className="size-4" />}
-            label="closed this month"
+            label="Closed this month"
             value={String(loanStats.closedThisMonth)}
             hint={`${loanStats.closedThisMonthChange >= 0 ? "+" : ""}${loanStats.closedThisMonthChange} vs last month`}
             tone="good"
           />
         </section>
 
-        <div className="panel grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2 border-[var(--forest-emerald)] bg-white/95 p-2 shadow-[0_8px_20px_rgba(15,138,108,0.07)]">
+        <div className="soft-toolbar grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2 border-l-4 border-l-[var(--forest-emerald)] p-2">
           <label className="flex h-9 min-w-0 items-center gap-2 px-2">
             <Search className="size-4 shrink-0 text-slate-400" />
             <input
@@ -677,7 +680,7 @@ export default function LoansPage() {
             )}
             <span className="hidden sm:inline">Export</span>
           </button>
-          <label className="flex h-9 min-w-0 shrink-0 items-center gap-1.5 border border-[var(--forest-emerald)] bg-emerald-50/80 px-2 text-xs font-bold text-[var(--midnight-navy)] shadow-[inset_3px_0_0_var(--forest-emerald)] sm:min-w-[210px]">
+          <label className="flex h-9 min-w-0 shrink-0 items-center gap-1.5 rounded-xl border border-[var(--forest-emerald)] bg-emerald-50/80 px-2 text-xs font-bold text-[var(--midnight-navy)] shadow-[inset_3px_0_0_var(--forest-emerald)] sm:min-w-[210px]">
             <SlidersHorizontal className="size-3.5 shrink-0 text-[var(--forest-emerald)]" />
             <span className="text-[10px] font-bold text-[var(--forest-emerald)]">
               Showing
@@ -728,37 +731,37 @@ export default function LoansPage() {
             }
           />
         ) : (
-          <div className="panel overflow-hidden shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
+          <div className="panel overflow-hidden">
             <table className="w-full table-fixed text-left text-[11px]">
               <thead className="border-b border-[var(--line)] bg-[#e5ece8] text-[9px] capitalize tracking-[0.06em] text-slate-500">
                 <tr>
-                  <th className="w-[10%] px-2 py-2.5 font-semibold">loan id</th>
+                  <th className="w-[10%] px-2 py-2.5 font-semibold">Loan id</th>
                   <th className="w-[17%] px-2 py-2.5 font-semibold">
-                    borrower
+                    Borrower
                   </th>
                   <th className="hidden w-[12%] px-2 py-2.5 font-semibold md:table-cell">
-                    loan type
+                    Loan type
                   </th>
                   <th className="hidden w-[10%] px-2 py-2.5 text-right font-semibold sm:table-cell">
-                    principal
+                    Principal
                   </th>
                   <th className="hidden w-[10%] px-2 py-2.5 text-right font-semibold md:table-cell">
-                    installment
+                    Installment
                   </th>
                   <th className="hidden w-[8%] px-2 py-2.5 text-right font-semibold lg:table-cell">
-                    paid
+                    Paid
                   </th>
                   <th className="w-[12%] px-2 py-2.5 text-right font-semibold">
-                    balance
+                    Balance
                   </th>
                   <th className="hidden w-[10%] px-2 py-2.5 font-semibold lg:table-cell">
-                    next due
+                    Next due
                   </th>
                   <th className="hidden w-[7%] px-2 py-2.5 font-semibold xl:table-cell">
-                    officer
+                    Officer
                   </th>
                   <th className="w-[4%] px-2 py-2.5 text-right font-semibold">
-                    actions
+                    Actions
                   </th>
                 </tr>
               </thead>
@@ -873,7 +876,7 @@ export default function LoansPage() {
             aria-label="Close new loan panel"
             onClick={() => setAddOpen(false)}
           />
-          <aside className="relative z-10 flex h-full w-full max-w-lg flex-col border-l border-[var(--line)] bg-[var(--soft-ivory)] shadow-xl">
+          <aside className="relative z-10 flex h-full w-full max-w-lg flex-col border-l border-[var(--line)] bg-[var(--soft-ivory)] shadow-xl sm:rounded-l-2xl">
             <header className="flex items-start justify-between gap-3 border-b border-[var(--line)] px-4 py-3">
               <div>
                 <h2 className="text-lg font-bold text-[var(--midnight-navy)]">
@@ -1133,6 +1136,14 @@ function LoanStatCard({
         : tone === "warn"
           ? "border-amber-100 bg-amber-50 text-amber-700"
           : "border-rose-100 bg-rose-50 text-rose-700";
+  const valueClass =
+    tone === "good"
+      ? "text-[var(--forest-emerald)]"
+      : tone === "blue"
+        ? "text-[var(--clear-sky)]"
+        : tone === "warn"
+          ? "text-amber-700"
+          : "text-red-700";
 
   return (
     <article className="panel flex min-h-[76px] min-w-0 items-start gap-1.5 bg-white px-1.5 py-2 shadow-[0_8px_20px_rgba(20,33,61,0.05)] sm:gap-2 sm:px-2 xl:px-3">
@@ -1142,13 +1153,13 @@ function LoanStatCard({
         {icon}
       </span>
       <div className="min-w-0">
-        <p className="text-[8px] font-semibold capitalize tracking-[0.06em] text-slate-500 sm:text-[9px] xl:text-[10px]">
+        <p className="min-w-0 text-[8px] font-semibold tracking-[0.06em] text-slate-500 sm:text-[9px] xl:text-[10px]">
           {label}
         </p>
-        <p className="mt-1 break-words text-[clamp(0.55rem,1.15vw,1rem)] font-bold leading-tight tabular-nums text-[var(--midnight-navy)]">
+        <p className={`mt-1 break-words text-[clamp(0.58rem,1.08vw,1rem)] font-extrabold leading-tight tabular-nums ${valueClass}`}>
           {value}
         </p>
-        <p className="mt-0.5 break-words text-[clamp(0.5rem,0.9vw,0.7rem)] leading-tight text-slate-500">
+        <p className="mt-0.5 break-words text-[clamp(0.5rem,0.9vw,0.7rem)] font-semibold leading-tight text-slate-500">
           {hint}
         </p>
       </div>

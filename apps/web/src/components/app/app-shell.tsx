@@ -267,7 +267,7 @@ export function AppShell({
   if (operatorRole === "staff") {
     return (
       <div className="min-h-screen bg-[var(--background)] text-[var(--slate-text)]">
-        <header className="border-b border-[var(--line)] bg-[var(--soft-ivory)] px-4 py-3 sm:px-6">
+        <header className="border-b border-[var(--line)] bg-white/85 px-4 py-3 shadow-[0_10px_30px_rgba(20,33,61,0.05)] backdrop-blur sm:px-6">
           <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <Image
@@ -283,7 +283,7 @@ export function AppShell({
             <button
               type="button"
               onClick={handleLogout}
-              className="btn btn-ghost h-9 text-xs"
+              className="btn btn-ghost h-9 rounded-xl text-xs"
             >
               <LogOut className="size-3.5" />
               sign out
@@ -303,12 +303,15 @@ export function AppShell({
         }`}
       >
         <div className="flex h-full flex-col px-3 py-4">
-          <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-3">
-            <Link href={homeHref} className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-4">
+            <Link
+              href={homeHref}
+              className="flex items-center gap-2 rounded-2xl px-1 py-1 transition hover:bg-white/8"
+            >
               <Image
                 src={rembehIcon}
                 alt="REMBEH"
-                className="size-8 object-cover"
+                className="size-9 rounded-xl object-cover shadow-[0_10px_24px_rgba(0,0,0,0.18)]"
                 priority
               />
               <div>
@@ -322,7 +325,7 @@ export function AppShell({
             </Link>
             <button
               type="button"
-              className="grid size-8 place-items-center bg-white/8 text-white lg:hidden"
+              className="grid size-8 place-items-center rounded-xl bg-white/10 text-white lg:hidden"
               onClick={() => setMobileOpen(false)}
               aria-label="Close navigation"
             >
@@ -347,10 +350,10 @@ export function AppShell({
                     key={item.href}
                     href={item.href}
                     onClick={() => setMobileOpen(false)}
-                    className={`flex items-center gap-2.5 px-3 py-2 text-sm font-semibold ${
+                  className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${
                       active
-                        ? "bg-[var(--forest-emerald)] text-white"
-                        : "text-white/70 hover:bg-white/8 hover:text-white"
+                        ? "bg-[var(--forest-emerald)] text-white shadow-[0_10px_24px_rgba(0,0,0,0.12)]"
+                        : "text-white/72 hover:bg-white/10 hover:text-white"
                     }`}
                   >
                     <Icon className="size-4" />
@@ -367,7 +370,7 @@ export function AppShell({
                     operatorRole === "owner" ? "/owner/settings" : "/settings"
                   }
                   onClick={() => setMobileOpen(false)}
-                  className={`flex items-center gap-2.5 px-3 py-2 text-sm font-semibold ${
+                  className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${
                     pathname ===
                       (operatorRole === "owner"
                         ? "/owner/settings"
@@ -377,8 +380,8 @@ export function AppShell({
                         ? "/owner/settings/"
                         : "/settings/",
                     )
-                      ? "bg-[var(--forest-emerald)] text-white"
-                      : "text-white/70 hover:bg-white/8 hover:text-white"
+                      ? "bg-[var(--forest-emerald)] text-white shadow-[0_10px_24px_rgba(0,0,0,0.12)]"
+                      : "text-white/72 hover:bg-white/10 hover:text-white"
                   }`}
                 >
                   <Settings className="size-4" />
@@ -388,7 +391,7 @@ export function AppShell({
               <button
                 type="button"
                 onClick={handleLogout}
-                className="flex w-full items-center gap-2.5 px-3 py-2 text-sm font-semibold text-white/70 hover:bg-white/8 hover:text-white"
+                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold text-white/72 transition hover:bg-white/10 hover:text-white"
               >
                 <LogOut className="size-4" />
                 Sign out
@@ -401,19 +404,19 @@ export function AppShell({
       {mobileOpen ? (
         <button
           type="button"
-          className="fixed inset-0 z-30 bg-[rgba(10,18,32,0.5)] lg:hidden"
+          className="fixed inset-0 z-30 bg-[rgba(10,18,32,0.5)] backdrop-blur-[2px] lg:hidden"
           aria-label="Close overlay"
           onClick={() => setMobileOpen(false)}
         />
       ) : null}
 
       <div className="min-h-screen lg:pl-[232px]">
-        <header className="sticky top-0 z-20 border-b border-[var(--line)] bg-[var(--soft-ivory)] px-4 py-2.5 sm:px-5">
+        <header className="sticky top-0 z-20 border-b border-[rgba(184,200,192,0.78)] bg-[rgba(248,251,249,0.88)] px-4 py-2.5 shadow-[0_10px_30px_rgba(20,33,61,0.05)] backdrop-blur sm:px-5">
           <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-2.5">
               <button
                 type="button"
-                className="grid size-9 place-items-center border border-[var(--line)] bg-white text-[var(--midnight-navy)] lg:hidden"
+                className="grid size-9 place-items-center rounded-xl border border-[var(--line)] bg-white text-[var(--midnight-navy)] shadow-[0_6px_16px_rgba(20,33,61,0.06)] lg:hidden"
                 onClick={() => setMobileOpen(true)}
                 aria-label="Open navigation"
               >
@@ -435,10 +438,10 @@ export function AppShell({
               <button
                 type="button"
                 onClick={() => setProfileOpen((open) => !open)}
-                className="inline-flex h-9 items-center gap-2 border border-[var(--line)] bg-white px-2.5 text-xs font-semibold text-[var(--midnight-navy)]"
+                className="inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-2.5 text-xs font-semibold text-[var(--midnight-navy)] shadow-[0_8px_20px_rgba(20,33,61,0.06)]"
                 aria-expanded={profileOpen}
               >
-                <span className="grid size-6 place-items-center bg-[var(--soft-mist)] text-[var(--forest-emerald)]">
+                <span className="grid size-6 place-items-center rounded-lg bg-[var(--mint-wash)] text-[var(--forest-emerald)]">
                   <UserRound className="size-3.5" />
                 </span>
                 <span className="hidden max-w-[140px] truncate sm:inline">
@@ -448,7 +451,7 @@ export function AppShell({
               </button>
 
               {profileOpen ? (
-                <div className="absolute right-0 top-[calc(100%+6px)] z-30 w-[260px] border border-[var(--line)] bg-white shadow-[0_12px_30px_rgba(20,33,61,0.16)]">
+                <div className="absolute right-0 top-[calc(100%+8px)] z-30 w-[260px] overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-[0_18px_44px_rgba(20,33,61,0.18)]">
                   <div className="border-b border-[var(--line)] px-3 py-2.5">
                     <p className="text-sm font-bold text-[var(--midnight-navy)]">
                       {user?.name ?? "User"}
@@ -505,7 +508,7 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="px-4 py-4 sm:px-5 sm:py-5">{children}</main>
+        <main className="px-4 py-5 sm:px-5 sm:py-6">{children}</main>
       </div>
     </div>
   );

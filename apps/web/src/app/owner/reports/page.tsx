@@ -135,9 +135,13 @@ export default function OwnerReportsPage() {
   }, [branchId, state.session, status]);
 
   useEffect(() => {
-    if (state.ready && state.session) {
-      void loadReports();
-    }
+    const boot = window.setTimeout(() => {
+      if (state.ready && state.session) {
+        void loadReports();
+      }
+    }, 0);
+
+    return () => window.clearTimeout(boot);
   }, [loadReports, state.ready, state.session]);
 
   const filteredReports = useMemo(() => {
@@ -523,20 +527,37 @@ function ReportStat({
   value: string;
   tone?: "slate" | "green" | "blue" | "gold" | "red";
 }) {
-  const color = {
-    slate: "bg-slate-50 text-slate-600",
-    green: "bg-emerald-50 text-[var(--forest-emerald)]",
-    blue: "bg-sky-50 text-sky-700",
-    gold: "bg-amber-50 text-amber-700",
-    red: "bg-red-50 text-red-700",
+  const toneClass = {
+    slate: "border-slate-200 bg-slate-50 text-slate-600",
+    green: "border-emerald-100 bg-emerald-50 text-[var(--forest-emerald)]",
+    blue: "border-sky-100 bg-sky-50 text-sky-700",
+    gold: "border-amber-100 bg-amber-50 text-amber-700",
+    red: "border-red-100 bg-red-50 text-red-700",
+  }[tone];
+  const valueClass = {
+    slate: "text-[var(--midnight-navy)]",
+    green: "text-[var(--forest-emerald)]",
+    blue: "text-[var(--clear-sky)]",
+    gold: "text-amber-700",
+    red: "text-red-700",
   }[tone];
   return (
-    <div className="min-w-0 border border-[var(--line)] bg-white p-3 shadow-[0_10px_24px_rgba(20,33,61,0.06)]">
-      <span className={`mb-2 inline-block h-1.5 w-10 rounded-full ${color}`} />
-      <p className="truncate text-[11px] font-bold text-slate-500">{label}</p>
-      <p className="mt-1 truncate text-lg font-bold tabular-nums text-[var(--midnight-navy)]">
-        {value}
-      </p>
+    <div className="panel flex min-h-[76px] min-w-0 items-start gap-1.5 bg-white px-1.5 py-2 shadow-[0_8px_20px_rgba(20,33,61,0.05)] sm:gap-2 sm:px-2 xl:px-3">
+      <span
+        className={`hidden size-7 shrink-0 place-items-center border md:grid xl:size-8 ${toneClass}`}
+      >
+        <FileText className="size-4" />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[8px] font-semibold tracking-[0.06em] text-slate-500 sm:text-[9px] xl:text-[10px]">
+          {label}
+        </p>
+        <p
+          className={`mt-1 truncate text-[clamp(0.55rem,1.15vw,1rem)] font-bold leading-tight tabular-nums ${valueClass}`}
+        >
+          {value}
+        </p>
+      </div>
     </div>
   );
 }
@@ -653,7 +674,6 @@ function ComputerisedReportView({
   currency: string;
 }) {
   const opening = snapshot.openingCash;
-  const cash = snapshot.cashPosition;
   const summary = snapshot.summary;
   return (
     <div className="space-y-4">
@@ -1191,12 +1211,21 @@ function ReportMiniStat({
   hint: string;
 }) {
   return (
-    <div className="border border-[var(--line)] bg-[var(--soft-ivory)] p-3">
-      <p className="text-[10px] font-bold text-slate-500">{label}</p>
-      <p className="mt-1 truncate text-lg font-bold tabular-nums text-[var(--midnight-navy)]">
-        {value}
-      </p>
-      <p className="mt-1 truncate text-[11px] text-slate-500">{hint}</p>
+    <div className="panel flex min-h-[76px] min-w-0 items-start gap-1.5 bg-white px-1.5 py-2 shadow-[0_8px_20px_rgba(20,33,61,0.05)] sm:gap-2 sm:px-2 xl:px-3">
+      <span className="hidden size-7 shrink-0 place-items-center border border-slate-200 bg-slate-50 text-slate-600 md:grid xl:size-8">
+        <FileText className="size-4" />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[8px] font-semibold tracking-[0.06em] text-slate-500 sm:text-[9px] xl:text-[10px]">
+          {label}
+        </p>
+        <p className="mt-1 truncate text-[clamp(0.55rem,1.15vw,1rem)] font-bold leading-tight tabular-nums text-[var(--midnight-navy)]">
+          {value}
+        </p>
+        <p className="mt-0.5 truncate text-[clamp(0.5rem,0.9vw,0.7rem)] leading-tight text-slate-500">
+          {hint}
+        </p>
+      </div>
     </div>
   );
 }

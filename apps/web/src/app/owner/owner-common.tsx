@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { Banknote } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "../../components/app/app-shell";
 import { AppBootSkeleton, TableSkeleton } from "../../components/app/skeleton";
@@ -198,13 +199,13 @@ export function OwnerPage({
       user={state.user}
       branch={null}
     >
-      <div className="mx-auto max-w-7xl space-y-4 animate-rise">
-        <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="mx-auto max-w-7xl space-y-5 animate-rise">
+        <div className="panel flex flex-wrap items-end justify-between gap-3 overflow-hidden px-4 py-3">
           <div>
             <p className="text-[11px] font-bold tracking-[0.14em] text-[var(--forest-emerald)]">
               {eyebrow ?? "Owner"}
             </p>
-            <h1 className="text-2xl font-bold text-[var(--midnight-navy)]">
+            <h1 className="mt-0.5 text-2xl font-extrabold text-[var(--midnight-navy)]">
               {title}
             </h1>
           </div>
@@ -219,34 +220,55 @@ export function OwnerPage({
 }
 
 export function OwnerStat({
+  icon,
   label,
   value,
   detail,
   tone = "green",
 }: {
+  icon?: ReactNode;
   label: string;
   value: string;
   detail?: string;
   tone?: "green" | "blue" | "gold" | "red" | "slate";
 }) {
   const toneClass = {
-    green: "bg-emerald-50 text-[var(--forest-emerald)]",
-    blue: "bg-sky-50 text-sky-700",
-    gold: "bg-amber-50 text-amber-700",
-    red: "bg-red-50 text-red-700",
-    slate: "bg-slate-50 text-slate-700",
+    green: "border-emerald-100 bg-emerald-50 text-[var(--forest-emerald)]",
+    blue: "border-sky-100 bg-sky-50 text-sky-700",
+    gold: "border-amber-100 bg-amber-50 text-amber-700",
+    red: "border-rose-100 bg-rose-50 text-rose-700",
+    slate: "border-slate-200 bg-slate-50 text-slate-600",
+  }[tone];
+  const valueClass = {
+    green: "text-[var(--forest-emerald)]",
+    blue: "text-[var(--clear-sky)]",
+    gold: "text-amber-700",
+    red: "text-red-700",
+    slate: "text-[var(--midnight-navy)]",
   }[tone];
 
   return (
-    <div className="min-w-0 border border-[var(--line)] bg-white p-3 shadow-[0_10px_24px_rgba(20,33,61,0.06)]">
-      <div className={`mb-2 h-1.5 w-10 rounded-full ${toneClass}`} />
-      <p className="truncate text-[11px] font-bold text-slate-500">{label}</p>
-      <p className="mt-1 truncate text-xl font-bold tabular-nums text-[var(--midnight-navy)]">
-        {value}
-      </p>
-      {detail ? (
-        <p className="mt-1 truncate text-xs text-slate-500">{detail}</p>
-      ) : null}
+    <div className="panel flex min-h-[76px] min-w-0 items-start gap-1.5 bg-white px-1.5 py-2 shadow-[0_8px_20px_rgba(20,33,61,0.05)] sm:gap-2 sm:px-2 xl:px-3">
+      <span
+        className={`hidden size-7 shrink-0 place-items-center border md:grid xl:size-8 ${toneClass}`}
+      >
+        {icon ?? <Banknote className="size-4" />}
+      </span>
+      <div className="min-w-0">
+        <p className="text-[8px] font-semibold tracking-[0.06em] text-slate-500 sm:text-[9px] xl:text-[10px]">
+          {label}
+        </p>
+        <p
+          className={`mt-1 truncate text-[clamp(0.55rem,1.15vw,1rem)] font-bold leading-tight tabular-nums ${valueClass}`}
+        >
+          {value}
+        </p>
+        {detail ? (
+          <p className="mt-0.5 truncate text-[clamp(0.5rem,0.9vw,0.7rem)] leading-tight text-slate-500">
+            {detail}
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -261,8 +283,8 @@ export function OwnerPanel({
   children: ReactNode;
 }) {
   return (
-    <section className="overflow-hidden border border-[var(--line)] bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
-      <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] bg-[var(--soft-mist)] px-3 py-2">
+    <section className="panel overflow-hidden bg-white">
+      <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] bg-[var(--table-head)] px-3 py-2.5">
         <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
           {title}
         </h2>
@@ -312,7 +334,7 @@ export function OwnerStatus({ value }: { value: string }) {
         : "border-slate-200 bg-slate-50 text-slate-600";
   return (
     <span
-      className={`inline-flex border px-2 py-1 text-[11px] font-bold ${tone}`}
+      className={`inline-flex rounded-lg border px-2 py-1 text-[11px] font-bold ${tone}`}
     >
       {titleCase(normalized)}
     </span>

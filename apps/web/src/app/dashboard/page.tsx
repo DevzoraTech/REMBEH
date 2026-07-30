@@ -1,15 +1,21 @@
 "use client";
 
 import {
+  BadgeCheck,
+  Banknote,
   Building2,
   CalendarDays,
+  Clock3,
   FileText,
+  ReceiptText,
+  ShieldCheck,
   Smartphone,
   Users,
+  WalletCards,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/app/app-shell";
 import { LiveApplicationsPanel } from "../../components/app/live-applications-panel";
 import { LivePaymentsPanel } from "../../components/app/live-payments-panel";
@@ -260,7 +266,7 @@ export default function DashboardPage() {
     }, 0);
 
     return () => window.clearTimeout(boot);
-  }, [clearSessionAndRedirect]);
+  }, [clearSessionAndRedirect, router]);
 
   useEffect(() => {
     if (isLoading || !session || operatorRole !== "owner") {
@@ -362,28 +368,57 @@ function OwnerView({
 }) {
   return (
     <>
-      <section className="grid gap-2 sm:grid-cols-3 lg:grid-cols-5">
-        <Stat label="Branches" value={String(branches.length)} />
-        <Stat label="Borrowers" value={numberStat(customerCount)} />
-        <Stat label="Active loans" value={numberStat(stats.activeLoans)} />
+      <section className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Stat
+          icon={<Building2 className="size-4" />}
+          label="Branches"
+          value={String(branches.length)}
+          tone="blue"
+        />
+        <Stat
+          icon={<Users className="size-4" />}
+          label="Borrowers"
+          value={numberStat(customerCount)}
+          tone="green"
+        />
+        <Stat
+          icon={<FileText className="size-4" />}
+          label="Active loans"
+          value={numberStat(stats.activeLoans)}
+          tone="green"
+        />
+        <Stat
+          icon={<BadgeCheck className="size-4" />}
           label="Completed loans"
           value={numberStat(stats.completedLoans)}
+          tone="slate"
         />
         <Stat
+          icon={<WalletCards className="size-4" />}
           label="Outstanding"
           value={moneyStat(stats.outstanding, stats.currency)}
+          tone="blue"
         />
         <Stat
+          icon={<Banknote className="size-4" />}
           label="Collected today"
           value={moneyStat(stats.collectedToday, stats.currency)}
+          tone="green"
         />
-        <Stat label="Due today" value={numberStat(stats.dueToday)} />
         <Stat
+          icon={<Clock3 className="size-4" />}
+          label="Due today"
+          value={numberStat(stats.dueToday)}
+          tone="gold"
+        />
+        <Stat
+          icon={<ReceiptText className="size-4" />}
           label="Payments today"
           value={numberStat(stats.repaymentsToday)}
+          tone="blue"
         />
         <Stat
+          icon={<ShieldCheck className="size-4" />}
           label="Active staff"
           value={String(
             branches.reduce(
@@ -391,14 +426,17 @@ function OwnerView({
               0,
             ),
           )}
+          tone="green"
         />
         <Stat
+          icon={<CalendarDays className="size-4" />}
           label="Pending managers"
           value={String(
             branches.filter(
               (item) => item.manager?.inviteStatus === "INVITE_PENDING",
             ).length,
           )}
+          tone="gold"
         />
       </section>
 
@@ -434,33 +472,60 @@ function ManagerView({
     <>
       <ManagerBranchOverview branch={branch} />
 
-      <section className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Borrowers" value={numberStat(customerCount)} />
-        <Stat label="Active loans" value={numberStat(stats.activeLoans)} />
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
+          icon={<Users className="size-4" />}
+          label="Borrowers"
+          value={numberStat(customerCount)}
+          tone="green"
+        />
+        <Stat
+          icon={<FileText className="size-4" />}
+          label="Active loans"
+          value={numberStat(stats.activeLoans)}
+          tone="green"
+        />
+        <Stat
+          icon={<BadgeCheck className="size-4" />}
           label="Completed loans"
           value={numberStat(stats.completedLoans)}
+          tone="slate"
         />
         <Stat
+          icon={<WalletCards className="size-4" />}
           label="Outstanding"
           value={moneyStat(stats.outstanding, stats.currency)}
+          tone="blue"
         />
         <Stat
+          icon={<Banknote className="size-4" />}
           label="Collected today"
           value={moneyStat(stats.collectedToday, stats.currency)}
+          tone="green"
         />
-        <Stat label="Due today" value={numberStat(stats.dueToday)} />
         <Stat
+          icon={<Clock3 className="size-4" />}
+          label="Due today"
+          value={numberStat(stats.dueToday)}
+          tone="gold"
+        />
+        <Stat
+          icon={<ReceiptText className="size-4" />}
           label="Payments today"
           value={numberStat(stats.repaymentsToday)}
+          tone="blue"
         />
         <Stat
+          icon={<ShieldCheck className="size-4" />}
           label="Active staff"
           value={String(branch?.staffSummary?.active ?? 0)}
+          tone="green"
         />
         <Stat
+          icon={<CalendarDays className="size-4" />}
           label="Pending invites"
           value={String(branch?.staffSummary?.pendingInvites ?? 0)}
+          tone="gold"
         />
       </section>
 
@@ -501,7 +566,7 @@ function StaffView() {
 
 function ManagerBranchOverview({ branch }: { branch: Branch | null }) {
   return (
-    <section className="panel bg-white p-4 shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
+    <section className="panel relative overflow-hidden bg-white p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[11px] font-semibold tracking-[0.12em] text-[var(--forest-emerald)]">
@@ -533,16 +598,50 @@ function ManagerBranchOverview({ branch }: { branch: Branch | null }) {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({
+  icon,
+  label,
+  value,
+  tone = "green",
+}: {
+  icon?: ReactNode;
+  label: string;
+  value: string;
+  tone?: "green" | "blue" | "gold" | "red" | "slate";
+}) {
+  const toneClass = {
+    green: "border-emerald-100 bg-emerald-50 text-[var(--forest-emerald)]",
+    blue: "border-sky-100 bg-sky-50 text-sky-700",
+    gold: "border-amber-100 bg-amber-50 text-amber-700",
+    red: "border-rose-100 bg-rose-50 text-rose-700",
+    slate: "border-slate-200 bg-slate-50 text-slate-600",
+  }[tone];
+  const valueClass = {
+    green: "text-[var(--forest-emerald)]",
+    blue: "text-[var(--clear-sky)]",
+    gold: "text-amber-700",
+    red: "text-red-700",
+    slate: "text-[var(--midnight-navy)]",
+  }[tone];
+
   return (
-    <div className="panel border-l-4 border-l-[var(--midnight-navy)] bg-white px-3 py-2.5 shadow-[0_8px_22px_rgba(20,33,61,0.05)]">
-      <p className="text-[10px] font-semibold tracking-[0.1em] text-slate-500">
-        {label}
-      </p>
-      <p className="mt-0.5 break-words text-[clamp(0.9rem,2vw,1.25rem)] font-bold leading-tight text-[var(--midnight-navy)]">
-        {value}
-      </p>
-    </div>
+    <article className="panel flex min-h-[76px] min-w-0 items-start gap-1.5 bg-white px-1.5 py-2 shadow-[0_8px_20px_rgba(20,33,61,0.05)] sm:gap-2 sm:px-2 xl:px-3">
+      <span
+        className={`hidden size-7 shrink-0 place-items-center border md:grid xl:size-8 ${toneClass}`}
+      >
+        {icon ?? <Banknote className="size-4" />}
+      </span>
+      <div className="min-w-0">
+        <p className="text-[8px] font-semibold tracking-[0.06em] text-slate-500 sm:text-[9px] xl:text-[10px]">
+          {label}
+        </p>
+        <p
+          className={`mt-1 break-words text-[clamp(0.55rem,1.15vw,1rem)] font-bold leading-tight tabular-nums ${valueClass}`}
+        >
+          {value}
+        </p>
+      </div>
+    </article>
   );
 }
 
@@ -571,12 +670,12 @@ function OwnerBranchesTable({ branches }: { branches: Branch[] }) {
   );
 
   return (
-    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
-      <div className="flex items-center justify-between border-b border-[var(--line)] bg-[#eef3f0] px-3 py-2.5">
+    <section className="panel overflow-hidden bg-white">
+      <div className="flex items-center justify-between border-b border-[var(--line)] bg-[var(--table-head)] px-3 py-2.5">
         <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
           Branch Directory
         </h2>
-        <Link href="/branches" className="btn btn-ghost h-8 text-xs">
+        <Link href="/owner/branches" className="btn btn-ghost h-8 text-xs">
           Manage
         </Link>
       </div>
@@ -587,17 +686,17 @@ function OwnerBranchesTable({ branches }: { branches: Branch[] }) {
           <table className="w-full table-fixed text-left text-[12px]">
             <thead className="border-b border-[var(--line)] bg-[#f7faf8] text-[9px] capitalize tracking-[0.06em] text-slate-500">
               <tr>
-                <th className="w-[24%] px-3 py-2.5 font-semibold">branch</th>
-                <th className="w-[23%] px-3 py-2.5 font-semibold">address</th>
-                <th className="w-[20%] px-3 py-2.5 font-semibold">manager</th>
+                <th className="w-[24%] px-3 py-2.5 font-semibold">Branch</th>
+                <th className="w-[23%] px-3 py-2.5 font-semibold">Address</th>
+                <th className="w-[20%] px-3 py-2.5 font-semibold">Manager</th>
                 <th className="w-[10%] px-3 py-2.5 text-right font-semibold">
-                  staff
+                  Staff
                 </th>
                 <th className="w-[11%] px-3 py-2.5 text-right font-semibold">
-                  pending
+                  Pending
                 </th>
                 <th className="w-[12%] px-3 py-2.5 text-right font-semibold">
-                  action
+                  Action
                 </th>
               </tr>
             </thead>
@@ -637,7 +736,7 @@ function OwnerBranchesTable({ branches }: { branches: Branch[] }) {
                           label: item.manager
                             ? "Edit manager"
                             : "Assign manager",
-                          href: `/branches?invite=manager&branchId=${item.id}`,
+                          href: `/owner/branches?invite=manager&branchId=${item.id}`,
                         },
                       ]}
                     />

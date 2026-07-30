@@ -159,7 +159,7 @@ export default function ClientsPage() {
           </button>
         </div>
 
-        <div className="panel flex flex-wrap items-center gap-2 bg-white/90 px-3 py-2 shadow-[0_8px_22px_rgba(20,33,61,0.05)]">
+        <div className="soft-toolbar flex flex-wrap items-center gap-2 border-l-4 border-l-[var(--forest-emerald)] px-3 py-2">
           <Search className="size-4 shrink-0 text-slate-400" />
           <input
             type="search"
