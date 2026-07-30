@@ -1,16 +1,22 @@
 "use client";
 
 import {
+  Banknote,
+  Bell,
   Building2,
   ChevronDown,
   ChevronRight,
   ClipboardCheck,
+  Filter,
+  Grid2X2,
+  List,
   Mail,
   MapPin,
   Phone,
   Plus,
-  RefreshCw,
   Search,
+  SlidersHorizontal,
+  UserCheck,
   Users,
   WalletCards,
   X,
@@ -18,12 +24,15 @@ import {
 import Link from "next/link";
 import type { FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AppShell } from "../../../components/app/app-shell";
+import { AppBootSkeleton } from "../../../components/app/skeleton";
 import {
   FormError,
   PhoneField,
   PrimaryButton,
   TextField,
 } from "../../../components/auth/form-controls";
+import { RowActions } from "../../../components/app/row-actions";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../../lib/api";
 import type { RembehSession } from "../../../lib/auth-session";
 import { formatInternationalPhone } from "../../../lib/phone";
@@ -31,9 +40,7 @@ import {
   OwnerBorrower,
   OwnerBranch,
   OwnerLoan,
-  OwnerPage,
   OwnerReport,
-  OwnerStat,
   OwnerStatus,
   authHeaders,
   formatDate,
@@ -60,7 +67,9 @@ export default function OwnerBranchesPage() {
   const [borrowers, setBorrowers] = useState<OwnerBorrower[]>([]);
   const [reports, setReports] = useState<OwnerReport[]>([]);
   const [search, setSearch] = useState("");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [regionFilter, setRegionFilter] = useState("all");
+  const [tableMode, setTableMode] = useState<"rows" | "compact">("rows");
   const [detailBranch, setDetailBranch] = useState<OwnerBranch | null>(null);
   const [inviteBranch, setInviteBranch] = useState<OwnerBranch | null>(null);
   const [createdBranch, setCreatedBranch] = useState<OwnerBranch | null>(null);
@@ -98,7 +107,6 @@ export default function OwnerBranchesPage() {
       setLoans(loanPayload.loans ?? []);
       setBorrowers(borrowerPayload.customers ?? []);
       setReports(reportPayload.reports ?? []);
-      setExpandedId((current) => current ?? nextBranches[0]?.id ?? null);
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Could not load branches.",
@@ -109,30 +117,59 @@ export default function OwnerBranchesPage() {
   }, [state.session]);
 
   useEffect(() => {
-    if (state.ready && state.session) {
-      void loadData();
-    }
+    const boot = window.setTimeout(() => {
+      if (state.ready && state.session) {
+        void loadData();
+      }
+    }, 0);
+
+    return () => window.clearTimeout(boot);
   }, [loadData, state.ready, state.session]);
 
   const filteredBranches = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return branches;
-    return branches.filter((branch) =>
-      [
-        branch.name,
-        branch.address,
-        branch.phone ?? "",
-        branch.manager?.name ?? "",
-        branch.manager?.email ?? "",
-      ].some((value) => value.toLowerCase().includes(q)),
-    );
-  }, [branches, search]);
+    return branches.filter((branch) => {
+      const status = branchStatus(branch);
+      const region = branchRegion(branch);
+      const matchesStatus = statusFilter === "all" || status === statusFilter;
+      const matchesRegion = regionFilter === "all" || region === regionFilter;
+      const matchesSearch =
+        !q ||
+        [
+          branch.name,
+          branch.address,
+          branch.phone ?? "",
+          branch.manager?.name ?? "",
+          branch.manager?.email ?? "",
+        ].some((value) => value.toLowerCase().includes(q));
+      return matchesStatus && matchesRegion && matchesSearch;
+    });
+  }, [branches, regionFilter, search, statusFilter]);
 
   const assignedManagers = branches.filter((branch) =>
     activeManager(branch),
   ).length;
   const activeStaff = sumBy(branches, (branch) => branch.staffSummary.active);
   const sentReportCount = reports.length;
+  const outstandingTotal = sumBy(loans, (loan) => loan.balance);
+  const activeBranchCount = branches.filter(
+    (branch) => branchStatus(branch) === "active",
+  ).length;
+  const pendingBranchCount = branches.filter(
+    (branch) => branchStatus(branch) === "pending",
+  ).length;
+  const inactiveBranchCount = Math.max(
+    0,
+    branches.length - activeBranchCount - pendingBranchCount,
+  );
+  const regionOptions = useMemo(
+    () => Array.from(new Set(branches.map(branchRegion))).sort(),
+    [branches],
+  );
+  const recentActivity = useMemo(
+    () => buildBranchActivity(branches, loans, reports),
+    [branches, loans, reports],
+  );
 
   async function createBranch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -195,137 +232,296 @@ export default function OwnerBranchesPage() {
     }
   }
 
+  if (!state.ready || !state.session) return <AppBootSkeleton />;
+
   return (
-    <OwnerPage
-      state={state}
-      title="Branches"
-      eyebrow="Account Network"
-      actions={
-        <>
-          <button
-            type="button"
-            className="btn btn-ghost h-9 text-xs"
-            onClick={() => void loadData()}
-            disabled={loading}
-          >
-            <RefreshCw
-              className={`size-3.5 ${loading ? "animate-spin" : ""}`}
-            />
-            Refresh
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary h-9 text-xs"
-            onClick={() => {
-              setFormError(null);
-              setCreateOpen(true);
-            }}
-          >
-            <Plus className="size-3.5" />
-            Add Branch
-          </button>
-        </>
-      }
+    <AppShell
+      session={state.session}
+      workspace={state.workspace}
+      user={state.user}
+      branch={null}
     >
-      {notice ? (
-        <p className="border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-[var(--forest-emerald)]">
-          {notice}
-        </p>
-      ) : null}
-      {error ? (
-        <p className="border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </p>
-      ) : null}
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <OwnerStat label="Branches" value={formatNumber(branches.length)} />
-        <OwnerStat
-          label="Assigned managers"
-          value={formatNumber(assignedManagers)}
-          tone="green"
-        />
-        <OwnerStat
-          label="Active staff"
-          value={formatNumber(activeStaff)}
-          tone="blue"
-        />
-        <OwnerStat
-          label="Sent reports"
-          value={formatNumber(sentReportCount)}
-          tone="gold"
-        />
-        <OwnerStat
-          label="Outstanding"
-          value={formatMoney(
-            sumBy(loans, (loan) => loan.balance),
-            currency,
-          )}
-          tone="slate"
-        />
-      </div>
-
-      <section className="overflow-hidden border border-[var(--line)] bg-white shadow-[0_12px_30px_rgba(20,33,61,0.08)]">
-        <div className="grid gap-3 border-b border-[var(--line)] bg-[var(--soft-mist)] px-3 py-3 lg:grid-cols-[1fr_260px] lg:items-center">
-          <div>
-            <h2 className="text-base font-bold text-[var(--midnight-navy)]">
-              Branches
-            </h2>
-            <p className="mt-1 text-xs text-slate-500">
-              {filteredBranches.length} shown
+      <div className="mx-auto max-w-[1440px] space-y-4">
+        <header className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 pt-1">
+            <p className="text-xs font-extrabold text-[var(--forest-emerald)]">
+              Account Network
             </p>
+            <h1 className="mt-0.5 text-[clamp(1.28rem,1.45vw,1.65rem)] font-extrabold leading-tight tracking-[-0.02em] text-[#070b18]">
+              Branches
+            </h1>
           </div>
-          <label className="flex h-10 items-center gap-2 border border-[var(--line)] bg-white px-3 text-sm">
-            <Search className="size-4 text-slate-400" />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              className="min-w-0 flex-1 bg-transparent outline-none"
-              placeholder="Search branches"
-            />
-          </label>
-        </div>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
+            <label className="flex h-9 min-w-[220px] max-w-[330px] flex-1 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
+              <Search className="size-3.5 shrink-0 text-slate-400" />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                type="search"
+                placeholder="Search anything..."
+                className="min-w-0 flex-1 bg-transparent text-xs font-semibold text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
+              />
+              <span className="hidden rounded-lg border border-[#e8edf2] px-2 py-0.5 text-[11px] font-bold text-slate-400 sm:inline">
+                ⌘K
+              </span>
+            </label>
+            <button
+              type="button"
+              className="relative grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)]"
+              aria-label="Notifications"
+            >
+              <Bell className="size-4" />
+              {pendingBranchCount > 0 ? (
+                <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-[#18a76f] text-[10px] font-extrabold text-white">
+                  {Math.min(pendingBranchCount, 9)}
+                </span>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              className="flex h-9 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3.5 text-xs font-extrabold text-white shadow-[0_10px_20px_rgba(0,135,95,0.22)]"
+              onClick={() => {
+                setFormError(null);
+                setCreateOpen(true);
+              }}
+            >
+              <Plus className="size-3.5" />
+              Add Branch
+            </button>
+          </div>
+        </header>
 
-        <div className="divide-y divide-[var(--line)]">
-          {loading ? (
-            <BranchSkeleton />
-          ) : filteredBranches.length === 0 ? (
-            <div className="px-4 py-12 text-center">
-              <Building2 className="mx-auto size-7 text-[var(--forest-emerald)]" />
-              <h3 className="mt-3 text-base font-bold text-[var(--midnight-navy)]">
-                No branches found
-              </h3>
-              <p className="mt-1 text-sm text-slate-500">
-                Create a branch, then invite its branch manager.
+        {notice ? (
+          <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-[var(--forest-emerald)]">
+            {notice}
+          </p>
+        ) : null}
+        {error ? (
+          <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {error}
+          </p>
+        ) : null}
+
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <BranchStatCard
+            icon={<Building2 className="size-5" />}
+            label="Total Branches"
+            value={formatNumber(branches.length)}
+            detail="Across all regions"
+            tone="green"
+          />
+          <BranchStatCard
+            icon={<UserCheck className="size-5" />}
+            label="Assigned Managers"
+            value={formatNumber(assignedManagers)}
+            detail="Active"
+            tone="violet"
+          />
+          <BranchStatCard
+            icon={<Users className="size-5" />}
+            label="Active Staff"
+            value={formatNumber(activeStaff)}
+            detail="Across all branches"
+            tone="blue"
+          />
+          <BranchStatCard
+            icon={<ClipboardCheck className="size-5" />}
+            label="Reports Sent"
+            value={formatNumber(sentReportCount)}
+            detail="Submitted reports"
+            tone="gold"
+          />
+          <BranchStatCard
+            icon={<WalletCards className="size-5" />}
+            label="Total Outstanding"
+            value={formatMoney(outstandingTotal, currency)}
+            detail="Across portfolio"
+            tone="green"
+            change="+ 8.6%"
+          />
+        </section>
+
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_330px]">
+          <section className="overflow-hidden rounded-[14px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.055)]">
+            <div className="border-b border-[#edf1f5] px-4 py-4">
+              <h2 className="text-[15px] font-extrabold text-[#0b1220]">
+                All Branches
+              </h2>
+              <p className="mt-1 text-xs font-semibold text-slate-500">
+                Manage and monitor all your branches
               </p>
             </div>
-          ) : (
-            filteredBranches.map((branch) => {
-              const metrics = branchMetrics(branch, loans, borrowers, reports);
-              const expanded = expandedId === branch.id;
-              return (
-                <BranchRow
-                  key={branch.id}
-                  branch={branch}
-                  metrics={metrics}
-                  currency={currency}
-                  expanded={expanded}
-                  onToggle={() =>
-                    setExpandedId((current) =>
-                      current === branch.id ? null : branch.id,
-                    )
-                  }
-                  onInvite={() => {
-                    setCreatedBranch(null);
-                    setInviteBranch(branch);
-                  }}
-                  onOpenDetails={() => setDetailBranch(branch)}
+            <div className="grid gap-2.5 border-b border-[#edf1f5] bg-white px-4 py-3 lg:grid-cols-[minmax(210px,1fr)_150px_150px_auto_auto]">
+              <label className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+                <Search className="size-3.5 shrink-0 text-slate-400" />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  className="min-w-0 flex-1 bg-transparent font-semibold text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
+                  placeholder="Search branches..."
                 />
-              );
-            })
-          )}
-        </div>
-      </section>
+              </label>
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+                className="h-9 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-extrabold text-[var(--midnight-navy)] outline-none shadow-[0_8px_18px_rgba(15,23,42,0.035)]"
+              >
+                <option value="all">All Status</option>
+                <option value="active">Active</option>
+                <option value="pending">Pending</option>
+                <option value="inactive">Inactive</option>
+              </select>
+              <select
+                value={regionFilter}
+                onChange={(event) => setRegionFilter(event.target.value)}
+                className="h-9 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-extrabold text-[var(--midnight-navy)] outline-none shadow-[0_8px_18px_rgba(15,23,42,0.035)]"
+              >
+                <option value="all">All Regions</option>
+                {regionOptions.map((region) => (
+                  <option key={region} value={region}>
+                    {region}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="flex h-9 items-center justify-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-extrabold text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.035)]"
+                onClick={() => {
+                  setSearch("");
+                  setStatusFilter("all");
+                  setRegionFilter("all");
+                }}
+              >
+                <Filter className="size-3.5" />
+                More filters
+              </button>
+              <div className="flex h-9 items-center rounded-xl border border-[#e6ebf0] bg-white p-1 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+                <button
+                  type="button"
+                  className={`grid size-7 place-items-center rounded-lg ${
+                    tableMode === "rows"
+                      ? "bg-emerald-50 text-[var(--forest-emerald)]"
+                      : "text-slate-500"
+                  }`}
+                  onClick={() => setTableMode("rows")}
+                  aria-label="Rows view"
+                >
+                  <List className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  className={`grid size-7 place-items-center rounded-lg ${
+                    tableMode === "compact"
+                      ? "bg-emerald-50 text-[var(--forest-emerald)]"
+                      : "text-slate-500"
+                  }`}
+                  onClick={() => setTableMode("compact")}
+                  aria-label="Compact view"
+                >
+                  <Grid2X2 className="size-3.5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="hidden grid-cols-[1.4fr_1.05fr_1fr_64px_66px_104px_72px_42px] gap-3 border-b border-[#edf1f5] bg-[#f8faf9] px-4 py-3 text-[10px] font-extrabold uppercase tracking-[0.04em] text-slate-500 xl:grid">
+              <span>Branch</span>
+              <span>Location</span>
+              <span>Manager</span>
+              <span className="text-center">Staff</span>
+              <span className="text-center">Loans</span>
+              <span className="text-right">Outstanding</span>
+              <span className="text-center">Status</span>
+              <span className="text-right">Actions</span>
+            </div>
+
+            <div className="divide-y divide-[#edf1f5]">
+              {loading ? (
+                <BranchSkeleton />
+              ) : filteredBranches.length === 0 ? (
+                <div className="px-4 py-12 text-center">
+                  <Building2 className="mx-auto size-7 text-[var(--forest-emerald)]" />
+                  <h3 className="mt-3 text-base font-bold text-[var(--midnight-navy)]">
+                    No branches found
+                  </h3>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Adjust the filters or add a branch.
+                  </p>
+                </div>
+              ) : (
+                filteredBranches.map((branch) => (
+                  <BranchRow
+                    key={branch.id}
+                    branch={branch}
+                    metrics={branchMetrics(branch, loans, borrowers, reports)}
+                    currency={currency}
+                    compact={tableMode === "compact"}
+                    onInvite={() => {
+                      setCreatedBranch(null);
+                      setInviteBranch(branch);
+                    }}
+                    onOpenDetails={() => setDetailBranch(branch)}
+                  />
+                ))
+              )}
+            </div>
+
+            <div className="flex items-center justify-between border-t border-[#edf1f5] px-4 py-3 text-xs font-semibold text-slate-500">
+              <p>
+                Showing {formatNumber(filteredBranches.length)} of{" "}
+                {formatNumber(branches.length)} branch
+                {branches.length === 1 ? "" : "es"}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="grid size-8 place-items-center rounded-xl border border-[#edf1f5] text-slate-400"
+                  aria-label="Previous page"
+                  disabled
+                >
+                  <ChevronRight className="size-3.5 rotate-180" />
+                </button>
+                <span className="grid size-8 place-items-center rounded-xl bg-[var(--forest-emerald)] text-xs font-extrabold text-white">
+                  1
+                </span>
+                <button
+                  type="button"
+                  className="grid size-8 place-items-center rounded-xl border border-[#edf1f5] text-slate-400"
+                  aria-label="Next page"
+                  disabled
+                >
+                  <ChevronRight className="size-3.5" />
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <aside className="space-y-3">
+            <BranchOverviewCard
+              active={activeBranchCount}
+              inactive={inactiveBranchCount}
+              pending={pendingBranchCount}
+              total={branches.length}
+            />
+            <QuickActionsCard
+              onAddBranch={() => {
+                setFormError(null);
+                setCreateOpen(true);
+              }}
+              onAssignManager={() => {
+                const target =
+                  branches.find((branch) => !activeManager(branch)) ??
+                  branches[0] ??
+                  null;
+                if (target) {
+                  setCreatedBranch(null);
+                  setInviteBranch(target);
+                }
+              }}
+            />
+            <RecentBranchActivityCard activities={recentActivity} />
+          </aside>
+        </section>
+      </div>
 
       {createOpen && state.session ? (
         <SidePanel
@@ -439,7 +635,7 @@ export default function OwnerBranchesPage() {
           }}
         />
       ) : null}
-    </OwnerPage>
+    </AppShell>
   );
 }
 
@@ -447,16 +643,14 @@ function BranchRow({
   branch,
   metrics,
   currency,
-  expanded,
-  onToggle,
+  compact,
   onInvite,
   onOpenDetails,
 }: {
   branch: OwnerBranch;
   metrics: BranchMetrics;
   currency: string;
-  expanded: boolean;
-  onToggle: () => void;
+  compact: boolean;
   onInvite: () => void;
   onOpenDetails: () => void;
 }) {
@@ -465,122 +659,406 @@ function BranchRow({
     branch.manager && branch.manager.inviteStatus !== "ACTIVE"
       ? branch.manager
       : null;
+  const status = branchStatus(branch);
+  const statusLabel =
+    status === "active"
+      ? "Active"
+      : status === "pending"
+        ? "Pending"
+        : "Inactive";
+
   return (
-    <article>
+    <article
+      className={`grid gap-3 px-4 ${compact ? "py-2.5" : "py-4"} text-left transition hover:bg-[#fbfdfc] xl:grid-cols-[1.4fr_1.05fr_1fr_64px_66px_104px_72px_42px] xl:items-center`}
+      onClick={onOpenDetails}
+    >
       <button
         type="button"
-        className="grid w-full gap-2 px-3 py-2.5 text-left hover:bg-[var(--soft-mist)] lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_86px_92px_128px_30px] lg:items-center"
-        onClick={onToggle}
+        className="flex min-w-0 items-center gap-3 text-left"
+        onClick={onOpenDetails}
       >
-        <div className="min-w-0">
-          <p className="truncate text-sm font-bold text-[var(--midnight-navy)]">
-            {branch.name}
-          </p>
-          <p className="mt-1 flex min-w-0 items-center gap-1 truncate text-xs text-slate-500">
-            <MapPin className="size-3 shrink-0 text-[var(--forest-emerald)]" />
-            <span className="truncate">{branch.address}</span>
-          </p>
-        </div>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
-            {manager?.name ?? "No active manager"}
-          </p>
-          {manager ? (
-            <p className="mt-0.5 truncate text-xs text-slate-500">
-              {manager.email}
-            </p>
-          ) : invitedManager ? (
-            <p className="mt-0.5 truncate text-xs text-amber-700">
-              Invite pending: {invitedManager.name}
-            </p>
-          ) : null}
-        </div>
-        <p className="text-xs font-bold tabular-nums text-[var(--midnight-navy)] lg:text-right">
-          {metrics.staffActive}/{metrics.staffTotal}
-          <span className="ml-1 font-semibold text-slate-500">staff</span>
-        </p>
-        <p className="text-xs font-bold tabular-nums text-[var(--midnight-navy)] lg:text-right">
-          {formatNumber(metrics.activeLoans)}
-          <span className="ml-1 font-semibold text-slate-500">loans</span>
-        </p>
-        <p className="text-xs font-bold tabular-nums text-[var(--forest-emerald)] lg:text-right">
-          {formatMoney(metrics.outstanding, currency)}
-        </p>
-        <span className="grid size-7 place-items-center justify-self-end border border-[var(--line)] bg-white text-slate-500">
-          {expanded ? (
-            <ChevronDown className="size-3.5" />
-          ) : (
-            <ChevronRight className="size-3.5" />
-          )}
+        <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-emerald-50 text-[var(--forest-emerald)]">
+          <Building2 className="size-4" />
+        </span>
+        <span className="min-w-0">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-xs font-extrabold text-[#111827]">
+              {branch.name}
+            </span>
+            {manager ? (
+              <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-extrabold text-[var(--forest-emerald)]">
+                Managed
+              </span>
+            ) : null}
+          </span>
+          <span className="mt-0.5 block truncate text-[10px] font-semibold text-slate-500">
+            Branch Code: {branch.id.slice(0, 6).toUpperCase()}
+          </span>
         </span>
       </button>
 
-      {expanded ? (
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-[var(--line)] bg-[var(--soft-ivory)] px-3 py-2 text-xs">
-          <InlineFact label="Phone" value={branch.phone ?? "-"} />
-          <InlineFact
-            label="Borrowers"
-            value={formatNumber(metrics.borrowers)}
-          />
-          <InlineFact
-            label="Reports"
-            value={formatNumber(metrics.reports.length)}
-          />
-          {metrics.latestReport ? (
-            <span className="inline-flex items-center gap-2">
-              <span className="font-bold text-slate-500">Latest</span>
-              <OwnerStatus value={metrics.latestReport.status} />
-            </span>
-          ) : null}
-          <div className="ml-auto flex flex-wrap gap-2">
-            {!manager ? (
-              <button
-                type="button"
-                className="btn btn-primary h-9 text-xs"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onInvite();
-                }}
-              >
-                <Mail className="size-3.5" />
-                Add Manager
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="btn btn-ghost h-9 text-xs"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onInvite();
-                }}
-              >
-                <Mail className="size-3.5" />
-                Invite Manager
-              </button>
-            )}
-            <button
-              type="button"
-              className="btn btn-navy h-9 text-xs"
-              onClick={(event) => {
-                event.stopPropagation();
-                onOpenDetails();
-              }}
-            >
-              Details
-            </button>
+      <div className="flex min-w-0 items-center gap-2 text-xs text-slate-500">
+        <MapPin className="size-3.5 shrink-0 text-[var(--forest-emerald)]" />
+        <div className="min-w-0">
+          <p className="truncate font-bold text-[#111827]">{branch.address}</p>
+          <p className="truncate text-[10px] font-semibold text-slate-500">
+            {branchRegion(branch)}
+          </p>
+        </div>
+      </div>
+
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="grid size-7 shrink-0 place-items-center rounded-full bg-slate-100 text-[10px] font-extrabold text-slate-600">
+            {initials(manager?.name ?? invitedManager?.name ?? "No Manager")}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-xs font-extrabold text-[#111827]">
+              {manager?.name ?? invitedManager?.name ?? "No manager"}
+            </p>
+            <p className="truncate text-[10px] font-semibold text-slate-500">
+              {manager?.email ?? invitedManager?.email ?? "Assign manager"}
+            </p>
           </div>
         </div>
-      ) : null}
+      </div>
+
+      <p className="text-xs font-extrabold tabular-nums text-[#111827] xl:text-center">
+        {metrics.staffActive}/{metrics.staffTotal}
+      </p>
+      <p className="text-xs font-extrabold tabular-nums text-[#111827] xl:text-center">
+        {formatNumber(metrics.activeLoans)}
+      </p>
+      <p className="break-words text-xs font-extrabold tabular-nums text-[var(--forest-emerald)] xl:text-right">
+        {formatMoney(metrics.outstanding, currency)}
+      </p>
+      <div className="xl:justify-self-center">
+        <span
+          className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-extrabold ${
+            status === "active"
+              ? "bg-emerald-50 text-[var(--forest-emerald)]"
+              : status === "pending"
+                ? "bg-amber-50 text-amber-700"
+                : "bg-slate-100 text-slate-600"
+          }`}
+        >
+          {statusLabel}
+        </span>
+      </div>
+      <RowActions
+        label={`Branch actions for ${branch.name}`}
+        items={[
+          { label: "View details", onSelect: onOpenDetails },
+          { label: manager ? "Invite manager" : "Assign manager", onSelect: onInvite },
+          { label: "View reports", href: `/owner/reports?branchId=${branch.id}` },
+        ]}
+      />
     </article>
   );
 }
 
-function InlineFact({ label, value }: { label: string; value: string }) {
+function BranchStatCard({
+  icon,
+  label,
+  value,
+  detail,
+  tone,
+  change,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  detail: string;
+  tone: "green" | "violet" | "blue" | "gold";
+  change?: string;
+}) {
+  const toneClass = {
+    green: "bg-emerald-50 text-[var(--forest-emerald)]",
+    violet: "bg-violet-50 text-violet-600",
+    blue: "bg-sky-50 text-sky-600",
+    gold: "bg-orange-50 text-orange-600",
+  }[tone];
+
   return (
-    <span className="inline-flex items-center gap-2">
-      <span className="font-bold text-slate-500">{label}</span>
-      <span className="font-bold text-[var(--midnight-navy)]">{value}</span>
+    <article className="flex min-h-[96px] min-w-0 items-center gap-3 rounded-[14px] border border-[#e6ebf0] bg-white px-4 py-3.5 shadow-[0_12px_26px_rgba(15,23,42,0.055)]">
+      <span className={`grid size-12 shrink-0 place-items-center rounded-2xl ${toneClass}`}>
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-[11px] font-bold text-slate-500">{label}</p>
+        <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
+          <p className="break-words text-[clamp(0.82rem,1vw,1.08rem)] font-extrabold leading-tight tabular-nums text-[#111827]">
+            {value}
+          </p>
+          {change ? (
+            <span className="rounded-md bg-emerald-50 px-1.5 py-0.5 text-[9px] font-extrabold text-[var(--forest-emerald)]">
+              {change}
+            </span>
+          ) : null}
+        </div>
+        <p className="mt-1 text-[11px] font-semibold text-slate-500">{detail}</p>
+      </div>
+    </article>
+  );
+}
+
+function BranchOverviewCard({
+  active,
+  inactive,
+  pending,
+  total,
+}: {
+  active: number;
+  inactive: number;
+  pending: number;
+  total: number;
+}) {
+  const gradient = branchOverviewGradient(active, inactive, pending, total);
+  const rows = [
+    { label: "Active", value: active, color: "#059669" },
+    { label: "Inactive", value: inactive, color: "#f97316" },
+    { label: "Pending", value: pending, color: "#cbd5e1" },
+  ];
+
+  return (
+    <section className="rounded-[14px] border border-[#e6ebf0] bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.055)]">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-[15px] font-extrabold text-[#0b1220]">
+          Branch Overview
+        </h2>
+        <button
+          type="button"
+          className="flex h-8 items-center gap-2 rounded-xl border border-[#e6ebf0] px-3 text-[11px] font-extrabold text-slate-600"
+        >
+          This month
+          <ChevronDown className="size-3.5" />
+        </button>
+      </div>
+      <div className="mt-5 grid items-center gap-5 sm:grid-cols-[138px_1fr] xl:grid-cols-1 2xl:grid-cols-[138px_1fr]">
+        <div className="relative mx-auto grid size-[138px] place-items-center rounded-full">
+          <div
+            className="absolute inset-0 rounded-full"
+            style={{ background: gradient }}
+          />
+          <div className="absolute inset-[20px] rounded-full bg-white" />
+          <div className="relative text-center">
+            <p className="text-2xl font-extrabold text-[#070b18]">
+              {formatNumber(total)}
+            </p>
+            <p className="mt-0.5 text-[11px] font-bold text-slate-500">
+              Total Branches
+            </p>
+          </div>
+        </div>
+        <div className="space-y-3">
+          {rows.map((row) => (
+            <div key={row.label} className="flex items-center gap-3">
+              <span
+                className="size-2.5 rounded-full"
+                style={{ backgroundColor: row.color }}
+              />
+              <span className="min-w-0 flex-1 text-xs font-semibold text-slate-600">
+                {row.label}
+              </span>
+              <span className="text-xs font-extrabold tabular-nums text-[#111827]">
+                {formatNumber(row.value)}
+              </span>
+              <span className="w-12 text-right text-xs font-semibold text-slate-500">
+                {percent(row.value, total)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function QuickActionsCard({
+  onAddBranch,
+  onAssignManager,
+}: {
+  onAddBranch: () => void;
+  onAssignManager: () => void;
+}) {
+  return (
+    <section className="rounded-[14px] border border-[#e6ebf0] bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.055)]">
+      <h2 className="text-[15px] font-extrabold text-[#0b1220]">
+        Quick Actions
+      </h2>
+      <div className="mt-3 overflow-hidden rounded-xl border border-[#edf1f5]">
+        <QuickActionButton
+          icon={<ClipboardCheck className="size-4" />}
+          title="Add New Branch"
+          detail="Create a new branch"
+          tone="green"
+          onClick={onAddBranch}
+        />
+        <QuickActionButton
+          icon={<UserCheck className="size-4" />}
+          title="Assign Manager"
+          detail="Assign manager to branch"
+          tone="green"
+          onClick={onAssignManager}
+        />
+        <QuickActionLink
+          icon={<SlidersHorizontal className="size-4" />}
+          title="Branch Performance"
+          detail="View branch analytics"
+          tone="blue"
+          href="/owner/portfolio"
+        />
+        <QuickActionLink
+          icon={<ClipboardCheck className="size-4" />}
+          title="Send Report"
+          detail="Review submitted reports"
+          tone="gold"
+          href="/owner/reports"
+        />
+      </div>
+    </section>
+  );
+}
+
+function QuickActionButton({
+  icon,
+  title,
+  detail,
+  tone,
+  onClick,
+}: {
+  icon: ReactNode;
+  title: string;
+  detail: string;
+  tone: "green" | "blue" | "gold";
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="flex w-full items-center gap-3 border-b border-[#edf1f5] px-3 py-3 text-left last:border-b-0 hover:bg-[#fbfdfc]"
+      onClick={onClick}
+    >
+      <QuickActionIcon tone={tone}>{icon}</QuickActionIcon>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-xs font-extrabold text-[#111827]">
+          {title}
+        </span>
+        <span className="mt-0.5 block truncate text-[11px] font-semibold text-slate-500">
+          {detail}
+        </span>
+      </span>
+      <ChevronRight className="size-4 text-slate-400" />
+    </button>
+  );
+}
+
+function QuickActionLink({
+  icon,
+  title,
+  detail,
+  tone,
+  href,
+}: {
+  icon: ReactNode;
+  title: string;
+  detail: string;
+  tone: "green" | "blue" | "gold";
+  href: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex items-center gap-3 border-b border-[#edf1f5] px-3 py-3 text-left last:border-b-0 hover:bg-[#fbfdfc]"
+    >
+      <QuickActionIcon tone={tone}>{icon}</QuickActionIcon>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-xs font-extrabold text-[#111827]">
+          {title}
+        </span>
+        <span className="mt-0.5 block truncate text-[11px] font-semibold text-slate-500">
+          {detail}
+        </span>
+      </span>
+      <ChevronRight className="size-4 text-slate-400" />
+    </Link>
+  );
+}
+
+function QuickActionIcon({
+  tone,
+  children,
+}: {
+  tone: "green" | "blue" | "gold";
+  children: ReactNode;
+}) {
+  const className = {
+    green: "bg-emerald-50 text-[var(--forest-emerald)]",
+    blue: "bg-sky-50 text-sky-600",
+    gold: "bg-orange-50 text-orange-600",
+  }[tone];
+  return (
+    <span className={`grid size-8 shrink-0 place-items-center rounded-lg ${className}`}>
+      {children}
     </span>
+  );
+}
+
+function RecentBranchActivityCard({
+  activities,
+}: {
+  activities: BranchActivity[];
+}) {
+  return (
+    <section className="rounded-[14px] border border-[#e6ebf0] bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.055)]">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="text-[15px] font-extrabold text-[#0b1220]">
+          Recent Activity
+        </h2>
+        <Link
+          href="/owner/reports"
+          className="text-xs font-extrabold text-[var(--forest-emerald)]"
+        >
+          View all
+        </Link>
+      </div>
+      <div className="mt-3 divide-y divide-[#edf1f5]">
+        {activities.length === 0 ? (
+          <p className="py-8 text-center text-sm font-semibold text-slate-500">
+            No recent activity yet.
+          </p>
+        ) : (
+          activities.slice(0, 3).map((activity) => (
+            <Link
+              key={activity.id}
+              href={activity.href}
+              className="flex items-center gap-3 py-3"
+            >
+              <QuickActionIcon tone={activity.tone}>
+                {activity.icon === "report" ? (
+                  <ClipboardCheck className="size-4" />
+                ) : activity.icon === "loan" ? (
+                  <Banknote className="size-4" />
+                ) : (
+                  <Users className="size-4" />
+                )}
+              </QuickActionIcon>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-extrabold text-[#111827]">
+                  {activity.title}
+                </span>
+                <span className="mt-0.5 block truncate text-[11px] font-semibold text-slate-500">
+                  {activity.detail}
+                </span>
+              </span>
+              <span className="text-[11px] font-semibold text-slate-500">
+                {activity.time}
+              </span>
+            </Link>
+          ))
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -966,6 +1444,17 @@ function BranchSkeleton() {
   );
 }
 
+type BranchActivity = {
+  id: string;
+  title: string;
+  detail: string;
+  time: string;
+  href: string;
+  tone: "green" | "blue" | "gold";
+  icon: "report" | "loan" | "staff";
+  at: Date;
+};
+
 function activeManager(branch: OwnerBranch) {
   const manager = branch.staff?.find(
     (member) =>
@@ -973,6 +1462,115 @@ function activeManager(branch: OwnerBranch) {
   );
   if (manager) return manager;
   return branch.manager?.inviteStatus === "ACTIVE" ? branch.manager : null;
+}
+
+function branchStatus(branch: OwnerBranch) {
+  if (activeManager(branch)) return "active";
+  if (branch.manager) return "pending";
+  return "inactive";
+}
+
+function branchRegion(branch: OwnerBranch) {
+  const parts = branch.address
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.at(-1) ?? "All regions";
+}
+
+function percent(value: number, total: number) {
+  if (total <= 0) return "(0%)";
+  return `(${Math.round((value / total) * 100)}%)`;
+}
+
+function branchOverviewGradient(
+  active: number,
+  inactive: number,
+  pending: number,
+  total: number,
+) {
+  if (total <= 0) return "conic-gradient(#e8eef2 0deg 360deg)";
+  const items = [
+    { value: active, color: "#059669" },
+    { value: inactive, color: "#f97316" },
+    { value: pending, color: "#cbd5e1" },
+  ];
+  let start = 0;
+  const stops = items
+    .filter((item) => item.value > 0)
+    .map((item) => {
+      const end = start + (item.value / total) * 360;
+      const stop = `${item.color} ${start}deg ${end}deg`;
+      start = end;
+      return stop;
+    });
+  return `conic-gradient(${stops.join(", ")})`;
+}
+
+function buildBranchActivity(
+  branches: OwnerBranch[],
+  loans: OwnerLoan[],
+  reports: OwnerReport[],
+): BranchActivity[] {
+  const branchById = new Map(branches.map((branch) => [branch.id, branch]));
+  const reportItems = reports.slice(0, 8).map((report) => ({
+    id: `report-${report.id}`,
+    title: `Report sent from ${report.branchName}`,
+    detail: report.reportNumber,
+    time: timeAgo(report.generatedAt),
+    href: `/owner/reports?reportId=${report.id}`,
+    tone: "green" as const,
+    icon: "report" as const,
+    at: new Date(report.generatedAt),
+  }));
+  const loanItems = loans.slice(0, 8).map((loan) => {
+    const branch = branchById.get(loan.branchId);
+    return {
+      id: `loan-${loan.id}`,
+      title: `Loans updated in ${branch?.name ?? "branch"}`,
+      detail: `${formatMoney(loan.principal, loan.currency)} principal`,
+      time: timeAgo(loan.disbursedAt ?? loan.createdAt),
+      href: "/owner/portfolio",
+      tone: "gold" as const,
+      icon: "loan" as const,
+      at: new Date(loan.disbursedAt ?? loan.createdAt),
+    };
+  });
+  const staffItems = branches.flatMap((branch) =>
+    (branch.staff ?? []).slice(0, 3).map((member) => ({
+      id: `staff-${member.id}`,
+      title: `Staff added in ${branch.name}`,
+      detail: `${member.name} · ${member.roleName}`,
+      time: timeAgo(member.invitedAt ?? branch.createdAt),
+      href: `/owner/branches?branchId=${branch.id}`,
+      tone: "blue" as const,
+      icon: "staff" as const,
+      at: new Date(member.invitedAt ?? branch.createdAt),
+    })),
+  );
+  return [...reportItems, ...loanItems, ...staffItems].sort(
+    (a, b) => b.at.getTime() - a.at.getTime(),
+  );
+}
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+}
+
+function timeAgo(value: string | null | undefined) {
+  if (!value) return "";
+  const diff = Date.now() - new Date(value).getTime();
+  const minutes = Math.max(1, Math.round(diff / 60000));
+  if (minutes < 60) return `${minutes} mins ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? "1d ago" : `${days}d ago`;
 }
 
 type BranchMetrics = {

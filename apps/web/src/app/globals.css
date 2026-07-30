@@ -21,6 +21,9 @@
   --surface-raised: #fbfcfd;
   --line: #e1e7ec;
   --line-strong: #cbd5dd;
+  --font-sans: "Manrope", "Avenir Next", "Segoe UI", Arial, sans-serif;
+  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   --radius: 12px;
   --radius-lg: 14px;
   --radius-xl: 16px;

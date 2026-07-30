@@ -729,7 +729,7 @@ export default function AgentsPage() {
                   >
                     <td className="px-2 py-2.5">
                       <div className="min-w-0">
-                        <p className="truncate font-bold tabular-nums text-[var(--midnight-navy)]">
+                        <p className="break-words font-bold tabular-nums text-[var(--midnight-navy)]">
                           {agent.publicId ?? "—"}
                         </p>
                       </div>

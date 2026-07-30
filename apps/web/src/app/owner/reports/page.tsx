@@ -1,20 +1,25 @@
 "use client";
 
 import {
+  Bell,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   Download,
   FileSpreadsheet,
   FileText,
   Loader2,
   RefreshCw,
   Search,
+  Send,
   SlidersHorizontal,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AppShell } from "../../../components/app/app-shell";
+import { AppBootSkeleton } from "../../../components/app/skeleton";
 import {
   OwnerBranch,
-  OwnerPage,
   OwnerReport,
   OwnerStatus,
   authHeaders,
@@ -205,117 +210,218 @@ export default function OwnerReportsPage() {
     }
   }
 
+  if (!state.ready || !state.session) return <AppBootSkeleton />;
+
   return (
-    <OwnerPage
-      state={state}
-      title="Sent Reports"
-      eyebrow="Owner Review"
-      actions={
-        <button
-          type="button"
-          className="btn btn-ghost h-9 text-xs"
-          onClick={() => void loadReports()}
-          disabled={loading}
-        >
-          <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </button>
-      }
+    <AppShell
+      session={state.session}
+      workspace={state.workspace}
+      user={state.user}
+      branch={null}
     >
-      {notice ? (
-        <p className="border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-[var(--forest-emerald)]">
-          {notice}
-        </p>
-      ) : null}
-      {error ? (
-        <p className="border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          {error}
-        </p>
-      ) : null}
-
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
-        <ReportStat label="Sent reports" value={formatNumber(reports.length)} />
-        <ReportStat
-          label="Waiting approval"
-          value={formatNumber(waitingReports.length)}
-          tone="gold"
-        />
-        <ReportStat
-          label="Approved"
-          value={formatNumber(approvedReports.length)}
-          tone="green"
-        />
-        <ReportStat
-          label="Expected close"
-          value={formatMoney(
-            sumBy(reports, (report) => report.expectedClosingBalance),
-            currency,
-          )}
-          tone="blue"
-        />
-        <ReportStat
-          label="Counted cash"
-          value={formatMoney(
-            sumBy(reports, (report) => report.closingBalance ?? 0),
-            currency,
-          )}
-        />
-        <ReportStat
-          label="Variance"
-          value={formatMoney(
-            sumBy(reports, (report) => report.closingVariance ?? 0),
-            currency,
-          )}
-          tone="red"
-        />
-      </div>
-
-      <ReportQueueDropdown
-        open={queueOpen}
-        setOpen={setQueueOpen}
-        reports={filteredReports}
-        branches={branches}
-        selectedReport={selectedReport}
-        loading={loading}
-        currency={currency}
-        branchId={branchId}
-        status={status}
-        search={search}
-        setBranchId={setBranchId}
-        setStatus={setStatus}
-        setSearch={setSearch}
-        onSelect={(report) => {
-          setSelectedId(report.id);
-          setOwnerNotes("");
-          setQueueOpen(false);
-        }}
-      />
-
-      <section className="min-w-0 overflow-hidden border border-[var(--line)] bg-white shadow-[0_12px_30px_rgba(20,33,61,0.08)]">
-        {!selectedReport || !selectedSnapshot ? (
-          <div className="px-4 py-14 text-center">
-            <p className="text-sm font-semibold text-slate-500">
-              Select a sent report to review.
+      <div className="mx-auto max-w-[1440px] space-y-4">
+        <header className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 pt-1">
+            <div className="flex items-center gap-2 text-xs font-extrabold">
+              <span className="text-[var(--forest-emerald)]">Reports</span>
+              <ChevronRight className="size-3.5 text-slate-400" />
+              <span className="text-slate-500">Sent Reports</span>
+            </div>
+            <h1 className="mt-2 text-[clamp(1.3rem,1.45vw,1.7rem)] font-extrabold leading-tight tracking-[-0.02em] text-[#070b18]">
+              Sent Reports
+            </h1>
+            <p className="mt-1 text-xs font-semibold text-slate-500">
+              Track and review reports sent from branches
             </p>
           </div>
-        ) : (
-          <>
-            <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--line)] px-4 py-4">
-              <div className="min-w-0">
-                <p className="text-[11px] font-semibold tracking-[0.12em] text-[var(--forest-emerald)]">
-                  Close-Day Report
-                </p>
-                <h2 className="mt-1 text-lg font-bold text-[var(--midnight-navy)]">
-                  {selectedReport.reportNumber}
-                </h2>
-                <p className="mt-1 text-xs font-semibold text-slate-500">
-                  {selectedReport.branchName} -{" "}
-                  {formatDate(selectedReport.operationDate)}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <OwnerStatus value={selectedReport.status} />
-                <div className="flex border border-[var(--line)] bg-[var(--soft-mist)] p-1">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
+            <label className="flex h-9 min-w-[220px] max-w-[330px] flex-1 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
+              <Search className="size-3.5 shrink-0 text-slate-400" />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                type="search"
+                placeholder="Search anything..."
+                className="min-w-0 flex-1 bg-transparent text-xs font-semibold text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
+              />
+              <span className="hidden rounded-lg border border-[#e8edf2] px-2 py-0.5 text-[11px] font-bold text-slate-400 sm:inline">
+                ⌘K
+              </span>
+            </label>
+            <button
+              type="button"
+              className="relative grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)]"
+              aria-label="Notifications"
+            >
+              <Bell className="size-4" />
+              {waitingReports.length > 0 ? (
+                <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-[#18a76f] text-[10px] font-extrabold text-white">
+                  {Math.min(waitingReports.length, 9)}
+                </span>
+              ) : null}
+            </button>
+            <button
+              type="button"
+              className="flex h-9 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3.5 text-xs font-extrabold text-white shadow-[0_10px_20px_rgba(0,135,95,0.22)] disabled:opacity-55"
+              disabled={!selectedReport || !selectedSnapshot}
+              onClick={() => {
+                if (!selectedReport || !selectedSnapshot) return;
+                void exportReport(
+                  selectedReport,
+                  selectedSnapshot,
+                  currency,
+                  setExportingId,
+                );
+              }}
+            >
+              {exportingId ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Download className="size-3.5" />
+              )}
+              Export Report
+              <ChevronDown className="size-3.5" />
+            </button>
+          </div>
+        </header>
+
+        {notice ? (
+          <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-[var(--forest-emerald)]">
+            {notice}
+          </p>
+        ) : null}
+        {error ? (
+          <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="flex justify-end">
+          <button
+            type="button"
+            className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-extrabold text-[var(--midnight-navy)] shadow-[0_8px_18px_rgba(15,23,42,0.035)] disabled:opacity-55"
+            onClick={() => void loadReports()}
+            disabled={loading}
+          >
+            <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+        </div>
+
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+          <ReportStat
+            icon={<SlidersHorizontal className="size-5" />}
+            label="Sent reports"
+            value={formatNumber(reports.length)}
+            detail="This month"
+            tone="green"
+          />
+          <ReportStat
+            icon={<FileText className="size-5" />}
+            label="Waiting approval"
+            value={formatNumber(waitingReports.length)}
+            detail="Requires action"
+            tone="gold"
+          />
+          <ReportStat
+            icon={<FileText className="size-5" />}
+            label="Approved"
+            value={formatNumber(approvedReports.length)}
+            detail="This month"
+            tone="green"
+          />
+          <ReportStat
+            icon={<FileSpreadsheet className="size-5" />}
+            label="Expected close"
+            value={formatMoney(
+              sumBy(reports, (report) => report.expectedClosingBalance),
+              currency,
+            )}
+            detail="Expected balance"
+            tone="blue"
+          />
+          <ReportStat
+            icon={<FileSpreadsheet className="size-5" />}
+            label="Counted cash"
+            value={formatMoney(
+              sumBy(reports, (report) => report.closingBalance ?? 0),
+              currency,
+            )}
+            detail="Total counted"
+          />
+          <ReportStat
+            icon={<FileText className="size-5" />}
+            label="Variance"
+            value={formatMoney(
+              sumBy(reports, (report) => report.closingVariance ?? 0),
+              currency,
+            )}
+            detail="Difference"
+            tone="red"
+          />
+        </section>
+
+        <ReportQueueDropdown
+          open={queueOpen}
+          setOpen={setQueueOpen}
+          reports={filteredReports}
+          branches={branches}
+          selectedReport={selectedReport}
+          loading={loading}
+          currency={currency}
+          branchId={branchId}
+          status={status}
+          search={search}
+          setBranchId={setBranchId}
+          setStatus={setStatus}
+          setSearch={setSearch}
+          onSelect={(report) => {
+            setSelectedId(report.id);
+            setOwnerNotes("");
+            setQueueOpen(false);
+          }}
+          onSendToOwner={() => {
+            setNotice("This report is already in the owner review queue.");
+          }}
+        />
+
+        <section className="min-w-0 overflow-hidden rounded-[14px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.055)]">
+          {!selectedReport || !selectedSnapshot ? (
+            <div className="px-4 py-14 text-center">
+              <p className="text-sm font-semibold text-slate-500">
+                Select a sent report to review.
+              </p>
+            </div>
+          ) : (
+            <>
+              <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[#edf1f5] px-5 py-5">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-extrabold uppercase tracking-[0.12em] text-slate-500">
+                    Close-Day Report
+                  </p>
+                  <h2 className="mt-2 text-xl font-extrabold text-[var(--midnight-navy)]">
+                    {selectedReport.reportNumber}
+                  </h2>
+                  <p className="mt-2 text-xs font-semibold text-slate-500">
+                    {selectedReport.branchName} <span className="px-1">·</span>{" "}
+                    {formatDate(selectedReport.operationDate)}{" "}
+                    <span className="px-1">·</span> Closed by{" "}
+                    {selectedSnapshot.operation.closedByName
+                      ? textValue(selectedSnapshot.operation.closedByName)
+                      : selectedReport.managerReviewedByName ?? "Manager"}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="flex h-9 items-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 text-xs font-extrabold text-[var(--forest-emerald)]"
+                    onClick={() =>
+                      setNotice("This report is already in the owner review queue.")
+                    }
+                  >
+                    <Send className="size-3.5" />
+                    Send To Owner
+                  </button>
                   <ReportViewButton
                     active={view === "report"}
                     icon={<FileText className="size-3.5" />}
@@ -328,58 +434,71 @@ export default function OwnerReportsPage() {
                     label="Excel View"
                     onClick={() => setView("excel")}
                   />
+                  <button
+                    type="button"
+                    className="flex h-9 items-center gap-2 rounded-xl bg-[#003f35] px-4 text-xs font-extrabold text-white shadow-[0_10px_20px_rgba(0,63,53,0.2)]"
+                    disabled={exportingId === selectedReport.id}
+                    onClick={() =>
+                      void exportReport(
+                        selectedReport,
+                        selectedSnapshot,
+                        currency,
+                        setExportingId,
+                      )
+                    }
+                  >
+                    {exportingId === selectedReport.id ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Download className="size-3.5" />
+                    )}
+                    Export
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  className="btn btn-ghost h-10 text-xs"
-                  disabled={exportingId === selectedReport.id}
-                  onClick={() =>
-                    void exportReport(
-                      selectedReport,
-                      selectedSnapshot,
-                      currency,
-                      setExportingId,
-                    )
-                  }
-                >
-                  {exportingId === selectedReport.id ? (
-                    <Loader2 className="size-3.5 animate-spin" />
-                  ) : (
-                    <Download className="size-3.5" />
-                  )}
-                  Export
-                </button>
-              </div>
-            </header>
+              </header>
 
-            <div className="space-y-4 p-4">
-              <div className="min-w-0">
-                {view === "report" ? (
-                  <ComputerisedReportView
-                    report={selectedReport}
-                    snapshot={selectedSnapshot}
-                    currency={currency}
-                  />
-                ) : (
-                  <ExcelReportView
-                    report={selectedReport}
-                    snapshot={selectedSnapshot}
-                    currency={currency}
-                  />
-                )}
+              <div className="space-y-4 p-5">
+                <div className="min-w-0">
+                  {view === "report" ? (
+                    <ComputerisedReportView
+                      report={selectedReport}
+                      snapshot={selectedSnapshot}
+                      currency={currency}
+                      reviewPanel={
+                        <OwnerReviewPanel
+                          report={selectedReport}
+                          notes={ownerNotes}
+                          setNotes={setOwnerNotes}
+                          approving={approvingId === selectedReport.id}
+                          onApprove={() => void approveReport(selectedReport)}
+                        />
+                      }
+                    />
+                  ) : (
+                    <div className="space-y-4">
+                      <ExcelReportView
+                        report={selectedReport}
+                        snapshot={selectedSnapshot}
+                        currency={currency}
+                      />
+                      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+                        <OwnerReviewPanel
+                          report={selectedReport}
+                          notes={ownerNotes}
+                          setNotes={setOwnerNotes}
+                          approving={approvingId === selectedReport.id}
+                          onApprove={() => void approveReport(selectedReport)}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-              <OwnerReviewPanel
-                report={selectedReport}
-                notes={ownerNotes}
-                setNotes={setOwnerNotes}
-                approving={approvingId === selectedReport.id}
-                onApprove={() => void approveReport(selectedReport)}
-              />
-            </div>
-          </>
-        )}
-      </section>
-    </OwnerPage>
+            </>
+          )}
+        </section>
+      </div>
+    </AppShell>
   );
 }
 
@@ -398,6 +517,7 @@ function ReportQueueDropdown({
   setStatus,
   setSearch,
   onSelect,
+  onSendToOwner,
 }: {
   open: boolean;
   setOpen: (open: boolean) => void;
@@ -413,23 +533,24 @@ function ReportQueueDropdown({
   setStatus: (value: ReportStatusFilter) => void;
   setSearch: (value: string) => void;
   onSelect: (report: OwnerReport) => void;
+  onSendToOwner: () => void;
 }) {
   return (
     <div className="relative z-10">
-      <div className="flex flex-wrap items-center justify-between gap-3 border border-[var(--line)] bg-white px-3 py-2 shadow-[0_10px_24px_rgba(20,33,61,0.06)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-emerald-100 bg-white px-4 py-3 shadow-[0_12px_26px_rgba(15,23,42,0.045)]">
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-3 text-left"
           onClick={() => setOpen(!open)}
         >
-          <span className="grid size-9 shrink-0 place-items-center bg-emerald-50 text-[var(--forest-emerald)]">
+          <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-emerald-50 text-[var(--forest-emerald)]">
             <SlidersHorizontal className="size-4" />
           </span>
           <span className="min-w-0">
-            <span className="block text-[11px] font-bold text-slate-500">
+            <span className="block text-[10px] font-extrabold uppercase tracking-[0.08em] text-slate-500">
               Review Queue
             </span>
-            <span className="mt-0.5 block truncate text-sm font-bold text-[var(--midnight-navy)]">
+            <span className="mt-1 block truncate text-sm font-extrabold text-[var(--midnight-navy)]">
               {selectedReport
                 ? `${selectedReport.branchName} - ${selectedReport.reportNumber}`
                 : "Choose a sent report"}
@@ -437,39 +558,45 @@ function ReportQueueDropdown({
           </span>
         </button>
         <div className="flex items-center gap-2">
-          <p className="hidden text-xs font-semibold text-slate-500 sm:block">
+          <p className="hidden text-xs font-extrabold text-[var(--midnight-navy)] sm:block">
             {reports.length} shown
           </p>
-          {selectedReport ? (
-            <OwnerStatus value={selectedReport.status} />
-          ) : null}
           <button
             type="button"
-            className="btn btn-ghost h-9 text-xs"
+            className="flex h-9 items-center gap-2 rounded-xl border border-emerald-200 bg-white px-3 text-xs font-extrabold text-[var(--forest-emerald)]"
+            onClick={onSendToOwner}
+          >
+            <Send className="size-3.5" />
+            Send To Owner
+          </button>
+          <button
+            type="button"
+            className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-extrabold text-[var(--midnight-navy)] shadow-[0_8px_18px_rgba(15,23,42,0.035)]"
             onClick={() => setOpen(!open)}
           >
-            {open ? "Hide queue" : "Open queue"}
+            {open ? "Close Queue" : "Open Queue"}
+            <ChevronRight className={`size-3.5 transition ${open ? "-rotate-90" : ""}`} />
           </button>
         </div>
       </div>
 
       {open ? (
-        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-40 max-w-3xl overflow-hidden border border-[var(--line)] bg-white shadow-[0_22px_50px_rgba(20,33,61,0.2)] animate-rise">
-          <div className="border-b border-[var(--line)] bg-[var(--soft-mist)] px-3 py-3">
+        <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-40 max-w-3xl overflow-hidden rounded-[14px] border border-[#e6ebf0] bg-white shadow-[0_22px_50px_rgba(20,33,61,0.2)] animate-rise">
+          <div className="border-b border-[#edf1f5] bg-[#f8faf9] px-3 py-3">
             <div className="grid gap-2 md:grid-cols-[1fr_180px_190px]">
-              <label className="flex h-10 items-center gap-2 border border-[var(--line)] bg-white px-3 text-sm">
-                <Search className="size-4 text-slate-400" />
+              <label className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs">
+                <Search className="size-3.5 text-slate-400" />
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  className="min-w-0 flex-1 bg-transparent outline-none"
+                  className="min-w-0 flex-1 bg-transparent font-semibold outline-none"
                   placeholder="Search report, branch or manager"
                 />
               </label>
               <select
                 value={branchId}
                 onChange={(event) => setBranchId(event.target.value)}
-                className="h-10 border border-[var(--line)] bg-white px-3 text-sm font-semibold outline-none"
+                className="h-9 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-extrabold outline-none"
               >
                 <option value="all">All branches</option>
                 {branches.map((branch) => (
@@ -483,7 +610,7 @@ function ReportQueueDropdown({
                 onChange={(event) =>
                   setStatus(event.target.value as ReportStatusFilter)
                 }
-                className="h-10 border border-[var(--line)] bg-white px-3 text-sm font-semibold outline-none"
+                className="h-9 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-extrabold outline-none"
               >
                 {STATUS_OPTIONS.map((item) => (
                   <option key={item.value} value={item.value}>
@@ -519,20 +646,24 @@ function ReportQueueDropdown({
 }
 
 function ReportStat({
+  icon,
   label,
   value,
+  detail,
   tone = "slate",
 }: {
+  icon: ReactNode;
   label: string;
   value: string;
+  detail: string;
   tone?: "slate" | "green" | "blue" | "gold" | "red";
 }) {
   const toneClass = {
-    slate: "border-slate-200 bg-slate-50 text-slate-600",
-    green: "border-emerald-100 bg-emerald-50 text-[var(--forest-emerald)]",
-    blue: "border-sky-100 bg-sky-50 text-sky-700",
-    gold: "border-amber-100 bg-amber-50 text-amber-700",
-    red: "border-red-100 bg-red-50 text-red-700",
+    slate: "bg-slate-100 text-slate-600",
+    green: "bg-emerald-50 text-[var(--forest-emerald)]",
+    blue: "bg-sky-50 text-sky-600",
+    gold: "bg-orange-50 text-orange-600",
+    red: "bg-red-50 text-red-600",
   }[tone];
   const valueClass = {
     slate: "text-[var(--midnight-navy)]",
@@ -542,23 +673,24 @@ function ReportStat({
     red: "text-red-700",
   }[tone];
   return (
-    <div className="panel flex min-h-[76px] min-w-0 items-start gap-1.5 bg-white px-1.5 py-2 shadow-[0_8px_20px_rgba(20,33,61,0.05)] sm:gap-2 sm:px-2 xl:px-3">
-      <span
-        className={`hidden size-7 shrink-0 place-items-center border md:grid xl:size-8 ${toneClass}`}
-      >
-        <FileText className="size-4" />
+    <article className="flex min-h-[96px] min-w-0 items-center gap-3 rounded-[14px] border border-[#e6ebf0] bg-white px-4 py-3.5 shadow-[0_12px_26px_rgba(15,23,42,0.055)]">
+      <span className={`grid size-12 shrink-0 place-items-center rounded-2xl ${toneClass}`}>
+        {icon}
       </span>
       <div className="min-w-0">
-        <p className="text-[8px] font-semibold tracking-[0.06em] text-slate-500 sm:text-[9px] xl:text-[10px]">
+        <p className="truncate text-[11px] font-bold text-slate-500">
           {label}
         </p>
         <p
-          className={`mt-1 truncate text-[clamp(0.55rem,1.15vw,1rem)] font-bold leading-tight tabular-nums ${valueClass}`}
+          className={`mt-1.5 break-words text-[clamp(0.82rem,1vw,1.08rem)] font-extrabold leading-tight tabular-nums ${valueClass}`}
         >
           {value}
         </p>
+        <p className="mt-1 text-[11px] font-semibold text-slate-500">
+          {detail}
+        </p>
       </div>
-    </div>
+    </article>
   );
 }
 
@@ -627,7 +759,7 @@ function QueueFigure({
     <div className="min-w-0 border border-[var(--line)] bg-white px-2 py-1.5">
       <p className="text-[10px] font-bold text-slate-500">{label}</p>
       <p
-        className={`mt-0.5 truncate text-xs font-bold tabular-nums ${
+        className={`mt-0.5 break-words text-xs font-bold tabular-nums ${
           danger ? "text-red-700" : "text-[var(--midnight-navy)]"
         }`}
       >
@@ -651,10 +783,10 @@ function ReportViewButton({
   return (
     <button
       type="button"
-      className={`inline-flex h-8 items-center gap-2 px-3 text-xs font-bold transition ${
+      className={`inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-extrabold transition ${
         active
-          ? "bg-white text-[var(--midnight-navy)] shadow-sm"
-          : "text-slate-500 hover:text-[var(--midnight-navy)]"
+          ? "border-[#dfe8e3] bg-white text-[var(--midnight-navy)] shadow-[0_8px_18px_rgba(15,23,42,0.035)]"
+          : "border-[#e6ebf0] bg-white text-slate-600 hover:text-[var(--midnight-navy)]"
       }`}
       onClick={onClick}
     >
@@ -668,16 +800,18 @@ function ComputerisedReportView({
   report,
   snapshot,
   currency,
+  reviewPanel,
 }: {
   report: OwnerReport;
   snapshot: ReportSnapshot;
   currency: string;
+  reviewPanel: ReactNode;
 }) {
   const opening = snapshot.openingCash;
   const summary = snapshot.summary;
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-2 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-2 lg:grid-cols-6">
         <ReportMetric
           label="Opening Cash"
           value={formatMoney(
@@ -753,47 +887,49 @@ function ComputerisedReportView({
         </ReportBlock>
       </div>
 
-      <ReportBlock title="Field Activity">
-        <div className="grid gap-2 sm:grid-cols-4">
-          <ReportMiniStat
-            label="Loans issued"
-            value={formatNumber(numberValue(summary.loansIssuedCount))}
-            hint={formatMoney(
-              numberValue(summary.loansIssuedPrincipal),
-              currency,
-            )}
-          />
-          <ReportMiniStat
-            label="Collections"
-            value={formatNumber(numberValue(summary.collectionsCount))}
-            hint={formatMoney(
-              numberValue(summary.collectionsReceived),
-              currency,
-            )}
-          />
-          <ReportMiniStat
-            label="Processing fees"
-            value={formatMoney(numberValue(summary.processingFees), currency)}
-            hint="Included in handover"
-          />
-          <ReportMiniStat
-            label="Agents returned"
-            value={`${snapshot.agentReturns.filter((row) => row.amountReturned != null).length}/${snapshot.agentReturns.length}`}
-            hint={formatMoney(
-              sumBy(snapshot.agentReturns, (row) =>
-                numberValue(row.expectedReturn),
-              ),
-              currency,
-            )}
-          />
-        </div>
-      </ReportBlock>
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <ReportBlock title="Field Activity">
+          <div className="grid gap-2 sm:grid-cols-4">
+            <ReportMiniStat
+              label="Loans issued"
+              value={formatNumber(numberValue(summary.loansIssuedCount))}
+              hint={formatMoney(
+                numberValue(summary.loansIssuedPrincipal),
+                currency,
+              )}
+            />
+            <ReportMiniStat
+              label="Collections"
+              value={formatNumber(numberValue(summary.collectionsCount))}
+              hint={formatMoney(
+                numberValue(summary.collectionsReceived),
+                currency,
+              )}
+            />
+            <ReportMiniStat
+              label="Processing fees"
+              value={formatMoney(numberValue(summary.processingFees), currency)}
+              hint="Included in handover"
+            />
+            <ReportMiniStat
+              label="Agents returned"
+              value={`${snapshot.agentReturns.filter((row) => row.amountReturned != null).length}/${snapshot.agentReturns.length}`}
+              hint={formatMoney(
+                sumBy(snapshot.agentReturns, (row) =>
+                  numberValue(row.expectedReturn),
+                ),
+                currency,
+              )}
+            />
+          </div>
+        </ReportBlock>
 
-      <ReportAgentTable rows={snapshot.agentReturns} currency={currency} />
+        <ReportAgentTable rows={snapshot.agentReturns} currency={currency} />
+      </div>
 
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,1.05fr)_minmax(0,0.8fr)_minmax(0,1fr)_minmax(0,1.25fr)]">
         <ReportRecordList
-          title="Top-ups"
+          title="Topups"
           empty="No top-ups recorded."
           rows={snapshot.topUps.map((topUp, index) => ({
             id: topUp.id ?? `topup-${index}`,
@@ -812,21 +948,12 @@ function ComputerisedReportView({
             value: formatMoney(numberValue(expense.amount), currency),
           }))}
         />
-      </div>
-
-      <div className="grid gap-3 text-xs text-slate-600 sm:grid-cols-3">
-        <ReportDetail
-          label="Opened By"
-          value={textValue(snapshot.operation.openedByName, "Not recorded")}
+        <ReportOperationCard
+          openedBy={textValue(snapshot.operation.openedByName, "Not recorded")}
+          closedBy={textValue(snapshot.operation.closedByName, "Not recorded")}
+          sentAt={formatDateTime(report.managerReviewedAt)}
         />
-        <ReportDetail
-          label="Closed By"
-          value={textValue(snapshot.operation.closedByName, "Not recorded")}
-        />
-        <ReportDetail
-          label="Sent To Owner"
-          value={formatDateTime(report.managerReviewedAt)}
-        />
+        {reviewPanel}
       </div>
 
       {snapshot.closingNotes ? (
@@ -1034,50 +1161,44 @@ function OwnerReviewPanel({
 }) {
   const waiting = report.status === "SENT_TO_OWNER";
   return (
-    <aside
-      className={`grid gap-3 ${
-        waiting
-          ? "xl:grid-cols-[minmax(0,0.75fr)_minmax(0,0.75fr)_minmax(320px,1fr)]"
-          : "xl:grid-cols-2"
-      }`}
-    >
-      <div className="border border-[var(--line)] bg-[var(--soft-ivory)] p-3">
-        <p className="text-[11px] font-bold tracking-[0.12em] text-[var(--forest-emerald)]">
+    <>
+      <div className="rounded-xl border border-[#e6ebf0] bg-white p-4">
+        <p className="text-[11px] font-extrabold tracking-[0.08em] text-amber-700">
           Review Status
         </p>
-        <h3 className="mt-2 text-base font-bold text-[var(--midnight-navy)]">
+        <h3 className="mt-2 text-base font-extrabold text-[var(--midnight-navy)]">
           {statusLabel(report.status)}
         </h3>
-        <p className="mt-1 text-xs text-slate-500">
+        <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
           {statusHelp(report.status)}
         </p>
-      </div>
-      <div className="border border-[var(--line)] bg-white p-3">
-        <ReviewLine
-          label="Manager"
-          name={report.managerReviewedByName}
-          date={report.managerReviewedAt}
-        />
-        <ReviewLine
-          label="Owner"
-          name={report.ownerApprovedByName}
-          date={report.ownerApprovedAt}
-        />
+        <div className="mt-4 grid grid-cols-2 divide-x divide-[#edf1f5] border-t border-[#edf1f5] pt-3">
+          <ReviewLine
+            label="Manager"
+            name={report.managerReviewedByName}
+            date={report.managerReviewedAt}
+          />
+          <ReviewLine
+            label="Owner"
+            name={report.ownerApprovedByName}
+            date={report.ownerApprovedAt}
+          />
+        </div>
       </div>
       {waiting ? (
-        <div className="border border-[var(--line)] bg-white p-3">
-          <label className="text-xs font-bold text-[var(--midnight-navy)]">
+        <div className="rounded-xl border border-[#e6ebf0] bg-white p-4">
+          <label className="text-xs font-extrabold text-[var(--midnight-navy)]">
             Owner Notes
             <textarea
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
-              className="mt-2 min-h-20 w-full border border-[var(--line)] px-3 py-2 text-sm outline-none focus:border-[var(--forest-emerald)]"
+              className="mt-2 min-h-20 w-full rounded-xl border border-[#e6ebf0] px-3 py-2 text-sm font-semibold outline-none focus:border-[var(--forest-emerald)]"
               placeholder="Optional note before approval"
             />
           </label>
           <button
             type="button"
-            className="btn btn-primary mt-3 h-10 w-full text-xs"
+            className="mt-3 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-4 text-xs font-extrabold text-white shadow-[0_10px_20px_rgba(0,135,95,0.18)] disabled:opacity-55"
             onClick={onApprove}
             disabled={approving}
           >
@@ -1089,8 +1210,17 @@ function OwnerReviewPanel({
             Approve Report
           </button>
         </div>
-      ) : null}
-    </aside>
+      ) : (
+        <div className="rounded-xl border border-[#e6ebf0] bg-white p-4">
+          <p className="text-xs font-extrabold text-[var(--midnight-navy)]">
+            Owner Notes
+          </p>
+          <p className="mt-2 text-sm font-semibold text-slate-500">
+            Report is already approved.
+          </p>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -1104,14 +1234,12 @@ function ReviewLine({
   date: string | null;
 }) {
   return (
-    <div className="border-b border-[var(--line)] py-2 text-xs last:border-b-0">
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-bold text-slate-500">{label}</span>
-        <span className="font-bold text-[var(--midnight-navy)]">
+    <div className="px-3 text-xs first:pl-0 last:pr-0">
+      <span className="font-bold text-slate-500">{label}</span>
+      <p className="mt-1 font-extrabold text-[var(--midnight-navy)]">
           {name ?? "Pending"}
-        </span>
-      </div>
-      <p className="mt-1 text-right text-slate-500">{formatDateTime(date)}</p>
+      </p>
+      <p className="mt-1 text-[11px] text-slate-500">{formatDateTime(date)}</p>
     </div>
   );
 }
@@ -1129,26 +1257,39 @@ function ReportMetric({
 }) {
   return (
     <div
-      className={`border p-3 ${
+      className={`flex min-h-[64px] min-w-0 items-center gap-3 rounded-xl border px-3 py-2.5 ${
         highlight
-          ? "border-emerald-200 bg-emerald-50"
+          ? "border-emerald-100 bg-emerald-50"
           : danger
             ? "border-red-100 bg-red-50"
-            : "border-[var(--line)] bg-white"
+            : "border-[#e6ebf0] bg-white"
       }`}
     >
-      <p className="truncate text-[10px] font-bold text-slate-500">{label}</p>
-      <p
-        className={`mt-1 truncate text-sm font-bold tabular-nums ${
+      <span
+        className={`grid size-8 shrink-0 place-items-center rounded-lg ${
           highlight
-            ? "text-[var(--forest-emerald)]"
+            ? "bg-white text-[var(--forest-emerald)]"
             : danger
-              ? "text-red-700"
-              : "text-[var(--midnight-navy)]"
+              ? "bg-white text-red-600"
+              : "bg-slate-50 text-slate-600"
         }`}
       >
-        {value}
-      </p>
+        <FileText className="size-4" />
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-[10px] font-bold text-slate-500">{label}</p>
+        <p
+          className={`mt-1 break-words text-sm font-extrabold tabular-nums ${
+            highlight
+              ? "text-[var(--forest-emerald)]"
+              : danger
+                ? "text-red-700"
+                : "text-[var(--midnight-navy)]"
+          }`}
+        >
+          {value}
+        </p>
+      </div>
     </div>
   );
 }
@@ -1161,11 +1302,11 @@ function ReportBlock({
   children: ReactNode;
 }) {
   return (
-    <section className="border border-[var(--line)] bg-white">
-      <h3 className="border-b border-[var(--line)] bg-[var(--soft-mist)] px-3 py-2 text-sm font-bold text-[var(--midnight-navy)]">
+    <section className="overflow-hidden rounded-xl border border-[#e6ebf0] bg-white">
+      <h3 className="border-b border-[#edf1f5] bg-[#f8faf9] px-4 py-3 text-sm font-extrabold text-[var(--midnight-navy)]">
         {title}
       </h3>
-      <div className="p-3">{children}</div>
+      <div className="p-4">{children}</div>
     </section>
   );
 }
@@ -1182,16 +1323,16 @@ function StatementRow({
   danger?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-[1fr_auto] gap-3 border-b border-[var(--line)] py-2 text-sm last:border-b-0">
+    <div className="grid grid-cols-[1fr_auto] gap-3 border-b border-[#edf1f5] py-2.5 text-sm last:border-b-0">
       <span
         className={
-          strong ? "font-bold text-[var(--midnight-navy)]" : "text-slate-600"
+          strong ? "font-extrabold text-[var(--midnight-navy)]" : "font-semibold text-slate-600"
         }
       >
         {label}
       </span>
       <span
-        className={`font-bold tabular-nums ${
+        className={`font-extrabold tabular-nums ${
           danger ? "text-red-700" : "text-[var(--midnight-navy)]"
         }`}
       >
@@ -1211,18 +1352,18 @@ function ReportMiniStat({
   hint: string;
 }) {
   return (
-    <div className="panel flex min-h-[76px] min-w-0 items-start gap-1.5 bg-white px-1.5 py-2 shadow-[0_8px_20px_rgba(20,33,61,0.05)] sm:gap-2 sm:px-2 xl:px-3">
-      <span className="hidden size-7 shrink-0 place-items-center border border-slate-200 bg-slate-50 text-slate-600 md:grid xl:size-8">
+    <div className="flex min-h-[70px] min-w-0 items-start gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 py-2.5 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-slate-50 text-slate-600">
         <FileText className="size-4" />
       </span>
       <div className="min-w-0">
-        <p className="text-[8px] font-semibold tracking-[0.06em] text-slate-500 sm:text-[9px] xl:text-[10px]">
+        <p className="text-[10px] font-bold text-slate-500">
           {label}
         </p>
-        <p className="mt-1 truncate text-[clamp(0.55rem,1.15vw,1rem)] font-bold leading-tight tabular-nums text-[var(--midnight-navy)]">
+        <p className="mt-1 break-words text-sm font-extrabold leading-tight tabular-nums text-[var(--midnight-navy)]">
           {value}
         </p>
-        <p className="mt-0.5 truncate text-[clamp(0.5rem,0.9vw,0.7rem)] leading-tight text-slate-500">
+        <p className="mt-0.5 truncate text-[11px] leading-tight text-slate-500">
           {hint}
         </p>
       </div>
@@ -1240,7 +1381,7 @@ function ReportAgentTable({
   return (
     <ReportBlock title="Agent Handover">
       <table className="w-full table-fixed text-left text-[11px]">
-        <thead className="bg-[#e5ece8] text-[10px] font-bold text-slate-500">
+        <thead className="bg-[#f8faf9] text-[10px] font-bold text-slate-500">
           <tr>
             <th className="w-[24%] px-2 py-2">Agent</th>
             <th className="w-[14%] px-2 py-2 text-right">Float</th>
@@ -1250,7 +1391,7 @@ function ReportAgentTable({
             <th className="w-[20%] px-2 py-2">Status</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-[var(--line)]">
+        <tbody className="divide-y divide-[#edf1f5]">
           {rows.length === 0 ? (
             <tr>
               <td colSpan={6} className="px-2 py-6 text-center text-slate-500">
@@ -1261,12 +1402,19 @@ function ReportAgentTable({
             rows.map((row, index) => (
               <tr key={row.floatId ?? row.agentId ?? index}>
                 <td className="px-2 py-2">
-                  <p className="truncate font-bold text-[var(--midnight-navy)]">
-                    {row.agentName ?? "Agent"}
-                  </p>
-                  <p className="truncate text-[10px] text-slate-500">
-                    {row.agentPublicId ?? "-"}
-                  </p>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="grid size-8 shrink-0 place-items-center rounded-full bg-slate-100 text-[10px] font-extrabold text-slate-600">
+                      {initials(row.agentName ?? "Agent")}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate font-bold text-[var(--midnight-navy)]">
+                        {row.agentName ?? "Agent"}
+                      </p>
+                      <p className="truncate text-[10px] text-slate-500">
+                        {row.agentPublicId ?? "-"}
+                      </p>
+                    </div>
+                  </div>
                 </td>
                 <td className="px-2 py-2 text-right font-bold tabular-nums">
                   {formatMoney(numberValue(row.amountGiven), currency)}
@@ -1304,9 +1452,16 @@ function ReportRecordList({
   return (
     <ReportBlock title={title}>
       {rows.length === 0 ? (
-        <p className="py-5 text-center text-sm text-slate-500">{empty}</p>
+        <div className="grid min-h-[126px] place-items-center text-center">
+          <div>
+            <span className="mx-auto grid size-14 place-items-center rounded-full bg-emerald-50 text-[var(--forest-emerald)]">
+              <FileText className="size-5" />
+            </span>
+            <p className="mt-3 text-sm font-semibold text-slate-500">{empty}</p>
+          </div>
+        </div>
       ) : (
-        <div className="divide-y divide-[var(--line)]">
+        <div className="divide-y divide-[#edf1f5]">
           {rows.map((row) => (
             <div key={row.id} className="grid grid-cols-[1fr_auto] gap-3 py-2">
               <div className="min-w-0">
@@ -1315,7 +1470,7 @@ function ReportRecordList({
                 </p>
                 <p className="truncate text-xs text-slate-500">{row.meta}</p>
               </div>
-              <p className="text-sm font-bold tabular-nums text-[var(--midnight-navy)]">
+              <p className="text-sm font-extrabold tabular-nums text-[var(--midnight-navy)]">
                 {row.value}
               </p>
             </div>
@@ -1326,11 +1481,29 @@ function ReportRecordList({
   );
 }
 
-function ReportDetail({ label, value }: { label: string; value: string }) {
+function ReportOperationCard({
+  openedBy,
+  closedBy,
+  sentAt,
+}: {
+  openedBy: string;
+  closedBy: string;
+  sentAt: string;
+}) {
   return (
-    <div className="border border-[var(--line)] bg-white p-3">
-      <p className="text-[10px] font-bold text-slate-500">{label}</p>
-      <p className="mt-1 truncate font-bold text-[var(--midnight-navy)]">
+    <div className="rounded-xl border border-[#e6ebf0] bg-white p-4 text-xs">
+      <OperationLine label="Opened by" value={openedBy} />
+      <OperationLine label="Closed by" value={closedBy} />
+      <OperationLine label="Sent to Owner" value={sentAt} />
+    </div>
+  );
+}
+
+function OperationLine({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border-b border-[#edf1f5] py-2 first:pt-0 last:border-b-0 last:pb-0">
+      <p className="font-semibold text-slate-500">{label}</p>
+      <p className="mt-1 break-words font-extrabold text-[var(--midnight-navy)]">
         {value}
       </p>
     </div>
@@ -1605,6 +1778,15 @@ function formatDateTime(value: string | null | undefined) {
 function categoryLabel(value: string | null | undefined) {
   if (!value) return "Expense";
   return titleCase(value.replaceAll("_", " ").toLowerCase());
+}
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
 }
 
 function statusLabel(value: string) {

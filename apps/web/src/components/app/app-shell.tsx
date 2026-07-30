@@ -1,11 +1,13 @@
 "use client";
 
 import {
+  ArrowRight,
   Building2,
   CalendarDays,
   ChevronDown,
   ClipboardCheck,
   FileText,
+  HandCoins,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -78,21 +80,33 @@ export function AppShell({
         enabled: operatorRole === "owner",
       },
       {
-        href: "/owner/reports",
-        label: "Sent Reports",
-        icon: ClipboardCheck,
-        enabled: operatorRole === "owner",
-      },
-      {
         href: "/owner/portfolio",
-        label: "Portfolio",
+        label: "Loans",
         icon: FileText,
         enabled: operatorRole === "owner",
       },
       {
         href: "/owner/borrowers",
         label: "Borrowers",
-        icon: UserRound,
+        icon: Users,
+        enabled: operatorRole === "owner",
+      },
+      {
+        href: "/owner/collections",
+        label: "Collections",
+        icon: HandCoins,
+        enabled: operatorRole === "owner",
+      },
+      {
+        href: "/owner/reports",
+        label: "Reports",
+        icon: ClipboardCheck,
+        enabled: operatorRole === "owner",
+      },
+      {
+        href: "/owner/sent-reports",
+        label: "Sent Reports",
+        icon: FileText,
         enabled: operatorRole === "owner",
       },
       {
@@ -106,6 +120,12 @@ export function AppShell({
         label: "Payments",
         icon: Wallet,
         enabled: operatorRole === "owner",
+      },
+      {
+        href: "/owner/settings",
+        label: "Settings",
+        icon: Settings,
+        enabled: false,
       },
     ];
 
@@ -191,7 +211,7 @@ export function AppShell({
       ["/loans", "/owner/portfolio"],
       ["/clients", "/owner/borrowers"],
       ["/blacklist-watchlist", "/owner/risk"],
-      ["/collections/daily", "/owner/payments"],
+      ["/collections/daily", "/owner/collections"],
       ["/settings", "/owner/settings"],
     ];
     const match = redirects.find(
@@ -295,6 +315,44 @@ export function AppShell({
     );
   }
 
+  if (operatorRole === "owner") {
+    return (
+      <div className="min-h-screen bg-[#f6f8fb] text-[var(--slate-text)]">
+        <OwnerSidebar
+          homeHref={homeHref}
+          mobileOpen={mobileOpen}
+          pathname={pathname}
+          primaryNav={primaryNav}
+          user={user}
+          onCloseMobile={() => setMobileOpen(false)}
+          onLogout={handleLogout}
+        />
+
+        {mobileOpen ? (
+          <button
+            type="button"
+            className="fixed inset-0 z-30 bg-[rgba(10,18,32,0.5)] backdrop-blur-[2px] lg:hidden"
+            aria-label="Close overlay"
+            onClick={() => setMobileOpen(false)}
+          />
+        ) : null}
+
+        <button
+          type="button"
+          className="fixed left-4 top-4 z-30 grid size-10 place-items-center rounded-2xl border border-white/50 bg-white text-[var(--midnight-navy)] shadow-[0_12px_26px_rgba(15,23,42,0.1)] lg:hidden"
+          onClick={() => setMobileOpen(true)}
+          aria-label="Open navigation"
+        >
+          <Menu className="size-4" />
+        </button>
+
+        <main className="min-h-screen px-4 py-5 sm:px-5 lg:pl-[268px] lg:pr-5 lg:pt-5">
+          {children}
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="app-shell min-h-screen text-[var(--slate-text)]">
       <aside
@@ -319,7 +377,7 @@ export function AppShell({
                   REMBEH
                 </p>
                 <p className="mt-1 text-[10px] capitalize tracking-[0.12em] text-white/45">
-                  {operatorRole === "owner" ? "Owner" : "Manager"}
+                  Manager
                 </p>
               </div>
             </Link>
@@ -350,7 +408,7 @@ export function AppShell({
                     key={item.href}
                     href={item.href}
                     onClick={() => setMobileOpen(false)}
-                  className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                    className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${
                       active
                         ? "bg-[var(--forest-emerald)] text-white shadow-[0_10px_24px_rgba(0,0,0,0.12)]"
                         : "text-white/72 hover:bg-white/10 hover:text-white"
@@ -366,20 +424,11 @@ export function AppShell({
             <div className="mt-auto space-y-1 border-t border-white/10 pt-3">
               {settingsEnabled ? (
                 <Link
-                  href={
-                    operatorRole === "owner" ? "/owner/settings" : "/settings"
-                  }
+                  href="/settings"
                   onClick={() => setMobileOpen(false)}
                   className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${
-                    pathname ===
-                      (operatorRole === "owner"
-                        ? "/owner/settings"
-                        : "/settings") ||
-                    pathname.startsWith(
-                      operatorRole === "owner"
-                        ? "/owner/settings/"
-                        : "/settings/",
-                    )
+                    pathname === "/settings" ||
+                    pathname.startsWith("/settings/")
                       ? "bg-[var(--forest-emerald)] text-white shadow-[0_10px_24px_rgba(0,0,0,0.12)]"
                       : "text-white/72 hover:bg-white/10 hover:text-white"
                   }`}
@@ -427,9 +476,7 @@ export function AppShell({
                   {workspace?.name ?? "REMBEH"}
                 </p>
                 <h1 className="truncate text-sm font-bold text-[var(--midnight-navy)]">
-                  {operatorRole === "manager"
-                    ? (branch?.name ?? "branch")
-                    : "account"}
+                  {branch?.name ?? "branch"}
                 </h1>
               </div>
             </div>
@@ -464,8 +511,7 @@ export function AppShell({
                     <ProfileLine
                       label="Role"
                       value={
-                        user?.roleName ??
-                        (operatorRole === "owner" ? "account owner" : "manager")
+                        user?.roleName ?? "manager"
                       }
                     />
                     <ProfileLine
@@ -514,6 +560,155 @@ export function AppShell({
   );
 }
 
+function OwnerSidebar({
+  homeHref,
+  mobileOpen,
+  pathname,
+  primaryNav,
+  user,
+  onCloseMobile,
+  onLogout,
+}: {
+  homeHref: string;
+  mobileOpen: boolean;
+  pathname: string;
+  primaryNav: Array<{
+    href: string;
+    label: string;
+    icon: typeof LayoutDashboard;
+    matchPath?: string;
+  }>;
+  user: RembehUser | null;
+  onCloseMobile: () => void;
+  onLogout: () => void;
+}) {
+  return (
+    <aside
+      className={`fixed inset-y-0 left-0 z-40 w-[248px] transform overflow-hidden bg-[#003f35] text-white shadow-[18px_0_44px_rgba(0,38,31,0.18)] transition duration-200 lg:translate-x-0 ${
+        mobileOpen ? "translate-x-0" : "-translate-x-full"
+      }`}
+    >
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,#00473d_0%,#003e35_52%,#002e28_100%)]" />
+      <div className="relative flex h-full min-h-0 flex-col px-5 py-5">
+        <div className="flex items-center justify-between gap-3">
+          <Link
+            href={homeHref}
+            onClick={onCloseMobile}
+            className="flex min-w-0 items-center gap-3"
+          >
+            <Image
+              src={rembehIcon}
+              alt="REMBEH"
+              className="size-10 rounded-xl object-cover shadow-[0_10px_24px_rgba(0,0,0,0.16)]"
+              priority
+            />
+            <div className="min-w-0">
+              <p className="font-[family-name:var(--font-display)] text-xl font-bold leading-none tracking-[-0.03em] text-white">
+                REMBEH
+              </p>
+              <p className="mt-1 text-[8px] font-extrabold uppercase tracking-[0.14em] text-white/72">
+                Financial Services
+              </p>
+            </div>
+          </Link>
+          <button
+            type="button"
+            className="grid size-8 place-items-center rounded-2xl bg-white/10 text-white lg:hidden"
+            onClick={onCloseMobile}
+            aria-label="Close navigation"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <nav className="mt-7 min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
+          {primaryNav.map((item) => {
+            const Icon = item.icon;
+            const activePath = item.matchPath ?? item.href;
+            const active =
+              pathname === activePath ||
+              (activePath !== "/owner" &&
+                pathname.startsWith(`${activePath}/`));
+            return (
+              <Link
+                key={`${item.href}-${item.label}`}
+                href={item.href}
+                onClick={onCloseMobile}
+                className={`relative flex h-11 items-center gap-3 rounded-xl px-3 text-[13px] font-bold transition ${
+                  active
+                    ? "bg-white/14 text-white ring-1 ring-white/10 shadow-[0_15px_28px_rgba(0,21,17,0.18)] before:absolute before:left-0 before:h-6 before:w-1 before:rounded-r-full before:bg-[#20d08d]"
+                    : "text-white/78 hover:bg-white/9 hover:text-white"
+                }`}
+              >
+                <Icon
+                  className={`size-4 shrink-0 ${
+                    active ? "text-[#7df2bd]" : "text-white/75"
+                  }`}
+                />
+                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="mt-3 shrink-0 rounded-2xl border border-white/12 bg-white/[0.045] p-3 shadow-[0_14px_30px_rgba(0,21,17,0.14)] [@media(max-height:760px)]:hidden">
+          <div className="flex items-start gap-2.5">
+            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#d9f7e7] text-[#006b4f]">
+              <Users className="size-[18px]" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-extrabold text-white">
+                Scale your lending
+              </p>
+              <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-white/64">
+                Invite managers and agents to grow your portfolio.
+              </p>
+            </div>
+          </div>
+          <Link
+            href="/owner/branches"
+            onClick={onCloseMobile}
+            className="mt-3 flex h-8 items-center justify-between rounded-xl bg-[#19a876] px-3 text-[11px] font-extrabold text-white shadow-[0_10px_20px_rgba(25,168,118,0.2)] transition hover:bg-[#15986b]"
+          >
+            Invite Team
+            <ArrowRight className="size-3.5" />
+          </Link>
+        </div>
+
+        <div className="mt-4 shrink-0 border-t border-white/14 pt-4">
+          <div className="flex items-center gap-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white/12 text-xs font-extrabold text-white">
+              {initials(user?.name ?? "Owner")}
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-xs font-extrabold text-white">
+                {user?.name ?? "Owner"}
+              </p>
+              <p className="text-xs font-semibold text-white/62">Owner</p>
+            </div>
+            <Link
+              href="/owner/settings"
+              onClick={onCloseMobile}
+              className="grid size-8 place-items-center rounded-xl text-white/75 transition hover:bg-white/10 hover:text-white"
+              aria-label="Open settings"
+            >
+              <ChevronDown className="size-4" />
+            </Link>
+          </div>
+          <button
+            type="button"
+            onClick={onLogout}
+            className="mt-4 flex h-9 w-full items-center gap-2 rounded-xl px-2 text-xs font-semibold text-white/75 transition hover:bg-white/10 hover:text-white"
+          >
+            <LogOut className="size-3.5" />
+            Sign out
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
 function ProfileLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-3">
@@ -523,4 +718,13 @@ function ProfileLine({ label, value }: { label: string; value: string }) {
       </span>
     </div>
   );
+}
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
 }

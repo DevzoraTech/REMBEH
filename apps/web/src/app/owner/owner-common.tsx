@@ -259,7 +259,7 @@ export function OwnerStat({
           {label}
         </p>
         <p
-          className={`mt-1 truncate text-[clamp(0.55rem,1.15vw,1rem)] font-bold leading-tight tabular-nums ${valueClass}`}
+          className={`mt-1 break-words text-[clamp(0.55rem,1.15vw,1rem)] font-bold leading-tight tabular-nums ${valueClass}`}
         >
           {value}
         </p>

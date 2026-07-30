@@ -400,17 +400,21 @@ export default function OperationsPage() {
   );
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const queryDate = params.get("date");
-    const prompt = params.get("prompt");
-    if (validDateInputValue(queryDate)) {
-      setDate((current) => (queryDate === current ? current : queryDate!));
-    }
-    if (prompt === "close") {
-      setNotice("Close the previous branch day before opening a new day.");
-    } else if (prompt === "open") {
-      setNotice("Open today's branch before continuing.");
-    }
+    const boot = window.setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      const queryDate = params.get("date");
+      const prompt = params.get("prompt");
+      if (validDateInputValue(queryDate)) {
+        setDate((current) => (queryDate === current ? current : queryDate!));
+      }
+      if (prompt === "close") {
+        setNotice("Close the previous branch day before opening a new day.");
+      } else if (prompt === "open") {
+        setNotice("Open today's branch before continuing.");
+      }
+    }, 0);
+
+    return () => window.clearTimeout(boot);
   }, []);
 
   const loadAgentsForDay = useCallback(
@@ -2542,7 +2546,7 @@ function ReportMetric({
     >
       <p className="text-[10px] font-bold text-slate-500">{label}</p>
       <p
-        className={`mt-1 truncate text-sm font-bold tabular-nums ${
+        className={`mt-1 break-words text-sm font-bold tabular-nums ${
           highlight
             ? "text-[var(--forest-emerald)]"
             : "text-[var(--midnight-navy)]"
