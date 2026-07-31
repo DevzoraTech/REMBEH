@@ -69,6 +69,10 @@ deploy_web_on_server() {
   export NODE_OPTIONS='--max-old-space-size=768'
   export NEXT_PUBLIC_API_URL="$API_URL"
 
+  echo "==> npm install (web workspace)..."
+  # Do NOT source .env before install — NODE_ENV=production skips devDependencies.
+  npm install --workspace apps/web --include=dev
+
   # Bake public Firebase web config into the Next.js build when present on server.
   if [[ -f "$REMOTE_DIR/.env" ]]; then
     set -a
@@ -77,9 +81,6 @@ deploy_web_on_server() {
     set +a
     export NEXT_PUBLIC_API_URL="$API_URL"
   fi
-
-  echo "==> npm install (web workspace)..."
-  npm install --workspace apps/web
 
   echo "==> Next.js build..."
   cd apps/web
