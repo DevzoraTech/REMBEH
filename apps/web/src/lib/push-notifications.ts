@@ -1,6 +1,6 @@
 "use client";
 
-import { getToken, onMessage } from "firebase/messaging";
+import { getToken, onMessage, type MessagePayload } from "firebase/messaging";
 import { apiBaseUrl, readApiJson } from "./api";
 import { getFirebaseMessaging } from "./firebase";
 import { readAuthState } from "./auth-session";
@@ -114,7 +114,7 @@ export async function listenForForegroundPush(
     return () => undefined;
   }
 
-  return onMessage(messaging, (payload) => {
+  return onMessage(messaging, (payload: MessagePayload) => {
     const title = payload.notification?.title ?? payload.data?.title ?? "REMBEH";
     const body =
       payload.notification?.body ?? payload.data?.body ?? "New notification";
