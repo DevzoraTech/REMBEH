@@ -104,11 +104,25 @@ Optional on the server `.env` (see root `.env.example`):
 
 | Variable | Notes |
 |----------|--------|
-| `SMS_PROVIDER` | `mock` (default, logs only), `twilio`, or `africastalking` |
+| `SMS_PROVIDER` | `mock` (default), `pahappa` (EgoSMS), `twilio`, or `africastalking` |
+| `PAHAPPA_USERNAME` / `PAHAPPA_API_KEY` or `PAHAPPA_PASSWORD` / `PAHAPPA_SENDER` | Required for Pahappa EgoSMS |
 | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER` | Required for Twilio |
 | `AFRICASTALKING_USERNAME` / `AFRICASTALKING_API_KEY` / `AFRICASTALKING_FROM` | Required for Africa's Talking |
 
 If keys are missing, SMS stays in stub/log mode even when `SMS_PROVIDER` is set.
+
+### Flutterwave (gateway — server only)
+
+| Variable | Notes |
+|----------|--------|
+| `FLW_ENABLED` | `true` to activate |
+| `FLW_PUBLIC_KEY` | Safe for clients via `GET /payments/flutterwave/config` |
+| `FLW_SECRET_KEY` | **Server only** — never ship to web/mobile |
+| `FLW_SECRET_HASH` | Dashboard webhook secret; compared to `verif-hash` with timing-safe equality |
+| `FLW_DEFAULT_CURRENCY` | Default `UGX` |
+| `FLW_REDIRECT_URL` | Default return URL after checkout |
+
+Webhook endpoint: `POST /payments/flutterwave/webhook`. Success is only marked after server-side verify (amount + currency + `tx_ref`).
 
 ### Overdue fines cron
 

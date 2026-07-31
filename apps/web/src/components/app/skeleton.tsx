@@ -1,3 +1,8 @@
+import {
+  AuthCardSkeleton,
+  AuthScene,
+} from "../auth/auth-scene";
+
 type SkeletonBlockProps = {
   className?: string;
 };
@@ -85,25 +90,8 @@ export function AppBootSkeleton() {
 
 export function AuthPageSkeleton() {
   return (
-    <main className="auth-shell min-h-screen text-[var(--slate-text)]">
-      <div className="mx-auto grid min-h-screen w-full max-w-[1200px] lg:grid-cols-[1fr_1fr]">
-        <aside className="auth-panel hidden px-10 py-10 lg:block">
-          <SkeletonBlock className="h-8 w-40 bg-white/15" />
-          <div className="mt-32 space-y-3">
-            <SkeletonBlock className="h-3 w-24 bg-white/15" />
-            <SkeletonBlock className="h-10 w-56 bg-white/15" />
-          </div>
-        </aside>
-        <section className="flex items-center px-5 py-8 sm:px-8 lg:px-12">
-          <div className="auth-card mx-auto w-full max-w-[460px] space-y-5">
-            <SkeletonBlock className="h-3 w-24" />
-            <SkeletonBlock className="h-8 w-48" />
-            <SkeletonBlock className="h-11 w-full" />
-            <SkeletonBlock className="h-11 w-full" />
-            <SkeletonBlock className="h-11 w-full" />
-          </div>
-        </section>
-      </div>
-    </main>
+    <AuthScene>
+      <AuthCardSkeleton />
+    </AuthScene>
   );
 }

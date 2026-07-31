@@ -8,6 +8,7 @@ import {
   ClipboardCheck,
   Folder,
   Search,
+  Settings,
 } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -35,6 +36,7 @@ export function OwnerHeader({
   notifications,
   actions,
   showReportsButton = true,
+  settingsHref = "/owner/settings",
 }: {
   eyebrow?: string;
   title: string;
@@ -46,6 +48,7 @@ export function OwnerHeader({
   notifications: OwnerNotificationItem[];
   actions?: ReactNode;
   showReportsButton?: boolean;
+  settingsHref?: string;
 }) {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
@@ -114,6 +117,15 @@ export function OwnerHeader({
             onClose={() => setNotificationsOpen(false)}
           />
         </div>
+        <Tooltip label="Open settings.">
+          <Link
+            href={settingsHref}
+            className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:border-emerald-200 hover:bg-emerald-50"
+            aria-label="Settings"
+          >
+            <Settings className="size-4" />
+          </Link>
+        </Tooltip>
         {showReportsButton ? (
           <Tooltip label="Open the report review page.">
             <Link

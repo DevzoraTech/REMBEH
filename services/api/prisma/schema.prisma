@@ -101,6 +101,18 @@ enum RepaymentMethod {
   OTHER
 }
 
+enum PaymentGatewayProvider {
+  FLUTTERWAVE
+}
+
+enum PaymentGatewayIntentStatus {
+  PENDING
+  SUCCESSFUL
+  FAILED
+  CANCELLED
+  REVERSED
+}
+
 enum BranchOperationStatus {
   OPEN
   CLOSING
@@ -181,6 +193,7 @@ model Tenant {
   customers                Customer[]
   loans                    Loan[]
   repayments               Repayment[]
+  paymentGatewayIntents    PaymentGatewayIntent[]
   clientWallets            ClientWallet[]
   loanApplications         LoanApplication[]
   loanRateOptions          LoanRateOption[]
@@ -786,6 +799,44 @@ model Repayment {
   @@index([tenantId, loanId])
   @@index([tenantId, recordedByUserId])
   @@map("repayments")
+}
+
+/// Flutterwave (and future PSP) payment intents — server-side source of truth.
+/// Never trust client redirect status; verify via API + signed webhooks.
+model PaymentGatewayIntent {
+  id                 String                     @id @default(uuid()) @db.Uuid
+  tenantId           String                     @map("tenant_id") @db.Uuid
+  provider           PaymentGatewayProvider     @default(FLUTTERWAVE)
+  /// Merchant reference — unique idempotency key we generate (tx_ref).
+  txRef              String                     @unique @map("tx_ref")
+  flwTransactionId   String?                    @map("flw_transaction_id")
+  flwFlwRef          String?                    @map("flw_flw_ref")
+  amount             Decimal                    @db.Decimal(18, 2)
+  currency           String
+  status             PaymentGatewayIntentStatus @default(PENDING)
+  purpose            String
+  customerEmail      String?                    @map("customer_email")
+  customerPhone      String?                    @map("customer_phone")
+  customerName       String?                    @map("customer_name")
+  loanId             String?                    @map("loan_id") @db.Uuid
+  branchId           String?                    @map("branch_id") @db.Uuid
+  initiatedByUserId  String?                    @map("initiated_by_user_id") @db.Uuid
+  paymentLink        String?                    @map("payment_link")
+  verifiedAmount     Decimal?                   @map("verified_amount") @db.Decimal(18, 2)
+  verifiedCurrency   String?                    @map("verified_currency")
+  verifiedAt         DateTime?                  @map("verified_at")
+  failureReason      String?                    @map("failure_reason")
+  /// Non-sensitive metadata only (purpose ids, loan refs). Never store PANs/CVV.
+  metadata           Json?
+  lastEventType      String?                    @map("last_event_type")
+  createdAt          DateTime                   @default(now()) @map("created_at")
+  updatedAt          DateTime                   @updatedAt @map("updated_at")
+  tenant             Tenant                     @relation(fields: [tenantId], references: [id])
+
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, loanId])
+  @@index([flwTransactionId])
+  @@map("payment_gateway_intents")
 }
 
 model LoanApplication {

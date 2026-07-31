@@ -117,8 +117,8 @@ option {
 .field-input {
   height: 2.75rem;
   width: 100%;
-  border-radius: var(--radius);
-  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  border: 1px solid #d7dee6;
   background: #fff;
   padding: 0 0.75rem;
   font-size: 0.875rem;
@@ -128,9 +128,7 @@ option {
 
 .field-input:focus {
   border-color: var(--forest-emerald);
-  box-shadow:
-    0 0 0 3px rgba(15, 138, 108, 0.12),
-    inset 0 0 0 1px var(--forest-emerald);
+  box-shadow: 0 0 0 3px rgba(15, 138, 108, 0.12);
 }
 
 .field-input::placeholder {

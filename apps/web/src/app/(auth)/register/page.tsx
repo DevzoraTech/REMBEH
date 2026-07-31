@@ -1,21 +1,25 @@
 "use client";
 
-import { Mail, RefreshCw } from "lucide-react";
+import { ArrowRight, Loader2, Mail, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { AuthShell } from "../../components/auth/auth-shell";
-import { AuthPageSkeleton } from "../../components/app/skeleton";
+import {
+  AuthCardHeader,
+  AuthCardSkeleton,
+  AuthGhostButton,
+  AuthPrimaryButton,
+  AuthStepBar,
+} from "../../../components/auth/auth-scene";
 import {
   FormError,
   OtpInput,
   PasswordField,
   PhoneField,
-  PrimaryButton,
   SelectField,
   TextField,
-} from "../../components/auth/form-controls";
-import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
+} from "../../../components/auth/form-controls";
+import { apiBaseUrl, formatApiError, readApiJson } from "../../../lib/api";
 import {
   RembehSession,
   RembehUser,
@@ -23,12 +27,12 @@ import {
   isSessionExpired,
   persistAuthState,
   readAuthState,
-} from "../../lib/auth-session";
+} from "../../../lib/auth-session";
 import {
   PHONE_COUNTRIES,
   countryByDialCode,
   formatInternationalPhone,
-} from "../../lib/phone";
+} from "../../../lib/phone";
 
 type OtpChallenge = {
   id: string;
@@ -84,6 +88,10 @@ type VerificationResponse = {
   message?: string | string[];
 };
 
+type RegisterStep = "business" | "owner" | "account" | "verify";
+
+const STEPS = ["Business", "Owner", "Account", "Verify"] as const;
+
 const COUNTRY_OPTIONS = PHONE_COUNTRIES.map((country) => ({
   value: country.name,
   label: `${country.flag} ${country.name}`,
@@ -91,7 +99,7 @@ const COUNTRY_OPTIONS = PHONE_COUNTRIES.map((country) => ({
 
 export default function RegisterPage() {
   const router = useRouter();
-  const [step, setStep] = useState<"details" | "verify">("details");
+  const [step, setStep] = useState<RegisterStep>("business");
   const [formData, setFormData] = useState({
     businessName: "",
     country: "Uganda",
@@ -167,6 +175,34 @@ export default function RegisterPage() {
     }));
   }
 
+  function goNextFromBusiness(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    if (!formData.businessName.trim()) {
+      setError("Enter your business name.");
+      return;
+    }
+    setStep("owner");
+  }
+
+  function goNextFromOwner(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError(null);
+    if (!formData.ownerName.trim()) {
+      setError("Enter the owner full name.");
+      return;
+    }
+    const phone = formatInternationalPhone(
+      formData.phoneCountryCode,
+      formData.phoneNationalNumber,
+    );
+    if (!phone) {
+      setError("Enter a valid phone number.");
+      return;
+    }
+    setStep("account");
+  }
+
   async function handleRegister(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
@@ -232,17 +268,14 @@ export default function RegisterPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(
-        `${apiBaseUrl}/auth/workspace/verify-email`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            challengeId: registration.emailChallenge.id,
-            code: emailOtpCode,
-          }),
-        },
-      );
+      const response = await fetch(`${apiBaseUrl}/auth/workspace/verify-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          challengeId: registration.emailChallenge.id,
+          code: emailOtpCode,
+        }),
+      });
 
       const payload = await readApiJson<VerificationResponse>(response);
 
@@ -328,83 +361,51 @@ export default function RegisterPage() {
   }
 
   if (checkingSession) {
-    return <AuthPageSkeleton />;
+    return <AuthCardSkeleton />;
   }
 
-  return (
-    <AuthShell
-      eyebrow="REMBEH"
-      title="create account"
-      footer={
-        step === "details" ? (
-          <p className="text-center text-sm text-slate-500">
-            already registered?{" "}
-            <Link
-              href="/login"
-              className="font-bold text-[var(--forest-emerald)] hover:underline"
-            >
-              sign in
-            </Link>
-          </p>
-        ) : null
-      }
-    >
-      {step === "verify" && registration ? (
-        <form className="space-y-5" onSubmit={handleVerifyEmail}>
-          <div>
-            <div className="mb-4 flex items-center gap-2">
-              <StepPill active label="1. details" done />
-              <StepPill active label="2. verify" />
-            </div>
-            <p className="text-xs font-semibold capitalize tracking-[0.18em] text-[var(--forest-emerald)]">
-              email verification
-            </p>
-            <h2 className="mt-2 text-3xl font-bold text-[var(--midnight-navy)]">
-              enter your code
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-slate-500">
-              we sent a 6-digit code to{" "}
-              <span className="font-semibold text-[var(--midnight-navy)]">
-                {registration.emailChallenge.destination}
-              </span>
-              {expiresAt ? `. expires ${expiresAt}.` : "."}
-            </p>
+  if (step === "verify" && registration) {
+    return (
+      <div key="verify">
+        <AuthStepBar steps={[...STEPS]} current={3} />
+        <AuthCardHeader
+          title="Verify email"
+          subtitle={`Code sent to ${registration.emailChallenge.destination}${expiresAt ? ` · ${expiresAt}` : ""}`}
+        />
+
+        <form className="mt-3.5 space-y-2.5 text-left" onSubmit={handleVerifyEmail}>
+          <div className="flex items-center gap-2 rounded-xl border border-[#e2e8ee] bg-[#f8fafb] px-2.5 py-2 text-[11px] text-slate-600">
+            <Mail className="size-3.5 shrink-0 text-[var(--forest-emerald)]" />
+            <span className="font-medium text-[var(--midnight-navy)]">
+              {registration.emailDelivery.delivered
+                ? "Check inbox & spam"
+                : "Code pending"}
+            </span>
           </div>
 
-          <div className="rounded-2xl border border-[var(--line)] bg-[var(--soft-mist)] px-4 py-3 text-sm leading-6 text-slate-600">
-            <div className="flex items-start gap-3">
-              <span className="mt-0.5 grid size-8 place-items-center rounded-lg bg-white text-[var(--forest-emerald)]">
-                <Mail className="size-4" />
-              </span>
-              <div>
-                <p className="font-semibold text-[var(--midnight-navy)]">
-                  {registration.emailDelivery.delivered
-                    ? "code sent"
-                    : "code pending"}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <p className="mb-2 text-sm font-semibold text-[var(--midnight-navy)]">
-              verification code
-            </p>
-            <OtpInput value={emailOtpCode} onChange={setEmailOtpCode} />
-          </div>
-
+          <OtpInput value={emailOtpCode} onChange={setEmailOtpCode} />
           <FormError error={error} />
 
-          <PrimaryButton type="submit" loading={isSubmitting}>
-            verify and start setup
-          </PrimaryButton>
+          <AuthPrimaryButton loading={isSubmitting}>
+            {isSubmitting ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" />
+                Verifying…
+              </>
+            ) : (
+              <>
+                Verify & continue
+                <ArrowRight className="size-3.5 transition group-hover:translate-x-0.5" />
+              </>
+            )}
+          </AuthPrimaryButton>
 
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-2 pt-0.5">
             <Link
               href="/login"
-              className="text-sm font-semibold text-slate-500 hover:text-[var(--midnight-navy)]"
+              className="text-[11px] font-semibold text-slate-500 hover:text-[var(--midnight-navy)]"
             >
-              already verified? sign in
+              Sign in instead
             </Link>
             <button
               type="button"
@@ -414,67 +415,99 @@ export default function RegisterPage() {
                 registration.emailChallenge.resendCount >=
                   registration.emailChallenge.maxResends
               }
-              className="inline-flex items-center gap-2 text-sm font-bold text-[var(--forest-emerald)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-1 text-[11px] font-bold normal-case tracking-normal text-[var(--forest-emerald)] disabled:opacity-50"
               onClick={handleResendEmailOtp}
             >
               <RefreshCw
-                className={`size-3.5 ${isResending ? "animate-spin" : ""}`}
+                className={`size-3 ${isResending ? "animate-spin" : ""}`}
               />
-              {resendSeconds > 0
-                ? `resend in ${resendSeconds}s`
-                : "resend code"}
+              {resendSeconds > 0 ? `${resendSeconds}s` : "Resend"}
             </button>
           </div>
         </form>
-      ) : (
-        <form className="space-y-5" onSubmit={handleRegister}>
-          <div>
-            <div className="mb-4 flex items-center gap-2">
-              <StepPill active label="1. details" />
-              <StepPill label="2. verify" />
-            </div>
-            <p className="text-xs font-semibold capitalize tracking-[0.18em] text-[var(--forest-emerald)]">
-              company registration
-            </p>
-            <h2 className="mt-2 text-3xl font-bold text-[var(--midnight-navy)]">
-              set up your account
-            </h2>
-          </div>
+      </div>
+    );
+  }
 
+  if (step === "account") {
+    return (
+      <div key="account">
+        <AuthStepBar steps={[...STEPS]} current={2} />
+        <AuthCardHeader
+          title="Create login"
+          subtitle="Email and password for your owner account"
+        />
+
+        <form className="mt-3.5 space-y-2.5 text-left" onSubmit={handleRegister}>
           <TextField
-            label="Business name"
-            value={formData.businessName}
+            compact
+            label="Work email"
+            type="email"
+            value={formData.email}
             onChange={(value) =>
-              setFormData((current) => ({ ...current, businessName: value }))
+              setFormData((current) => ({ ...current, email: value }))
             }
-            placeholder="Registered company name"
+            placeholder="owner@institution.com"
+            autoComplete="email"
             required
           />
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <SelectField
-              label="Country"
-              value={formData.country}
-              onChange={syncCountryCurrency}
-              options={COUNTRY_OPTIONS}
-              required
-            />
-            <SelectField
-              label="Currency"
-              value={formData.currency}
-              onChange={(value) =>
-                setFormData((current) => ({ ...current, currency: value }))
-              }
-              options={PHONE_COUNTRIES.map((country) => ({
-                value: country.currency,
-                label: country.currency,
-              }))}
-              required
-            />
+          <PasswordField
+            compact
+            label="Password"
+            value={formData.password}
+            onChange={(value) =>
+              setFormData((current) => ({ ...current, password: value }))
+            }
+            autoComplete="new-password"
+          />
+          <FormError error={error} />
+          <div className="flex gap-2">
+            <AuthGhostButton
+              onClick={() => {
+                setError(null);
+                setStep("owner");
+              }}
+              disabled={isSubmitting}
+            >
+              Back
+            </AuthGhostButton>
+            <div className="flex-[1.6]">
+              <AuthPrimaryButton loading={isSubmitting}>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    Creating…
+                  </>
+                ) : (
+                  <>
+                    Continue
+                    <ArrowRight className="size-3.5 transition group-hover:translate-x-0.5" />
+                  </>
+                )}
+              </AuthPrimaryButton>
+            </div>
           </div>
+        </form>
+      </div>
+    );
+  }
 
+  if (step === "owner") {
+    return (
+      <div key="owner">
+        <AuthStepBar steps={[...STEPS]} current={1} />
+        <AuthCardHeader
+          title="Owner details"
+          subtitle="Who will manage this institution"
+        />
+
+        <form
+          className="mt-3.5 space-y-2.5 text-left"
+          onSubmit={goNextFromOwner}
+        >
           <TextField
-            label="Owner full name"
+            compact
+            label="Full name"
             value={formData.ownerName}
             onChange={(value) =>
               setFormData((current) => ({ ...current, ownerName: value }))
@@ -483,9 +516,9 @@ export default function RegisterPage() {
             autoComplete="name"
             required
           />
-
           <PhoneField
-            label="Owner phone"
+            compact
+            label="Phone"
             countryCode={formData.phoneCountryCode}
             nationalNumber={formData.phoneNationalNumber}
             onCountryCodeChange={(value) => {
@@ -505,57 +538,89 @@ export default function RegisterPage() {
             }
             required
           />
+          <FormError error={error} />
+          <div className="flex gap-2">
+            <AuthGhostButton
+              onClick={() => {
+                setError(null);
+                setStep("business");
+              }}
+            >
+              Back
+            </AuthGhostButton>
+            <div className="flex-[1.6]">
+              <AuthPrimaryButton>
+                Continue
+                <ArrowRight className="size-3.5 transition group-hover:translate-x-0.5" />
+              </AuthPrimaryButton>
+            </div>
+          </div>
+        </form>
+      </div>
+    );
+  }
 
-          <TextField
-            label="Owner email"
-            type="email"
-            value={formData.email}
-            onChange={(value) =>
-              setFormData((current) => ({ ...current, email: value }))
-            }
-            placeholder="owner@institution.com"
-            autoComplete="email"
+  return (
+    <div key="business">
+      <AuthStepBar steps={[...STEPS]} current={0} />
+      <AuthCardHeader
+        title="Create account"
+        subtitle="Tell us about your lending institution"
+      />
+
+      <form
+        className="mt-3.5 space-y-2.5 text-left"
+        onSubmit={goNextFromBusiness}
+      >
+        <TextField
+          compact
+          label="Business name"
+          value={formData.businessName}
+          onChange={(value) =>
+            setFormData((current) => ({ ...current, businessName: value }))
+          }
+          placeholder="Registered company name"
+          required
+        />
+        <div className="grid grid-cols-2 gap-2">
+          <SelectField
+            compact
+            label="Country"
+            value={formData.country}
+            onChange={syncCountryCurrency}
+            options={COUNTRY_OPTIONS}
             required
           />
-
-          <PasswordField
-            label="Password"
-            value={formData.password}
+          <SelectField
+            compact
+            label="Currency"
+            value={formData.currency}
             onChange={(value) =>
-              setFormData((current) => ({ ...current, password: value }))
+              setFormData((current) => ({ ...current, currency: value }))
             }
-            autoComplete="new-password"
+            options={PHONE_COUNTRIES.map((country) => ({
+              value: country.currency,
+              label: country.currency,
+            }))}
+            required
           />
+        </div>
+        <FormError error={error} />
+        <AuthPrimaryButton>
+          Continue
+          <ArrowRight className="size-3.5 transition group-hover:translate-x-0.5" />
+        </AuthPrimaryButton>
+      </form>
 
-          <FormError error={error} />
-
-          <PrimaryButton type="submit" loading={isSubmitting} variant="navy">
-            continue to verification
-          </PrimaryButton>
-        </form>
-      )}
-    </AuthShell>
-  );
-}
-
-function StepPill({
-  label,
-  active = false,
-  done = false,
-}: {
-  label: string;
-  active?: boolean;
-  done?: boolean;
-}) {
-  return (
-    <span
-      className={`border px-2.5 py-1 text-xs font-semibold ${
-        active || done
-          ? "border-[rgba(15,138,108,0.35)] bg-[rgba(15,138,108,0.1)] text-[var(--forest-emerald)]"
-          : "border-[var(--line)] bg-[var(--soft-mist)] text-slate-500"
-      }`}
-    >
-      {label}
-    </span>
+      <p className="mt-3 text-center text-[11px] text-slate-500">
+        Already registered?{" "}
+        <Link
+          href="/login"
+          className="font-semibold text-[var(--forest-emerald)] hover:underline"
+        >
+          Sign in
+        </Link>
+      </p>
+    </div>
   );
 }

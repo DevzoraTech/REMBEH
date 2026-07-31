@@ -16,7 +16,6 @@ import {
   Settings,
   ShieldAlert,
   Users,
-  Wallet,
   UserRound,
   X,
 } from "lucide-react";
@@ -113,12 +112,6 @@ export function AppShell({
         enabled: operatorRole === "owner",
       },
       {
-        href: "/owner/payments",
-        label: "Payments",
-        icon: Wallet,
-        enabled: operatorRole === "owner",
-      },
-      {
         href: "/owner/settings",
         label: "Settings",
         icon: Settings,
@@ -171,8 +164,8 @@ export function AppShell({
       },
       {
         href: "/dashboard#payments",
-        label: "Payments",
-        icon: Wallet,
+        label: "Collections",
+        icon: HandCoins,
         enabled:
           operatorRole === "manager" &&
           Boolean(session.permissions.includes("collection.read")),
@@ -209,6 +202,7 @@ export function AppShell({
       ["/clients", "/owner/borrowers"],
       ["/blacklist-watchlist", "/owner/risk"],
       ["/collections/daily", "/owner/collections"],
+      ["/owner/payments", "/owner/collections"],
       ["/settings", "/owner/settings"],
     ];
     const match = redirects.find(
@@ -486,7 +480,19 @@ export function AppShell({
               </div>
             </div>
 
-            <div className="relative" ref={profileRef}>
+            <div className="flex items-center gap-2">
+              {settingsEnabled ? (
+                <Link
+                  href="/settings"
+                  className="grid size-9 place-items-center rounded-xl border border-[var(--line)] bg-white text-[var(--midnight-navy)] shadow-[0_8px_20px_rgba(20,33,61,0.06)] transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-[var(--forest-emerald)]"
+                  aria-label="Open settings"
+                  title="Settings"
+                >
+                  <Settings className="size-4" />
+                </Link>
+              ) : null}
+
+              <div className="relative" ref={profileRef}>
               <button
                 type="button"
                 onClick={() => setProfileOpen((open) => !open)}
@@ -555,6 +561,7 @@ export function AppShell({
                   </button>
                 </div>
               ) : null}
+              </div>
             </div>
           </div>
         </header>
@@ -807,7 +814,7 @@ function OwnerSidebar({
                 }`}
                 aria-label="Open settings"
               >
-                <ChevronDown className="size-4" />
+                <Settings className="size-4" />
               </Link>
             </div>
           </OwnerSidebarTooltip>

@@ -70,6 +70,7 @@ type AlertItem = {
   detail: string;
   time: string;
   tone: "red" | "gold" | "blue";
+  href?: string;
 };
 
 type BranchPerformance = {
@@ -844,7 +845,7 @@ function AlertsCard({ alerts }: { alerts: AlertItem[] }) {
             block
           >
             <Link
-              href="/owner/risk"
+              href={alert.href ?? "/owner/risk"}
               className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 transition hover:shadow-[0_10px_24px_rgba(15,23,42,0.06)] ${
                 alert.tone === "red"
                   ? "border-red-100 bg-red-50/80"
@@ -1460,9 +1461,10 @@ function buildAlerts({
       id: "branch-critical-exposure",
       title: `${criticalBranches.length} branches critical`,
       detail:
-        "Daily reconciliation, expected reports or portfolio exposure need urgent action.",
+        "Daily close or overdue exposure needs urgent action.",
       time: "Today",
       tone: "red",
+      href: "/owner/branches?view=attention",
     });
   }
 
@@ -1470,29 +1472,32 @@ function buildAlerts({
     alerts.push({
       id: "branch-high-risk-exposure",
       title: `${highRiskBranches.length} branches high risk`,
-      detail: "Borrowers have 4 to 7 uncovered repayment days.",
+      detail: "Borrowers with 4–7 uncovered repayment days.",
       time: "Today",
       tone: "gold",
+      href: "/owner/branches?view=attention",
     });
   }
 
   if (followUpBranches.length > 0) {
     alerts.push({
       id: "branch-follow-up-exposure",
-      title: `${followUpBranches.length} branches require follow-up`,
-      detail: "Borrowers have 2 to 3 uncovered repayment days.",
+      title: `${followUpBranches.length} branches need follow-up`,
+      detail: "Borrowers with 2–3 uncovered repayment days.",
       time: "Today",
       tone: "gold",
+      href: "/owner/branches?view=attention",
     });
   }
 
   if (collectionAttentionBranches.length > 0) {
     alerts.push({
       id: "branch-collection-attention",
-      title: `${collectionAttentionBranches.length} branches need collection review`,
-      detail: "Average collection rate is 70% or lower over the last 7 tracked days.",
+      title: `${collectionAttentionBranches.length} branches need repayment review`,
+      detail: "Repayment rate is 70% or less over the last 7 days.",
       time: "Today",
       tone: "gold",
+      href: "/owner/branches?view=attention",
     });
   }
 
@@ -1543,6 +1548,7 @@ function buildAlerts({
       detail: `${missingManagers.length} branches need an active manager`,
       time: "Today",
       tone: "blue",
+      href: "/owner/branches?status=pending",
     });
   }
 
@@ -1571,7 +1577,11 @@ function buildNotifications({
       id: `alert-${alert.id}`,
       title: alert.title,
       detail: alert.detail,
-      href: alert.id.startsWith("branch-") ? "/owner/branches" : "/owner/risk",
+      href:
+        alert.href ??
+        (alert.id.startsWith("branch-")
+          ? "/owner/branches?view=attention"
+          : "/owner/risk"),
       tone: alert.tone,
       icon: alert.id.includes("loan") ? ("loan" as const) : ("alert" as const),
       time: alert.time,

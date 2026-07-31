@@ -198,6 +198,48 @@ export function attentionLabel(level: BranchAttentionLevel) {
   return "Healthy";
 }
 
+export function attentionSeverityRank(level: BranchAttentionLevel) {
+  return severityRank(level);
+}
+
+/** Short labels for reason chips in attention UI. */
+export function attentionReasonKind(reason: string): {
+  kind: "collection" | "overdue" | "daily" | "other";
+  title: string;
+} {
+  const lower = reason.toLowerCase();
+  if (lower.includes("repayment rate") || lower.includes("collection rate")) {
+    return { kind: "collection", title: "Repayments" };
+  }
+  if (
+    lower.includes("overdue") ||
+    lower.includes("borrower") ||
+    lower.includes("follow-up") ||
+    lower.includes("high risk") ||
+    lower.includes("critical")
+  ) {
+    return { kind: "overdue", title: "Overdue loans" };
+  }
+  if (
+    lower.includes("reconcil") ||
+    lower.includes("daily report") ||
+    lower.includes("report for")
+  ) {
+    return { kind: "daily", title: "Daily close" };
+  }
+  return { kind: "other", title: "Issue" };
+}
+
+export const ATTENTION_TABLE_TOOLTIP =
+  "Repayment % is collected vs expected over the last 7 days — 70% or less needs a look, under 50% is critical. Overdue is borrowers missing 2+ days. Daily close is yesterday’s reconciliation and report.";
+
+export function repaymentBandLabel(averageRate: number | null) {
+  if (averageRate == null) return "—";
+  if (averageRate < 50) return "<50%";
+  if (averageRate <= 70) return "≤70%";
+  return "Above 70%";
+}
+
 function collectionAttentionLevel(
   averageRate: number | null,
 ): BranchAttentionLevel {
@@ -214,7 +256,13 @@ function collectionAttentionReason(
   if (averageRate == null || ratedDays === 0) {
     return "No expected repayments in the last 7 days.";
   }
-  return `Collection rate is ${averageRate}% over the last ${ratedDays} tracked days.`;
+  if (averageRate < 50) {
+    return "Repayment rate is less than 50% over the last 7 days.";
+  }
+  if (averageRate <= 70) {
+    return "Repayment rate is 70% or less over the last 7 days.";
+  }
+  return "Repayment rate is above 70% over the last 7 days.";
 }
 
 function buildDailyComplianceByBranch(

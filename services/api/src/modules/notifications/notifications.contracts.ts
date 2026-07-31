@@ -29,7 +29,7 @@ export type PhoneOtpDeliveryInput = {
 
 export type PhoneOtpDeliveryResult = {
   channel: 'PHONE';
-  provider: 'development' | 'mock' | 'twilio' | 'africastalking';
+  provider: 'development' | 'mock' | 'twilio' | 'africastalking' | 'pahappa';
   delivered: boolean;
   destination: string;
   devCode?: string;

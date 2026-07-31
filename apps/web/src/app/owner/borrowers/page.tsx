@@ -3,6 +3,7 @@
 import {
   ArrowUpDown,
   Building2,
+  CalendarDays,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -14,6 +15,7 @@ import {
   List,
   MapPin,
   Plus,
+  RefreshCw,
   Search,
   ShieldCheck,
   UserCheck,
@@ -200,30 +202,42 @@ export default function OwnerBorrowersPage() {
       user={state.user}
       branch={null}
     >
-      <div className="mx-auto max-w-[1440px] space-y-4">
+      <div className="mx-auto max-w-[1400px] space-y-5 animate-rise">
         <OwnerHeader
-          eyebrow="Account Register"
-          title="Borrowers"
+          eyebrow="Borrowers"
+          title="Borrower Register"
           search={search}
           onSearchChange={updateSearch}
           searchTooltip="Search borrowers by name, phone, national ID, branch or collateral."
+          searchPlaceholder="Search name, phone, national ID or branch..."
           notifications={borrowerNotifications}
+          showReportsButton={false}
           actions={
             <>
+              <button
+                type="button"
+                onClick={() => void loadBorrowers()}
+                disabled={loading}
+                aria-label="Refresh borrowers"
+                className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-50 disabled:opacity-60"
+              >
+                <RefreshCw
+                  className={`size-4 ${loading ? "animate-spin" : ""}`}
+                />
+              </button>
               <button
                 type="button"
                 onClick={() =>
                   setNotice("Borrowers are added from a loan application.")
                 }
-                className="flex h-9 items-center gap-2 rounded-xl bg-[#0b936b] px-3 text-xs font-medium text-white shadow-[0_10px_22px_rgba(11,147,107,0.2)] transition hover:bg-[#087f5d]"
+                className="flex h-9 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3.5 text-xs font-semibold text-white shadow-[0_12px_24px_rgba(15,143,104,0.28)] transition hover:brightness-105"
               >
-                <Plus className="size-4" />
+                <Plus className="size-3.5" />
                 Add Borrower
-                <ChevronDown className="size-4" />
               </button>
               <button
                 type="button"
-                disabled={exporting}
+                disabled={exporting || filtered.length === 0}
                 onClick={() =>
                   void exportBorrowers(
                     filtered,
@@ -236,36 +250,25 @@ export default function OwnerBorrowersPage() {
                     setExporting,
                   )
                 }
-                className="flex h-9 items-center gap-2 rounded-xl border border-[#e3e8ee] bg-white px-3 text-xs font-medium text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8fafb] disabled:opacity-60"
+                className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8faf9] disabled:opacity-60"
               >
-                <Download className="size-4" />
+                <Download className="size-3.5" />
                 {exporting ? "Exporting" : "Export"}
               </button>
-              <RowActions
-                label="Borrower page actions"
-                items={[
-                  {
-                    label: "Refresh",
-                    onSelect: () => void loadBorrowers(),
-                  },
-                  {
-                    label: "Clear filters",
-                    onSelect: resetFilters,
-                  },
-                ]}
-                busy={loading}
-              />
             </>
           }
         />
+        <p className="-mt-2 text-sm font-medium text-slate-500">
+          Review verified borrowers, pending checks, and loan activity across branches.
+        </p>
 
         {error ? (
-          <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+          <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
             {error}
           </p>
         ) : null}
         {notice ? (
-          <div className="flex items-center justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-[#087f5d]">
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-[#087f5d]">
             <span>{notice}</span>
             <button
               type="button"
@@ -286,34 +289,34 @@ export default function OwnerBorrowersPage() {
           ) : (
             <>
               <BorrowerStatCard
-                icon={<Users className="size-6" />}
+                icon={<Users className="size-4" />}
                 label="Total Borrowers"
                 value={formatNumber(borrowers.length)}
-                detail="All registered borrowers"
+                detail="All registered"
                 change="—"
                 tone="green"
               />
               <BorrowerStatCard
-                icon={<ShieldCheck className="size-6" />}
-                label="Verified Borrowers"
+                icon={<ShieldCheck className="size-4" />}
+                label="Verified"
                 value={formatNumber(verifiedCount)}
-                detail="Identity & docs verified"
+                detail="Identity confirmed"
                 change={percent(verifiedCount, borrowers.length)}
                 tone="green"
               />
               <BorrowerStatCard
-                icon={<UserCheck className="size-6" />}
+                icon={<UserCheck className="size-4" />}
                 label="With Loans"
                 value={formatNumber(withLoansCount)}
-                detail="Active loan accounts"
+                detail="Active accounts"
                 change={percent(withLoansCount, borrowers.length)}
                 tone="blue"
               />
               <BorrowerStatCard
-                icon={<ShieldCheck className="size-6" />}
+                icon={<CalendarDays className="size-4" />}
                 label="New This Month"
                 value={formatNumber(newThisMonthCount)}
-                detail="Joined this month"
+                detail="Joined recently"
                 change={percent(newThisMonthCount, borrowers.length)}
                 tone="gold"
               />
@@ -321,19 +324,60 @@ export default function OwnerBorrowersPage() {
           )}
         </section>
 
-        <section className="rounded-2xl border border-[#e5ebf0] bg-white p-3 shadow-[0_14px_32px_rgba(15,23,42,0.05)]">
-          <div className="grid gap-3 xl:grid-cols-[1.55fr_0.75fr_0.75fr_0.9fr_auto]">
-            <label className="flex h-9 min-w-0 items-center gap-2 rounded-xl border border-[#e2e8ee] bg-white px-3 shadow-[0_7px_16px_rgba(15,23,42,0.03)]">
-              <Search className="size-4 shrink-0 text-slate-400" />
+        <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#edf1f5] px-4 py-4">
+            <div>
+              <h2 className="text-[15px] font-semibold text-[#0b1220]">
+                All Borrowers
+              </h2>
+              <p className="mt-0.5 text-xs font-medium text-slate-500">
+                {formatNumber(filtered.length)} result
+                {filtered.length === 1 ? "" : "s"}
+                {activeFilterCount > 0
+                  ? ` · ${activeFilterCount} filter${activeFilterCount === 1 ? "" : "s"}`
+                  : ""}
+              </p>
+            </div>
+            <div className="flex h-9 items-center rounded-xl border border-[#e6ebf0] bg-white p-1 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+              <button
+                type="button"
+                onClick={() => setTableMode("list")}
+                className={`grid size-7 place-items-center rounded-lg transition ${
+                  tableMode === "list"
+                    ? "bg-emerald-50 text-[var(--forest-emerald)]"
+                    : "text-slate-400 hover:bg-[#f8faf9]"
+                }`}
+                aria-label="List view"
+              >
+                <List className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setTableMode("grid")}
+                className={`grid size-7 place-items-center rounded-lg transition ${
+                  tableMode === "grid"
+                    ? "bg-emerald-50 text-[var(--forest-emerald)]"
+                    : "text-slate-400 hover:bg-[#f8faf9]"
+                }`}
+                aria-label="Grid view"
+              >
+                <Grid2X2 className="size-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-2.5 border-b border-[#edf1f5] px-4 py-3 lg:grid-cols-[minmax(0,1fr)_160px_140px_170px_auto]">
+            <label className="flex h-9 min-w-0 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+              <Search className="size-3.5 shrink-0 text-slate-400" />
               <input
                 value={search}
                 onChange={(event) => updateSearch(event.target.value)}
                 className="min-w-0 flex-1 bg-transparent text-xs font-medium text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
-                placeholder="Search by name, phone, national ID or branch..."
+                placeholder="Filter this list..."
               />
             </label>
             <FilterSelect
-              icon={<Building2 className="size-4" />}
+              icon={<Building2 className="size-3.5" />}
               value={branchFilter}
               onChange={(value) => {
                 setBranchFilter(value);
@@ -349,7 +393,7 @@ export default function OwnerBorrowersPage() {
               ))}
             </FilterSelect>
             <FilterSelect
-              icon={<ShieldCheck className="size-4" />}
+              icon={<ShieldCheck className="size-3.5" />}
               value={statusFilter}
               onChange={(value) => {
                 setStatusFilter(value);
@@ -362,15 +406,15 @@ export default function OwnerBorrowersPage() {
               <option value="pending">Pending</option>
             </FilterSelect>
             <FilterSelect
-              icon={<ShieldCheck className="size-4" />}
+              icon={<MapPin className="size-3.5" />}
               value={collateralFilter}
               onChange={(value) => {
                 setCollateralFilter(value);
                 setPage(1);
               }}
-              label="All Collateral Types"
+              label="All Collateral"
             >
-              <option value="all">All Collateral Types</option>
+              <option value="all">All Collateral</option>
               {collateralOptions.map((collateral) => (
                 <option key={collateral} value={collateral}>
                   {titleCase(collateral)}
@@ -379,58 +423,18 @@ export default function OwnerBorrowersPage() {
             </FilterSelect>
             <button
               type="button"
-              className="flex h-9 items-center justify-center gap-2 rounded-xl border border-[#e2e8ee] bg-white px-3 text-xs font-medium text-[#111a2e] shadow-[0_7px_16px_rgba(15,23,42,0.03)] transition hover:bg-[#f8fafb]"
+              disabled={!search.trim() && activeFilterCount === 0}
+              onClick={resetFilters}
+              className="flex h-9 items-center justify-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition hover:bg-[#f8faf9] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <Filter className="size-4" />
-              Filters
+              <Filter className="size-3.5" />
+              Clear
               {activeFilterCount > 0 ? (
-                <span className="grid size-5 place-items-center rounded-full bg-[#0b936b] text-[10px] font-semibold text-white">
+                <span className="grid size-5 place-items-center rounded-full bg-[var(--forest-emerald)] text-[10px] font-semibold text-white">
                   {activeFilterCount}
                 </span>
               ) : null}
             </button>
-          </div>
-        </section>
-
-        <section className="overflow-hidden rounded-2xl border border-[#e5ebf0] bg-white shadow-[0_16px_38px_rgba(15,23,42,0.055)]">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f4] px-4 py-3.5">
-            <div>
-              <h2 className="text-base font-bold tracking-[-0.02em] text-[#0b1224]">
-                Borrower Register
-              </h2>
-              <span className="mt-2 block h-0.5 w-7 rounded-full bg-[#0b936b]" />
-            </div>
-            <div className="flex items-center gap-2.5">
-              <p className="text-xs font-semibold text-slate-500">
-                {formatNumber(filtered.length)} results found
-              </p>
-              <div className="flex rounded-xl border border-[#e4e9ef] bg-white p-1">
-                <button
-                  type="button"
-                  onClick={() => setTableMode("grid")}
-                  className={`grid size-8 place-items-center rounded-lg transition ${
-                    tableMode === "grid"
-                      ? "bg-[#eef8f4] text-[#0b936b]"
-                      : "text-slate-400 hover:bg-[#f7f9fb]"
-                  }`}
-                  aria-label="Grid view"
-                >
-                  <Grid2X2 className="size-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTableMode("list")}
-                  className={`grid size-8 place-items-center rounded-lg transition ${
-                    tableMode === "list"
-                      ? "bg-[#eef8f4] text-[#0b936b]"
-                      : "text-slate-400 hover:bg-[#f7f9fb]"
-                  }`}
-                  aria-label="List view"
-                >
-                  <List className="size-4" />
-                </button>
-              </div>
-            </div>
           </div>
 
           {loading ? (
@@ -476,56 +480,61 @@ export default function OwnerBorrowersPage() {
             />
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#edf1f4] px-4 py-3">
-            <label className="flex items-center gap-2 text-xs font-semibold text-slate-500">
-              Show
-              <select
-                value={pageSize}
-                onChange={(event) => {
-                  setPageSize(Number(event.target.value));
-                  setPage(1);
-                }}
-                className="h-9 rounded-xl border border-[#e2e8ee] bg-white px-3 text-xs font-medium text-[#0b1224] outline-none"
-              >
-                {PAGE_SIZE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-              per page
-            </label>
-            <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#edf1f5] px-4 py-3 text-xs font-semibold text-slate-500">
+            <p>
+              Showing{" "}
+              {formatNumber(
+                filtered.length === 0
+                  ? 0
+                  : (currentPage - 1) * pageSize + 1,
+              )}{" "}
+              to{" "}
+              {formatNumber(
+                Math.min(currentPage * pageSize, filtered.length),
+              )}{" "}
+              of {formatNumber(filtered.length)}
+            </p>
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
                 disabled={currentPage === 1}
                 onClick={() =>
-                  setPage((current) =>
-                    Math.max(1, Math.min(totalPages, current) - 1),
-                  )
+                  setPage((current) => Math.max(1, current - 1))
                 }
-                className="grid size-9 place-items-center rounded-xl border border-[#e4e9ef] bg-[#f6f8fb] text-slate-400 transition hover:bg-white disabled:opacity-45"
+                className="grid size-8 place-items-center rounded-xl border border-[#edf1f5] text-slate-400 disabled:opacity-40"
                 aria-label="Previous page"
               >
-                <ChevronLeft className="size-4" />
+                <ChevronLeft className="size-3.5" />
               </button>
-              <span className="grid size-9 place-items-center rounded-xl bg-[#0b936b] text-xs font-medium text-white shadow-[0_10px_20px_rgba(11,147,107,0.2)]">
+              <span className="grid size-8 place-items-center rounded-xl bg-[var(--forest-emerald)] text-xs font-semibold text-white">
                 {currentPage}
               </span>
               <button
                 type="button"
                 disabled={currentPage === totalPages}
                 onClick={() =>
-                  setPage((current) =>
-                    Math.min(totalPages, Math.min(totalPages, current) + 1),
-                  )
+                  setPage((current) => Math.min(totalPages, current + 1))
                 }
-                className="grid size-9 place-items-center rounded-xl border border-[#e4e9ef] bg-[#f6f8fb] text-slate-400 transition hover:bg-white disabled:opacity-45"
+                className="grid size-8 place-items-center rounded-xl border border-[#edf1f5] text-slate-400 disabled:opacity-40"
                 aria-label="Next page"
               >
-                <ChevronRight className="size-4" />
+                <ChevronRight className="size-3.5" />
               </button>
             </div>
+            <select
+              value={pageSize}
+              onChange={(event) => {
+                setPageSize(Number(event.target.value));
+                setPage(1);
+              }}
+              className="h-8 rounded-xl border border-[#edf1f5] bg-white px-2.5 text-xs font-semibold text-slate-600 outline-none"
+            >
+              {PAGE_SIZE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option} per page
+                </option>
+              ))}
+            </select>
           </div>
         </section>
       </div>
@@ -557,27 +566,29 @@ function BorrowerStatCard({
 }) {
   const styles = toneStyles(tone);
   return (
-    <article className="flex min-h-[96px] min-w-0 items-center gap-3 rounded-2xl border border-[#e5ebf0] bg-white px-4 py-3 shadow-[0_14px_32px_rgba(15,23,42,0.055)]">
+    <article className="flex min-h-[96px] min-w-0 items-center gap-3 rounded-[14px] border border-[#e6ebf0] bg-white px-4 py-3.5 shadow-[0_12px_26px_rgba(15,23,42,0.045)]">
       <span
-        className={`grid size-11 shrink-0 place-items-center rounded-xl ${styles.icon}`}
+        className={`grid size-11 shrink-0 place-items-center rounded-2xl ${styles.icon}`}
       >
         {icon}
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center justify-between gap-2">
-          <p className="truncate text-xs font-medium text-[#25314b]">
+          <p className="truncate text-[11px] font-bold text-slate-500">
             {label}
           </p>
-          <span
-            className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${styles.badge}`}
-          >
-            {change}
-          </span>
+          {change !== "—" ? (
+            <span
+              className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${styles.badge}`}
+            >
+              {change}
+            </span>
+          ) : null}
         </div>
-        <p className="mt-1.5 break-words text-[clamp(1.18rem,1.55vw,1.55rem)] font-bold leading-none tracking-[-0.03em] text-[#090f21] tabular-nums">
+        <p className="mt-1.5 break-words text-[clamp(0.95rem,1.1vw,1.2rem)] font-semibold leading-tight tracking-[-0.02em] text-[#111827] tabular-nums">
           {value}
         </p>
-        <p className="mt-1.5 truncate text-xs font-medium text-slate-500">
+        <p className="mt-1 truncate text-[11px] font-semibold text-slate-500">
           {detail}
         </p>
       </div>
@@ -614,17 +625,17 @@ function FilterSelect({
   children: ReactNode;
 }) {
   return (
-    <label className="relative flex h-9 min-w-0 items-center gap-2 rounded-xl border border-[#e2e8ee] bg-white px-3 text-[#0b1224] shadow-[0_7px_16px_rgba(15,23,42,0.03)]">
-      <span className="shrink-0 text-[#0b3145]">{icon}</span>
+    <label className="relative flex h-9 min-w-0 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-[#0b1224] shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+      <span className="shrink-0 text-slate-500">{icon}</span>
       <select
         value={value}
         aria-label={label}
         onChange={(event) => onChange(event.target.value)}
-        className="min-w-0 flex-1 appearance-none bg-transparent pr-7 text-xs font-medium outline-none"
+        className="min-w-0 flex-1 appearance-none bg-transparent pr-7 text-xs font-semibold outline-none"
       >
         {children}
       </select>
-      <ChevronDown className="pointer-events-none absolute right-3 size-4 text-slate-500" />
+      <ChevronDown className="pointer-events-none absolute right-3 size-3.5 text-slate-400" />
     </label>
   );
 }
@@ -689,45 +700,60 @@ function BorrowerListRow({
   onExport: (borrower: OwnerBorrower) => void;
 }) {
   return (
-    <div className="grid gap-3 px-4 py-3 text-[13px] lg:grid-cols-[1.45fr_0.9fr_0.95fr_1fr_1fr_0.45fr_0.72fr_0.62fr] lg:items-center lg:gap-3">
-      <div className="flex min-w-0 items-center gap-3">
-        <span
-          className={`grid size-9 shrink-0 place-items-center rounded-full text-xs font-medium ${avatarTone(index)}`}
-        >
-          {initials(borrower.fullName)}
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-[13px] font-medium text-[#0b1224]">
-            {borrower.fullName}
-          </p>
-          <p className="mt-0.5 truncate text-[11px] font-medium text-slate-500">
-            Joined {formatDate(borrower.createdAt)}
-          </p>
+    <article
+      className="grid cursor-pointer gap-3 px-4 py-3.5 text-[13px] transition hover:bg-[#fbfdfc] lg:grid-cols-[1.45fr_0.9fr_0.95fr_1fr_1fr_0.45fr_0.72fr_0.62fr] lg:items-center lg:gap-3"
+      onClick={() => onView(borrower)}
+    >
+      <div className="flex min-w-0 items-start justify-between gap-3 lg:contents">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <span
+            className={`grid size-10 shrink-0 place-items-center rounded-full text-xs font-semibold ${avatarTone(index)}`}
+          >
+            {initials(borrower.fullName)}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-[#0b1224]">
+              {borrower.fullName}
+            </p>
+            <p className="mt-0.5 truncate text-[11px] font-medium text-slate-500">
+              Joined {formatDate(borrower.createdAt)}
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2 lg:hidden">
+          <BorrowerStatus verified={Boolean(borrower.verifiedAt)} />
+          <RowActions
+            label={`Actions for ${borrower.fullName}`}
+            items={[
+              { label: "View details", onSelect: () => onView(borrower) },
+              { label: "Export borrower", onSelect: () => onExport(borrower) },
+            ]}
+          />
         </div>
       </div>
-      <TableValue label="Phone">{borrower.phone || "-"}</TableValue>
-      <TableValue label="National ID">{borrower.nationalId ?? "-"}</TableValue>
+      <TableValue label="Phone">{borrower.phone || "—"}</TableValue>
+      <TableValue label="National ID">{borrower.nationalId ?? "—"}</TableValue>
       <TableValue label="Collateral">
-        {borrower.collateralType ? titleCase(borrower.collateralType) : "-"}
+        {borrower.collateralType ? titleCase(borrower.collateralType) : "—"}
       </TableValue>
       <TableValue label="Branch">
         <span className="inline-flex min-w-0 items-center gap-1.5">
-          <MapPin className="size-3 shrink-0 text-[#0b936b]" />
-          <span className="truncate">{borrower.branchName ?? "-"}</span>
+          <MapPin className="size-3 shrink-0 text-[var(--forest-emerald)]" />
+          <span className="truncate">{borrower.branchName ?? "—"}</span>
         </span>
       </TableValue>
       <TableValue label="Loans">{formatNumber(borrower.loanCount)}</TableValue>
-      <div>
-        <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-slate-400 lg:hidden">
-          Status
-        </p>
+      <div className="hidden lg:block">
         <BorrowerStatus verified={Boolean(borrower.verifiedAt)} />
       </div>
-      <div className="flex items-center justify-start gap-2 lg:justify-end">
+      <div
+        className="hidden items-center justify-end gap-2 lg:flex"
+        onClick={(event) => event.stopPropagation()}
+      >
         <button
           type="button"
           onClick={() => onView(borrower)}
-          className="grid size-8 place-items-center rounded-xl border border-[#e4e9ef] bg-white text-[#0b3145] shadow-[0_7px_14px_rgba(15,23,42,0.035)] transition hover:bg-[#f8fafb]"
+          className="grid size-8 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#0b3145] shadow-[0_7px_14px_rgba(15,23,42,0.035)] transition hover:bg-[#f8faf9]"
           aria-label={`View ${borrower.fullName}`}
         >
           <Eye className="size-3.5" />
@@ -740,7 +766,7 @@ function BorrowerListRow({
           ]}
         />
       </div>
-    </div>
+    </article>
   );
 }
 

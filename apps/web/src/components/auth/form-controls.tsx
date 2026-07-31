@@ -20,7 +20,7 @@ export function FormError({ error }: { error: string | null }) {
   return (
     <div
       role="alert"
-      className="border border-red-300 bg-red-50 px-3 py-2.5 text-sm leading-6 text-red-700"
+      className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-2 text-[12px] leading-5 text-red-700"
     >
       {error}
     </div>
@@ -101,6 +101,7 @@ export function PasswordField({
   autoComplete = "current-password",
   minLength = 8,
   required = true,
+  compact = false,
 }: {
   label: string;
   value: string;
@@ -109,17 +110,18 @@ export function PasswordField({
   autoComplete?: string;
   minLength?: number;
   required?: boolean;
+  compact?: boolean;
 }) {
   const [visible, setVisible] = useState(false);
 
   return (
     <label className="block">
-      <FieldLabel label={label} />
+      <FieldLabel label={label} compact={compact} />
       <div className="relative">
         <input
           value={value}
           onChange={(event) => onChange(event.target.value)}
-          className="field-input pr-12"
+          className={`field-input pr-12 ${compact ? "h-9 text-sm" : ""}`}
           type={visible ? "text" : "password"}
           required={required}
           minLength={minLength}
@@ -188,6 +190,7 @@ export function PhoneField({
   onNationalNumberChange,
   required = false,
   placeholder = "700 000 000",
+  compact = false,
 }: {
   label: string;
   countryCode: string;
@@ -196,15 +199,18 @@ export function PhoneField({
   onNationalNumberChange: (value: string) => void;
   required?: boolean;
   placeholder?: string;
+  compact?: boolean;
 }) {
+  const height = compact ? "h-9" : "h-11";
+
   return (
     <label className="block">
-      <FieldLabel label={label} />
-      <div className="grid grid-cols-[9.5rem_1fr] border border-[var(--line)] bg-white focus-within:border-[var(--forest-emerald)] focus-within:shadow-[inset_0_0_0_1px_var(--forest-emerald)]">
+      <FieldLabel label={label} compact={compact} />
+      <div className="grid grid-cols-[7.5rem_1fr] overflow-hidden rounded-xl border border-[#d7dee6] bg-white focus-within:border-[var(--forest-emerald)] focus-within:shadow-[0_0_0_3px_rgba(15,138,108,0.12)]">
         <select
           value={countryCode}
           onChange={(event) => onCountryCodeChange(event.target.value)}
-          className="h-11 border-r border-[var(--line)] bg-[var(--soft-mist)] px-2 text-sm font-semibold outline-none"
+          className={`${height} border-r border-[#d7dee6] bg-[#f4f7f9] px-1.5 text-xs font-semibold outline-none sm:px-2 sm:text-sm`}
           aria-label={`${label} country code`}
         >
           {PHONE_COUNTRIES.map((country) => (
@@ -216,7 +222,7 @@ export function PhoneField({
         <input
           value={nationalNumber}
           onChange={(event) => onNationalNumberChange(event.target.value)}
-          className="h-11 w-full px-3 text-sm outline-none"
+          className={`${height} w-full px-3 text-sm text-[var(--midnight-navy)] outline-none`}
           inputMode="tel"
           required={required}
           placeholder={placeholder}
@@ -254,7 +260,7 @@ export function PrimaryButton({
       type={type}
       disabled={disabled || loading}
       onClick={onClick}
-      className={`inline-flex h-11 w-full items-center justify-center gap-2 px-4 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-65 ${variantClass}`}
+      className={`inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold normal-case tracking-normal transition disabled:cursor-not-allowed disabled:opacity-65 ${variantClass}`}
     >
       {loading ? <Loader2 className="size-4 animate-spin" /> : null}
       {children}
@@ -335,7 +341,7 @@ export function OtpInput({
   }
 
   return (
-    <div className="grid grid-cols-6 gap-2.5">
+    <div className="grid grid-cols-6 gap-1.5 sm:gap-2">
       {digits.map((digit, index) => (
         <input
           key={index}
@@ -350,7 +356,7 @@ export function OtpInput({
           inputMode="numeric"
           autoComplete={index === 0 ? "one-time-code" : "off"}
           aria-label={`Digit ${index + 1}`}
-          className="h-11 border border-[var(--line)] bg-white text-center text-lg font-bold text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] focus:shadow-[inset_0_0_0_1px_var(--forest-emerald)] disabled:opacity-60"
+          className="h-10 rounded-xl border border-[#d7dee6] bg-white text-center text-base font-bold text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] focus:shadow-[0_0_0_3px_rgba(15,138,108,0.12)] disabled:opacity-60"
         />
       ))}
     </div>
