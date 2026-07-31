@@ -169,16 +169,31 @@ export class FcmPushService implements OnModuleInit {
     }
 
     try {
+      const webOrigin = (
+        this.config.get<string>('WEB_PUBLIC_URL') ??
+        this.config.get<string>('PUBLIC_WEB_URL') ??
+        'https://rembeh.antikra.com'
+      ).replace(/\/$/, '');
+      const href = payload.href?.startsWith('http')
+        ? payload.href
+        : `${webOrigin}${payload.href?.startsWith('/') ? payload.href : `/${payload.href ?? 'owner'}`}`;
+      const icon = `${webOrigin}/rembeh-icon.png`;
+
+      // Prefer webpush.notification (absolute icon/link). Avoid relying on relative paths —
+      // Chrome often fails to surface web push when icon/link are not absolute HTTPS URLs.
       await getMessaging(app).send({
         token,
-        notification: {
+        data: {
+          ...data,
           title: payload.title,
           body: payload.body,
+          href,
         },
-        data,
         android: {
           priority: 'high',
           notification: {
+            title: payload.title,
+            body: payload.body,
             channelId: 'rembeh_alerts',
             clickAction: 'FLUTTER_NOTIFICATION_CLICK',
           },
@@ -186,19 +201,29 @@ export class FcmPushService implements OnModuleInit {
         apns: {
           payload: {
             aps: {
+              alert: {
+                title: payload.title,
+                body: payload.body,
+              },
               sound: 'default',
               contentAvailable: true,
             },
           },
         },
         webpush: {
-          fcmOptions: {
-            link: payload.href || '/',
+          headers: {
+            Urgency: 'high',
+            TTL: '86400',
           },
           notification: {
             title: payload.title,
             body: payload.body,
-            icon: '/rembeh-icon.png',
+            icon,
+            badge: icon,
+            requireInteraction: true,
+          },
+          fcmOptions: {
+            link: href,
           },
         },
       });

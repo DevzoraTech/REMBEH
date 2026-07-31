@@ -18,35 +18,46 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+function absoluteHref(href) {
+  if (!href) return self.location.origin + "/owner";
+  if (/^https?:\/\//i.test(href)) return href;
+  return self.location.origin + (href.startsWith("/") ? href : "/" + href);
+}
+
 messaging.onBackgroundMessage((payload) => {
-  const title = payload.notification?.title || payload.data?.title || "REMBEH";
+  const title =
+    payload.notification?.title || payload.data?.title || "REMBEH";
   const body =
     payload.notification?.body || payload.data?.body || "New notification";
-  const href = payload.data?.href || "/";
+  const href = absoluteHref(payload.data?.href || "/owner");
 
-  self.registration.showNotification(title, {
+  // Always show — some browsers skip auto-display depending on payload shape.
+  return self.registration.showNotification(title, {
     body,
-    icon: "/rembeh-icon.png",
-    badge: "/rembeh-icon.png",
+    icon: self.location.origin + "/rembeh-icon.png",
+    badge: self.location.origin + "/rembeh-icon.png",
     data: { href },
+    requireInteraction: true,
   });
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const href = event.notification?.data?.href || "/";
+  const href = absoluteHref(event.notification?.data?.href || "/owner");
   event.waitUntil(
-    clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
-      for (const client of clientList) {
-        if ("focus" in client) {
-          client.navigate(href);
-          return client.focus();
+    clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clientList) => {
+        for (const client of clientList) {
+          if ("focus" in client) {
+            client.navigate(href);
+            return client.focus();
+          }
         }
-      }
-      if (clients.openWindow) {
-        return clients.openWindow(href);
-      }
-      return undefined;
-    }),
+        if (clients.openWindow) {
+          return clients.openWindow(href);
+        }
+        return undefined;
+      }),
   );
 });
