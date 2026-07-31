@@ -23,6 +23,10 @@ apps/mobile/.packages
 .env.*
 !.env.example
 
+# Firebase Admin SDK private keys (never commit)
+*firebase-adminsdk*.json
+secrets/
+
 # AWS RDS TLS trust store (downloaded locally)
 global-bundle.pem
 *.pem

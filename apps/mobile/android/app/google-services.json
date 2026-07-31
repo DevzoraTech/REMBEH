@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "271959163843",
+    "project_id": "rembeh-mobile",
+    "storage_bucket": "rembeh-mobile.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:271959163843:android:db7559e259c6cd6f767376",
+        "android_client_info": {
+          "package_name": "com.antikra.rembeh.rembeh_mobile"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAEk5VUhrOZWfvolQWDcz2eNwsQXPN7Jkk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

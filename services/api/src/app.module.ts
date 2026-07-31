@@ -18,6 +18,7 @@ import { OperationsModule } from './modules/operations/operations.module';
 import { AppUpdateModule } from './modules/app-update/app-update.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { PlatformModule } from './modules/platform/platform.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { StorageModule } from './modules/storage/storage.module';
 
@@ -31,6 +32,7 @@ import { StorageModule } from './modules/storage/storage.module';
     DatabaseModule,
     StorageModule,
     RealtimeModule,
+    NotificationsModule,
     AuthModule,
     BorrowerListsModule,
     AgentsModule,

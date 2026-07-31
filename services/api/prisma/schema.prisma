@@ -211,6 +211,7 @@ model Tenant {
   branchOperationExpenses  BranchOperationExpense[]
   branchOperationTopUps    BranchOperationTopUp[]
   branchOperationReports   BranchOperationReport[]
+  devicePushTokens         DevicePushToken[]
 
   @@map("tenants")
 }
@@ -451,11 +452,42 @@ model User {
   operationReportsReviewed  BranchOperationReport[]  @relation("BranchOperationReportReviewedBy")
   operationReportsApproved  BranchOperationReport[]  @relation("BranchOperationReportApprovedBy")
   operationReportsReturned  BranchOperationReport[]  @relation("BranchOperationReportReturnedBy")
+  devicePushTokens          DevicePushToken[]
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
   @@index([tenantId, branchId])
   @@map("users")
+}
+
+enum PushPlatform {
+  WEB
+  ANDROID
+  IOS
+}
+
+/// FCM device tokens for web / Android / iOS push (closed-app delivery).
+model DevicePushToken {
+  id         String       @id @default(uuid()) @db.Uuid
+  tenantId   String       @map("tenant_id") @db.Uuid
+  userId     String       @map("user_id") @db.Uuid
+  /// Which Firebase project issued the token: WEB (rembeh-web) or MOBILE (rembeh-mobile).
+  projectKey String       @default("MOBILE") @map("project_key")
+  platform   PushPlatform
+  token      String
+  deviceId   String?      @map("device_id")
+  userAgent  String?      @map("user_agent")
+  enabled    Boolean      @default(true)
+  lastSeenAt DateTime     @default(now()) @map("last_seen_at")
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+  tenant     Tenant       @relation(fields: [tenantId], references: [id])
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@index([tenantId, userId, enabled])
+  @@index([projectKey, enabled])
+  @@map("device_push_tokens")
 }
 
 /// Cash float given to a field agent at the start of a working day for new loans.

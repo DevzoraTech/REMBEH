@@ -33,6 +33,7 @@ import {
   clearAuthState,
 } from "../../lib/auth-session";
 import { resolveOperatorRole } from "../../lib/roles";
+import { PushNotificationsBootstrap } from "./push-notifications-bootstrap";
 
 type AppShellProps = {
   children: ReactNode;
@@ -278,6 +279,7 @@ export function AppShell({
   if (operatorRole === "staff") {
     return (
       <div className="min-h-screen bg-[var(--background)] text-[var(--slate-text)]">
+        <PushNotificationsBootstrap enabled />
         <header className="border-b border-[var(--line)] bg-white/85 px-4 py-3 shadow-[0_10px_30px_rgba(20,33,61,0.05)] backdrop-blur sm:px-6">
           <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
@@ -309,6 +311,7 @@ export function AppShell({
   if (operatorRole === "owner") {
     return (
       <div className="min-h-screen bg-[#f6f8fb] text-[var(--slate-text)]">
+        <PushNotificationsBootstrap enabled />
         <OwnerSidebar
           homeHref={homeHref}
           mobileOpen={mobileOpen}
@@ -354,6 +357,7 @@ export function AppShell({
 
   return (
     <div className="app-shell min-h-screen text-[var(--slate-text)]">
+      <PushNotificationsBootstrap enabled />
       <aside
         className={`app-sidebar fixed inset-y-0 left-0 z-40 w-[232px] transform transition duration-200 lg:translate-x-0 ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"

@@ -55,9 +55,11 @@ if [[ -d "\$REMOTE_DIR/.git" ]]; then
     -e dist \
     -e .env \
     -e services/api/.env \
+    -e secrets \
     -e global-bundle.pem \
     -e apps/web/.next \
     -e apps/web/node_modules \
+    -e apps/web/.env.production.local \
     -e website/node_modules \
     -e website/out \
     -e website/.next

@@ -5,18 +5,30 @@ import 'screens/force_update_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/profile/agent_selfie_capture_screen.dart';
 import 'services/api_client.dart';
+import 'services/push_notification_service.dart';
 import 'services/session_cleanup.dart';
 import 'services/session_store.dart';
 import 'services/update_service.dart';
 import 'theme.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const RembehApp());
+
+  final store = SessionStore();
+  final push = await bootstrapPush(store);
+
+  runApp(RembehApp(sessionStore: store, pushService: push));
 }
 
 class RembehApp extends StatelessWidget {
-  const RembehApp({super.key});
+  const RembehApp({
+    super.key,
+    required this.sessionStore,
+    this.pushService,
+  });
+
+  final SessionStore sessionStore;
+  final PushNotificationService? pushService;
 
   @override
   Widget build(BuildContext context) {
@@ -24,13 +36,22 @@ class RembehApp extends StatelessWidget {
       title: 'REMBEH',
       debugShowCheckedModeBanner: false,
       theme: buildRembehTheme(),
-      home: const _BootScreen(),
+      home: _BootScreen(
+        sessionStore: sessionStore,
+        pushService: pushService,
+      ),
     );
   }
 }
 
 class _BootScreen extends StatefulWidget {
-  const _BootScreen();
+  const _BootScreen({
+    required this.sessionStore,
+    this.pushService,
+  });
+
+  final SessionStore sessionStore;
+  final PushNotificationService? pushService;
 
   @override
   State<_BootScreen> createState() => _BootScreenState();
@@ -63,7 +84,7 @@ class _BootScreenState extends State<_BootScreen> {
       }
     }
 
-    final store = SessionStore();
+    final store = widget.sessionStore;
     var session = await store.read();
     if (!mounted) return;
 
@@ -78,6 +99,8 @@ class _BootScreenState extends State<_BootScreen> {
       }
 
       if (!session.isAccessExpired) {
+        await widget.pushService?.requestPermissionAndSync();
+        if (!mounted) return;
         _goShell(session);
         return;
       }
@@ -87,6 +110,8 @@ class _BootScreenState extends State<_BootScreen> {
         final refreshed = await ApiClient(store).refreshSession(session);
         if (!mounted) return;
         if (refreshed != null) {
+          await widget.pushService?.requestPermissionAndSync();
+          if (!mounted) return;
           _goShell(refreshed);
           return;
         }
@@ -101,7 +126,9 @@ class _BootScreenState extends State<_BootScreen> {
 
   void _goLogin() {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      MaterialPageRoute(
+        builder: (_) => LoginScreen(pushService: widget.pushService),
+      ),
     );
   }
 

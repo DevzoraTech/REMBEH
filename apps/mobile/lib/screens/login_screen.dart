@@ -3,6 +3,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/api_client.dart';
+import '../services/push_notification_service.dart';
 import '../services/session_store.dart';
 import '../theme.dart';
 import '../utils/friendly_errors.dart';
@@ -14,9 +15,14 @@ const _rememberMeKey = 'rembeh.login.remember_me';
 const _loginMaxCardWidth = 360.0;
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key, this.idleSignedOutMessage});
+  const LoginScreen({
+    super.key,
+    this.idleSignedOutMessage,
+    this.pushService,
+  });
 
   final String? idleSignedOutMessage;
+  final PushNotificationService? pushService;
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -117,6 +123,8 @@ class _LoginScreenState extends State<LoginScreen>
       await _api.login(email: _email.text, password: _password.text);
       final session = await _store.read();
       if (!mounted || session == null) return;
+      await widget.pushService?.requestPermissionAndSync();
+      if (!mounted) return;
       final next = session.isAgent && !session.hasProfilePhoto
           ? AgentSelfieCaptureScreen(session: session)
           : AgentShell(session: session);
