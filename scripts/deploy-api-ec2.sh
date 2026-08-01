@@ -164,14 +164,45 @@ if [[ "$SKIP_ENV_UPLOAD" != "1" ]]; then
   echo "==> [3/4] Sync .env to server (IAM role for S3; not stored in GitHub)..."
   python3 - <<PY | ec2_ssh "$USER_NAME@$HOST" "cat > '$REMOTE_DIR/.env'"
 from pathlib import Path
+import json
 import re
-text = Path("$ROOT/.env").read_text()
+
+root = Path("$ROOT")
+text = root.joinpath(".env").read_text()
 text = re.sub(
     r"sslrootcert=[^&\"']+",
     "sslrootcert=/home/ubuntu/rembeh/global-bundle.pem",
     text,
 )
+
+def load_service_account_json(candidates: list[Path]) -> str | None:
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            parsed = json.loads(path.read_text())
+        except Exception:
+            continue
+        if isinstance(parsed, dict) and parsed.get("type") == "service_account":
+            # Single-line JSON so dotenv parsers keep the whole credential.
+            return json.dumps(parsed, separators=(",", ":"))
+    return None
+
+web_sa = load_service_account_json(
+    [
+        root / "secrets" / "rembeh-web-firebase-adminsdk.json",
+        *sorted(root.glob("apps/web/rembeh-web-firebase-adminsdk*.json")),
+    ]
+)
+mobile_sa = load_service_account_json(
+    [
+        root / "secrets" / "rembeh-mobile-firebase-adminsdk.json",
+        *sorted(root.glob("apps/mobile/rembeh-mobile-firebase-adminsdk*.json")),
+    ]
+)
+
 lines = []
+seen = set()
 for line in text.splitlines():
     if line.startswith("S3_ENDPOINT="):
         lines.append("S3_ENDPOINT=")
@@ -191,12 +222,71 @@ for line in text.splitlines():
         )
     elif line.startswith("NODE_ENV="):
         lines.append("NODE_ENV=production")
+    elif line.startswith("FIREBASE_WEB_SERVICE_ACCOUNT_JSON="):
+        lines.append(
+            f"FIREBASE_WEB_SERVICE_ACCOUNT_JSON={web_sa or ''}"
+        )
+        seen.add("FIREBASE_WEB_SERVICE_ACCOUNT_JSON")
+    elif line.startswith("FIREBASE_MOBILE_SERVICE_ACCOUNT_JSON="):
+        lines.append(
+            f"FIREBASE_MOBILE_SERVICE_ACCOUNT_JSON={mobile_sa or ''}"
+        )
+        seen.add("FIREBASE_MOBILE_SERVICE_ACCOUNT_JSON")
+    elif line.startswith("FIREBASE_WEB_SERVICE_ACCOUNT_PATH="):
+        # Prefer JSON on the server; keep a stable relative fallback path.
+        lines.append(
+            "FIREBASE_WEB_SERVICE_ACCOUNT_PATH=/home/ubuntu/rembeh/secrets/rembeh-web-firebase-adminsdk.json"
+        )
+        seen.add("FIREBASE_WEB_SERVICE_ACCOUNT_PATH")
+    elif line.startswith("FIREBASE_MOBILE_SERVICE_ACCOUNT_PATH="):
+        lines.append(
+            "FIREBASE_MOBILE_SERVICE_ACCOUNT_PATH=/home/ubuntu/rembeh/secrets/rembeh-mobile-firebase-adminsdk.json"
+        )
+        seen.add("FIREBASE_MOBILE_SERVICE_ACCOUNT_PATH")
     else:
         lines.append(line)
+
 if not any(l.startswith("NODE_ENV=") for l in lines):
     lines.insert(0, "NODE_ENV=production")
+if "FIREBASE_WEB_SERVICE_ACCOUNT_JSON" not in seen:
+    lines.append(f"FIREBASE_WEB_SERVICE_ACCOUNT_JSON={web_sa or ''}")
+if "FIREBASE_MOBILE_SERVICE_ACCOUNT_JSON" not in seen:
+    lines.append(f"FIREBASE_MOBILE_SERVICE_ACCOUNT_JSON={mobile_sa or ''}")
+if "FIREBASE_WEB_SERVICE_ACCOUNT_PATH" not in seen:
+    lines.append(
+        "FIREBASE_WEB_SERVICE_ACCOUNT_PATH=/home/ubuntu/rembeh/secrets/rembeh-web-firebase-adminsdk.json"
+    )
+if "FIREBASE_MOBILE_SERVICE_ACCOUNT_PATH" not in seen:
+    lines.append(
+        "FIREBASE_MOBILE_SERVICE_ACCOUNT_PATH=/home/ubuntu/rembeh/secrets/rembeh-mobile-firebase-adminsdk.json"
+    )
+
 print("\n".join(lines) + "\n")
+if web_sa:
+    print("firebase_web_sa=embedded", file=__import__("sys").stderr)
+else:
+    print("firebase_web_sa=missing", file=__import__("sys").stderr)
+if mobile_sa:
+    print("firebase_mobile_sa=embedded", file=__import__("sys").stderr)
+else:
+    print("firebase_mobile_sa=missing", file=__import__("sys").stderr)
 PY
+
+  # Keep server secret JSON files aligned with local admin SDKs (gitignored).
+  mkdir -p /tmp/rembeh-firebase-sync
+  WEB_SA_SRC="$(ls "$ROOT"/secrets/rembeh-web-firebase-adminsdk.json "$ROOT"/apps/web/rembeh-web-firebase-adminsdk*.json 2>/dev/null | head -1 || true)"
+  MOBILE_SA_SRC="$(ls "$ROOT"/secrets/rembeh-mobile-firebase-adminsdk.json "$ROOT"/apps/mobile/rembeh-mobile-firebase-adminsdk*.json 2>/dev/null | head -1 || true)"
+  ec2_ssh "$USER_NAME@$HOST" "mkdir -p '$REMOTE_DIR/secrets' && chmod 700 '$REMOTE_DIR/secrets'"
+  if [[ -n "$WEB_SA_SRC" && -f "$WEB_SA_SRC" ]]; then
+    ec2_scp "$WEB_SA_SRC" "$USER_NAME@$HOST:$REMOTE_DIR/secrets/rembeh-web-firebase-adminsdk.json"
+    ec2_ssh "$USER_NAME@$HOST" "chmod 600 '$REMOTE_DIR/secrets/rembeh-web-firebase-adminsdk.json'"
+    echo "synced secrets/rembeh-web-firebase-adminsdk.json"
+  fi
+  if [[ -n "$MOBILE_SA_SRC" && -f "$MOBILE_SA_SRC" ]]; then
+    ec2_scp "$MOBILE_SA_SRC" "$USER_NAME@$HOST:$REMOTE_DIR/secrets/rembeh-mobile-firebase-adminsdk.json"
+    ec2_ssh "$USER_NAME@$HOST" "chmod 600 '$REMOTE_DIR/secrets/rembeh-mobile-firebase-adminsdk.json'"
+    echo "synced secrets/rembeh-mobile-firebase-adminsdk.json"
+  fi
 else
   echo "==> [3/4] SKIP_ENV_UPLOAD=1 — keeping server .env"
 fi

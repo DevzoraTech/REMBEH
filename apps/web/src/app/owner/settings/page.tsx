@@ -121,6 +121,11 @@ function OwnerSettingsContent() {
       );
       if (typeof Notification !== "undefined") {
         setPushPermission(Notification.permission);
+        if (Notification.permission === "granted") {
+          // Re-sync FCM token quietly so Settings "test alert" works after
+          // server/FCM recoveries (tokens can be disabled by failed sends).
+          void ensureWebPushRegistration({ requestPermission: false });
+        }
       }
     } catch {
       // Overview counts are optional; loan types section loads its own data.
@@ -173,6 +178,17 @@ function OwnerSettingsContent() {
     setError(null);
     setNotice(null);
     try {
+      const registration = await ensureWebPushRegistration({
+        requestPermission: false,
+      });
+      setPushPermission(registration.permission);
+      if (registration.permission !== "granted" || !registration.registered) {
+        setError(
+          "This browser is not registered for alerts yet. Click Turn on alerts, then try again.",
+        );
+        return;
+      }
+
       const response = await fetch(`${apiBaseUrl}/notifications/push/test`, {
         method: "POST",
         headers: {
@@ -187,16 +203,28 @@ function OwnerSettingsContent() {
       });
       const payload = await readApiJson<{
         success?: number;
+        reason?: "fcm_disabled" | "no_tokens" | "send_failed";
         message?: string | string[];
+        webEnabled?: boolean;
       }>(response);
       if (!response.ok) {
         throw new Error(formatApiError(payload.message));
       }
       if ((payload.success ?? 0) > 0) {
         setNotice("Test alert sent. Check your notifications.");
+      } else if (typeof payload.message === "string" && payload.message.trim()) {
+        setError(payload.message);
+      } else if (payload.reason === "fcm_disabled" || payload.webEnabled === false) {
+        setError(
+          "Push delivery is not configured on the server yet. Alerts cannot be sent until Firebase is set up.",
+        );
+      } else if (payload.reason === "no_tokens") {
+        setError(
+          "This browser is not registered yet. Click Turn on alerts, then try again.",
+        );
       } else {
         setError(
-          "No alert was delivered. Turn on alerts first, then try again.",
+          "No alert was delivered. Turn alerts off and on again, then try once more.",
         );
       }
     } catch (caught) {

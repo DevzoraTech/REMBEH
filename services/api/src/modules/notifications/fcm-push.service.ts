@@ -122,13 +122,45 @@ export class FcmPushService implements OnModuleInit {
     tenantId: string,
     userId: string,
     payload: PushPayload,
-  ): Promise<{ attempted: number; success: number }> {
+  ): Promise<{
+    attempted: number;
+    success: number;
+    reason?: 'fcm_disabled' | 'no_tokens' | 'send_failed';
+    message?: string;
+  }> {
     const tokens = await this.prisma.devicePushToken.findMany({
       where: { tenantId, userId, enabled: true },
     });
 
     if (tokens.length === 0) {
-      return { attempted: 0, success: 0 };
+      return {
+        attempted: 0,
+        success: 0,
+        reason: 'no_tokens',
+        message:
+          'No browser is registered for alerts yet. Turn on alerts in Settings, then try again.',
+      };
+    }
+
+    const neededProjects = new Set(
+      tokens.map((row) =>
+        row.projectKey === 'WEB' ? ('WEB' as const) : ('MOBILE' as const),
+      ),
+    );
+    const missingProjects = [...neededProjects].filter(
+      (projectKey) => !this.apps.has(projectKey),
+    );
+    if (missingProjects.length > 0) {
+      this.logger.warn(
+        `FCM not configured for: ${missingProjects.join(', ')}`,
+      );
+      return {
+        attempted: tokens.length,
+        success: 0,
+        reason: 'fcm_disabled',
+        message:
+          'Push delivery is not configured on the server. Ask an admin to set Firebase service accounts.',
+      };
     }
 
     let success = 0;
@@ -136,15 +168,25 @@ export class FcmPushService implements OnModuleInit {
       const projectKey = (
         row.projectKey === 'WEB' ? 'WEB' : 'MOBILE'
       ) as FirebaseProjectKey;
-      const ok = await this.sendToToken(projectKey, row.token, payload);
-      if (ok) {
+      const result = await this.sendToToken(projectKey, row.token, payload);
+      if (result === 'ok') {
         success += 1;
-      } else {
+      } else if (result === 'invalid_token') {
         await this.prisma.devicePushToken.updateMany({
           where: { id: row.id },
           data: { enabled: false },
         });
       }
+    }
+
+    if (success === 0) {
+      return {
+        attempted: tokens.length,
+        success: 0,
+        reason: 'send_failed',
+        message:
+          'Alert could not be delivered to this browser. Turn alerts off and on again, then retry.',
+      };
     }
 
     return { attempted: tokens.length, success };
@@ -154,11 +196,11 @@ export class FcmPushService implements OnModuleInit {
     projectKey: FirebaseProjectKey,
     token: string,
     payload: PushPayload,
-  ): Promise<boolean> {
+  ): Promise<'ok' | 'no_app' | 'invalid_token' | 'error'> {
     const app = this.apps.get(projectKey);
     if (!app) {
       this.logger.warn(`No Firebase admin app for ${projectKey}`);
-      return false;
+      return 'no_app';
     }
 
     const data: Record<string, string> = {
@@ -227,7 +269,7 @@ export class FcmPushService implements OnModuleInit {
           },
         },
       });
-      return true;
+      return 'ok';
     } catch (error) {
       const code =
         error && typeof error === 'object' && 'code' in error
@@ -236,7 +278,14 @@ export class FcmPushService implements OnModuleInit {
       this.logger.warn(
         `FCM send failed (${projectKey}): ${code || (error instanceof Error ? error.message : 'unknown')}`,
       );
-      return false;
+      if (
+        code.includes('registration-token-not-registered') ||
+        code.includes('invalid-registration-token') ||
+        code.includes('invalid-argument')
+      ) {
+        return 'invalid_token';
+      }
+      return 'error';
     }
   }
 

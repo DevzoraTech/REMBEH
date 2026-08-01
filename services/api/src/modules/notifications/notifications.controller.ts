@@ -83,6 +83,10 @@ export class NotificationsController {
         href: dto.href,
       },
     );
-    return result;
+    return {
+      ...result,
+      webEnabled: this.fcmPushService.isEnabled('WEB'),
+      mobileEnabled: this.fcmPushService.isEnabled('MOBILE'),
+    };
   }
 }
