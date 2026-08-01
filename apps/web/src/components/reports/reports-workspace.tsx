@@ -1,0 +1,2272 @@
+"use client";
+
+import {
+  ArrowRightLeft,
+  Banknote,
+  CheckCircle2,
+  ClipboardList,
+  Clock3,
+  Download,
+  FileSpreadsheet,
+  FileText,
+  Filter,
+  HandCoins,
+  Loader2,
+  RefreshCw,
+  Scale,
+  Search,
+  Users,
+  WalletCards,
+} from "lucide-react";
+import type { ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AppShell } from "../app/app-shell";
+import { AppBootSkeleton } from "../app/skeleton";
+import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
+import {
+  RembehBranch,
+  RembehSession,
+  RembehUser,
+  RembehWorkspace,
+  clearAuthState,
+  isSessionExpired,
+  readAuthState,
+} from "../../lib/auth-session";
+import { resolveOperatorRole } from "../../lib/roles";
+import { useRouter } from "next/navigation";
+import {
+  OwnerBranch,
+  OwnerReport,
+  authHeaders,
+  formatDate,
+  formatMoney,
+  formatNumber,
+  ownerFetch,
+  sumBy,
+  titleCase,
+} from "../../app/owner/owner-common";
+import { OwnerHeader } from "../../app/owner/owner-header";
+import { invalidateOwnerNotifications } from "../../app/owner/owner-notifications";
+
+type ReportStatusFilter =
+  | "all"
+  | "MANAGER_REVIEW"
+  | "SENT_TO_OWNER"
+  | "OWNER_APPROVED"
+  | "RETURNED_TO_MANAGER";
+type ReportView = "report" | "excel";
+export type ReportsMode = "owner" | "manager";
+
+type ReportAgentReturn = {
+  floatId?: string;
+  agentId?: string;
+  agentName?: string;
+  agentPublicId?: string | null;
+  amountGiven?: number;
+  amountDisbursed?: number;
+  processingFees?: number;
+  amountCollected?: number;
+  expectedReturn?: number;
+  amountReturned?: number | null;
+  variance?: number | null;
+  returnedAt?: string | null;
+  status?: string;
+};
+
+type ReportRecord = {
+  id?: string;
+  amount?: number;
+  description?: string | null;
+  category?: string;
+  addedAt?: string;
+  incurredAt?: string;
+  recordedByName?: string;
+};
+
+type ReportSnapshot = {
+  summary: Record<string, unknown>;
+  openingCash: Record<string, unknown>;
+  cashPosition: Record<string, unknown>;
+  operation: Record<string, unknown>;
+  agentReturns: ReportAgentReturn[];
+  topUps: ReportRecord[];
+  expenses: ReportRecord[];
+  closingNotes: string | null;
+};
+
+const OWNER_STATUS_OPTIONS: Array<{ value: ReportStatusFilter; label: string }> = [
+  { value: "all", label: "All statuses" },
+  { value: "SENT_TO_OWNER", label: "Waiting approval" },
+  { value: "OWNER_APPROVED", label: "Approved" },
+  { value: "RETURNED_TO_MANAGER", label: "Returned" },
+];
+
+const MANAGER_STATUS_OPTIONS: Array<{ value: ReportStatusFilter; label: string }> = [
+  { value: "all", label: "All statuses" },
+  { value: "MANAGER_REVIEW", label: "Ready to send" },
+  { value: "SENT_TO_OWNER", label: "With owner" },
+  { value: "OWNER_APPROVED", label: "Approved" },
+  { value: "RETURNED_TO_MANAGER", label: "Returned" },
+];
+
+type ReportsSession = {
+  session: RembehSession | null;
+  workspace: RembehWorkspace | null;
+  user: RembehUser | null;
+  branch: RembehBranch | null;
+  ready: boolean;
+};
+
+function useReportsSession(mode: ReportsMode): ReportsSession {
+  const router = useRouter();
+  const [state, setState] = useState<ReportsSession>({
+    session: null,
+    workspace: null,
+    user: null,
+    branch: null,
+    ready: false,
+  });
+
+  useEffect(() => {
+    const boot = window.setTimeout(() => {
+      const auth = readAuthState();
+      if (!auth.session || isSessionExpired(auth.session)) {
+        clearAuthState();
+        router.replace(
+          `/login?next=${encodeURIComponent(mode === "owner" ? "/owner/reports" : "/reports")}`,
+        );
+        return;
+      }
+      const role = resolveOperatorRole(auth.session, auth.user);
+      if (mode === "owner" && role !== "owner") {
+        router.replace(role === "manager" ? "/reports" : "/dashboard");
+        return;
+      }
+      if (mode === "manager" && role !== "manager") {
+        router.replace(role === "owner" ? "/owner/reports" : "/dashboard");
+        return;
+      }
+      setState({
+        session: auth.session,
+        workspace: auth.workspace,
+        user: auth.user,
+        branch: auth.branch,
+        ready: true,
+      });
+    }, 0);
+    return () => window.clearTimeout(boot);
+  }, [mode, router]);
+
+  return state;
+}
+
+export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
+  const state = useReportsSession(mode);
+  const isManager = mode === "manager";
+  const statusOptions = isManager ? MANAGER_STATUS_OPTIONS : OWNER_STATUS_OPTIONS;
+  const [branches, setBranches] = useState<OwnerBranch[]>([]);
+  const [reports, setReports] = useState<OwnerReport[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [branchId, setBranchId] = useState("all");
+  const [status, setStatus] = useState<ReportStatusFilter>("all");
+  const [search, setSearch] = useState("");
+  const [view, setView] = useState<ReportView>("report");
+  const [actionNotes, setActionNotes] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [actingId, setActingId] = useState<string | null>(null);
+  const [exportingId, setExportingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const currency = state.workspace?.currency ?? "UGX";
+
+  const loadReports = useCallback(async () => {
+    if (!state.session) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (!isManager && branchId !== "all") params.set("branchId", branchId);
+      if (status !== "all") params.set("status", status);
+      const [branchPayload, reportPayload] = await Promise.all([
+        ownerFetch<{ branches?: OwnerBranch[] }>(state.session, "/branches"),
+        ownerFetch<{ reports?: OwnerReport[] }>(
+          state.session,
+          `/operations/reports${params.toString() ? `?${params}` : ""}`,
+        ),
+      ]);
+      const nextReports = reportPayload.reports ?? [];
+      setBranches(branchPayload.branches ?? []);
+      setReports(nextReports);
+      setSelectedId((current) => {
+        const fromUrl = new URLSearchParams(window.location.search).get(
+          "reportId",
+        );
+        if (fromUrl && nextReports.some((report) => report.id === fromUrl)) {
+          return fromUrl;
+        }
+        if (current && nextReports.some((report) => report.id === current)) {
+          return current;
+        }
+        return nextReports[0]?.id ?? null;
+      });
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not load reports.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [branchId, isManager, state.session, status]);
+
+  useEffect(() => {
+    const boot = window.setTimeout(() => {
+      if (state.ready && state.session) {
+        void loadReports();
+      }
+    }, 0);
+    return () => window.clearTimeout(boot);
+  }, [loadReports, state.ready, state.session]);
+
+  const filteredReports = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return reports;
+    return reports.filter((report) =>
+      [
+        report.reportNumber,
+        report.branchName,
+        report.operationDate,
+        report.status,
+        report.managerReviewedByName ?? "",
+      ].some((value) => value.toLowerCase().includes(q)),
+    );
+  }, [reports, search]);
+
+  const selectedReport =
+    filteredReports.find((report) => report.id === selectedId) ??
+    filteredReports[0] ??
+    null;
+  const selectedSnapshot = selectedReport
+    ? readReportSnapshot(selectedReport)
+    : null;
+
+  const waitingReports = reports.filter((r) => r.status === "SENT_TO_OWNER");
+  const approvedReports = reports.filter((r) => r.status === "OWNER_APPROVED");
+  const filtersActive =
+    search.trim().length > 0 ||
+    (!isManager && branchId !== "all") ||
+    status !== "all";
+
+  async function submitReportAction(report: OwnerReport) {
+    if (!state.session || actingId) return;
+    setActingId(report.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const path = isManager
+        ? `/operations/reports/${report.id}/manager-confirm`
+        : `/operations/reports/${report.id}/owner-approve`;
+      const response = await fetch(`${apiBaseUrl}${path}`, {
+        method: "POST",
+        headers: {
+          ...authHeaders(state.session),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ notes: actionNotes.trim() || undefined }),
+      });
+      const payload = await readApiJson<{ message?: string | string[] }>(
+        response,
+      );
+      if (!response.ok) throw new Error(formatApiError(payload.message));
+      setActionNotes("");
+      setNotice(
+        isManager
+          ? "Report sent to owner successfully."
+          : "Report approved successfully.",
+      );
+      invalidateOwnerNotifications();
+      await loadReports();
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : isManager
+            ? "Could not send report to owner."
+            : "Could not approve report.",
+      );
+    } finally {
+      setActingId(null);
+    }
+  }
+
+  if (!state.ready || !state.session) return <AppBootSkeleton />;
+
+  return (
+    <AppShell
+      session={state.session}
+      workspace={state.workspace}
+      user={state.user}
+      branch={isManager ? state.branch : null}
+    >
+      <div className="mx-auto max-w-[1440px] space-y-5 animate-rise">
+        <OwnerHeader
+          eyebrow="Daily Close"
+          title="Reports"
+          search={search}
+          onSearchChange={setSearch}
+          searchTooltip={
+            isManager
+              ? "Search report number, date or status for your branch."
+              : "Search report number, branch, date, status or manager."
+          }
+          searchPlaceholder="Search reports..."
+          showReportsButton={false}
+          settingsHref={isManager ? "/settings" : "/owner/settings"}
+          reportsHref={isManager ? "/reports" : "/owner/reports"}
+          notificationScope={mode}
+          actions={
+            <>
+              <button
+                type="button"
+                onClick={() => void loadReports()}
+                disabled={loading}
+                aria-label="Refresh reports"
+                className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#25314b] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8faf9] disabled:opacity-60"
+              >
+                <RefreshCw
+                  className={`size-4 ${loading ? "animate-spin" : ""}`}
+                />
+              </button>
+              <button
+                type="button"
+                className="inline-flex h-9 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3.5 text-xs font-semibold text-white shadow-[0_12px_24px_rgba(15,143,104,0.28)] transition hover:brightness-105 disabled:opacity-60"
+                disabled={
+                  !selectedReport || !selectedSnapshot || Boolean(exportingId)
+                }
+                onClick={() => {
+                  if (!selectedReport || !selectedSnapshot) return;
+                  void exportReport(
+                    selectedReport,
+                    selectedSnapshot,
+                    currency,
+                    setExportingId,
+                  );
+                }}
+              >
+                {exportingId ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Download className="size-3.5" />
+                )}
+                Export
+              </button>
+            </>
+          }
+        />
+        <p className="-mt-2 text-sm font-medium text-slate-500">
+          {isManager
+            ? "Review your close-day reports, verify cash position, and send them to the owner."
+            : "Review branch close-day reports, verify cash position, and approve with confidence."}
+        </p>
+
+        {notice ? (
+          <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-[var(--forest-emerald)]">
+            {notice}
+          </p>
+        ) : null}
+        {error ? (
+          <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {error}
+          </p>
+        ) : null}
+
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <MetricCard
+            icon={<ClipboardList className="size-4" />}
+            tone="green"
+            label="Reports in view"
+            value={formatNumber(filteredReports.length)}
+            detail={
+              status === "all" ? "Matching filters" : statusLabel(status)
+            }
+          />
+          <MetricCard
+            icon={<Clock3 className="size-4" />}
+            tone="gold"
+            label={isManager ? "With owner" : "Waiting approval"}
+            value={formatNumber(waitingReports.length)}
+            detail={isManager ? "Awaiting owner approval" : "Needs owner action"}
+            onClick={
+              waitingReports.length > 0
+                ? () => setStatus("SENT_TO_OWNER")
+                : undefined
+            }
+            active={status === "SENT_TO_OWNER"}
+          />
+          <MetricCard
+            icon={<CheckCircle2 className="size-4" />}
+            tone="violet"
+            label="Approved"
+            value={formatNumber(approvedReports.length)}
+            detail="Locked for records"
+          />
+          <MetricCard
+            icon={<Scale className="size-4" />}
+            tone="blue"
+            label="Net variance"
+            value={formatMoney(
+              sumBy(reports, (report) => report.closingVariance ?? 0),
+              currency,
+            )}
+            detail="Counted vs expected"
+          />
+        </section>
+
+        <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#edf1f5] px-4 py-4">
+            <div>
+              <h2 className="text-[15px] font-semibold text-[#0b1220]">
+                Close-day workspace
+              </h2>
+              <p className="mt-0.5 text-xs font-medium text-slate-500">
+                {isManager
+                  ? "Select a report, inspect cash movement, then send to owner."
+                  : "Select a report, inspect cash movement, then approve."}
+              </p>
+            </div>
+            {status === "SENT_TO_OWNER" ? (
+              <button
+                type="button"
+                onClick={() => setStatus("all")}
+                className="h-8 rounded-xl border border-[#e6ebf0] bg-white px-3 text-[11px] font-semibold text-slate-600 transition hover:bg-[#f8faf9]"
+              >
+                Show all statuses
+              </button>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 border-b border-[#edf1f5] px-4 py-3">
+            <label className="flex h-10 min-w-[220px] flex-1 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+              <Search className="size-3.5 shrink-0 text-slate-400" />
+              <input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                className="min-w-0 flex-1 bg-transparent text-xs font-medium text-[#0b1224] outline-none placeholder:text-slate-400"
+                placeholder="Search branch, report number, manager..."
+              />
+            </label>
+            {isManager ? (
+              <span className="inline-flex h-10 items-center rounded-xl border border-[#e6ebf0] bg-[#f8faf9] px-3 text-xs font-semibold text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+                {state.branch?.name ?? branches[0]?.name ?? "Your branch"}
+              </span>
+            ) : (
+              <select
+                value={branchId}
+                onChange={(event) => setBranchId(event.target.value)}
+                className="h-10 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-[#0b1224] outline-none shadow-[0_8px_18px_rgba(15,23,42,0.035)]"
+              >
+                <option value="all">All branches</option>
+                {branches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <select
+              value={status}
+              onChange={(event) =>
+                setStatus(event.target.value as ReportStatusFilter)
+              }
+              className="h-10 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-[#0b1224] outline-none shadow-[0_8px_18px_rgba(15,23,42,0.035)]"
+            >
+              {statusOptions.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={!filtersActive}
+              onClick={() => {
+                setSearch("");
+                setBranchId("all");
+                setStatus("all");
+              }}
+              className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.035)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Filter className="size-3.5" />
+              Clear
+            </button>
+          </div>
+
+          <div className="border-b border-[#edf1f5]">
+            <div className="hidden grid-cols-[1.3fr_1.1fr_0.9fr_1fr_1fr_1.1fr_0.95fr] gap-3 bg-[#f8faf9] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500 lg:grid">
+              <span>Branch</span>
+              <span>Report</span>
+              <span>Date</span>
+              <span className="text-right">Expected</span>
+              <span className="text-right">Variance</span>
+              <span>Manager</span>
+              <span>Status</span>
+            </div>
+            <div className="max-h-[240px] overflow-y-auto">
+              {loading ? (
+                <div className="space-y-2 p-4">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div
+                      key={i}
+                      className="h-12 animate-pulse rounded-xl bg-[#f1f5f4]"
+                    />
+                  ))}
+                </div>
+              ) : filteredReports.length === 0 ? (
+                <div className="px-4 py-12 text-center">
+                  <p className="text-sm font-semibold text-[#0b1220]">
+                    No reports in this view
+                  </p>
+                  <p className="mt-1 text-xs font-medium text-slate-500">
+                    Adjust filters or wait for managers to submit close-day
+                    reports.
+                  </p>
+                </div>
+              ) : (
+                filteredReports.map((report) => {
+                  const active = selectedReport?.id === report.id;
+                  const variance = report.closingVariance ?? 0;
+                  return (
+                    <button
+                      key={report.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedId(report.id);
+                        setActionNotes("");
+                      }}
+                      className={`grid w-full grid-cols-1 gap-2 border-b border-[#edf1f5] px-4 py-3 text-left transition last:border-b-0 lg:grid-cols-[1.3fr_1.1fr_0.9fr_1fr_1fr_1.1fr_0.95fr] lg:items-center lg:gap-3 ${
+                        active
+                          ? "bg-emerald-50/70"
+                          : "bg-white hover:bg-[#f8faf9]"
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-[#0b1220]">
+                          {report.branchName}
+                        </p>
+                        <p className="mt-0.5 text-[11px] font-medium text-slate-500 lg:hidden">
+                          {report.reportNumber}
+                        </p>
+                      </div>
+                      <p className="hidden truncate text-xs font-semibold text-slate-600 lg:block">
+                        {report.reportNumber}
+                      </p>
+                      <p className="text-xs font-semibold text-slate-600">
+                        {formatDate(report.operationDate)}
+                      </p>
+                      <p className="text-xs font-semibold tabular-nums text-[#0b1220] lg:text-right">
+                        {formatMoney(report.expectedClosingBalance, currency)}
+                      </p>
+                      <p
+                        className={`text-xs font-semibold tabular-nums lg:text-right ${
+                          variance !== 0 ? "text-red-600" : "text-[#0b1220]"
+                        }`}
+                      >
+                        {formatMoney(variance, currency)}
+                      </p>
+                      <p className="truncate text-xs font-semibold text-slate-600">
+                        {report.managerReviewedByName ?? "Manager"}
+                      </p>
+                      <div>
+                        <StatusPill status={report.status} />
+                      </div>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {!selectedReport || !selectedSnapshot ? (
+            <div className="grid min-h-[320px] place-items-center px-4 py-16 text-center">
+              <div>
+                <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-emerald-50 text-[var(--forest-emerald)]">
+                  <FileText className="size-6" />
+                </span>
+                <p className="mt-4 text-sm font-semibold text-[#0b1220]">
+                  Select a report above
+                </p>
+                <p className="mt-1 max-w-sm text-xs font-medium text-slate-500">
+                  Cash summary, agent handover, and approval actions will appear
+                  here.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3 p-3.5 sm:p-4">
+              <div className="flex flex-wrap items-start justify-between gap-2.5">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-base font-bold tracking-[-0.02em] text-[#0b1220]">
+                      {selectedReport.reportNumber}
+                    </h3>
+                    <StatusPill status={selectedReport.status} />
+                  </div>
+                  <p className="mt-1 text-[11px] font-medium text-slate-500">
+                    {selectedReport.branchName}
+                    <span className="px-1.5 text-slate-300">·</span>
+                    {formatDate(selectedReport.operationDate)}
+                    <span className="px-1.5 text-slate-300">·</span>
+                    Closed by{" "}
+                    {textValue(
+                      selectedSnapshot.operation.closedByName,
+                      selectedReport.managerReviewedByName ?? "Manager",
+                    )}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex h-9 items-center rounded-xl border border-[#e6ebf0] bg-[#f8faf9] p-1">
+                    <ViewTab
+                      active={view === "report"}
+                      icon={<FileText className="size-3.5" />}
+                      label="Summary"
+                      onClick={() => setView("report")}
+                    />
+                    <ViewTab
+                      active={view === "excel"}
+                      icon={<FileSpreadsheet className="size-3.5" />}
+                      label="Ledger"
+                      onClick={() => setView("excel")}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-[#0b1220] shadow-[0_8px_18px_rgba(15,23,42,0.035)] disabled:opacity-55"
+                    disabled={exportingId === selectedReport.id}
+                    onClick={() =>
+                      void exportReport(
+                        selectedReport,
+                        selectedSnapshot,
+                        currency,
+                        setExportingId,
+                      )
+                    }
+                  >
+                    {exportingId === selectedReport.id ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Download className="size-3.5" />
+                    )}
+                    Download Excel
+                  </button>
+                </div>
+              </div>
+
+              {view === "report" ? (
+                <ReportSummaryView
+                  report={selectedReport}
+                  snapshot={selectedSnapshot}
+                  currency={currency}
+                  notes={actionNotes}
+                  setNotes={setActionNotes}
+                  approving={actingId === selectedReport.id}
+                  mode={mode}
+                  onAction={() => void submitReportAction(selectedReport)}
+                />
+              ) : (
+                <div className="space-y-4">
+                  <LedgerTable
+                    report={selectedReport}
+                    snapshot={selectedSnapshot}
+                    currency={currency}
+                  />
+                  <ReportActionCard
+                    report={selectedReport}
+                    notes={actionNotes}
+                    setNotes={setActionNotes}
+                    approving={actingId === selectedReport.id}
+                    mode={mode}
+                    onAction={() => void submitReportAction(selectedReport)}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      </div>
+    </AppShell>
+  );
+}
+
+function MetricCard({
+  icon,
+  label,
+  value,
+  detail,
+  tone,
+  onClick,
+  active,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  detail: string;
+  tone: "green" | "gold" | "violet" | "blue";
+  onClick?: () => void;
+  active?: boolean;
+}) {
+  const toneClass = {
+    green: "bg-emerald-50 text-[var(--forest-emerald)]",
+    gold: "bg-orange-50 text-orange-600",
+    violet: "bg-violet-50 text-violet-600",
+    blue: "bg-sky-50 text-sky-600",
+  }[tone];
+
+  const body = (
+    <>
+      <span
+        className={`grid size-10 shrink-0 place-items-center rounded-xl ${toneClass}`}
+      >
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-[11px] font-semibold text-slate-500">
+          {label}
+        </p>
+        <p className="mt-1 break-words text-[clamp(0.85rem,1vw,1.1rem)] font-semibold leading-tight tabular-nums text-[#111827]">
+          {value}
+        </p>
+        <p
+          className={`mt-1 text-[11px] font-semibold ${
+            active ? "text-amber-700" : "text-slate-500"
+          }`}
+        >
+          {detail}
+        </p>
+      </div>
+    </>
+  );
+
+  const className = `flex min-h-[92px] min-w-0 items-center gap-3 rounded-[14px] border border-[#e6ebf0] bg-white px-4 py-3.5 text-left shadow-[0_12px_26px_rgba(15,23,42,0.045)] ${
+    onClick ? "transition hover:border-emerald-200 hover:bg-[#fbfefc]" : ""
+  } ${active ? "ring-1 ring-amber-200" : ""}`;
+
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={className}>
+        {body}
+      </button>
+    );
+  }
+  return <article className={className}>{body}</article>;
+}
+
+function StatusPill({ status }: { status: string }) {
+  const style =
+    status === "OWNER_APPROVED"
+      ? "bg-emerald-50 text-[var(--forest-emerald)] ring-emerald-100"
+      : status === "SENT_TO_OWNER"
+        ? "bg-amber-50 text-amber-700 ring-amber-100"
+        : status === "RETURNED_TO_MANAGER"
+          ? "bg-red-50 text-red-700 ring-red-100"
+          : "bg-slate-100 text-slate-600 ring-slate-200";
+  return (
+    <span
+      className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ring-inset ${style}`}
+    >
+      {statusLabel(status)}
+    </span>
+  );
+}
+
+function ViewTab({
+  active,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[11px] font-semibold transition ${
+        active
+          ? "bg-white text-[var(--forest-emerald)] shadow-[0_4px_12px_rgba(15,23,42,0.08)]"
+          : "text-slate-500 hover:text-[#0b1220]"
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
+function ReportSummaryView({
+  report,
+  snapshot,
+  currency,
+  notes,
+  setNotes,
+  approving,
+  mode,
+  onAction,
+}: {
+  report: OwnerReport;
+  snapshot: ReportSnapshot;
+  currency: string;
+  notes: string;
+  setNotes: (value: string) => void;
+  approving: boolean;
+  mode: ReportsMode;
+  onAction: () => void;
+}) {
+  const opening = snapshot.openingCash;
+  const summary = snapshot.summary;
+  const variance = report.closingVariance ?? 0;
+  const agentsReturned = snapshot.agentReturns.filter(
+    (row) => row.amountReturned != null || row.status === "RETURNED",
+  ).length;
+
+  return (
+    <div className="space-y-3">
+      <section className="grid gap-2.5 md:grid-cols-3">
+        <HeroStat
+          icon={<WalletCards className="size-3.5" />}
+          label="Expected close"
+          value={formatMoney(report.expectedClosingBalance, currency)}
+          tone="green"
+        />
+        <HeroStat
+          icon={<Banknote className="size-3.5" />}
+          label="Counted cash"
+          value={formatMoney(report.closingBalance ?? 0, currency)}
+          tone="blue"
+        />
+        <HeroStat
+          icon={<Scale className="size-3.5" />}
+          label="Variance"
+          value={formatMoney(variance, currency)}
+          tone={variance !== 0 ? "red" : "slate"}
+          hint={variance === 0 ? "Balanced" : "Needs attention"}
+        />
+      </section>
+
+      <section className="grid gap-2.5 lg:grid-cols-2">
+        <Panel title="Opening cash" icon={<ArrowRightLeft className="size-3.5" />}>
+          <LineRow
+            label="Previous closing balance"
+            value={formatMoney(
+              numberValue(opening.previousClosingBalance),
+              currency,
+            )}
+          />
+          <LineRow
+            label="Top-ups added today"
+            value={formatMoney(numberValue(opening.cashAddedToday), currency)}
+          />
+          <LineRow
+            label="Total opening balance"
+            value={formatMoney(
+              numberValue(opening.totalOpeningBalance) ||
+                numberValue(summary.openingCash),
+              currency,
+            )}
+            strong
+          />
+        </Panel>
+        <Panel title="Day movement" icon={<HandCoins className="size-3.5" />}>
+          <LineRow
+            label="Float distributed"
+            value={formatMoney(numberValue(summary.floatDistributed), currency)}
+          />
+          <LineRow
+            label="Cash returned by agents"
+            value={formatMoney(
+              numberValue(summary.cashReturnedByAgents),
+              currency,
+            )}
+          />
+          <LineRow
+            label="Expenses"
+            value={formatMoney(numberValue(summary.expenses), currency)}
+            danger={numberValue(summary.expenses) > 0}
+          />
+        </Panel>
+      </section>
+
+      <section className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+        <MiniKpi
+          icon={<FileText className="size-3.5" />}
+          label="Loans issued"
+          value={formatNumber(numberValue(summary.loansIssuedCount))}
+          hint={formatMoney(
+            numberValue(summary.loansIssuedPrincipal),
+            currency,
+          )}
+        />
+        <MiniKpi
+          icon={<HandCoins className="size-3.5" />}
+          label="Collections"
+          value={formatNumber(numberValue(summary.collectionsCount))}
+          hint={formatMoney(
+            numberValue(summary.collectionsReceived),
+            currency,
+          )}
+        />
+        <MiniKpi
+          icon={<Banknote className="size-3.5" />}
+          label="Processing fees"
+          value={formatMoney(numberValue(summary.processingFees), currency)}
+          hint="Included in handover"
+        />
+        <MiniKpi
+          icon={<Users className="size-3.5" />}
+          label="Agents returned"
+          value={`${agentsReturned}/${snapshot.agentReturns.length}`}
+          hint={formatMoney(
+            sumBy(snapshot.agentReturns, (row) =>
+              numberValue(row.expectedReturn),
+            ),
+            currency,
+          )}
+        />
+      </section>
+
+      <Panel title="Agent handover" icon={<Users className="size-3.5" />}>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[620px] text-left text-xs">
+            <thead>
+              <tr className="border-b border-[#edf1f5] bg-[#f8faf9] text-[10px] font-semibold text-slate-500">
+                <th className="px-2 py-2 font-semibold">Agent</th>
+                <th className="px-2 py-2 text-right font-semibold">Float</th>
+                <th className="px-2 py-2 text-right font-semibold">Loans</th>
+                <th className="px-2 py-2 text-right font-semibold">
+                  Collections
+                </th>
+                <th className="px-2 py-2 text-right font-semibold">Expected</th>
+                <th className="px-2 py-2 font-semibold">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#edf1f5]">
+              {snapshot.agentReturns.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-2 py-6 text-center text-[11px] font-medium text-slate-500"
+                  >
+                    No agent float recorded for this day.
+                  </td>
+                </tr>
+              ) : (
+                snapshot.agentReturns.map((row, index) => {
+                  const status = row.status ?? "PENDING";
+                  return (
+                    <tr
+                      key={row.floatId ?? row.agentId ?? index}
+                      className={
+                        status === "PENDING"
+                          ? "bg-amber-50/30"
+                          : status === "SHORT"
+                            ? "bg-red-50/30"
+                            : status === "RETURNED"
+                              ? "bg-emerald-50/20"
+                              : undefined
+                      }
+                    >
+                      <td className="px-2 py-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-[#eef6f2] text-[10px] font-bold text-[var(--forest-emerald)]">
+                            {initials(row.agentName ?? "Agent")}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="truncate text-[11px] font-semibold text-[#0b1220]">
+                              {row.agentName ?? "Agent"}
+                            </p>
+                            <p className="truncate text-[10px] text-slate-500">
+                              {row.agentPublicId ?? "—"}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-2 py-2 text-right text-[11px] font-semibold tabular-nums">
+                        {formatMoney(numberValue(row.amountGiven), currency)}
+                      </td>
+                      <td className="px-2 py-2 text-right text-[11px] tabular-nums text-slate-600">
+                        {formatMoney(
+                          numberValue(row.amountDisbursed),
+                          currency,
+                        )}
+                      </td>
+                      <td className="px-2 py-2 text-right text-[11px] tabular-nums text-slate-600">
+                        {formatMoney(
+                          numberValue(row.amountCollected),
+                          currency,
+                        )}
+                      </td>
+                      <td className="px-2 py-2 text-right text-[11px] font-semibold tabular-nums">
+                        {formatMoney(
+                          numberValue(row.expectedReturn),
+                          currency,
+                        )}
+                      </td>
+                      <td className="px-2 py-2">
+                        <StatusPill status={status} />
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+
+      <section className="grid gap-2.5 xl:grid-cols-[1.15fr_1.15fr_0.9fr]">
+        <RecordList
+          title="Top-ups"
+          empty="No top-ups recorded."
+          rows={snapshot.topUps.map((topUp, index) => ({
+            id: topUp.id ?? `topup-${index}`,
+            label: topUp.description || "Cash top-up",
+            meta: `${formatClock(topUp.addedAt)} · ${topUp.recordedByName ?? "Manager"}`,
+            value: formatMoney(numberValue(topUp.amount), currency),
+          }))}
+        />
+        <RecordList
+          title="Expenses"
+          empty="No expenses recorded."
+          rows={snapshot.expenses.map((expense, index) => ({
+            id: expense.id ?? `expense-${index}`,
+            label: categoryLabel(expense.category),
+            meta: `${formatClock(expense.incurredAt)} · ${expense.recordedByName ?? "Manager"}`,
+            value: formatMoney(numberValue(expense.amount), currency),
+          }))}
+        />
+        <Panel title="Timeline" icon={<Clock3 className="size-3.5" />}>
+          <TimelineRow
+            label="Opened by"
+            value={textValue(snapshot.operation.openedByName, "Not recorded")}
+          />
+          <TimelineRow
+            label="Closed by"
+            value={textValue(snapshot.operation.closedByName, "Not recorded")}
+          />
+          <TimelineRow
+            label="Sent to owner"
+            value={formatDateTime(report.managerReviewedAt)}
+          />
+        </Panel>
+      </section>
+
+      <section className="grid gap-2.5 lg:grid-cols-[1.2fr_0.8fr]">
+        <ReportActionCard
+          report={report}
+          notes={notes}
+          setNotes={setNotes}
+          approving={approving}
+          mode={mode}
+          onAction={onAction}
+        />
+        <Panel title="Closing notes" icon={<FileText className="size-3.5" />}>
+          <p className="text-xs font-medium leading-relaxed text-slate-600">
+            {snapshot.closingNotes?.trim() ||
+              "No closing notes were added for this day."}
+          </p>
+        </Panel>
+      </section>
+    </div>
+  );
+}
+
+function HeroStat({
+  icon,
+  label,
+  value,
+  tone,
+  hint,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  tone: "green" | "blue" | "red" | "slate";
+  hint?: string;
+}) {
+  const wrap = {
+    green: "border-emerald-100 bg-emerald-50/50",
+    blue: "border-sky-100 bg-sky-50/50",
+    red: "border-red-100 bg-red-50/50",
+    slate: "border-[#e6ebf0] bg-white",
+  }[tone];
+  const iconTone = {
+    green: "bg-white text-[var(--forest-emerald)]",
+    blue: "bg-white text-sky-700",
+    red: "bg-white text-red-700",
+    slate: "bg-slate-100 text-slate-600",
+  }[tone];
+  const valueTone = {
+    green: "text-[var(--forest-emerald)]",
+    blue: "text-sky-800",
+    red: "text-red-700",
+    slate: "text-[#0b1220]",
+  }[tone];
+
+  return (
+    <article
+      className={`flex min-h-[72px] items-center gap-2.5 rounded-[13px] border px-3 py-2.5 ${wrap}`}
+    >
+      <span
+        className={`grid size-8 shrink-0 place-items-center rounded-lg ${iconTone}`}
+      >
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+          {label}
+        </p>
+        <p
+          className={`mt-0.5 break-words text-[clamp(0.8rem,1vw,1.05rem)] font-bold leading-tight tabular-nums ${valueTone}`}
+        >
+          {value}
+        </p>
+        {hint ? (
+          <p className="mt-0.5 text-[10px] font-medium text-slate-500">{hint}</p>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function Panel({
+  title,
+  icon,
+  children,
+}: {
+  title: string;
+  icon?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-[14px] border border-[#e6ebf0] bg-white shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+      <div className="flex items-center gap-2 border-b border-[#edf1f5] bg-[#f8faf9] px-3 py-2.5">
+        {icon ? (
+          <span className="text-[var(--forest-emerald)]">{icon}</span>
+        ) : null}
+        <h4 className="text-sm font-bold text-[#0b1220]">{title}</h4>
+      </div>
+      <div className="p-3">{children}</div>
+    </section>
+  );
+}
+
+function LineRow({
+  label,
+  value,
+  strong,
+  danger,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-[#edf1f5] py-1.5 last:border-b-0 last:pb-0 first:pt-0">
+      <span
+        className={`text-[11px] ${strong ? "font-semibold text-[#0b1220]" : "font-medium text-slate-600"}`}
+      >
+        {label}
+      </span>
+      <span
+        className={`shrink-0 text-[11px] font-bold tabular-nums ${
+          danger ? "text-red-700" : "text-[#0b1220]"
+        }`}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function MiniKpi({
+  icon,
+  label,
+  value,
+  hint,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <article className="rounded-[13px] border border-[#e6ebf0] bg-white px-3 py-2.5 shadow-[0_8px_18px_rgba(15,23,42,0.03)]">
+      <div className="flex items-center gap-2">
+        <span className="grid size-7 place-items-center rounded-lg bg-[#eef6f2] text-[var(--forest-emerald)]">
+          {icon}
+        </span>
+        <p className="truncate text-[11px] font-medium text-slate-500">
+          {label}
+        </p>
+      </div>
+      <p className="mt-1.5 text-sm font-bold tabular-nums text-[#0b1220]">
+        {value}
+      </p>
+      <p className="mt-0.5 truncate text-[10px] font-medium text-slate-500">
+        {hint}
+      </p>
+    </article>
+  );
+}
+
+function RecordList({
+  title,
+  empty,
+  rows,
+}: {
+  title: string;
+  empty: string;
+  rows: Array<{ id: string; label: string; meta: string; value: string }>;
+}) {
+  return (
+    <Panel title={title}>
+      {rows.length === 0 ? (
+        <p className="py-4 text-center text-[11px] font-medium text-slate-500">
+          {empty}
+        </p>
+      ) : (
+        <div className="divide-y divide-[#edf1f5]">
+          {rows.map((row) => (
+            <div
+              key={row.id}
+              className="flex items-center justify-between gap-3 py-1.5 first:pt-0 last:pb-0"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-[11px] font-semibold text-[#0b1220]">
+                  {row.label}
+                </p>
+                <p className="truncate text-[10px] font-medium text-slate-500">
+                  {row.meta}
+                </p>
+              </div>
+              <p className="shrink-0 text-[11px] font-bold tabular-nums text-[#0b1220]">
+                {row.value}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function TimelineRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border-b border-[#edf1f5] py-1.5 first:pt-0 last:border-b-0 last:pb-0">
+      <p className="text-[10px] font-semibold text-slate-500">{label}</p>
+      <p className="mt-0.5 text-[11px] font-semibold text-[#0b1220]">{value}</p>
+    </div>
+  );
+}
+
+function ReportActionCard({
+  report,
+  notes,
+  setNotes,
+  approving,
+  mode,
+  onAction,
+}: {
+  report: OwnerReport;
+  notes: string;
+  setNotes: (value: string) => void;
+  approving: boolean;
+  mode: ReportsMode;
+  onAction: () => void;
+}) {
+  const isManager = mode === "manager";
+  const canAct = isManager
+    ? report.status === "MANAGER_REVIEW" ||
+      report.status === "RETURNED_TO_MANAGER"
+    : report.status === "SENT_TO_OWNER";
+  return (
+    <section className="overflow-hidden rounded-[14px] border border-[#e6ebf0] bg-white shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+      <div className="border-b border-[#edf1f5] bg-[#f8faf9] px-3 py-2.5">
+        <p className="text-[10px] font-bold uppercase tracking-[0.06em] text-amber-700">
+          {isManager ? "Manager review" : "Owner review"}
+        </p>
+        <h4 className="mt-0.5 text-sm font-bold text-[#0b1220]">
+          {statusLabel(report.status)}
+        </h4>
+        <p className="mt-0.5 text-[11px] font-medium leading-relaxed text-slate-500">
+          {statusHelp(report.status)}
+        </p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 border-b border-[#edf1f5] px-3 py-2.5">
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+            Manager
+          </p>
+          <p className="mt-0.5 text-[11px] font-semibold text-[#0b1220]">
+            {report.managerReviewedByName ?? "Pending"}
+          </p>
+          <p className="mt-0.5 text-[10px] text-slate-500">
+            {formatDateTime(report.managerReviewedAt)}
+          </p>
+        </div>
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+            Owner
+          </p>
+          <p className="mt-0.5 text-[11px] font-semibold text-[#0b1220]">
+            {report.ownerApprovedByName ?? "Pending"}
+          </p>
+          <p className="mt-0.5 text-[10px] text-slate-500">
+            {formatDateTime(report.ownerApprovedAt)}
+          </p>
+        </div>
+      </div>
+      <div className="p-3">
+        {canAct ? (
+          <>
+            <label className="text-[11px] font-semibold text-[#0b1220]">
+              {isManager ? "Notes for owner" : "Approval notes"}
+              <textarea
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+                className="mt-1.5 min-h-[72px] w-full rounded-xl border border-[#e6ebf0] bg-[#fbfcfd] px-3 py-2 text-xs font-medium outline-none transition focus:border-[var(--forest-emerald)]"
+                placeholder={
+                  isManager
+                    ? "Optional note before sending to owner"
+                    : "Optional note before approval"
+                }
+              />
+            </label>
+            <button
+              type="button"
+              className="mt-2.5 flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-4 text-xs font-semibold text-white shadow-[0_12px_24px_rgba(15,143,104,0.25)] disabled:opacity-55"
+              onClick={onAction}
+              disabled={approving}
+            >
+              {approving ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <CheckCircle2 className="size-3.5" />
+              )}
+              {isManager ? "Send to owner" : "Approve report"}
+            </button>
+          </>
+        ) : (
+          <p className="text-[11px] font-medium text-slate-500">
+            {report.status === "OWNER_APPROVED"
+              ? "This report is approved and locked."
+              : report.status === "SENT_TO_OWNER" && isManager
+                ? "This report is with the owner for approval."
+                : isManager
+                  ? "No manager action is required right now."
+                  : "No owner action is required right now."}
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function LedgerTable({
+  report,
+  snapshot,
+  currency,
+}: {
+  report: OwnerReport;
+  snapshot: ReportSnapshot;
+  currency: string;
+}) {
+  const [sheet, setSheet] = useState<"daily" | "agents">("daily");
+  const rows = buildExcelRows(report, snapshot);
+  const columns = [
+    "Section",
+    "Description",
+    "Count",
+    "Cash In",
+    "Cash Out",
+    "Balance",
+    "Notes",
+  ];
+  const letters = ["A", "B", "C", "D", "E", "F", "G"];
+  const headerRow = 5;
+  const firstDataRow = 6;
+  const finalRowNumber = rows.length + firstDataRow;
+  const selectedCell = sheet === "daily" ? `A${headerRow}` : "A3";
+  const formulaLabel =
+    sheet === "daily"
+      ? `REMBEH Daily Operations Report · ${formatDate(report.operationDate)} · ${statusLabel(report.status)}`
+      : `Agent Handover · ${snapshot.agentReturns.length} agent${snapshot.agentReturns.length === 1 ? "" : "s"} · ${report.branchName}`;
+
+  return (
+    <div className="overflow-hidden rounded-[10px] border border-[#9aa5a0] bg-[#f3f7f5] shadow-[0_16px_40px_rgba(15,23,42,0.1)]">
+      <div className="flex flex-wrap items-center gap-2 border-b border-[#8f9a94] bg-[#217346] px-3 py-2 text-white">
+        <FileSpreadsheet className="size-4 shrink-0 opacity-90" />
+        <p className="min-w-0 flex-1 truncate text-xs font-semibold tracking-wide">
+          {report.reportNumber}.xlsx — {report.branchName}
+        </p>
+        <span className="rounded bg-white/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em]">
+          Excel view
+        </span>
+      </div>
+
+      <div className="border-b border-[#c6d2cc] bg-[#e7eee9] px-2 py-1.5">
+        <div className="mb-1.5 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setSheet("daily")}
+            className={`rounded-t-md border px-3 py-1 text-[11px] font-bold transition ${
+              sheet === "daily"
+                ? "border-b-0 border-[#c6d2cc] bg-white text-[#217346]"
+                : "border-transparent text-slate-500 hover:bg-white/50"
+            }`}
+          >
+            Daily Report
+          </button>
+          <button
+            type="button"
+            onClick={() => setSheet("agents")}
+            className={`rounded-t-md border px-3 py-1 text-[11px] font-bold transition ${
+              sheet === "agents"
+                ? "border-b-0 border-[#c6d2cc] bg-white text-[#217346]"
+                : "border-transparent text-slate-500 hover:bg-white/50"
+            }`}
+          >
+            Agent Handover
+          </button>
+        </div>
+        <div className="flex items-center gap-2 rounded border border-[#c6d2cc] bg-white px-2 py-1">
+          <span className="grid size-6 place-items-center rounded border border-[#c6d2cc] bg-[#f4f7f5] text-[10px] font-bold text-slate-500">
+            fx
+          </span>
+          <span className="w-14 shrink-0 border-r border-[#e2e8e4] pr-2 text-[11px] font-bold text-slate-600">
+            {selectedCell}
+          </span>
+          <span className="min-w-0 truncate text-[11px] font-semibold text-slate-700">
+            {formulaLabel}
+          </span>
+        </div>
+      </div>
+
+      {sheet === "daily" ? (
+        <div className="overflow-x-auto bg-[#eef3f0]">
+          <table className="w-full min-w-[880px] table-fixed border-collapse text-left text-[11px]">
+            <colgroup>
+              <col className="w-9" />
+              <col className="w-[12%]" />
+              <col className="w-[26%]" />
+              <col className="w-[8%]" />
+              <col className="w-[13%]" />
+              <col className="w-[13%]" />
+              <col className="w-[13%]" />
+              <col className="w-[15%]" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th className="border border-[#c6d2cc] bg-[#dbe4df]" />
+                {letters.map((letter) => (
+                  <th
+                    key={letter}
+                    className="border border-[#c6d2cc] bg-[#dbe4df] px-1 py-1 text-center text-[10px] font-bold text-slate-600"
+                  >
+                    {letter}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <ExcelMergedRow
+                rowNumber={1}
+                cols={7}
+                value="REMBEH Daily Operations Report"
+                strong
+              />
+              <ExcelMergedRow
+                rowNumber={2}
+                cols={7}
+                value={`${report.branchName} — ${formatDate(report.operationDate)}`}
+              />
+              <ExcelMergedRow
+                rowNumber={3}
+                cols={7}
+                value={`${report.reportNumber} — ${statusLabel(report.status)}`}
+                muted
+              />
+              <tr>
+                <ExcelRowNumber value={4} />
+                <ExcelSummaryCell
+                  label="Expected close"
+                  value={report.expectedClosingBalance}
+                  currency={currency}
+                />
+                <ExcelSummaryCell
+                  label="Counted cash"
+                  value={report.closingBalance ?? 0}
+                  currency={currency}
+                />
+                <ExcelSummaryCell
+                  label="Variance"
+                  value={report.closingVariance ?? 0}
+                  currency={currency}
+                  danger={(report.closingVariance ?? 0) !== 0}
+                />
+                <td className="border border-[#c6d2cc] bg-white" />
+              </tr>
+              <tr>
+                <ExcelRowNumber value={headerRow} />
+                {columns.map((column) => (
+                  <td
+                    key={column}
+                    className="border border-[#1f6b45] bg-[#217346] px-2 py-1.5 text-center text-[10px] font-bold uppercase tracking-[0.03em] text-white"
+                  >
+                    {column}
+                  </td>
+                ))}
+              </tr>
+              {rows.map((row, index) => (
+                <tr
+                  key={`${row.section}-${row.description}`}
+                  className={index % 2 === 0 ? "bg-white" : "bg-[#f7fbf8]"}
+                >
+                  <ExcelRowNumber value={firstDataRow + index} />
+                  <td className="border border-[#d0d9d4] px-2 py-1.5 font-bold text-[#1a2b22]">
+                    {row.section}
+                  </td>
+                  <td className="border border-[#d0d9d4] px-2 py-1.5 text-slate-700">
+                    {row.description}
+                  </td>
+                  <td className="border border-[#d0d9d4] px-2 py-1.5 text-right tabular-nums text-slate-600">
+                    {row.count}
+                  </td>
+                  <ExcelMoneyCell
+                    value={row.cashIn}
+                    tone="in"
+                    currency={currency}
+                  />
+                  <ExcelMoneyCell
+                    value={row.cashOut}
+                    tone="out"
+                    currency={currency}
+                  />
+                  <ExcelMoneyCell
+                    value={row.balance}
+                    tone="balance"
+                    currency={currency}
+                  />
+                  <td className="border border-[#d0d9d4] px-2 py-1.5 text-slate-500">
+                    {row.note}
+                  </td>
+                </tr>
+              ))}
+              <tr>
+                <ExcelRowNumber value={finalRowNumber} />
+                <td className="border border-[#c6d2cc] bg-[#dfe8e3] px-2 py-1.5 font-bold text-[#1a2b22]">
+                  Closing
+                </td>
+                <td className="border border-[#c6d2cc] bg-[#dfe8e3] px-2 py-1.5 font-bold text-[#1a2b22]">
+                  Final report totals
+                </td>
+                <td className="border border-[#c6d2cc] bg-[#dfe8e3] px-2 py-1.5 text-right font-bold tabular-nums">
+                  —
+                </td>
+                <ExcelMoneyCell
+                  value={
+                    numberValue(snapshot.summary.cashReturnedByAgents) +
+                    numberValue(snapshot.summary.collectionsReceived) +
+                    numberValue(snapshot.summary.processingFees)
+                  }
+                  tone="in"
+                  total
+                  currency={currency}
+                />
+                <ExcelMoneyCell
+                  value={
+                    numberValue(snapshot.summary.floatDistributed) +
+                    numberValue(snapshot.summary.expenses) +
+                    numberValue(snapshot.summary.loansIssuedPrincipal)
+                  }
+                  tone="out"
+                  total
+                  currency={currency}
+                />
+                <ExcelMoneyCell
+                  value={report.expectedClosingBalance}
+                  tone="balance"
+                  total
+                  currency={currency}
+                />
+                <td className="border border-[#c6d2cc] bg-[#dfe8e3] px-2 py-1.5 font-semibold text-slate-600">
+                  Ready for owner
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <AgentHandoverExcel
+          report={report}
+          agents={snapshot.agentReturns}
+          currency={currency}
+        />
+      )}
+
+      <div className="flex items-center justify-between gap-2 border-t border-[#c6d2cc] bg-[#e7eee9] px-3 py-1.5 text-[10px] font-semibold text-slate-500">
+        <span>
+          Sheet {sheet === "daily" ? "1" : "2"} of 2 ·{" "}
+          {sheet === "daily" ? "Daily Report" : "Agent Handover"}
+        </span>
+        <span>Use Download Excel for the real .xlsx file</span>
+      </div>
+    </div>
+  );
+}
+
+function AgentHandoverExcel({
+  report,
+  agents,
+  currency,
+}: {
+  report: OwnerReport;
+  agents: ReportAgentReturn[];
+  currency: string;
+}) {
+  const columns = [
+    "Agent",
+    "Float",
+    "Loans",
+    "Collections",
+    "Fees",
+    "Expected",
+    "Returned",
+    "Status",
+  ];
+  const letters = ["A", "B", "C", "D", "E", "F", "G", "H"];
+  const returnedCount = agents.filter(
+    (row) => row.amountReturned != null,
+  ).length;
+
+  return (
+    <div className="overflow-x-auto bg-[#eef3f0]">
+      <table className="w-full min-w-[980px] table-fixed border-collapse text-left text-[11px]">
+        <colgroup>
+          <col className="w-9" />
+          <col className="w-[18%]" />
+          <col className="w-[11%]" />
+          <col className="w-[11%]" />
+          <col className="w-[11%]" />
+          <col className="w-[10%]" />
+          <col className="w-[11%]" />
+          <col className="w-[11%]" />
+          <col className="w-[10%]" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th className="border border-[#c6d2cc] bg-[#dbe4df]" />
+            {letters.map((letter) => (
+              <th
+                key={letter}
+                className="border border-[#c6d2cc] bg-[#dbe4df] px-1 py-1 text-center text-[10px] font-bold text-slate-600"
+              >
+                {letter}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          <ExcelMergedRow
+            rowNumber={1}
+            cols={8}
+            value="REMBEH Agent Handover"
+            strong
+          />
+          <ExcelMergedRow
+            rowNumber={2}
+            cols={8}
+            value={`${report.branchName} — ${formatDate(report.operationDate)} · ${returnedCount}/${agents.length} returned`}
+          />
+          <tr>
+            <ExcelRowNumber value={3} />
+            {columns.map((column) => (
+              <td
+                key={column}
+                className="border border-[#1f6b45] bg-[#217346] px-2 py-1.5 text-center text-[10px] font-bold uppercase tracking-[0.03em] text-white"
+              >
+                {column}
+              </td>
+            ))}
+          </tr>
+          {agents.length === 0 ? (
+            <tr className="bg-white">
+              <ExcelRowNumber value={4} />
+              <td
+                colSpan={8}
+                className="border border-[#d0d9d4] px-2 py-6 text-center font-semibold text-slate-500"
+              >
+                No agent float returns on this report
+              </td>
+            </tr>
+          ) : (
+            agents.map((row, index) => {
+              const variance = row.variance ?? null;
+              return (
+                <tr
+                  key={`${row.agentId ?? row.agentName ?? "agent"}-${index}`}
+                  className={index % 2 === 0 ? "bg-white" : "bg-[#f7fbf8]"}
+                >
+                  <ExcelRowNumber value={4 + index} />
+                  <td className="border border-[#d0d9d4] px-2 py-1.5 font-bold text-[#1a2b22]">
+                    {row.agentName ?? "Agent"}
+                    {row.agentPublicId ? (
+                      <span className="mt-0.5 block text-[10px] font-medium text-slate-500">
+                        {row.agentPublicId}
+                      </span>
+                    ) : null}
+                  </td>
+                  <ExcelMoneyCell
+                    value={numberValue(row.amountGiven)}
+                    tone="out"
+                    currency={currency}
+                  />
+                  <ExcelMoneyCell
+                    value={numberValue(row.amountDisbursed)}
+                    tone="out"
+                    currency={currency}
+                  />
+                  <ExcelMoneyCell
+                    value={numberValue(row.amountCollected)}
+                    tone="in"
+                    currency={currency}
+                  />
+                  <ExcelMoneyCell
+                    value={numberValue(row.processingFees)}
+                    tone="in"
+                    currency={currency}
+                  />
+                  <ExcelMoneyCell
+                    value={numberValue(row.expectedReturn)}
+                    tone="balance"
+                    currency={currency}
+                  />
+                  <ExcelMoneyCell
+                    value={
+                      row.amountReturned == null
+                        ? null
+                        : numberValue(row.amountReturned)
+                    }
+                    tone={
+                      variance != null && variance !== 0 ? "out" : "balance"
+                    }
+                    currency={currency}
+                  />
+                  <td className="border border-[#d0d9d4] px-2 py-1.5 font-semibold text-slate-600">
+                    {titleCase((row.status ?? "PENDING").replaceAll("_", " "))}
+                    {variance != null && variance !== 0 ? (
+                      <span className="mt-0.5 block text-[10px] font-bold text-red-700">
+                        Var {formatMoney(variance, currency)}
+                      </span>
+                    ) : null}
+                  </td>
+                </tr>
+              );
+            })
+          )}
+          {agents.length > 0 ? (
+            <tr>
+              <ExcelRowNumber value={4 + agents.length} />
+              <td className="border border-[#c6d2cc] bg-[#dfe8e3] px-2 py-1.5 font-bold text-[#1a2b22]">
+                Totals
+              </td>
+              <ExcelMoneyCell
+                value={sumBy(agents, (row) => numberValue(row.amountGiven))}
+                tone="out"
+                total
+                currency={currency}
+              />
+              <ExcelMoneyCell
+                value={sumBy(agents, (row) => numberValue(row.amountDisbursed))}
+                tone="out"
+                total
+                currency={currency}
+              />
+              <ExcelMoneyCell
+                value={sumBy(agents, (row) => numberValue(row.amountCollected))}
+                tone="in"
+                total
+                currency={currency}
+              />
+              <ExcelMoneyCell
+                value={sumBy(agents, (row) => numberValue(row.processingFees))}
+                tone="in"
+                total
+                currency={currency}
+              />
+              <ExcelMoneyCell
+                value={sumBy(agents, (row) => numberValue(row.expectedReturn))}
+                tone="balance"
+                total
+                currency={currency}
+              />
+              <ExcelMoneyCell
+                value={sumBy(agents, (row) =>
+                  row.amountReturned == null
+                    ? 0
+                    : numberValue(row.amountReturned),
+                )}
+                tone="balance"
+                total
+                currency={currency}
+              />
+              <td className="border border-[#c6d2cc] bg-[#dfe8e3] px-2 py-1.5 font-semibold text-slate-600">
+                {returnedCount}/{agents.length} settled
+              </td>
+            </tr>
+          ) : null}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ExcelMergedRow({
+  rowNumber,
+  value,
+  strong,
+  muted,
+  cols = 7,
+}: {
+  rowNumber: number;
+  value: string;
+  strong?: boolean;
+  muted?: boolean;
+  cols?: number;
+}) {
+  return (
+    <tr>
+      <ExcelRowNumber value={rowNumber} />
+      <td
+        colSpan={cols}
+        className={`border border-[#c6d2cc] bg-white px-2 py-2 text-center ${
+          strong
+            ? "text-sm font-bold text-[#1a2b22]"
+            : muted
+              ? "font-semibold text-slate-500"
+              : "font-bold text-slate-700"
+        }`}
+      >
+        {value}
+      </td>
+    </tr>
+  );
+}
+
+function ExcelRowNumber({ value }: { value: number }) {
+  return (
+    <td className="border border-[#c6d2cc] bg-[#dbe4df] px-1 py-1.5 text-center text-[10px] font-bold text-slate-500">
+      {value}
+    </td>
+  );
+}
+
+function ExcelSummaryCell({
+  label,
+  value,
+  currency,
+  danger,
+}: {
+  label: string;
+  value: number;
+  currency: string;
+  danger?: boolean;
+}) {
+  return (
+    <td colSpan={2} className="border border-[#c6d2cc] bg-white px-2 py-2">
+      <p className="text-[9px] font-bold uppercase tracking-[0.04em] text-slate-500">
+        {label}
+      </p>
+      <p
+        className={`mt-1 font-bold tabular-nums ${
+          danger ? "text-red-700" : "text-[#1a2b22]"
+        }`}
+      >
+        {formatMoney(value, currency)}
+      </p>
+    </td>
+  );
+}
+
+function ExcelMoneyCell({
+  value,
+  tone,
+  total,
+  currency,
+}: {
+  value: number | null;
+  tone: "in" | "out" | "balance";
+  total?: boolean;
+  currency: string;
+}) {
+  const color =
+    tone === "in"
+      ? "text-[#0f7a4d]"
+      : tone === "out"
+        ? "text-red-700"
+        : "text-[#1a2b22]";
+  return (
+    <td
+      className={`border border-[#d0d9d4] px-2 py-1.5 text-right tabular-nums ${color} ${
+        total ? "border-[#c6d2cc] bg-[#dfe8e3] font-bold" : "font-semibold"
+      }`}
+    >
+      {value == null ? "—" : formatMoney(value, currency)}
+    </td>
+  );
+}
+
+function readReportSnapshot(report: OwnerReport): ReportSnapshot {
+  const root = objectValue(report.snapshot);
+  return {
+    summary: objectValue(root.summary),
+    openingCash: objectValue(root.openingCash),
+    cashPosition: objectValue(root.cashPosition),
+    operation: objectValue(root.operation),
+    agentReturns: arrayValue(root.agentReturns) as ReportAgentReturn[],
+    topUps: arrayValue(root.topUps) as ReportRecord[],
+    expenses: arrayValue(root.expenses) as ReportRecord[],
+    closingNotes:
+      typeof root.closingNotes === "string" && root.closingNotes.trim()
+        ? root.closingNotes
+        : null,
+  };
+}
+
+function buildExcelRows(report: OwnerReport, snapshot: ReportSnapshot) {
+  return [
+    {
+      section: "Opening",
+      description: "Previous closing balance",
+      count: "-",
+      cashIn: null as number | null,
+      cashOut: null as number | null,
+      balance: numberValue(snapshot.openingCash.previousClosingBalance),
+      note: "Carried from previous close",
+    },
+    {
+      section: "Opening",
+      description: "Top-ups added today",
+      count: "-",
+      cashIn: numberValue(snapshot.openingCash.cashAddedToday),
+      cashOut: null,
+      balance: null,
+      note: "Cash added before and during day",
+    },
+    {
+      section: "Float",
+      description: "Float distributed",
+      count: `${snapshot.agentReturns.length}`,
+      cashIn: null,
+      cashOut: numberValue(snapshot.summary.floatDistributed),
+      balance: null,
+      note: "Issued to agents",
+    },
+    {
+      section: "Field",
+      description: "Loans issued",
+      count: formatNumber(numberValue(snapshot.summary.loansIssuedCount)),
+      cashIn: null,
+      cashOut: numberValue(snapshot.summary.loansIssuedPrincipal),
+      balance: null,
+      note: "Principal disbursed",
+    },
+    {
+      section: "Field",
+      description: "Collections received",
+      count: formatNumber(numberValue(snapshot.summary.collectionsCount)),
+      cashIn: numberValue(snapshot.summary.collectionsReceived),
+      cashOut: null,
+      balance: null,
+      note: "Borrower repayments",
+    },
+    {
+      section: "Field",
+      description: "Processing fees",
+      count: "-",
+      cashIn: numberValue(snapshot.summary.processingFees),
+      cashOut: null,
+      balance: null,
+      note: "Fees collected on issued loans",
+    },
+    {
+      section: "Returns",
+      description: "Cash returned by agents",
+      count: `${snapshot.agentReturns.filter((row) => row.amountReturned != null).length}/${snapshot.agentReturns.length}`,
+      cashIn: numberValue(snapshot.summary.cashReturnedByAgents),
+      cashOut: null,
+      balance: null,
+      note: "Recorded handovers",
+    },
+    {
+      section: "Expenses",
+      description: "Branch expenses",
+      count: formatNumber(snapshot.expenses.length),
+      cashIn: null,
+      cashOut: numberValue(snapshot.summary.expenses),
+      balance: null,
+      note: "Approved daily expenses",
+    },
+    {
+      section: "Closing",
+      description: "Expected closing balance",
+      count: "-",
+      cashIn: null,
+      cashOut: null,
+      balance: report.expectedClosingBalance,
+      note: "System expected close",
+    },
+    {
+      section: "Closing",
+      description: "Counted cash",
+      count: "-",
+      cashIn: null,
+      cashOut: null,
+      balance: report.closingBalance ?? 0,
+      note: "Manager counted cash",
+    },
+    {
+      section: "Closing",
+      description: "Variance",
+      count: "-",
+      cashIn: null,
+      cashOut: null,
+      balance: report.closingVariance ?? 0,
+      note: "Counted cash less expected close",
+    },
+  ];
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function arrayValue(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function numberValue(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function textValue(value: unknown, fallback = "-") {
+  return typeof value === "string" && value.trim() ? value : fallback;
+}
+
+function formatClock(value: string | null | undefined) {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "-";
+  return new Intl.DateTimeFormat("en-UG", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "Pending";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
+}
+
+function categoryLabel(value: string | null | undefined) {
+  if (!value) return "Expense";
+  return titleCase(value.replaceAll("_", " ").toLowerCase());
+}
+
+function initials(name: string) {
+  return name
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+}
+
+function statusLabel(value: string) {
+  if (value === "MANAGER_REVIEW") return "Ready to send";
+  if (value === "SENT_TO_OWNER") return "Waiting approval";
+  if (value === "OWNER_APPROVED") return "Approved";
+  if (value === "RETURNED_TO_MANAGER") return "Returned";
+  if (value === "PENDING") return "Pending";
+  return titleCase(value.replaceAll("_", " ").toLowerCase());
+}
+
+function statusHelp(value: string) {
+  if (value === "MANAGER_REVIEW") {
+    return "Day is closed. Review the report and send it to the owner.";
+  }
+  if (value === "SENT_TO_OWNER") {
+    return "Review the figures and approve when everything is correct.";
+  }
+  if (value === "OWNER_APPROVED") {
+    return "This report has been approved and locked for owner records.";
+  }
+  if (value === "RETURNED_TO_MANAGER") {
+    return "Returned for correction before another submission.";
+  }
+  return "Report is available for review.";
+}
+
+async function exportReport(
+  report: OwnerReport,
+  snapshot: ReportSnapshot,
+  currency: string,
+  setExportingId: (id: string | null) => void,
+) {
+  setExportingId(report.id);
+  try {
+    const { Workbook } = await import("exceljs");
+    const workbook = new Workbook();
+    const worksheet = workbook.addWorksheet("Daily Report");
+    worksheet.addRow(["REMBEH Daily Operations Report"]);
+    worksheet.mergeCells(1, 1, 1, 7);
+    worksheet.addRow([
+      report.branchName,
+      report.reportNumber,
+      report.operationDate,
+      statusLabel(report.status),
+    ]);
+    worksheet.mergeCells(2, 1, 2, 7);
+    worksheet.addRow([]);
+    const header = worksheet.addRow([
+      "Section",
+      "Description",
+      "Count",
+      "Cash In",
+      "Cash Out",
+      "Balance",
+      "Notes",
+    ]);
+    buildExcelRows(report, snapshot).forEach((row) => {
+      worksheet.addRow([
+        row.section,
+        row.description,
+        row.count,
+        row.cashIn ?? "",
+        row.cashOut ?? "",
+        row.balance ?? "",
+        row.note,
+      ]);
+    });
+    worksheet.columns = [
+      { width: 16 },
+      { width: 30 },
+      { width: 12 },
+      { width: 16 },
+      { width: 16 },
+      { width: 16 },
+      { width: 30 },
+    ];
+    worksheet.getRow(1).font = {
+      bold: true,
+      size: 16,
+      color: { argb: "FF14213D" },
+    };
+    worksheet.getRow(1).alignment = { horizontal: "center" };
+    header.font = { bold: true, color: { argb: "FFFFFFFF" } };
+    header.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF0F8F68" },
+    };
+    [4, 5, 6].forEach((column) => {
+      worksheet.getColumn(column).numFmt = `"${currency}" #,##0`;
+    });
+    worksheet.eachRow((row) => {
+      row.eachCell((cell) => {
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFC6D2CC" } },
+          bottom: { style: "thin", color: { argb: "FFC6D2CC" } },
+          left: { style: "thin", color: { argb: "FFC6D2CC" } },
+          right: { style: "thin", color: { argb: "FFC6D2CC" } },
+        };
+      });
+    });
+    const agentSheet = workbook.addWorksheet("Agent Handover");
+    agentSheet.addRow([
+      "Agent",
+      "Float",
+      "Loans",
+      "Collections",
+      "Fees",
+      "Expected",
+      "Returned",
+      "Status",
+    ]);
+    snapshot.agentReturns.forEach((row) => {
+      agentSheet.addRow([
+        row.agentName ?? "Agent",
+        numberValue(row.amountGiven),
+        numberValue(row.amountDisbursed),
+        numberValue(row.amountCollected),
+        numberValue(row.processingFees),
+        numberValue(row.expectedReturn),
+        row.amountReturned == null ? "" : numberValue(row.amountReturned),
+        row.status ?? "PENDING",
+      ]);
+    });
+    agentSheet.columns = [
+      { width: 24 },
+      { width: 16 },
+      { width: 16 },
+      { width: 16 },
+      { width: 16 },
+      { width: 16 },
+      { width: 16 },
+      { width: 16 },
+    ];
+    agentSheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+    agentSheet.getRow(1).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF0F8F68" },
+    };
+    [2, 3, 4, 5, 6, 7].forEach((column) => {
+      agentSheet.getColumn(column).numFmt = `"${currency}" #,##0`;
+    });
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download =
+      `${report.reportNumber}-${report.branchName}`.replace(
+        /[^a-z0-9-]+/gi,
+        "_",
+      ) + ".xlsx";
+    link.click();
+    URL.revokeObjectURL(url);
+  } finally {
+    setExportingId(null);
+  }
+}

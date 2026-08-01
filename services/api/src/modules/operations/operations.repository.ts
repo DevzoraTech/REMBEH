@@ -535,11 +535,15 @@ export class OperationsRepository {
     status?: BranchOperationReportStatus | null;
     fromDate?: Date | null;
     toDate?: Date | null;
+    includeManagerReview?: boolean;
   }) {
     const allowedStatuses: BranchOperationReportStatus[] = [
       BranchOperationReportStatus.SENT_TO_OWNER,
       BranchOperationReportStatus.OWNER_APPROVED,
       BranchOperationReportStatus.RETURNED_TO_MANAGER,
+      ...(input.includeManagerReview
+        ? [BranchOperationReportStatus.MANAGER_REVIEW]
+        : []),
     ];
 
     return this.prisma.branchOperationReport.findMany({

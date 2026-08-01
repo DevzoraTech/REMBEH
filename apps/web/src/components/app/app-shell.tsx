@@ -4,7 +4,6 @@ import {
   ArrowRight,
   Building2,
   CalendarDays,
-  ChevronDown,
   ClipboardCheck,
   FileText,
   HandCoins,
@@ -52,23 +51,22 @@ type OperationOpenCheck = {
   } | null;
 };
 
-export function AppShell({
-  children,
-  session,
-  workspace,
-  user,
-  branch = null,
-}: AppShellProps) {
+export function AppShell({ children, session, user }: AppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [ownerSidebarCollapsed, setOwnerSidebarCollapsed] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
-  const profileRef = useRef<HTMLDivElement | null>(null);
+  const [railSidebarPinned, setRailSidebarPinned] = useState(false);
+  const [railSidebarHover, setRailSidebarHover] = useState(false);
+  const railSidebarLeaveTimer = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const railSidebarExpanded = railSidebarPinned || railSidebarHover;
   const operatorRole = resolveOperatorRole(session, user);
   const homeHref = operatorRole === "owner" ? "/owner" : "/dashboard";
+  const settingsHref =
+    operatorRole === "owner" ? "/owner/settings" : "/settings";
 
-  const { primaryNav, settingsEnabled } = useMemo(() => {
+  const primaryNav = useMemo(() => {
     const ownerPrimary = [
       {
         href: "/owner",
@@ -116,16 +114,17 @@ export function AppShell({
         href: "/owner/settings",
         label: "Settings",
         icon: Settings,
-        enabled: false,
+        enabled: operatorRole === "owner",
       },
     ];
 
     const managerPrimary = [
       {
         href: "/dashboard",
-        label: "Home",
+        label: "Overview",
         icon: LayoutDashboard,
         enabled: operatorRole === "manager",
+        matchPath: "/dashboard",
       },
       {
         href: "/agents",
@@ -135,8 +134,8 @@ export function AppShell({
           operatorRole === "manager" &&
           Boolean(
             session.permissions.includes("branch.staff.read") ||
-            session.permissions.includes("user.read") ||
-            session.permissions.includes("collection.read"),
+              session.permissions.includes("user.read") ||
+              session.permissions.includes("collection.read"),
           ),
       },
       {
@@ -164,12 +163,20 @@ export function AppShell({
           Boolean(session.permissions.includes("customer.read")),
       },
       {
-        href: "/dashboard#payments",
+        href: "/collections/daily",
         label: "Collections",
         icon: HandCoins,
         enabled:
           operatorRole === "manager" &&
           Boolean(session.permissions.includes("collection.read")),
+      },
+      {
+        href: "/reports",
+        label: "Reports",
+        icon: ClipboardCheck,
+        enabled:
+          operatorRole === "manager" &&
+          Boolean(session.permissions.includes("operation.read")),
       },
       {
         href: "/operations",
@@ -179,19 +186,35 @@ export function AppShell({
           operatorRole === "manager" &&
           Boolean(session.permissions.includes("operation.read")),
       },
+      {
+        href: "/settings",
+        label: "Settings",
+        icon: Settings,
+        enabled: operatorRole === "manager",
+      },
     ];
 
-    const primary = (
-      operatorRole === "owner" ? ownerPrimary : managerPrimary
-    ).filter((item) => item.enabled);
-
-    const settingsEnabled =
-      operatorRole === "owner" ||
-      operatorRole === "manager" ||
-      Boolean(session.permissions.includes("loan.product.manage"));
-
-    return { primaryNav: primary, settingsEnabled };
+    return (operatorRole === "owner" ? ownerPrimary : managerPrimary).filter(
+      (item) => item.enabled,
+    );
   }, [operatorRole, session.permissions]);
+
+  const sidebarPromo =
+    operatorRole === "owner"
+      ? {
+          href: "/owner/branches",
+          title: "Scale your lending",
+          description: "Invite managers and agents to grow your portfolio.",
+          cta: "Invite Team",
+          collapsedLabel: "Invite team",
+        }
+      : {
+          href: "/agents",
+          title: "Grow your branch",
+          description: "Invite agents so collections and field work stay covered.",
+          cta: "Invite Agents",
+          collapsedLabel: "Invite agents",
+        };
 
   useEffect(() => {
     if (operatorRole !== "owner") return;
@@ -204,6 +227,7 @@ export function AppShell({
       ["/blacklist-watchlist", "/owner/risk"],
       ["/collections/daily", "/owner/collections"],
       ["/owner/payments", "/owner/collections"],
+      ["/reports", "/owner/reports"],
       ["/settings", "/owner/settings"],
     ];
     const match = redirects.find(
@@ -213,17 +237,6 @@ export function AppShell({
       router.replace(match[1]);
     }
   }, [operatorRole, pathname, router]);
-
-  useEffect(() => {
-    function onPointerDown(event: MouseEvent) {
-      if (!profileRef.current?.contains(event.target as Node)) {
-        setProfileOpen(false);
-      }
-    }
-
-    document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
-  }, []);
 
   useEffect(() => {
     if (
@@ -308,150 +321,40 @@ export function AppShell({
     );
   }
 
-  if (operatorRole === "owner") {
-    return (
-      <div className="min-h-screen bg-[#f6f8fb] text-[var(--slate-text)]">
-        <PushNotificationsBootstrap enabled />
-        <OwnerSidebar
-          homeHref={homeHref}
-          mobileOpen={mobileOpen}
-          pathname={pathname}
-          primaryNav={primaryNav}
-          user={user}
-          collapsed={ownerSidebarCollapsed}
-          onCloseMobile={() => setMobileOpen(false)}
-          onToggleCollapsed={() =>
-            setOwnerSidebarCollapsed((collapsed) => !collapsed)
-          }
-          onLogout={handleLogout}
-        />
-
-        {mobileOpen ? (
-          <button
-            type="button"
-            className="fixed inset-0 z-30 bg-[rgba(10,18,32,0.5)] backdrop-blur-[2px] lg:hidden"
-            aria-label="Close overlay"
-            onClick={() => setMobileOpen(false)}
-          />
-        ) : null}
-
-        <button
-          type="button"
-          className="fixed left-4 top-4 z-30 grid size-10 place-items-center rounded-2xl border border-white/50 bg-white text-[var(--midnight-navy)] shadow-[0_12px_26px_rgba(15,23,42,0.1)] lg:hidden"
-          onClick={() => setMobileOpen(true)}
-          aria-label="Open navigation"
-        >
-          <Menu className="size-4" />
-        </button>
-
-        <main
-          className={`min-h-screen px-4 py-5 transition-[padding] duration-300 sm:px-5 lg:pr-5 lg:pt-5 ${
-            ownerSidebarCollapsed ? "lg:pl-[96px]" : "lg:pl-[268px]"
-          }`}
-        >
-          {children}
-        </main>
-      </div>
-    );
-  }
-
   return (
-    <div className="app-shell min-h-screen text-[var(--slate-text)]">
+    <div className="min-h-screen bg-[#f6f8fb] text-[var(--slate-text)]">
       <PushNotificationsBootstrap enabled />
-      <aside
-        className={`app-sidebar fixed inset-y-0 left-0 z-40 w-[232px] transform transition duration-200 lg:translate-x-0 ${
-          mobileOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
-      >
-        <div className="flex h-full flex-col px-3 py-4">
-          <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-4">
-            <Link
-              href={homeHref}
-              className="flex items-center gap-2 rounded-2xl px-1 py-1 transition hover:bg-white/8"
-            >
-              <Image
-                src={rembehIcon}
-                alt="REMBEH"
-                className="size-9 rounded-xl object-cover shadow-[0_10px_24px_rgba(0,0,0,0.18)]"
-                priority
-              />
-              <div>
-                <p className="font-[family-name:var(--font-display)] text-lg leading-none tracking-[-0.03em] text-white">
-                  REMBEH
-                </p>
-                <p className="mt-1 text-[10px] capitalize tracking-[0.12em] text-white/45">
-                  Manager
-                </p>
-              </div>
-            </Link>
-            <button
-              type="button"
-              className="grid size-8 place-items-center rounded-xl bg-white/10 text-white lg:hidden"
-              onClick={() => setMobileOpen(false)}
-              aria-label="Close navigation"
-            >
-              <X className="size-4" />
-            </button>
-          </div>
-
-          <nav className="mt-4 flex flex-1 flex-col">
-            <div className="space-y-1">
-              {primaryNav.map((item) => {
-                const Icon = item.icon;
-                const active =
-                  pathname === item.href ||
-                  (item.href !== "/dashboard" &&
-                    item.href !== "/owner" &&
-                    pathname.startsWith(`${item.href}/`)) ||
-                  (item.href === "/dashboard" && pathname === "/dashboard") ||
-                  (item.href === "/owner" && pathname === "/owner");
-
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    onClick={() => setMobileOpen(false)}
-                    className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${
-                      active
-                        ? "bg-[var(--forest-emerald)] text-white shadow-[0_10px_24px_rgba(0,0,0,0.12)]"
-                        : "text-white/72 hover:bg-white/10 hover:text-white"
-                    }`}
-                  >
-                    <Icon className="size-4" />
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </div>
-
-            <div className="mt-auto space-y-1 border-t border-white/10 pt-3">
-              {settingsEnabled ? (
-                <Link
-                  href="/settings"
-                  onClick={() => setMobileOpen(false)}
-                  className={`flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${
-                    pathname === "/settings" ||
-                    pathname.startsWith("/settings/")
-                      ? "bg-[var(--forest-emerald)] text-white shadow-[0_10px_24px_rgba(0,0,0,0.12)]"
-                      : "text-white/72 hover:bg-white/10 hover:text-white"
-                  }`}
-                >
-                  <Settings className="size-4" />
-                  Settings
-                </Link>
-              ) : null}
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="flex w-full items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-semibold text-white/72 transition hover:bg-white/10 hover:text-white"
-              >
-                <LogOut className="size-4" />
-                Sign out
-              </button>
-            </div>
-          </nav>
-        </div>
-      </aside>
+      <RailSidebar
+        homeHref={homeHref}
+        mobileOpen={mobileOpen}
+        pathname={pathname}
+        primaryNav={primaryNav}
+        user={user}
+        roleLabel={operatorRole === "owner" ? "Owner" : "Manager"}
+        settingsHref={settingsHref}
+        promo={sidebarPromo}
+        expanded={railSidebarExpanded}
+        pinned={railSidebarPinned}
+        onCloseMobile={() => setMobileOpen(false)}
+        onTogglePinned={() => {
+          setRailSidebarPinned((pinned) => !pinned);
+        }}
+        onHoverChange={(hovering) => {
+          if (railSidebarLeaveTimer.current) {
+            clearTimeout(railSidebarLeaveTimer.current);
+            railSidebarLeaveTimer.current = null;
+          }
+          if (hovering) {
+            setRailSidebarHover(true);
+            return;
+          }
+          railSidebarLeaveTimer.current = setTimeout(() => {
+            setRailSidebarHover(false);
+            railSidebarLeaveTimer.current = null;
+          }, 160);
+        }}
+        onLogout={handleLogout}
+      />
 
       {mobileOpen ? (
         <button
@@ -462,129 +365,37 @@ export function AppShell({
         />
       ) : null}
 
-      <div className="min-h-screen lg:pl-[232px]">
-        <header className="sticky top-0 z-20 border-b border-[rgba(184,200,192,0.78)] bg-[rgba(248,251,249,0.88)] px-4 py-2.5 shadow-[0_10px_30px_rgba(20,33,61,0.05)] backdrop-blur sm:px-5">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <button
-                type="button"
-                className="grid size-9 place-items-center rounded-xl border border-[var(--line)] bg-white text-[var(--midnight-navy)] shadow-[0_6px_16px_rgba(20,33,61,0.06)] lg:hidden"
-                onClick={() => setMobileOpen(true)}
-                aria-label="Open navigation"
-              >
-                <Menu className="size-4" />
-              </button>
-              <div className="min-w-0">
-                <p className="truncate text-[11px] font-semibold tracking-[0.12em] text-[var(--forest-emerald)]">
-                  {workspace?.name ?? "REMBEH"}
-                </p>
-                <h1 className="truncate text-sm font-bold text-[var(--midnight-navy)]">
-                  {branch?.name ?? "branch"}
-                </h1>
-              </div>
-            </div>
+      <button
+        type="button"
+        className="fixed left-4 top-4 z-30 grid size-10 place-items-center rounded-2xl border border-white/50 bg-white text-[var(--midnight-navy)] shadow-[0_12px_26px_rgba(15,23,42,0.1)] lg:hidden"
+        onClick={() => setMobileOpen(true)}
+        aria-label="Open navigation"
+      >
+        <Menu className="size-4" />
+      </button>
 
-            <div className="flex items-center gap-2">
-              {settingsEnabled ? (
-                <Link
-                  href="/settings"
-                  className="grid size-9 place-items-center rounded-xl border border-[var(--line)] bg-white text-[var(--midnight-navy)] shadow-[0_8px_20px_rgba(20,33,61,0.06)] transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-[var(--forest-emerald)]"
-                  aria-label="Open settings"
-                  title="Settings"
-                >
-                  <Settings className="size-4" />
-                </Link>
-              ) : null}
-
-              <div className="relative" ref={profileRef}>
-              <button
-                type="button"
-                onClick={() => setProfileOpen((open) => !open)}
-                className="inline-flex h-9 items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-2.5 text-xs font-semibold text-[var(--midnight-navy)] shadow-[0_8px_20px_rgba(20,33,61,0.06)]"
-                aria-expanded={profileOpen}
-              >
-                <span className="grid size-6 place-items-center rounded-lg bg-[var(--mint-wash)] text-[var(--forest-emerald)]">
-                  <UserRound className="size-3.5" />
-                </span>
-                <span className="hidden max-w-[140px] truncate sm:inline">
-                  {user?.name ?? "profile"}
-                </span>
-                <ChevronDown className="size-3.5 text-slate-500" />
-              </button>
-
-              {profileOpen ? (
-                <div className="absolute right-0 top-[calc(100%+8px)] z-30 w-[260px] overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-[0_18px_44px_rgba(20,33,61,0.18)]">
-                  <div className="border-b border-[var(--line)] px-3 py-2.5">
-                    <p className="text-sm font-bold text-[var(--midnight-navy)]">
-                      {user?.name ?? "User"}
-                    </p>
-                    <p className="mt-0.5 truncate text-xs text-slate-500">
-                      {user?.email ?? "—"}
-                    </p>
-                  </div>
-                  <div className="space-y-1.5 px-3 py-2.5 text-xs">
-                    <ProfileLine
-                      label="Role"
-                      value={
-                        user?.roleName ?? "manager"
-                      }
-                    />
-                    <ProfileLine
-                      label="Account"
-                      value={workspace?.name ?? "—"}
-                    />
-                    {operatorRole === "manager" ? (
-                      <>
-                        <ProfileLine
-                          label="Branch"
-                          value={branch?.name ?? "—"}
-                        />
-                        <ProfileLine
-                          label="Address"
-                          value={branch?.address ?? "—"}
-                        />
-                      </>
-                    ) : (
-                      <ProfileLine
-                        label="Market"
-                        value={
-                          [workspace?.country, workspace?.currency]
-                            .filter(Boolean)
-                            .join(" · ") || "—"
-                        }
-                      />
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleLogout}
-                    className="flex w-full items-center gap-2 border-t border-[var(--line)] px-3 py-2.5 text-left text-xs font-semibold text-[var(--midnight-navy)] hover:bg-[var(--soft-mist)]"
-                  >
-                    <LogOut className="size-3.5" />
-                    Sign out
-                  </button>
-                </div>
-              ) : null}
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <main className="px-4 py-5 sm:px-5 sm:py-6">{children}</main>
-      </div>
+      {/* Keep content inset at the rail width so hover-expand overlays instead of shifting the page. */}
+      <main className="min-h-screen px-4 py-5 sm:px-5 lg:pl-[96px] lg:pr-5 lg:pt-5">
+        {children}
+      </main>
     </div>
   );
 }
 
-function OwnerSidebar({
+function RailSidebar({
   homeHref,
   mobileOpen,
   pathname,
   primaryNav,
   user,
-  collapsed,
+  roleLabel,
+  settingsHref,
+  promo,
+  expanded,
+  pinned,
   onCloseMobile,
-  onToggleCollapsed,
+  onTogglePinned,
+  onHoverChange,
   onLogout,
 }: {
   homeHref: string;
@@ -597,75 +408,111 @@ function OwnerSidebar({
     matchPath?: string;
   }>;
   user: RembehUser | null;
-  collapsed: boolean;
+  roleLabel: string;
+  settingsHref: string;
+  promo: {
+    href: string;
+    title: string;
+    description: string;
+    cta: string;
+    collapsedLabel: string;
+  };
+  expanded: boolean;
+  pinned: boolean;
   onCloseMobile: () => void;
-  onToggleCollapsed: () => void;
+  onTogglePinned: () => void;
+  onHoverChange: (hovering: boolean) => void;
   onLogout: () => void;
 }) {
+  const collapsed = !expanded;
+  const rootPaths = new Set(["/owner", "/dashboard"]);
+
   return (
     <aside
-      className={`fixed inset-y-0 left-0 z-40 w-[248px] transform overflow-visible bg-[#003f35] text-white shadow-[18px_0_44px_rgba(0,38,31,0.18)] transition-[width,transform] duration-300 ease-out lg:translate-x-0 ${
-        collapsed ? "lg:w-[76px]" : "lg:w-[248px]"
-      } ${
-        mobileOpen ? "translate-x-0" : "-translate-x-full"
-      }`}
+      onMouseEnter={() => onHoverChange(true)}
+      onMouseLeave={() => onHoverChange(false)}
+      onFocusCapture={() => onHoverChange(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          onHoverChange(false);
+        }
+      }}
+      className={`fixed inset-y-0 left-0 z-40 w-[248px] transform overflow-visible bg-[#003f35] text-white transition-[width,transform,box-shadow] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] lg:translate-x-0 ${
+        collapsed
+          ? "lg:w-[76px] lg:shadow-[10px_0_28px_rgba(0,38,31,0.12)]"
+          : "lg:w-[248px] lg:shadow-[22px_0_56px_rgba(0,38,31,0.28)]"
+      } ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
     >
       <div className="absolute inset-0 bg-[linear-gradient(180deg,#00473d_0%,#003e35_52%,#002e28_100%)]" />
       <div
-        className={`relative flex h-full min-h-0 flex-col px-5 py-5 transition-[padding] duration-300 [@media(max-height:720px)]:py-4 ${
-          collapsed ? "lg:px-2" : "lg:px-5"
+        className={`pointer-events-none absolute inset-y-0 right-0 w-px bg-gradient-to-b from-transparent via-white/20 to-transparent transition-opacity duration-300 ${
+          collapsed ? "opacity-40" : "opacity-70"
+        }`}
+      />
+      <div
+        className={`relative flex h-full min-h-0 flex-col py-5 transition-[padding] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [@media(max-height:720px)]:py-4 ${
+          collapsed ? "px-5 lg:px-2" : "px-5"
         }`}
       >
         <div
           className={`flex h-10 items-center gap-3 ${
-            collapsed ? "lg:justify-between lg:gap-1" : "justify-between"
+            collapsed ? "lg:justify-center" : "justify-between"
           }`}
         >
-          <OwnerSidebarTooltip label="Go to owner overview">
+          <RailSidebarTooltip label="Overview" show={collapsed}>
             <Link
               href={homeHref}
               onClick={onCloseMobile}
-              className={`flex min-w-0 items-center gap-3 ${
+              className={`flex min-w-0 items-center gap-3 overflow-hidden ${
                 collapsed ? "lg:justify-center" : ""
               }`}
             >
               <Image
                 src={rembehIcon}
                 alt="REMBEH"
-                className={`rounded-xl object-cover shadow-[0_10px_24px_rgba(0,0,0,0.16)] ${
-                  collapsed ? "size-10 lg:size-8 lg:rounded-lg" : "size-10"
+                className={`shrink-0 rounded-xl object-cover shadow-[0_10px_24px_rgba(0,0,0,0.16)] transition-all duration-300 ${
+                  collapsed ? "size-10 lg:size-9 lg:rounded-[10px]" : "size-10"
                 }`}
                 priority
               />
-              <div className={`min-w-0 ${collapsed ? "lg:hidden" : ""}`}>
-                <p className="font-[family-name:var(--font-display)] text-xl font-bold leading-none tracking-[-0.03em] text-white">
+              <div
+                className={`min-w-0 overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                  collapsed
+                    ? "max-w-0 opacity-0 lg:pointer-events-none"
+                    : "max-w-[160px] opacity-100"
+                }`}
+              >
+                <p className="whitespace-nowrap font-[family-name:var(--font-display)] text-xl font-bold leading-none tracking-[-0.03em] text-white">
                   REMBEH
                 </p>
-                <p className="mt-1 text-[8px] font-medium uppercase tracking-[0.14em] text-white/72">
+                <p className="mt-1 whitespace-nowrap text-[8px] font-medium uppercase tracking-[0.14em] text-white/72">
                   Financial Services
                 </p>
               </div>
             </Link>
-          </OwnerSidebarTooltip>
-          <OwnerSidebarTooltip
-            label={collapsed ? "Expand navigation" : "Collapse navigation"}
+          </RailSidebarTooltip>
+          <RailSidebarTooltip
+            label={pinned ? "Unpin sidebar" : "Keep sidebar open"}
+            show={collapsed}
           >
             <button
               type="button"
               className={`hidden place-items-center border border-white/10 bg-white/10 text-white/82 shadow-[0_10px_22px_rgba(0,21,17,0.18)] transition hover:bg-white/16 hover:text-white lg:grid ${
-                collapsed ? "size-7 rounded-lg" : "size-8 rounded-xl"
+                collapsed
+                  ? "pointer-events-none absolute opacity-0"
+                  : "size-8 rounded-xl"
               }`}
-              onClick={onToggleCollapsed}
-              aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
-              aria-pressed={collapsed}
+              onClick={onTogglePinned}
+              aria-label={pinned ? "Unpin sidebar" : "Keep sidebar open"}
+              aria-pressed={pinned}
             >
-              {collapsed ? (
-                <PanelLeftOpen className="size-4" />
-              ) : (
+              {pinned ? (
                 <PanelLeftClose className="size-4" />
+              ) : (
+                <PanelLeftOpen className="size-4" />
               )}
             </button>
-          </OwnerSidebarTooltip>
+          </RailSidebarTooltip>
           <button
             type="button"
             className="grid size-8 place-items-center rounded-2xl bg-white/10 text-white lg:hidden"
@@ -676,23 +523,24 @@ function OwnerSidebar({
           </button>
         </div>
 
-        <nav className="mt-6 min-h-0 flex-1 space-y-1 overflow-hidden pr-0 [@media(max-height:720px)]:mt-4 [@media(max-height:720px)]:space-y-0.5">
+        <nav className="mt-6 min-h-0 flex-1 space-y-1 overflow-x-hidden overflow-y-auto pr-0 [@media(max-height:720px)]:mt-4 [@media(max-height:720px)]:space-y-0.5">
           {primaryNav.map((item) => {
             const Icon = item.icon;
             const activePath = item.matchPath ?? item.href;
             const active =
               pathname === activePath ||
-              (activePath !== "/owner" &&
+              (!rootPaths.has(activePath) &&
                 pathname.startsWith(`${activePath}/`));
             return (
-              <OwnerSidebarTooltip
+              <RailSidebarTooltip
                 key={`${item.href}-${item.label}`}
-                label={`Open ${item.label}`}
+                label={item.label}
+                show={collapsed}
               >
                 <Link
                   href={item.href}
                   onClick={onCloseMobile}
-                  className={`relative flex h-10 w-full items-center rounded-xl text-[13px] font-medium transition [@media(max-height:720px)]:h-9 ${
+                  className={`relative flex h-10 w-full items-center rounded-xl text-[13px] font-medium transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [@media(max-height:720px)]:h-9 ${
                     collapsed ? "lg:justify-center lg:px-0" : "gap-3 px-3"
                   } ${
                     active
@@ -705,115 +553,123 @@ function OwnerSidebar({
                   }`}
                 >
                   <Icon
-                    className={`size-4 shrink-0 ${
+                    className={`size-4 shrink-0 transition-colors duration-200 ${
                       active ? "text-[#7df2bd]" : "text-white/75"
                     }`}
                   />
                   <span
-                    className={`min-w-0 flex-1 truncate ${
-                      collapsed ? "lg:hidden" : ""
+                    className={`min-w-0 flex-1 truncate whitespace-nowrap transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                      collapsed
+                        ? "max-w-0 opacity-0 lg:pointer-events-none"
+                        : "max-w-[160px] opacity-100"
                     }`}
                   >
                     {item.label}
                   </span>
                 </Link>
-              </OwnerSidebarTooltip>
+              </RailSidebarTooltip>
             );
           })}
         </nav>
 
         <div
-          className={`mt-2 shrink-0 rounded-2xl border border-white/12 bg-white/[0.045] shadow-[0_14px_30px_rgba(0,21,17,0.14)] transition-all duration-300 [@media(max-height:720px)]:p-2 ${
+          className={`mt-2 shrink-0 overflow-hidden rounded-2xl border border-white/12 bg-white/[0.045] shadow-[0_14px_30px_rgba(0,21,17,0.14)] transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [@media(max-height:720px)]:p-2 ${
             collapsed ? "p-3 lg:p-2" : "p-3"
           }`}
         >
-          {collapsed ? (
-            <>
-              <OwnerSidebarTooltip label="Invite managers and agents">
-                <Link
-                  href="/owner/branches"
-                  onClick={onCloseMobile}
-                  className="hidden h-10 w-full place-items-center rounded-xl bg-[#19a876] text-white shadow-[0_10px_20px_rgba(25,168,118,0.2)] transition hover:bg-[#15986b] lg:grid"
-                  aria-label="Invite team"
-                >
-                  <Users className="size-4" />
-                </Link>
-              </OwnerSidebarTooltip>
-              <div className="lg:hidden">
-                <div className="flex items-start gap-2.5">
-                  <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#d9f7e7] text-[#006b4f]">
-                    <Users className="size-[18px]" />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-xs font-medium text-white">
-                      Scale your lending
-                    </p>
-                    <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-white/64 [@media(max-height:720px)]:line-clamp-1">
-                      Invite managers and agents to grow your portfolio.
-                    </p>
-                  </div>
-                </div>
-                <OwnerSidebarTooltip label="Invite managers and agents">
-                  <Link
-                    href="/owner/branches"
-                    onClick={onCloseMobile}
-                    className="mt-3 flex h-8 items-center justify-between rounded-xl bg-[#19a876] px-3 text-[11px] font-medium text-white shadow-[0_10px_20px_rgba(25,168,118,0.2)] transition hover:bg-[#15986b] [@media(max-height:720px)]:mt-2 [@media(max-height:720px)]:h-7"
-                  >
-                    Invite Team
-                    <ArrowRight className="size-3.5" />
-                  </Link>
-                </OwnerSidebarTooltip>
+          <div className={collapsed ? "hidden lg:block" : "hidden"}>
+            <RailSidebarTooltip label={promo.collapsedLabel} show>
+              <Link
+                href={promo.href}
+                onClick={onCloseMobile}
+                className="grid h-10 w-full place-items-center rounded-xl bg-[#19a876] text-white shadow-[0_10px_20px_rgba(25,168,118,0.2)] transition hover:bg-[#15986b]"
+                aria-label={promo.collapsedLabel}
+              >
+                <Users className="size-4" />
+              </Link>
+            </RailSidebarTooltip>
+          </div>
+          <div
+            className={`transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+              collapsed
+                ? "max-h-0 opacity-0 lg:pointer-events-none lg:max-h-0"
+                : "max-h-40 opacity-100"
+            } ${collapsed ? "lg:hidden" : ""}`}
+          >
+            <div className="flex items-start gap-2.5">
+              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#d9f7e7] text-[#006b4f]">
+                <Users className="size-[18px]" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-white">{promo.title}</p>
+                <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-white/64 [@media(max-height:720px)]:line-clamp-1">
+                  {promo.description}
+                </p>
               </div>
-            </>
-          ) : (
-            <div>
-              <div className="flex items-start gap-2.5">
-                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#d9f7e7] text-[#006b4f]">
-                  <Users className="size-[18px]" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-white">
-                    Scale your lending
-                  </p>
-                  <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-white/64 [@media(max-height:720px)]:line-clamp-1">
-                    Invite managers and agents to grow your portfolio.
-                  </p>
-                </div>
-              </div>
-              <OwnerSidebarTooltip label="Invite managers and agents">
-                <Link
-                  href="/owner/branches"
-                  onClick={onCloseMobile}
-                  className="mt-3 flex h-8 items-center justify-between rounded-xl bg-[#19a876] px-3 text-[11px] font-medium text-white shadow-[0_10px_20px_rgba(25,168,118,0.2)] transition hover:bg-[#15986b] [@media(max-height:720px)]:mt-2 [@media(max-height:720px)]:h-7"
-                >
-                  Invite Team
-                  <ArrowRight className="size-3.5" />
-                </Link>
-              </OwnerSidebarTooltip>
             </div>
-          )}
+            <Link
+              href={promo.href}
+              onClick={onCloseMobile}
+              className="mt-3 flex h-8 items-center justify-between rounded-xl bg-[#19a876] px-3 text-[11px] font-medium text-white shadow-[0_10px_20px_rgba(25,168,118,0.2)] transition hover:bg-[#15986b] [@media(max-height:720px)]:mt-2 [@media(max-height:720px)]:h-7"
+            >
+              {promo.cta}
+              <ArrowRight className="size-3.5" />
+            </Link>
+          </div>
+          <div className={`lg:hidden ${collapsed ? "" : "hidden"}`}>
+            <div className="flex items-start gap-2.5">
+              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#d9f7e7] text-[#006b4f]">
+                <Users className="size-[18px]" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-white">{promo.title}</p>
+                <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-white/64">
+                  {promo.description}
+                </p>
+              </div>
+            </div>
+            <Link
+              href={promo.href}
+              onClick={onCloseMobile}
+              className="mt-3 flex h-8 items-center justify-between rounded-xl bg-[#19a876] px-3 text-[11px] font-medium text-white"
+            >
+              {promo.cta}
+              <ArrowRight className="size-3.5" />
+            </Link>
+          </div>
         </div>
 
         <div className="mt-3 shrink-0 border-t border-white/14 pt-3 [@media(max-height:720px)]:mt-2 [@media(max-height:720px)]:pt-2">
-          <OwnerSidebarTooltip label={`${user?.name ?? "Owner"} account menu`}>
+          <RailSidebarTooltip
+            label={user?.name ?? roleLabel}
+            show={collapsed}
+          >
             <div
-              className={`flex items-center ${
+              className={`flex items-center overflow-hidden transition-all duration-300 ${
                 collapsed ? "lg:justify-center" : "gap-3"
               }`}
             >
               <span className="grid size-9 shrink-0 place-items-center rounded-full bg-white/12 text-xs font-medium text-white">
-                {initials(user?.name ?? "Owner")}
+                {initials(user?.name ?? roleLabel)}
               </span>
-              <div className={`min-w-0 flex-1 ${collapsed ? "lg:hidden" : ""}`}>
-                <p className="truncate text-xs font-medium text-white">
-                  {user?.name ?? "Owner"}
+              <div
+                className={`min-w-0 flex-1 overflow-hidden transition-all duration-300 ${
+                  collapsed
+                    ? "max-w-0 opacity-0 lg:pointer-events-none"
+                    : "max-w-[140px] opacity-100"
+                }`}
+              >
+                <p className="truncate whitespace-nowrap text-xs font-medium text-white">
+                  {user?.name ?? roleLabel}
                 </p>
-                <p className="text-xs font-semibold text-white/62">Owner</p>
+                <p className="whitespace-nowrap text-xs font-semibold text-white/62">
+                  {roleLabel}
+                </p>
               </div>
               <Link
-                href="/owner/settings"
+                href={settingsHref}
                 onClick={onCloseMobile}
-                className={`grid size-8 place-items-center rounded-xl text-white/75 transition hover:bg-white/10 hover:text-white ${
+                className={`grid size-8 shrink-0 place-items-center rounded-xl text-white/75 transition hover:bg-white/10 hover:text-white ${
                   collapsed ? "lg:hidden" : ""
                 }`}
                 aria-label="Open settings"
@@ -821,8 +677,8 @@ function OwnerSidebar({
                 <Settings className="size-4" />
               </Link>
             </div>
-          </OwnerSidebarTooltip>
-          <OwnerSidebarTooltip label="Sign out of REMBEH">
+          </RailSidebarTooltip>
+          <RailSidebarTooltip label="Sign out" show={collapsed}>
             <button
               type="button"
               onClick={onLogout}
@@ -830,40 +686,41 @@ function OwnerSidebar({
                 collapsed ? "lg:justify-center lg:px-0" : "gap-2 px-2"
               }`}
             >
-              <LogOut className="size-3.5" />
-              <span className={collapsed ? "lg:hidden" : ""}>Sign out</span>
+              <LogOut className="size-3.5 shrink-0" />
+              <span
+                className={`overflow-hidden whitespace-nowrap transition-all duration-300 ${
+                  collapsed
+                    ? "max-w-0 opacity-0 lg:pointer-events-none"
+                    : "max-w-[80px] opacity-100"
+                }`}
+              >
+                Sign out
+              </span>
             </button>
-          </OwnerSidebarTooltip>
+          </RailSidebarTooltip>
         </div>
       </div>
     </aside>
   );
 }
 
-function ProfileLine({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <span className="text-slate-500 capitalize">{label}</span>
-      <span className="max-w-[160px] truncate text-right font-semibold text-[var(--midnight-navy)]">
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function OwnerSidebarTooltip({
+function RailSidebarTooltip({
   label,
   children,
+  show = true,
 }: {
   label: string;
   children: ReactNode;
+  show?: boolean;
 }) {
   return (
     <span className="group/sidebar-tip relative flex min-w-0">
       {children}
-      <span className="pointer-events-none absolute left-[calc(100%+10px)] top-1/2 z-50 max-w-[230px] -translate-y-1/2 whitespace-nowrap rounded-lg border border-white/10 bg-[#071611] px-2.5 py-1.5 text-[11px] font-medium text-white opacity-0 shadow-[0_14px_32px_rgba(7,22,17,0.28)] transition duration-150 group-hover/sidebar-tip:translate-x-0 group-hover/sidebar-tip:opacity-100">
-        {label}
-      </span>
+      {show ? (
+        <span className="pointer-events-none absolute left-[calc(100%+12px)] top-1/2 z-50 hidden max-w-[230px] -translate-y-1/2 translate-x-1 whitespace-nowrap rounded-lg border border-white/10 bg-[#071611] px-2.5 py-1.5 text-[11px] font-medium text-white opacity-0 shadow-[0_14px_32px_rgba(7,22,17,0.28)] transition duration-150 group-hover/sidebar-tip:translate-x-0 group-hover/sidebar-tip:opacity-100 lg:block">
+          {label}
+        </span>
+      ) : null}
     </span>
   );
 }

@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ClipboardCheck,
   Folder,
+  MessageCircleQuestion,
   Search,
   Settings,
 } from "lucide-react";
@@ -14,16 +15,13 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { formatNumber } from "./owner-common";
+import {
+  useOwnerNotifications,
+  type OwnerNotificationItem,
+} from "./owner-notifications";
+import { useTooltipsEnabled } from "./owner-tooltip-prefs";
 
-export type OwnerNotificationItem = {
-  id: string;
-  title: string;
-  detail: string;
-  href: string;
-  tone: "red" | "gold" | "blue" | "green";
-  icon: "alert" | "report" | "loan";
-  time: string;
-};
+export type { OwnerNotificationItem };
 
 export function OwnerHeader({
   eyebrow,
@@ -33,10 +31,12 @@ export function OwnerHeader({
   onSearchChange,
   searchTooltip,
   searchPlaceholder = "Search anything...",
-  notifications,
   actions,
   showReportsButton = true,
+  showSearch = true,
   settingsHref = "/owner/settings",
+  reportsHref = "/owner/reports",
+  notificationScope = "owner",
 }: {
   eyebrow?: string;
   title: string;
@@ -45,11 +45,17 @@ export function OwnerHeader({
   onSearchChange: (value: string) => void;
   searchTooltip: string;
   searchPlaceholder?: string;
-  notifications: OwnerNotificationItem[];
+  /** @deprecated Notifications are shared account-wide via OwnerHeader. */
+  notifications?: OwnerNotificationItem[];
   actions?: ReactNode;
   showReportsButton?: boolean;
+  showSearch?: boolean;
   settingsHref?: string;
+  reportsHref?: string;
+  notificationScope?: "owner" | "manager";
 }) {
+  const { items: notifications } = useOwnerNotifications(notificationScope);
+  const { enabled: tooltipsEnabled, setTooltipsEnabled } = useTooltipsEnabled();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
 
@@ -79,21 +85,29 @@ export function OwnerHeader({
         </h1>
       </div>
       <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
-        <Tooltip label={searchTooltip}>
-          <label className="flex h-9 min-w-[220px] max-w-[315px] flex-1 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
-            <Search className="size-3.5 shrink-0 text-slate-400" />
-            <input
-              value={search}
-              onChange={(event) => onSearchChange(event.target.value)}
-              type="search"
-              placeholder={searchPlaceholder}
-              className="min-w-0 flex-1 bg-transparent text-xs font-medium text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
-            />
-            <span className="hidden rounded-lg border border-[#e8edf2] px-2 py-0.5 text-[11px] font-bold text-slate-400 sm:inline">
-              ⌘K
-            </span>
-          </label>
-        </Tooltip>
+        {showSearch ? (
+          <Tooltip label={searchTooltip}>
+            <label className="flex h-9 min-w-[220px] max-w-[315px] flex-1 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
+              <Search className="size-3.5 shrink-0 text-slate-400" />
+              <input
+                value={search}
+                onChange={(event) => onSearchChange(event.target.value)}
+                type="search"
+                placeholder={searchPlaceholder}
+                className="min-w-0 flex-1 bg-transparent text-xs font-medium text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
+              />
+              <span className="hidden rounded-lg border border-[#e8edf2] px-2 py-0.5 text-[11px] font-bold text-slate-400 sm:inline">
+                ⌘K
+              </span>
+            </label>
+          </Tooltip>
+        ) : null}
+
+        <TooltipToggle
+          enabled={tooltipsEnabled}
+          onChange={setTooltipsEnabled}
+        />
+
         <div ref={notificationsRef} className="relative">
           <Tooltip label="Open live notifications and items needing attention.">
             <button
@@ -115,6 +129,7 @@ export function OwnerHeader({
             open={notificationsOpen}
             items={notifications}
             onClose={() => setNotificationsOpen(false)}
+            scope={notificationScope}
           />
         </div>
         <Tooltip label="Open settings.">
@@ -129,7 +144,7 @@ export function OwnerHeader({
         {showReportsButton ? (
           <Tooltip label="Open the report review page.">
             <Link
-              href="/owner/reports"
+              href={reportsHref}
               className="flex h-9 items-center gap-2 rounded-xl bg-[#003f35] px-3.5 text-xs font-medium text-white shadow-[0_10px_20px_rgba(0,63,53,0.2)]"
             >
               Reports
@@ -140,6 +155,48 @@ export function OwnerHeader({
         {actions}
       </div>
     </header>
+  );
+}
+
+function TooltipToggle({
+  enabled,
+  onChange,
+}: {
+  enabled: boolean;
+  onChange: (enabled: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={enabled}
+      aria-label={enabled ? "Turn tooltips off" : "Turn tooltips on"}
+      title={enabled ? "Tooltips on" : "Tooltips off"}
+      onClick={() => onChange(!enabled)}
+      className={`inline-flex h-9 items-center gap-2 rounded-xl border px-2.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition ${
+        enabled
+          ? "border-emerald-200 bg-emerald-50/80 text-[#013f35]"
+          : "border-[#e6ebf0] bg-white text-slate-500 hover:border-slate-300"
+      }`}
+    >
+      <MessageCircleQuestion
+        className={`size-3.5 shrink-0 ${
+          enabled ? "text-[var(--forest-emerald)]" : "text-slate-400"
+        }`}
+      />
+      <span className="hidden text-[11px] font-semibold sm:inline">Tips</span>
+      <span
+        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 ${
+          enabled ? "bg-[var(--forest-emerald)]" : "bg-slate-300"
+        }`}
+      >
+        <span
+          className={`absolute size-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+            enabled ? "translate-x-4" : "translate-x-0.5"
+          }`}
+        />
+      </span>
+    </button>
   );
 }
 
@@ -154,6 +211,7 @@ export function Tooltip({
   align?: "left" | "center" | "right";
   block?: boolean;
 }) {
+  const { enabled } = useTooltipsEnabled();
   const alignClass = {
     left: "left-0",
     center: "left-1/2 -translate-x-1/2",
@@ -161,13 +219,17 @@ export function Tooltip({
   }[align];
 
   return (
-    <span className={`group/tooltip relative min-w-0 ${block ? "flex w-full" : "inline-flex"}`}>
+    <span
+      className={`group/tooltip relative min-w-0 ${block ? "flex w-full" : "inline-flex"}`}
+    >
       {children}
-      <span
-        className={`pointer-events-none absolute top-[calc(100%+8px)] z-50 max-w-[260px] whitespace-normal rounded-lg border border-[#dfe8e4] bg-[#071611] px-2.5 py-1.5 text-[11px] font-medium leading-4 text-white opacity-0 shadow-[0_14px_32px_rgba(7,22,17,0.24)] transition duration-150 group-hover/tooltip:translate-y-0 group-hover/tooltip:opacity-100 ${alignClass}`}
-      >
-        {label}
-      </span>
+      {enabled ? (
+        <span
+          className={`pointer-events-none absolute top-[calc(100%+8px)] z-50 max-w-[260px] whitespace-normal rounded-lg border border-[#dfe8e4] bg-[#071611] px-2.5 py-1.5 text-[11px] font-medium leading-4 text-white opacity-0 shadow-[0_14px_32px_rgba(7,22,17,0.24)] transition duration-150 group-hover/tooltip:translate-y-0 group-hover/tooltip:opacity-100 ${alignClass}`}
+        >
+          {label}
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -176,10 +238,12 @@ function NotificationOverlay({
   open,
   items,
   onClose,
+  scope = "owner",
 }: {
   open: boolean;
   items: OwnerNotificationItem[];
   onClose: () => void;
+  scope?: "owner" | "manager";
 }) {
   return (
     <div
@@ -193,7 +257,9 @@ function NotificationOverlay({
         <div>
           <p className="text-sm font-bold text-[#0b1220]">Notifications</p>
           <p className="mt-0.5 text-[11px] font-medium text-slate-500">
-            Live items needing attention
+            {scope === "manager"
+              ? "Branch items needing attention"
+              : "Account-wide items needing attention"}
           </p>
         </div>
         <span className="rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-[var(--forest-emerald)]">
@@ -209,7 +275,9 @@ function NotificationOverlay({
             No notifications
           </h3>
           <p className="mx-auto mt-1 max-w-[250px] text-xs font-medium leading-5 text-slate-500">
-            Everything that needs owner attention is clear right now.
+            {scope === "manager"
+              ? "Everything that needs your attention is clear right now."
+              : "Everything that needs owner attention is clear right now."}
           </p>
         </div>
       ) : (

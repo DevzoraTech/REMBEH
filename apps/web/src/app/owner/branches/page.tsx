@@ -48,7 +48,6 @@ import {
 import {
   OwnerHeader,
   Tooltip,
-  type OwnerNotificationItem,
 } from "../owner-header";
 import {
   OwnerBorrower,
@@ -316,69 +315,6 @@ function OwnerBranchesPageContent() {
           .filter((branch): branch is OwnerBranch => Boolean(branch))
       : filteredBranches;
 
-  const branchNotifications = useMemo<OwnerNotificationItem[]>(() => {
-    const items: OwnerNotificationItem[] = [];
-    if (criticalBranchCount > 0) {
-      items.push({
-        id: "critical-collection-performance",
-        title: `${formatNumber(criticalBranchCount)} critical branch${criticalBranchCount === 1 ? "" : "es"}`,
-        detail:
-          "Missing daily close or critical overdue exposure.",
-        href: "/owner/branches?view=attention",
-        tone: "red",
-        icon: "alert",
-        time: "Today",
-      });
-    }
-    if (highRiskBranchCount > 0) {
-      items.push({
-        id: "high-risk-overdue-exposure",
-        title: `${formatNumber(highRiskBranchCount)} high risk branch${highRiskBranchCount === 1 ? "" : "es"}`,
-        detail: "Borrowers with 4–7 uncovered repayment days.",
-        href: "/owner/branches?view=attention",
-        tone: "gold",
-        icon: "alert",
-        time: "Today",
-      });
-    }
-    const attentionCount =
-      branchesNeedingAttentionCount -
-      criticalBranchCount -
-      highRiskBranchCount;
-    if (attentionCount > 0) {
-      items.push({
-        id: "attention-branch-performance",
-        title: `${formatNumber(attentionCount)} branch${attentionCount === 1 ? "" : "es"} need attention`,
-        detail:
-          followUpBranchCount > 0
-            ? "Follow-up overdue loans or soft repayment dip."
-            : "Repayment rate is 70% or less (7 days).",
-        href: "/owner/branches?view=attention",
-        tone: "gold",
-        icon: "alert",
-        time: "Today",
-      });
-    }
-    if (pendingBranchCount > 0) {
-      items.push({
-        id: "pending-branches",
-        title: `${formatNumber(pendingBranchCount)} pending branch${pendingBranchCount === 1 ? "" : "es"}`,
-        detail: "Still need a manager or setup.",
-        href: "/owner/branches?status=pending",
-        tone: "blue",
-        icon: "alert",
-        time: "Today",
-      });
-    }
-    return items;
-  }, [
-    branchesNeedingAttentionCount,
-    criticalBranchCount,
-    followUpBranchCount,
-    highRiskBranchCount,
-    pendingBranchCount,
-  ]);
-
   async function createBranch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!state.session) return;
@@ -456,7 +392,6 @@ function OwnerBranchesPageContent() {
           search={search}
           onSearchChange={setSearch}
           searchTooltip="Search branches, managers, locations and branch activity."
-          notifications={branchNotifications}
           actions={
             <button
               type="button"

@@ -301,8 +301,28 @@ export class OperationsService {
       to?: string;
     },
   ): Promise<OwnerOperationReportListResponseContract> {
-    this.assertCanOwnerApproveReport(user);
-    const status = this.parseOwnerReportStatus(options?.status);
+    const canOwnerList =
+      user.permissions.includes(OPERATIONS_PERMISSIONS.approve) &&
+      user.permissions.includes(BRANCH_PERMISSIONS.create);
+    const canManagerList =
+      user.permissions.includes(OPERATIONS_PERMISSIONS.reportReview) ||
+      user.permissions.includes(OPERATIONS_PERMISSIONS.close) ||
+      user.permissions.includes(OPERATIONS_PERMISSIONS.read);
+
+    if (!canOwnerList && !canManagerList) {
+      throw new ForbiddenException('Missing permission to view reports.');
+    }
+
+    const managerScoped = !canOwnerList;
+    if (managerScoped) {
+      if (!user.branchId) {
+        throw new ForbiddenException('Branch scope is required.');
+      }
+    }
+
+    const status = this.parseOwnerReportStatus(options?.status, {
+      includeManagerReview: managerScoped,
+    });
     const fromDate = options?.from
       ? this.parseDayBounds(options.from).dateOnly
       : null;
@@ -311,10 +331,13 @@ export class OperationsService {
       : null;
     const reports = await this.repository.listOwnerReports({
       tenantId: user.tenantId,
-      branchId: options?.branchId || null,
+      branchId: managerScoped
+        ? user.branchId
+        : options?.branchId || null,
       status,
       fromDate,
       toDate,
+      includeManagerReview: managerScoped,
     });
 
     return {
@@ -1328,13 +1351,19 @@ export class OperationsService {
     };
   }
 
-  private parseOwnerReportStatus(value?: string) {
+  private parseOwnerReportStatus(
+    value?: string,
+    options?: { includeManagerReview?: boolean },
+  ) {
     if (!value?.trim() || value === 'all') return null;
     const status = value.trim().toUpperCase();
     const allowed: BranchOperationReportStatus[] = [
       BranchOperationReportStatus.SENT_TO_OWNER,
       BranchOperationReportStatus.OWNER_APPROVED,
       BranchOperationReportStatus.RETURNED_TO_MANAGER,
+      ...(options?.includeManagerReview
+        ? [BranchOperationReportStatus.MANAGER_REVIEW]
+        : []),
     ];
     if (!allowed.includes(status as BranchOperationReportStatus)) {
       throw new BadRequestException('Choose a valid report status.');

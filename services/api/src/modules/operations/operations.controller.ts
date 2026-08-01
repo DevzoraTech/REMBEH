@@ -43,7 +43,7 @@ export class OperationsController {
   }
 
   @Get('reports')
-  @RequirePermissions(OPERATIONS_PERMISSIONS.approve)
+  @RequirePermissions(OPERATIONS_PERMISSIONS.read)
   listOwnerReports(
     @CurrentUser() user: AuthenticatedUser,
     @Query('branchId') branchId?: string,

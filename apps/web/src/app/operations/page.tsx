@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  AlertTriangle,
+  ArrowRight,
   Banknote,
   Building2,
   CalendarDays,
@@ -29,6 +31,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/app/app-shell";
 import { AppBootSkeleton, SkeletonBlock } from "../../components/app/skeleton";
+import { OwnerHeader, Tooltip } from "../owner/owner-header";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import {
   RembehBranch,
@@ -239,6 +242,15 @@ type OperationActionPanel =
   | "agent-return"
   | "close-day"
   | null;
+
+type AttentionItem = {
+  id: string;
+  title: string;
+  detail: string;
+  tone: "red" | "gold" | "blue";
+  action?: Exclude<OperationActionPanel, null>;
+  actionLabel?: string;
+};
 
 const emptyOpeningForm: OpeningForm = {
   openingBalance: "",
@@ -1261,6 +1273,16 @@ export default function OperationsPage() {
     return <AppBootSkeleton />;
   }
 
+  const operationStatusLabel = operation
+    ? operation.status === "OPEN"
+      ? "Day open"
+      : operation.status === "CLOSED"
+        ? "Day closed"
+        : "Closing"
+    : pendingClosureOperation
+      ? "Previous day open"
+      : "Not opened";
+
   return (
     <AppShell
       session={session}
@@ -1268,96 +1290,114 @@ export default function OperationsPage() {
       user={user}
       branch={operatorRole === "manager" ? branch : null}
     >
-      <div className="mx-auto max-w-7xl space-y-4">
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-semibold tracking-[0.12em] text-[var(--forest-emerald)]">
-              {operatorRole === "owner"
-                ? "Operation Reports"
-                : "Daily Operations"}
-            </p>
-            <h1 className="text-xl font-bold text-[var(--midnight-navy)]">
-              {selectedReportBranch?.name ?? "Operations Hub"}
-            </h1>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {operatorRole === "owner" ? (
-              <label className="flex h-9 items-center gap-2 border border-[var(--line)] bg-white px-2 text-xs font-bold text-[var(--midnight-navy)]">
-                <Building2 className="size-3.5 text-slate-400" />
-                <select
-                  value={selectedBranchId}
-                  onChange={(event) => {
-                    setNotice(null);
-                    setError(null);
-                    setData(null);
-                    setSelectedBranchId(event.target.value);
-                  }}
-                  className="min-w-[180px] bg-transparent outline-none"
+      <div className="mx-auto max-w-[1440px] space-y-3.5">
+        <OwnerHeader
+          subtitle={`${selectedReportBranch?.name ?? "Operations"} · ${formatDateOnly(date)}`}
+          title={
+            operatorRole === "owner" ? "Operation Reports" : "Daily Operations"
+          }
+          search=""
+          onSearchChange={() => undefined}
+          searchTooltip="Use the date control to switch the operations day."
+          showSearch={false}
+          showReportsButton={operatorRole === "manager"}
+          settingsHref={
+            operatorRole === "owner" ? "/owner/settings" : "/settings"
+          }
+          reportsHref={
+            operatorRole === "owner" ? "/owner/reports" : "/reports"
+          }
+          notificationScope={operatorRole === "owner" ? "owner" : "manager"}
+          actions={
+            <>
+              {operatorRole === "owner" ? (
+                <Tooltip label="Choose which branch report to inspect.">
+                  <label className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-[#0b1220] shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
+                    <Building2 className="size-3.5 text-slate-400" />
+                    <select
+                      value={selectedBranchId}
+                      onChange={(event) => {
+                        setNotice(null);
+                        setError(null);
+                        setData(null);
+                        setSelectedBranchId(event.target.value);
+                      }}
+                      className="min-w-[160px] bg-transparent outline-none"
+                    >
+                      {reportBranches.length === 0 ? (
+                        <option value="">No branches</option>
+                      ) : null}
+                      {reportBranches.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </Tooltip>
+              ) : (
+                <span className="inline-flex h-9 items-center rounded-xl border border-[#e6ebf0] bg-white px-3 text-[11px] font-semibold text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
+                  {operationStatusLabel}
+                </span>
+              )}
+              <Tooltip label="Choose the operations day.">
+                <label className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-[#0b1220] shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
+                  <CalendarDays className="size-3.5 text-slate-400" />
+                  <input
+                    type="date"
+                    value={date}
+                    onChange={(event) => {
+                      setNotice(null);
+                      setError(null);
+                      setForm(emptyOpeningForm);
+                      setTopUpForm(emptyTopUpForm);
+                      setExpenseForm(emptyExpenseForm);
+                      setFloatForm(emptyFloatForm);
+                      setFloatTopUpForm(emptyFloatForm);
+                      setAgentReturnForm(emptyAgentReturnForm);
+                      setClosingForm(emptyClosingForm);
+                      setManagerReportNotes("");
+                      setOwnerReportNotes("");
+                      setActivePanel(null);
+                      setDate(event.target.value);
+                    }}
+                    className="bg-transparent outline-none"
+                  />
+                </label>
+              </Tooltip>
+              <Tooltip label="Refresh this day's operations.">
+                <button
+                  type="button"
+                  className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:border-emerald-200 hover:bg-emerald-50 disabled:opacity-60"
+                  onClick={() =>
+                    void (operatorRole === "owner"
+                      ? loadOperation(session, date, selectedBranchId)
+                      : Promise.all([
+                          loadOperation(session, date),
+                          loadAgentsForDay(session, date),
+                        ]))
+                  }
+                  disabled={
+                    loading || (operatorRole === "owner" && !selectedBranchId)
+                  }
+                  aria-label="Refresh operations"
                 >
-                  {reportBranches.length === 0 ? (
-                    <option value="">No branches</option>
-                  ) : null}
-                  {reportBranches.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null}
-            <label className="flex h-9 items-center gap-2 border border-[var(--line)] bg-white px-2 text-xs font-bold text-[var(--midnight-navy)]">
-              <CalendarDays className="size-3.5 text-slate-400" />
-              <input
-                type="date"
-                value={date}
-                onChange={(event) => {
-                  setNotice(null);
-                  setError(null);
-                  setForm(emptyOpeningForm);
-                  setTopUpForm(emptyTopUpForm);
-                  setExpenseForm(emptyExpenseForm);
-                  setFloatForm(emptyFloatForm);
-                  setFloatTopUpForm(emptyFloatForm);
-                  setAgentReturnForm(emptyAgentReturnForm);
-                  setClosingForm(emptyClosingForm);
-                  setManagerReportNotes("");
-                  setOwnerReportNotes("");
-                  setActivePanel(null);
-                  setDate(event.target.value);
-                }}
-                className="bg-transparent outline-none"
-              />
-            </label>
-            <button
-              type="button"
-              className="btn btn-ghost h-9 text-xs"
-              onClick={() =>
-                void (operatorRole === "owner"
-                  ? loadOperation(session, date, selectedBranchId)
-                  : Promise.all([
-                      loadOperation(session, date),
-                      loadAgentsForDay(session, date),
-                    ]))
-              }
-              disabled={
-                loading || (operatorRole === "owner" && !selectedBranchId)
-              }
-            >
-              <RefreshCw
-                className={`size-3.5 ${loading ? "animate-spin" : ""}`}
-              />
-              Refresh
-            </button>
-          </div>
-        </div>
+                  <RefreshCw
+                    className={`size-4 ${loading ? "animate-spin" : ""}`}
+                  />
+                </button>
+              </Tooltip>
+            </>
+          }
+        />
 
         {notice ? (
-          <p className="border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-[var(--forest-emerald)]">
+          <p className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-[var(--forest-emerald)]">
             {notice}
           </p>
         ) : null}
         {error ? (
-          <p className="border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p className="rounded-[14px] border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {error}
           </p>
         ) : null}
@@ -1365,7 +1405,7 @@ export default function OperationsPage() {
         {loading && !data ? (
           <OperationsSkeleton />
         ) : !activeBranch ? (
-          <div className="panel bg-white px-4 py-6 text-sm text-slate-500">
+          <div className="rounded-[16px] border border-[#e6ebf0] bg-white px-5 py-8 text-sm font-medium text-slate-500 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
             {operatorRole === "owner"
               ? "Create a branch before viewing operation reports."
               : "Create a branch before starting daily operations."}
@@ -1479,29 +1519,29 @@ function PendingClosureView({
   onReview: () => void;
 }) {
   return (
-    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
-      <div className="grid gap-4 p-5 lg:grid-cols-[1fr_260px] lg:items-center">
+    <section className="overflow-hidden rounded-[16px] border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+      <div className="grid gap-5 lg:grid-cols-[1.2fr_280px] lg:items-center">
         <div>
-          <p className="text-[11px] font-semibold tracking-[0.12em] text-amber-700">
-            Close Previous Day
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-amber-700">
+            Action required
           </p>
-          <h2 className="mt-2 text-xl font-bold text-[var(--midnight-navy)]">
-            Close {formatDateOnly(pendingOperation.operationDate)} first
+          <h2 className="mt-2 text-[clamp(1.2rem,1.5vw,1.55rem)] font-bold tracking-[-0.02em] text-[#0b1220]">
+            Close {formatDateOnly(pendingOperation.operationDate)} before opening today
           </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-            This branch still has an open record from the previous day. Close it
-            first so the next day starts with the correct opening balance.
+          <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-slate-600">
+            Your branch still has an open day. Finish returns, close cash, and
+            send that report so the next day opens with the right balance.
           </p>
         </div>
-        <div className="border border-amber-200 bg-amber-50 p-4">
-          <p className="text-xs font-bold text-amber-700">Open branch day</p>
-          <p className="mt-1 text-lg font-bold text-[var(--midnight-navy)]">
+        <div className="rounded-[14px] border border-amber-200 bg-white p-4 shadow-[0_10px_24px_rgba(245,158,11,0.12)]">
+          <p className="text-[11px] font-semibold text-amber-700">Open day</p>
+          <p className="mt-1 text-xl font-bold text-[#0b1220]">
             {formatDateOnly(pendingOperation.operationDate)}
           </p>
           <button
             type="button"
             onClick={onReview}
-            className="btn btn-primary mt-4 h-9 w-full text-xs"
+            className="mt-4 flex h-10 w-full items-center justify-center rounded-xl bg-[#003f35] text-xs font-semibold text-white shadow-[0_10px_20px_rgba(0,63,53,0.2)]"
           >
             Close this day
           </button>
@@ -1521,16 +1561,16 @@ function OwnerOperationEmptyView({
   pendingOperation: OperationCarryover | null;
 }) {
   return (
-    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
-      <div className="grid gap-4 p-5 lg:grid-cols-[1fr_260px] lg:items-center">
+    <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+      <div className="grid gap-5 p-5 lg:grid-cols-[1.2fr_280px] lg:items-center">
         <div>
-          <p className="text-[11px] font-semibold tracking-[0.12em] text-[var(--forest-emerald)]">
-            Branch Report
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--forest-emerald)]">
+            Branch report
           </p>
-          <h2 className="mt-2 text-xl font-bold text-[var(--midnight-navy)]">
+          <h2 className="mt-2 text-[clamp(1.2rem,1.5vw,1.55rem)] font-bold tracking-[-0.02em] text-[#0b1220]">
             No operation report for {formatDateOnly(date)}
           </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+          <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-slate-600">
             {pendingOperation
               ? `The manager still needs to close ${formatDateOnly(
                   pendingOperation.operationDate,
@@ -1538,12 +1578,12 @@ function OwnerOperationEmptyView({
               : "This branch has not opened operations for the selected day."}
           </p>
         </div>
-        <div className="border border-[var(--line)] bg-[var(--soft-mist)] p-4">
-          <p className="text-xs font-bold text-slate-500">Branch</p>
-          <p className="mt-1 text-lg font-bold text-[var(--midnight-navy)]">
-            {branch.name}
+        <div className="rounded-[14px] border border-[#e6ebf0] bg-[#f8faf9] p-4">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-slate-500">
+            Branch
           </p>
-          <p className="mt-1 text-xs font-semibold text-slate-500">
+          <p className="mt-1 text-lg font-bold text-[#0b1220]">{branch.name}</p>
+          <p className="mt-1 text-xs font-medium text-slate-500">
             {branch.address || "Address not set"}
           </p>
         </div>
@@ -1586,15 +1626,20 @@ function OpeningView({
     form.floatSetAside !== "";
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_360px]">
-      <section className="panel bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
-        <header className="border-b border-[var(--line)] px-4 py-3">
-          <p className="text-sm font-bold text-[var(--midnight-navy)]">
-            Open branch
+    <div className="grid gap-3.5 xl:grid-cols-[1.35fr_0.85fr]">
+      <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+        <header className="border-b border-[#edf1f5] bg-[#003f35] px-5 py-4 text-white">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/70">
+            Start the day
           </p>
-          <p className="mt-0.5 text-xs text-slate-500">{branch.address}</p>
+          <h2 className="mt-1 text-lg font-bold tracking-[-0.02em]">
+            Open {branch.name}
+          </h2>
+          <p className="mt-1 text-xs font-medium text-white/70">
+            {branch.address || "Set opening cash and float before agents go out."}
+          </p>
         </header>
-        <div className="grid gap-3 p-4 sm:grid-cols-2">
+        <div className="grid gap-3 p-5 sm:grid-cols-2">
           <MoneyField
             label="Opening balance"
             value={form.openingBalance}
@@ -1602,12 +1647,12 @@ function OpeningView({
             onChange={(value) => setForm({ ...form, openingBalance: value })}
           />
           {suggestedOpeningBalance != null ? (
-            <p className="self-end text-xs font-semibold leading-5 text-slate-500">
+            <p className="self-end rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2 text-xs font-semibold leading-5 text-[#0c6b4f]">
               From closing cash
               {previousClosedOperation
                 ? ` on ${formatDateOnly(previousClosedOperation.operationDate)}`
                 : ""}
-              . This amount cannot be edited.
+              . Locked automatically.
             </p>
           ) : null}
           <MoneyField
@@ -1623,7 +1668,7 @@ function OpeningView({
             onChange={(value) => setForm({ ...form, floatSetAside: value })}
           />
           <label className="sm:col-span-2">
-            <span className="text-xs font-bold text-slate-600">Notes</span>
+            <span className="text-xs font-semibold text-slate-600">Notes</span>
             <textarea
               value={form.notes}
               disabled={!editableDate}
@@ -1631,25 +1676,29 @@ function OpeningView({
                 setForm({ ...form, notes: event.target.value })
               }
               rows={3}
-              className="mt-1 w-full border border-[var(--line)] bg-white px-3 py-2 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
+              className="mt-1.5 w-full rounded-xl border border-[#e6ebf0] bg-[#fbfcfd] px-3 py-2.5 text-sm font-medium text-[#0b1220] outline-none transition focus:border-[var(--forest-emerald)] disabled:bg-[#f5f7f8] disabled:text-slate-500"
+              placeholder="Optional opening notes"
             />
           </label>
         </div>
-        <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line)] bg-[var(--soft-mist)] px-4 py-3">
+        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#edf1f5] bg-[#f8faf9] px-5 py-4">
           <div>
-            <p className="text-sm font-bold tabular-nums text-[var(--midnight-navy)]">
-              Available cash: {formatMoney(openingTotal)}
+            <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-slate-500">
+              Available cash
+            </p>
+            <p className="mt-0.5 text-lg font-bold tabular-nums text-[#0b1220]">
+              {formatMoney(openingTotal)}
             </p>
             {form.floatSetAside !== "" &&
             Number(form.floatSetAside) > openingTotal ? (
               <p className="mt-1 text-xs font-semibold text-red-600">
-                Assignable float limit cannot be more than available cash.
+                Assignable float cannot exceed available cash.
               </p>
             ) : null}
           </div>
           <button
             type="button"
-            className="btn btn-primary h-9 text-xs"
+            className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#003f35] px-5 text-xs font-semibold text-white shadow-[0_12px_24px_rgba(0,63,53,0.22)] disabled:opacity-55"
             onClick={onOpen}
             disabled={!canOpen || !editableDate || !valid || opening}
           >
@@ -1658,12 +1707,22 @@ function OpeningView({
             ) : (
               <CheckCircle2 className="size-3.5" />
             )}
-            Open branch
+            Open branch day
           </button>
         </footer>
       </section>
 
       <aside className="space-y-3">
+        <div className="rounded-[16px] border border-[#e6ebf0] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+          <p className="text-[11px] font-bold uppercase tracking-[0.07em] text-amber-700">
+            Before you open
+          </p>
+          <ul className="mt-3 space-y-2.5 text-xs font-medium leading-5 text-slate-600">
+            <li>Confirm vault cash matches the opening balance.</li>
+            <li>Set float you are ready to issue to agents today.</li>
+            <li>Keep notes short — they appear on the close-day report.</li>
+          </ul>
+        </div>
         <StatusPanel
           icon={<LockKeyhole className="size-4" />}
           title={editableDate ? "Branch not open" : "Past day"}
@@ -1673,7 +1732,7 @@ function OpeningView({
         <StatusPanel
           icon={<ShieldCheck className="size-4" />}
           title="Opening formula"
-          value="Balance + cash"
+          value="Balance + cash added"
           tone="good"
         />
       </aside>
@@ -1744,94 +1803,167 @@ function OpenOperationView({
     operation.agentsReturnedCount === operation.agentsWithFloatCount;
   const cashPosition =
     operation.closingBalance ?? operation.branchCashRemaining;
-  const cashPositionHint =
-    operation.status === "CLOSED"
-      ? "Closing balance"
-      : "Float, returns, expenses";
   const unresolvedExpenses = operation.expenses.filter(
     (expense) => expense.approvedAt == null,
   ).length;
-  const attentionItems = [
+  const agentsOut = operation.agentsWithFloatCount;
+  const agentsBack = operation.agentsReturnedCount;
+  const attentionItems: AttentionItem[] = [
     pendingReturnsCount > 0
-      ? `${pendingReturnsCount} agent${pendingReturnsCount === 1 ? "" : "s"} not yet returned`
+      ? {
+          id: "pending-returns",
+          title: `${pendingReturnsCount} agent return${pendingReturnsCount === 1 ? "" : "s"} outstanding`,
+          detail: "Agents still out with float must hand cash back before close.",
+          tone: "red" as const,
+          action: "agent-return" as const,
+          actionLabel: "Record return",
+        }
       : null,
-    operation.floatRemaining > 0
-      ? `${formatMoney(operation.floatRemaining)} float still assignable`
+    operation.floatRemaining > 0 && editable
+      ? {
+          id: "float-left",
+          title: `${formatMoney(operation.floatRemaining)} float still unassigned`,
+          detail: "Assignable float is waiting in the vault for agents.",
+          tone: "gold" as const,
+          action: "issue-float" as const,
+          actionLabel: "Issue float",
+        }
       : null,
     unresolvedExpenses > 0
-      ? `${unresolvedExpenses} expense${unresolvedExpenses === 1 ? "" : "s"} pending approval`
+      ? {
+          id: "expenses-pending",
+          title: `${unresolvedExpenses} expense${unresolvedExpenses === 1 ? "" : "s"} need review`,
+          detail: "Recorded expenses are still pending approval or follow-up.",
+          tone: "blue" as const,
+          action: "expense" as const,
+          actionLabel: "Review",
+        }
       : null,
-  ].filter(Boolean) as string[];
+  ].filter(Boolean) as AttentionItem[];
 
   return (
-    <div className="space-y-4">
-      {canOperateBranch ? (
-        <div className="flex flex-wrap justify-end gap-2">
-          <ActionButton
-            icon={<PlusCircle className="size-4" />}
-            label="Add Top-up"
-            disabled={!editable || !canRecordTopUp}
-            onClick={() => onAction("top-up")}
-          />
-          <ActionButton
-            icon={<ReceiptText className="size-4" />}
-            label="Record Expense"
-            disabled={!editable || !canRecordExpense}
-            onClick={() => onAction("expense")}
-          />
-          <ActionButton
-            icon={<LockKeyhole className="size-4" />}
-            label="Close Day"
-            primary
-            disabled={!editable || !canClose || !allReturnsRecorded}
-            onClick={() => onAction("close-day")}
-          />
+    <div className="space-y-3">
+      <section className="rounded-[14px] border border-[#e6ebf0] bg-white px-3.5 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+        <div className="flex flex-wrap items-center justify-between gap-2.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <StatusChip
+              tone={operation.status === "OPEN" ? "green" : "slate"}
+              label={operation.status === "OPEN" ? "Open" : "Closed"}
+            />
+            <StatusChip
+              tone="slate"
+              label={`${agentsBack}/${agentsOut || 0} agents back`}
+            />
+            <StatusChip
+              tone={operation.floatRemaining > 0 ? "amber" : "slate"}
+              label={`${formatMoney(operation.floatRemaining)} float left`}
+            />
+            {pendingReturnsCount > 0 ? (
+              <StatusChip
+                tone="amber"
+                label={`${pendingReturnsCount} return${pendingReturnsCount === 1 ? "" : "s"} due`}
+              />
+            ) : null}
+          </div>
+          {canOperateBranch ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <ActionChip
+                icon={<PlusCircle className="size-3.5" />}
+                label="Top-up"
+                disabled={!editable || !canRecordTopUp}
+                onClick={() => onAction("top-up")}
+              />
+              <ActionChip
+                icon={<ReceiptText className="size-3.5" />}
+                label="Expense"
+                disabled={!editable || !canRecordExpense}
+                onClick={() => onAction("expense")}
+              />
+              <ActionChip
+                icon={<UserRoundPlus className="size-3.5" />}
+                label="Issue float"
+                disabled={
+                  !editable ||
+                  !canManageFloat ||
+                  loadingAgents ||
+                  assignableAgentsCount === 0 ||
+                  operation.floatRemaining <= 0
+                }
+                onClick={() => onAction("issue-float")}
+              />
+              <ActionChip
+                icon={<CircleDollarSign className="size-3.5" />}
+                label="Add float"
+                disabled={
+                  !editable ||
+                  !canManageFloat ||
+                  addFloatAgentsCount === 0 ||
+                  operation.floatRemaining <= 0
+                }
+                onClick={() => onAction("add-float")}
+              />
+              <ActionChip
+                icon={<RotateCcw className="size-3.5" />}
+                label="Return"
+                disabled={
+                  !editable || !canRecordReturn || pendingReturnsCount === 0
+                }
+                tone={pendingReturnsCount > 0 ? "amber" : "default"}
+                onClick={() => onAction("agent-return")}
+              />
+              <ActionChip
+                icon={<LockKeyhole className="size-3.5" />}
+                label="Close day"
+                primary
+                disabled={!editable || !canClose || !allReturnsRecorded}
+                onClick={() => onAction("close-day")}
+              />
+            </div>
+          ) : null}
         </div>
-      ) : null}
+      </section>
 
-      <section className="grid grid-cols-6 gap-1 sm:gap-1.5 xl:gap-2">
-        <OperationStat
-          label="Total opening balance"
-          value={formatMoney(operation.cashAvailableAtOpening)}
-          hint="Cash at start"
-          tone="good"
-          icon={<WalletCards className="size-4" />}
-        />
-        <OperationStat
-          label="Float distributed"
-          value={formatMoney(operation.floatIssued)}
-          hint="Given to agents"
-          tone="warn"
-          icon={<UserRoundPlus className="size-4" />}
-        />
-        <OperationStat
-          label="Branch cash available"
+      <section className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-5">
+        <DayTopStat
+          icon={<WalletCards className="size-5" />}
+          label="Vault cash"
           value={formatMoney(cashPosition)}
-          hint={cashPositionHint}
-          tone="blue"
-          icon={<Landmark className="size-4" />}
+          hint={`Opening ${formatMoney(operation.cashAvailableAtOpening)}`}
+          tooltip="Cash currently in the branch vault for this operations day."
+          tone="green"
         />
-        <OperationStat
-          label="Expenses today"
-          value={formatMoney(operation.expensesTotal)}
-          hint={`${operation.expensesCount} recorded`}
-          tone="bad"
-          icon={<ReceiptText className="size-4" />}
-        />
-        <OperationStat
-          label="Cash returned by agents"
-          value={formatMoney(operation.cashReturnedByAgents)}
-          hint={`${operation.agentsReturnedCount}/${operation.agentsWithFloatCount} returned`}
-          tone="blue"
-          icon={<RotateCcw className="size-4" />}
-        />
-        <OperationStat
-          label="Expected closing balance"
+        <DayTopStat
+          icon={<Landmark className="size-5" />}
+          label="Expected close"
           value={formatMoney(operation.expectedClosingBalance)}
-          hint="Projected cash"
-          tone="good"
-          icon={<ShieldCheck className="size-4" />}
-          featured
+          hint="Target in the vault"
+          tooltip="Expected vault balance after float, returns, and expenses."
+          tone="green"
+        />
+        <DayTopStat
+          icon={<UserRoundPlus className="size-5" />}
+          label="Float out"
+          value={formatMoney(operation.floatIssued)}
+          hint={`${formatMoney(operation.floatRemaining)} still assignable`}
+          tooltip="Total float issued to agents today, with how much remains to assign."
+          tone="gold"
+        />
+        <DayTopStat
+          icon={<RotateCcw className="size-5" />}
+          label="Cash returned"
+          value={formatMoney(operation.cashReturnedByAgents)}
+          hint={`${agentsBack} of ${agentsOut || 0} agents back`}
+          tooltip="Cash returned by agents so far today."
+          tone="blue"
+        />
+        <DayTopStat
+          icon={<Banknote className="size-5" />}
+          label="Collections"
+          value={formatMoney(operation.collectionsReceived)}
+          hint={`${operation.loansIssuedCount} loans · ${formatMoney(operation.expensesTotal)} expenses`}
+          tooltip="Collections received today, with loans issued and expenses recorded."
+          tone="violet"
+          className="sm:col-span-2 xl:col-span-1"
         />
       </section>
 
@@ -1856,46 +1988,47 @@ function OpenOperationView({
             onExport={onExportReport}
           />
         ) : (
-          <section className="panel bg-white p-4 text-sm font-semibold text-slate-500">
+          <section className="rounded-[14px] border border-[#e6ebf0] bg-white px-4 py-4 text-sm font-medium text-slate-500">
             Preparing close-day report...
           </section>
         )
       ) : null}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(360px,0.9fr)_minmax(0,1.45fr)]">
-        <div className="space-y-3">
-          <OpeningCashPanel
-            operation={operation}
-            onTopUp={() => onAction("top-up")}
-          />
-          <CashPositionPanel operation={operation} />
-          <RecentExpensesPanel
-            operation={operation}
-            onRecordExpense={() => onAction("expense")}
-          />
-        </div>
+      <section className="grid gap-3 xl:grid-cols-[0.95fr_1.35fr]">
+        <CashMovementCard operation={operation} />
+        <AgentFloatBoard
+          operation={operation}
+          onIssueFloat={
+            canOperateBranch ? () => onAction("issue-float") : undefined
+          }
+          canIssue={
+            editable &&
+            canManageFloat &&
+            !loadingAgents &&
+            assignableAgentsCount > 0 &&
+            operation.floatRemaining > 0
+          }
+        />
+      </section>
 
-        <div className="space-y-3">
-          <AgentFloatStatusPanel operation={operation} />
-          {canOperateBranch ? (
-            <QuickActionsPanel
-              editable={editable}
-              canManageFloat={canManageFloat}
-              canRecordReturn={canRecordReturn}
-              loadingAgents={loadingAgents}
-              assignableAgentsCount={assignableAgentsCount}
-              addFloatAgentsCount={addFloatAgentsCount}
-              pendingReturnsCount={pendingReturnsCount}
-              operation={operation}
-              onAction={onAction}
-            />
-          ) : null}
-          <AttentionPanel
-            items={attentionItems}
-            closed={!editable && operation.status === "CLOSED"}
-          />
-        </div>
-      </div>
+      <section className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+        <DayExpensesStrip
+          operation={operation}
+          onRecordExpense={() => onAction("expense")}
+          canRecord={editable && canRecordExpense}
+        />
+        <DayAttentionCard
+          items={attentionItems}
+          closed={!editable && operation.status === "CLOSED"}
+          canOperate={canOperateBranch && editable}
+          onAction={onAction}
+          onCloseDay={
+            canOperateBranch && editable && canClose && allReturnsRecorded
+              ? () => onAction("close-day")
+              : undefined
+          }
+        />
+      </section>
     </div>
   );
 }
@@ -1936,38 +2069,38 @@ function OperationReportSection({
   onExport: () => void;
 }) {
   return (
-    <section className="panel overflow-hidden bg-white shadow-[0_12px_30px_rgba(20,33,61,0.08)]">
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--line)] px-4 py-4">
+    <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[#edf1f5] bg-[#f8faf9]/80 px-5 py-4">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold tracking-[0.12em] text-[var(--forest-emerald)]">
-            Close-Day Report
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--forest-emerald)]">
+            Close-day report
           </p>
-          <h2 className="mt-1 text-lg font-bold text-[var(--midnight-navy)]">
+          <h2 className="mt-1 text-lg font-bold tracking-[-0.02em] text-[#0b1220]">
             {report.reportNumber}
           </h2>
-          <p className="mt-1 text-xs font-semibold text-slate-500">
+          <p className="mt-1 text-xs font-medium text-slate-500">
             {operation.branchName} · {formatDateOnly(report.operationDate)}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <ReportStatusBadge status={report.status} />
-          <div className="flex border border-[var(--line)] bg-[var(--soft-mist)] p-1">
+          <div className="flex rounded-xl border border-[#e6ebf0] bg-white p-1 shadow-[0_6px_16px_rgba(15,23,42,0.04)]">
             <ReportViewButton
               active={view === "report"}
               icon={<FileText className="size-3.5" />}
-              label="Computerised Report"
+              label="Summary"
               onClick={() => setView("report")}
             />
             <ReportViewButton
               active={view === "excel"}
               icon={<FileSpreadsheet className="size-3.5" />}
-              label="Excel View"
+              label="Ledger"
               onClick={() => setView("excel")}
             />
           </div>
           <button
             type="button"
-            className="btn btn-ghost h-10 text-xs"
+            className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#0b1220] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-50 disabled:opacity-55"
             disabled={exporting}
             onClick={onExport}
           >
@@ -2021,10 +2154,10 @@ function ReportViewButton({
   return (
     <button
       type="button"
-      className={`inline-flex h-8 items-center gap-2 px-3 text-xs font-bold transition ${
+      className={`inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs font-semibold transition ${
         active
-          ? "bg-white text-[var(--midnight-navy)] shadow-sm"
-          : "text-slate-500 hover:text-[var(--midnight-navy)]"
+          ? "bg-emerald-50 text-[var(--forest-emerald)]"
+          : "text-slate-500 hover:bg-[#f8faf9] hover:text-[#0b1220]"
       }`}
       onClick={onClick}
     >
@@ -2191,9 +2324,9 @@ function ExcelReportView({
   const finalRowNumber = rows.length + 6;
 
   return (
-    <div className="overflow-hidden border border-[#c6d2cc] bg-[#f3f7f5] shadow-inner">
-      <div className="flex items-center gap-2 border-b border-[#c6d2cc] bg-[#eef3f0] px-3 py-2 text-[11px] font-semibold text-slate-600">
-        <span className="border border-[#c6d2cc] bg-white px-2 py-1 text-[10px] font-bold text-slate-500">
+    <div className="overflow-hidden rounded-[14px] border border-[#d7e3de] bg-[#f3f7f5] shadow-[inset_0_1px_0_rgba(255,255,255,0.7)]">
+      <div className="flex items-center gap-2 border-b border-[#d7e3de] bg-[#eef3f0] px-3.5 py-2.5 text-[11px] font-semibold text-slate-600">
+        <span className="rounded-md border border-[#d7e3de] bg-white px-2 py-1 text-[10px] font-bold text-slate-500">
           fx
         </span>
         <span className="min-w-0 truncate">
@@ -2444,16 +2577,14 @@ function ReportReviewPanel({
   const waitingForOwner = report.status === "SENT_TO_OWNER";
 
   return (
-    <aside className="border border-[var(--line)] bg-[var(--soft-mist)] p-4">
+    <aside className="rounded-[14px] border border-[#e6ebf0] bg-[#f8faf9] p-4">
       <div className="flex items-start gap-3">
-        <span className="grid size-9 shrink-0 place-items-center border border-emerald-100 bg-white text-[var(--forest-emerald)]">
+        <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white text-[var(--forest-emerald)] shadow-[0_6px_16px_rgba(15,23,42,0.05)]">
           <ClipboardCheck className="size-4" />
         </span>
         <div>
-          <p className="text-sm font-bold text-[var(--midnight-navy)]">
-            Review Flow
-          </p>
-          <p className="mt-1 text-xs font-semibold text-slate-500">
+          <p className="text-sm font-bold text-[#0b1220]">Review flow</p>
+          <p className="mt-1 text-xs font-medium leading-5 text-slate-500">
             {reportStatusHelp(report.status)}
           </p>
         </div>
@@ -2477,13 +2608,13 @@ function ReportReviewPanel({
       {waitingForManager && canReviewReport ? (
         <div className="mt-4 space-y-3">
           <TextAreaField
-            label="Manager Notes"
+            label="Manager notes"
             value={managerNotes}
             onChange={setManagerNotes}
           />
           <button
             type="button"
-            className="btn btn-primary h-10 w-full text-xs"
+            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#003f35] text-xs font-semibold text-white shadow-[0_12px_24px_rgba(0,63,53,0.22)] disabled:opacity-55"
             disabled={reviewing}
             onClick={onManagerConfirm}
           >
@@ -2492,7 +2623,7 @@ function ReportReviewPanel({
             ) : (
               <Send className="size-3.5" />
             )}
-            Send To Owner
+            Send to owner
           </button>
         </div>
       ) : null}
@@ -2500,13 +2631,13 @@ function ReportReviewPanel({
       {waitingForOwner && canApproveReport ? (
         <div className="mt-4 space-y-3">
           <TextAreaField
-            label="Owner Notes"
+            label="Owner notes"
             value={ownerNotes}
             onChange={setOwnerNotes}
           />
           <button
             type="button"
-            className="btn btn-primary h-10 w-full text-xs"
+            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#003f35] text-xs font-semibold text-white shadow-[0_12px_24px_rgba(0,63,53,0.22)] disabled:opacity-55"
             disabled={approving}
             onClick={onOwnerApprove}
           >
@@ -2515,7 +2646,7 @@ function ReportReviewPanel({
             ) : (
               <CheckCircle2 className="size-3.5" />
             )}
-            Approve Report
+            Approve report
           </button>
         </div>
       ) : null}
@@ -2536,20 +2667,20 @@ function ReportMetric({
 }) {
   return (
     <div
-      className={`border px-2 py-2 ${
+      className={`rounded-xl border px-3 py-2.5 ${
         highlight
           ? "border-emerald-200 bg-emerald-50"
           : danger
             ? "border-amber-200 bg-amber-50"
-            : "border-[var(--line)] bg-[var(--soft-mist)]"
+            : "border-[#e6ebf0] bg-[#f8faf9]"
       }`}
     >
-      <p className="text-[10px] font-bold text-slate-500">{label}</p>
+      <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+        {label}
+      </p>
       <p
         className={`mt-1 break-words text-sm font-bold tabular-nums ${
-          highlight
-            ? "text-[var(--forest-emerald)]"
-            : "text-[var(--midnight-navy)]"
+          highlight ? "text-[var(--forest-emerald)]" : "text-[#0b1220]"
         }`}
       >
         {value}
@@ -2566,11 +2697,11 @@ function ReportBlock({
   children: ReactNode;
 }) {
   return (
-    <section className="border border-[var(--line)]">
-      <header className="border-b border-[var(--line)] bg-[#e5ece8] px-3 py-2">
-        <p className="text-xs font-bold text-[var(--midnight-navy)]">{title}</p>
+    <section className="overflow-hidden rounded-[14px] border border-[#e6ebf0] bg-white">
+      <header className="border-b border-[#edf1f5] bg-[#f8faf9] px-3.5 py-2.5">
+        <p className="text-xs font-bold text-[#0b1220]">{title}</p>
       </header>
-      <div className="space-y-2 p-3">{children}</div>
+      <div className="space-y-1.5 p-3.5">{children}</div>
     </section>
   );
 }
@@ -2585,12 +2716,14 @@ function ReportMiniStat({
   hint: string;
 }) {
   return (
-    <div>
-      <p className="text-[10px] font-bold text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-bold tabular-nums text-[var(--midnight-navy)]">
+    <div className="rounded-xl border border-[#edf1f5] bg-[#fbfcfd] px-3 py-2.5">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+        {label}
+      </p>
+      <p className="mt-1 text-sm font-bold tabular-nums text-[#0b1220]">
         {value}
       </p>
-      <p className="mt-0.5 truncate text-[10px] font-semibold text-slate-500">
+      <p className="mt-0.5 truncate text-[11px] font-medium text-slate-500">
         {hint}
       </p>
     </div>
@@ -2616,7 +2749,7 @@ function ReportAgentTable({ operation }: { operation: DailyOperation }) {
               <th className="w-[15%] pl-2 py-1 text-right">Returned</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[var(--line)]">
+          <tbody className="divide-y divide-[#edf1f5]">
             {operation.agentReturns.map((agentReturn) => (
               <tr key={agentReturn.floatId}>
                 <td className="py-2 pr-2">
@@ -2700,11 +2833,11 @@ function ReportRecordList({
 
 function ReportDetail({ label, value }: { label: string; value: string }) {
   return (
-    <div className="border border-[var(--line)] bg-white px-3 py-2">
-      <p className="text-[10px] font-bold text-slate-500">{label}</p>
-      <p className="mt-1 truncate font-bold text-[var(--midnight-navy)]">
-        {value}
+    <div className="rounded-xl border border-[#e6ebf0] bg-[#f8faf9] px-3 py-2.5">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+        {label}
       </p>
+      <p className="mt-1 truncate text-sm font-bold text-[#0b1220]">{value}</p>
     </div>
   );
 }
@@ -2721,17 +2854,23 @@ function ReviewStamp({
   note: string | null;
 }) {
   return (
-    <div className="border-t border-[var(--line)] pt-3">
-      <p className="text-[10px] font-bold text-slate-500">{label}</p>
-      <p className="mt-1 text-sm font-bold text-[var(--midnight-navy)]">
+    <div className="rounded-xl border border-[#e6ebf0] bg-white px-3 py-3">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.05em] text-slate-500">
+        {label}
+      </p>
+      <p className="mt-1 text-sm font-bold text-[#0b1220]">
         {name ?? "Pending"}
       </p>
       {date ? (
-        <p className="mt-0.5 text-[10px] font-semibold text-slate-500">
+        <p className="mt-0.5 text-[11px] font-medium text-slate-500">
           {formatDateTime(date)}
         </p>
       ) : null}
-      {note ? <p className="mt-2 text-xs text-slate-600">{note}</p> : null}
+      {note ? (
+        <p className="mt-2 text-xs font-medium leading-5 text-slate-600">
+          {note}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -2745,33 +2884,66 @@ function ReportStatusBadge({ status }: { status: OperationReportStatus }) {
         ? "border-sky-200 bg-sky-50 text-sky-700"
         : status === "RETURNED_TO_MANAGER"
           ? "border-amber-200 bg-amber-50 text-amber-700"
-          : "border-slate-200 bg-[var(--soft-mist)] text-slate-600";
+          : "border-[#e6ebf0] bg-[#f8faf9] text-slate-600";
   return (
-    <span className={`inline-flex px-3 py-2 text-xs font-bold ${className}`}>
+    <span
+      className={`inline-flex rounded-xl border px-3 py-2 text-xs font-bold ${className}`}
+    >
       {label}
     </span>
   );
 }
 
-function ActionButton({
+function StatusChip({
+  label,
+  tone = "slate",
+}: {
+  label: string;
+  tone?: "slate" | "green" | "amber" | "rose" | "blue";
+}) {
+  const tones = {
+    slate: "border-[#e6ebf0] bg-[#f8fafc] text-slate-600",
+    green: "border-emerald-200 bg-emerald-50 text-[#0c6b4f]",
+    amber: "border-amber-200 bg-amber-50 text-amber-800",
+    rose: "border-rose-200 bg-rose-50 text-rose-700",
+    blue: "border-sky-200 bg-sky-50 text-sky-800",
+  } as const;
+  return (
+    <span
+      className={`inline-flex h-7 items-center rounded-full border px-2.5 text-[11px] font-semibold ${tones[tone]}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+function ActionChip({
   icon,
   label,
   disabled,
   primary = false,
+  tone = "default",
   onClick,
 }: {
   icon: ReactNode;
   label: string;
   disabled?: boolean;
   primary?: boolean;
+  tone?: "default" | "amber";
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
-      className={`${primary ? "btn btn-primary" : "btn btn-ghost"} h-10 min-w-[136px] text-xs shadow-[0_8px_20px_rgba(20,33,61,0.05)]`}
       disabled={disabled}
       onClick={onClick}
+      className={`inline-flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-semibold transition disabled:cursor-not-allowed disabled:opacity-40 ${
+        primary
+          ? "bg-[#003f35] text-white hover:brightness-110"
+          : tone === "amber"
+            ? "border border-amber-200 bg-amber-50 text-amber-900 hover:bg-amber-100"
+            : "border border-[#e6ebf0] bg-white text-[#0b1220] hover:border-emerald-200 hover:bg-emerald-50/70"
+      }`}
     >
       {icon}
       {label}
@@ -2779,316 +2951,567 @@ function ActionButton({
   );
 }
 
-function OpeningCashPanel({
+function DayTopStat({
+  icon,
+  label,
+  value,
+  hint,
+  tooltip,
+  tone,
+  className = "",
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  hint: string;
+  tooltip: string;
+  tone: "green" | "blue" | "violet" | "gold";
+  className?: string;
+}) {
+  const toneClass = {
+    green: "bg-[#e9f8ef] text-[#07885f]",
+    blue: "bg-[#eaf4ff] text-[#2078dc]",
+    violet: "bg-[#f2eaff] text-[#8b4ee8]",
+    gold: "bg-[#fff3df] text-[#f28a17]",
+  }[tone];
+
+  return (
+    <div className={`min-w-0 ${className}`}>
+      <Tooltip label={tooltip} block>
+        <article className="flex h-full min-h-[88px] w-full min-w-0 items-center gap-2.5 rounded-[13px] border border-[#e6ebf0] bg-white px-3 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
+          <span
+            className={`grid size-10 shrink-0 place-items-center rounded-xl ${toneClass}`}
+          >
+            {icon}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[11px] font-medium text-slate-500">
+              {label}
+            </p>
+            <p className="mt-1 min-w-0 break-words text-[clamp(0.72rem,0.9vw,1rem)] font-bold leading-tight tabular-nums text-[#0b1220]">
+              {value}
+            </p>
+            <p className="mt-1 truncate text-[11px] font-medium text-slate-500">
+              {hint}
+            </p>
+          </div>
+        </article>
+      </Tooltip>
+    </div>
+  );
+}
+
+function CashMovementCard({ operation }: { operation: DailyOperation }) {
+  const rows = [
+    {
+      label: "Previous close",
+      detail: "Opening vault",
+      amount: operation.openingBalance,
+      signed: "neutral" as const,
+      tone: "slate" as const,
+    },
+    {
+      label: "Top-ups",
+      detail: `${operation.topUpsCount} recorded`,
+      amount: operation.topUpsTotal ?? operation.cashAddedToday,
+      signed: "plus" as const,
+      tone: "green" as const,
+    },
+    {
+      label: "Float out",
+      detail: `${operation.agentsWithFloatCount} agent${operation.agentsWithFloatCount === 1 ? "" : "s"}`,
+      amount: operation.floatIssued,
+      signed: "minus" as const,
+      tone: "amber" as const,
+    },
+    {
+      label: "Returns in",
+      detail: `${operation.agentsReturnedCount} back`,
+      amount: operation.cashReturnedByAgents,
+      signed: "plus" as const,
+      tone: "blue" as const,
+    },
+    {
+      label: "Expenses",
+      detail: `${operation.expensesCount} logged`,
+      amount: operation.expensesTotal,
+      signed: "minus" as const,
+      tone: "rose" as const,
+    },
+  ];
+
+  const dot = {
+    slate: "bg-slate-300",
+    green: "bg-[#19a876]",
+    amber: "bg-amber-500",
+    blue: "bg-sky-500",
+    rose: "bg-rose-500",
+  } as const;
+  const amountTone = {
+    slate: "text-[#0b1220]",
+    green: "text-[var(--forest-emerald)]",
+    amber: "text-amber-700",
+    blue: "text-sky-700",
+    rose: "text-rose-700",
+  } as const;
+
+  return (
+    <section className="rounded-[14px] border border-[#e6ebf0] bg-white p-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-[#0b1220]">Cash movement</p>
+          <p className="mt-0.5 truncate text-[10px] font-medium text-slate-500">
+            {operation.openedByName} · {formatDateTime(operation.openedAt)}
+          </p>
+        </div>
+        <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-2 py-1 text-right">
+          <p className="text-[9px] font-semibold uppercase tracking-[0.04em] text-[#0c6b4f]">
+            Close
+          </p>
+          <p className="text-[11px] font-bold tabular-nums text-[var(--forest-emerald)]">
+            {formatCompactMoney(operation.expectedClosingBalance)}
+          </p>
+        </div>
+      </div>
+
+      <div className="mt-2.5 grid grid-cols-[1fr_88px] gap-2 border-b border-[#edf1f5] pb-1.5 text-[10px] font-medium text-slate-500">
+        <span>Line item</span>
+        <span className="text-right">Amount</span>
+      </div>
+      <div className="divide-y divide-[#edf1f5]">
+        {rows.map((row) => (
+          <div
+            key={row.label}
+            className="grid grid-cols-[1fr_88px] items-center gap-2 py-1.5"
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <span
+                className={`size-1.5 shrink-0 rounded-full ${dot[row.tone]}`}
+              />
+              <div className="min-w-0">
+                <p className="truncate text-[11px] font-semibold text-[#0b1220]">
+                  {row.label}
+                </p>
+                <p className="truncate text-[10px] font-medium text-slate-500">
+                  {row.detail}
+                </p>
+              </div>
+            </div>
+            <p
+              className={`text-right text-[11px] font-bold tabular-nums ${amountTone[row.tone]}`}
+            >
+              {row.signed === "plus"
+                ? `+${formatCompactMoney(row.amount)}`
+                : row.signed === "minus"
+                  ? `−${formatCompactMoney(row.amount)}`
+                  : formatCompactMoney(row.amount)}
+            </p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AgentFloatBoard({
   operation,
-  onTopUp,
+  onIssueFloat,
+  canIssue,
 }: {
   operation: DailyOperation;
-  onTopUp: () => void;
+  onIssueFloat?: () => void;
+  canIssue?: boolean;
 }) {
-  const latestTopUps = operation.topUps.slice(0, 3);
+  const pendingCount = operation.agentReturns.filter(
+    (row) => row.status === "PENDING",
+  ).length;
+
   return (
-    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
-      <RecordHeader
-        icon={<WalletCards className="size-4" />}
-        title="Opening Cash"
-      />
-      <div className="space-y-2 px-4 pb-4 pt-3">
-        <StatementRow
-          label="Previous closing balance"
-          value={formatMoney(operation.openingBalance)}
-        />
-        <StatementRow
-          label="Top-ups added today"
-          value={formatMoney(operation.topUpsTotal ?? operation.cashAddedToday)}
-        />
-        <StatementRow label="Opened by" value={operation.openedByName} muted />
-        <StatementRow
-          label="Opened at"
-          value={formatDateTime(operation.openedAt)}
-          muted
-        />
-        <div className="border-t border-[var(--line)] pt-3">
-          <StatementRow
-            label="Total opening balance"
-            value={formatMoney(operation.cashAvailableAtOpening)}
-            strong
-          />
+    <section className="rounded-[14px] border border-[#e6ebf0] bg-white p-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-[#0b1220]">Agent float</p>
+          <p className="mt-0.5 text-[10px] font-medium text-slate-500">
+            {operation.agentReturns.length} agent
+            {operation.agentReturns.length === 1 ? "" : "s"} ·{" "}
+            {formatCompactMoney(operation.floatIssued)} issued
+            {pendingCount > 0 ? ` · ${pendingCount} pending` : ""}
+          </p>
         </div>
-        <button
-          type="button"
-          className="mt-1 inline-flex items-center gap-1 text-xs font-bold text-[var(--forest-emerald)]"
-          onClick={onTopUp}
-        >
-          View top-ups
-          <span aria-hidden>›</span>
-        </button>
-        {latestTopUps.length > 0 ? (
-          <div className="mt-2 space-y-1.5 border-t border-[var(--line)] pt-3">
-            {latestTopUps.map((topUp) => (
-              <MiniRecord
-                key={topUp.id}
-                label={topUp.description || "Cash top-up"}
-                value={formatMoney(topUp.amount)}
-                meta={formatClock(topUp.addedAt)}
-              />
-            ))}
-          </div>
+        {onIssueFloat ? (
+          <ActionChip
+            icon={<UserRoundPlus className="size-3.5" />}
+            label="Issue"
+            primary
+            disabled={!canIssue}
+            onClick={onIssueFloat}
+          />
         ) : null}
       </div>
-    </section>
-  );
-}
 
-function CashPositionPanel({ operation }: { operation: DailyOperation }) {
-  return (
-    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
-      <RecordHeader
-        icon={<Landmark className="size-4" />}
-        title="Today's Cash Position"
-      />
-      <div className="space-y-2 px-4 pb-4 pt-3">
-        <StatementRow
-          label="Float distributed"
-          value={formatMoney(operation.floatIssued)}
-        />
-        <StatementRow
-          label="Branch expenses"
-          value={formatMoney(operation.expensesTotal)}
-        />
-        <StatementRow
-          label="Cash returned by agents"
-          value={formatMoney(operation.cashReturnedByAgents)}
-        />
-        <StatementRow
-          label="Branch repayments"
-          value={formatMoney(operation.collectionsReceived)}
-        />
-        <StatementRow
-          label="Loan processing fees"
-          value={formatMoney(operation.processingFeesTotal)}
-        />
-        <StatementRow
-          label="Loans issued"
-          value={formatMoney(operation.loansIssuedPrincipal)}
-          danger
-        />
-        <div className="border-t border-[var(--line)] pt-3">
-          <StatementRow
-            label="Expected closing balance"
-            value={formatMoney(operation.expectedClosingBalance)}
-            strong
-          />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function RecentExpensesPanel({
-  operation,
-  onRecordExpense,
-}: {
-  operation: DailyOperation;
-  onRecordExpense: () => void;
-}) {
-  const latestExpenses = operation.expenses.slice(0, 3);
-  return (
-    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
-      <RecordHeader
-        icon={<ReceiptText className="size-4" />}
-        title="Recent Expenses"
-        end={formatMoney(operation.expensesTotal)}
-      />
-      <div className="px-4 pb-4 pt-3">
-        {latestExpenses.length === 0 ? (
-          <p className="py-3 text-sm text-slate-500">
-            No expenses recorded for this day.
-          </p>
-        ) : (
-          <div className="space-y-2">
-            {latestExpenses.map((expense) => (
-              <MiniRecord
-                key={expense.id}
-                label={categoryLabel(expense.category)}
-                value={formatMoney(expense.amount)}
-                meta={formatClock(expense.incurredAt)}
-                status="Recorded"
-              />
-            ))}
-          </div>
-        )}
-        <button
-          type="button"
-          className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-[var(--forest-emerald)]"
-          onClick={onRecordExpense}
-        >
-          View all expenses
-          <span aria-hidden>›</span>
-        </button>
-      </div>
-    </section>
-  );
-}
-
-function AgentFloatStatusPanel({ operation }: { operation: DailyOperation }) {
-  return (
-    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
-      <RecordHeader
-        icon={<UserRoundPlus className="size-4" />}
-        title="Agent Float Status"
-      />
       {operation.agentReturns.length === 0 ? (
-        <div className="px-4 py-8 text-sm text-slate-500">
-          No agent has received float for this day.
+        <div className="mt-2.5 rounded-xl border border-dashed border-[#e6ebf0] bg-[#fbfcfd] px-3 py-5 text-center">
+          <p className="text-xs font-semibold text-[#0b1220]">
+            No float issued yet
+          </p>
+          <p className="mt-1 text-[10px] font-medium text-slate-500">
+            Issue float to start tracking field cash.
+          </p>
+          {onIssueFloat ? (
+            <div className="mt-2.5 flex justify-center">
+              <ActionChip
+                icon={<UserRoundPlus className="size-3.5" />}
+                label="Issue first float"
+                disabled={!canIssue}
+                onClick={onIssueFloat}
+              />
+            </div>
+          ) : null}
         </div>
       ) : (
-        <table className="w-full table-fixed text-left text-[11px]">
-          <thead className="border-y border-[var(--line)] bg-[#e5ece8] text-[9px] font-semibold text-slate-500">
-            <tr>
-              <th className="w-[22%] px-3 py-2">Agent</th>
-              <th className="w-[15%] px-2 py-2 text-right">Float Received</th>
-              <th className="w-[14%] px-2 py-2 text-right">Loans Issued</th>
-              <th className="w-[14%] px-2 py-2 text-right">Collections</th>
-              <th className="w-[14%] px-2 py-2 text-right">Fees</th>
-              <th className="w-[14%] px-2 py-2 text-right">Handover</th>
-              <th className="w-[7%] px-2 py-2 text-right">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--line)]">
+        <>
+          <div className="mt-2.5 hidden grid-cols-[minmax(0,1.25fr)_repeat(4,minmax(0,0.7fr))_68px] gap-2 border-b border-[#edf1f5] bg-[#f8faf9] px-2 py-1.5 text-[10px] font-semibold text-slate-500 sm:grid">
+            <span>Agent</span>
+            <span className="text-right">Float</span>
+            <span className="text-right">Loans</span>
+            <span className="text-right">Collected</span>
+            <span className="text-right">Handover</span>
+            <span className="text-right">Status</span>
+          </div>
+          <div className="divide-y divide-[#edf1f5]">
             {operation.agentReturns.map((agentReturn) => (
-              <tr
+              <div
                 key={agentReturn.floatId}
-                className="bg-white even:bg-[#fbfdfc]"
+                className={`grid gap-2 px-2 py-2 sm:grid-cols-[minmax(0,1.25fr)_repeat(4,minmax(0,0.7fr))_68px] sm:items-center ${
+                  agentReturn.status === "PENDING"
+                    ? "bg-amber-50/35"
+                    : agentReturn.status === "SHORT"
+                      ? "bg-red-50/35"
+                      : agentReturn.status === "RETURNED"
+                        ? "bg-emerald-50/25"
+                        : ""
+                }`}
               >
-                <td className="px-3 py-2.5">
-                  <p className="truncate font-bold text-[var(--midnight-navy)]">
-                    {agentReturn.agentName}
-                  </p>
-                  <p className="truncate text-[10px] text-slate-500">
-                    {agentReturn.agentPublicId ?? "No agent id"}
-                  </p>
-                </td>
-                <TableMoney value={agentReturn.amountGiven} />
-                <TableMoney value={agentReturn.amountDisbursed} />
-                <TableMoney value={agentReturn.amountCollected} />
-                <TableMoney value={agentReturn.processingFees} />
-                <TableMoney value={agentReturn.expectedReturn} strong />
-                <td className="px-2 py-2.5 text-right">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span
+                    className={`grid size-7 shrink-0 place-items-center rounded-lg text-[10px] font-bold ${
+                      agentReturn.status === "RETURNED"
+                        ? "bg-[#e9f8ef] text-[#07885f]"
+                        : agentReturn.status === "PENDING"
+                          ? "bg-[#fff3df] text-[#f28a17]"
+                          : agentReturn.status === "SHORT"
+                            ? "bg-red-50 text-red-600"
+                            : "bg-[#eaf4ff] text-[#2078dc]"
+                    }`}
+                  >
+                    {agentInitials(agentReturn.agentName)}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-[11px] font-semibold text-[#0b1220]">
+                      {agentReturn.agentName}
+                    </p>
+                    <p className="truncate text-[10px] font-medium text-slate-500">
+                      {agentReturn.agentPublicId ?? "No agent id"}
+                    </p>
+                  </div>
+                </div>
+                <AgentTableCell label="Float" value={agentReturn.amountGiven} />
+                <AgentTableCell
+                  label="Loans"
+                  value={agentReturn.amountDisbursed}
+                />
+                <AgentTableCell
+                  label="Collected"
+                  value={agentReturn.amountCollected}
+                />
+                <AgentTableCell
+                  label="Handover"
+                  value={agentReturn.expectedReturn}
+                  strong
+                />
+                <div className="flex justify-start sm:justify-end">
                   <ReturnBadge status={agentReturn.status} />
-                </td>
-              </tr>
+                </div>
+              </div>
             ))}
-          </tbody>
-        </table>
+          </div>
+        </>
       )}
     </section>
   );
 }
 
-function QuickActionsPanel({
-  editable,
-  canManageFloat,
-  canRecordReturn,
-  loadingAgents,
-  assignableAgentsCount,
-  addFloatAgentsCount,
-  pendingReturnsCount,
-  operation,
-  onAction,
+function AgentTableCell({
+  label,
+  value,
+  strong = false,
 }: {
-  editable: boolean;
-  canManageFloat: boolean;
-  canRecordReturn: boolean;
-  loadingAgents: boolean;
-  assignableAgentsCount: number;
-  addFloatAgentsCount: number;
-  pendingReturnsCount: number;
-  operation: DailyOperation;
-  onAction: (panel: Exclude<OperationActionPanel, null>) => void;
+  label: string;
+  value: number;
+  strong?: boolean;
 }) {
   return (
-    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
-      <RecordHeader icon={<Send className="size-4" />} title="Quick Actions" />
-      <div className="grid gap-2 p-3 sm:grid-cols-3">
-        <QuickActionButton
-          icon={<UserRoundPlus className="size-4" />}
-          label="Issue Float"
-          hint={
-            loadingAgents
-              ? "Loading agents"
-              : `${assignableAgentsCount} available`
-          }
-          disabled={
-            !editable ||
-            !canManageFloat ||
-            loadingAgents ||
-            assignableAgentsCount === 0 ||
-            operation.floatRemaining <= 0
-          }
-          onClick={() => onAction("issue-float")}
-        />
-        <QuickActionButton
-          icon={<CircleDollarSign className="size-4" />}
-          label="Add More Float"
-          hint={`${formatMoney(operation.floatRemaining)} left`}
-          disabled={
-            !editable ||
-            !canManageFloat ||
-            addFloatAgentsCount === 0 ||
-            operation.floatRemaining <= 0
-          }
-          onClick={() => onAction("add-float")}
-        />
-        <QuickActionButton
-          icon={<RotateCcw className="size-4" />}
-          label="Record Agent Return"
-          hint={`${pendingReturnsCount} pending`}
-          disabled={!editable || !canRecordReturn || pendingReturnsCount === 0}
-          onClick={() => onAction("agent-return")}
+    <div className="flex items-center justify-between gap-2 sm:block sm:text-right">
+      <span className="text-[10px] font-medium text-slate-400 sm:hidden">
+        {label}
+      </span>
+      <p
+        className={`text-[11px] tabular-nums ${
+          strong
+            ? "font-bold text-[var(--forest-emerald)]"
+            : "font-semibold text-[#111827]"
+        }`}
+      >
+        {formatCompactMoney(value)}
+      </p>
+    </div>
+  );
+}
+
+function agentInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "A";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0] ?? ""}${parts[1][0] ?? ""}`.toUpperCase();
+}
+
+function DayExpensesStrip({
+  operation,
+  onRecordExpense,
+  canRecord,
+}: {
+  operation: DailyOperation;
+  onRecordExpense: () => void;
+  canRecord: boolean;
+}) {
+  const latest = operation.expenses.slice(0, 8);
+  return (
+    <section className="rounded-[14px] border border-[#e6ebf0] bg-white p-3.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-sm font-bold text-[#0b1220]">Expenses</p>
+          <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+            {operation.expensesCount} recorded ·{" "}
+            {formatMoney(operation.expensesTotal)}
+          </p>
+        </div>
+        <ActionChip
+          icon={<ReceiptText className="size-3.5" />}
+          label="Record"
+          disabled={!canRecord}
+          onClick={onRecordExpense}
         />
       </div>
+
+      {latest.length === 0 ? (
+        <div className="mt-3 rounded-xl border border-dashed border-[#e6ebf0] bg-[#fbfcfd] px-4 py-6 text-center">
+          <p className="text-xs font-semibold text-[#0b1220]">No expenses yet</p>
+          <p className="mt-1 text-[11px] font-medium text-slate-500">
+            Transport, meals and other day costs will show here.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="mt-3 grid grid-cols-[1fr_96px_64px_72px] gap-2 border-b border-[#edf1f5] pb-2 text-[10px] font-medium text-slate-500">
+            <span>Category</span>
+            <span className="text-right">Amount</span>
+            <span className="text-right">Time</span>
+            <span className="text-right">Status</span>
+          </div>
+          <div className="divide-y divide-[#edf1f5]">
+            {latest.map((expense) => (
+              <div
+                key={expense.id}
+                className="grid grid-cols-[1fr_96px_64px_72px] items-center gap-2 py-2"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-[11px] font-semibold text-[#0b1220]">
+                    {categoryLabel(expense.category)}
+                  </p>
+                  <p className="truncate text-[10px] font-medium text-slate-500">
+                    {expense.description?.trim() || expense.recordedByName}
+                  </p>
+                </div>
+                <p className="text-right text-[11px] font-bold tabular-nums text-[#0b1220]">
+                  {formatCompactMoney(expense.amount)}
+                </p>
+                <p className="text-right text-[10px] font-medium tabular-nums text-slate-500">
+                  {formatClock(expense.incurredAt)}
+                </p>
+                <div className="flex justify-end">
+                  <span
+                    className={`inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${
+                      expense.approvedAt
+                        ? "border-emerald-200 bg-emerald-50 text-[var(--forest-emerald)]"
+                        : "border-amber-200 bg-amber-50 text-amber-700"
+                    }`}
+                  >
+                    {expense.approvedAt ? "Approved" : "Pending"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </section>
   );
 }
 
-function AttentionPanel({
+function DayAttentionCard({
   items,
   closed,
+  canOperate,
+  onAction,
+  onCloseDay,
 }: {
-  items: string[];
+  items: AttentionItem[];
   closed: boolean;
+  canOperate: boolean;
+  onAction: (panel: Exclude<OperationActionPanel, null>) => void;
+  onCloseDay?: () => void;
 }) {
+  const clear = !closed && items.length === 0;
+  const urgentCount = items.filter((item) => item.tone === "red").length;
+
   return (
-    <section className="panel border-amber-200 bg-amber-50/70 p-4">
-      <div className="flex items-start gap-3">
-        <span className="grid size-9 shrink-0 place-items-center border border-amber-200 bg-white text-amber-700">
-          <ClipboardCheck className="size-4" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-bold text-[var(--midnight-navy)]">
-            Attention Needed
-          </p>
-          {closed ? (
-            <p className="mt-1 text-xs font-semibold text-[var(--forest-emerald)]">
-              This day is closed.
+    <section
+      className={`overflow-hidden rounded-[14px] border shadow-[0_8px_18px_rgba(15,23,42,0.045)] ${
+        closed || clear
+          ? "border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-white"
+          : urgentCount > 0
+            ? "border-red-200 bg-gradient-to-br from-red-50 via-white to-white"
+            : "border-amber-200 bg-gradient-to-br from-amber-50 via-white to-white"
+      }`}
+    >
+      <header className="flex items-start justify-between gap-3 border-b border-black/5 px-3.5 py-3">
+        <div className="flex min-w-0 items-start gap-2.5">
+          <span
+            className={`grid size-9 shrink-0 place-items-center rounded-xl border bg-white ${
+              closed || clear
+                ? "border-emerald-200 text-[var(--forest-emerald)]"
+                : urgentCount > 0
+                  ? "border-red-200 text-red-600"
+                  : "border-amber-200 text-amber-700"
+            }`}
+          >
+            {closed || clear ? (
+              <CheckCircle2 className="size-4" />
+            ) : (
+              <AlertTriangle className="size-4" />
+            )}
+          </span>
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-[#0b1220]">
+              {closed
+                ? "Day complete"
+                : clear
+                  ? "All clear"
+                  : "Needs attention"}
             </p>
-          ) : items.length === 0 ? (
-            <p className="mt-1 text-xs font-semibold text-[var(--forest-emerald)]">
-              No attention needed right now.
+            <p className="mt-0.5 text-[11px] font-medium text-slate-600">
+              {closed
+                ? "Review and send the close-day report when ready."
+                : clear
+                  ? "No blockers — close the day when agents are back."
+                  : `${items.length} issue${items.length === 1 ? "" : "s"} blocking a clean close.`}
             </p>
-          ) : (
-            <ul className="mt-2 space-y-1 text-xs font-semibold text-amber-800">
-              {items.map((item) => (
-                <li key={item} className="flex gap-2">
-                  <span className="mt-1 size-1.5 shrink-0 rounded-full bg-amber-500" />
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+          </div>
         </div>
+        <StatusChip
+          tone={closed || clear ? "green" : urgentCount > 0 ? "rose" : "amber"}
+          label={
+            closed
+              ? "Closed"
+              : clear
+                ? "Clear"
+                : urgentCount > 0
+                  ? "Urgent"
+                  : "Watch"
+          }
+        />
+      </header>
+
+      <div className="space-y-2 p-3.5">
+        {closed || clear ? (
+          <div className="flex items-center gap-3 rounded-xl border border-emerald-100 bg-white/80 px-3 py-2.5">
+            <span className="grid size-8 shrink-0 place-items-center rounded-xl bg-emerald-50 text-[var(--forest-emerald)]">
+              <ShieldCheck className="size-4" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-semibold text-[#0b1220]">
+                {closed ? "Operations day sealed" : "Ready for close"}
+              </p>
+              <p className="mt-0.5 text-[11px] font-medium text-slate-500">
+                {closed
+                  ? "Cash, float and returns are locked for this day."
+                  : "Float and returns look healthy right now."}
+              </p>
+            </div>
+          </div>
+        ) : (
+          items.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              disabled={!canOperate || !item.action}
+              onClick={() => {
+                if (item.action) onAction(item.action);
+              }}
+              className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition disabled:cursor-default ${
+                item.tone === "red"
+                  ? "border-red-100 bg-red-50/90 hover:bg-red-50"
+                  : item.tone === "gold"
+                    ? "border-amber-100 bg-amber-50/90 hover:bg-amber-50"
+                    : "border-sky-100 bg-sky-50/90 hover:bg-sky-50"
+              }`}
+            >
+              <span
+                className={`grid size-8 shrink-0 place-items-center rounded-xl bg-white/85 ${
+                  item.tone === "red"
+                    ? "text-red-600"
+                    : item.tone === "gold"
+                      ? "text-amber-700"
+                      : "text-sky-700"
+                }`}
+              >
+                {item.tone === "red" ? (
+                  <RotateCcw className="size-3.5" />
+                ) : item.tone === "gold" ? (
+                  <UserRoundPlus className="size-3.5" />
+                ) : (
+                  <ReceiptText className="size-3.5" />
+                )}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-semibold text-[#111827]">
+                  {item.title}
+                </p>
+                <p className="mt-0.5 truncate text-[11px] font-medium text-slate-600">
+                  {item.detail}
+                </p>
+              </div>
+              {canOperate && item.action ? (
+                <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-bold text-slate-600">
+                  {item.actionLabel ?? "Open"}
+                  <ArrowRight className="size-3" />
+                </span>
+              ) : null}
+            </button>
+          ))
+        )}
       </div>
+
+      {onCloseDay ? (
+        <div className="border-t border-black/5 px-3.5 py-3">
+          <ActionChip
+            icon={<LockKeyhole className="size-3.5" />}
+            label="Close day"
+            primary
+            onClick={onCloseDay}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -3174,18 +3597,7 @@ function OperationActionDrawer({
 }) {
   if (!panel || !operation) return null;
 
-  const title =
-    panel === "top-up"
-      ? "Add Top-up"
-      : panel === "expense"
-        ? "Record Expense"
-        : panel === "issue-float"
-          ? "Issue Float"
-          : panel === "add-float"
-            ? "Add More Float"
-            : panel === "agent-return"
-              ? "Record Agent Return"
-              : "Close Day";
+  const meta = panelMeta(panel);
   const expenseAmount = Number(expenseForm.amount);
   const validExpense =
     canRecordExpense &&
@@ -3203,6 +3615,14 @@ function OperationActionDrawer({
   const selectedReturn = pendingAgentReturns.find(
     (agentReturn) => agentReturn.agentId === agentReturnForm.agentId,
   );
+  const returnVariance =
+    selectedReturn && agentReturnForm.amountReturned !== ""
+      ? Math.round(
+          (Number(agentReturnForm.amountReturned) -
+            selectedReturn.expectedReturn) *
+            100,
+        ) / 100
+      : null;
   const canSubmitReturn =
     editable &&
     canRecordReturn &&
@@ -3224,332 +3644,518 @@ function OperationActionDrawer({
     allReturnsRecorded &&
     closingForm.countedCash !== "" &&
     (!needsCloseNote || closingForm.notes.trim().length > 0);
+  const submitting =
+    recordingTopUp ||
+    recordingExpense ||
+    savingFloat ||
+    savingFloatTopUp ||
+    recordingAgentReturn ||
+    closing;
+  const canSubmit =
+    panel === "top-up"
+      ? validTopUp && !recordingTopUp
+      : panel === "expense"
+        ? validExpense && !recordingExpense
+        : panel === "issue-float"
+          ? canSubmitFloat && !savingFloat
+          : panel === "add-float"
+            ? canSubmitFloatTopUp && !savingFloatTopUp
+            : panel === "agent-return"
+              ? canSubmitReturn && !recordingAgentReturn
+              : canSubmitClose && !closing;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/35">
+    <div className="fixed inset-0 z-50 flex justify-end bg-[rgba(8,16,28,0.48)] backdrop-blur-[3px]">
       <button
         type="button"
         className="hidden flex-1 cursor-default bg-transparent sm:block"
         aria-label="Close panel"
         onClick={onClosePanel}
       />
-      <aside className="flex h-full w-full max-w-md flex-col bg-white shadow-2xl">
-        <header className="flex items-start justify-between gap-4 border-b border-[var(--line)] px-5 py-4">
-          <div>
-            <p className="text-xs font-semibold tracking-[0.12em] text-[var(--forest-emerald)]">
-              Daily Operations
-            </p>
-            <h2 className="mt-1 text-lg font-bold text-[var(--midnight-navy)]">
-              {title}
-            </h2>
+      <aside className="flex h-full w-full max-w-[440px] flex-col bg-[#f4f7f6] shadow-[-28px_0_70px_rgba(15,23,42,0.22)]">
+        <header className="relative overflow-hidden bg-[linear-gradient(135deg,#003f35_0%,#0a6b55_58%,#12805f_100%)] px-5 pb-5 pt-4 text-white">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="grid size-11 shrink-0 place-items-center rounded-2xl border border-white/20 bg-white/12">
+                {meta.icon}
+              </span>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/65">
+                  {operation.branchName}
+                </p>
+                <h2 className="mt-1 text-lg font-bold tracking-[-0.02em]">
+                  {meta.title}
+                </h2>
+                <p className="mt-1 text-xs font-medium text-white/72">
+                  {meta.subtitle}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              className="grid size-9 place-items-center rounded-full border border-white/20 bg-white/10 text-white transition hover:bg-white/18"
+              aria-label="Close panel"
+              onClick={onClosePanel}
+            >
+              <X className="size-4" />
+            </button>
           </div>
-          <button
-            type="button"
-            className="grid size-8 place-items-center border border-[var(--line)] bg-white text-[var(--midnight-navy)] hover:bg-[var(--soft-mist)]"
-            aria-label="Close panel"
-            onClick={onClosePanel}
-          >
-            <X className="size-4" />
-          </button>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            {meta.stats(operation).map((stat) => (
+              <div
+                key={stat.label}
+                className="rounded-xl border border-white/15 bg-white/10 px-3 py-2.5 backdrop-blur-sm"
+              >
+                <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-white/65">
+                  {stat.label}
+                </p>
+                <p className="mt-1 truncate text-xs font-bold tabular-nums text-white">
+                  {stat.value}
+                </p>
+              </div>
+            ))}
+          </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          {panel === "top-up" ? (
-            <div className="space-y-4">
-              <PanelHint
-                label="Available cash"
-                value={formatMoney(operation.branchCashRemaining)}
-              />
-              <MoneyField
-                label="Top-up amount"
-                value={topUpForm.amount}
-                locked={!editable || !canRecordTopUp}
-                onChange={(value) =>
-                  setTopUpForm({ ...topUpForm, amount: value })
-                }
-              />
-              <TextAreaField
-                label="Description"
-                value={topUpForm.description}
-                locked={!editable || !canRecordTopUp}
-                onChange={(value) =>
-                  setTopUpForm({ ...topUpForm, description: value })
-                }
-              />
-              <TopUpList operation={operation} />
-            </div>
-          ) : null}
+        <div className="flex-1 overflow-y-auto px-4 py-4">
+          <div className="rounded-[16px] border border-[#e6ebf0] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+            {panel === "top-up" ? (
+              <div className="space-y-3.5">
+                <DrawerSection title="Top-up details" />
+                <MoneyField
+                  label="Top-up amount"
+                  value={topUpForm.amount}
+                  locked={!editable || !canRecordTopUp}
+                  onChange={(value) =>
+                    setTopUpForm({ ...topUpForm, amount: value })
+                  }
+                />
+                <TextAreaField
+                  label="Description"
+                  value={topUpForm.description}
+                  locked={!editable || !canRecordTopUp}
+                  onChange={(value) =>
+                    setTopUpForm({ ...topUpForm, description: value })
+                  }
+                />
+                <TopUpList operation={operation} />
+              </div>
+            ) : null}
 
-          {panel === "expense" ? (
-            <div className="space-y-4">
-              <PanelHint
-                label="Remaining cash"
-                value={formatMoney(operation.branchCashRemaining)}
-              />
-              <label>
-                <span className="text-xs font-bold text-slate-600">
-                  Category
-                </span>
-                <select
+            {panel === "expense" ? (
+              <div className="space-y-3.5">
+                <DrawerSection title="Expense details" />
+                <SelectField
+                  label="Category"
                   value={expenseForm.category}
-                  disabled={!editable || !canRecordExpense}
-                  onChange={(event) =>
+                  locked={!editable || !canRecordExpense}
+                  onChange={(value) =>
                     setExpenseForm({
                       ...expenseForm,
-                      category: event.target.value as ExpenseCategory,
+                      category: value as ExpenseCategory,
                     })
                   }
-                  className="mt-1 h-10 w-full border border-[var(--line)] bg-white px-3 text-sm font-semibold text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
-                >
-                  {expenseCategoryOptions.map((category) => (
-                    <option key={category} value={category}>
-                      {categoryLabel(category)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <MoneyField
-                label="Amount"
-                value={expenseForm.amount}
-                locked={!editable || !canRecordExpense}
-                onChange={(value) =>
-                  setExpenseForm({ ...expenseForm, amount: value })
-                }
-              />
-              <TextAreaField
-                label="Description"
-                value={expenseForm.description}
-                locked={!editable || !canRecordExpense}
-                onChange={(value) =>
-                  setExpenseForm({ ...expenseForm, description: value })
-                }
-              />
-              {expenseForm.amount !== "" &&
-              expenseAmount > operation.branchCashRemaining ? (
-                <p className="text-xs font-semibold text-red-600">
-                  Expense is more than remaining branch cash.
-                </p>
-              ) : null}
-            </div>
-          ) : null}
+                  options={expenseCategoryOptions.map((category) => ({
+                    id: category,
+                    label: categoryLabel(category),
+                  }))}
+                />
+                <MoneyField
+                  label="Amount"
+                  value={expenseForm.amount}
+                  locked={!editable || !canRecordExpense}
+                  onChange={(value) =>
+                    setExpenseForm({ ...expenseForm, amount: value })
+                  }
+                />
+                <TextAreaField
+                  label="Description"
+                  value={expenseForm.description}
+                  locked={!editable || !canRecordExpense}
+                  onChange={(value) =>
+                    setExpenseForm({ ...expenseForm, description: value })
+                  }
+                />
+                {expenseForm.amount !== "" &&
+                expenseAmount > operation.branchCashRemaining ? (
+                  <DrawerAlert tone="red">
+                    Expense is more than remaining branch cash.
+                  </DrawerAlert>
+                ) : null}
+              </div>
+            ) : null}
 
-          {panel === "issue-float" ? (
-            <FloatPanelForm
-              form={floatForm}
-              options={assignableAgents.map((agent) => ({
-                id: agent.id,
-                label: `${agent.name}${agent.publicId ? ` · ${agent.publicId}` : ""}`,
-              }))}
-              amountLeft={operation.floatRemaining}
-              emptyMessage="All agents have float for this day."
-              locked={!editable || !canManageFloat}
-              onChange={setFloatForm}
-            />
-          ) : null}
+            {panel === "issue-float" ? (
+              <FloatPanelForm
+                form={floatForm}
+                options={assignableAgents.map((agent) => ({
+                  id: agent.id,
+                  label: agent.name,
+                  meta: agent.publicId ?? "No agent id",
+                }))}
+                amountLeft={operation.floatRemaining}
+                emptyMessage="All agents already have float for this day."
+                locked={!editable || !canManageFloat}
+                onChange={setFloatForm}
+              />
+            ) : null}
 
-          {panel === "add-float" ? (
-            <FloatPanelForm
-              form={floatTopUpForm}
-              options={addFloatOptions.map((agentReturn) => ({
-                id: agentReturn.agentId,
-                label: `${agentReturn.agentName}${
-                  agentReturn.agentPublicId
-                    ? ` · ${agentReturn.agentPublicId}`
-                    : ""
-                }`,
-              }))}
-              amountLeft={operation.floatRemaining}
-              emptyMessage="No active float can receive more right now."
-              locked={!editable || !canManageFloat}
-              onChange={setFloatTopUpForm}
-            />
-          ) : null}
+            {panel === "add-float" ? (
+              <FloatPanelForm
+                form={floatTopUpForm}
+                options={addFloatOptions.map((agentReturn) => ({
+                  id: agentReturn.agentId,
+                  label: agentReturn.agentName,
+                  meta: agentReturn.agentPublicId ?? "No agent id",
+                }))}
+                amountLeft={operation.floatRemaining}
+                emptyMessage="No active float can receive more right now."
+                locked={!editable || !canManageFloat}
+                onChange={setFloatTopUpForm}
+              />
+            ) : null}
 
-          {panel === "agent-return" ? (
-            <div className="space-y-4">
-              <PanelHint
-                label="Expected agent handover"
-                value={formatMoney(operation.expectedAgentReturnTotal)}
-              />
-              <label>
-                <span className="text-xs font-bold text-slate-600">Agent</span>
-                <select
-                  value={agentReturnForm.agentId}
-                  disabled={!editable || !canRecordReturn}
-                  onChange={(event) => {
-                    const next = pendingAgentReturns.find(
-                      (agentReturn) =>
-                        agentReturn.agentId === event.target.value,
-                    );
-                    setAgentReturnForm({
-                      ...agentReturnForm,
-                      agentId: event.target.value,
-                      amountReturned: next ? String(next.expectedReturn) : "",
-                    });
-                  }}
-                  className="mt-1 h-10 w-full border border-[var(--line)] bg-white px-3 text-sm font-semibold text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
-                >
-                  {pendingAgentReturns.length === 0 ? (
-                    <option value="">All agents returned</option>
-                  ) : null}
-                  {pendingAgentReturns.map((agentReturn) => (
-                    <option
-                      key={agentReturn.floatId}
-                      value={agentReturn.agentId}
-                    >
-                      {agentReturn.agentName}
-                      {agentReturn.agentPublicId
-                        ? ` · ${agentReturn.agentPublicId}`
-                        : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {selectedReturn ? (
-                <div className="grid grid-cols-2 gap-2">
-                  <PanelHint
-                    label="Float received"
-                    value={formatMoney(selectedReturn.amountGiven)}
-                  />
-                  <PanelHint
-                    label="Expected handover"
-                    value={formatMoney(selectedReturn.expectedReturn)}
-                  />
-                </div>
-              ) : null}
-              <MoneyField
-                label="Cash received"
-                value={agentReturnForm.amountReturned}
-                locked={!editable || !canRecordReturn}
-                onChange={(value) =>
-                  setAgentReturnForm({
-                    ...agentReturnForm,
-                    amountReturned: value,
-                  })
-                }
-              />
-              <TextAreaField
-                label="Notes"
-                value={agentReturnForm.notes}
-                locked={!editable || !canRecordReturn}
-                onChange={(value) =>
-                  setAgentReturnForm({ ...agentReturnForm, notes: value })
-                }
-              />
-            </div>
-          ) : null}
+            {panel === "agent-return" ? (
+              <div className="space-y-3.5">
+                <DrawerSection title="Select agent" />
+                {pendingAgentReturns.length === 0 ? (
+                  <DrawerAlert tone="green">
+                    All agents with float have returned.
+                  </DrawerAlert>
+                ) : (
+                  <div className="space-y-2">
+                    {pendingAgentReturns.map((agentReturn) => {
+                      const selected =
+                        agentReturnForm.agentId === agentReturn.agentId;
+                      return (
+                        <button
+                          key={agentReturn.floatId}
+                          type="button"
+                          disabled={!editable || !canRecordReturn}
+                          onClick={() =>
+                            setAgentReturnForm({
+                              ...agentReturnForm,
+                              agentId: agentReturn.agentId,
+                              amountReturned: String(agentReturn.expectedReturn),
+                            })
+                          }
+                          className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition disabled:opacity-50 ${
+                            selected
+                              ? "border-emerald-300 bg-emerald-50"
+                              : "border-[#e6ebf0] bg-[#fbfcfd] hover:border-emerald-200"
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-bold text-[#0b1220]">
+                              {agentReturn.agentName}
+                            </p>
+                            <p className="truncate text-[10px] font-medium text-slate-500">
+                              {agentReturn.agentPublicId ?? "No agent id"} ·
+                              expected {formatCompactMoney(agentReturn.expectedReturn)}
+                            </p>
+                          </div>
+                          <ReturnBadge status={agentReturn.status} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                {selectedReturn ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-2">
+                      <PanelHint
+                        label="Float given"
+                        value={formatMoney(selectedReturn.amountGiven)}
+                      />
+                      <PanelHint
+                        label="Expected back"
+                        value={formatMoney(selectedReturn.expectedReturn)}
+                      />
+                    </div>
+                    <MoneyField
+                      label="Cash received"
+                      value={agentReturnForm.amountReturned}
+                      locked={!editable || !canRecordReturn}
+                      onChange={(value) =>
+                        setAgentReturnForm({
+                          ...agentReturnForm,
+                          amountReturned: value,
+                        })
+                      }
+                    />
+                    {returnVariance != null ? (
+                      <DrawerAlert
+                        tone={
+                          returnVariance === 0
+                            ? "green"
+                            : returnVariance < 0
+                              ? "red"
+                              : "amber"
+                        }
+                      >
+                        Variance {formatVariance(returnVariance)}
+                      </DrawerAlert>
+                    ) : null}
+                    <TextAreaField
+                      label="Notes"
+                      value={agentReturnForm.notes}
+                      locked={!editable || !canRecordReturn}
+                      onChange={(value) =>
+                        setAgentReturnForm({
+                          ...agentReturnForm,
+                          notes: value,
+                        })
+                      }
+                    />
+                  </>
+                ) : null}
+              </div>
+            ) : null}
 
-          {panel === "close-day" ? (
-            <div className="space-y-4">
-              {!allReturnsRecorded ? (
-                <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
-                  Record all agent returns before closing.
-                </p>
-              ) : null}
-              <PanelHint
-                label="Expected closing balance"
-                value={formatMoney(operation.expectedClosingBalance)}
-              />
-              <MoneyField
-                label="Counted cash"
-                value={closingForm.countedCash}
-                locked={!editable || !canClose}
-                onChange={(value) =>
-                  setClosingForm({ ...closingForm, countedCash: value })
-                }
-              />
-              {variance != null ? (
-                <p
-                  className={`text-xs font-bold ${
-                    variance === 0
-                      ? "text-[var(--forest-emerald)]"
-                      : variance < 0
-                        ? "text-red-600"
-                        : "text-amber-700"
-                  }`}
-                >
-                  Variance: {formatVariance(variance)}
-                </p>
-              ) : null}
-              <TextAreaField
-                label={needsCloseNote ? "Notes required" : "Notes"}
-                value={closingForm.notes}
-                locked={!editable || !canClose}
-                onChange={(value) =>
-                  setClosingForm({ ...closingForm, notes: value })
-                }
-              />
-            </div>
-          ) : null}
+            {panel === "close-day" ? (
+              <div className="space-y-3.5">
+                <DrawerSection title="Count and confirm" />
+                {!allReturnsRecorded ? (
+                  <DrawerAlert tone="amber">
+                    Record all agent returns before closing the day.
+                  </DrawerAlert>
+                ) : (
+                  <DrawerAlert tone="green">
+                    All agent returns are recorded. Ready to close.
+                  </DrawerAlert>
+                )}
+                <PanelHint
+                  label="Expected closing balance"
+                  value={formatMoney(operation.expectedClosingBalance)}
+                  accent
+                />
+                <MoneyField
+                  label="Counted cash"
+                  value={closingForm.countedCash}
+                  locked={!editable || !canClose}
+                  onChange={(value) =>
+                    setClosingForm({ ...closingForm, countedCash: value })
+                  }
+                />
+                {variance != null ? (
+                  <DrawerAlert
+                    tone={
+                      variance === 0
+                        ? "green"
+                        : variance < 0
+                          ? "red"
+                          : "amber"
+                    }
+                  >
+                    Variance {formatVariance(variance)}
+                    {needsCloseNote ? " · notes required" : ""}
+                  </DrawerAlert>
+                ) : null}
+                <TextAreaField
+                  label={needsCloseNote ? "Notes required" : "Notes"}
+                  value={closingForm.notes}
+                  locked={!editable || !canClose}
+                  onChange={(value) =>
+                    setClosingForm({ ...closingForm, notes: value })
+                  }
+                />
+              </div>
+            ) : null}
+          </div>
         </div>
 
-        <footer className="border-t border-[var(--line)] bg-[var(--soft-mist)] px-5 py-4">
-          <button
-            type="button"
-            className="btn btn-primary h-10 w-full text-xs"
-            disabled={
-              panel === "top-up"
-                ? !validTopUp || recordingTopUp
-                : panel === "expense"
-                  ? !validExpense || recordingExpense
-                  : panel === "issue-float"
-                    ? !canSubmitFloat || savingFloat
-                    : panel === "add-float"
-                      ? !canSubmitFloatTopUp || savingFloatTopUp
-                      : panel === "agent-return"
-                        ? !canSubmitReturn || recordingAgentReturn
-                        : !canSubmitClose || closing
-            }
-            onClick={() => {
-              if (panel === "top-up") onRecordTopUp();
-              if (panel === "expense") onRecordExpense();
-              if (panel === "issue-float") onSaveFloat();
-              if (panel === "add-float") onSaveFloatTopUp();
-              if (panel === "agent-return") onRecordAgentReturn();
-              if (panel === "close-day") onCloseDay();
-            }}
-          >
-            {recordingTopUp ||
-            recordingExpense ||
-            savingFloat ||
-            savingFloatTopUp ||
-            recordingAgentReturn ||
-            closing ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : null}
-            {title}
-          </button>
+        <footer className="border-t border-[#e6ebf0] bg-white px-4 py-3.5">
+          <div className="grid grid-cols-[1fr_1.4fr] gap-2">
+            <button
+              type="button"
+              onClick={onClosePanel}
+              className="inline-flex h-11 items-center justify-center rounded-xl border border-[#e6ebf0] bg-white text-xs font-semibold text-[#0b1220] transition hover:bg-[#f8faf9]"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#003f35] text-xs font-semibold text-white shadow-[0_12px_24px_rgba(0,63,53,0.22)] transition hover:brightness-110 disabled:opacity-50"
+              disabled={!canSubmit}
+              onClick={() => {
+                if (panel === "top-up") onRecordTopUp();
+                if (panel === "expense") onRecordExpense();
+                if (panel === "issue-float") onSaveFloat();
+                if (panel === "add-float") onSaveFloatTopUp();
+                if (panel === "agent-return") onRecordAgentReturn();
+                if (panel === "close-day") onCloseDay();
+              }}
+            >
+              {submitting ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              {meta.cta}
+            </button>
+          </div>
         </footer>
       </aside>
     </div>
   );
 }
 
-function RecordHeader({
-  icon,
-  title,
-  end,
+function panelMeta(panel: Exclude<OperationActionPanel, null>) {
+  const configs = {
+    "top-up": {
+      title: "Add top-up",
+      subtitle: "Increase vault cash for today’s operations.",
+      cta: "Save top-up",
+      icon: <PlusCircle className="size-5" />,
+      stats: (operation: DailyOperation) => [
+        {
+          label: "Vault now",
+          value: formatMoney(operation.branchCashRemaining),
+        },
+        {
+          label: "Top-ups today",
+          value: formatMoney(operation.topUpsTotal ?? operation.cashAddedToday),
+        },
+      ],
+    },
+    expense: {
+      title: "Record expense",
+      subtitle: "Log day costs against branch vault cash.",
+      cta: "Save expense",
+      icon: <ReceiptText className="size-5" />,
+      stats: (operation: DailyOperation) => [
+        {
+          label: "Vault left",
+          value: formatMoney(operation.branchCashRemaining),
+        },
+        {
+          label: "Expenses",
+          value: formatMoney(operation.expensesTotal),
+        },
+      ],
+    },
+    "issue-float": {
+      title: "Issue float",
+      subtitle: "Assign vault float to an agent for the field day.",
+      cta: "Issue float",
+      icon: <UserRoundPlus className="size-5" />,
+      stats: (operation: DailyOperation) => [
+        {
+          label: "Assignable",
+          value: formatMoney(operation.floatRemaining),
+        },
+        {
+          label: "Already out",
+          value: formatMoney(operation.floatIssued),
+        },
+      ],
+    },
+    "add-float": {
+      title: "Add more float",
+      subtitle: "Top up an agent who already has float today.",
+      cta: "Add float",
+      icon: <CircleDollarSign className="size-5" />,
+      stats: (operation: DailyOperation) => [
+        {
+          label: "Assignable",
+          value: formatMoney(operation.floatRemaining),
+        },
+        {
+          label: "Agents out",
+          value: String(operation.agentsWithFloatCount),
+        },
+      ],
+    },
+    "agent-return": {
+      title: "Record return",
+      subtitle: "Capture cash handed back by an agent.",
+      cta: "Save return",
+      icon: <RotateCcw className="size-5" />,
+      stats: (operation: DailyOperation) => [
+        {
+          label: "Expected back",
+          value: formatMoney(operation.expectedAgentReturnTotal),
+        },
+        {
+          label: "Agents back",
+          value: `${operation.agentsReturnedCount}/${operation.agentsWithFloatCount || 0}`,
+        },
+      ],
+    },
+    "close-day": {
+      title: "Close day",
+      subtitle: "Count vault cash and seal today’s operations.",
+      cta: "Close day",
+      icon: <LockKeyhole className="size-5" />,
+      stats: (operation: DailyOperation) => [
+        {
+          label: "Expected close",
+          value: formatMoney(operation.expectedClosingBalance),
+        },
+        {
+          label: "Returns",
+          value: `${operation.agentsReturnedCount}/${operation.agentsWithFloatCount || 0}`,
+        },
+      ],
+    },
+  } as const;
+  return configs[panel];
+}
+
+function DrawerSection({ title }: { title: string }) {
+  return (
+    <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-slate-500">
+      {title}
+    </p>
+  );
+}
+
+function DrawerAlert({
+  tone,
+  children,
 }: {
-  icon: ReactNode;
-  title: string;
-  end?: string;
+  tone: "green" | "amber" | "red";
+  children: ReactNode;
+}) {
+  const tones = {
+    green: "border-emerald-200 bg-emerald-50 text-[#0c6b4f]",
+    amber: "border-amber-200 bg-amber-50 text-amber-800",
+    red: "border-red-200 bg-red-50 text-red-700",
+  } as const;
+  return (
+    <p
+      className={`rounded-xl border px-3 py-2.5 text-xs font-semibold ${tones[tone]}`}
+    >
+      {children}
+    </p>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  options,
+  locked = false,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: { id: string; label: string }[];
+  locked?: boolean;
+  onChange: (value: string) => void;
 }) {
   return (
-    <header className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-4 py-3">
-      <div className="flex min-w-0 items-center gap-3">
-        <span className="grid size-8 shrink-0 place-items-center border border-emerald-100 bg-emerald-50 text-[var(--forest-emerald)]">
-          {icon}
-        </span>
-        <p className="truncate text-sm font-bold text-[var(--midnight-navy)]">
-          {title}
-        </p>
-      </div>
-      {end ? (
-        <span className="shrink-0 text-xs font-bold tabular-nums text-[var(--midnight-navy)]">
-          {end}
-        </span>
-      ) : null}
-    </header>
+    <label className="block">
+      <span className="text-[11px] font-semibold text-slate-600">{label}</span>
+      <select
+        value={value}
+        disabled={locked}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1.5 h-11 w-full rounded-xl border border-[#e6ebf0] bg-[#fbfcfd] px-3 text-sm font-semibold text-[#0b1220] outline-none transition focus:border-[var(--forest-emerald)] focus:bg-white disabled:bg-[#f5f7f8] disabled:text-slate-500"
+      >
+        {options.map((option) => (
+          <option key={option.id} value={option.id}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -3567,25 +4173,29 @@ function StatementRow({
   danger?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 text-sm">
+    <div
+      className={`flex items-center justify-between gap-4 rounded-xl px-2.5 py-2 text-sm ${
+        strong ? "bg-emerald-50/70" : ""
+      }`}
+    >
       <span
-        className={`min-w-0 truncate ${
+        className={`min-w-0 truncate text-xs font-semibold ${
           strong
-            ? "font-bold text-[var(--midnight-navy)]"
+            ? "text-[#0b1220]"
             : muted
               ? "text-slate-500"
-              : "text-[var(--midnight-navy)]"
+              : "text-slate-600"
         }`}
       >
         {label}
       </span>
       <span
-        className={`shrink-0 text-right font-bold tabular-nums ${
+        className={`shrink-0 text-right text-xs font-bold tabular-nums ${
           strong
             ? "text-[var(--forest-emerald)]"
             : danger
               ? "text-amber-700"
-              : "text-[var(--midnight-navy)]"
+              : "text-[#0b1220]"
         }`}
       >
         {value}
@@ -3606,14 +4216,16 @@ function MiniRecord({
   status?: string;
 }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_105px_58px_auto] items-center gap-2 text-sm">
-      <span className="truncate text-[var(--midnight-navy)]">{label}</span>
-      <span className="text-right font-bold tabular-nums text-[var(--midnight-navy)]">
+    <div className="flex items-center gap-3 rounded-xl border border-[#edf1f5] bg-[#fbfcfd] px-3 py-2.5">
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-semibold text-[#0b1220]">{label}</p>
+        <p className="mt-0.5 text-[11px] font-medium text-slate-500">{meta}</p>
+      </div>
+      <p className="shrink-0 text-xs font-bold tabular-nums text-[#0b1220]">
         {value}
-      </span>
-      <span className="text-right text-xs text-slate-500">{meta}</span>
+      </p>
       {status ? (
-        <span className="border border-emerald-200 bg-emerald-50 px-2 py-1 text-right text-[10px] font-bold text-[var(--forest-emerald)]">
+        <span className="shrink-0 rounded-lg border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-[var(--forest-emerald)]">
           {status}
         </span>
       ) : null}
@@ -3651,53 +4263,38 @@ function ReturnBadge({ status }: { status: AgentReturnStatus }) {
           : "border-sky-200 bg-sky-50 text-sky-700";
   return (
     <span
-      className={`inline-flex px-2 py-1 text-[10px] font-bold ${className}`}
+      className={`inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${className}`}
     >
       {label}
     </span>
   );
 }
 
-function QuickActionButton({
-  icon,
+function PanelHint({
   label,
-  hint,
-  disabled,
-  onClick,
+  value,
+  accent = false,
 }: {
-  icon: ReactNode;
   label: string;
-  hint: string;
-  disabled?: boolean;
-  onClick: () => void;
+  value: string;
+  accent?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      className="flex min-h-16 items-center gap-3 border border-[var(--line)] bg-white px-3 py-3 text-left transition hover:bg-[var(--soft-mist)] disabled:cursor-not-allowed disabled:opacity-50"
-      disabled={disabled}
-      onClick={onClick}
+    <div
+      className={`rounded-xl border px-3 py-2.5 ${
+        accent
+          ? "border-emerald-200 bg-emerald-50"
+          : "border-[#edf1f5] bg-[#f8faf9]"
+      }`}
     >
-      <span className="grid size-9 shrink-0 place-items-center border border-emerald-100 bg-emerald-50 text-[var(--forest-emerald)]">
-        {icon}
-      </span>
-      <span className="min-w-0">
-        <span className="block truncate text-xs font-bold text-[var(--midnight-navy)]">
-          {label}
-        </span>
-        <span className="mt-0.5 block truncate text-[10px] font-semibold text-slate-500">
-          {hint}
-        </span>
-      </span>
-    </button>
-  );
-}
-
-function PanelHint({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="border border-[var(--line)] bg-[var(--soft-mist)] px-3 py-3">
-      <p className="text-[10px] font-semibold text-slate-500">{label}</p>
-      <p className="mt-1 text-base font-bold tabular-nums text-[var(--midnight-navy)]">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.05em] text-slate-500">
+        {label}
+      </p>
+      <p
+        className={`mt-1 text-sm font-bold tabular-nums ${
+          accent ? "text-[var(--forest-emerald)]" : "text-[#0b1220]"
+        }`}
+      >
         {value}
       </p>
     </div>
@@ -3716,14 +4313,14 @@ function TextAreaField({
   onChange: (value: string) => void;
 }) {
   return (
-    <label>
-      <span className="text-xs font-bold text-slate-600">{label}</span>
+    <label className="block">
+      <span className="text-[11px] font-semibold text-slate-600">{label}</span>
       <textarea
         value={value}
         disabled={locked}
         onChange={(event) => onChange(event.target.value)}
         rows={3}
-        className="mt-1 w-full border border-[var(--line)] bg-white px-3 py-2 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
+        className="mt-1.5 w-full rounded-xl border border-[#e6ebf0] bg-[#fbfcfd] px-3 py-2.5 text-sm font-medium text-[#0b1220] outline-none transition focus:border-[var(--forest-emerald)] focus:bg-white disabled:bg-[#f5f7f8] disabled:text-slate-500"
       />
     </label>
   );
@@ -3738,7 +4335,7 @@ function FloatPanelForm({
   onChange,
 }: {
   form: FloatForm;
-  options: { id: string; label: string }[];
+  options: { id: string; label: string; meta?: string }[];
   amountLeft: number;
   emptyMessage: string;
   locked: boolean;
@@ -3747,31 +4344,56 @@ function FloatPanelForm({
   const amount = Number(form.amount);
   const exceeds = form.amount !== "" && amount > amountLeft;
   return (
-    <div className="space-y-4">
+    <div className="space-y-3.5">
+      <DrawerSection title="Assign float" />
       <PanelHint
         label="Assignable float left"
         value={formatMoney(amountLeft)}
+        accent
       />
-      <label>
-        <span className="text-xs font-bold text-slate-600">Agent</span>
-        <select
-          value={form.agentId}
-          disabled={locked || options.length === 0}
-          onChange={(event) =>
-            onChange({ ...form, agentId: event.target.value })
-          }
-          className="mt-1 h-10 w-full border border-[var(--line)] bg-white px-3 text-sm font-semibold text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
-        >
-          {options.length === 0 ? (
-            <option value="">{emptyMessage}</option>
-          ) : null}
-          {options.map((option) => (
-            <option key={option.id} value={option.id}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-      </label>
+      {options.length === 0 ? (
+        <DrawerAlert tone="amber">{emptyMessage}</DrawerAlert>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-[11px] font-semibold text-slate-600">Agent</p>
+          {options.map((option) => {
+            const selected = form.agentId === option.id;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                disabled={locked}
+                onClick={() => onChange({ ...form, agentId: option.id })}
+                className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition disabled:opacity-50 ${
+                  selected
+                    ? "border-emerald-300 bg-emerald-50"
+                    : "border-[#e6ebf0] bg-[#fbfcfd] hover:border-emerald-200"
+                }`}
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-xs font-bold text-[#0b1220]">
+                    {option.label}
+                  </p>
+                  {option.meta ? (
+                    <p className="truncate text-[10px] font-medium text-slate-500">
+                      {option.meta}
+                    </p>
+                  ) : null}
+                </div>
+                <span
+                  className={`grid size-5 place-items-center rounded-full border ${
+                    selected
+                      ? "border-[var(--forest-emerald)] bg-[var(--forest-emerald)] text-white"
+                      : "border-[#d7dee7] bg-white"
+                  }`}
+                >
+                  {selected ? <CheckCircle2 className="size-3" /> : null}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
       <MoneyField
         label="Amount"
         value={form.amount}
@@ -3779,9 +4401,9 @@ function FloatPanelForm({
         onChange={(value) => onChange({ ...form, amount: value })}
       />
       {exceeds ? (
-        <p className="text-xs font-semibold text-red-600">
+        <DrawerAlert tone="red">
           Float is more than the assignable amount left.
-        </p>
+        </DrawerAlert>
       ) : null}
       <TextAreaField
         label="Notes"
@@ -3795,19 +4417,38 @@ function FloatPanelForm({
 
 function TopUpList({ operation }: { operation: DailyOperation }) {
   return (
-    <div className="border-t border-[var(--line)] pt-4">
-      <p className="text-xs font-bold text-[var(--midnight-navy)]">Top-ups</p>
+    <div className="border-t border-[#edf1f5] pt-3.5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">
+          Top-ups today
+        </p>
+        <span className="text-[11px] font-semibold text-slate-500">
+          {operation.topUps.length}
+        </span>
+      </div>
       {operation.topUps.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">No top-ups recorded yet.</p>
+        <p className="mt-2 text-xs font-medium text-slate-500">
+          No top-ups recorded yet.
+        </p>
       ) : (
-        <div className="mt-2 space-y-2">
+        <div className="mt-2 divide-y divide-[#edf1f5] rounded-xl border border-[#edf1f5]">
           {operation.topUps.map((topUp) => (
-            <MiniRecord
+            <div
               key={topUp.id}
-              label={topUp.description || "Cash top-up"}
-              value={formatMoney(topUp.amount)}
-              meta={formatClock(topUp.addedAt)}
-            />
+              className="flex items-center justify-between gap-3 px-3 py-2.5"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-xs font-semibold text-[#0b1220]">
+                  {topUp.description || "Cash top-up"}
+                </p>
+                <p className="text-[10px] font-medium text-slate-500">
+                  {formatClock(topUp.addedAt)} · {topUp.recordedByName}
+                </p>
+              </div>
+              <p className="shrink-0 text-xs font-bold tabular-nums text-[var(--forest-emerald)]">
+                +{formatCompactMoney(topUp.amount)}
+              </p>
+            </div>
           ))}
         </div>
       )}
@@ -3843,8 +4484,8 @@ function AgentReturnsPanel({
     Number(form.amountReturned) >= 0;
 
   return (
-    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--line)] px-4 py-3">
+    <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#edf1f5] bg-[#f8faf9]/80 px-4 py-3.5">
         <div>
           <p className="text-sm font-bold text-[var(--midnight-navy)]">
             Agent returns
@@ -3863,7 +4504,7 @@ function AgentReturnsPanel({
           No float has been assigned for this day.
         </div>
       ) : (
-        <div className="divide-y divide-[var(--line)]">
+        <div className="divide-y divide-[#edf1f5]">
           <div className="hidden grid-cols-[minmax(0,1.1fr)_96px_96px_96px_90px_110px_90px] gap-3 bg-[#e5ece8] px-4 py-2.5 text-[10px] font-semibold text-slate-500 lg:grid">
             <span>Agent</span>
             <span className="text-right">Float</span>
@@ -3914,7 +4555,7 @@ function AgentReturnsPanel({
                   ) : editable && canRecordReturn ? (
                     <button
                       type="button"
-                      className="btn btn-ghost h-8 px-3 text-xs"
+                      className="inline-flex h-8 items-center gap-2 rounded-lg border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-[#0b1220] transition hover:bg-emerald-50"
                       onClick={() =>
                         setForm({
                           agentId: agentReturn.agentId,
@@ -3932,7 +4573,7 @@ function AgentReturnsPanel({
                   )}
                 </div>
                 {selected && !returned ? (
-                  <div className="grid gap-2 border-t border-[var(--line)] pt-3 lg:col-span-7 lg:grid-cols-[160px_minmax(0,1fr)_110px]">
+                  <div className="grid gap-2 border-t border-[#e6ebf0] pt-3 lg:col-span-7 lg:grid-cols-[160px_minmax(0,1fr)_110px]">
                     <MoneyField
                       label="Returned cash"
                       value={form.amountReturned}
@@ -3951,12 +4592,12 @@ function AgentReturnsPanel({
                         onChange={(event) =>
                           setForm({ ...form, notes: event.target.value })
                         }
-                        className="mt-1 h-10 w-full border border-[var(--line)] bg-white px-3 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
+                        className="mt-1.5 h-11 w-full rounded-xl border border-[#e6ebf0] bg-[#fbfcfd] px-3 text-sm font-medium text-[#0b1220] outline-none transition focus:border-[var(--forest-emerald)] disabled:bg-[#f5f7f8] disabled:text-slate-500"
                       />
                     </label>
                     <button
                       type="button"
-                      className="btn btn-primary mt-5 h-10 text-xs lg:mt-6"
+                      className="mt-5 inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#003f35] px-4 text-xs font-semibold text-white shadow-[0_12px_24px_rgba(0,63,53,0.22)] disabled:opacity-55 lg:mt-6"
                       disabled={!canSubmitReturn || recording}
                       onClick={onRecord}
                     >
@@ -4013,8 +4654,8 @@ function CloseDayCard({
 
   if (operation.status === "CLOSED") {
     return (
-      <section className="panel bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
-        <header className="border-b border-[var(--line)] px-4 py-3">
+      <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+        <header className="border-b border-[#edf1f5] bg-[#f8faf9]/80 px-4 py-3.5">
           <p className="text-sm font-bold text-[var(--midnight-navy)]">
             Closed
           </p>
@@ -4040,8 +4681,8 @@ function CloseDayCard({
   }
 
   return (
-    <section className="panel bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
-      <header className="border-b border-[var(--line)] px-4 py-3">
+    <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+      <header className="border-b border-[#edf1f5] bg-[#f8faf9]/80 px-4 py-3.5">
         <p className="text-sm font-bold text-[var(--midnight-navy)]">
           Close day
         </p>
@@ -4054,7 +4695,7 @@ function CloseDayCard({
       </header>
       <div className="space-y-3 p-4">
         {!allReturnsRecorded ? (
-          <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs font-semibold text-amber-700">
             Record all agent returns first.
           </p>
         ) : null}
@@ -4066,7 +4707,7 @@ function CloseDayCard({
         />
         <button
           type="button"
-          className="btn btn-ghost h-8 w-full text-xs"
+          className="inline-flex h-8 w-full items-center justify-center gap-2 rounded-lg border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-[#0b1220] transition hover:bg-emerald-50"
           disabled={!editable || !canClose}
           onClick={() =>
             setForm({
@@ -4099,14 +4740,14 @@ function CloseDayCard({
               setForm({ ...form, notes: event.target.value })
             }
             rows={2}
-            className="mt-1 w-full border border-[var(--line)] bg-white px-3 py-2 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
+            className="mt-1.5 w-full rounded-xl border border-[#e6ebf0] bg-[#fbfcfd] px-3 py-2.5 text-sm font-medium text-[#0b1220] outline-none transition focus:border-[var(--forest-emerald)] disabled:bg-[#f5f7f8] disabled:text-slate-500"
           />
         </label>
       </div>
-      <footer className="border-t border-[var(--line)] bg-[var(--soft-mist)] px-4 py-3">
+      <footer className="border-t border-[#edf1f5] bg-[#f8faf9] px-4 py-3.5">
         <button
           type="button"
-          className="btn btn-primary h-9 w-full text-xs"
+          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#003f35] text-xs font-semibold text-white shadow-[0_12px_24px_rgba(0,63,53,0.22)] disabled:opacity-55"
           disabled={!canSubmit || closing}
           onClick={onClose}
         >
@@ -4142,8 +4783,8 @@ function ExpenseFormCard({
   onRecord: () => void;
 }) {
   return (
-    <section className="panel bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
-      <header className="border-b border-[var(--line)] px-4 py-3">
+    <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+      <header className="border-b border-[#edf1f5] bg-[#f8faf9]/80 px-4 py-3.5">
         <p className="text-sm font-bold text-[var(--midnight-navy)]">
           Record expense
         </p>
@@ -4153,11 +4794,11 @@ function ExpenseFormCard({
       </header>
       <div className="space-y-3 p-4">
         {!editable ? (
-          <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs font-semibold text-amber-700">
             Past days can be viewed only.
           </p>
         ) : !canRecordExpense ? (
-          <p className="border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs font-semibold text-amber-700">
             Your account cannot record expenses.
           </p>
         ) : null}
@@ -4172,7 +4813,7 @@ function ExpenseFormCard({
                 category: event.target.value as ExpenseCategory,
               })
             }
-            className="mt-1 h-10 w-full border border-[var(--line)] bg-white px-3 text-sm font-semibold text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
+            className="mt-1.5 h-11 w-full rounded-xl border border-[#e6ebf0] bg-[#fbfcfd] px-3 text-sm font-semibold text-[#0b1220] outline-none transition focus:border-[var(--forest-emerald)] disabled:bg-[#f5f7f8] disabled:text-slate-500"
           >
             {expenseCategoryOptions.map((category) => (
               <option key={category} value={category}>
@@ -4196,14 +4837,14 @@ function ExpenseFormCard({
               setForm({ ...form, description: event.target.value })
             }
             rows={3}
-            className="mt-1 w-full border border-[var(--line)] bg-white px-3 py-2 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
+            className="mt-1.5 w-full rounded-xl border border-[#e6ebf0] bg-[#fbfcfd] px-3 py-2.5 text-sm font-medium text-[#0b1220] outline-none transition focus:border-[var(--forest-emerald)] disabled:bg-[#f5f7f8] disabled:text-slate-500"
           />
         </label>
       </div>
-      <footer className="border-t border-[var(--line)] bg-[var(--soft-mist)] px-4 py-3">
+      <footer className="border-t border-[#edf1f5] bg-[#f8faf9] px-4 py-3.5">
         <button
           type="button"
-          className="btn btn-primary h-9 w-full text-xs"
+          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#003f35] text-xs font-semibold text-white shadow-[0_12px_24px_rgba(0,63,53,0.22)] disabled:opacity-55"
           disabled={!valid || recording}
           onClick={onRecord}
         >
@@ -4221,8 +4862,8 @@ function ExpenseFormCard({
 
 function ExpenseList({ operation }: { operation: DailyOperation }) {
   return (
-    <section className="panel overflow-hidden bg-white shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
-      <header className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-4 py-3">
+    <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+      <header className="flex items-center justify-between gap-3 border-b border-[#edf1f5] bg-[#f8faf9]/80 px-4 py-3.5">
         <p className="text-sm font-bold text-[var(--midnight-navy)]">
           Expenses
         </p>
@@ -4235,7 +4876,7 @@ function ExpenseList({ operation }: { operation: DailyOperation }) {
           No expenses recorded for this day.
         </div>
       ) : (
-        <div className="divide-y divide-[var(--line)]">
+        <div className="divide-y divide-[#edf1f5]">
           <div className="hidden grid-cols-[minmax(0,1.25fr)_120px_140px_160px] gap-3 bg-[#e5ece8] px-4 py-2.5 text-[10px] font-semibold text-slate-500 sm:grid">
             <span>Category</span>
             <span className="text-right">Amount</span>
@@ -4284,17 +4925,22 @@ function MoneyField({
   onChange: (value: string) => void;
 }) {
   return (
-    <label>
-      <span className="text-xs font-bold text-slate-600">{label}</span>
-      <input
-        type="number"
-        min="0"
-        step="100"
-        value={value}
-        disabled={locked}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-1 h-10 w-full border border-[var(--line)] bg-white px-3 text-sm font-semibold tabular-nums text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-[var(--soft-mist)] disabled:text-slate-500"
-      />
+    <label className="block">
+      <span className="text-[11px] font-semibold text-slate-600">{label}</span>
+      <div className="relative mt-1.5">
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-400">
+          UGX
+        </span>
+        <input
+          type="number"
+          min="0"
+          step="100"
+          value={value}
+          disabled={locked}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-11 w-full rounded-xl border border-[#e6ebf0] bg-[#fbfcfd] py-2 pl-12 pr-3 text-sm font-semibold tabular-nums text-[#0b1220] outline-none transition focus:border-[var(--forest-emerald)] focus:bg-white disabled:bg-[#f5f7f8] disabled:text-slate-500"
+        />
+      </div>
     </label>
   );
 }
@@ -4320,68 +4966,13 @@ function MoneyCell({
   );
 }
 
-function OperationStat({
-  icon,
-  label,
-  value,
-  hint,
-  tone,
-  featured = false,
-}: {
-  icon?: ReactNode;
-  label: string;
-  value: string;
-  hint: string;
-  tone: "good" | "blue" | "warn" | "bad";
-  featured?: boolean;
-}) {
-  const toneClass =
-    tone === "good"
-      ? "border-emerald-100 bg-emerald-50 text-[var(--forest-emerald)]"
-      : tone === "blue"
-        ? "border-sky-100 bg-sky-50 text-sky-700"
-        : tone === "warn"
-          ? "border-amber-100 bg-amber-50 text-amber-700"
-          : "border-rose-100 bg-rose-50 text-rose-700";
-  const articleClass = featured
-    ? "panel flex min-h-[78px] min-w-0 items-start gap-1.5 border-2 border-emerald-300 bg-emerald-50 px-1.5 py-2 shadow-[0_12px_28px_rgba(15,118,87,0.16)] sm:gap-2 sm:px-2 xl:px-3"
-    : "panel flex min-h-[76px] min-w-0 items-start gap-1.5 bg-white px-1.5 py-2 shadow-[0_8px_20px_rgba(20,33,61,0.05)] sm:gap-2 sm:px-2 xl:px-3";
-
-  return (
-    <article className={articleClass}>
-      <span
-        className={`hidden size-7 shrink-0 place-items-center border md:grid xl:size-8 ${toneClass}`}
-      >
-        {icon ?? <Banknote className="size-4" />}
-      </span>
-      <div className="min-w-0">
-        <p className="text-[8px] font-semibold tracking-[0.06em] text-slate-500 sm:text-[9px] xl:text-[10px]">
-          {label}
-        </p>
-        <p
-          className={`mt-1 break-words font-bold leading-tight tabular-nums ${
-            featured
-              ? "text-[clamp(0.6rem,1.25vw,1.1rem)] text-[var(--forest-emerald)]"
-              : "text-[clamp(0.55rem,1.15vw,1rem)] text-[var(--midnight-navy)]"
-          }`}
-        >
-          {value}
-        </p>
-        <p className="mt-0.5 break-words text-[clamp(0.5rem,0.9vw,0.7rem)] leading-tight text-slate-500">
-          {hint}
-        </p>
-      </div>
-    </article>
-  );
-}
-
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="border-b border-[var(--line)] px-1 py-2">
-      <p className="text-[10px] font-semibold text-slate-500">{label}</p>
-      <p className="mt-0.5 truncate text-sm font-bold text-[var(--midnight-navy)]">
-        {value}
+    <div className="border-b border-[#edf1f5] px-1 py-2.5 last:border-b-0">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+        {label}
       </p>
+      <p className="mt-0.5 truncate text-sm font-bold text-[#0b1220]">{value}</p>
     </div>
   );
 }
@@ -4404,8 +4995,8 @@ function StatusPanel({
         ? "border-sky-100 bg-sky-50 text-sky-700"
         : "border-amber-100 bg-amber-50 text-amber-700";
   return (
-    <div className="panel flex items-center gap-3 bg-white px-4 py-3">
-      <span className={`grid size-9 place-items-center border ${toneClass}`}>
+    <div className="flex items-center gap-3 rounded-[14px] border border-[#e6ebf0] bg-white px-4 py-3.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
+      <span className={`grid size-9 place-items-center rounded-xl border ${toneClass}`}>
         {icon}
       </span>
       <span className="min-w-0">
@@ -4422,13 +5013,17 @@ function StatusPanel({
 
 function OperationsSkeleton() {
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-6 gap-2">
+    <div className="space-y-3.5">
+      <div className="h-[72px] animate-pulse rounded-[16px] border border-[#e6ebf0] bg-white" />
+      <div className="grid grid-cols-2 gap-2.5 md:grid-cols-3 xl:grid-cols-6">
         {Array.from({ length: 6 }).map((_, index) => (
-          <SkeletonBlock key={index} className="h-20" />
+          <SkeletonBlock key={index} className="h-[92px] rounded-[14px]" />
         ))}
       </div>
-      <SkeletonBlock className="h-72" />
+      <div className="grid gap-3.5 xl:grid-cols-[0.9fr_1.45fr]">
+        <SkeletonBlock className="h-72 rounded-[16px]" />
+        <SkeletonBlock className="h-72 rounded-[16px]" />
+      </div>
     </div>
   );
 }
