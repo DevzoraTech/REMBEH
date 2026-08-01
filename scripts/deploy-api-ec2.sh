@@ -164,7 +164,6 @@ if [[ "$SKIP_ENV_UPLOAD" != "1" ]]; then
   echo "==> [3/4] Sync .env to server (IAM role for S3; not stored in GitHub)..."
   python3 - <<PY | ec2_ssh "$USER_NAME@$HOST" "cat > '$REMOTE_DIR/.env'"
 from pathlib import Path
-import json
 import re
 
 root = Path("$ROOT")
@@ -175,32 +174,8 @@ text = re.sub(
     text,
 )
 
-def load_service_account_json(candidates: list[Path]) -> str | None:
-    for path in candidates:
-        if not path.is_file():
-            continue
-        try:
-            parsed = json.loads(path.read_text())
-        except Exception:
-            continue
-        if isinstance(parsed, dict) and parsed.get("type") == "service_account":
-            # Single-line JSON so dotenv parsers keep the whole credential.
-            return json.dumps(parsed, separators=(",", ":"))
-    return None
-
-web_sa = load_service_account_json(
-    [
-        root / "secrets" / "rembeh-web-firebase-adminsdk.json",
-        *sorted(root.glob("apps/web/rembeh-web-firebase-adminsdk*.json")),
-    ]
-)
-mobile_sa = load_service_account_json(
-    [
-        root / "secrets" / "rembeh-mobile-firebase-adminsdk.json",
-        *sorted(root.glob("apps/mobile/rembeh-mobile-firebase-adminsdk*.json")),
-    ]
-)
-
+# Dotenv mangles PEM private keys inside single-line JSON env vars.
+# On EC2 we always load Firebase admin SDKs from secrets/*.json files.
 lines = []
 seen = set()
 for line in text.splitlines():
@@ -223,17 +198,12 @@ for line in text.splitlines():
     elif line.startswith("NODE_ENV="):
         lines.append("NODE_ENV=production")
     elif line.startswith("FIREBASE_WEB_SERVICE_ACCOUNT_JSON="):
-        lines.append(
-            f"FIREBASE_WEB_SERVICE_ACCOUNT_JSON={web_sa or ''}"
-        )
+        lines.append("FIREBASE_WEB_SERVICE_ACCOUNT_JSON=")
         seen.add("FIREBASE_WEB_SERVICE_ACCOUNT_JSON")
     elif line.startswith("FIREBASE_MOBILE_SERVICE_ACCOUNT_JSON="):
-        lines.append(
-            f"FIREBASE_MOBILE_SERVICE_ACCOUNT_JSON={mobile_sa or ''}"
-        )
+        lines.append("FIREBASE_MOBILE_SERVICE_ACCOUNT_JSON=")
         seen.add("FIREBASE_MOBILE_SERVICE_ACCOUNT_JSON")
     elif line.startswith("FIREBASE_WEB_SERVICE_ACCOUNT_PATH="):
-        # Prefer JSON on the server; keep a stable relative fallback path.
         lines.append(
             "FIREBASE_WEB_SERVICE_ACCOUNT_PATH=/home/ubuntu/rembeh/secrets/rembeh-web-firebase-adminsdk.json"
         )
@@ -249,9 +219,9 @@ for line in text.splitlines():
 if not any(l.startswith("NODE_ENV=") for l in lines):
     lines.insert(0, "NODE_ENV=production")
 if "FIREBASE_WEB_SERVICE_ACCOUNT_JSON" not in seen:
-    lines.append(f"FIREBASE_WEB_SERVICE_ACCOUNT_JSON={web_sa or ''}")
+    lines.append("FIREBASE_WEB_SERVICE_ACCOUNT_JSON=")
 if "FIREBASE_MOBILE_SERVICE_ACCOUNT_JSON" not in seen:
-    lines.append(f"FIREBASE_MOBILE_SERVICE_ACCOUNT_JSON={mobile_sa or ''}")
+    lines.append("FIREBASE_MOBILE_SERVICE_ACCOUNT_JSON=")
 if "FIREBASE_WEB_SERVICE_ACCOUNT_PATH" not in seen:
     lines.append(
         "FIREBASE_WEB_SERVICE_ACCOUNT_PATH=/home/ubuntu/rembeh/secrets/rembeh-web-firebase-adminsdk.json"
@@ -262,14 +232,7 @@ if "FIREBASE_MOBILE_SERVICE_ACCOUNT_PATH" not in seen:
     )
 
 print("\n".join(lines) + "\n")
-if web_sa:
-    print("firebase_web_sa=embedded", file=__import__("sys").stderr)
-else:
-    print("firebase_web_sa=missing", file=__import__("sys").stderr)
-if mobile_sa:
-    print("firebase_mobile_sa=embedded", file=__import__("sys").stderr)
-else:
-    print("firebase_mobile_sa=missing", file=__import__("sys").stderr)
+print("firebase_sa_mode=secrets-files", file=__import__("sys").stderr)
 PY
 
   # Keep server secret JSON files aligned with local admin SDKs (gitignored).
