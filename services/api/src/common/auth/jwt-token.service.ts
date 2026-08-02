@@ -11,12 +11,21 @@ const REFRESH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 export class JwtTokenService {
   constructor(private readonly configService: ConfigService) {}
 
-  issueAccessToken(input: { userId: string; tenantId: string }) {
+  get refreshTokenTtlSeconds() {
+    return REFRESH_TOKEN_TTL_SECONDS;
+  }
+
+  issueAccessToken(input: {
+    userId: string;
+    tenantId: string;
+    sessionId?: string;
+  }) {
     const now = Math.floor(Date.now() / 1000);
     const payload: AccessTokenPayload = {
       typ: 'access',
       sub: input.userId,
       tenantId: input.tenantId,
+      ...(input.sessionId ? { sid: input.sessionId } : {}),
       iat: now,
       exp: now + ACCESS_TOKEN_TTL_SECONDS,
     };
@@ -27,12 +36,17 @@ export class JwtTokenService {
     };
   }
 
-  issueRefreshToken(input: { userId: string; tenantId: string }) {
+  issueRefreshToken(input: {
+    userId: string;
+    tenantId: string;
+    sessionId?: string;
+  }) {
     const now = Math.floor(Date.now() / 1000);
     const payload: RefreshTokenPayload = {
       typ: 'refresh',
       sub: input.userId,
       tenantId: input.tenantId,
+      ...(input.sessionId ? { sid: input.sessionId } : {}),
       iat: now,
       exp: now + REFRESH_TOKEN_TTL_SECONDS,
     };
@@ -43,7 +57,11 @@ export class JwtTokenService {
     };
   }
 
-  issueTokenPair(input: { userId: string; tenantId: string }) {
+  issueTokenPair(input: {
+    userId: string;
+    tenantId: string;
+    sessionId?: string;
+  }) {
     return {
       ...this.issueAccessToken(input),
       ...this.issueRefreshToken(input),

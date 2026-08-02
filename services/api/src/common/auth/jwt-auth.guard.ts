@@ -58,12 +58,28 @@ export class JwtAuthGuard implements CanActivate {
 
     assertUserCanAuthenticate(user);
 
+    if (payload.sid) {
+      const session = await this.prisma.authSession.findFirst({
+        where: {
+          id: payload.sid,
+          userId: user.id,
+          tenantId: user.tenantId,
+          revokedAt: null,
+        },
+        select: { id: true, expiresAt: true },
+      });
+      if (!session || session.expiresAt.getTime() <= Date.now()) {
+        throw new UnauthorizedException('Device session was signed out.');
+      }
+    }
+
     request.user = {
       userId: user.id,
       tenantId: user.tenantId,
       branchId: user.branchId,
       email: user.email,
       displayName: user.displayName,
+      sessionId: payload.sid ?? null,
       permissions: [
         ...new Set(
           user.roles.flatMap((userRole) =>

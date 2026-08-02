@@ -28,6 +28,7 @@ import {
   readAuthState,
   resolveSafeNextPath,
 } from "../../../lib/auth-session";
+import { resolveWebDeviceIdentity } from "../../../lib/device-identity";
 import { resolveOperatorRole } from "../../../lib/roles";
 
 const REMEMBER_EMAIL_KEY = "rembeh.login.email";
@@ -97,12 +98,14 @@ function LoginForm() {
 
     try {
       const email = formData.email.trim();
+      const device = resolveWebDeviceIdentity();
       const response = await fetch(`${apiBaseUrl}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email,
           password: formData.password,
+          ...device,
         }),
       });
       const payload = await readApiJson<LoginResponse>(response);

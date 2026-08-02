@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -62,6 +63,31 @@ export class AgentsController {
       date,
       range,
     });
+  }
+
+  @Get(':agentId/account')
+  getAccount(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('agentId', ParseUUIDPipe) agentId: string,
+  ) {
+    return this.agentsService.getAgentAccount(user, agentId);
+  }
+
+  @Delete(':agentId/sessions/:sessionId')
+  revokeSession(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('agentId', ParseUUIDPipe) agentId: string,
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+  ) {
+    return this.agentsService.revokeAgentSession(user, agentId, sessionId);
+  }
+
+  @Post(':agentId/sessions/revoke-all')
+  revokeAllSessions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('agentId', ParseUUIDPipe) agentId: string,
+  ) {
+    return this.agentsService.revokeAllAgentSessions(user, agentId);
   }
 
   @Patch(':agentId/status')

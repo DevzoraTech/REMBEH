@@ -15,10 +15,13 @@ import {
   AGENT_READ_PERMISSIONS,
 } from './agents.permissions';
 import type {
+  AgentAccessHistoryContract,
+  AgentAccountResponse,
   AgentAccountabilityContract,
   AgentActivityResponse,
   AgentDailyFloatContract,
   AgentDetailContract,
+  AgentDeviceContract,
   AgentListItemContract,
   AgentOtherActivityContract,
   AgentsListResponse,
@@ -153,34 +156,46 @@ export class AgentsService {
     const { dayStart, dayEnd, dateLabel, floatDate } =
       this.parseDayBounds(date);
 
-    const [repayToday, repayLife, appsToday, appsLife, floatRow] =
-      await Promise.all([
-        this.repository.sumRepayments({
-          tenantId: scope.tenantId,
-          agentId,
-          from: dayStart,
-          to: dayEnd,
-        }),
-        this.repository.sumRepayments({
-          tenantId: scope.tenantId,
-          agentId,
-        }),
-        this.repository.sumApplicationPrincipal({
-          tenantId: scope.tenantId,
-          agentId,
-          from: dayStart,
-          to: dayEnd,
-        }),
-        this.repository.sumApplicationPrincipal({
-          tenantId: scope.tenantId,
-          agentId,
-        }),
-        this.repository.findFloatForDay({
-          tenantId: scope.tenantId,
-          agentId,
-          floatDate,
-        }),
-      ]);
+    const [
+      repayToday,
+      repayLife,
+      appsToday,
+      appsLife,
+      floatRow,
+      latestSession,
+      lastActiveMap,
+    ] = await Promise.all([
+      this.repository.sumRepayments({
+        tenantId: scope.tenantId,
+        agentId,
+        from: dayStart,
+        to: dayEnd,
+      }),
+      this.repository.sumRepayments({
+        tenantId: scope.tenantId,
+        agentId,
+      }),
+      this.repository.sumApplicationPrincipal({
+        tenantId: scope.tenantId,
+        agentId,
+        from: dayStart,
+        to: dayEnd,
+      }),
+      this.repository.sumApplicationPrincipal({
+        tenantId: scope.tenantId,
+        agentId,
+      }),
+      this.repository.findFloatForDay({
+        tenantId: scope.tenantId,
+        agentId,
+        floatDate,
+      }),
+      this.repository.findLatestSession({
+        tenantId: scope.tenantId,
+        userId: agentId,
+      }),
+      this.latestActivityByAgent(scope.tenantId, [agentId]),
+    ]);
 
     const amountGiven = this.decimalToNumber(floatRow?.amountGiven) ?? 0;
     const amountDisbursed =
@@ -199,6 +214,8 @@ export class AgentsService {
       formula: ACCOUNTABILITY_FORMULA,
     };
 
+    const lastActiveAt = lastActiveMap.get(agentId) ?? null;
+
     return {
       agent: {
         id: agent.id,
@@ -212,6 +229,8 @@ export class AgentsService {
         branchName: agent.branch?.name ?? null,
         photoUrl: await this.presignPhotoUrl(agent.profilePhotoStorageKey),
         createdAt: agent.createdAt.toISOString(),
+        lastSignInAt: latestSession?.lastSeenAt.toISOString() ?? null,
+        lastActiveAt: lastActiveAt ? lastActiveAt.toISOString() : null,
         accountability,
         float: floatRow ? this.toFloatContract(floatRow) : null,
         collectionsToday: repayToday._count._all,
@@ -224,6 +243,149 @@ export class AgentsService {
           this.decimalToNumber(appsLife._sum.principalAmount) ?? 0,
       },
     };
+  }
+
+  async getAgentAccount(
+    user: AuthenticatedUser,
+    agentId: string,
+  ): Promise<AgentAccountResponse> {
+    this.assertCanRead(user);
+    const scope = this.scope(user);
+    const agent = await this.repository.findAgentById({
+      ...scope,
+      agentId,
+    });
+    if (!agent) {
+      throw new NotFoundException('Agent not found.');
+    }
+
+    const [sessions, allSessions, audits] = await Promise.all([
+      this.repository.listActiveSessions({
+        tenantId: scope.tenantId,
+        userId: agentId,
+      }),
+      this.repository.listAllSessions({
+        tenantId: scope.tenantId,
+        userId: agentId,
+      }),
+      this.repository.listAgentAccessAudits({
+        tenantId: scope.tenantId,
+        agentId,
+      }),
+    ]);
+
+    const canManage = AGENT_MANAGE_PERMISSIONS.some((key) =>
+      user.permissions.includes(key),
+    );
+    const currentSessionId = sessions[0]?.id ?? null;
+    const devices: AgentDeviceContract[] = sessions.map((session) => {
+      const isCurrent = session.id === currentSessionId;
+      return {
+        id: session.id,
+        deviceName: session.deviceName || 'Unknown device',
+        deviceType:
+          session.deviceType ||
+          (session.platform === 'WEB'
+            ? 'Web App'
+            : session.platform === 'IOS'
+              ? 'Mobile App (iOS)'
+              : session.platform === 'ANDROID'
+                ? 'Mobile App (Android)'
+                : 'App'),
+        platform: session.platform,
+        lastUsedAt: session.lastSeenAt.toISOString(),
+        status: isCurrent ? 'CURRENT' : 'ACTIVE',
+        // Match design: current device has no Remove action.
+        canRemove: canManage && !isCurrent,
+      };
+    });
+
+    const accessHistory = this.buildAccessHistory({
+      agentCreatedAt: agent.createdAt,
+      firstSessionAt: allSessions[0]?.createdAt ?? null,
+      audits,
+    });
+
+    return { devices, accessHistory };
+  }
+
+  async revokeAgentSession(
+    user: AuthenticatedUser,
+    agentId: string,
+    sessionId: string,
+  ) {
+    this.assertCanManage(user);
+    const scope = this.scope(user);
+    const agent = await this.repository.findAgentById({
+      ...scope,
+      agentId,
+    });
+    if (!agent) {
+      throw new NotFoundException('Agent not found.');
+    }
+
+    const session = await this.repository.findSessionById({
+      tenantId: scope.tenantId,
+      userId: agentId,
+      sessionId,
+    });
+    if (!session || session.revokedAt) {
+      throw new NotFoundException('Device session not found.');
+    }
+
+    await this.repository.revokeSession({
+      sessionId,
+      revokedByUserId: user.userId,
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: scope.tenantId,
+        actorUserId: user.userId,
+        action: 'agent.session.revoke',
+        entityType: 'User',
+        entityId: agentId,
+        newValue: {
+          sessionId,
+          deviceName: session.deviceName,
+          deviceType: session.deviceType,
+        },
+        device: session.deviceName,
+      },
+    });
+
+    return this.getAgentAccount(user, agentId);
+  }
+
+  async revokeAllAgentSessions(user: AuthenticatedUser, agentId: string) {
+    this.assertCanManage(user);
+    const scope = this.scope(user);
+    const agent = await this.repository.findAgentById({
+      ...scope,
+      agentId,
+    });
+    if (!agent) {
+      throw new NotFoundException('Agent not found.');
+    }
+
+    const result = await this.repository.revokeAllSessions({
+      tenantId: scope.tenantId,
+      userId: agentId,
+      revokedByUserId: user.userId,
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: scope.tenantId,
+        actorUserId: user.userId,
+        action: 'agent.session.revoke_all',
+        entityType: 'User',
+        entityId: agentId,
+        newValue: { revokedCount: result.count },
+      },
+    });
+
+    return this.getAgentAccount(user, agentId);
   }
 
   async getAgentActivity(
@@ -346,6 +508,14 @@ export class AgentsService {
       status: nextStatus,
       suspensionReason,
     });
+
+    if (nextStatus === 'SUSPENDED') {
+      await this.repository.revokeAllSessions({
+        tenantId: scope.tenantId,
+        userId: agentId,
+        revokedByUserId: user.userId,
+      });
+    }
 
     await this.prisma.auditLog.create({
       data: {
@@ -793,6 +963,90 @@ export class AgentsService {
     if (!value || typeof value !== 'object') return null;
     const reason = (value as { reason?: unknown }).reason;
     return typeof reason === 'string' && reason.trim() ? reason.trim() : null;
+  }
+
+  private buildAccessHistory(input: {
+    agentCreatedAt: Date;
+    firstSessionAt: Date | null;
+    audits: Array<{
+      id: string;
+      action: string;
+      newValue: unknown;
+      createdAt: Date;
+      actor: { displayName: string } | null;
+    }>;
+  }): AgentAccessHistoryContract[] {
+    const items: AgentAccessHistoryContract[] = [];
+
+    const invite = input.audits.find(
+      (audit) => audit.action === 'branch.staff.invite',
+    );
+    items.push({
+      id: invite ? `created-${invite.id}` : 'account-created',
+      type: 'ACCOUNT_CREATED',
+      title: 'Account created',
+      detail: 'Account was created for the agent.',
+      occurredAt: (invite?.createdAt ?? input.agentCreatedAt).toISOString(),
+      actorName: invite?.actor?.displayName || 'System',
+    });
+
+    if (input.firstSessionAt) {
+      items.push({
+        id: 'first-sign-in',
+        type: 'FIRST_SIGN_IN',
+        title: 'First sign-in',
+        detail: 'Agent signed in for the first time.',
+        occurredAt: input.firstSessionAt.toISOString(),
+        actorName: 'System',
+      });
+    }
+
+    for (const audit of input.audits) {
+      const actorName = audit.actor?.displayName || 'System';
+      if (audit.action === 'agent.suspend') {
+        const reason = this.readAuditReason(audit.newValue);
+        items.push({
+          id: `suspend-${audit.id}`,
+          type: 'ACCOUNT_SUSPENDED',
+          title: 'Account suspended',
+          detail: reason ? `Reason: ${reason}` : 'Account was suspended.',
+          occurredAt: audit.createdAt.toISOString(),
+          actorName,
+        });
+      } else if (audit.action === 'agent.activate') {
+        items.push({
+          id: `activate-${audit.id}`,
+          type: 'ACCOUNT_REACTIVATED',
+          title: 'Account reactivated',
+          detail: 'Account was reactivated.',
+          occurredAt: audit.createdAt.toISOString(),
+          actorName,
+        });
+      } else if (audit.action === 'user.password_reset') {
+        items.push({
+          id: `password-${audit.id}`,
+          type: 'PASSWORD_RESET',
+          title: 'Password reset',
+          detail: 'Password was reset by branch manager.',
+          occurredAt: audit.createdAt.toISOString(),
+          actorName,
+        });
+      } else if (audit.action === 'agent.session.revoke_all') {
+        items.push({
+          id: `revoke-all-${audit.id}`,
+          type: 'DEVICES_SIGNED_OUT',
+          title: 'Devices signed out',
+          detail: 'All devices were signed out.',
+          occurredAt: audit.createdAt.toISOString(),
+          actorName,
+        });
+      }
+    }
+
+    return items.sort(
+      (a, b) =>
+        new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
+    );
   }
 
   private toFloatContract(row: {

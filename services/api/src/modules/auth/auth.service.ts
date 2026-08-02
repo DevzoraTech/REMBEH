@@ -18,6 +18,12 @@ import {
 } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 import { ConfigService } from '@nestjs/config';
+import {
+  hashRefreshToken,
+  newAuthSessionId,
+  normalizeDeviceMeta,
+  type DeviceMeta,
+} from '../../common/auth/auth-session.util';
 import { JwtTokenService } from '../../common/auth/jwt-token.service';
 import { assertUserCanAuthenticate } from '../../common/auth/user-status-access';
 import {
@@ -509,7 +515,7 @@ export class AuthService {
     return this.buildWorkspaceVerificationResponse(result.tenant, result.owner);
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, requestMeta?: DeviceMeta) {
     const normalizedEmail = normalizeEmailAddress(dto.email);
     const user = await this.prisma.user.findUnique({
       where: {
@@ -548,6 +554,15 @@ export class AuthService {
       ? await this.presignProfilePhoto(profilePhotoStorageKey)
       : null;
 
+    const deviceMeta = normalizeDeviceMeta({
+      deviceId: dto.deviceId ?? requestMeta?.deviceId,
+      deviceName: dto.deviceName ?? requestMeta?.deviceName,
+      deviceType: dto.deviceType ?? requestMeta?.deviceType,
+      platform: dto.platform ?? requestMeta?.platform,
+      userAgent: requestMeta?.userAgent,
+      ipAddress: requestMeta?.ipAddress,
+    });
+
     return {
       workspace: {
         id: user.tenant.id,
@@ -575,7 +590,9 @@ export class AuthService {
             address: user.branch.address,
           }
         : null,
-      session: await this.buildSession(user.id, user.tenantId),
+      session: await this.buildSession(user.id, user.tenantId, {
+        device: deviceMeta,
+      }),
     };
   }
 
@@ -968,8 +985,73 @@ export class AuthService {
     throw new ConflictException('A conflicting registration already exists.');
   }
 
-  private async buildSession(userId: string, tenantId: string) {
-    const tokens = this.jwtTokenService.issueTokenPair({ userId, tenantId });
+  private async buildSession(
+    userId: string,
+    tenantId: string,
+    options?: {
+      device?: DeviceMeta | null;
+      existingSessionId?: string | null;
+    },
+  ) {
+    const sessionId = options?.existingSessionId || newAuthSessionId();
+    const tokens = this.jwtTokenService.issueTokenPair({
+      userId,
+      tenantId,
+      sessionId,
+    });
+    const refreshTokenHash = hashRefreshToken(tokens.refreshToken);
+    const expiresAt = new Date(tokens.refreshExpiresAt);
+    const device = normalizeDeviceMeta(options?.device);
+    const now = new Date();
+
+    if (options?.existingSessionId) {
+      await this.prisma.authSession.update({
+        where: { id: sessionId },
+        data: {
+          refreshTokenHash,
+          lastSeenAt: now,
+          expiresAt,
+          ...(device.deviceId ? { deviceId: device.deviceId } : {}),
+          ...(device.deviceName ? { deviceName: device.deviceName } : {}),
+          ...(device.deviceType ? { deviceType: device.deviceType } : {}),
+          ...(device.platform ? { platform: device.platform } : {}),
+          ...(device.userAgent ? { userAgent: device.userAgent } : {}),
+          ...(device.ipAddress ? { ipAddress: device.ipAddress } : {}),
+        },
+      });
+    } else {
+      if (device.deviceId) {
+        await this.prisma.authSession.updateMany({
+          where: {
+            tenantId,
+            userId,
+            deviceId: device.deviceId,
+            revokedAt: null,
+          },
+          data: {
+            revokedAt: now,
+          },
+        });
+      }
+
+      await this.prisma.authSession.create({
+        data: {
+          id: sessionId,
+          tenantId,
+          userId,
+          refreshTokenHash,
+          deviceId: device.deviceId,
+          deviceName: device.deviceName,
+          deviceType: device.deviceType,
+          platform: device.platform,
+          userAgent: device.userAgent,
+          ipAddress: device.ipAddress,
+          lastSeenAt: now,
+          expiresAt,
+        },
+      });
+    }
+
     const permissions = await this.prisma.userRole.findMany({
       where: { userId },
       include: {
@@ -991,6 +1073,7 @@ export class AuthService {
       refreshToken: tokens.refreshToken,
       refreshExpiresAt: tokens.refreshExpiresAt,
       tokenType: 'Bearer' as const,
+      sessionId,
       permissions: [
         ...new Set(
           permissions.flatMap((userRole) =>
@@ -1003,7 +1086,7 @@ export class AuthService {
     };
   }
 
-  async refreshSession(dto: RefreshSessionDto) {
+  async refreshSession(dto: RefreshSessionDto, requestMeta?: DeviceMeta) {
     const payload = this.jwtTokenService.verifyRefreshToken(dto.refreshToken);
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
@@ -1023,8 +1106,55 @@ export class AuthService {
       throw new UnauthorizedException('Unable to refresh session.');
     }
 
+    const refreshTokenHash = hashRefreshToken(dto.refreshToken);
+    let existingSessionId: string | null = null;
+
+    if (payload.sid) {
+      const session = await this.prisma.authSession.findFirst({
+        where: {
+          id: payload.sid,
+          userId: user.id,
+          tenantId: user.tenantId,
+          refreshTokenHash,
+          revokedAt: null,
+        },
+      });
+      if (!session || session.expiresAt.getTime() <= Date.now()) {
+        throw new UnauthorizedException('Session is no longer valid.');
+      }
+      existingSessionId = session.id;
+    }
+
     return {
-      session: await this.buildSession(user.id, user.tenantId),
+      session: await this.buildSession(user.id, user.tenantId, {
+        existingSessionId,
+        device: {
+          userAgent: requestMeta?.userAgent,
+          ipAddress: requestMeta?.ipAddress,
+        },
+      }),
     };
+  }
+
+  async revokeUserSessions(input: {
+    tenantId: string;
+    userId: string;
+    revokedByUserId?: string | null;
+    exceptSessionId?: string | null;
+  }) {
+    return this.prisma.authSession.updateMany({
+      where: {
+        tenantId: input.tenantId,
+        userId: input.userId,
+        revokedAt: null,
+        ...(input.exceptSessionId
+          ? { id: { not: input.exceptSessionId } }
+          : {}),
+      },
+      data: {
+        revokedAt: new Date(),
+        revokedByUserId: input.revokedByUserId ?? null,
+      },
+    });
   }
 }

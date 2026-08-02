@@ -353,7 +353,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
     >
       <div className="mx-auto max-w-[1400px] space-y-5 animate-rise">
         <OwnerHeader
-          eyebrow={isManager ? "Your branch" : "All Branches"}
+          eyebrow={isManager ? undefined : "All Branches"}
           title="Loans"
           search={search}
           onSearchChange={setSearch}
@@ -363,49 +363,22 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
           settingsHref={isManager ? "/settings" : "/owner/settings"}
           notificationScope={mode}
           actions={
-            <>
-              <button
-                type="button"
-                onClick={() => void loadLoans()}
-                disabled={loading}
-                aria-label="Refresh loans"
-                className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-50 disabled:opacity-60"
-              >
-                <RefreshCw
-                  className={`size-4 ${loading ? "animate-spin" : ""}`}
-                />
-              </button>
-              {canCreate ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPanelError(null);
-                    setCreateMode("new");
-                    setAddOpen(true);
-                  }}
-                  className="flex h-9 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3.5 text-xs font-semibold text-white shadow-[0_12px_24px_rgba(15,143,104,0.28)]"
-                >
-                  <Plus className="size-3.5" />
-                  New Loan
-                </button>
-              ) : null}
-              <button
-                type="button"
-                disabled={exporting || filtered.length === 0}
-                onClick={() =>
-                  void exportPortfolio(filtered, currency, setExporting)
-                }
-                className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] disabled:opacity-60"
-              >
-                <Download className="size-3.5" />
-                {exporting ? "Exporting" : "Export"}
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={() => void loadLoans()}
+              disabled={loading}
+              aria-label="Refresh loans"
+              className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-50 disabled:opacity-60"
+            >
+              <RefreshCw
+                className={`size-4 ${loading ? "animate-spin" : ""}`}
+              />
+            </button>
           }
         />
         <p className="-mt-2 text-sm font-medium text-slate-500">
           {isManager
-            ? "Review and manage loans issued at your branch."
+            ? "Track loans, monitor repayments, and follow up on overdue balances."
             : "Review loan portfolio performance across branches."}
         </p>
 
@@ -467,21 +440,50 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
 
         <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-3.5">
-            <h2 className="text-[15px] font-semibold text-[#0b1220]">
-              {isManager ? "Branch Loans" : "All Loans"}
-            </h2>
-            <select
-              value={filter}
-              onChange={(event) =>
-                setFilter(event.target.value as PortfolioFilter)
-              }
-              className="h-9 w-full rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold outline-none sm:w-[170px]"
-            >
-              <option value="active">Active Loans</option>
-              <option value="all">All Loans</option>
-              <option value="closed">Closed Loans</option>
-              <option value="overdue">Overdue Loans</option>
-            </select>
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              <h2 className="text-[15px] font-semibold text-[#0b1220]">
+                {isManager ? "Branch Loans" : "All Loans"}
+              </h2>
+              <select
+                value={filter}
+                onChange={(event) =>
+                  setFilter(event.target.value as PortfolioFilter)
+                }
+                className="h-9 w-full rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold outline-none sm:w-[170px]"
+              >
+                <option value="active">Active Loans</option>
+                <option value="all">All Loans</option>
+                <option value="closed">Closed Loans</option>
+                <option value="overdue">Overdue Loans</option>
+              </select>
+            </div>
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+              {canCreate ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPanelError(null);
+                    setCreateMode("new");
+                    setAddOpen(true);
+                  }}
+                  className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8faf9]"
+                >
+                  <Plus className="size-3.5" />
+                  New Loan
+                </button>
+              ) : null}
+              <button
+                type="button"
+                disabled={exporting || filtered.length === 0}
+                onClick={() =>
+                  void exportPortfolio(filtered, currency, setExporting)
+                }
+                className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] disabled:opacity-60"
+              >
+                <Download className="size-3.5" />
+                {exporting ? "Exporting" : "Export"}
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto">

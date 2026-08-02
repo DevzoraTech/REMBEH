@@ -401,4 +401,111 @@ export class AgentsRepository {
       take: input.take ?? 100,
     });
   }
+
+  listAgentAccessAudits(input: {
+    tenantId: string;
+    agentId: string;
+    take?: number;
+  }) {
+    return this.prisma.auditLog.findMany({
+      where: {
+        tenantId: input.tenantId,
+        entityType: 'User',
+        entityId: input.agentId,
+        action: {
+          in: [
+            'agent.suspend',
+            'agent.activate',
+            'agent.session.revoke',
+            'agent.session.revoke_all',
+            'branch.staff.invite',
+            'user.password_reset',
+          ],
+        },
+      },
+      include: {
+        actor: { select: { displayName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: input.take ?? 50,
+    });
+  }
+
+  listActiveSessions(input: { tenantId: string; userId: string }) {
+    return this.prisma.authSession.findMany({
+      where: {
+        tenantId: input.tenantId,
+        userId: input.userId,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { lastSeenAt: 'desc' },
+    });
+  }
+
+  listAllSessions(input: { tenantId: string; userId: string; take?: number }) {
+    return this.prisma.authSession.findMany({
+      where: {
+        tenantId: input.tenantId,
+        userId: input.userId,
+      },
+      orderBy: { createdAt: 'asc' },
+      take: input.take ?? 200,
+    });
+  }
+
+  findLatestSession(input: { tenantId: string; userId: string }) {
+    return this.prisma.authSession.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        userId: input.userId,
+      },
+      orderBy: { lastSeenAt: 'desc' },
+    });
+  }
+
+  findSessionById(input: {
+    tenantId: string;
+    userId: string;
+    sessionId: string;
+  }) {
+    return this.prisma.authSession.findFirst({
+      where: {
+        id: input.sessionId,
+        tenantId: input.tenantId,
+        userId: input.userId,
+      },
+    });
+  }
+
+  revokeSession(input: {
+    sessionId: string;
+    revokedByUserId: string;
+  }) {
+    return this.prisma.authSession.update({
+      where: { id: input.sessionId },
+      data: {
+        revokedAt: new Date(),
+        revokedByUserId: input.revokedByUserId,
+      },
+    });
+  }
+
+  revokeAllSessions(input: {
+    tenantId: string;
+    userId: string;
+    revokedByUserId: string;
+  }) {
+    return this.prisma.authSession.updateMany({
+      where: {
+        tenantId: input.tenantId,
+        userId: input.userId,
+        revokedAt: null,
+      },
+      data: {
+        revokedAt: new Date(),
+        revokedByUserId: input.revokedByUserId,
+      },
+    });
+  }
 }

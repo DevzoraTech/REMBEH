@@ -53,3 +53,6 @@ website/node_modules/
 
 # Local APK staging (not committed)
 tmp-releases/
+
+# Cognate/Coglim migration exports (PII + financial records)
+data/coglim-export/

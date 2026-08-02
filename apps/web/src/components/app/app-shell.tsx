@@ -12,7 +12,6 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
-  Settings,
   ShieldAlert,
   Users,
   UserRound,
@@ -63,9 +62,6 @@ export function AppShell({ children, session, user }: AppShellProps) {
   const railSidebarExpanded = railSidebarPinned || railSidebarHover;
   const operatorRole = resolveOperatorRole(session, user);
   const homeHref = operatorRole === "owner" ? "/owner" : "/dashboard";
-  const settingsHref =
-    operatorRole === "owner" ? "/owner/settings" : "/settings";
-
   const primaryNav = useMemo(() => {
     const ownerPrimary = [
       {
@@ -108,12 +104,6 @@ export function AppShell({ children, session, user }: AppShellProps) {
         href: "/owner/risk",
         label: "Risk Register",
         icon: ShieldAlert,
-        enabled: operatorRole === "owner",
-      },
-      {
-        href: "/owner/settings",
-        label: "Settings",
-        icon: Settings,
         enabled: operatorRole === "owner",
       },
     ];
@@ -185,12 +175,6 @@ export function AppShell({ children, session, user }: AppShellProps) {
         enabled:
           operatorRole === "manager" &&
           Boolean(session.permissions.includes("operation.read")),
-      },
-      {
-        href: "/settings",
-        label: "Settings",
-        icon: Settings,
-        enabled: operatorRole === "manager",
       },
     ];
 
@@ -331,7 +315,6 @@ export function AppShell({ children, session, user }: AppShellProps) {
         primaryNav={primaryNav}
         user={user}
         roleLabel={operatorRole === "owner" ? "Owner" : "Manager"}
-        settingsHref={settingsHref}
         promo={sidebarPromo}
         expanded={railSidebarExpanded}
         pinned={railSidebarPinned}
@@ -389,7 +372,6 @@ function RailSidebar({
   primaryNav,
   user,
   roleLabel,
-  settingsHref,
   promo,
   expanded,
   pinned,
@@ -409,7 +391,6 @@ function RailSidebar({
   }>;
   user: RembehUser | null;
   roleLabel: string;
-  settingsHref: string;
   promo: {
     href: string;
     title: string;
@@ -666,16 +647,6 @@ function RailSidebar({
                   {roleLabel}
                 </p>
               </div>
-              <Link
-                href={settingsHref}
-                onClick={onCloseMobile}
-                className={`grid size-8 shrink-0 place-items-center rounded-xl text-white/75 transition hover:bg-white/10 hover:text-white ${
-                  collapsed ? "lg:hidden" : ""
-                }`}
-                aria-label="Open settings"
-              >
-                <Settings className="size-4" />
-              </Link>
             </div>
           </RailSidebarTooltip>
           <RailSidebarTooltip label="Sign out" show={collapsed}>

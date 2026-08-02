@@ -1,5 +1,14 @@
-import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import type { Request } from 'express';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
+import { resolveClientIp } from '../../common/auth/auth-session.util';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { AuthService } from './auth.service';
@@ -33,13 +42,29 @@ export class AuthController {
   }
 
   @Post('login')
-  login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  login(@Body() dto: LoginDto, @Req() request: Request) {
+    return this.authService.login(dto, {
+      userAgent: request.header('user-agent') ?? null,
+      ipAddress: resolveClientIp(
+        request.headers as Record<string, unknown>,
+        request.ip,
+      ),
+      platform: dto.platform ?? 'WEB',
+      deviceName: dto.deviceName,
+      deviceType: dto.deviceType,
+      deviceId: dto.deviceId,
+    });
   }
 
   @Post('refresh')
-  refresh(@Body() dto: RefreshSessionDto) {
-    return this.authService.refreshSession(dto);
+  refresh(@Body() dto: RefreshSessionDto, @Req() request: Request) {
+    return this.authService.refreshSession(dto, {
+      userAgent: request.header('user-agent') ?? null,
+      ipAddress: resolveClientIp(
+        request.headers as Record<string, unknown>,
+        request.ip,
+      ),
+    });
   }
 
   @Get('me')

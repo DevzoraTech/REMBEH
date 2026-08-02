@@ -75,6 +75,10 @@ export type AgentDetailContract = {
   branchName: string | null;
   photoUrl: string | null;
   createdAt: string;
+  /** Latest auth session activity (sign-in / refresh). */
+  lastSignInAt: string | null;
+  /** Latest meaningful field activity (loan issuance or repayment). */
+  lastActiveAt: string | null;
   accountability: AgentAccountabilityContract;
   float: AgentDailyFloatContract | null;
   collectionsToday: number;
@@ -83,6 +87,38 @@ export type AgentDetailContract = {
   applicationsLifetime: number;
   amountCollectedLifetime: number;
   amountDisbursedLifetime: number;
+};
+
+export type AgentDeviceContract = {
+  id: string;
+  deviceName: string;
+  deviceType: string;
+  platform: string | null;
+  lastUsedAt: string;
+  status: 'CURRENT' | 'ACTIVE';
+  canRemove: boolean;
+};
+
+export type AgentAccessHistoryType =
+  | 'ACCOUNT_CREATED'
+  | 'FIRST_SIGN_IN'
+  | 'ACCOUNT_SUSPENDED'
+  | 'ACCOUNT_REACTIVATED'
+  | 'PASSWORD_RESET'
+  | 'DEVICES_SIGNED_OUT';
+
+export type AgentAccessHistoryContract = {
+  id: string;
+  type: AgentAccessHistoryType;
+  title: string;
+  detail: string;
+  occurredAt: string;
+  actorName: string;
+};
+
+export type AgentAccountResponse = {
+  devices: AgentDeviceContract[];
+  accessHistory: AgentAccessHistoryContract[];
 };
 
 export type AgentActivityApplicationContract = {

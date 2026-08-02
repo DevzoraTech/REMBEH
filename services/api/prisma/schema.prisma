@@ -212,6 +212,7 @@ model Tenant {
   branchOperationTopUps    BranchOperationTopUp[]
   branchOperationReports   BranchOperationReport[]
   devicePushTokens         DevicePushToken[]
+  authSessions             AuthSession[]
 
   @@map("tenants")
 }
@@ -455,11 +456,38 @@ model User {
   operationReportsApproved  BranchOperationReport[]  @relation("BranchOperationReportApprovedBy")
   operationReportsReturned  BranchOperationReport[]  @relation("BranchOperationReportReturnedBy")
   devicePushTokens          DevicePushToken[]
+  authSessions              AuthSession[]
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
   @@index([tenantId, branchId])
   @@map("users")
+}
+
+/// Persisted login sessions so managers can list / revoke agent devices.
+model AuthSession {
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  refreshTokenHash String    @map("refresh_token_hash")
+  deviceId         String?   @map("device_id")
+  deviceName       String?   @map("device_name")
+  deviceType       String?   @map("device_type")
+  platform         String?
+  userAgent        String?   @map("user_agent")
+  ipAddress        String?   @map("ip_address")
+  lastSeenAt       DateTime  @default(now()) @map("last_seen_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  expiresAt        DateTime  @map("expires_at")
+  revokedAt        DateTime? @map("revoked_at")
+  revokedByUserId  String?   @map("revoked_by_user_id") @db.Uuid
+  tenant           Tenant    @relation(fields: [tenantId], references: [id])
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId, revokedAt])
+  @@index([userId, lastSeenAt])
+  @@index([refreshTokenHash])
+  @@map("auth_sessions")
 }
 
 enum PushPlatform {

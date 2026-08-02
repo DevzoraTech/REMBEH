@@ -7,6 +7,7 @@ import '../config.dart';
 import '../models/agent_day_status.dart';
 import '../utils/account_access.dart';
 import '../utils/friendly_errors.dart';
+import 'device_identity.dart';
 import 'session_store.dart';
 
 class ApiClient {
@@ -18,11 +19,16 @@ class ApiClient {
     required String email,
     required String password,
   }) async {
+    final device = await resolveDeviceIdentity();
     final uri = Uri.parse('$rembehApiBaseUrl/auth/login');
     final response = await http.post(
       uri,
       headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'email': email.trim(), 'password': password}),
+      body: jsonEncode({
+        'email': email.trim(),
+        'password': password,
+        ...device.toJson(),
+      }),
     );
 
     final body = _decode(response);
