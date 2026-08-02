@@ -339,4 +339,66 @@ export class AgentsRepository {
       orderBy: { createdAt: 'desc' },
     });
   }
+
+  listFloatsForAgent(input: {
+    tenantId: string;
+    agentId: string;
+    from?: Date;
+    to?: Date;
+    take?: number;
+  }) {
+    const createdAt =
+      input.from || input.to
+        ? {
+            ...(input.from ? { gte: input.from } : {}),
+            ...(input.to ? { lte: input.to } : {}),
+          }
+        : undefined;
+    const returnedAt = createdAt;
+
+    return this.prisma.agentDailyFloat.findMany({
+      where: {
+        tenantId: input.tenantId,
+        agentId: input.agentId,
+        ...(createdAt
+          ? {
+              OR: [{ createdAt }, { returnedAt }],
+            }
+          : {}),
+      },
+      include: {
+        recordedBy: { select: { displayName: true } },
+        returnedBy: { select: { displayName: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: input.take ?? 100,
+    });
+  }
+
+  listAgentStatusAudits(input: {
+    tenantId: string;
+    agentId: string;
+    from?: Date;
+    to?: Date;
+    take?: number;
+  }) {
+    return this.prisma.auditLog.findMany({
+      where: {
+        tenantId: input.tenantId,
+        entityType: 'User',
+        entityId: input.agentId,
+        action: { in: ['agent.suspend', 'agent.activate'] },
+        ...(input.from || input.to
+          ? {
+              createdAt: {
+                ...(input.from ? { gte: input.from } : {}),
+                ...(input.to ? { lte: input.to } : {}),
+              },
+            }
+          : {}),
+      },
+      orderBy: { createdAt: 'desc' },
+      take: input.take ?? 100,
+    });
+  }
 }

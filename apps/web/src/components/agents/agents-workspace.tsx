@@ -510,6 +510,7 @@ export function AgentsWorkspace() {
         accessToken={session.accessToken}
         tokenType={session.tokenType}
         canManage={canManage}
+        currency={workspace?.currency ?? "UGX"}
         onClose={() => setSelectedAgentId(null)}
         onChanged={() => void loadAgents(session, query, selectedDate)}
       />

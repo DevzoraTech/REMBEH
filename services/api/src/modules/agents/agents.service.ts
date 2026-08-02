@@ -20,6 +20,7 @@ import type {
   AgentDailyFloatContract,
   AgentDetailContract,
   AgentListItemContract,
+  AgentOtherActivityContract,
   AgentsListResponse,
 } from './agents.contracts';
 import { AgentsRepository } from './agents.repository';
@@ -210,6 +211,7 @@ export class AgentsService {
         branchId: agent.branchId,
         branchName: agent.branch?.name ?? null,
         photoUrl: await this.presignPhotoUrl(agent.profilePhotoStorageKey),
+        createdAt: agent.createdAt.toISOString(),
         accountability,
         float: floatRow ? this.toFloatContract(floatRow) : null,
         collectionsToday: repayToday._count._all,
@@ -242,7 +244,7 @@ export class AgentsService {
     const range = this.normalizeRange(options?.range);
     const bounds = this.rangeBounds(range, options?.date);
 
-    const [applications, repayments] = await Promise.all([
+    const [applications, repayments, floats, statusAudits] = await Promise.all([
       this.repository.listApplications({
         tenantId: scope.tenantId,
         agentId,
@@ -255,7 +257,26 @@ export class AgentsService {
         from: bounds.from,
         to: bounds.to,
       }),
+      this.repository.listFloatsForAgent({
+        tenantId: scope.tenantId,
+        agentId,
+        from: bounds.from,
+        to: bounds.to,
+      }),
+      this.repository.listAgentStatusAudits({
+        tenantId: scope.tenantId,
+        agentId,
+        from: bounds.from,
+        to: bounds.to,
+      }),
     ]);
+
+    const otherActivity = this.buildOtherActivity(
+      floats,
+      statusAudits,
+      bounds.from,
+      bounds.to,
+    );
 
     return {
       date: bounds.dateLabel,
@@ -269,8 +290,12 @@ export class AgentsService {
           'Client',
         phone: app.customer?.phone ?? app.phone,
         principalAmount: this.decimalToNumber(app.principalAmount) ?? 0,
-        status: app.status,
-        submittedAt: (app.submittedAt ?? app.createdAt).toISOString(),
+        status: app.loan?.status ?? app.status,
+        submittedAt: (
+          app.loan?.disbursedAt ??
+          app.submittedAt ??
+          app.createdAt
+        ).toISOString(),
         loanId: app.loanId ?? app.loan?.id ?? null,
       })),
       collections: repayments.map((row) => ({
@@ -284,6 +309,7 @@ export class AgentsService {
         note: row.note,
         paidAt: row.paidAt.toISOString(),
       })),
+      otherActivity,
     };
   }
 
@@ -681,6 +707,92 @@ export class AgentsService {
     }
 
     return result;
+  }
+
+  private buildOtherActivity(
+    floats: Array<{
+      id: string;
+      amountGiven: Prisma.Decimal;
+      amountReturned: Prisma.Decimal | null;
+      createdAt: Date;
+      returnedAt: Date | null;
+      recordedBy: { displayName: string };
+    }>,
+    statusAudits: Array<{
+      id: string;
+      action: string;
+      newValue: unknown;
+      createdAt: Date;
+    }>,
+    from?: Date,
+    to?: Date,
+  ): AgentOtherActivityContract[] {
+    const inRange = (at: Date) => {
+      if (from && at < from) return false;
+      if (to && at > to) return false;
+      return true;
+    };
+
+    const items: AgentOtherActivityContract[] = [];
+
+    for (const float of floats) {
+      if (inRange(float.createdAt)) {
+        const amount = this.decimalToNumber(float.amountGiven) ?? 0;
+        items.push({
+          id: `float-received-${float.id}`,
+          type: 'FLOAT_RECEIVED',
+          title: 'Float received',
+          detail: `UGX ${Math.round(amount).toLocaleString('en-UG')} issued by ${float.recordedBy.displayName}`,
+          occurredAt: float.createdAt.toISOString(),
+        });
+      }
+
+      if (float.returnedAt && inRange(float.returnedAt)) {
+        const returned = this.decimalToNumber(float.amountReturned);
+        items.push({
+          id: `reconciliation-${float.id}`,
+          type: 'RECONCILIATION_COMPLETED',
+          title: 'Reconciliation completed',
+          detail:
+            returned != null
+              ? `UGX ${Math.round(returned).toLocaleString('en-UG')} returned and confirmed`
+              : 'No cash difference recorded',
+          occurredAt: float.returnedAt.toISOString(),
+        });
+      }
+    }
+
+    for (const audit of statusAudits) {
+      const reason = this.readAuditReason(audit.newValue);
+      if (audit.action === 'agent.suspend') {
+        items.push({
+          id: `suspend-${audit.id}`,
+          type: 'ACCOUNT_SUSPENDED',
+          title: 'Account suspended',
+          detail: reason ? `Reason: ${reason}` : 'Account suspended by manager',
+          occurredAt: audit.createdAt.toISOString(),
+        });
+      } else if (audit.action === 'agent.activate') {
+        items.push({
+          id: `activate-${audit.id}`,
+          type: 'ACCOUNT_ACTIVATED',
+          title: 'Account activated',
+          detail: 'Account reactivated by manager',
+          occurredAt: audit.createdAt.toISOString(),
+        });
+      }
+    }
+
+    return items.sort(
+      (a, b) =>
+        new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime(),
+    );
+  }
+
+  private readAuditReason(value: unknown): string | null {
+    if (!value || typeof value !== 'object') return null;
+    const reason = (value as { reason?: unknown }).reason;
+    return typeof reason === 'string' && reason.trim() ? reason.trim() : null;
   }
 
   private toFloatContract(row: {

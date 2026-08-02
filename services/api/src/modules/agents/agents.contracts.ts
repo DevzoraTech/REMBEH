@@ -74,6 +74,7 @@ export type AgentDetailContract = {
   branchId: string | null;
   branchName: string | null;
   photoUrl: string | null;
+  createdAt: string;
   accountability: AgentAccountabilityContract;
   float: AgentDailyFloatContract | null;
   collectionsToday: number;
@@ -107,9 +108,24 @@ export type AgentActivityCollectionContract = {
   paidAt: string;
 };
 
+export type AgentOtherActivityType =
+  | 'FLOAT_RECEIVED'
+  | 'RECONCILIATION_COMPLETED'
+  | 'ACCOUNT_SUSPENDED'
+  | 'ACCOUNT_ACTIVATED';
+
+export type AgentOtherActivityContract = {
+  id: string;
+  type: AgentOtherActivityType;
+  title: string;
+  detail: string;
+  occurredAt: string;
+};
+
 export type AgentActivityResponse = {
   date: string;
   range: 'today' | 'week' | 'all';
   applications: AgentActivityApplicationContract[];
   collections: AgentActivityCollectionContract[];
+  otherActivity: AgentOtherActivityContract[];
 };
