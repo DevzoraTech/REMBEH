@@ -374,7 +374,7 @@ function OwnerSettingsContent() {
                     <OpsLink
                       href="/owner/collections"
                       icon={<HandCoins className="size-4" />}
-                      title="Collections"
+                      title="Repayments"
                       text="Track repayments coming in."
                     />
                     <OpsLink

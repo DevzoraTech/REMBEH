@@ -94,7 +94,7 @@ export function AppShell({ children, session, user }: AppShellProps) {
       },
       {
         href: "/owner/collections",
-        label: "Collections",
+        label: "Repayments",
         icon: HandCoins,
         enabled: operatorRole === "owner",
       },
@@ -164,7 +164,7 @@ export function AppShell({ children, session, user }: AppShellProps) {
       },
       {
         href: "/collections/daily",
-        label: "Collections",
+        label: "Repayments",
         icon: HandCoins,
         enabled:
           operatorRole === "manager" &&
@@ -211,7 +211,7 @@ export function AppShell({ children, session, user }: AppShellProps) {
       : {
           href: "/agents",
           title: "Grow your branch",
-          description: "Invite agents so collections and field work stay covered.",
+          description: "Invite agents so repayments and field work stay covered.",
           cta: "Invite Agents",
           collapsedLabel: "Invite agents",
         };

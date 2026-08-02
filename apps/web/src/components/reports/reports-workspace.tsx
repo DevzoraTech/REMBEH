@@ -14,7 +14,6 @@ import {
   Loader2,
   RefreshCw,
   Scale,
-  Search,
   Users,
   WalletCards,
 } from "lucide-react";
@@ -95,18 +94,18 @@ type ReportSnapshot = {
 };
 
 const OWNER_STATUS_OPTIONS: Array<{ value: ReportStatusFilter; label: string }> = [
-  { value: "all", label: "All statuses" },
-  { value: "SENT_TO_OWNER", label: "Waiting approval" },
+  { value: "all", label: "All Statuses" },
+  { value: "SENT_TO_OWNER", label: "Needs Your Review" },
   { value: "OWNER_APPROVED", label: "Approved" },
-  { value: "RETURNED_TO_MANAGER", label: "Returned" },
+  { value: "RETURNED_TO_MANAGER", label: "Sent Back" },
 ];
 
 const MANAGER_STATUS_OPTIONS: Array<{ value: ReportStatusFilter; label: string }> = [
-  { value: "all", label: "All statuses" },
-  { value: "MANAGER_REVIEW", label: "Ready to send" },
-  { value: "SENT_TO_OWNER", label: "With owner" },
+  { value: "all", label: "All Statuses" },
+  { value: "MANAGER_REVIEW", label: "Ready To Send" },
+  { value: "SENT_TO_OWNER", label: "Sent To Owner" },
   { value: "OWNER_APPROVED", label: "Approved" },
-  { value: "RETURNED_TO_MANAGER", label: "Returned" },
+  { value: "RETURNED_TO_MANAGER", label: "Sent Back" },
 ];
 
 type ReportsSession = {
@@ -231,15 +230,20 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
   const filteredReports = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return reports;
-    return reports.filter((report) =>
-      [
+    return reports.filter((report) => {
+      const statusLabel = report.status.replaceAll("_", " ").toLowerCase();
+      return [
         report.reportNumber,
         report.branchName,
         report.operationDate,
         report.status,
+        statusLabel,
         report.managerReviewedByName ?? "",
-      ].some((value) => value.toLowerCase().includes(q)),
-    );
+        report.ownerApprovedByName ?? "",
+        String(report.loansIssuedCount),
+        String(report.collectionsReceived),
+      ].some((value) => value.toLowerCase().includes(q));
+    });
   }, [reports, search]);
 
   const selectedReport =
@@ -319,7 +323,7 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
               ? "Search report number, date or status for your branch."
               : "Search report number, branch, date, status or manager."
           }
-          searchPlaceholder="Search reports..."
+          searchPlaceholder="Search Reports..."
           showReportsButton={false}
           settingsHref={isManager ? "/settings" : "/owner/settings"}
           reportsHref={isManager ? "/reports" : "/owner/reports"}
@@ -384,18 +388,28 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
           <MetricCard
             icon={<ClipboardList className="size-4" />}
             tone="green"
-            label="Reports in view"
+            label="Total Reports"
             value={formatNumber(filteredReports.length)}
             detail={
-              status === "all" ? "Matching filters" : statusLabel(status)
+              status === "all"
+                ? isManager
+                  ? "This Branch"
+                  : "In This List"
+                : statusLabel(status)
             }
           />
           <MetricCard
             icon={<Clock3 className="size-4" />}
             tone="gold"
-            label={isManager ? "With owner" : "Waiting approval"}
+            label={isManager ? "Sent To Owner" : "Needs Your Review"}
             value={formatNumber(waitingReports.length)}
-            detail={isManager ? "Awaiting owner approval" : "Needs owner action"}
+            detail={
+              isManager
+                ? "Waiting For Approval"
+                : waitingReports.length === 0
+                  ? "Nothing Waiting"
+                  : "Tap To Review"
+            }
             onClick={
               waitingReports.length > 0
                 ? () => setStatus("SENT_TO_OWNER")
@@ -406,19 +420,19 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
           <MetricCard
             icon={<CheckCircle2 className="size-4" />}
             tone="violet"
-            label="Approved"
+            label="Approved Reports"
             value={formatNumber(approvedReports.length)}
-            detail="Locked for records"
+            detail="Finished And Saved"
           />
           <MetricCard
             icon={<Scale className="size-4" />}
             tone="blue"
-            label="Net variance"
+            label="Cash Difference"
             value={formatMoney(
               sumBy(reports, (report) => report.closingVariance ?? 0),
               currency,
             )}
-            detail="Counted vs expected"
+            detail="Counted Cash vs Expected"
           />
         </section>
 
@@ -440,21 +454,12 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
                 onClick={() => setStatus("all")}
                 className="h-8 rounded-xl border border-[#e6ebf0] bg-white px-3 text-[11px] font-semibold text-slate-600 transition hover:bg-[#f8faf9]"
               >
-                Show all statuses
+                Show All Statuses
               </button>
             ) : null}
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 border-b border-[#edf1f5] px-4 py-3">
-            <label className="flex h-10 min-w-[220px] flex-1 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
-              <Search className="size-3.5 shrink-0 text-slate-400" />
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                className="min-w-0 flex-1 bg-transparent text-xs font-medium text-[#0b1224] outline-none placeholder:text-slate-400"
-                placeholder="Search branch, report number, manager..."
-              />
-            </label>
             {isManager ? (
               <span className="inline-flex h-10 items-center rounded-xl border border-[#e6ebf0] bg-[#f8faf9] px-3 text-xs font-semibold text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
                 {state.branch?.name ?? branches[0]?.name ?? "Your branch"}
@@ -836,19 +841,19 @@ function ReportSummaryView({
       <section className="grid gap-2.5 md:grid-cols-3">
         <HeroStat
           icon={<WalletCards className="size-3.5" />}
-          label="Expected close"
+          label="Expected Close"
           value={formatMoney(report.expectedClosingBalance, currency)}
           tone="green"
         />
         <HeroStat
           icon={<Banknote className="size-3.5" />}
-          label="Counted cash"
+          label="Counted Cash"
           value={formatMoney(report.closingBalance ?? 0, currency)}
           tone="blue"
         />
         <HeroStat
           icon={<Scale className="size-3.5" />}
-          label="Variance"
+          label="Cash Difference"
           value={formatMoney(variance, currency)}
           tone={variance !== 0 ? "red" : "slate"}
           hint={variance === 0 ? "Balanced" : "Needs attention"}
@@ -901,7 +906,7 @@ function ReportSummaryView({
       <section className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
         <MiniKpi
           icon={<FileText className="size-3.5" />}
-          label="Loans issued"
+          label="Loans Given"
           value={formatNumber(numberValue(summary.loansIssuedCount))}
           hint={formatMoney(
             numberValue(summary.loansIssuedPrincipal),
@@ -910,7 +915,7 @@ function ReportSummaryView({
         />
         <MiniKpi
           icon={<HandCoins className="size-3.5" />}
-          label="Collections"
+          label="Repayments"
           value={formatNumber(numberValue(summary.collectionsCount))}
           hint={formatMoney(
             numberValue(summary.collectionsReceived),
@@ -919,13 +924,13 @@ function ReportSummaryView({
         />
         <MiniKpi
           icon={<Banknote className="size-3.5" />}
-          label="Processing fees"
+          label="Processing Fees"
           value={formatMoney(numberValue(summary.processingFees), currency)}
-          hint="Included in handover"
+          hint="From New Loans"
         />
         <MiniKpi
           icon={<Users className="size-3.5" />}
-          label="Agents returned"
+          label="Agents Back"
           value={`${agentsReturned}/${snapshot.agentReturns.length}`}
           hint={formatMoney(
             sumBy(snapshot.agentReturns, (row) =>
@@ -945,7 +950,7 @@ function ReportSummaryView({
                 <th className="px-2 py-2 text-right font-semibold">Float</th>
                 <th className="px-2 py-2 text-right font-semibold">Loans</th>
                 <th className="px-2 py-2 text-right font-semibold">
-                  Collections
+                  Repayments
                 </th>
                 <th className="px-2 py-2 text-right font-semibold">Expected</th>
                 <th className="px-2 py-2 font-semibold">Status</th>
@@ -1502,17 +1507,17 @@ function LedgerTable({
               <tr>
                 <ExcelRowNumber value={4} />
                 <ExcelSummaryCell
-                  label="Expected close"
+                  label="Expected Close"
                   value={report.expectedClosingBalance}
                   currency={currency}
                 />
                 <ExcelSummaryCell
-                  label="Counted cash"
+                  label="Counted Cash"
                   value={report.closingBalance ?? 0}
                   currency={currency}
                 />
                 <ExcelSummaryCell
-                  label="Variance"
+                  label="Cash Difference"
                   value={report.closingVariance ?? 0}
                   currency={currency}
                   danger={(report.closingVariance ?? 0) !== 0}
@@ -1641,7 +1646,7 @@ function AgentHandoverExcel({
     "Agent",
     "Float",
     "Loans",
-    "Collections",
+    "Repayments",
     "Fees",
     "Expected",
     "Returned",
@@ -1986,7 +1991,7 @@ function buildExcelRows(report: OwnerReport, snapshot: ReportSnapshot) {
     },
     {
       section: "Field",
-      description: "Collections received",
+      description: "Repayments received",
       count: formatNumber(numberValue(snapshot.summary.collectionsCount)),
       cashIn: numberValue(snapshot.summary.collectionsReceived),
       cashOut: null,
@@ -2111,28 +2116,28 @@ function initials(name: string) {
 }
 
 function statusLabel(value: string) {
-  if (value === "MANAGER_REVIEW") return "Ready to send";
-  if (value === "SENT_TO_OWNER") return "Waiting approval";
+  if (value === "MANAGER_REVIEW") return "Ready To Send";
+  if (value === "SENT_TO_OWNER") return "Needs Review";
   if (value === "OWNER_APPROVED") return "Approved";
-  if (value === "RETURNED_TO_MANAGER") return "Returned";
+  if (value === "RETURNED_TO_MANAGER") return "Sent Back";
   if (value === "PENDING") return "Pending";
   return titleCase(value.replaceAll("_", " ").toLowerCase());
 }
 
 function statusHelp(value: string) {
   if (value === "MANAGER_REVIEW") {
-    return "Day is closed. Review the report and send it to the owner.";
+    return "Day is closed. Check the figures, then send the report to the owner.";
   }
   if (value === "SENT_TO_OWNER") {
-    return "Review the figures and approve when everything is correct.";
+    return "Check the figures and approve when everything looks correct.";
   }
   if (value === "OWNER_APPROVED") {
-    return "This report has been approved and locked for owner records.";
+    return "This report is finished and saved.";
   }
   if (value === "RETURNED_TO_MANAGER") {
-    return "Returned for correction before another submission.";
+    return "Sent back for correction before it can be submitted again.";
   }
-  return "Report is available for review.";
+  return "This report is ready to review.";
 }
 
 async function exportReport(
@@ -2215,7 +2220,7 @@ async function exportReport(
       "Agent",
       "Float",
       "Loans",
-      "Collections",
+      "Repayments",
       "Fees",
       "Expected",
       "Returned",

@@ -232,10 +232,11 @@ export async function loadOwnerNotifications(
       if (waiting.length > 0) {
         items.push({
           id: "waiting-owner",
-          title: `${formatNumber(waiting.length)} report${waiting.length === 1 ? "" : "s"} with owner`,
-          detail: "Submitted and waiting for owner approval.",
+          title: "Daily reconciliation awaiting approval",
+          detail:
+            "Your reconciliation has been submitted to the administrator and is waiting for review.",
           href: links.reports,
-          tone: "gold",
+          tone: "blue",
           icon: "report",
           time: "Today",
         });

@@ -23,7 +23,6 @@ import { AppShell } from "../app/app-shell";
 import { AppBootSkeleton, SkeletonBlock } from "../app/skeleton";
 import {
   OwnerLoan,
-  OwnerStatus,
   formatDate,
   formatMoney,
   formatNumber,
@@ -213,14 +212,31 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
         return false;
       }
       if (!q) return true;
-      return [
+      const digits = q.replace(/\D/g, "");
+      const haystack = [
         loan.id,
+        shortLoanId(loan.id),
         loan.borrowerName,
         loan.phone,
         loan.nationalId ?? "",
         loan.loanTypeName ?? "",
         loan.officerName ?? "",
-      ].some((value) => value.toLowerCase().includes(q));
+        loan.officerPublicId ?? "",
+        loan.status,
+        loan.status.replaceAll("_", " "),
+        String(loan.principal),
+        String(loan.balance),
+        String(loan.paidAmount),
+      ]
+        .join(" ")
+        .toLowerCase();
+      if (haystack.includes(q)) return true;
+      if (digits.length >= 3) {
+        return [loan.phone, loan.nationalId ?? "", loan.id].some((value) =>
+          value.replace(/\D/g, "").includes(digits),
+        );
+      }
+      return false;
     });
   }, [filter, loans, search]);
 
@@ -313,8 +329,8 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
           title={isManager ? "Loans" : "Portfolio"}
           search={search}
           onSearchChange={setSearch}
-          searchTooltip="Search borrower, loan id, phone or officer."
-          searchPlaceholder="Search borrower, loan id, phone or officer..."
+          searchPlaceholder="Search Loans..."
+          searchTooltip="Search by borrower, loan ID, phone, national ID, loan type, officer, status or amount."
           showReportsButton={false}
           settingsHref={isManager ? "/settings" : "/owner/settings"}
           notificationScope={mode}
@@ -379,14 +395,13 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
         <section className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-5">
           <LoanStat
             icon={<Folder className="size-4" />}
-            label="Loans"
+            label="Total Loans Given"
             value={formatNumber(loans.length)}
-            hint="In this view"
             tone="green"
           />
           <LoanStat
             icon={<WalletCards className="size-4" />}
-            label="Active loans"
+            label="Active Loans"
             value={formatNumber(activeLoans.length)}
             hint={formatMoney(
               sumBy(activeLoans, (loan) => loan.balance),
@@ -396,22 +411,22 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
           />
           <LoanStat
             icon={<Banknote className="size-4" />}
-            label="Principal"
+            label="Amount Given"
             value={formatMoney(
               sumBy(loans, (loan) => loan.principal),
               currency,
             )}
-            hint="Total issued"
+            hint="Total Issued"
             tone="blue"
           />
           <LoanStat
             icon={<Clock3 className="size-4" />}
-            label="Outstanding"
+            label="Total Loan Balance"
             value={formatMoney(
               sumBy(activeLoans, (loan) => loan.balance),
               currency,
             )}
-            hint={`${overdueLoans.length} overdue`}
+            hint={`${overdueLoans.length} Overdue`}
             tone="gold"
           />
           <LoanStat
@@ -421,7 +436,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
               sumBy(loans, (loan) => loan.paidAmount),
               currency,
             )}
-            hint="Collections to date"
+            hint="Repayments To Date"
             tone="violet"
             className="sm:col-span-2 xl:col-span-1"
           />
@@ -429,49 +444,35 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
 
         <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-3.5">
-            <div>
-              <h2 className="text-[15px] font-semibold text-[#0b1220]">
-                {isManager ? "Branch loans" : "Portfolio loans"}
-              </h2>
-              <p className="mt-0.5 text-xs font-medium text-slate-500">
-                {formatNumber(filtered.length)} shown
-              </p>
-            </div>
-            <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-[minmax(220px,280px)_170px]">
-              <label className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
-                <Search className="size-3.5 text-slate-400" />
-                <input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  className="min-w-0 flex-1 bg-transparent text-xs font-medium outline-none"
-                  placeholder="Filter this list..."
-                />
-              </label>
-              <select
-                value={filter}
-                onChange={(event) =>
-                  setFilter(event.target.value as PortfolioFilter)
-                }
-                className="h-9 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold outline-none"
-              >
-                <option value="active">Active loans</option>
-                <option value="all">All loans</option>
-                <option value="closed">Closed loans</option>
-                <option value="overdue">Overdue loans</option>
-              </select>
-            </div>
+            <h2 className="text-[15px] font-semibold text-[#0b1220]">
+              {isManager ? "Branch Loans" : "Portfolio Loans"}
+            </h2>
+            <select
+              value={filter}
+              onChange={(event) =>
+                setFilter(event.target.value as PortfolioFilter)
+              }
+              className="h-9 w-full rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold outline-none sm:w-[170px]"
+            >
+              <option value="active">Active Loans</option>
+              <option value="all">All Loans</option>
+              <option value="closed">Closed Loans</option>
+              <option value="overdue">Overdue Loans</option>
+            </select>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] table-fixed text-left text-xs">
               <thead className="bg-[#f8faf9] text-[10px] font-semibold text-slate-500">
                 <tr>
-                  <th className="w-[16%] px-3 py-2.5">Loan</th>
+                  <th className="w-[16%] px-3 py-2.5">Loan ID</th>
                   <th className="w-[19%] px-3 py-2.5">Borrower</th>
                   <th className="w-[15%] px-3 py-2.5">Loan type</th>
-                  <th className="w-[13%] px-3 py-2.5 text-right">Principal</th>
+                  <th className="w-[13%] px-3 py-2.5 text-right">Amount Given</th>
                   <th className="w-[13%] px-3 py-2.5 text-right">Paid</th>
-                  <th className="w-[13%] px-3 py-2.5 text-right">Balance</th>
+                  <th className="w-[13%] px-3 py-2.5 text-right">
+                    Total Loan Balance
+                  </th>
                   <th className="w-[11%] px-3 py-2.5">Due</th>
                 </tr>
               </thead>
@@ -510,10 +511,9 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                       }}
                     >
                       <td className="px-3 py-3">
-                        <p className="truncate font-bold text-[#0b1220]">
-                          {loan.id}
+                        <p className="truncate font-bold tabular-nums text-[#0b1220]">
+                          {shortLoanId(loan.id)}
                         </p>
-                        <OwnerStatus value={loan.status} />
                       </td>
                       <td className="px-3 py-3">
                         <p className="truncate font-semibold text-[#0b1220]">
@@ -704,7 +704,7 @@ function LoanStat({
   icon: ReactNode;
   label: string;
   value: string;
-  hint: string;
+  hint?: string;
   tone: "green" | "blue" | "violet" | "gold";
   className?: string;
 }) {
@@ -729,9 +729,11 @@ function LoanStat({
           <p className="mt-1 break-words text-[clamp(0.72rem,0.9vw,1rem)] font-bold leading-tight tabular-nums text-[#0b1220]">
             {value}
           </p>
-          <p className="mt-1 truncate text-[11px] font-medium text-slate-500">
-            {hint}
-          </p>
+          {hint ? (
+            <p className="mt-1 truncate text-[11px] font-medium text-slate-500">
+              {hint}
+            </p>
+          ) : null}
         </div>
       </article>
     </div>
@@ -782,9 +784,9 @@ async function exportPortfolio(
       "Borrower",
       "Phone",
       "Loan Type",
-      "Principal",
+      "Amount Given",
       "Paid",
-      "Balance",
+      "Total Loan Balance",
       "Status",
     ]);
     rows.forEach((loan) => {
@@ -832,4 +834,9 @@ async function exportPortfolio(
   } finally {
     setExporting(false);
   }
+}
+
+/** Compact UI id — full database id stays for API/export/search. */
+function shortLoanId(id: string) {
+  return id.replace(/-/g, "").slice(0, 8).toUpperCase();
 }

@@ -13,7 +13,6 @@ import {
   Funnel,
   Phone,
   RefreshCw,
-  Search,
   Smartphone,
   TrendingUp,
   Users,
@@ -24,7 +23,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
@@ -59,10 +57,10 @@ type MethodFilter = "all" | "CASH" | "MOBILE_MONEY" | "BANK_TRANSFER" | "OTHER";
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 const FILTER_LABELS: Record<PaymentFilter, string> = {
-  collectedToday: "Collected today",
+  collectedToday: "Collected Today",
   all: "All Payments",
   yesterday: "Yesterday",
-  thisWeek: "This week",
+  thisWeek: "This Week",
 };
 
 type CollectionsSession = {
@@ -130,7 +128,6 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
   const [error, setError] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const searchRef = useRef<HTMLInputElement | null>(null);
   const currency = state.workspace?.currency ?? "UGX";
 
   const loadPayments = useCallback(async () => {
@@ -162,17 +159,6 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
   }, [loadPayments, state.ready, state.session]);
 
   useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        searchRef.current?.focus();
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-
-  useEffect(() => {
     setPage(1);
   }, [filter, methodFilter, search, pageSize]);
 
@@ -182,15 +168,28 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
       const method = payment.method.toUpperCase().replace(/\s+/g, "_");
       const matchesMethod =
         methodFilter === "all" || method === methodFilter;
+      if (!q) return matchesMethod;
+      const digits = q.replace(/\D/g, "");
+      const shortLoan = payment.loanId.slice(0, 8);
+      const haystack = [
+        payment.clientName,
+        payment.phone,
+        payment.loanId,
+        shortLoan,
+        payment.method,
+        payment.method.replaceAll("_", " "),
+        payment.recordedByName,
+        String(payment.amount),
+        String(payment.amountPaid),
+      ]
+        .join(" ")
+        .toLowerCase();
       const matchesSearch =
-        !q ||
-        [
-          payment.clientName,
-          payment.phone,
-          payment.loanId,
-          payment.method,
-          payment.recordedByName,
-        ].some((value) => value.toLowerCase().includes(q));
+        haystack.includes(q) ||
+        (digits.length >= 3 &&
+          [payment.phone, payment.loanId].some((value) =>
+            value.replace(/\D/g, "").includes(digits),
+          ));
       return matchesMethod && matchesSearch;
     });
   }, [methodFilter, repayments, search]);
@@ -238,12 +237,11 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
     >
       <div className="mx-auto max-w-[1400px] space-y-5 animate-rise">
         <OwnerHeader
-          eyebrow={isManager ? "Your branch" : "All Branches"}
-          title="Collections"
+          title="Repayments"
           search={search}
           onSearchChange={setSearch}
-          searchTooltip="Search borrower, phone, loan ID or officer."
-          searchPlaceholder="Search borrower, phone, loan ID or officer..."
+          searchPlaceholder="Search Repayments..."
+          searchTooltip="Search by borrower, phone, loan ID, payment method, amount or officer."
           showReportsButton={false}
           settingsHref={isManager ? "/settings" : "/owner/settings"}
           notificationScope={mode}
@@ -260,7 +258,7 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
                 type="button"
                 onClick={() => void loadPayments()}
                 disabled={loading}
-                aria-label="Refresh payments"
+                aria-label="Refresh Repayments"
                 className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#25314b] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8faf9] disabled:opacity-60"
               >
                 <RefreshCw
@@ -283,8 +281,8 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
         />
         <p className="-mt-2 text-sm font-medium text-slate-500">
           {isManager
-            ? "Track and manage repayment collections for your branch."
-            : "Track and manage all repayment collections in one place."}
+            ? "Track repayments, review payment activity, and manage cash coming in at your branch."
+            : "Track repayments, review payment activity, and manage cash coming in across branches."}
         </p>
 
         {error ? (
@@ -297,32 +295,32 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
           <MetricCard
             icon={<Banknote className="size-4" />}
             tone="green"
-            label="Payments"
+            label="Total Payments"
             value={formatNumber(filtered.length)}
-            detail={filter === "collectedToday" ? "Today" : "In view"}
+            detail={filter === "collectedToday" ? "Collected Today" : "In This List"}
           />
           <MetricCard
             icon={<TrendingUp className="size-4" />}
             tone="green"
-            label="Collected"
+            label="Amount Collected"
             value={formatMoney(collectedTotal, currency)}
-            detail="Total amount"
+            detail="Total Received"
           />
           <MetricCard
             icon={<Users className="size-4" />}
             tone="blue"
-            label="Borrowers served"
+            label="Borrowers Paid"
             value={formatNumber(uniqueBorrowers)}
-            detail="Unique borrowers"
+            detail="People Who Paid"
           />
           <MetricCard
             icon={<Funnel className="size-4" />}
             tone="violet"
-            label="Current view"
+            label="Showing"
             value={FILTER_LABELS[filter]}
             detail={
               methodFilter === "all"
-                ? "All methods"
+                ? "All Methods"
                 : titleCase(methodFilter.replace(/_/g, " "))
             }
           />
@@ -330,32 +328,12 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
 
         <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-4">
-            <div>
-              <h2 className="text-[15px] font-semibold text-[#0b1220]">
-                Payment Records
-              </h2>
-              <p className="mt-0.5 text-xs font-medium text-slate-500">
-                {formatNumber(filtered.length)} repayment
-                {filtered.length === 1 ? "" : "s"} in this view
-              </p>
-            </div>
+            <h2 className="text-[15px] font-semibold text-[#0b1220]">
+              {isManager ? "Branch Payments" : "All Payments"}
+            </h2>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 border-b border-[#edf1f5] px-4 py-3">
-            <label className="flex h-10 min-w-[240px] flex-1 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
-              <Search className="size-3.5 shrink-0 text-slate-400" />
-              <input
-                ref={searchRef}
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                className="min-w-0 flex-1 bg-transparent text-xs font-medium text-[#0b1224] outline-none placeholder:text-slate-400"
-                placeholder="Search borrower, phone, loan ID or officer..."
-              />
-              <span className="hidden rounded-md border border-[#e8edf2] px-1.5 py-0.5 text-[10px] font-bold text-slate-400 sm:inline">
-                ⌘K
-              </span>
-            </label>
-
             <div className="relative">
               <button
                 type="button"
@@ -367,16 +345,16 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
                 }`}
               >
                 <Filter className="size-3.5" />
-                Filter
+                Method
               </button>
               {filtersOpen ? (
                 <div className="absolute right-0 top-[calc(100%+8px)] z-20 w-52 overflow-hidden rounded-2xl border border-[#e6ebf0] bg-white p-2 shadow-[0_18px_40px_rgba(15,23,42,0.14)]">
                   {(
                     [
-                      ["all", "All methods"],
+                      ["all", "All Methods"],
                       ["CASH", "Cash"],
-                      ["MOBILE_MONEY", "Mobile money"],
-                      ["BANK_TRANSFER", "Bank transfer"],
+                      ["MOBILE_MONEY", "Mobile Money"],
+                      ["BANK_TRANSFER", "Bank Transfer"],
                       ["OTHER", "Other"],
                     ] as const
                   ).map(([value, label]) => (
@@ -411,13 +389,13 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
               className="h-10 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-[#0b1224] outline-none shadow-[0_8px_18px_rgba(15,23,42,0.035)]"
             >
               <option value="all">All Payments</option>
-              <option value="collectedToday">Collected today</option>
+              <option value="collectedToday">Collected Today</option>
               <option value="yesterday">Yesterday</option>
-              <option value="thisWeek">This week</option>
+              <option value="thisWeek">This Week</option>
             </select>
           </div>
 
-          <div className="hidden grid-cols-[1.45fr_1.05fr_1fr_0.95fr_0.9fr_0.85fr_1.05fr_42px] gap-3 border-b border-[#edf1f5] bg-[#f8faf9] px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500 xl:grid">
+          <div className="hidden grid-cols-[1.45fr_1.05fr_1fr_0.95fr_0.9fr_0.85fr_1.05fr_42px] gap-3 border-b border-[#edf1f5] bg-[#f8faf9] px-4 py-3 text-[10px] font-semibold text-slate-500 xl:grid">
             <span>Borrower</span>
             <span>Phone</span>
             <span>Loan ID</span>
@@ -445,10 +423,10 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
               <div className="px-4 py-14 text-center">
                 <Banknote className="mx-auto size-7 text-[var(--forest-emerald)]" />
                 <h3 className="mt-3 text-base font-bold text-[#0b1224]">
-                  No payments found
+                  No Payments Found
                 </h3>
                 <p className="mt-1 text-sm text-slate-500">
-                  Adjust the filters or date range to see repayments.
+                  Try another search or change the filters to see repayments.
                 </p>
               </div>
             ) : (
@@ -468,8 +446,8 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#edf1f5] px-4 py-3 text-xs font-semibold text-slate-500">
             <p>
               Showing {formatNumber(pageStart)} to {formatNumber(pageEnd)} of{" "}
-              {formatNumber(filtered.length)} payment
-              {filtered.length === 1 ? "" : "s"}
+              {formatNumber(filtered.length)}{" "}
+              {filtered.length === 1 ? "payment" : "payments"}
             </p>
             <div className="flex items-center gap-1.5">
               <button
@@ -517,7 +495,7 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
             >
               {PAGE_SIZE_OPTIONS.map((size) => (
                 <option key={size} value={size}>
-                  {size} per page
+                  {size} Per Page
                 </option>
               ))}
             </select>
@@ -560,9 +538,6 @@ function PaymentRow({
           <p className="truncate text-sm font-semibold text-[#0b1224]">
             {payment.clientName}
           </p>
-          <span className="mt-1 inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-[var(--forest-emerald)]">
-            Active
-          </span>
         </div>
       </div>
 
@@ -648,14 +623,14 @@ function PaymentRow({
 
       <div className="flex justify-end">
         <RowActions
-          label={`Payment actions for ${payment.clientName}`}
+          label={`Actions For ${payment.clientName}`}
           items={[
             {
-              label: "Copy loan ID",
+              label: "Copy Loan ID",
               onSelect: () => onCopy(`${payment.id}-loan`, payment.loanId),
             },
             {
-              label: "Copy phone",
+              label: "Copy Phone",
               onSelect: () => onCopy(`${payment.id}-phone`, payment.phone),
               disabled: !payment.phone,
             },
@@ -764,7 +739,7 @@ function rangeLabelForFilter(
     start.setDate(start.getDate() - 6);
     return `${format(start)} – ${format(today)}`;
   }
-  return "All time";
+  return "All Time";
 }
 
 function initials(name: string) {
@@ -803,7 +778,7 @@ async function exportPayments(
     worksheet.addRow([
       "Borrower",
       "Phone",
-      "Loan",
+      "Loan ID",
       "Amount",
       "Method",
       "Officer",

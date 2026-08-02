@@ -14,9 +14,6 @@ import {
   Loader2,
   MoreVertical,
   RefreshCw,
-  Search,
-  UserCheck,
-  UserMinus,
   Users,
   Wallet,
 } from "lucide-react";
@@ -93,12 +90,6 @@ type ActionMenuState = {
   left: number;
 };
 
-type FloatFormState = {
-  agentId: string;
-  amount: string;
-  notes: string;
-};
-
 export function AgentsWorkspace() {
   const router = useRouter();
   const [session, setSession] = useState<RembehSession | null>(null);
@@ -109,7 +100,7 @@ export function AgentsWorkspace() {
   const [counts, setCounts] = useState<AgentsResponse["counts"] | null>(null);
   const [operationSummary, setOperationSummary] =
     useState<OperationSummaryResponse | null>(null);
-  const [selectedDate, setSelectedDate] = useState(todayInputValue);
+  const [selectedDate] = useState(todayInputValue);
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -120,12 +111,6 @@ export function AgentsWorkspace() {
   const [statusBusyId, setStatusBusyId] = useState<string | null>(null);
   const agentsRequestId = useRef(0);
   const [actionMenu, setActionMenu] = useState<ActionMenuState | null>(null);
-  const [floatForm, setFloatForm] = useState<FloatFormState>({
-    agentId: "",
-    amount: "",
-    notes: "",
-  });
-  const [savingFloat, setSavingFloat] = useState(false);
   const operationRequestId = useRef(0);
 
   const canRead = Boolean(
@@ -138,10 +123,6 @@ export function AgentsWorkspace() {
     session?.permissions.includes("user.activate") ||
     session?.permissions.includes("branch.create"),
   );
-  const canManageFloat = Boolean(
-    session?.permissions.includes("operation.float.manage"),
-  );
-
   const loadAgents = useCallback(
     async (activeSession: RembehSession, q: string, date: string) => {
       const requestId = agentsRequestId.current + 1;
@@ -165,19 +146,7 @@ export function AgentsWorkspace() {
           throw new Error(formatApiError(payload.message));
         }
         if (requestId !== agentsRequestId.current) return;
-        const nextAgents = payload.agents ?? [];
-        const nextAssignableAgents = nextAgents.filter(
-          (agent) => agent.floatToday == null,
-        );
-        setAgents(nextAgents);
-        setFloatForm((current) => ({
-          ...current,
-          agentId:
-            current.agentId &&
-            nextAssignableAgents.some((agent) => agent.id === current.agentId)
-              ? current.agentId
-              : (nextAssignableAgents[0]?.id ?? ""),
-        }));
+        setAgents(payload.agents ?? []);
         setCounts(payload.counts ?? null);
       } catch (caught) {
         if (requestId !== agentsRequestId.current) return;
@@ -324,85 +293,6 @@ export function AgentsWorkspace() {
     }
   }
 
-  async function saveFloat() {
-    if (!session || savingFloat || !floatForm.agentId) return;
-    const amount = Number(floatForm.amount);
-    if (!Number.isFinite(amount) || amount < 0) {
-      setError("Enter a valid float amount.");
-      return;
-    }
-    if (!isSelectedDateToday) {
-      setError("Only today's records can be changed.");
-      return;
-    }
-    if (
-      !operationSummary?.operation ||
-      operationSummary.operation.status !== "OPEN"
-    ) {
-      setError("Open today's branch before assigning float.");
-      router.replace("/operations?prompt=open");
-      return;
-    }
-    if (amount > floatLeftFromOperations) {
-      setError(
-        `Float exceeds assignable float limit. Available: UGX ${formatAmount(
-          floatLeftFromOperations,
-        )}.`,
-      );
-      return;
-    }
-
-    setSavingFloat(true);
-    setError(null);
-    try {
-      const response = await fetch(
-        `${apiBaseUrl}/agents/${floatForm.agentId}/floats`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `${session.tokenType} ${session.accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            amountGiven: amount,
-            date: selectedDate,
-            notes: floatForm.notes.trim() || undefined,
-          }),
-        },
-      );
-      const payload = await readApiJson<{ message?: string | string[] }>(
-        response,
-      );
-      if (!response.ok) {
-        throw new Error(formatApiError(payload.message));
-      }
-      await Promise.all([
-        loadAgents(session, query, selectedDate),
-        loadOperationSummary(session, selectedDate),
-      ]);
-      setFloatForm((current) => ({ ...current, notes: "" }));
-    } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : "Could not record float.",
-      );
-    } finally {
-      setSavingFloat(false);
-    }
-  }
-
-  function openFloatForAgent(agent: AgentRow) {
-    setFloatForm({
-      agentId: agent.id,
-      amount: agent.floatToday == null ? "" : String(agent.floatToday),
-      notes: "",
-    });
-    window.setTimeout(() => {
-      document
-        .getElementById("daily-float-panel")
-        ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    }, 0);
-  }
-
   function toggleActionMenu(
     agentId: string,
     event: MouseEvent<HTMLButtonElement>,
@@ -427,38 +317,19 @@ export function AgentsWorkspace() {
   }
 
   const floatStats = useMemo(() => {
-    const given = agents.filter((agent) => agent.floatToday != null).length;
+    const withFloat = agents.filter((agent) => agent.floatToday != null);
+    const amountGiven = withFloat.reduce(
+      (sum, agent) => sum + (agent.floatToday ?? 0),
+      0,
+    );
     return {
-      given,
-      missing: Math.max(agents.length - given, 0),
+      amountGiven,
+      missing: Math.max(agents.length - withFloat.length, 0),
     };
   }, [agents]);
 
-  const assignableAgents = useMemo(
-    () => agents.filter((agent) => agent.floatToday == null),
-    [agents],
-  );
-  const selectedFloatAgent = useMemo(
-    () =>
-      assignableAgents.find((agent) => agent.id === floatForm.agentId) ?? null,
-    [assignableAgents, floatForm.agentId],
-  );
-  const isSelectedDateToday = selectedDate === todayInputValue();
   const operationForSelectedDate = operationSummary?.operation ?? null;
   const floatLeftFromOperations = operationForSelectedDate?.floatRemaining ?? 0;
-  const floatAmount = Number(floatForm.amount);
-  const floatAmountValid =
-    floatForm.amount !== "" && Number.isFinite(floatAmount) && floatAmount >= 0;
-  const floatAmountExceedsSetAside =
-    floatAmountValid && floatAmount > floatLeftFromOperations;
-  const canSubmitFloat =
-    canManageFloat &&
-    Boolean(selectedFloatAgent) &&
-    Boolean(operationForSelectedDate) &&
-    operationForSelectedDate?.status === "OPEN" &&
-    isSelectedDateToday &&
-    floatAmountValid &&
-    !floatAmountExceedsSetAside;
   const actionMenuAgent = actionMenu
     ? (agents.find((agent) => agent.id === actionMenu.agentId) ?? null)
     : null;
@@ -481,15 +352,14 @@ export function AgentsWorkspace() {
     >
       <div className="mx-auto max-w-[1400px] space-y-5 animate-rise">
         <OwnerHeader
-          eyebrow="Your branch"
           title="Agents"
           search={search}
           onSearchChange={(value) => {
             setSearch(value);
             setPage(1);
           }}
-          searchTooltip="Search agents by name, phone, email or id."
-          searchPlaceholder="Search agents..."
+          searchPlaceholder="Search Agents..."
+          searchTooltip="Search by agent name, ID, phone, email or branch."
           showReportsButton={false}
           settingsHref="/settings"
           notificationScope="manager"
@@ -513,41 +383,29 @@ export function AgentsWorkspace() {
           }
         />
         <p className="-mt-2 text-sm font-medium text-slate-500">
-          Branch staff, float assignment, and daily agent performance.
+          Manage agents, review their activity, and monitor daily performance.
         </p>
 
-        <section className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-5">
-          <AgentStat
-            icon={<Users className="size-4" />}
-            label="Agents"
-            value={String(counts?.total ?? agents.length)}
-            hint={`${counts?.active ?? 0} active`}
-            tone="green"
-          />
-          <AgentStat
-            icon={<UserCheck className="size-4" />}
-            label="Active"
-            value={String(counts?.active ?? 0)}
-            hint="Can collect today"
-            tone="green"
-          />
-          <AgentStat
-            icon={<UserMinus className="size-4" />}
-            label="Suspended"
-            value={String(counts?.suspended ?? 0)}
-            hint={`${counts?.inactive ?? 0} inactive`}
-            tone="gold"
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <AgentsSummaryCard
+            total={counts?.total ?? agents.length}
+            active={counts?.active ?? 0}
+            suspended={counts?.suspended ?? 0}
           />
           <AgentStat
             icon={<Wallet className="size-4" />}
-            label="Float given"
-            value={String(floatStats.given)}
-            hint={`${floatStats.missing} missing`}
+            label="Float Given"
+            value={`UGX ${formatAmount(floatStats.amountGiven)}`}
+            hint={
+              agents.length > 0 && floatStats.missing === 0
+                ? "All Agents Given"
+                : `${floatStats.missing} Missing`
+            }
             tone="blue"
           />
           <AgentStat
             icon={<Banknote className="size-4" />}
-            label="Assignable left"
+            label="Unallocated Float"
             value={
               operationForSelectedDate
                 ? `UGX ${formatAmount(floatLeftFromOperations)}`
@@ -555,137 +413,12 @@ export function AgentsWorkspace() {
             }
             hint={
               operationForSelectedDate
-                ? operationForSelectedDate.status
-                : "Day not open"
+                ? "Available To Assign"
+                : "Day Not Started"
             }
             tone="violet"
-            className="sm:col-span-2 xl:col-span-1"
           />
         </section>
-
-        <div
-          id="daily-float-panel"
-          className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white px-4 py-3.5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]"
-        >
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-[15px] font-semibold text-[#0b1220]">
-                Daily float
-              </h2>
-              <p className="mt-0.5 text-xs font-medium text-slate-500">
-                Assign float for the selected day
-              </p>
-            </div>
-            <label className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-slate-500 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
-              <span>Float day</span>
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(event) => {
-                  setSelectedDate(event.target.value);
-                  setPage(1);
-                }}
-                className="bg-transparent text-sm font-semibold text-[#0b1220] outline-none"
-              />
-            </label>
-          </div>
-
-          {canManageFloat ? (
-            <div className="grid gap-2 md:grid-cols-[minmax(180px,1fr)_140px_minmax(180px,1fr)_auto]">
-              <select
-                value={floatForm.agentId}
-                onChange={(event) =>
-                  setFloatForm((current) => ({
-                    ...current,
-                    agentId: event.target.value,
-                  }))
-                }
-                disabled={
-                  assignableAgents.length === 0 ||
-                  !operationForSelectedDate ||
-                  operationForSelectedDate.status !== "OPEN" ||
-                  !isSelectedDateToday
-                }
-                className="h-9 min-w-0 rounded-xl border border-[#e6ebf0] bg-white px-3 text-sm outline-none"
-              >
-                {assignableAgents.length === 0 ? (
-                  <option value="">All agents assigned</option>
-                ) : null}
-                {assignableAgents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.name}
-                    {agent.publicId ? ` · ${agent.publicId}` : ""}
-                  </option>
-                ))}
-              </select>
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                value={floatForm.amount}
-                onChange={(event) =>
-                  setFloatForm((current) => ({
-                    ...current,
-                    amount: event.target.value,
-                  }))
-                }
-                placeholder="Amount"
-                className="h-9 min-w-0 rounded-xl border border-[#e6ebf0] bg-white px-3 text-sm outline-none"
-              />
-              <input
-                type="text"
-                value={floatForm.notes}
-                onChange={(event) =>
-                  setFloatForm((current) => ({
-                    ...current,
-                    notes: event.target.value,
-                  }))
-                }
-                placeholder="Notes"
-                className="h-9 min-w-0 rounded-xl border border-[#e6ebf0] bg-white px-3 text-sm outline-none"
-              />
-              <button
-                type="button"
-                className="flex h-9 items-center justify-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3.5 text-xs font-semibold text-white disabled:opacity-55"
-                disabled={savingFloat || !canSubmitFloat}
-                onClick={() => void saveFloat()}
-              >
-                {savingFloat ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : null}
-                Save float
-              </button>
-            </div>
-          ) : null}
-          {canManageFloat && !isSelectedDateToday ? (
-            <p className="mt-2 text-xs font-semibold text-amber-700">
-              Past days can be viewed only.
-            </p>
-          ) : canManageFloat && !operationForSelectedDate ? (
-            <p className="mt-2 text-xs font-semibold text-amber-700">
-              Open today&apos;s branch before assigning float.
-            </p>
-          ) : canManageFloat && floatAmountExceedsSetAside ? (
-            <p className="mt-2 text-xs font-semibold text-red-600">
-              Float exceeds assignable float limit. Available: UGX{" "}
-              {formatAmount(floatLeftFromOperations)}.
-            </p>
-          ) : canManageFloat &&
-            operationForSelectedDate &&
-            operationForSelectedDate.status === "OPEN" &&
-            assignableAgents.length === 0 ? (
-            <p className="mt-2 text-xs font-semibold text-[var(--forest-emerald)]">
-              All agents have been given float for this day.
-            </p>
-          ) : canManageFloat &&
-            operationForSelectedDate &&
-            operationForSelectedDate.status === "OPEN" &&
-            floatLeftFromOperations <= 0 ? (
-            <p className="mt-2 text-xs font-semibold text-amber-700">
-              No assignable float left for this day.
-            </p>
-          ) : null}
-        </div>
 
         {error ? (
           <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
@@ -705,45 +438,27 @@ export function AgentsWorkspace() {
           </p>
         ) : (
           <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-3.5">
-              <div>
-                <h2 className="text-[15px] font-semibold text-[#0b1220]">
-                  Branch agents
-                </h2>
-                <p className="mt-0.5 text-xs font-medium text-slate-500">
-                  {agents.length} shown
-                </p>
-              </div>
-              <label className="flex h-9 w-full items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)] sm:w-[280px]">
-                <Search className="size-3.5 text-slate-400" />
-                <input
-                  type="search"
-                  value={search}
-                  onChange={(event) => {
-                    setSearch(event.target.value);
-                    setPage(1);
-                  }}
-                  placeholder="Filter this list..."
-                  className="min-w-0 flex-1 bg-transparent text-xs font-medium outline-none"
-                />
-              </label>
+            <div className="border-b border-[#edf1f5] px-4 py-3.5">
+              <h2 className="text-[15px] font-semibold text-[#0b1220]">
+                Branch Agents
+              </h2>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] table-fixed text-left text-xs">
                 <thead className="bg-[#f8faf9] text-[10px] font-semibold text-slate-500">
                   <tr>
-                    <th className="w-[9%] px-3 py-2.5">Agent id</th>
+                    <th className="w-[9%] px-3 py-2.5">Agent ID</th>
                     <th className="w-[14%] px-3 py-2.5">Name</th>
                     <th className="w-[15%] px-3 py-2.5">Contact</th>
                     <th className="w-[9%] px-3 py-2.5 text-right">Float</th>
                     <th className="w-[10%] px-3 py-2.5 text-right">Expected</th>
                     <th className="w-[9%] px-3 py-2.5 text-right">
-                      Collections
+                      Repayments
                     </th>
                     <th className="w-[9%] px-3 py-2.5 text-right">
                       Applications
                     </th>
-                    <th className="w-[10%] px-3 py-2.5 text-right">Collected</th>
+                    <th className="w-[10%] px-3 py-2.5 text-right">Repaid</th>
                     <th className="w-[10%] px-3 py-2.5 text-right">Disbursed</th>
                     {canManage ? (
                       <th className="w-[5%] px-3 py-2.5 text-right">Actions</th>
@@ -787,7 +502,7 @@ export function AgentsWorkspace() {
                           }`}
                         >
                           {agent.floatToday == null
-                            ? "Not given"
+                            ? "Not Given"
                             : formatAmount(agent.floatToday)}
                         </p>
                       </td>
@@ -802,7 +517,7 @@ export function AgentsWorkspace() {
                           {agent.collectionsLifetime}
                         </p>
                         <p className="text-[10px] text-slate-500">
-                          today / total
+                          Today / Total
                         </p>
                       </td>
                       <td className="px-3 py-3 text-right tabular-nums">
@@ -811,23 +526,23 @@ export function AgentsWorkspace() {
                           {agent.applicationsLifetime}
                         </p>
                         <p className="text-[10px] text-slate-500">
-                          today / total
+                          Today / Total
                         </p>
                       </td>
                       <td className="px-3 py-3 text-right tabular-nums">
                         <p className="whitespace-nowrap font-bold text-[var(--forest-emerald)]">
-                          today {formatAmount(agent.amountCollectedToday)}
+                          Today {formatAmount(agent.amountCollectedToday)}
                         </p>
                         <p className="whitespace-nowrap text-[10px] text-slate-500">
-                          total {formatAmount(agent.amountCollectedLifetime)}
+                          Total {formatAmount(agent.amountCollectedLifetime)}
                         </p>
                       </td>
                       <td className="px-3 py-3 text-right tabular-nums">
                         <p className="whitespace-nowrap font-bold text-[#0b1220]">
-                          today {formatAmount(agent.amountDisbursedToday)}
+                          Today {formatAmount(agent.amountDisbursedToday)}
                         </p>
                         <p className="whitespace-nowrap text-[10px] text-slate-500">
-                          total {formatAmount(agent.amountDisbursedLifetime)}
+                          Total {formatAmount(agent.amountDisbursedLifetime)}
                         </p>
                       </td>
                       {canManage ? (
@@ -904,16 +619,6 @@ export function AgentsWorkspace() {
                 label="Activate"
               />
             ) : null}
-            {canManageFloat && actionMenuAgent.floatToday == null ? (
-              <ActionMenuItem
-                disabled={statusBusyId === actionMenuAgent.id}
-                onClick={() => {
-                  setActionMenu(null);
-                  openFloatForAgent(actionMenuAgent);
-                }}
-                label="Set float"
-              />
-            ) : null}
             {actionMenuAgent.status !== "INACTIVE" ? (
               <ActionMenuItem
                 disabled={statusBusyId === actionMenuAgent.id}
@@ -940,6 +645,54 @@ export function AgentsWorkspace() {
   );
 }
 
+function AgentsSummaryCard({
+  total,
+  active,
+  suspended,
+}: {
+  total: number;
+  active: number;
+  suspended: number;
+}) {
+  return (
+    <article className="flex h-full min-h-[92px] items-center gap-3 rounded-[13px] border border-[#e6ebf0] bg-white px-3 py-2.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
+      <div className="flex min-w-0 flex-1 items-center gap-2.5">
+        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[#e9f8ef] text-[#07885f]">
+          <Users className="size-3.5" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-xs font-bold text-[#0b1220]">Agents</p>
+          <p className="mt-0.5 text-xl font-bold leading-none tabular-nums text-[#0b1220]">
+            {total}
+          </p>
+          <p className="mt-0.5 text-[11px] font-medium text-slate-500">Total</p>
+        </div>
+      </div>
+      <span className="h-12 w-px shrink-0 bg-[#edf1f5]" aria-hidden />
+      <div className="grid min-w-[108px] gap-1.5">
+        <div className="flex items-center gap-2 rounded-lg bg-[#e9f8ef] px-2 py-1">
+          <span className="size-1.5 shrink-0 rounded-full bg-[#12a066]" />
+          <div className="min-w-0 leading-tight">
+            <p className="text-xs font-bold tabular-nums text-[#0b1220]">
+              {active}
+            </p>
+            <p className="text-[10px] font-medium text-slate-500">Active</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 rounded-lg bg-[#fff1f0] px-2 py-1">
+          <span className="size-1.5 shrink-0 rounded-full bg-[#e11d48]" />
+          <div className="min-w-0 leading-tight">
+            <p className="text-xs font-bold tabular-nums text-[#0b1220]">
+              {suspended}
+            </p>
+            <p className="text-[10px] font-medium text-slate-500">Suspended</p>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function AgentStat({
   icon,
   label,
@@ -963,9 +716,9 @@ function AgentStat({
   }[tone];
   return (
     <div className={`min-w-0 ${className}`}>
-      <article className="flex h-full min-h-[88px] items-center gap-2.5 rounded-[13px] border border-[#e6ebf0] bg-white px-3 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
+      <article className="flex h-full min-h-[92px] items-center gap-2.5 rounded-[13px] border border-[#e6ebf0] bg-white px-3 py-2.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
         <span
-          className={`grid size-10 shrink-0 place-items-center rounded-xl ${toneClass}`}
+          className={`grid size-9 shrink-0 place-items-center rounded-xl ${toneClass}`}
         >
           {icon}
         </span>
@@ -973,10 +726,10 @@ function AgentStat({
           <p className="truncate text-[11px] font-medium text-slate-500">
             {label}
           </p>
-          <p className="mt-1 break-words text-[clamp(0.72rem,0.9vw,1rem)] font-bold leading-tight tabular-nums text-[#0b1220]">
+          <p className="mt-0.5 break-words text-[clamp(0.78rem,0.95vw,1.05rem)] font-bold leading-tight tabular-nums text-[#0b1220]">
             {value}
           </p>
-          <p className="mt-1 truncate text-[11px] font-medium text-slate-500">
+          <p className="mt-0.5 truncate text-[11px] font-medium text-slate-500">
             {hint}
           </p>
         </div>

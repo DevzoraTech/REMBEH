@@ -16,7 +16,6 @@ import {
   MapPin,
   Plus,
   RefreshCw,
-  Search,
   ShieldCheck,
   UserCheck,
   Users,
@@ -189,16 +188,26 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
       const matchesCollateral =
         collateralFilter === "all" ||
         borrower.collateralType === collateralFilter;
+      const digits = q.replace(/\D/g, "");
+      const haystack = [
+        borrower.fullName,
+        borrower.phone,
+        borrower.nationalId ?? "",
+        borrower.collateralType ?? "",
+        borrower.city ?? "",
+        borrower.branchName ?? "",
+        String(borrower.loanCount),
+        borrower.verifiedAt ? "verified confirmed" : "pending awaiting check",
+      ]
+        .join(" ")
+        .toLowerCase();
       const matchesSearch =
         !q ||
-        [
-          borrower.fullName,
-          borrower.phone,
-          borrower.nationalId ?? "",
-          borrower.collateralType ?? "",
-          borrower.city ?? "",
-          borrower.branchName ?? "",
-        ].some((value) => value.toLowerCase().includes(q));
+        haystack.includes(q) ||
+        (digits.length >= 3 &&
+          [borrower.phone, borrower.nationalId ?? ""].some((value) =>
+            value.replace(/\D/g, "").includes(digits),
+          ));
 
       return (
         matchesBranch && matchesStatus && matchesCollateral && matchesSearch
@@ -255,12 +264,11 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
     >
       <div className="mx-auto max-w-[1400px] space-y-5 animate-rise">
         <OwnerHeader
-          eyebrow={isManager ? "Your branch" : "All Branches"}
           title="Borrowers"
           search={search}
           onSearchChange={updateSearch}
-          searchTooltip="Search borrowers by name, phone, national ID, branch or collateral."
-          searchPlaceholder="Search name, phone, national ID or branch..."
+          searchPlaceholder="Search Borrowers..."
+          searchTooltip="Search by name, phone, national ID, security, city or branch."
           showReportsButton={false}
           settingsHref={isManager ? "/settings" : "/owner/settings"}
           notificationScope={mode}
@@ -270,7 +278,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
                 type="button"
                 onClick={() => void loadBorrowers()}
                 disabled={loading}
-                aria-label="Refresh borrowers"
+                aria-label="Refresh Borrowers"
                 className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-50 disabled:opacity-60"
               >
                 <RefreshCw
@@ -280,7 +288,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
               <button
                 type="button"
                 onClick={() =>
-                  setNotice("Borrowers are added from a loan application.")
+                  setNotice("Borrowers are added when you create a loan.")
                 }
                 className="flex h-9 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3.5 text-xs font-semibold text-white shadow-[0_12px_24px_rgba(15,143,104,0.28)] transition hover:brightness-105"
               >
@@ -314,8 +322,8 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
         />
         <p className="-mt-2 text-sm font-medium text-slate-500">
           {isManager
-            ? "Review verified borrowers, pending checks, and loan activity at your branch."
-            : "Review verified borrowers, pending checks, and loan activity across branches."}
+            ? "Manage borrowers, review their details, and track loan activity at your branch."
+            : "Manage borrowers, review their details, and track loan activity across branches."}
         </p>
 
         {error ? (
@@ -348,32 +356,28 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
                 icon={<Users className="size-4" />}
                 label="Total Borrowers"
                 value={formatNumber(borrowers.length)}
-                detail="All registered"
-                change="—"
+                detail={isManager ? "This Branch" : "All Branches"}
                 tone="green"
               />
               <BorrowerStatCard
                 icon={<ShieldCheck className="size-4" />}
-                label="Verified"
+                label="Confirmed"
                 value={formatNumber(verifiedCount)}
-                detail="Identity confirmed"
-                change={percent(verifiedCount, borrowers.length)}
+                detail={`${formatNumber(pendingVerificationCount)} Awaiting Check`}
                 tone="green"
               />
               <BorrowerStatCard
                 icon={<UserCheck className="size-4" />}
-                label="With Loans"
+                label="Have Loans"
                 value={formatNumber(withLoansCount)}
-                detail="Active accounts"
-                change={percent(withLoansCount, borrowers.length)}
+                detail="Borrowers With Loans"
                 tone="blue"
               />
               <BorrowerStatCard
                 icon={<CalendarDays className="size-4" />}
                 label="New This Month"
                 value={formatNumber(newThisMonthCount)}
-                detail="Joined recently"
-                change={percent(newThisMonthCount, borrowers.length)}
+                detail="Added This Month"
                 tone="gold"
               />
             </>
@@ -381,19 +385,10 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
         </section>
 
         <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#edf1f5] px-4 py-4">
-            <div>
-              <h2 className="text-[15px] font-semibold text-[#0b1220]">
-                {isManager ? "Branch Borrowers" : "All Borrowers"}
-              </h2>
-              <p className="mt-0.5 text-xs font-medium text-slate-500">
-                {formatNumber(filtered.length)} result
-                {filtered.length === 1 ? "" : "s"}
-                {activeFilterCount > 0
-                  ? ` · ${activeFilterCount} filter${activeFilterCount === 1 ? "" : "s"}`
-                  : ""}
-              </p>
-            </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-4">
+            <h2 className="text-[15px] font-semibold text-[#0b1220]">
+              {isManager ? "Branch Borrowers" : "All Borrowers"}
+            </h2>
             <div className="flex h-9 items-center rounded-xl border border-[#e6ebf0] bg-white p-1 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
               <button
                 type="button"
@@ -425,19 +420,10 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
           <div
             className={`grid gap-2.5 border-b border-[#edf1f5] px-4 py-3 ${
               isManager
-                ? "lg:grid-cols-[minmax(0,1fr)_140px_170px_auto]"
-                : "lg:grid-cols-[minmax(0,1fr)_160px_140px_170px_auto]"
+                ? "lg:grid-cols-[140px_170px_auto]"
+                : "lg:grid-cols-[160px_140px_170px_auto]"
             }`}
           >
-            <label className="flex h-9 min-w-0 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
-              <Search className="size-3.5 shrink-0 text-slate-400" />
-              <input
-                value={search}
-                onChange={(event) => updateSearch(event.target.value)}
-                className="min-w-0 flex-1 bg-transparent text-xs font-medium text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
-                placeholder="Filter this list..."
-              />
-            </label>
             {!isManager ? (
               <FilterSelect
                 icon={<Building2 className="size-3.5" />}
@@ -463,11 +449,11 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
                 setStatusFilter(value);
                 setPage(1);
               }}
-              label="All Status"
+              label="All Statuses"
             >
-              <option value="all">All Status</option>
-              <option value="verified">Verified</option>
-              <option value="pending">Pending</option>
+              <option value="all">All Statuses</option>
+              <option value="verified">Confirmed</option>
+              <option value="pending">Awaiting Check</option>
             </FilterSelect>
             <FilterSelect
               icon={<MapPin className="size-3.5" />}
@@ -476,9 +462,9 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
                 setCollateralFilter(value);
                 setPage(1);
               }}
-              label="All Collateral"
+              label="All Security"
             >
-              <option value="all">All Collateral</option>
+              <option value="all">All Security</option>
               {collateralOptions.map((collateral) => (
                 <option key={collateral} value={collateral}>
                   {titleCase(collateral)}
@@ -618,14 +604,12 @@ function BorrowerStatCard({
   label,
   value,
   detail,
-  change,
   tone,
 }: {
   icon: ReactNode;
   label: string;
   value: string;
   detail: string;
-  change: string;
   tone: BorrowerTone;
 }) {
   const styles = toneStyles(tone);
@@ -637,18 +621,7 @@ function BorrowerStatCard({
         {icon}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center justify-between gap-2">
-          <p className="truncate text-[11px] font-bold text-slate-500">
-            {label}
-          </p>
-          {change !== "—" ? (
-            <span
-              className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${styles.badge}`}
-            >
-              {change}
-            </span>
-          ) : null}
-        </div>
+        <p className="truncate text-[11px] font-bold text-slate-500">{label}</p>
         <p className="mt-1.5 break-words text-[clamp(0.95rem,1.1vw,1.2rem)] font-semibold leading-tight tracking-[-0.02em] text-[#111827] tabular-nums">
           {value}
         </p>
@@ -720,7 +693,7 @@ function BorrowerTable({
           "Borrower",
           "Phone",
           "National ID",
-          "Collateral",
+          "Security",
           "Branch",
           "Loans",
           "Status",
@@ -787,17 +760,17 @@ function BorrowerListRow({
         <div className="flex shrink-0 items-center gap-2 lg:hidden">
           <BorrowerStatus verified={Boolean(borrower.verifiedAt)} />
           <RowActions
-            label={`Actions for ${borrower.fullName}`}
+            label={`Actions For ${borrower.fullName}`}
             items={[
-              { label: "View details", onSelect: () => onView(borrower) },
-              { label: "Export borrower", onSelect: () => onExport(borrower) },
+              { label: "View Details", onSelect: () => onView(borrower) },
+              { label: "Export Borrower", onSelect: () => onExport(borrower) },
             ]}
           />
         </div>
       </div>
       <TableValue label="Phone">{borrower.phone || "—"}</TableValue>
       <TableValue label="National ID">{borrower.nationalId ?? "—"}</TableValue>
-      <TableValue label="Collateral">
+      <TableValue label="Security">
         {borrower.collateralType ? titleCase(borrower.collateralType) : "—"}
       </TableValue>
       <TableValue label="Branch">
@@ -823,10 +796,10 @@ function BorrowerListRow({
           <Eye className="size-3.5" />
         </button>
         <RowActions
-          label={`Actions for ${borrower.fullName}`}
+          label={`Actions For ${borrower.fullName}`}
           items={[
-            { label: "View details", onSelect: () => onView(borrower) },
-            { label: "Export borrower", onSelect: () => onExport(borrower) },
+            { label: "View Details", onSelect: () => onView(borrower) },
+            { label: "Export Borrower", onSelect: () => onExport(borrower) },
           ]}
         />
       </div>
@@ -867,10 +840,10 @@ function BorrowerGrid({
               </div>
             </div>
             <RowActions
-              label={`Actions for ${borrower.fullName}`}
+              label={`Actions For ${borrower.fullName}`}
               items={[
-                { label: "View details", onSelect: () => onView(borrower) },
-                { label: "Export borrower", onSelect: () => onExport(borrower) },
+                { label: "View Details", onSelect: () => onView(borrower) },
+                { label: "Export Borrower", onSelect: () => onExport(borrower) },
               ]}
             />
           </div>
@@ -878,7 +851,7 @@ function BorrowerGrid({
             <InfoLine label="Phone" value={borrower.phone || "-"} />
             <InfoLine label="National ID" value={borrower.nationalId ?? "-"} />
             <InfoLine
-              label="Collateral"
+              label="Security"
               value={
                 borrower.collateralType
                   ? titleCase(borrower.collateralType)
@@ -926,12 +899,12 @@ function EmptyBorrowersState({
         <Users className="size-5" />
       </div>
       <h3 className="mt-3 text-sm font-medium text-[#0b1224]">
-        No borrowers found
+        No Borrowers Found
       </h3>
       <p className="mx-auto mt-1 max-w-sm text-xs font-medium text-slate-500">
         {hasFilters
           ? "Try another search or clear the filters to see more borrowers."
-          : "Borrowers will appear here when loan applications are registered."}
+          : "Borrowers will appear here when you create loans."}
       </p>
       {hasFilters ? (
         <button
@@ -939,7 +912,7 @@ function EmptyBorrowersState({
           onClick={onClear}
           className="mt-3 rounded-xl bg-[#0b936b] px-3 py-2 text-xs font-medium text-white"
         >
-          Clear filters
+          Clear Filters
         </button>
       ) : null}
     </div>
@@ -958,13 +931,13 @@ function BorrowerDetailDrawer({
       <button
         type="button"
         className="absolute inset-0 cursor-default"
-        aria-label="Close borrower details"
+        aria-label="Close Borrower Details"
         onClick={onClose}
       />
       <aside className="relative h-full w-full max-w-[400px] overflow-y-auto bg-white p-4 shadow-[-18px_0_44px_rgba(15,23,42,0.18)]">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-[#0b936b]">
+            <p className="text-[11px] font-medium text-[#0b936b]">
               Borrower Details
             </p>
             <h2 className="mt-1.5 text-xl font-bold tracking-[-0.03em] text-[#0b1224]">
@@ -988,8 +961,8 @@ function BorrowerDetailDrawer({
             <div className="min-w-0">
               <BorrowerStatus verified={Boolean(borrower.verifiedAt)} />
               <p className="mt-1.5 text-xs font-medium text-slate-500">
-                {formatNumber(borrower.loanCount)} loan
-                {borrower.loanCount === 1 ? "" : "s"}
+                {formatNumber(borrower.loanCount)}{" "}
+                {borrower.loanCount === 1 ? "Loan" : "Loans"}
               </p>
             </div>
           </div>
@@ -998,16 +971,16 @@ function BorrowerDetailDrawer({
           <InfoLine label="Phone" value={borrower.phone || "-"} />
           <InfoLine label="National ID" value={borrower.nationalId ?? "-"} />
           <InfoLine
-            label="Collateral"
+            label="Security"
             value={
               borrower.collateralType ? titleCase(borrower.collateralType) : "-"
             }
           />
           <InfoLine label="Branch" value={borrower.branchName ?? "-"} />
           <InfoLine label="City" value={borrower.city ?? "-"} />
-          <InfoLine label="Registered" value={formatDate(borrower.createdAt)} />
+          <InfoLine label="Joined" value={formatDate(borrower.createdAt)} />
           <InfoLine
-            label="Verified"
+            label="Confirmed"
             value={borrower.verifiedAt ? formatDate(borrower.verifiedAt) : "-"}
           />
         </div>
@@ -1043,7 +1016,7 @@ function BorrowerStatus({ verified }: { verified: boolean }) {
       }`}
     >
       {verified ? <Check className="size-3" /> : null}
-      {verified ? "Verified" : "Pending"}
+      {verified ? "Confirmed" : "Awaiting Check"}
     </span>
   );
 }
@@ -1100,11 +1073,6 @@ function initials(name: string) {
     .join("");
 }
 
-function percent(value: number, total: number) {
-  if (total <= 0) return "—";
-  return `${Math.round((value / total) * 100)}%`;
-}
-
 function isThisMonth(borrower: OwnerBorrower) {
   const createdAt = new Date(borrower.createdAt);
   const now = new Date();
@@ -1138,11 +1106,17 @@ async function exportBorrowers(
     worksheet.mergeCells(2, 1, 2, 8);
     worksheet.addRow([
       "Filters",
-      filters.search.trim() || "All searches",
-      filters.branch === "all" ? "All branches" : filters.branch,
-      filters.status === "all" ? "All statuses" : titleCase(filters.status),
+      filters.search.trim() || "All Searches",
+      filters.branch === "all" ? "All Branches" : filters.branch,
+      filters.status === "all"
+        ? "All Statuses"
+        : filters.status === "verified"
+          ? "Confirmed"
+          : filters.status === "pending"
+            ? "Awaiting Check"
+            : titleCase(filters.status),
       filters.collateral === "all"
-        ? "All collateral types"
+        ? "All Security"
         : titleCase(filters.collateral),
     ]);
     worksheet.mergeCells(3, 5, 3, 8);
@@ -1151,7 +1125,7 @@ async function exportBorrowers(
       "Borrower",
       "Phone",
       "National ID",
-      "Collateral",
+      "Security",
       "Branch",
       "Loans",
       "Status",
@@ -1166,7 +1140,7 @@ async function exportBorrowers(
         borrower.collateralType ? titleCase(borrower.collateralType) : "",
         borrower.branchName ?? "",
         borrower.loanCount,
-        borrower.verifiedAt ? "Verified" : "Pending",
+        borrower.verifiedAt ? "Confirmed" : "Awaiting Check",
         formatDate(borrower.createdAt),
       ]);
     });

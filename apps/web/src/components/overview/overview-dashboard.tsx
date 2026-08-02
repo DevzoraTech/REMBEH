@@ -42,6 +42,7 @@ import {
   OwnerLoan,
   OwnerReport,
   OwnerRepayment,
+  formatDate,
   formatMoney,
   formatNumber,
   ownerFetch,
@@ -496,10 +497,11 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
           title="Here's what's happening today"
           search={search}
           onSearchChange={setSearch}
+          searchPlaceholder="Search Overview..."
           searchTooltip={
             isManager
-              ? "Search reports, borrowers, activity and alerts for this branch."
-              : "Search branches, reports, borrowers, activity and alerts on this overview."
+              ? "Search today's activity, alerts and reports on this page."
+              : "Search branches, today's activity, alerts and reports on this page."
           }
           settingsHref={links.settings}
           reportsHref={links.reports}
@@ -512,31 +514,25 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
           </p>
         ) : null}
 
-        <section className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-5">
+        <section
+          className={`grid grid-cols-1 gap-2.5 sm:grid-cols-2 ${
+            isManager ? "xl:grid-cols-4" : "xl:grid-cols-5"
+          }`}
+        >
           <TopStatCard
             icon={<WalletCards className="size-5" />}
             label="Total Loan Balance"
             value={formatMoney(totalLoanBalance, currency)}
             hint={branchScopeHint}
             change={loanBalanceChange}
-            tooltip={
-              isManager
-                ? "Total outstanding loan balance for this branch."
-                : "Total outstanding loan balance from all loan records visible to the owner."
-            }
             tone="green"
           />
           <TopStatCard
             icon={<Banknote className="size-5" />}
-            label="Collected Today"
+            label={isManager ? "Today's repayments" : "Collected Today"}
             value={formatMoney(collectedToday, currency)}
             hint={branchScopeHint}
             change={collectedTodayChange}
-            tooltip={
-              isManager
-                ? "Total repayments recorded today at this branch."
-                : "Total repayments recorded today across every branch."
-            }
             tone="green"
           />
           <TopStatCard
@@ -544,7 +540,6 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
             label="Active Loans"
             value={formatNumber(activeLoans.length)}
             hint={`${formatNumber(todayLoans.length)} New Today`}
-            tooltip="Loans currently open or in progress, with new loans issued today below."
             tone="blue"
           />
           <TopStatCard
@@ -552,30 +547,63 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
             label="Borrowers"
             value={formatNumber(borrowers.length)}
             hint={`${formatNumber(todayBorrowers.length)} new today`}
-            tooltip={
-              isManager
-                ? "Registered borrowers at this branch, with today's new borrowers below."
-                : "All registered borrowers visible to the owner, with today's new borrowers below."
-            }
             tone="violet"
           />
-          <TopStatCard
-            icon={<Clock3 className="size-5" />}
-            label="Received Reports"
-            value={`${formatNumber(receivedReportsThisMonth.length)} of ${formatNumber(reportsThisMonth.length)}`}
-            hint={`${formatNumber(pendingReports.length)} pending approval`}
-            tooltip={
-              isManager
-                ? "Reports for this branch this month. Pending shows items still waiting on review."
-                : "Reports received this month out of report records available this month. Pending approval shows reports waiting for owner action."
-            }
-            tone="gold"
-            className="sm:col-span-2 xl:col-span-1"
-          />
+          {!isManager ? (
+            <TopStatCard
+              icon={<Clock3 className="size-5" />}
+              label="Received Reports"
+              value={`${formatNumber(receivedReportsThisMonth.length)} of ${formatNumber(reportsThisMonth.length)}`}
+              hint={`${formatNumber(pendingReports.length)} pending approval`}
+              tone="gold"
+              className="sm:col-span-2 xl:col-span-1"
+            />
+          ) : null}
         </section>
 
         {loading ? (
           <OverviewSkeleton />
+        ) : isManager ? (
+          <>
+            <section className="grid min-w-0 items-stretch gap-3 xl:grid-cols-3">
+              <div className="min-w-0">
+                <PortfolioPerformanceCard
+                  series={series}
+                  currency={currency}
+                  period={performancePeriod}
+                  view={performanceView}
+                  onPeriodChange={setPerformancePeriod}
+                  onViewChange={setPerformanceView}
+                  title="Performance"
+                  collectionsLabel="Repayments"
+                />
+              </div>
+              <div className="min-w-0">
+                <TodayActivityCard
+                  total={activityTotal}
+                  loansIssued={todayActivity.loansIssued.length}
+                  collections={todayActivity.collections.length}
+                  newBorrowers={todayActivity.newBorrowers.length}
+                  fullySettled={todayActivity.fullySettled.length}
+                  branches={branches}
+                  branchId={activityBranchId}
+                  onBranchChange={setActivityBranchId}
+                  lockBranch
+                  collectionsLabel="Repayments"
+                />
+              </div>
+              <div className="min-w-0">
+                <AlertsCard alerts={visibleAlerts} href={links.risk} />
+              </div>
+            </section>
+
+            <section className="grid items-stretch gap-3">
+              <RecentActivityCard
+                activities={visibleActivities}
+                href={links.reports}
+              />
+            </section>
+          </>
         ) : (
           <>
             <section className="grid gap-3 xl:grid-cols-[1.08fr_1fr_0.86fr]">
@@ -590,9 +618,9 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
               <BranchPerformanceCard
                 rows={visibleBranchPerformance}
                 currency={currency}
-                href={isManager ? links.loans : links.branches}
-                title={isManager ? "Your Performance" : "Branch Performance"}
-                variant={isManager ? "manager" : "owner"}
+                href={links.branches}
+                title="Branch Performance"
+                variant="owner"
               />
               <TodayActivityCard
                 total={activityTotal}
@@ -603,7 +631,6 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
                 branches={branches}
                 branchId={activityBranchId}
                 onBranchChange={setActivityBranchId}
-                lockBranch={isManager}
               />
             </section>
 
@@ -627,7 +654,6 @@ function TopStatCard({
   value,
   hint,
   change,
-  tooltip,
   tone,
   className = "",
 }: {
@@ -636,7 +662,6 @@ function TopStatCard({
   value: string;
   hint: string;
   change?: string;
-  tooltip: string;
   tone: "green" | "blue" | "violet" | "gold";
   className?: string;
 }) {
@@ -654,7 +679,6 @@ function TopStatCard({
 
   return (
     <div className={`min-w-0 ${className}`}>
-    <Tooltip label={tooltip} block>
       <article className="flex h-full min-h-[88px] w-full min-w-0 items-center gap-2.5 rounded-[13px] border border-[#e6ebf0] bg-white px-3 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
         <span
           className={`grid size-10 shrink-0 place-items-center rounded-xl ${toneClass}`}
@@ -682,7 +706,6 @@ function TopStatCard({
           </p>
         </div>
       </article>
-    </Tooltip>
     </div>
   );
 }
@@ -694,6 +717,8 @@ function PortfolioPerformanceCard({
   view,
   onPeriodChange,
   onViewChange,
+  title = "Overall Performance",
+  collectionsLabel = "Repayments",
 }: {
   series: ReturnType<typeof buildPortfolioSeries>;
   currency: string;
@@ -701,19 +726,22 @@ function PortfolioPerformanceCard({
   view: PerformanceView;
   onPeriodChange: (period: PerformancePeriod) => void;
   onViewChange: (view: PerformanceView) => void;
+  title?: string;
+  collectionsLabel?: string;
 }) {
+  const collectionsWord = collectionsLabel.toLowerCase();
   return (
-    <section className="rounded-[14px] border border-[#e6ebf0] bg-white p-3.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
+    <section className="flex h-full flex-col rounded-[14px] border border-[#e6ebf0] bg-white p-3.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-[15px] font-bold text-[#0b1220]">
-          Overall Performance
-        </h2>
+        <h2 className="text-[15px] font-bold text-[#0b1220]">{title}</h2>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <div
             className="flex h-8 items-center rounded-xl border border-[#e6ebf0] bg-white p-1 shadow-[0_8px_16px_rgba(15,23,42,0.04)]"
             aria-label="Performance view"
           >
-            <Tooltip label="Trend view: balance, collections and issued over time.">
+            <Tooltip
+              label={`Trend view: balance, ${collectionsWord} and issued over time.`}
+            >
               <button
                 type="button"
                 onClick={() => onViewChange("line")}
@@ -727,7 +755,9 @@ function PortfolioPerformanceCard({
                 <ChartNoAxesCombined className="size-3.5" />
               </button>
             </Tooltip>
-            <Tooltip label="Mix view: balance vs collections vs issued.">
+            <Tooltip
+              label={`Mix view: balance vs ${collectionsWord} vs issued.`}
+            >
               <button
                 type="button"
                 onClick={() => onViewChange("donut")}
@@ -742,34 +772,37 @@ function PortfolioPerformanceCard({
               </button>
             </Tooltip>
           </div>
-          <Tooltip
-            label="Choose the period used for this performance view."
-            align="right"
-          >
-            <label className="relative">
-              <span className="sr-only">Performance period</span>
-              <select
-                value={period}
-                onChange={(event) =>
-                  onPeriodChange(event.target.value as PerformancePeriod)
-                }
-                className="h-8 appearance-none rounded-xl border border-[#e6ebf0] bg-white pl-3 pr-8 text-[11px] font-medium text-slate-600 outline-none shadow-[0_8px_16px_rgba(15,23,42,0.04)] transition focus:border-[var(--forest-emerald)]"
-              >
-                {PERFORMANCE_PERIODS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-500" />
-            </label>
-          </Tooltip>
+          <label className="relative">
+            <span className="sr-only">Performance period</span>
+            <select
+              value={period}
+              onChange={(event) =>
+                onPeriodChange(event.target.value as PerformancePeriod)
+              }
+              className="h-8 appearance-none rounded-xl border border-[#e6ebf0] bg-white pl-3 pr-8 text-[11px] font-medium text-slate-600 outline-none shadow-[0_8px_16px_rgba(15,23,42,0.04)] transition focus:border-[var(--forest-emerald)]"
+            >
+              {PERFORMANCE_PERIODS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-500" />
+          </label>
         </div>
       </div>
       {view === "line" ? (
-        <LineChart series={series} currency={currency} />
+        <LineChart
+          series={series}
+          currency={currency}
+          collectedLabel={collectionsLabel}
+        />
       ) : (
-        <PerformanceDonutChart series={series} currency={currency} />
+        <PerformanceDonutChart
+          series={series}
+          currency={currency}
+          collectedLabel={collectionsLabel}
+        />
       )}
     </section>
   );
@@ -793,42 +826,10 @@ function BranchPerformanceCard({
     <section className="rounded-[14px] border border-[#e6ebf0] bg-white p-3.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
       <PanelHeader title={title} href={href} />
       <div className="mt-3 grid grid-cols-[1fr_80px_86px_86px] gap-2 border-b border-[#edf1f5] pb-2 text-[10px] font-medium text-slate-500">
-        <Tooltip
-          label={
-            isManager
-              ? "Your branch portfolio focus for today."
-              : "Branch name with the active manager under it."
-          }
-          align="left"
-          block
-        >
-          <span>{isManager ? "Focus" : "Branch"}</span>
-        </Tooltip>
-        <Tooltip
-          label={
-            isManager
-              ? "Total principal issued at your branch."
-              : "Total principal issued by this branch."
-          }
-          align="right"
-          block
-        >
-          <span className="block w-full text-right">Loan ({currency})</span>
-        </Tooltip>
-        <Tooltip
-          label={
-            isManager
-              ? "Repayments collected today at your branch."
-              : "Repayments collected today by this branch."
-          }
-          align="right"
-          block
-        >
-          <span className="block w-full text-right">Collected</span>
-        </Tooltip>
-        <Tooltip label="Overdue balance with the overdue loan count below." align="right" block>
-          <span className="block w-full text-right">Overdue</span>
-        </Tooltip>
+        <span>{isManager ? "Focus" : "Branch"}</span>
+        <span className="block w-full text-right">Loan ({currency})</span>
+        <span className="block w-full text-right">Collected</span>
+        <span className="block w-full text-right">Overdue</span>
       </div>
       <div className="divide-y divide-[#edf1f5]">
         {rows.length === 0 ? (
@@ -837,57 +838,51 @@ function BranchPerformanceCard({
             title={isManager ? "No activity yet" : "No branch activity"}
             text={
               isManager
-                ? "Your loan book, collections and overdue balances will show here as the day progresses."
-                : "Branch performance will appear here once loans, collections or overdue balances are recorded."
+                ? "Your loan book, repayments and overdue balances will show here as the day progresses."
+                : "Branch performance will appear here once loans, repayments or overdue balances are recorded."
             }
           />
         ) : (
           rows.slice(0, 5).map((row) => (
-            <Tooltip
+            <div
               key={row.branch.id}
-              label={`${isManager ? "Your branch" : row.branch.name}: ${formatMoney(row.loanTotal, currency)} issued, ${formatMoney(row.collectedToday, currency)} collected today, ${formatMoney(row.overdueAmount, currency)} overdue.`}
-              align="right"
-              block
+              className="grid w-full grid-cols-[1fr_80px_86px_86px] items-center gap-2 py-2"
             >
-              <div
-                className="grid w-full grid-cols-[1fr_80px_86px_86px] items-center gap-2 py-2"
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-emerald-50 text-[var(--forest-emerald)]">
-                    <Building2 className="size-3.5" />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-[11px] font-medium text-[#101827]">
-                      {isManager ? "Your branch" : row.branch.name}
-                    </p>
-                    <p className="truncate text-[10px] font-normal text-slate-500">
-                      {isManager
-                        ? "Portfolio snapshot"
-                        : (row.branch.manager?.name ?? "No manager assigned")}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex min-w-0 justify-end text-right">
-                  <p className="max-w-full break-words text-[11px] font-medium tabular-nums text-[#111827]">
-                    {formatPlainMoney(row.loanTotal, currency)}
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-emerald-50 text-[var(--forest-emerald)]">
+                  <Building2 className="size-3.5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-[11px] font-medium text-[#101827]">
+                    {isManager ? "Your branch" : row.branch.name}
                   </p>
-                </div>
-                <div className="flex min-w-0 justify-end text-right">
-                  <p className="max-w-full break-words text-[11px] font-medium tabular-nums text-[#111827]">
-                    {formatPlainMoney(row.collectedToday, currency)}
-                  </p>
-                </div>
-                <div className="flex min-w-0 flex-col items-end text-right">
-                  <p className="max-w-full break-words text-[11px] font-medium tabular-nums text-[#111827]">
-                    {formatPlainMoney(row.overdueAmount, currency)}
-                  </p>
-                  <p className="mt-0.5 truncate text-[10px] font-medium text-slate-500">
-                    {formatNumber(row.overdueLoanCount)}{" "}
-                    {row.overdueLoanCount === 1 ? "loan" : "loans"}
+                  <p className="truncate text-[10px] font-normal text-slate-500">
+                    {isManager
+                      ? "Portfolio snapshot"
+                      : (row.branch.manager?.name ?? "No manager assigned")}
                   </p>
                 </div>
               </div>
-            </Tooltip>
+              <div className="flex min-w-0 justify-end text-right">
+                <p className="max-w-full break-words text-[11px] font-medium tabular-nums text-[#111827]">
+                  {formatPlainMoney(row.loanTotal, currency)}
+                </p>
+              </div>
+              <div className="flex min-w-0 justify-end text-right">
+                <p className="max-w-full break-words text-[11px] font-medium tabular-nums text-[#111827]">
+                  {formatPlainMoney(row.collectedToday, currency)}
+                </p>
+              </div>
+              <div className="flex min-w-0 flex-col items-end text-right">
+                <p className="max-w-full break-words text-[11px] font-medium tabular-nums text-[#111827]">
+                  {formatPlainMoney(row.overdueAmount, currency)}
+                </p>
+                <p className="mt-0.5 truncate text-[10px] font-medium text-slate-500">
+                  {formatNumber(row.overdueLoanCount)}{" "}
+                  {row.overdueLoanCount === 1 ? "loan" : "loans"}
+                </p>
+              </div>
+            </div>
           ))
         )}
       </div>
@@ -905,6 +900,7 @@ function TodayActivityCard({
   branchId,
   onBranchChange,
   lockBranch = false,
+  collectionsLabel = "Repayments",
 }: {
   total: number;
   loansIssued: number;
@@ -915,10 +911,11 @@ function TodayActivityCard({
   branchId: string;
   onBranchChange: (branchId: string) => void;
   lockBranch?: boolean;
+  collectionsLabel?: string;
 }) {
   const items = [
     { label: "Loans Issued", value: loansIssued, color: "#003f35" },
-    { label: "Collections", value: collections, color: "#10a06f" },
+    { label: collectionsLabel, value: collections, color: "#10a06f" },
     { label: "New Borrowers", value: newBorrowers, color: "#9bd8ac" },
     { label: "Fully Settled", value: fullySettled, color: "#ccebd2" },
   ];
@@ -926,19 +923,16 @@ function TodayActivityCard({
   const lockedBranch = branches.find((branch) => branch.id === branchId);
 
   return (
-    <section className="rounded-[14px] border border-[#e6ebf0] bg-white p-3.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
+    <section className="flex h-full flex-col rounded-[14px] border border-[#e6ebf0] bg-white p-3.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-[15px] font-bold text-[#0b1220]">
           Today&apos;s Activity
         </h2>
         {lockBranch ? (
-          <Tooltip label="Activity is scoped to the branch you manage." align="right">
-            <span className="inline-flex h-8 max-w-[160px] items-center truncate rounded-xl border border-[#e6ebf0] bg-white px-3 text-[11px] font-medium text-slate-600 shadow-[0_8px_16px_rgba(15,23,42,0.04)]">
-              {lockedBranch?.name ?? "This branch"}
-            </span>
-          </Tooltip>
+          <span className="inline-flex h-8 max-w-[160px] items-center truncate rounded-xl border border-[#e6ebf0] bg-white px-3 text-[11px] font-medium text-slate-600 shadow-[0_8px_16px_rgba(15,23,42,0.04)]">
+            {lockedBranch?.name ?? "This branch"}
+          </span>
         ) : (
-        <Tooltip label="Choose one branch, or keep All branches to show network activity today." align="right">
           <label className="relative min-w-[128px]">
             <span className="sr-only">Activity branch</span>
             <select
@@ -955,7 +949,6 @@ function TodayActivityCard({
             </select>
             <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-500" />
           </label>
-        </Tooltip>
         )}
       </div>
       <div className="mt-4 grid items-center gap-4 sm:grid-cols-[128px_1fr] xl:grid-cols-1 2xl:grid-cols-[128px_1fr]">
@@ -974,28 +967,18 @@ function TodayActivityCard({
         </div>
         <div className="space-y-2.5">
           {items.map((item) => (
-            <Tooltip
-              key={item.label}
-              label={`${item.label}: ${formatNumber(item.value)} today for the selected branch filter.`}
-              align="right"
-              block
-            >
-              <span className="flex w-full items-center gap-2.5">
-                <span
-                  className="size-2.5 rounded-full"
-                  style={{ backgroundColor: item.color }}
-                />
-                <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-600">
-                  {item.label}
-                </span>
-                <span className="text-xs font-medium tabular-nums text-[#111827]">
-                  {formatNumber(item.value)}
-                </span>
-                <span className="w-10 text-right text-xs font-semibold text-slate-500">
-                  {percent(item.value, total)}
-                </span>
+            <span key={item.label} className="flex w-full items-center gap-2.5">
+              <span
+                className="size-2.5 rounded-full"
+                style={{ backgroundColor: item.color }}
+              />
+              <span className="min-w-0 flex-1 truncate text-xs font-semibold text-slate-600">
+                {item.label}
               </span>
-            </Tooltip>
+              <span className="text-xs font-medium tabular-nums text-[#111827]">
+                {formatNumber(item.value)}
+              </span>
+            </span>
           ))}
         </div>
       </div>
@@ -1011,6 +994,7 @@ function OverviewSidePanel({
   emptyText,
   children,
   hasRows,
+  listClassName = "divide-y divide-[#edf1f5]",
 }: {
   title: string;
   href: string;
@@ -1019,13 +1003,14 @@ function OverviewSidePanel({
   emptyText: string;
   children: ReactNode;
   hasRows: boolean;
+  listClassName?: string;
 }) {
   return (
-    <section className="flex h-full flex-col rounded-[14px] border border-[#e6ebf0] bg-white p-3.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
+    <section className="flex h-full min-w-0 flex-col overflow-hidden rounded-[14px] border border-[#e6ebf0] bg-white p-3.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
       <PanelHeader title={title} href={href} />
-      <div className="mt-3 flex min-h-0 flex-1 flex-col">
+      <div className="mt-3 flex min-h-0 min-w-0 flex-1 flex-col">
         {hasRows ? (
-          <div className="divide-y divide-[#edf1f5]">{children}</div>
+          <div className={`min-w-0 ${listClassName}`}>{children}</div>
         ) : (
           <div className="flex flex-1 items-center justify-center">
             <EmptyState
@@ -1058,32 +1043,25 @@ function RecentActivityCard({
       hasRows={rows.length > 0}
     >
       {rows.map((item) => (
-        <Tooltip
-          key={item.id}
-          label={`${item.title}. ${item.meta}${item.amount ? `, ${item.amount}` : ""}.`}
-          align="right"
-          block
-        >
-          <div className="flex h-[52px] w-full items-center gap-2.5">
-            <ActivityIcon icon={item.icon} tone={item.tone} />
-            <div className="min-w-0 flex-1 overflow-hidden">
-              <p className="truncate text-xs font-medium text-[#111827]">
-                {item.title}
-              </p>
-              <p className="mt-0.5 truncate text-[11px] font-normal text-slate-500">
-                {item.meta}
-              </p>
-            </div>
-            {item.amount ? (
-              <p className="min-w-[94px] shrink-0 truncate text-right text-xs font-medium tabular-nums text-[var(--forest-emerald)]">
-                {item.amount}
-              </p>
-            ) : null}
-            <p className="w-16 shrink-0 text-right text-[11px] font-semibold text-slate-500">
-              {item.time}
+        <div key={item.id} className="flex h-[52px] w-full items-center gap-2.5">
+          <ActivityIcon icon={item.icon} tone={item.tone} />
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <p className="truncate text-xs font-medium text-[#111827]">
+              {item.title}
+            </p>
+            <p className="mt-0.5 truncate text-[11px] font-normal text-slate-500">
+              {item.meta}
             </p>
           </div>
-        </Tooltip>
+          {item.amount ? (
+            <p className="min-w-[94px] shrink-0 truncate text-right text-xs font-medium tabular-nums text-[var(--forest-emerald)]">
+              {item.amount}
+            </p>
+          ) : null}
+          <p className="w-16 shrink-0 text-right text-[11px] font-semibold text-slate-500">
+            {item.time}
+          </p>
+        </div>
       ))}
     </OverviewSidePanel>
   );
@@ -1105,47 +1083,48 @@ function AlertsCard({
       emptyTitle="No active alerts"
       emptyText="There are no overdue, approval or branch setup issues needing attention right now."
       hasRows={rows.length > 0}
+      listClassName="space-y-2"
     >
       {rows.map((alert) => (
-        <Tooltip
+        <Link
           key={alert.id}
-          label={`${alert.title}. ${alert.detail}.`}
-          align="right"
-          block
+          href={alert.href ?? href}
+          className={`flex w-full min-w-0 items-center gap-2.5 rounded-xl border px-3 py-2.5 transition hover:shadow-[0_10px_24px_rgba(15,23,42,0.06)] ${
+            alert.tone === "red"
+              ? "border-red-100 bg-red-50/80"
+              : alert.tone === "gold"
+                ? "border-amber-100 bg-amber-50/80"
+                : "border-blue-100 bg-blue-50/75"
+          }`}
         >
-          <Link
-            href={alert.href ?? href}
-            className="flex h-[52px] w-full min-w-0 items-center gap-2.5 transition hover:bg-[#fbfdfc]"
+          <span
+            className={`grid size-8 shrink-0 place-items-center rounded-xl ${
+              alert.tone === "red"
+                ? "bg-white/80 text-red-600"
+                : alert.tone === "gold"
+                  ? "bg-white/80 text-orange-600"
+                  : "bg-white/80 text-blue-600"
+            }`}
           >
-            <span
-              className={`grid size-8 shrink-0 place-items-center rounded-xl ${
-                alert.tone === "red"
-                  ? "bg-red-50 text-red-600"
-                  : alert.tone === "gold"
-                    ? "bg-orange-50 text-orange-600"
-                    : "bg-blue-50 text-blue-600"
-              }`}
-            >
-              {alert.tone === "blue" ? (
-                <Clock3 className="size-4" />
-              ) : (
-                <AlertTriangle className="size-4" />
-              )}
-            </span>
-            <div className="min-w-0 flex-1 overflow-hidden">
-              <p className="truncate text-xs font-medium text-[#111827]">
-                {alert.title}
-              </p>
-              <p className="mt-0.5 truncate text-[11px] font-normal text-slate-500">
-                {alert.detail}
-              </p>
-            </div>
-            <p className="w-14 shrink-0 text-right text-[11px] font-semibold text-slate-500">
-              {alert.time}
+            {alert.tone === "blue" ? (
+              <Clock3 className="size-4" />
+            ) : (
+              <AlertTriangle className="size-4" />
+            )}
+          </span>
+          <div className="min-w-0 flex-1 overflow-hidden">
+            <p className="truncate text-xs font-medium text-[#111827]">
+              {alert.title}
             </p>
-            <ArrowRight className="size-3.5 shrink-0 text-slate-400" />
-          </Link>
-        </Tooltip>
+            <p className="mt-0.5 truncate text-[11px] font-normal text-slate-500">
+              {alert.detail}
+            </p>
+          </div>
+          <p className="w-14 shrink-0 text-right text-[11px] font-semibold text-slate-500">
+            {alert.time}
+          </p>
+          <ArrowRight className="size-3.5 shrink-0 text-slate-400" />
+        </Link>
       ))}
     </OverviewSidePanel>
   );
@@ -1164,24 +1143,20 @@ function PanelHeader({
     <div className="flex items-center justify-between gap-3">
       <h2 className="text-[15px] font-bold text-[#0b1220]">{title}</h2>
       {href ? (
-        <Tooltip label={`Open the full ${title.toLowerCase()} page.`} align="right">
-          <Link
-            href={href}
-            className="rounded-xl border border-[#e6ebf0] px-3 py-1.5 text-[11px] font-medium text-[#111827] shadow-[0_8px_16px_rgba(15,23,42,0.04)]"
-          >
-            View all
-          </Link>
-        </Tooltip>
+        <Link
+          href={href}
+          className="rounded-xl border border-[#e6ebf0] px-3 py-1.5 text-[11px] font-medium text-[#111827] shadow-[0_8px_16px_rgba(15,23,42,0.04)]"
+        >
+          View all
+        </Link>
       ) : action ? (
-        <Tooltip label={`Change ${title.toLowerCase()} options.`} align="right">
-          <button
-            type="button"
-            className="flex items-center gap-2 rounded-xl border border-[#e6ebf0] px-3 py-1.5 text-[11px] font-medium text-slate-600 shadow-[0_8px_16px_rgba(15,23,42,0.04)]"
-          >
-            {action}
-            <ChevronDown className="size-3.5" />
-          </button>
-        </Tooltip>
+        <button
+          type="button"
+          className="flex items-center gap-2 rounded-xl border border-[#e6ebf0] px-3 py-1.5 text-[11px] font-medium text-slate-600 shadow-[0_8px_16px_rgba(15,23,42,0.04)]"
+        >
+          {action}
+          <ChevronDown className="size-3.5" />
+        </button>
       ) : null}
     </div>
   );
@@ -1194,18 +1169,27 @@ const CHART_SERIES: Array<{
   label: string;
   color: string;
 }> = [
-  { key: "outstanding", label: "Outstanding", color: "#0f8f68" },
+  { key: "outstanding", label: "Total Loan Balance", color: "#0f8f68" },
   { key: "collected", label: "Collected", color: "#0ea5e9" },
-  { key: "issued", label: "Issued", color: "#64748b" },
+  { key: "issued", label: "Issued Loans", color: "#64748b" },
 ];
+
+function chartSeries(collectedLabel = "Collected") {
+  return CHART_SERIES.map((item) =>
+    item.key === "collected" ? { ...item, label: collectedLabel } : item,
+  );
+}
 
 function LineChart({
   series,
   currency,
+  collectedLabel = "Collected",
 }: {
   series: ReturnType<typeof buildPortfolioSeries>;
   currency: string;
+  collectedLabel?: string;
 }) {
+  const seriesMeta = chartSeries(collectedLabel);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [pinnedIndex, setPinnedIndex] = useState<number | null>(null);
   const [showArea, setShowArea] = useState(true);
@@ -1218,7 +1202,7 @@ function LineChart({
   const width = 640;
   const height = 250;
   const padding = { top: 20, right: 18, bottom: 34, left: 48 };
-  const activeSeries = CHART_SERIES.filter((item) => visible[item.key]);
+  const activeSeries = seriesMeta.filter((item) => visible[item.key]);
   const maxValue = Math.max(
     1,
     ...series.flatMap((point) =>
@@ -1318,7 +1302,7 @@ function LineChart({
     <div className="mt-4">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
-          {CHART_SERIES.map((item) => {
+          {seriesMeta.map((item) => {
             const on = visible[item.key];
             return (
               <button
@@ -1497,7 +1481,7 @@ function LineChart({
           ) : null}
 
           {activeIndex != null
-            ? CHART_SERIES.filter((item) => visible[item.key]).map((item) => (
+            ? seriesMeta.filter((item) => visible[item.key]).map((item) => (
                 <circle
                   key={item.key}
                   cx={pointMaps[item.key][activeIndex]?.x}
@@ -1552,7 +1536,7 @@ function LineChart({
               ) : null}
             </div>
             <div className="mt-2 space-y-1 text-[11px]">
-              {CHART_SERIES.filter((item) => visible[item.key]).map((item) => (
+              {seriesMeta.filter((item) => visible[item.key]).map((item) => (
                 <HoverStat
                   key={item.key}
                   color={item.color}
@@ -1630,9 +1614,11 @@ function HoverStat({
 function PerformanceDonutChart({
   series,
   currency,
+  collectedLabel = "Collected",
 }: {
   series: ReturnType<typeof buildPortfolioSeries>;
   currency: string;
+  collectedLabel?: string;
 }) {
   const [hoverLabel, setHoverLabel] = useState<string | null>(null);
   const [lockedLabel, setLockedLabel] = useState<string | null>(null);
@@ -1640,22 +1626,22 @@ function PerformanceDonutChart({
   const latest = series[series.length - 1];
   const items = [
     {
-      label: "Loan Balance",
+      label: "Total Loan Balance",
       value: latest?.outstanding ?? 0,
       color: "#003f35",
-      help: "Outstanding balance at period end",
+      help: "Total loan balance at period end",
     },
     {
-      label: "Collected",
+      label: collectedLabel,
       value: sumBy(series, (point) => point.collected),
       color: "#16a06d",
-      help: "Collections in this period",
+      help: "Repayments in this period",
     },
     {
-      label: "Issued",
+      label: "Issued Loans",
       value: sumBy(series, (point) => point.issued),
       color: "#86efac",
-      help: "Principal issued in this period",
+      help: "Amount given in this period",
     },
   ];
   const visibleItems = items.filter((item) => !hidden[item.label]);
@@ -2068,6 +2054,10 @@ function buildAlerts({
   const alerts: AlertItem[] = [];
 
   if (mode === "manager") {
+    const compliance = analytics?.dailyCompliance ?? null;
+    const overdueExposure = analytics?.overdueExposure ?? null;
+    const averageRate = analytics?.averageRate ?? null;
+
     if (returnedReports.length > 0) {
       alerts.push({
         id: "returned-reports",
@@ -2082,49 +2072,99 @@ function buildAlerts({
       });
     }
 
-    if (analytics?.level === "critical") {
+    if (compliance && compliance.level !== "healthy") {
+      const closeDate = compliance.date
+        ? formatDate(compliance.date)
+        : "yesterday";
       alerts.push({
-        id: "branch-critical-exposure",
-        title: "Branch needs urgent attention",
-        detail: "Daily close or overdue exposure needs action.",
+        id: "daily-close-attention",
+        title: "Daily operations require attention",
+        detail: `Complete outstanding reconciliation for ${closeDate}.`,
+        time: "Today",
+        tone: "red",
+        href: links.reports,
+      });
+    }
+
+    if (overdueLoans.length > 0) {
+      alerts.push({
+        id: "overdue-loans-action",
+        title: "Overdue loans require immediate action",
+        detail: `${overdueLoans.length} loan${
+          overdueLoans.length === 1 ? "" : "s"
+        } have missed their expected repayments.`,
         time: "Today",
         tone: "red",
         href: links.loans,
       });
-    } else if (analytics?.level === "high_risk") {
+    }
+
+    if (overdueExposure) {
+      if (overdueExposure.criticalCount > 0) {
+        alerts.push({
+          id: "repayments-overdue-critical",
+          title: "Repayments overdue",
+          detail: `${overdueExposure.criticalCount} borrower${
+            overdueExposure.criticalCount === 1 ? "" : "s"
+          } have missed repayments for more than 8 days.`,
+          time: "Today",
+          tone: "red",
+          href: links.loans,
+        });
+      }
+      if (overdueExposure.highRiskCount > 0) {
+        alerts.push({
+          id: "repayments-overdue-high-risk",
+          title: "Repayments overdue",
+          detail: `${overdueExposure.highRiskCount} borrower${
+            overdueExposure.highRiskCount === 1 ? "" : "s"
+          } have missed repayments for more than 4 days.`,
+          time: "Today",
+          tone: "gold",
+          href: links.loans,
+        });
+      }
+      if (overdueExposure.followUpCount > 0) {
+        alerts.push({
+          id: "repayments-overdue-follow-up",
+          title: "Repayments overdue",
+          detail: `${overdueExposure.followUpCount} borrower${
+            overdueExposure.followUpCount === 1 ? "" : "s"
+          } have missed repayments for more than 2 days.`,
+          time: "Today",
+          tone: "gold",
+          href: links.loans,
+        });
+      }
+    }
+
+    if (averageRate != null && averageRate < 50) {
       alerts.push({
-        id: "branch-high-risk-exposure",
-        title: "High-risk borrowers",
-        detail: "Borrowers with 4–7 uncovered repayment days.",
+        id: "collection-below-50",
+        title: "Less than 50% repayments collected",
+        detail:
+          "The branch collected less than 50% of the expected repayments over the past 7 days. Review missed repayments.",
         time: "Today",
-        tone: "gold",
+        tone: "red",
         href: links.loans,
       });
-    } else if (analytics?.level === "follow_up") {
+    } else if (averageRate != null && averageRate < 70) {
       alerts.push({
-        id: "branch-follow-up-exposure",
-        title: "Follow up on repayments",
-        detail: "Borrowers with 2–3 uncovered repayment days.",
-        time: "Today",
-        tone: "gold",
-        href: links.loans,
-      });
-    } else if (analytics?.level === "attention") {
-      alerts.push({
-        id: "branch-collection-attention",
-        title: "Collection rate needs review",
-        detail: "Repayment rate is 70% or less over 7 days.",
+        id: "collection-below-70",
+        title: "Less than 70% of repayments collected",
+        detail:
+          "The branch collected less than 70% of the expected repayments over the past 7 days. Review missed repayments.",
         time: "Today",
         tone: "gold",
         href: links.loans,
       });
     }
 
-    if (overdueLoans.length > 0) {
+    if (overdueLoans.length > 0 && overdueAmount > 0) {
       alerts.push({
-        id: "overdue-loans",
-        title: `${overdueLoans.length} loans overdue`,
-        detail: `Total overdue: ${formatMoney(overdueAmount, currency)}`,
+        id: "overdue-loan-payments",
+        title: "Overdue loan payments",
+        detail: `${formatMoney(overdueAmount, currency)} in loan repayments is overdue. Review affected loans.`,
         time: "Today",
         tone: "gold",
         href: links.loans,
@@ -2134,82 +2174,64 @@ function buildAlerts({
     if (varianceReports.length > 0) {
       alerts.push({
         id: "report-variance",
-        title: "Cash variance on close",
-        detail: "Counted cash did not match expected closing.",
+        title: "Cash does not match the expected balance",
+        detail:
+          "The cash counted at closing is different from the amount the system expected. Review transactions.",
         time: "Today",
         tone: "red",
         href: links.reports,
       });
     }
 
-    if (pendingReports.length > 0) {
-      alerts.push({
-        id: "awaiting-owner",
-        title:
-          pendingReports.length === 1
-            ? "Awaiting owner approval"
-            : `${pendingReports.length} reports with owner`,
-        detail: "Submitted and waiting for approval.",
-        time: "Today",
-        tone: "blue",
-        href: links.reports,
-      });
-    }
-
+    // Awaiting owner approval is shown as a header notification, not an alert.
     return alerts;
   }
 
-  const criticalBranches = branchAnalytics.filter(
-    (branch) => branch.level === "critical",
+  const missingReconciliationBranches = branchAnalytics.filter(
+    (branch) =>
+      branch.dailyCompliance.missingReconciliation ||
+      branch.dailyCompliance.missingReport,
   );
-  const highRiskBranches = branchAnalytics.filter(
-    (branch) => branch.level === "high_risk",
+  const highRiskBorrowerBranches = branchAnalytics.filter(
+    (branch) => branch.overdueExposure.highRiskCount > 0,
   );
-  const followUpBranches = branchAnalytics.filter(
-    (branch) => branch.level === "follow_up",
-  );
-  const collectionAttentionBranches = branchAnalytics.filter(
-    (branch) => branch.level === "attention",
+  const followUpBorrowerBranches = branchAnalytics.filter(
+    (branch) => branch.overdueExposure.followUpCount > 0,
   );
 
-  if (criticalBranches.length > 0) {
+  if (missingReconciliationBranches.length > 0) {
+    const closeDate =
+      missingReconciliationBranches.find((branch) => branch.dailyCompliance.date)
+        ?.dailyCompliance.date ?? previousDateLabel();
+    const count = missingReconciliationBranches.length;
     alerts.push({
-      id: "branch-critical-exposure",
-      title: `${criticalBranches.length} branches critical`,
-      detail: "Daily close or overdue exposure needs urgent action.",
+      id: "branch-missing-reconciliation",
+      title: count === 1 ? "Branch needs attention" : "Branches need attention",
+      detail: `${count} branch${count === 1 ? " has" : "es have"} not submitted reconciliation report for ${formatDate(closeDate)}.`,
       time: "Today",
       tone: "red",
       href: `${links.branches}?view=attention`,
     });
   }
 
-  if (highRiskBranches.length > 0) {
+  if (highRiskBorrowerBranches.length > 0) {
+    const count = highRiskBorrowerBranches.length;
     alerts.push({
       id: "branch-high-risk-exposure",
-      title: `${highRiskBranches.length} branches high risk`,
-      detail: "Borrowers with 4–7 uncovered repayment days.",
+      title: count === 1 ? "Branch needs attention" : "Branches need attention",
+      detail: `${count} branch${count === 1 ? " has" : "es have"} borrowers who are 4–7 days behind on repayments.`,
       time: "Today",
       tone: "gold",
       href: `${links.branches}?view=attention`,
     });
   }
 
-  if (followUpBranches.length > 0) {
+  if (followUpBorrowerBranches.length > 0) {
+    const count = followUpBorrowerBranches.length;
     alerts.push({
       id: "branch-follow-up-exposure",
-      title: `${followUpBranches.length} branches need follow-up`,
-      detail: "Borrowers with 2–3 uncovered repayment days.",
-      time: "Today",
-      tone: "gold",
-      href: `${links.branches}?view=attention`,
-    });
-  }
-
-  if (collectionAttentionBranches.length > 0) {
-    alerts.push({
-      id: "branch-collection-attention",
-      title: `${collectionAttentionBranches.length} branches need repayment review`,
-      detail: "Repayment rate is 70% or less over the last 7 days.",
+      title: count === 1 ? "Branch needs attention" : "Branches need attention",
+      detail: `${count} branch${count === 1 ? " has" : "es have"} borrowers who are 2–3 days behind on repayments.`,
       time: "Today",
       tone: "gold",
       href: `${links.branches}?view=attention`,
@@ -2219,48 +2241,23 @@ function buildAlerts({
   if (overdueLoans.length > 0) {
     alerts.push({
       id: "overdue-loans",
-      title: `${overdueLoans.length} loans overdue`,
-      detail: `Total overdue: ${formatMoney(overdueAmount, currency)}`,
+      title: "Overdue repayments",
+      detail: `${overdueLoans.length} loan${
+        overdueLoans.length === 1 ? "" : "s"
+      } have overdue repayments totalling to ${formatMoney(overdueAmount, currency)}.`,
       time: "Today",
       tone: "gold",
+      href: links.loans,
     });
   }
 
-  if (pendingReports.length > 0) {
-    alerts.push({
-      id: "pending-approvals",
-      title: "Manager approvals pending",
-      detail: `${pendingReports.length} reports awaiting approval`,
-      time: "Today",
-      tone: "gold",
-    });
-  }
+  // Pending approvals, returned reports, and cash variance are not owner alerts.
 
-  if (returnedReports.length > 0) {
+  for (const branch of missingManagers) {
     alerts.push({
-      id: "returned-reports",
-      title: `${returnedReports.length} returned reports`,
-      detail: "Reports returned to managers need follow-up",
-      time: "Today",
-      tone: "blue",
-    });
-  }
-
-  if (varianceReports.length > 0) {
-    alerts.push({
-      id: "report-variance",
-      title: `${varianceReports.length} reports have cash variance`,
-      detail: "Review counted cash against expected closing cash",
-      time: "Today",
-      tone: "red",
-    });
-  }
-
-  if (missingManagers.length > 0) {
-    alerts.push({
-      id: "missing-managers",
-      title: "Branch manager assignment",
-      detail: `${missingManagers.length} branches need an active manager`,
+      id: `missing-manager-${branch.id}`,
+      title: "Manager assignment needed",
+      detail: `Assign a manager for ${branch.name}`,
       time: "Today",
       tone: "blue",
       href: `${links.branches}?status=pending`,

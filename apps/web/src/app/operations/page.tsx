@@ -1153,7 +1153,7 @@ export default function OperationsPage() {
         "Agent Id",
         "Float Received",
         "Loans Issued",
-        "Collections",
+        "Repayments",
         "Processing Fees",
         "Expected Handover",
         "Returned Cash",
@@ -1718,7 +1718,7 @@ function OpeningView({
             Before you open
           </p>
           <ul className="mt-3 space-y-2.5 text-xs font-medium leading-5 text-slate-600">
-            <li>Confirm vault cash matches the opening balance.</li>
+            <li>Confirm cash on hand matches the opening balance.</li>
             <li>Set float you are ready to issue to agents today.</li>
             <li>Keep notes short — they appear on the close-day report.</li>
           </ul>
@@ -1823,7 +1823,7 @@ function OpenOperationView({
       ? {
           id: "float-left",
           title: `${formatMoney(operation.floatRemaining)} float still unassigned`,
-          detail: "Assignable float is waiting in the vault for agents.",
+          detail: "Assignable float is still available for agents.",
           tone: "gold" as const,
           action: "issue-float" as const,
           actionLabel: "Issue float",
@@ -1926,18 +1926,18 @@ function OpenOperationView({
       <section className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-5">
         <DayTopStat
           icon={<WalletCards className="size-5" />}
-          label="Vault cash"
+          label="Cash Left"
           value={formatMoney(cashPosition)}
           hint={`Opening ${formatMoney(operation.cashAvailableAtOpening)}`}
-          tooltip="Cash currently in the branch vault for this operations day."
+          tooltip="Cash currently on hand at the branch for this operations day."
           tone="green"
         />
         <DayTopStat
           icon={<Landmark className="size-5" />}
-          label="Expected close"
+          label="Expected Close"
           value={formatMoney(operation.expectedClosingBalance)}
-          hint="Target in the vault"
-          tooltip="Expected vault balance after float, returns, and expenses."
+          hint="Target Cash Left"
+          tooltip="Expected cash left after float, returns, and expenses."
           tone="green"
         />
         <DayTopStat
@@ -1958,10 +1958,10 @@ function OpenOperationView({
         />
         <DayTopStat
           icon={<Banknote className="size-5" />}
-          label="Collections"
+          label="Repayments"
           value={formatMoney(operation.collectionsReceived)}
           hint={`${operation.loansIssuedCount} loans · ${formatMoney(operation.expensesTotal)} expenses`}
-          tooltip="Collections received today, with loans issued and expenses recorded."
+          tooltip="Repayments received today, with loans issued and expenses recorded."
           tone="violet"
           className="sm:col-span-2 xl:col-span-1"
         />
@@ -2247,7 +2247,7 @@ function ComputerisedReportView({
             hint={formatMoney(operation.loansIssuedPrincipal)}
           />
           <ReportMiniStat
-            label="Collections"
+            label="Repayments"
             value={`${operation.collectionsCount}`}
             hint={formatMoney(operation.collectionsReceived)}
           />
@@ -2744,7 +2744,7 @@ function ReportAgentTable({ operation }: { operation: DailyOperation }) {
               <th className="w-[25%] py-1 pr-2">Agent</th>
               <th className="w-[15%] px-2 py-1 text-right">Float</th>
               <th className="w-[15%] px-2 py-1 text-right">Loans</th>
-              <th className="w-[15%] px-2 py-1 text-right">Collected</th>
+              <th className="w-[15%] px-2 py-1 text-right">Repayments</th>
               <th className="w-[15%] px-2 py-1 text-right">Fees</th>
               <th className="w-[15%] pl-2 py-1 text-right">Returned</th>
             </tr>
@@ -3005,7 +3005,7 @@ function CashMovementCard({ operation }: { operation: DailyOperation }) {
   const rows = [
     {
       label: "Previous close",
-      detail: "Opening vault",
+      detail: "Opening Cash",
       amount: operation.openingBalance,
       signed: "neutral" as const,
       tone: "slate" as const,
@@ -4000,28 +4000,28 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
   const configs = {
     "top-up": {
       title: "Add top-up",
-      subtitle: "Increase vault cash for today’s operations.",
+      subtitle: "Increase cash on hand for today’s operations.",
       cta: "Save top-up",
       icon: <PlusCircle className="size-5" />,
       stats: (operation: DailyOperation) => [
         {
-          label: "Vault now",
+          label: "Cash Left",
           value: formatMoney(operation.branchCashRemaining),
         },
         {
-          label: "Top-ups today",
+          label: "Top-ups Today",
           value: formatMoney(operation.topUpsTotal ?? operation.cashAddedToday),
         },
       ],
     },
     expense: {
       title: "Record expense",
-      subtitle: "Log day costs against branch vault cash.",
+      subtitle: "Log day costs against cash on hand.",
       cta: "Save expense",
       icon: <ReceiptText className="size-5" />,
       stats: (operation: DailyOperation) => [
         {
-          label: "Vault left",
+          label: "Cash Left",
           value: formatMoney(operation.branchCashRemaining),
         },
         {
@@ -4032,7 +4032,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
     },
     "issue-float": {
       title: "Issue float",
-      subtitle: "Assign vault float to an agent for the field day.",
+      subtitle: "Assign float to an agent for the field day.",
       cta: "Issue float",
       icon: <UserRoundPlus className="size-5" />,
       stats: (operation: DailyOperation) => [
@@ -4080,7 +4080,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
     },
     "close-day": {
       title: "Close day",
-      subtitle: "Count vault cash and seal today’s operations.",
+      subtitle: "Count the cash left and seal today’s operations.",
       cta: "Close day",
       icon: <LockKeyhole className="size-5" />,
       stats: (operation: DailyOperation) => [
@@ -4509,7 +4509,7 @@ function AgentReturnsPanel({
             <span>Agent</span>
             <span className="text-right">Float</span>
             <span className="text-right">Loans</span>
-            <span className="text-right">Collections</span>
+            <span className="text-right">Repayments</span>
             <span className="text-right">Fees</span>
             <span className="text-right">Expected</span>
             <span className="text-right">Return</span>
@@ -5091,7 +5091,7 @@ function buildExcelRows(operation: DailyOperation) {
       note: "Principal issued to borrowers",
     },
     {
-      section: "Collections",
+      section: "Repayments",
       description: "Repayments received",
       count: operation.collectionsCount,
       cashIn: operation.collectionsReceived,

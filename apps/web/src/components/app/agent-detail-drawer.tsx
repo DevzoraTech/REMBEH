@@ -386,12 +386,12 @@ export function AgentDetailDrawer({
             <TabButton
               active={tab === "collections"}
               onClick={() => setTab("collections")}
-              label={`collections (${collections.length})`}
+              label={`Repayments (${collections.length})`}
             />
             <TabButton
               active={tab === "applications"}
               onClick={() => setTab("applications")}
-              label={`loan applications (${applications.length})`}
+              label={`Loan Applications (${applications.length})`}
             />
           </div>
 
@@ -403,7 +403,7 @@ export function AgentDetailDrawer({
           ) : tab === "collections" ? (
             collections.length === 0 ? (
               <p className="text-sm text-slate-500">
-                no collections in this range.
+                No repayments in this range.
               </p>
             ) : (
               <ul className="divide-y divide-[var(--line)] border border-[var(--line)] bg-white">
