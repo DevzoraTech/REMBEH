@@ -1,15 +1,11 @@
 "use client";
 
 import {
-  ArrowUpDown,
   Building2,
   CalendarDays,
   Check,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Download,
-  Eye,
   Filter,
   Grid2X2,
   List,
@@ -24,8 +20,17 @@ import {
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "../app/app-shell";
+import {
+  DEFAULT_PAGE_SIZE,
+  PaginationControls,
+  paginateItems,
+} from "../app/pagination";
 import { RowActions } from "../app/row-actions";
 import { AppBootSkeleton, SkeletonBlock } from "../app/skeleton";
+import {
+  WorkspaceStatCard,
+  WorkspaceStatSkeleton,
+} from "../app/workspace-stat-card";
 import {
   OwnerBorrower,
   formatDate,
@@ -47,10 +52,7 @@ import { resolveOperatorRole } from "../../lib/roles";
 
 export type BorrowersMode = "owner" | "manager";
 
-type BorrowerTone = "green" | "blue" | "gold" | "violet";
 type TableMode = "list" | "grid";
-
-const PAGE_SIZE_OPTIONS = [10, 25, 50];
 
 type BorrowersSession = {
   session: RembehSession | null;
@@ -105,6 +107,7 @@ function useBorrowersSession(mode: BorrowersMode): BorrowersSession {
 
 export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
   const state = useBorrowersSession(mode);
+  const router = useRouter();
   const isManager = mode === "manager";
   const [borrowers, setBorrowers] = useState<OwnerBorrower[]>([]);
   const [search, setSearch] = useState("");
@@ -112,7 +115,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
   const [statusFilter, setStatusFilter] = useState("all");
   const [collateralFilter, setCollateralFilter] = useState("all");
   const [tableMode, setTableMode] = useState<TableMode>("list");
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [page, setPage] = useState(1);
   const [selectedBorrower, setSelectedBorrower] =
     useState<OwnerBorrower | null>(null);
@@ -120,6 +123,8 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const canCreateLoan =
+    isManager && Boolean(state.session?.permissions.includes("loan.create"));
 
   const loadBorrowers = useCallback(async () => {
     if (!state.session) return;
@@ -222,7 +227,6 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
     statusFilter,
   ]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const activeFilterCount = [
     !isManager && branchFilter !== "all",
     statusFilter !== "all",
@@ -234,11 +238,11 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
   ).length;
   const newThisMonthCount = borrowers.filter(isThisMonth).length;
   const pendingVerificationCount = borrowers.length - verifiedCount;
-  const currentPage = Math.min(page, totalPages);
-  const pageRows = filtered.slice(
-    (currentPage - 1) * pageSize,
-    currentPage * pageSize,
+  const paged = useMemo(
+    () => paginateItems(filtered, page, pageSize),
+    [filtered, page, pageSize],
   );
+  const pageRows = paged.items;
 
   function updateSearch(value: string) {
     setSearch(value);
@@ -285,16 +289,16 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
                   className={`size-4 ${loading ? "animate-spin" : ""}`}
                 />
               </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setNotice("Borrowers are added when you create a loan.")
-                }
-                className="flex h-9 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3.5 text-xs font-semibold text-white shadow-[0_12px_24px_rgba(15,143,104,0.28)] transition hover:brightness-105"
-              >
-                <Plus className="size-3.5" />
-                Add Borrower
-              </button>
+              {canCreateLoan ? (
+                <button
+                  type="button"
+                  onClick={() => router.push("/loans?new=1")}
+                  className="flex h-9 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3.5 text-xs font-semibold text-white shadow-[0_12px_24px_rgba(15,143,104,0.28)] transition hover:brightness-105"
+                >
+                  <Plus className="size-3.5" />
+                  New Loan
+                </button>
+              ) : null}
               <button
                 type="button"
                 disabled={exporting || filtered.length === 0}
@@ -348,36 +352,34 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           {loading ? (
             Array.from({ length: 4 }).map((_, index) => (
-              <BorrowerStatSkeleton key={index} />
+              <WorkspaceStatSkeleton key={index} />
             ))
           ) : (
             <>
-              <BorrowerStatCard
+              <WorkspaceStatCard
                 icon={<Users className="size-4" />}
                 label="Total Borrowers"
                 value={formatNumber(borrowers.length)}
-                detail={isManager ? "This Branch" : "All Branches"}
+                hint={isManager ? "This Branch" : "All Branches"}
                 tone="green"
               />
-              <BorrowerStatCard
+              <WorkspaceStatCard
                 icon={<ShieldCheck className="size-4" />}
                 label="Confirmed"
                 value={formatNumber(verifiedCount)}
-                detail={`${formatNumber(pendingVerificationCount)} Awaiting Check`}
+                hint={`${formatNumber(pendingVerificationCount)} Awaiting Check`}
                 tone="green"
               />
-              <BorrowerStatCard
+              <WorkspaceStatCard
                 icon={<UserCheck className="size-4" />}
                 label="Have Loans"
                 value={formatNumber(withLoansCount)}
-                detail="Borrowers With Loans"
                 tone="blue"
               />
-              <BorrowerStatCard
+              <WorkspaceStatCard
                 icon={<CalendarDays className="size-4" />}
                 label="New This Month"
                 value={formatNumber(newThisMonthCount)}
-                detail="Added This Month"
                 tone="gold"
               />
             </>
@@ -497,6 +499,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
           ) : tableMode === "grid" ? (
             <BorrowerGrid
               rows={pageRows}
+              showBranch={!isManager}
               onView={setSelectedBorrower}
               onExport={(borrower) =>
                 void exportBorrowers(
@@ -514,6 +517,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
           ) : (
             <BorrowerTable
               rows={pageRows}
+              showBranch={!isManager}
               onView={setSelectedBorrower}
               onExport={(borrower) =>
                 void exportBorrowers(
@@ -530,62 +534,17 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
             />
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#edf1f5] px-4 py-3 text-xs font-semibold text-slate-500">
-            <p>
-              Showing{" "}
-              {formatNumber(
-                filtered.length === 0
-                  ? 0
-                  : (currentPage - 1) * pageSize + 1,
-              )}{" "}
-              to{" "}
-              {formatNumber(
-                Math.min(currentPage * pageSize, filtered.length),
-              )}{" "}
-              of {formatNumber(filtered.length)}
-            </p>
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                disabled={currentPage === 1}
-                onClick={() =>
-                  setPage((current) => Math.max(1, current - 1))
-                }
-                className="grid size-8 place-items-center rounded-xl border border-[#edf1f5] text-slate-400 disabled:opacity-40"
-                aria-label="Previous page"
-              >
-                <ChevronLeft className="size-3.5" />
-              </button>
-              <span className="grid size-8 place-items-center rounded-xl bg-[var(--forest-emerald)] text-xs font-semibold text-white">
-                {currentPage}
-              </span>
-              <button
-                type="button"
-                disabled={currentPage === totalPages}
-                onClick={() =>
-                  setPage((current) => Math.min(totalPages, current + 1))
-                }
-                className="grid size-8 place-items-center rounded-xl border border-[#edf1f5] text-slate-400 disabled:opacity-40"
-                aria-label="Next page"
-              >
-                <ChevronRight className="size-3.5" />
-              </button>
-            </div>
-            <select
-              value={pageSize}
-              onChange={(event) => {
-                setPageSize(Number(event.target.value));
-                setPage(1);
-              }}
-              className="h-8 rounded-xl border border-[#edf1f5] bg-white px-2.5 text-xs font-semibold text-slate-600 outline-none"
-            >
-              {PAGE_SIZE_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  {option} per page
-                </option>
-              ))}
-            </select>
-          </div>
+          <PaginationControls
+            page={paged.currentPage}
+            pageSize={paged.pageSize}
+            total={paged.total}
+            itemLabel="borrowers"
+            onPageChange={setPage}
+            onPageSizeChange={(next) => {
+              setPageSize(next);
+              setPage(1);
+            }}
+          />
         </section>
       </div>
 
@@ -596,55 +555,6 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
         />
       ) : null}
     </AppShell>
-  );
-}
-
-function BorrowerStatCard({
-  icon,
-  label,
-  value,
-  detail,
-  tone,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  detail: string;
-  tone: BorrowerTone;
-}) {
-  const styles = toneStyles(tone);
-  return (
-    <article className="flex min-h-[96px] min-w-0 items-center gap-3 rounded-[14px] border border-[#e6ebf0] bg-white px-4 py-3.5 shadow-[0_12px_26px_rgba(15,23,42,0.045)]">
-      <span
-        className={`grid size-11 shrink-0 place-items-center rounded-2xl ${styles.icon}`}
-      >
-        {icon}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-[11px] font-bold text-slate-500">{label}</p>
-        <p className="mt-1.5 break-words text-[clamp(0.95rem,1.1vw,1.2rem)] font-semibold leading-tight tracking-[-0.02em] text-[#111827] tabular-nums">
-          {value}
-        </p>
-        <p className="mt-1 truncate text-[11px] font-semibold text-slate-500">
-          {detail}
-        </p>
-      </div>
-    </article>
-  );
-}
-
-function BorrowerStatSkeleton() {
-  return (
-    <div className="min-h-[96px] rounded-2xl border border-[#e5ebf0] bg-white p-4 shadow-[0_14px_32px_rgba(15,23,42,0.055)]">
-      <div className="flex items-center gap-3">
-        <SkeletonBlock className="size-11 rounded-xl" />
-        <div className="min-w-0 flex-1 space-y-2.5">
-          <SkeletonBlock className="h-3 w-28" />
-          <SkeletonBlock className="h-6 w-16" />
-          <SkeletonBlock className="h-3 w-36" />
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -679,34 +589,40 @@ function FilterSelect({
 
 function BorrowerTable({
   rows,
+  showBranch,
   onView,
   onExport,
 }: {
   rows: OwnerBorrower[];
+  showBranch: boolean;
   onView: (borrower: OwnerBorrower) => void;
   onExport: (borrower: OwnerBorrower) => void;
 }) {
+  const headers = [
+    "Borrower",
+    "Phone",
+    "National ID",
+    "Security",
+    ...(showBranch ? ["Branch"] : []),
+    "Loans",
+    "Status",
+    "Actions",
+  ];
+  const gridClass = showBranch
+    ? "lg:grid-cols-[1.45fr_0.9fr_0.95fr_1fr_1fr_0.45fr_0.72fr_0.5fr]"
+    : "lg:grid-cols-[1.55fr_1fr_1fr_1.1fr_0.5fr_0.8fr_0.5fr]";
+
   return (
     <div>
-      <div className="hidden grid-cols-[1.45fr_0.9fr_0.95fr_1fr_1fr_0.45fr_0.72fr_0.62fr] items-center gap-3 border-b border-[#edf1f4] bg-[#fbfcfd] px-4 py-2.5 text-[10px] font-medium text-slate-500 lg:grid">
-        {[
-          "Borrower",
-          "Phone",
-          "National ID",
-          "Security",
-          "Branch",
-          "Loans",
-          "Status",
-          "Actions",
-        ].map((label) => (
+      <div
+        className={`hidden items-center gap-3 border-b border-[#edf1f4] bg-[#fbfcfd] px-4 py-2.5 text-[10px] font-medium text-slate-500 lg:grid ${gridClass}`}
+      >
+        {headers.map((label) => (
           <div
             key={label}
-            className={`flex items-center gap-1 ${
-              label === "Actions" ? "justify-end" : ""
-            }`}
+            className={label === "Actions" ? "text-right" : undefined}
           >
             {label}
-            <ArrowUpDown className="size-3 text-slate-300" />
           </div>
         ))}
       </div>
@@ -716,6 +632,8 @@ function BorrowerTable({
             key={borrower.id}
             borrower={borrower}
             index={index}
+            showBranch={showBranch}
+            gridClass={gridClass}
             onView={onView}
             onExport={onExport}
           />
@@ -728,17 +646,26 @@ function BorrowerTable({
 function BorrowerListRow({
   borrower,
   index,
+  showBranch,
+  gridClass,
   onView,
   onExport,
 }: {
   borrower: OwnerBorrower;
   index: number;
+  showBranch: boolean;
+  gridClass: string;
   onView: (borrower: OwnerBorrower) => void;
   onExport: (borrower: OwnerBorrower) => void;
 }) {
+  const actionItems = [
+    { label: "View Borrower", onSelect: () => onView(borrower) },
+    { label: "Export Borrower", onSelect: () => onExport(borrower) },
+  ];
+
   return (
     <article
-      className="grid cursor-pointer gap-3 px-4 py-3.5 text-[13px] transition hover:bg-[#fbfdfc] lg:grid-cols-[1.45fr_0.9fr_0.95fr_1fr_1fr_0.45fr_0.72fr_0.62fr] lg:items-center lg:gap-3"
+      className={`grid cursor-pointer gap-3 px-4 py-3.5 text-[13px] transition hover:bg-[#fbfdfc] lg:items-center lg:gap-3 ${gridClass}`}
       onClick={() => onView(borrower)}
     >
       <div className="flex min-w-0 items-start justify-between gap-3 lg:contents">
@@ -761,10 +688,7 @@ function BorrowerListRow({
           <BorrowerStatus verified={Boolean(borrower.verifiedAt)} />
           <RowActions
             label={`Actions For ${borrower.fullName}`}
-            items={[
-              { label: "View Details", onSelect: () => onView(borrower) },
-              { label: "Export Borrower", onSelect: () => onExport(borrower) },
-            ]}
+            items={actionItems}
           />
         </div>
       </div>
@@ -773,34 +697,25 @@ function BorrowerListRow({
       <TableValue label="Security">
         {borrower.collateralType ? titleCase(borrower.collateralType) : "—"}
       </TableValue>
-      <TableValue label="Branch">
-        <span className="inline-flex min-w-0 items-center gap-1.5">
-          <MapPin className="size-3 shrink-0 text-[var(--forest-emerald)]" />
-          <span className="truncate">{borrower.branchName ?? "—"}</span>
-        </span>
-      </TableValue>
+      {showBranch ? (
+        <TableValue label="Branch">
+          <span className="inline-flex min-w-0 items-center gap-1.5">
+            <MapPin className="size-3 shrink-0 text-[var(--forest-emerald)]" />
+            <span className="truncate">{borrower.branchName ?? "—"}</span>
+          </span>
+        </TableValue>
+      ) : null}
       <TableValue label="Loans">{formatNumber(borrower.loanCount)}</TableValue>
       <div className="hidden lg:block">
         <BorrowerStatus verified={Boolean(borrower.verifiedAt)} />
       </div>
       <div
-        className="hidden items-center justify-end gap-2 lg:flex"
+        className="hidden items-center justify-end lg:flex"
         onClick={(event) => event.stopPropagation()}
       >
-        <button
-          type="button"
-          onClick={() => onView(borrower)}
-          className="grid size-8 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#0b3145] shadow-[0_7px_14px_rgba(15,23,42,0.035)] transition hover:bg-[#f8faf9]"
-          aria-label={`View ${borrower.fullName}`}
-        >
-          <Eye className="size-3.5" />
-        </button>
         <RowActions
           label={`Actions For ${borrower.fullName}`}
-          items={[
-            { label: "View Details", onSelect: () => onView(borrower) },
-            { label: "Export Borrower", onSelect: () => onExport(borrower) },
-          ]}
+          items={actionItems}
         />
       </div>
     </article>
@@ -809,10 +724,12 @@ function BorrowerListRow({
 
 function BorrowerGrid({
   rows,
+  showBranch,
   onView,
   onExport,
 }: {
   rows: OwnerBorrower[];
+  showBranch: boolean;
   onView: (borrower: OwnerBorrower) => void;
   onExport: (borrower: OwnerBorrower) => void;
 }) {
@@ -821,7 +738,8 @@ function BorrowerGrid({
       {rows.map((borrower, index) => (
         <article
           key={borrower.id}
-          className="rounded-2xl border border-[#e6ebf0] bg-white p-3.5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]"
+          className="cursor-pointer rounded-2xl border border-[#e6ebf0] bg-white p-3.5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]"
+          onClick={() => onView(borrower)}
         >
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
@@ -839,13 +757,18 @@ function BorrowerGrid({
                 </p>
               </div>
             </div>
-            <RowActions
-              label={`Actions For ${borrower.fullName}`}
-              items={[
-                { label: "View Details", onSelect: () => onView(borrower) },
-                { label: "Export Borrower", onSelect: () => onExport(borrower) },
-              ]}
-            />
+            <div onClick={(event) => event.stopPropagation()}>
+              <RowActions
+                label={`Actions For ${borrower.fullName}`}
+                items={[
+                  { label: "View Borrower", onSelect: () => onView(borrower) },
+                  {
+                    label: "Export Borrower",
+                    onSelect: () => onExport(borrower),
+                  },
+                ]}
+              />
+            </div>
           </div>
           <div className="mt-3 grid gap-1.5 text-xs font-medium text-[#17213a]">
             <InfoLine label="Phone" value={borrower.phone || "-"} />
@@ -858,7 +781,9 @@ function BorrowerGrid({
                   : "-"
               }
             />
-            <InfoLine label="Branch" value={borrower.branchName ?? "-"} />
+            {showBranch ? (
+              <InfoLine label="Branch" value={borrower.branchName ?? "-"} />
+            ) : null}
           </div>
         </article>
       ))}
@@ -1030,27 +955,6 @@ function InfoLine({ label, value }: { label: string; value: string }) {
       </span>
     </div>
   );
-}
-
-function toneStyles(tone: BorrowerTone) {
-  return {
-    green: {
-      icon: "bg-[#def7eb] text-[#0b936b]",
-      badge: "bg-[#def7eb] text-[#0b936b]",
-    },
-    blue: {
-      icon: "bg-[#eaf3ff] text-[#1f73f1]",
-      badge: "bg-[#eaf3ff] text-[#1f73f1]",
-    },
-    gold: {
-      icon: "bg-[#fff1df] text-[#f27a12]",
-      badge: "bg-[#fff1df] text-[#f27a12]",
-    },
-    violet: {
-      icon: "bg-[#f0e7ff] text-[#7952e8]",
-      badge: "bg-[#f0e7ff] text-[#7952e8]",
-    },
-  }[tone];
 }
 
 function avatarTone(index: number) {

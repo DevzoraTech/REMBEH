@@ -1285,6 +1285,8 @@ export class LoanApplicationsService {
       agentPhotoUrl: null,
       agentPhotoStorageKey: application.officer?.profilePhotoStorageKey ?? null,
       status: application.status,
+      loanId: application.loan?.id ?? null,
+      loanStatus: application.loan?.status ?? null,
       surname: application.surname,
       givenNames: application.givenNames,
       phone: application.phone,

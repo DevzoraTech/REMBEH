@@ -53,6 +53,10 @@ export type LoanApplicationContract = {
   agentPhotoUrl: string | null;
   agentPhotoStorageKey: string | null;
   status: string;
+  /** Linked loan id when the application has been issued. */
+  loanId: string | null;
+  /** Linked loan lifecycle status when issued. */
+  loanStatus: string | null;
   surname: string | null;
   givenNames: string | null;
   phone: string | null;

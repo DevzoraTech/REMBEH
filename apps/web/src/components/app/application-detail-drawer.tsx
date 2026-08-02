@@ -26,6 +26,8 @@ type SignatureItem = {
 type ApplicationDetail = {
   id: string;
   status: string;
+  loanId?: string | null;
+  loanStatus?: string | null;
   clientName: string;
   surname: string | null;
   givenNames: string | null;
@@ -218,15 +220,18 @@ export function ApplicationDetailDrawer({
         <header className="flex items-start justify-between gap-3 border-b border-[var(--line)] px-4 py-3">
           <div>
             <p className="text-[10px] font-semibold capitalize tracking-[0.08em] text-slate-500">
-              application
+              {detail?.loanId ? "loan" : "application"}
             </p>
             <h2 className="text-lg font-bold text-[var(--midnight-navy)]">
               {detail?.clientName || "Loading…"}
             </h2>
             {detail ? (
               <p className="text-xs text-slate-500">
-                {detail.status}
-                {detail.synced ? " · synced" : ""}
+                {formatPrimaryStatus(detail)}
+                {detail.loanId && detail.status
+                  ? ` · Application ${titleCaseStatus(detail.status)}`
+                  : ""}
+                {!detail.loanId && detail.synced ? " · synced" : ""}
               </p>
             ) : null}
           </div>
@@ -562,4 +567,35 @@ function formatDateOfBirth(value: string | null | undefined) {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
   if (!match) return value;
   return `${match[3]}/${match[2]}/${match[1]}`;
+}
+
+function formatPrimaryStatus(detail: ApplicationDetail) {
+  if (detail.loanStatus) {
+    return formatLoanLifecycleStatus(detail.loanStatus);
+  }
+  return titleCaseStatus(detail.status);
+}
+
+function formatLoanLifecycleStatus(status: string) {
+  const normalized = status.toUpperCase();
+  if (normalized === "CLOSED") return "Closed";
+  if (normalized === "IN_ARREARS" || normalized === "WRITTEN_OFF") {
+    return normalized === "WRITTEN_OFF" ? "Written Off" : "Overdue";
+  }
+  if (
+    normalized === "DISBURSED" ||
+    normalized === "CURRENT" ||
+    normalized === "RESTRUCTURED" ||
+    normalized === "APPROVED"
+  ) {
+    return "Active";
+  }
+  return titleCaseStatus(status);
+}
+
+function titleCaseStatus(status: string) {
+  return status
+    .replaceAll("_", " ")
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }

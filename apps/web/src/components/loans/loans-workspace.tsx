@@ -20,7 +20,13 @@ import { useRouter } from "next/navigation";
 import { ApplicationDetailDrawer } from "../app/application-detail-drawer";
 import { LoanApplicationFormDrawer } from "../app/loan-application-form-drawer";
 import { AppShell } from "../app/app-shell";
+import {
+  DEFAULT_PAGE_SIZE,
+  PaginationControls,
+  paginateItems,
+} from "../app/pagination";
 import { AppBootSkeleton, SkeletonBlock } from "../app/skeleton";
+import { WorkspaceStatCard } from "../app/workspace-stat-card";
 import {
   OwnerLoan,
   formatDate,
@@ -28,6 +34,7 @@ import {
   formatNumber,
   ownerFetch,
   sumBy,
+  titleCase,
 } from "../../app/owner/owner-common";
 import { OwnerHeader } from "../../app/owner/owner-header";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
@@ -122,11 +129,14 @@ function useLoansSession(mode: LoansMode): LoansSession {
 
 export function LoansWorkspace({ mode }: { mode: LoansMode }) {
   const state = useLoansSession(mode);
+  const router = useRouter();
   const isManager = mode === "manager";
   const [loans, setLoans] = useState<LoanRow[]>([]);
   const [borrowers, setBorrowers] = useState<BorrowerRow[]>([]);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<PortfolioFilter>("active");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -147,6 +157,16 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
   const currency = state.workspace?.currency ?? "UGX";
   const canCreate =
     isManager && Boolean(state.session?.permissions.includes("loan.create"));
+
+  useEffect(() => {
+    if (!canCreate || !state.ready) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("new") !== "1") return;
+    setPanelError(null);
+    setCreateMode("new");
+    setAddOpen(true);
+    router.replace(isManager ? "/loans" : "/owner/portfolio", { scroll: false });
+  }, [canCreate, isManager, router, state.ready]);
 
   const loadLoans = useCallback(async () => {
     if (!state.session) return;
@@ -240,12 +260,20 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
     });
   }, [filter, loans, search]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [filter, search]);
+
   const activeLoans = loans.filter((loan) => ACTIVE_STATUSES.has(loan.status));
   const overdueLoans = loans.filter(
     (loan) =>
       loan.dueDate &&
       new Date(loan.dueDate) < new Date() &&
       loan.balance > 0,
+  );
+  const paged = useMemo(
+    () => paginateItems(filtered, page, pageSize),
+    [filtered, page, pageSize],
   );
   const filteredBorrowers = useMemo(() => {
     const q = borrowerSearch.trim().toLowerCase();
@@ -326,7 +354,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
       <div className="mx-auto max-w-[1400px] space-y-5 animate-rise">
         <OwnerHeader
           eyebrow={isManager ? "Your branch" : "All Branches"}
-          title={isManager ? "Loans" : "Portfolio"}
+          title="Loans"
           search={search}
           onSearchChange={setSearch}
           searchPlaceholder="Search Loans..."
@@ -358,7 +386,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                   className="flex h-9 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3.5 text-xs font-semibold text-white shadow-[0_12px_24px_rgba(15,143,104,0.28)]"
                 >
                   <Plus className="size-3.5" />
-                  New loan
+                  New Loan
                 </button>
               ) : null}
               <button
@@ -393,33 +421,28 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
         ) : null}
 
         <section className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-5">
-          <LoanStat
+          <WorkspaceStatCard
             icon={<Folder className="size-4" />}
             label="Total Loans Given"
             value={formatNumber(loans.length)}
             tone="green"
           />
-          <LoanStat
+          <WorkspaceStatCard
             icon={<WalletCards className="size-4" />}
             label="Active Loans"
             value={formatNumber(activeLoans.length)}
-            hint={formatMoney(
-              sumBy(activeLoans, (loan) => loan.balance),
-              currency,
-            )}
             tone="green"
           />
-          <LoanStat
+          <WorkspaceStatCard
             icon={<Banknote className="size-4" />}
             label="Amount Given"
             value={formatMoney(
               sumBy(loans, (loan) => loan.principal),
               currency,
             )}
-            hint="Total Issued"
             tone="blue"
           />
-          <LoanStat
+          <WorkspaceStatCard
             icon={<Clock3 className="size-4" />}
             label="Total Loan Balance"
             value={formatMoney(
@@ -429,14 +452,14 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
             hint={`${overdueLoans.length} Overdue`}
             tone="gold"
           />
-          <LoanStat
+          <WorkspaceStatCard
             icon={<CheckCircle2 className="size-4" />}
-            label="Paid"
+            label="Total Repaid"
             value={formatMoney(
               sumBy(loans, (loan) => loan.paidAmount),
               currency,
             )}
-            hint="Repayments To Date"
+            hint="Across All Loans"
             tone="violet"
             className="sm:col-span-2 xl:col-span-1"
           />
@@ -445,7 +468,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
         <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-3.5">
             <h2 className="text-[15px] font-semibold text-[#0b1220]">
-              {isManager ? "Branch Loans" : "Portfolio Loans"}
+              {isManager ? "Branch Loans" : "All Loans"}
             </h2>
             <select
               value={filter}
@@ -469,7 +492,9 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                   <th className="w-[19%] px-3 py-2.5">Borrower</th>
                   <th className="w-[15%] px-3 py-2.5">Loan type</th>
                   <th className="w-[13%] px-3 py-2.5 text-right">Amount Given</th>
-                  <th className="w-[13%] px-3 py-2.5 text-right">Paid</th>
+                  <th className="w-[13%] px-3 py-2.5 text-right">
+                    Total Repaid
+                  </th>
                   <th className="w-[13%] px-3 py-2.5 text-right">
                     Total Loan Balance
                   </th>
@@ -483,7 +508,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                       colSpan={7}
                       className="px-3 py-8 text-center text-slate-500"
                     >
-                      Loading portfolio...
+                      Loading loans...
                     </td>
                   </tr>
                 ) : filtered.length === 0 ? (
@@ -496,7 +521,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                     </td>
                   </tr>
                 ) : (
-                  filtered.slice(0, 80).map((loan) => (
+                  paged.items.map((loan) => (
                     <tr
                       key={loan.id}
                       className={
@@ -523,7 +548,11 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                           {loan.phone}
                         </p>
                       </td>
-                      <td className="px-3 py-3">{loan.loanTypeName ?? "-"}</td>
+                      <td className="px-3 py-3">
+                        {loan.loanTypeName
+                          ? titleCase(loan.loanTypeName)
+                          : "-"}
+                      </td>
                       <td className="px-3 py-3 text-right font-bold tabular-nums">
                         {formatMoney(loan.principal, currency)}
                       </td>
@@ -540,6 +569,17 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
               </tbody>
             </table>
           </div>
+          <PaginationControls
+            page={paged.currentPage}
+            pageSize={paged.pageSize}
+            total={paged.total}
+            itemLabel="loans"
+            onPageChange={setPage}
+            onPageSizeChange={(next) => {
+              setPageSize(next);
+              setPage(1);
+            }}
+          />
         </section>
       </div>
 
@@ -693,53 +733,6 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
   );
 }
 
-function LoanStat({
-  icon,
-  label,
-  value,
-  hint,
-  tone,
-  className = "",
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string;
-  hint?: string;
-  tone: "green" | "blue" | "violet" | "gold";
-  className?: string;
-}) {
-  const toneClass = {
-    green: "bg-[#e9f8ef] text-[#07885f]",
-    blue: "bg-[#eaf4ff] text-[#2078dc]",
-    violet: "bg-[#f2eaff] text-[#8b4ee8]",
-    gold: "bg-[#fff3df] text-[#f28a17]",
-  }[tone];
-  return (
-    <div className={`min-w-0 ${className}`}>
-      <article className="flex h-full min-h-[88px] items-center gap-2.5 rounded-[13px] border border-[#e6ebf0] bg-white px-3 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
-        <span
-          className={`grid size-10 shrink-0 place-items-center rounded-xl ${toneClass}`}
-        >
-          {icon}
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-[11px] font-medium text-slate-500">
-            {label}
-          </p>
-          <p className="mt-1 break-words text-[clamp(0.72rem,0.9vw,1rem)] font-bold leading-tight tabular-nums text-[#0b1220]">
-            {value}
-          </p>
-          {hint ? (
-            <p className="mt-1 truncate text-[11px] font-medium text-slate-500">
-              {hint}
-            </p>
-          ) : null}
-        </div>
-      </article>
-    </div>
-  );
-}
-
 function ChoiceButton({
   active,
   icon,
@@ -785,7 +778,7 @@ async function exportPortfolio(
       "Phone",
       "Loan Type",
       "Amount Given",
-      "Paid",
+      "Total Repaid",
       "Total Loan Balance",
       "Status",
     ]);
@@ -794,7 +787,7 @@ async function exportPortfolio(
         loan.id,
         loan.borrowerName,
         loan.phone,
-        loan.loanTypeName ?? "",
+        loan.loanTypeName ? titleCase(loan.loanTypeName) : "",
         loan.principal,
         loan.paidAmount,
         loan.balance,
