@@ -5,6 +5,11 @@ import { Loader2, X } from "lucide-react";
 import Link from "next/link";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import { formatClock } from "../../lib/date-groups";
+import {
+  AgentStatusConfirmModal,
+  type AgentStatusConfirm,
+  type SuspendReason,
+} from "../agents/agent-status-confirm-modal";
 import { AgentPhoto } from "./agent-photo";
 
 type AgentAccountability = {
@@ -97,6 +102,8 @@ export function AgentDetailDrawer({
   const [collections, setCollections] = useState<ActivityCollection[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
+  const [statusConfirm, setStatusConfirm] =
+    useState<AgentStatusConfirm | null>(null);
 
   const authHeader = `${tokenType} ${accessToken}`;
 
@@ -186,7 +193,10 @@ export function AgentDetailDrawer({
 
   if (!agentId) return null;
 
-  async function setStatus(status: "ACTIVE" | "INACTIVE" | "SUSPENDED") {
+  async function setStatus(
+    status: "ACTIVE" | "SUSPENDED",
+    reason?: SuspendReason,
+  ) {
     if (!agentId || statusBusy) return;
     setStatusBusy(true);
     setError(null);
@@ -197,7 +207,10 @@ export function AgentDetailDrawer({
           Authorization: authHeader,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          status,
+          ...(reason ? { reason } : {}),
+        }),
       });
       const payload = await readApiJson<{
         agent?: AgentDetail;
@@ -207,6 +220,7 @@ export function AgentDetailDrawer({
         throw new Error(formatApiError(payload.message));
       }
       if (payload.agent) setDetail(payload.agent);
+      setStatusConfirm(null);
       onChanged?.();
     } catch (caught) {
       setError(
@@ -347,36 +361,37 @@ export function AgentDetailDrawer({
               ) : null}
               {detail ? (
                 <div className="flex flex-wrap gap-2">
-                  {detail.status !== "ACTIVE" ? (
-                    <button
-                      type="button"
-                      className="btn btn-ghost h-8 text-xs"
-                      disabled={statusBusy}
-                      onClick={() => void setStatus("ACTIVE")}
-                    >
-                      activate
-                    </button>
-                  ) : null}
-                  {detail.status !== "INACTIVE" ? (
-                    <button
-                      type="button"
-                      className="btn btn-ghost h-8 text-xs"
-                      disabled={statusBusy}
-                      onClick={() => void setStatus("INACTIVE")}
-                    >
-                      inactivate
-                    </button>
-                  ) : null}
-                  {detail.status !== "SUSPENDED" ? (
+                  {detail.status === "ACTIVE" ? (
                     <button
                       type="button"
                       className="btn btn-ghost h-8 text-xs text-red-700"
                       disabled={statusBusy}
-                      onClick={() => void setStatus("SUSPENDED")}
+                      onClick={() =>
+                        setStatusConfirm({
+                          action: "suspend",
+                          agentId: detail.id,
+                          agentName: detail.name,
+                        })
+                      }
                     >
-                      suspend
+                      Suspend Agent
                     </button>
-                  ) : null}
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-ghost h-8 text-xs"
+                      disabled={statusBusy}
+                      onClick={() =>
+                        setStatusConfirm({
+                          action: "activate",
+                          agentId: detail.id,
+                          agentName: detail.name,
+                        })
+                      }
+                    >
+                      Activate Agent
+                    </button>
+                  )}
                 </div>
               ) : null}
             </div>
@@ -475,6 +490,16 @@ export function AgentDetailDrawer({
           )}
         </div>
       </aside>
+      <AgentStatusConfirmModal
+        confirm={statusConfirm}
+        busy={statusBusy}
+        onClose={() => {
+          if (!statusBusy) setStatusConfirm(null);
+        }}
+        onConfirm={(payload) =>
+          void setStatus(payload.status, payload.reason)
+        }
+      />
     </div>
   );
 }

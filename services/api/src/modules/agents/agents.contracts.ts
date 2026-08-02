@@ -12,6 +12,13 @@ export type AgentListItemContract = {
   branchId: string | null;
   branchName: string | null;
   photoUrl: string | null;
+  /** When the agent account was created. */
+  createdAt: string;
+  /**
+   * Latest meaningful field activity (loan issuance or repayment collection).
+   * Null when the agent has never recorded either.
+   */
+  lastActiveAt: string | null;
   collectionsToday: number;
   collectionsLifetime: number;
   applicationsToday: number;

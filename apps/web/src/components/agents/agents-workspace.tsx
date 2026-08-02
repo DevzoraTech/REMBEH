@@ -10,16 +10,22 @@ import {
   type ReactNode,
 } from "react";
 import {
-  Banknote,
+  Activity,
   Loader2,
   MoreVertical,
   RefreshCw,
+  UserCheck,
   Users,
-  Wallet,
+  UserX,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { AgentDetailDrawer } from "../app/agent-detail-drawer";
 import { AppShell } from "../app/app-shell";
+import {
+  AgentStatusConfirmModal,
+  type AgentStatusConfirm,
+  type SuspendReason,
+} from "./agent-status-confirm-modal";
 import {
   DEFAULT_PAGE_SIZE,
   PaginationControls,
@@ -50,6 +56,8 @@ type AgentRow = {
   branchId: string | null;
   branchName: string | null;
   photoUrl: string | null;
+  createdAt?: string | null;
+  lastActiveAt?: string | null;
   collectionsToday: number;
   collectionsLifetime: number;
   applicationsToday: number;
@@ -71,19 +79,6 @@ type AgentsResponse = {
   };
 };
 
-type OperationSummaryResponse = {
-  branch: { id: string; name: string } | null;
-  operation: {
-    id: string;
-    status: "OPEN" | "CLOSING" | "CLOSED";
-    floatSetAside: number;
-    floatIssued: number;
-    floatRemaining: number;
-    branchCashRemaining: number;
-  } | null;
-  message?: string | string[];
-};
-
 type ActionMenuState = {
   agentId: string;
   top: number;
@@ -98,8 +93,6 @@ export function AgentsWorkspace() {
   const [branch, setBranch] = useState<RembehBranch | null>(null);
   const [agents, setAgents] = useState<AgentRow[]>([]);
   const [counts, setCounts] = useState<AgentsResponse["counts"] | null>(null);
-  const [operationSummary, setOperationSummary] =
-    useState<OperationSummaryResponse | null>(null);
   const [selectedDate] = useState(todayInputValue);
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
@@ -111,7 +104,8 @@ export function AgentsWorkspace() {
   const [statusBusyId, setStatusBusyId] = useState<string | null>(null);
   const agentsRequestId = useRef(0);
   const [actionMenu, setActionMenu] = useState<ActionMenuState | null>(null);
-  const operationRequestId = useRef(0);
+  const [statusConfirm, setStatusConfirm] =
+    useState<AgentStatusConfirm | null>(null);
 
   const canRead = Boolean(
     session?.permissions.includes("branch.staff.read") ||
@@ -160,38 +154,6 @@ export function AgentsWorkspace() {
     [],
   );
 
-  const loadOperationSummary = useCallback(
-    async (activeSession: RembehSession, activeDate: string) => {
-      if (!activeSession.permissions.includes("operation.read")) {
-        setOperationSummary(null);
-        return;
-      }
-
-      const requestId = operationRequestId.current + 1;
-      operationRequestId.current = requestId;
-      try {
-        const response = await fetch(
-          `${apiBaseUrl}/operations/today?date=${encodeURIComponent(activeDate)}`,
-          {
-            headers: {
-              Authorization: `${activeSession.tokenType} ${activeSession.accessToken}`,
-            },
-          },
-        );
-        const payload = await readApiJson<OperationSummaryResponse>(response);
-        if (!response.ok) {
-          throw new Error(formatApiError(payload.message));
-        }
-        if (requestId !== operationRequestId.current) return;
-        setOperationSummary(payload);
-      } catch {
-        if (requestId !== operationRequestId.current) return;
-        setOperationSummary(null);
-      }
-    },
-    [],
-  );
-
   useEffect(() => {
     const boot = window.setTimeout(() => {
       const auth = readAuthState();
@@ -223,14 +185,11 @@ export function AgentsWorkspace() {
         return;
       }
 
-      void Promise.all([
-        loadAgents(auth.session, query, selectedDate),
-        loadOperationSummary(auth.session, selectedDate),
-      ]);
+      void loadAgents(auth.session, query, selectedDate);
     }, 0);
 
     return () => window.clearTimeout(boot);
-  }, [router, query, selectedDate, loadAgents, loadOperationSummary]);
+  }, [router, query, selectedDate, loadAgents]);
 
   useEffect(() => {
     const searchSync = window.setTimeout(() => setQuery(search), 250);
@@ -260,7 +219,8 @@ export function AgentsWorkspace() {
 
   async function updateStatus(
     agentId: string,
-    status: "ACTIVE" | "INACTIVE" | "SUSPENDED",
+    status: "ACTIVE" | "SUSPENDED",
+    reason?: SuspendReason,
   ) {
     if (!session || statusBusyId) return;
     setStatusBusyId(agentId);
@@ -272,7 +232,10 @@ export function AgentsWorkspace() {
           Authorization: `${session.tokenType} ${session.accessToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({
+          status,
+          ...(reason ? { reason } : {}),
+        }),
       });
       const payload = await readApiJson<{ message?: string | string[] }>(
         response,
@@ -282,6 +245,7 @@ export function AgentsWorkspace() {
       }
       await loadAgents(session, query, selectedDate);
       setActionMenu(null);
+      setStatusConfirm(null);
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -298,7 +262,7 @@ export function AgentsWorkspace() {
     event: MouseEvent<HTMLButtonElement>,
   ) {
     const rect = event.currentTarget.getBoundingClientRect();
-    const menuWidth = 152;
+    const menuWidth = 168;
     setActionMenu((current) =>
       current?.agentId === agentId
         ? null
@@ -316,20 +280,25 @@ export function AgentsWorkspace() {
     );
   }
 
-  const floatStats = useMemo(() => {
-    const withFloat = agents.filter((agent) => agent.floatToday != null);
-    const amountGiven = withFloat.reduce(
-      (sum, agent) => sum + (agent.floatToday ?? 0),
-      0,
-    );
+  const summaryStats = useMemo(() => {
+    const activeToday = agents.filter(
+      (agent) =>
+        agent.collectionsToday > 0 ||
+        agent.applicationsToday > 0 ||
+        agent.amountCollectedToday > 0 ||
+        agent.amountDisbursedToday > 0 ||
+        isActiveToday(agent.lastActiveAt),
+    ).length;
     return {
-      amountGiven,
-      missing: Math.max(agents.length - withFloat.length, 0),
+      all: counts?.total ?? agents.length,
+      activeToday,
+      active: counts?.active ?? agents.filter((a) => a.status === "ACTIVE").length,
+      suspended:
+        counts?.suspended ??
+        agents.filter((a) => a.status === "SUSPENDED").length,
     };
-  }, [agents]);
+  }, [agents, counts]);
 
-  const operationForSelectedDate = operationSummary?.operation ?? null;
-  const floatLeftFromOperations = operationForSelectedDate?.floatRemaining ?? 0;
   const actionMenuAgent = actionMenu
     ? (agents.find((agent) => agent.id === actionMenu.agentId) ?? null)
     : null;
@@ -366,14 +335,9 @@ export function AgentsWorkspace() {
           actions={
             <button
               type="button"
-              onClick={() =>
-                void Promise.all([
-                  loadAgents(session, query, selectedDate),
-                  loadOperationSummary(session, selectedDate),
-                ])
-              }
+              onClick={() => void loadAgents(session, query, selectedDate)}
               disabled={loading}
-              aria-label="Refresh agents"
+              aria-label="Refresh Agents"
               className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-50 disabled:opacity-60"
             >
               <RefreshCw
@@ -383,40 +347,38 @@ export function AgentsWorkspace() {
           }
         />
         <p className="-mt-2 text-sm font-medium text-slate-500">
-          Manage agents, review their activity, and monitor daily performance.
+          Browse branch agents, review access status, and manage who can work in
+          the field.
         </p>
 
-        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <AgentsSummaryCard
-            total={counts?.total ?? agents.length}
-            active={counts?.active ?? 0}
-            suspended={counts?.suspended ?? 0}
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <AgentStat
+            icon={<Users className="size-4" />}
+            label="All Agents"
+            value={String(summaryStats.all)}
+            hint="Registered At The Branch"
+            tone="green"
           />
           <AgentStat
-            icon={<Wallet className="size-4" />}
-            label="Float Given"
-            value={`UGX ${formatAmount(floatStats.amountGiven)}`}
-            hint={
-              agents.length > 0 && floatStats.missing === 0
-                ? "All Agents Given"
-                : `${floatStats.missing} Missing`
-            }
+            icon={<Activity className="size-4" />}
+            label="Active Today"
+            value={String(summaryStats.activeToday)}
+            hint="Recorded Work Today"
             tone="blue"
           />
           <AgentStat
-            icon={<Banknote className="size-4" />}
-            label="Unallocated Float"
-            value={
-              operationForSelectedDate
-                ? `UGX ${formatAmount(floatLeftFromOperations)}`
-                : "UGX 0"
-            }
-            hint={
-              operationForSelectedDate
-                ? "Available To Assign"
-                : "Day Not Started"
-            }
+            icon={<UserCheck className="size-4" />}
+            label="Active Agents"
+            value={String(summaryStats.active)}
+            hint="Can Access The System"
             tone="violet"
+          />
+          <AgentStat
+            icon={<UserX className="size-4" />}
+            label="Suspended Agents"
+            value={String(summaryStats.suspended)}
+            hint="System Access Restricted"
+            tone="gold"
           />
         </section>
 
@@ -427,7 +389,7 @@ export function AgentsWorkspace() {
         ) : null}
 
         {loading && agents.length === 0 ? (
-          <TableSkeleton rows={6} columns={8} />
+          <TableSkeleton rows={6} columns={6} />
         ) : !canRead ? (
           <p className="rounded-[16px] border border-[#e6ebf0] bg-white px-4 py-6 text-sm text-slate-500">
             You do not have permission to view agents.
@@ -444,29 +406,19 @@ export function AgentsWorkspace() {
               </h2>
             </div>
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] table-fixed text-left text-xs">
+              <table className="w-full min-w-[760px] table-fixed text-left text-xs">
                 <thead className="bg-[#f8faf9] text-[10px] font-semibold text-slate-500">
                   <tr>
-                    <th className="w-[9%] px-3 py-2.5">Agent ID</th>
-                    <th className="w-[14%] px-3 py-2.5">Name</th>
-                    <th className="w-[15%] px-3 py-2.5">Contact</th>
-                    <th className="w-[9%] px-3 py-2.5 text-right">Float</th>
-                    <th className="w-[10%] px-3 py-2.5 text-right">Expected</th>
-                    <th className="w-[9%] px-3 py-2.5 text-right">
-                      Repayments
-                    </th>
-                    <th className="w-[9%] px-3 py-2.5 text-right">
-                      Applications
-                    </th>
-                    <th className="w-[10%] px-3 py-2.5 text-right">Repaid</th>
-                    <th className="w-[10%] px-3 py-2.5 text-right">Disbursed</th>
-                    {canManage ? (
-                      <th className="w-[5%] px-3 py-2.5 text-right">Actions</th>
-                    ) : null}
+                    <th className="w-[28%] px-3 py-2.5">Agent</th>
+                    <th className="w-[12%] px-3 py-2.5">Status</th>
+                    <th className="w-[22%] px-3 py-2.5">Contact</th>
+                    <th className="w-[14%] px-3 py-2.5">Joined</th>
+                    <th className="w-[16%] px-3 py-2.5">Last Active</th>
+                    <th className="w-[8%] px-3 py-2.5 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#edf1f5]">
-                  {pagedAgents.items.map((agent) => (
+                  {pagedAgents.items.map((agent, index) => (
                     <tr
                       key={agent.id}
                       className="cursor-pointer transition hover:bg-[#fbfdfc]"
@@ -476,101 +428,63 @@ export function AgentsWorkspace() {
                       }}
                     >
                       <td className="px-3 py-3">
-                        <p className="break-words font-bold tabular-nums text-[#0b1220]">
-                          {agent.publicId ?? "—"}
-                        </p>
+                        <div className="flex min-w-0 items-center gap-3">
+                          <AgentAvatar
+                            name={agent.name}
+                            photoUrl={agent.photoUrl}
+                            toneIndex={index}
+                          />
+                          <div className="min-w-0">
+                            <p className="truncate font-semibold text-[#0b1220]">
+                              {agent.name}
+                            </p>
+                            <p className="mt-0.5 truncate text-[11px] font-medium tabular-nums text-slate-500">
+                              {agent.publicId ?? "No Agent ID"}
+                            </p>
+                          </div>
+                        </div>
                       </td>
                       <td className="px-3 py-3">
-                        <p className="truncate font-semibold text-[#0b1220]">
-                          {agent.name}
-                        </p>
                         <StatusBadge status={agent.status} />
                       </td>
                       <td className="px-3 py-3 text-[11px] text-slate-600">
-                        <p className="truncate">{agent.phone || "—"}</p>
-                        <p className="truncate text-slate-500">{agent.email}</p>
+                        <p className="truncate font-medium text-[#0b1220]">
+                          {agent.phone || "—"}
+                        </p>
+                        <p className="mt-0.5 truncate text-slate-500">
+                          {agent.email}
+                        </p>
+                      </td>
+                      <td className="px-3 py-3 text-[11px] font-medium text-[#0b1220]">
+                        {formatJoinedDate(agent.createdAt)}
+                      </td>
+                      <td className="px-3 py-3 text-[11px] font-medium text-[#0b1220]">
+                        {formatLastActive(agent.lastActiveAt)}
                       </td>
                       <td
-                        className="px-3 py-3 text-right tabular-nums"
+                        className="px-3 py-3"
                         onClick={(event) => event.stopPropagation()}
                       >
-                        <p
-                          className={`truncate font-bold ${
-                            agent.floatToday == null
-                              ? "text-amber-700"
-                              : "text-[var(--forest-emerald)]"
-                          }`}
-                        >
-                          {agent.floatToday == null
-                            ? "Not Given"
-                            : formatAmount(agent.floatToday)}
-                        </p>
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            className="grid size-8 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#0b1220] transition hover:bg-[#f8faf9] disabled:opacity-50"
+                            aria-label={`Open actions for ${agent.name}`}
+                            aria-haspopup="menu"
+                            aria-expanded={actionMenu?.agentId === agent.id}
+                            disabled={statusBusyId === agent.id}
+                            onClick={(event) =>
+                              toggleActionMenu(agent.id, event)
+                            }
+                          >
+                            {statusBusyId === agent.id ? (
+                              <Loader2 className="size-3.5 animate-spin" />
+                            ) : (
+                              <MoreVertical className="size-4" />
+                            )}
+                          </button>
+                        </div>
                       </td>
-                      <td className="px-3 py-3 text-right tabular-nums">
-                        <p className="truncate font-bold text-[#0b1220]">
-                          {formatAmount(expectedCashForAgent(agent))}
-                        </p>
-                      </td>
-                      <td className="px-3 py-3 text-right tabular-nums">
-                        <p className="font-semibold text-[#0b1220]">
-                          {agent.collectionsToday} /{" "}
-                          {agent.collectionsLifetime}
-                        </p>
-                        <p className="text-[10px] text-slate-500">
-                          Today / Total
-                        </p>
-                      </td>
-                      <td className="px-3 py-3 text-right tabular-nums">
-                        <p className="font-semibold text-[#0b1220]">
-                          {agent.applicationsToday} /{" "}
-                          {agent.applicationsLifetime}
-                        </p>
-                        <p className="text-[10px] text-slate-500">
-                          Today / Total
-                        </p>
-                      </td>
-                      <td className="px-3 py-3 text-right tabular-nums">
-                        <p className="whitespace-nowrap font-bold text-[var(--forest-emerald)]">
-                          Today {formatAmount(agent.amountCollectedToday)}
-                        </p>
-                        <p className="whitespace-nowrap text-[10px] text-slate-500">
-                          Total {formatAmount(agent.amountCollectedLifetime)}
-                        </p>
-                      </td>
-                      <td className="px-3 py-3 text-right tabular-nums">
-                        <p className="whitespace-nowrap font-bold text-[#0b1220]">
-                          Today {formatAmount(agent.amountDisbursedToday)}
-                        </p>
-                        <p className="whitespace-nowrap text-[10px] text-slate-500">
-                          Total {formatAmount(agent.amountDisbursedLifetime)}
-                        </p>
-                      </td>
-                      {canManage ? (
-                        <td
-                          className="px-3 py-3"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          <div className="flex flex-col items-end">
-                            <button
-                              type="button"
-                              className="grid size-8 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#0b1220] transition hover:bg-[#f8faf9] disabled:opacity-50"
-                              aria-label={`Open actions for ${agent.name}`}
-                              aria-haspopup="menu"
-                              aria-expanded={actionMenu?.agentId === agent.id}
-                              disabled={statusBusyId === agent.id}
-                              onClick={(event) =>
-                                toggleActionMenu(agent.id, event)
-                              }
-                            >
-                              {statusBusyId === agent.id ? (
-                                <Loader2 className="size-3.5 animate-spin" />
-                              ) : (
-                                <MoreVertical className="size-4" />
-                              )}
-                            </button>
-                          </div>
-                        </td>
-                      ) : null}
                     </tr>
                   ))}
                 </tbody>
@@ -604,92 +518,66 @@ export function AgentsWorkspace() {
           <button
             type="button"
             className="fixed inset-0 z-40 cursor-default"
-            aria-label="Close actions"
+            aria-label="Close Actions"
             onClick={() => setActionMenu(null)}
           />
           <div
             role="menu"
-            className="fixed z-50 w-[152px] rounded-xl border border-[#e6ebf0] bg-white p-1 text-left shadow-[0_14px_34px_rgba(15,23,42,0.16)]"
+            className="fixed z-50 w-[168px] rounded-xl border border-[#e6ebf0] bg-white p-1 text-left shadow-[0_14px_34px_rgba(15,23,42,0.16)]"
             style={{ top: actionMenu.top, left: actionMenu.left }}
           >
-            {actionMenuAgent.status !== "ACTIVE" ? (
+            <ActionMenuItem
+              onClick={() => {
+                setActionMenu(null);
+                setSelectedAgentId(actionMenuAgent.id);
+              }}
+              label="View Agent"
+            />
+            {canManage && actionMenuAgent.status === "ACTIVE" ? (
               <ActionMenuItem
                 disabled={statusBusyId === actionMenuAgent.id}
-                onClick={() => void updateStatus(actionMenuAgent.id, "ACTIVE")}
-                label="Activate"
-              />
-            ) : null}
-            {actionMenuAgent.status !== "INACTIVE" ? (
-              <ActionMenuItem
-                disabled={statusBusyId === actionMenuAgent.id}
-                onClick={() =>
-                  void updateStatus(actionMenuAgent.id, "INACTIVE")
-                }
-                label="Inactivate"
-              />
-            ) : null}
-            {actionMenuAgent.status !== "SUSPENDED" ? (
-              <ActionMenuItem
-                disabled={statusBusyId === actionMenuAgent.id}
-                onClick={() =>
-                  void updateStatus(actionMenuAgent.id, "SUSPENDED")
-                }
-                label="Suspend"
+                onClick={() => {
+                  setActionMenu(null);
+                  setStatusConfirm({
+                    action: "suspend",
+                    agentId: actionMenuAgent.id,
+                    agentName: actionMenuAgent.name,
+                  });
+                }}
+                label="Suspend Agent"
                 danger
+              />
+            ) : null}
+            {canManage &&
+            (actionMenuAgent.status === "SUSPENDED" ||
+              actionMenuAgent.status === "INACTIVE") ? (
+              <ActionMenuItem
+                disabled={statusBusyId === actionMenuAgent.id}
+                onClick={() => {
+                  setActionMenu(null);
+                  setStatusConfirm({
+                    action: "activate",
+                    agentId: actionMenuAgent.id,
+                    agentName: actionMenuAgent.name,
+                  });
+                }}
+                label="Activate Agent"
               />
             ) : null}
           </div>
         </>
       ) : null}
+      <AgentStatusConfirmModal
+        confirm={statusConfirm}
+        busy={Boolean(statusBusyId)}
+        onClose={() => {
+          if (!statusBusyId) setStatusConfirm(null);
+        }}
+        onConfirm={(payload) =>
+          void updateStatus(payload.agentId, payload.status, payload.reason)
+        }
+      />
     </AppShell>
-  );
-}
-
-function AgentsSummaryCard({
-  total,
-  active,
-  suspended,
-}: {
-  total: number;
-  active: number;
-  suspended: number;
-}) {
-  return (
-    <article className="flex h-full min-h-[92px] items-center gap-3 rounded-[13px] border border-[#e6ebf0] bg-white px-3 py-2.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
-      <div className="flex min-w-0 flex-1 items-center gap-2.5">
-        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[#e9f8ef] text-[#07885f]">
-          <Users className="size-3.5" />
-        </span>
-        <div className="min-w-0">
-          <p className="text-xs font-bold text-[#0b1220]">Agents</p>
-          <p className="mt-0.5 text-xl font-bold leading-none tabular-nums text-[#0b1220]">
-            {total}
-          </p>
-          <p className="mt-0.5 text-[11px] font-medium text-slate-500">Total</p>
-        </div>
-      </div>
-      <span className="h-12 w-px shrink-0 bg-[#edf1f5]" aria-hidden />
-      <div className="grid min-w-[108px] gap-1.5">
-        <div className="flex items-center gap-2 rounded-lg bg-[#e9f8ef] px-2 py-1">
-          <span className="size-1.5 shrink-0 rounded-full bg-[#12a066]" />
-          <div className="min-w-0 leading-tight">
-            <p className="text-xs font-bold tabular-nums text-[#0b1220]">
-              {active}
-            </p>
-            <p className="text-[10px] font-medium text-slate-500">Active</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 rounded-lg bg-[#fff1f0] px-2 py-1">
-          <span className="size-1.5 shrink-0 rounded-full bg-[#e11d48]" />
-          <div className="min-w-0 leading-tight">
-            <p className="text-xs font-bold tabular-nums text-[#0b1220]">
-              {suspended}
-            </p>
-            <p className="text-[10px] font-medium text-slate-500">Suspended</p>
-          </div>
-        </div>
-      </div>
-    </article>
   );
 }
 
@@ -699,14 +587,12 @@ function AgentStat({
   value,
   hint,
   tone,
-  className = "",
 }: {
   icon: ReactNode;
   label: string;
   value: string;
   hint: string;
   tone: "green" | "blue" | "violet" | "gold";
-  className?: string;
 }) {
   const toneClass = {
     green: "bg-[#e9f8ef] text-[#07885f]",
@@ -715,26 +601,24 @@ function AgentStat({
     gold: "bg-[#fff3df] text-[#f28a17]",
   }[tone];
   return (
-    <div className={`min-w-0 ${className}`}>
-      <article className="flex h-full min-h-[92px] items-center gap-2.5 rounded-[13px] border border-[#e6ebf0] bg-white px-3 py-2.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
-        <span
-          className={`grid size-9 shrink-0 place-items-center rounded-xl ${toneClass}`}
-        >
-          {icon}
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-[11px] font-medium text-slate-500">
-            {label}
-          </p>
-          <p className="mt-0.5 break-words text-[clamp(0.78rem,0.95vw,1.05rem)] font-bold leading-tight tabular-nums text-[#0b1220]">
-            {value}
-          </p>
-          <p className="mt-0.5 truncate text-[11px] font-medium text-slate-500">
-            {hint}
-          </p>
-        </div>
-      </article>
-    </div>
+    <article className="flex h-full min-h-[92px] items-center gap-2.5 rounded-[13px] border border-[#e6ebf0] bg-white px-3 py-2.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
+      <span
+        className={`grid size-9 shrink-0 place-items-center rounded-xl ${toneClass}`}
+      >
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <p className="truncate text-[11px] font-semibold text-[#0b1220]">
+          {label}
+        </p>
+        <p className="mt-0.5 text-xl font-bold leading-none tabular-nums text-[#0b1220]">
+          {value}
+        </p>
+        <p className="mt-1 truncate text-[11px] font-medium text-slate-500">
+          {hint}
+        </p>
+      </div>
+    </article>
   );
 }
 
@@ -764,18 +648,6 @@ function ActionMenuItem({
   );
 }
 
-function formatAmount(value: number) {
-  return new Intl.NumberFormat("en-UG").format(value);
-}
-
-function expectedCashForAgent(agent: AgentRow) {
-  return (
-    (agent.floatToday ?? 0) -
-    agent.amountDisbursedToday +
-    agent.amountCollectedToday
-  );
-}
-
 function todayInputValue() {
   const parts = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Africa/Kampala",
@@ -792,21 +664,124 @@ function todayInputValue() {
   return `${year}-${month}-${day}`;
 }
 
-function StatusBadge({ status }: { status: string }) {
-  const className =
-    status === "ACTIVE"
-      ? "border-emerald-200 bg-emerald-50 text-[var(--forest-emerald)]"
-      : status === "SUSPENDED"
-        ? "border-red-200 bg-red-50 text-red-700"
-        : status === "INACTIVE"
-          ? "border-amber-200 bg-amber-50 text-amber-700"
-          : "border-[var(--line)] bg-[var(--soft-mist)] text-slate-600";
-
+function AgentAvatar({
+  name,
+  photoUrl,
+  toneIndex,
+}: {
+  name: string;
+  photoUrl: string | null;
+  toneIndex: number;
+}) {
+  if (photoUrl) {
+    return (
+      <img
+        src={photoUrl}
+        alt=""
+        className="size-10 shrink-0 rounded-full object-cover"
+      />
+    );
+  }
   return (
     <span
-      className={`mt-1 inline-flex h-5 items-center rounded-md border px-1.5 text-[9px] font-bold capitalize ${className}`}
+      className={`grid size-10 shrink-0 place-items-center rounded-full text-xs font-semibold ${avatarTone(toneIndex)}`}
     >
-      {status.replaceAll("_", " ")}
+      {initials(name)}
     </span>
   );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const active = status === "ACTIVE";
+  return (
+    <span
+      className={`inline-flex h-6 items-center rounded-full px-2.5 text-[11px] font-semibold ${
+        active
+          ? "bg-emerald-50 text-[var(--forest-emerald)]"
+          : "bg-red-50 text-red-700"
+      }`}
+    >
+      {active ? "Active" : "Suspended"}
+    </span>
+  );
+}
+
+function formatJoinedDate(value?: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Kampala",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
+function formatLastActive(value?: string | null) {
+  if (!value) return "Never Signed In";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Never Signed In";
+
+  const dayDiff = kampalaDayDiff(date, new Date());
+
+  if (dayDiff <= 0) {
+    const time = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Africa/Kampala",
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date);
+    return `Today, ${time}`;
+  }
+  if (dayDiff === 1) return "Yesterday";
+  if (dayDiff < 30) return `${dayDiff} Days Ago`;
+  return formatJoinedDate(value);
+}
+
+function isActiveToday(value?: string | null) {
+  if (!value) return false;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return kampalaDayDiff(date, new Date()) <= 0;
+}
+
+function kampalaDayDiff(target: Date, now: Date) {
+  const startOfToday = startOfDayKampala(now);
+  const startOfTarget = startOfDayKampala(target);
+  return Math.round(
+    (startOfToday.getTime() - startOfTarget.getTime()) / 86_400_000,
+  );
+}
+
+function startOfDayKampala(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Africa/Kampala",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const byType = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
+  return new Date(`${byType.year}-${byType.month}-${byType.day}T00:00:00+03:00`);
+}
+
+function initials(name: string) {
+  const value = name.trim();
+  if (!value) return "A";
+  return value
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("");
+}
+
+function avatarTone(index: number) {
+  const tones = [
+    "bg-[#e3f7ed] text-[#087f5d]",
+    "bg-[#fff2d9] text-[#c97900]",
+    "bg-[#f0e4ff] text-[#7952e8]",
+    "bg-[#eaf3ff] text-[#1f73f1]",
+  ];
+  return tones[index % tones.length];
 }

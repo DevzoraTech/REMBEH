@@ -60,6 +60,7 @@ export class AgentsService {
       appsToday,
       appsLifetime,
       floatsToday,
+      lastActiveByAgent,
     ] = await Promise.all([
       this.groupRepayments(scope.tenantId, agentIds, dayStart, dayEnd),
       this.groupRepayments(scope.tenantId, agentIds),
@@ -72,6 +73,7 @@ export class AgentsService {
           floatDate,
         },
       }),
+      this.latestActivityByAgent(scope.tenantId, agentIds),
     ]);
 
     const floatByAgent = new Map(
@@ -93,6 +95,7 @@ export class AgentsService {
         };
         const todayApp = appsToday.get(agent.id) ?? { count: 0, amount: 0 };
         const lifeApp = appsLifetime.get(agent.id) ?? { count: 0, amount: 0 };
+        const lastActiveAt = lastActiveByAgent.get(agent.id) ?? null;
 
         return {
           id: agent.id,
@@ -105,6 +108,8 @@ export class AgentsService {
           branchId: agent.branchId,
           branchName: agent.branch?.name ?? null,
           photoUrl: await this.presignPhotoUrl(agent.profilePhotoStorageKey),
+          createdAt: agent.createdAt.toISOString(),
+          lastActiveAt: lastActiveAt ? lastActiveAt.toISOString() : null,
           collectionsToday: todayRepay.count,
           collectionsLifetime: lifeRepay.count,
           applicationsToday: todayApp.count,
@@ -302,10 +307,34 @@ export class AgentsService {
     }
 
     const nextStatus = dto.status as UserStatus;
+    if (nextStatus === 'SUSPENDED' && !dto.reason?.trim()) {
+      throw new BadRequestException('Select a reason for suspension.');
+    }
+
     await this.repository.updateAgentStatus({
       tenantId: scope.tenantId,
       agentId,
       status: nextStatus,
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: scope.tenantId,
+        actorUserId: user.userId,
+        action:
+          nextStatus === 'SUSPENDED'
+            ? 'agent.suspend'
+            : nextStatus === 'ACTIVE'
+              ? 'agent.activate'
+              : 'agent.status_update',
+        entityType: 'User',
+        entityId: agentId,
+        oldValue: { status: agent.status },
+        newValue: {
+          status: nextStatus,
+          reason: dto.reason ?? null,
+        },
+      },
     });
 
     return this.getAgentDetail(user, agentId);
@@ -601,6 +630,55 @@ export class AgentsService {
         },
       ]),
     );
+  }
+
+  /** Latest loan issuance (disbursement) or repayment collection per agent. */
+  private async latestActivityByAgent(
+    tenantId: string,
+    agentIds: string[],
+  ): Promise<Map<string, Date>> {
+    const result = new Map<string, Date>();
+    if (agentIds.length === 0) return result;
+
+    const [repaymentRows, disbursedApps] = await Promise.all([
+      this.prisma.repayment.groupBy({
+        by: ['recordedByUserId'],
+        where: {
+          tenantId,
+          recordedByUserId: { in: agentIds },
+        },
+        _max: { paidAt: true },
+      }),
+      this.prisma.loanApplication.findMany({
+        where: {
+          tenantId,
+          officerUserId: { in: agentIds },
+          loanId: { not: null },
+          loan: { disbursedAt: { not: null } },
+        },
+        select: {
+          officerUserId: true,
+          loan: { select: { disbursedAt: true } },
+        },
+      }),
+    ]);
+
+    for (const row of repaymentRows) {
+      if (row._max.paidAt) {
+        result.set(row.recordedByUserId, row._max.paidAt);
+      }
+    }
+
+    for (const app of disbursedApps) {
+      const disbursedAt = app.loan?.disbursedAt;
+      if (!disbursedAt) continue;
+      const current = result.get(app.officerUserId);
+      if (!current || disbursedAt > current) {
+        result.set(app.officerUserId, disbursedAt);
+      }
+    }
+
+    return result;
   }
 
   private toFloatContract(row: {
