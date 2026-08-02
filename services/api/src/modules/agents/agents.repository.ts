@@ -79,13 +79,20 @@ export class AgentsRepository {
     tenantId: string;
     agentId: string;
     status: UserStatus;
+    suspensionReason?: string | null;
   }) {
     return this.prisma.user.updateMany({
       where: {
         id: input.agentId,
         tenantId: input.tenantId,
       },
-      data: { status: input.status },
+      data: {
+        status: input.status,
+        suspensionReason:
+          input.status === UserStatus.SUSPENDED
+            ? (input.suspensionReason?.trim() || null)
+            : null,
+      },
     });
   }
 

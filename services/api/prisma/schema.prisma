@@ -431,6 +431,8 @@ model User {
   emailVerified             Boolean                  @default(false) @map("email_verified")
   phoneVerified             Boolean                  @default(false) @map("phone_verified")
   status                    UserStatus               @default(INVITED)
+  /// Manager-provided reason when status is SUSPENDED; cleared on activate.
+  suspensionReason          String?                  @map("suspension_reason")
   createdAt                 DateTime                 @default(now()) @map("created_at")
   updatedAt                 DateTime                 @updatedAt @map("updated_at")
   tenant                    Tenant                   @relation(fields: [tenantId], references: [id])

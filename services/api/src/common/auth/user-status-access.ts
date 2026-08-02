@@ -3,6 +3,7 @@ import { TenantStatus, UserStatus } from '@prisma/client';
 
 type StatusUser = {
   status: UserStatus;
+  suspensionReason?: string | null;
   tenant: {
     name: string;
     status: TenantStatus;
@@ -23,7 +24,11 @@ export function resolveAuthStatusBlock(user: StatusUser): string | null {
   }
 
   if (user.status === UserStatus.SUSPENDED) {
-    return `You were suspended from "${user.tenant.name}". Contact your manager.`;
+    const reason = user.suspensionReason?.trim();
+    if (reason) {
+      return `Your account is suspended. Reason: ${reason}. Contact your manager.`;
+    }
+    return `Your account is suspended from "${user.tenant.name}". Contact your manager.`;
   }
 
   if (user.status === UserStatus.INACTIVE) {
@@ -38,4 +43,14 @@ export function assertUserCanAuthenticate(user: StatusUser): void {
   if (message) {
     throw new UnauthorizedException(message);
   }
+}
+
+/** True when an auth error message means the account itself is blocked. */
+export function isAccountAccessBlockedMessage(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes('suspended') ||
+    normalized.includes('deactivated') ||
+    normalized.includes('account or user is not active')
+  );
 }

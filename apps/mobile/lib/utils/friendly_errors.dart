@@ -1,3 +1,5 @@
+import 'account_access.dart';
+
 String friendlyErrorMessage(
   Object? error, {
   String fallback = 'Something went wrong. Please try again.',
@@ -10,6 +12,10 @@ String friendlyErrorMessage(
       .replaceFirst(RegExp(r'^ClientException:\s*'), '')
       .trim();
   final lower = cleaned.toLowerCase();
+
+  if (isAccountAccessBlockedMessage(cleaned)) {
+    return cleaned;
+  }
 
   if (_looksTechnical(cleaned)) {
     if (lower.contains('unauthorized') ||

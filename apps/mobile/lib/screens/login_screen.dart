@@ -6,7 +6,9 @@ import '../services/api_client.dart';
 import '../services/push_notification_service.dart';
 import '../services/session_store.dart';
 import '../theme.dart';
+import '../utils/account_access.dart';
 import '../utils/friendly_errors.dart';
+import 'account_locked_screen.dart';
 import 'agent_shell.dart';
 import 'profile/agent_selfie_capture_screen.dart';
 
@@ -132,7 +134,19 @@ class _LoginScreenState extends State<LoginScreen>
         context,
       ).pushReplacement(MaterialPageRoute(builder: (_) => next));
     } catch (error) {
-      setState(() => _error = friendlyErrorMessage(error));
+      final message = friendlyErrorMessage(error);
+      if (!mounted) return;
+      if (isAccountAccessBlockedMessage(message)) {
+        await _store.clear();
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => AccountLockedScreen(message: message),
+          ),
+        );
+        return;
+      }
+      setState(() => _error = message);
     } finally {
       if (mounted) setState(() => _loading = false);
     }

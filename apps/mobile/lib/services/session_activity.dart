@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
+import '../utils/account_access.dart';
+import '../utils/friendly_errors.dart';
 import 'api_client.dart';
 import 'session_cleanup.dart';
 import 'session_store.dart';
@@ -12,12 +14,14 @@ class SessionActivityController with WidgetsBindingObserver {
   SessionActivityController({
     required this.sessionStore,
     required this.onIdleLogout,
+    this.onAccountBlocked,
     this.idleTimeout = const Duration(minutes: 5),
     this.tickInterval = const Duration(seconds: 15),
   });
 
   final SessionStore sessionStore;
   final Future<void> Function() onIdleLogout;
+  final Future<void> Function(String message)? onAccountBlocked;
   final Duration idleTimeout;
   final Duration tickInterval;
 
@@ -91,7 +95,28 @@ class SessionActivityController with WidgetsBindingObserver {
         (expiry != null &&
             expiry.isBefore(DateTime.now().add(const Duration(minutes: 10))));
     if (!needsRefresh) return;
-    await ApiClient(sessionStore).refreshSession(session);
+    try {
+      await ApiClient(sessionStore).refreshSession(session);
+    } catch (error) {
+      final message = friendlyErrorMessage(error);
+      if (isAccountAccessBlockedMessage(message)) {
+        await _lockAccount(message);
+      }
+    }
+  }
+
+  Future<void> _lockAccount(String message) async {
+    if (_loggingOut) return;
+    _loggingOut = true;
+    _timer?.cancel();
+    await clearTenantScopedClientState();
+    await sessionStore.clear();
+    final handler = onAccountBlocked;
+    if (handler != null) {
+      await handler(message);
+      return;
+    }
+    await onIdleLogout();
   }
 
   Future<void> _logout() async {

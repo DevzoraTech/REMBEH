@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'screens/account_locked_screen.dart';
 import 'screens/agent_shell.dart';
 import 'screens/force_update_screen.dart';
 import 'screens/login_screen.dart';
@@ -10,6 +11,8 @@ import 'services/session_cleanup.dart';
 import 'services/session_store.dart';
 import 'services/update_service.dart';
 import 'theme.dart';
+import 'utils/account_access.dart';
+import 'utils/friendly_errors.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -107,13 +110,24 @@ class _BootScreenState extends State<_BootScreen> {
 
       // Access expired — try refresh before forcing login (if not idle).
       if (session.canRefresh) {
-        final refreshed = await ApiClient(store).refreshSession(session);
-        if (!mounted) return;
-        if (refreshed != null) {
-          await widget.pushService?.requestPermissionAndSync();
+        try {
+          final refreshed = await ApiClient(store).refreshSession(session);
           if (!mounted) return;
-          _goShell(refreshed);
-          return;
+          if (refreshed != null) {
+            await widget.pushService?.requestPermissionAndSync();
+            if (!mounted) return;
+            _goShell(refreshed);
+            return;
+          }
+        } catch (error) {
+          final message = friendlyErrorMessage(error);
+          if (isAccountAccessBlockedMessage(message)) {
+            await clearTenantScopedClientState();
+            await store.clear();
+            if (!mounted) return;
+            _goAccountLocked(message);
+            return;
+          }
         }
       }
     }
@@ -128,6 +142,14 @@ class _BootScreenState extends State<_BootScreen> {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => LoginScreen(pushService: widget.pushService),
+      ),
+    );
+  }
+
+  void _goAccountLocked(String message) {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => AccountLockedScreen(message: message),
       ),
     );
   }

@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 
 import '../config.dart';
 import '../models/agent_day_status.dart';
+import '../utils/account_access.dart';
 import '../utils/friendly_errors.dart';
 import 'session_store.dart';
 
@@ -110,6 +111,7 @@ class ApiClient {
 
   /// Refresh access token using the stored refresh token.
   /// Returns the updated session, or null if refresh is impossible.
+  /// Throws [ApiException] when the account itself is suspended/deactivated.
   Future<RembehSession?> refreshSession(RembehSession current) async {
     if (!current.canRefresh) return null;
 
@@ -121,6 +123,10 @@ class ApiClient {
     );
     final body = _decode(response);
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      final message = _message(body);
+      if (isAccountAccessBlockedMessage(message)) {
+        throw ApiException(message);
+      }
       return null;
     }
 
@@ -249,6 +255,9 @@ class ApiClient {
 
   String _failureMessage(Map<String, dynamic> body, int statusCode, Uri uri) {
     final message = _message(body);
+    if (isAccountAccessBlockedMessage(message)) {
+      return message;
+    }
     if (statusCode == 401) {
       return 'Your session has expired. Please sign in again.';
     }

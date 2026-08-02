@@ -8,6 +8,7 @@ import '../services/session_activity.dart';
 import '../services/session_store.dart';
 import '../theme.dart';
 import '../utils/money.dart';
+import 'account_locked_screen.dart';
 import 'home/home_tab.dart';
 import 'login_screen.dart';
 import 'profile/agent_profile_screen.dart';
@@ -38,6 +39,7 @@ class _AgentShellState extends State<AgentShell> {
     _activity = SessionActivityController(
       sessionStore: SessionStore(),
       onIdleLogout: _handleIdleLogout,
+      onAccountBlocked: _handleAccountBlocked,
     );
     _dayStore.addListener(_onDayChanged);
     // ignore: discarded_futures
@@ -55,6 +57,15 @@ class _AgentShellState extends State<AgentShell> {
   void _onDayChanged() {
     if (!mounted) return;
     setState(() {});
+    final blocked = _dayStore.accountBlockedMessage;
+    if (blocked != null && blocked.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        // ignore: discarded_futures
+        _handleAccountBlocked(blocked);
+      });
+      return;
+    }
     final status = _dayStore.status;
     if (status != null && !status.canUseApp) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -72,6 +83,18 @@ class _AgentShellState extends State<AgentShell> {
         builder: (_) => const LoginScreen(
           idleSignedOutMessage: 'Signed out after 5 minutes of inactivity.',
         ),
+      ),
+      (_) => false,
+    );
+  }
+
+  Future<void> _handleAccountBlocked(String message) async {
+    await clearTenantScopedClientState();
+    await SessionStore().clear();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => AccountLockedScreen(message: message),
       ),
       (_) => false,
     );
@@ -131,6 +154,11 @@ class _AgentShellState extends State<AgentShell> {
 
   @override
   Widget build(BuildContext context) {
+    final blocked = _dayStore.accountBlockedMessage;
+    if (blocked != null && blocked.isNotEmpty) {
+      return AccountLockedScreen(message: blocked);
+    }
+
     final dayStatus = _dayStore.status;
     if (dayStatus == null) {
       return SessionActivityListener(

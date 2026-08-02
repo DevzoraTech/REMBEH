@@ -4,6 +4,7 @@ import '../../../core/network/realtime_client.dart';
 import '../../../models/agent_day_status.dart';
 import '../../../services/api_client.dart';
 import '../../../services/session_store.dart';
+import '../../../utils/account_access.dart';
 import '../../../utils/friendly_errors.dart';
 
 class AgentDayStatusStore extends ChangeNotifier {
@@ -17,10 +18,12 @@ class AgentDayStatusStore extends ChangeNotifier {
   bool _loading = false;
   bool _listening = false;
   String? _error;
+  String? _accountBlockedMessage;
 
   AgentDayStatus? get status => _status;
   bool get loading => _loading;
   String? get error => _error;
+  String? get accountBlockedMessage => _accountBlockedMessage;
 
   Future<void> start(RembehSession session) async {
     final sessionChanged =
@@ -58,11 +61,18 @@ class AgentDayStatusStore extends ChangeNotifier {
     try {
       _status = await _api.getAgentDayStatus(session);
       _error = null;
+      _accountBlockedMessage = null;
     } catch (error) {
-      _error = friendlyErrorMessage(
+      final message = friendlyErrorMessage(
         error,
         fallback: 'We could not check your branch day. Please refresh.',
       );
+      if (isAccountAccessBlockedMessage(message)) {
+        _accountBlockedMessage = message;
+        _error = message;
+      } else {
+        _error = message;
+      }
     } finally {
       _loading = false;
       notifyListeners();
@@ -82,6 +92,7 @@ class AgentDayStatusStore extends ChangeNotifier {
     _session = null;
     _status = null;
     _error = null;
+    _accountBlockedMessage = null;
     _loading = false;
     _listening = false;
     notifyListeners();

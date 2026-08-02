@@ -311,10 +311,14 @@ export class AgentsService {
       throw new BadRequestException('Select a reason for suspension.');
     }
 
+    const suspensionReason =
+      nextStatus === 'SUSPENDED' ? dto.reason?.trim() || null : null;
+
     await this.repository.updateAgentStatus({
       tenantId: scope.tenantId,
       agentId,
       status: nextStatus,
+      suspensionReason,
     });
 
     await this.prisma.auditLog.create({
@@ -332,7 +336,7 @@ export class AgentsService {
         oldValue: { status: agent.status },
         newValue: {
           status: nextStatus,
-          reason: dto.reason ?? null,
+          reason: suspensionReason,
         },
       },
     });
@@ -632,7 +636,7 @@ export class AgentsService {
     );
   }
 
-  /** Latest loan issuance (disbursement) or repayment collection per agent. */
+  /** Latest repayment collection or loan application (submitted) per agent. */
   private async latestActivityByAgent(
     tenantId: string,
     agentIds: string[],
@@ -640,7 +644,7 @@ export class AgentsService {
     const result = new Map<string, Date>();
     if (agentIds.length === 0) return result;
 
-    const [repaymentRows, disbursedApps] = await Promise.all([
+    const [repaymentRows, applicationRows] = await Promise.all([
       this.prisma.repayment.groupBy({
         by: ['recordedByUserId'],
         where: {
@@ -649,33 +653,31 @@ export class AgentsService {
         },
         _max: { paidAt: true },
       }),
-      this.prisma.loanApplication.findMany({
+      this.prisma.loanApplication.groupBy({
+        by: ['officerUserId'],
         where: {
           tenantId,
           officerUserId: { in: agentIds },
-          loanId: { not: null },
-          loan: { disbursedAt: { not: null } },
+          submittedAt: { not: null },
         },
-        select: {
-          officerUserId: true,
-          loan: { select: { disbursedAt: true } },
-        },
+        _max: { submittedAt: true },
       }),
     ]);
 
-    for (const row of repaymentRows) {
-      if (row._max.paidAt) {
-        result.set(row.recordedByUserId, row._max.paidAt);
+    const consider = (agentId: string, at: Date | null | undefined) => {
+      if (!at) return;
+      const current = result.get(agentId);
+      if (!current || at > current) {
+        result.set(agentId, at);
       }
+    };
+
+    for (const row of repaymentRows) {
+      consider(row.recordedByUserId, row._max.paidAt);
     }
 
-    for (const app of disbursedApps) {
-      const disbursedAt = app.loan?.disbursedAt;
-      if (!disbursedAt) continue;
-      const current = result.get(app.officerUserId);
-      if (!current || disbursedAt > current) {
-        result.set(app.officerUserId, disbursedAt);
-      }
+    for (const row of applicationRows) {
+      consider(row.officerUserId, row._max.submittedAt);
     }
 
     return result;
