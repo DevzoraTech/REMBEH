@@ -253,235 +253,13 @@ export function ApplicationDetailDrawer({
           ) : error ? (
             <p className="text-sm text-red-600">{error}</p>
           ) : detail ? (
-            <div className="space-y-5">
-              <Section title="applicant">
-                <Row label="name" value={detail.clientName || "—"} />
-                <Row label="phone" value={detail.phone || "—"} />
-                <Row label="national id" value={detail.nationalId || "—"} />
-                <Row label="gender" value={formatGender(detail.gender)} />
-                <Row
-                  label="date of birth"
-                  value={formatDateOfBirth(detail.dateOfBirth)}
-                />
-                <Row
-                  label="location"
-                  value={
-                    [
-                      detail.village,
-                      detail.parish,
-                      detail.subCounty,
-                      detail.district,
-                    ]
-                      .filter(Boolean)
-                      .join(", ") || "—"
-                  }
-                />
-              </Section>
-
-              <Section title="field agent">
-                <div className="flex items-center gap-3">
-                  <AgentPhoto
-                    src={detail.agentPhotoUrl}
-                    name={detail.officerName || "branch officer"}
-                    publicId={detail.officerPublicId}
-                    size="md"
-                  />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
-                      {detail.officerName || "Branch officer"}
-                    </p>
-                    <p className="truncate text-xs text-slate-500">
-                      {detail.officerPublicId || "agent photo pending"}
-                    </p>
-                  </div>
-                </div>
-              </Section>
-
-              <Section title="loan terms">
-                <Row
-                  label="principal"
-                  value={formatAmount(detail.principalAmount)}
-                />
-                <Row
-                  label="interest rate"
-                  value={
-                    detail.interestRatePercent != null
-                      ? `${detail.interestRatePercent}%`
-                      : "—"
-                  }
-                />
-                <Row
-                  label="period"
-                  value={
-                    detail.durationDays != null
-                      ? `${detail.durationDays} days`
-                      : "—"
-                  }
-                />
-                <Row
-                  label="processing fee"
-                  value={formatAmount(detail.processingFee)}
-                />
-                <Row
-                  label="interest amount"
-                  value={formatAmount(detail.pricing?.interestAmount ?? null)}
-                />
-                <Row
-                  label="total repayable"
-                  value={formatAmount(detail.pricing?.totalRepayable ?? null)}
-                />
-                <Row label="collateral" value={detail.collateralType || "—"} />
-              </Section>
-
-              <Section title="guarantor">
-                <Row label="name" value={detail.guarantor?.fullName || "—"} />
-                <Row label="phone" value={detail.guarantor?.phone || "—"} />
-              </Section>
-
-              <Section title="signatures">
-                {detail.signatures.length === 0 ? (
-                  <p className="text-sm text-slate-500">no signatures yet.</p>
-                ) : (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {detail.signatures.map((sig) => (
-                      <div
-                        key={sig.id}
-                        className="rounded border border-[var(--line)] bg-white p-2"
-                      >
-                        <p className="text-xs font-semibold text-[var(--midnight-navy)]">
-                          {sig.signerRole} · v{sig.version}
-                        </p>
-                        <p className="text-[11px] text-slate-500">
-                          {sig.signerName}
-                          {sig.locked ? " · locked" : ""}
-                        </p>
-                        {sig.signatureDownloadUrl ? (
-                          <button
-                            type="button"
-                            className="mt-2 block w-full cursor-zoom-in bg-slate-50"
-                            onClick={() =>
-                              setPreview({
-                                src: sig.signatureDownloadUrl!,
-                                alt: `${sig.signerRole} signature`,
-                              })
-                            }
-                          >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={sig.signatureDownloadUrl}
-                              alt={`${sig.signerRole} signature`}
-                              className="h-16 w-full object-contain"
-                              onError={(event) => {
-                                event.currentTarget.style.display = "none";
-                                const fallback =
-                                  event.currentTarget.nextElementSibling;
-                                if (fallback instanceof HTMLElement) {
-                                  fallback.style.display = "block";
-                                }
-                              }}
-                            />
-                            <p className="mt-2 hidden text-xs text-slate-400">
-                              preview unavailable
-                            </p>
-                          </button>
-                        ) : (
-                          <p className="mt-2 text-xs text-slate-400">
-                            preview unavailable
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Section>
-
-              <Section title="uploads">
-                {detail.media.length === 0 ? (
-                  <p className="text-sm text-slate-500">no media uploaded.</p>
-                ) : (
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {detail.media.map((item) => (
-                      <div
-                        key={item.id}
-                        className="rounded border border-[var(--line)] bg-white p-2"
-                      >
-                        <p className="truncate text-xs font-semibold text-[var(--midnight-navy)]">
-                          {mediaLabel(item.type)}
-                        </p>
-                        <p className="truncate text-[11px] text-slate-500">
-                          {item.fileName || item.mimeType}
-                        </p>
-                        {item.downloadUrl &&
-                        item.mimeType.startsWith("image/") ? (
-                          <button
-                            type="button"
-                            className="mt-2 block w-full cursor-zoom-in bg-slate-50"
-                            onClick={() =>
-                              setPreview({
-                                src: item.downloadUrl!,
-                                alt: item.type,
-                              })
-                            }
-                          >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={item.downloadUrl}
-                              alt={item.type}
-                              className="h-28 w-full object-cover"
-                            />
-                          </button>
-                        ) : item.downloadUrl ? (
-                          <a
-                            href={item.downloadUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="mt-2 inline-block text-xs font-semibold text-[var(--forest-emerald)]"
-                          >
-                            open file
-                          </a>
-                        ) : (
-                          <p className="mt-2 text-xs text-slate-400">
-                            preview unavailable
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </Section>
-
-              <Section title="loan agreement">
-                <div className="flex flex-wrap gap-2">
-                  {detail.signedAgreementDownloadUrl ? (
-                    <a
-                      href={detail.signedAgreementDownloadUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn btn-ghost h-9 text-xs"
-                    >
-                      View loan agreement
-                    </a>
-                  ) : null}
-                  <button
-                    type="button"
-                    onClick={() => void downloadAgreementPdf()}
-                    disabled={downloadingPdf}
-                    className="btn btn-primary h-9 text-xs disabled:opacity-60"
-                  >
-                    {downloadingPdf
-                      ? "preparing pdf…"
-                      : "download loan agreement"}
-                  </button>
-                </div>
-                {downloadError ? (
-                  <p className="mt-2 text-xs text-rose-600">{downloadError}</p>
-                ) : (
-                  <p className="mt-2 text-xs text-slate-500">
-                    The saved agreement is reused when viewed or downloaded.
-                  </p>
-                )}
-              </Section>
-            </div>
+            <ApplicationDetailBody
+              detail={detail}
+              downloadingPdf={downloadingPdf}
+              downloadError={downloadError}
+              onPreview={setPreview}
+              onDownloadAgreement={() => void downloadAgreementPdf()}
+            />
           ) : null}
         </div>
       </aside>
@@ -512,6 +290,256 @@ export function ApplicationDetailDrawer({
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+function ApplicationDetailBody({
+  detail,
+  downloadingPdf,
+  downloadError,
+  onPreview,
+  onDownloadAgreement,
+}: {
+  detail: ApplicationDetail;
+  downloadingPdf: boolean;
+  downloadError: string | null;
+  onPreview: (preview: { src: string; alt: string }) => void;
+  onDownloadAgreement: () => void;
+}) {
+  // Signature PNGs are also stored as media; keep them only in Signatures.
+  const uploads = detail.media.filter(
+    (item) => !isSignatureMediaType(item.type),
+  );
+
+  return (
+    <div className="space-y-5">
+      <Section title="applicant">
+        <Row label="name" value={detail.clientName || "—"} />
+        <Row label="phone" value={detail.phone || "—"} />
+        <Row label="national id" value={detail.nationalId || "—"} />
+        <Row label="gender" value={formatGender(detail.gender)} />
+        <Row
+          label="date of birth"
+          value={formatDateOfBirth(detail.dateOfBirth)}
+        />
+        <Row
+          label="location"
+          value={
+            [
+              detail.village,
+              detail.parish,
+              detail.subCounty,
+              detail.district,
+            ]
+              .filter(Boolean)
+              .join(", ") || "—"
+          }
+        />
+      </Section>
+
+      <Section title="field agent">
+        <div className="flex items-center gap-3">
+          <AgentPhoto
+            src={detail.agentPhotoUrl}
+            name={detail.officerName || "branch officer"}
+            publicId={detail.officerPublicId}
+            size="md"
+          />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-[var(--midnight-navy)]">
+              {detail.officerName || "Branch officer"}
+            </p>
+            <p className="truncate text-xs text-slate-500">
+              {detail.officerPublicId || "agent photo pending"}
+            </p>
+          </div>
+        </div>
+      </Section>
+
+      <Section title="loan terms">
+        <Row
+          label="principal"
+          value={formatAmount(detail.principalAmount)}
+        />
+        <Row
+          label="interest rate"
+          value={
+            detail.interestRatePercent != null
+              ? `${detail.interestRatePercent}%`
+              : "—"
+          }
+        />
+        <Row
+          label="period"
+          value={
+            detail.durationDays != null
+              ? `${detail.durationDays} days`
+              : "—"
+          }
+        />
+        <Row
+          label="processing fee"
+          value={formatAmount(detail.processingFee)}
+        />
+        <Row
+          label="interest amount"
+          value={formatAmount(detail.pricing?.interestAmount ?? null)}
+        />
+        <Row
+          label="total repayable"
+          value={formatAmount(detail.pricing?.totalRepayable ?? null)}
+        />
+        <Row label="collateral" value={detail.collateralType || "—"} />
+      </Section>
+
+      <Section title="guarantor">
+        <Row label="name" value={detail.guarantor?.fullName || "—"} />
+        <Row label="phone" value={detail.guarantor?.phone || "—"} />
+      </Section>
+
+      <Section title="signatures">
+        {detail.signatures.length === 0 ? (
+          <p className="text-sm text-slate-500">no signatures yet.</p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {detail.signatures.map((sig) => (
+              <div
+                key={sig.id}
+                className="rounded border border-[var(--line)] bg-white p-2"
+              >
+                <p className="text-xs font-semibold text-[var(--midnight-navy)]">
+                  {sig.signerRole} · v{sig.version}
+                </p>
+                <p className="text-[11px] text-slate-500">
+                  {sig.signerName}
+                  {sig.locked ? " · locked" : ""}
+                </p>
+                {sig.signatureDownloadUrl ? (
+                  <button
+                    type="button"
+                    className="mt-2 block w-full cursor-zoom-in bg-slate-50"
+                    onClick={() =>
+                      onPreview({
+                        src: sig.signatureDownloadUrl!,
+                        alt: `${sig.signerRole} signature`,
+                      })
+                    }
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={sig.signatureDownloadUrl}
+                      alt={`${sig.signerRole} signature`}
+                      className="h-16 w-full object-contain"
+                      onError={(event) => {
+                        event.currentTarget.style.display = "none";
+                        const fallback =
+                          event.currentTarget.nextElementSibling;
+                        if (fallback instanceof HTMLElement) {
+                          fallback.style.display = "block";
+                        }
+                      }}
+                    />
+                    <p className="mt-2 hidden text-xs text-slate-400">
+                      preview unavailable
+                    </p>
+                  </button>
+                ) : (
+                  <p className="mt-2 text-xs text-slate-400">
+                    preview unavailable
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
+      <Section title="uploads">
+        {uploads.length === 0 ? (
+          <p className="text-sm text-slate-500">no media uploaded.</p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {uploads.map((item) => (
+              <div
+                key={item.id}
+                className="rounded border border-[var(--line)] bg-white p-2"
+              >
+                <p className="truncate text-xs font-semibold text-[var(--midnight-navy)]">
+                  {mediaLabel(item.type)}
+                </p>
+                <p className="truncate text-[11px] text-slate-500">
+                  {item.fileName || item.mimeType}
+                </p>
+                {item.downloadUrl && item.mimeType.startsWith("image/") ? (
+                  <button
+                    type="button"
+                    className="mt-2 block w-full cursor-zoom-in bg-slate-50"
+                    onClick={() =>
+                      onPreview({
+                        src: item.downloadUrl!,
+                        alt: item.type,
+                      })
+                    }
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={item.downloadUrl}
+                      alt={item.type}
+                      className="h-28 w-full object-cover"
+                    />
+                  </button>
+                ) : item.downloadUrl ? (
+                  <a
+                    href={item.downloadUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 inline-block text-xs font-semibold text-[var(--forest-emerald)]"
+                  >
+                    open file
+                  </a>
+                ) : (
+                  <p className="mt-2 text-xs text-slate-400">
+                    preview unavailable
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
+
+      <Section title="loan agreement">
+        <div className="flex flex-wrap gap-2">
+          {detail.signedAgreementDownloadUrl ? (
+            <a
+              href={detail.signedAgreementDownloadUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="btn btn-ghost h-9 text-xs"
+            >
+              View loan agreement
+            </a>
+          ) : null}
+          <button
+            type="button"
+            onClick={onDownloadAgreement}
+            disabled={downloadingPdf}
+            className="btn btn-primary h-9 text-xs disabled:opacity-60"
+          >
+            {downloadingPdf
+              ? "preparing pdf…"
+              : "download loan agreement"}
+          </button>
+        </div>
+        {downloadError ? (
+          <p className="mt-2 text-xs text-rose-600">{downloadError}</p>
+        ) : (
+          <p className="mt-2 text-xs text-slate-500">
+            The saved agreement is reused when viewed or downloaded.
+          </p>
+        )}
+      </Section>
     </div>
   );
 }
@@ -548,6 +576,16 @@ function formatGender(value: ApplicationDetail["gender"]) {
   if (value === "FEMALE") return "female";
   if (value === "OTHER") return "other";
   return "—";
+}
+
+const SIGNATURE_MEDIA_TYPES = new Set([
+  "SIGNATURE_APPLICANT",
+  "SIGNATURE_GUARANTOR",
+  "SIGNATURE_OFFICER",
+]);
+
+function isSignatureMediaType(type: string) {
+  return SIGNATURE_MEDIA_TYPES.has(type) || type.startsWith("SIGNATURE_");
 }
 
 function mediaLabel(type: string) {
