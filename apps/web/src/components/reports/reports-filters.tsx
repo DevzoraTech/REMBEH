@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Filter, X } from "lucide-react";
+import { Filter, X } from "lucide-react";
 import {
   useEffect,
   useLayoutEffect,
@@ -46,10 +46,10 @@ export type ReportBranchOption = {
 
 const DATE_OPTIONS: Array<{ value: DateIssuedPreset; label: string }> = [
   { value: "today", label: "Today" },
-  { value: "this_week", label: "This week" },
-  { value: "this_month", label: "This month" },
-  { value: "last_month", label: "Last month" },
-  { value: "custom", label: "Custom range" },
+  { value: "this_week", label: "This Week" },
+  { value: "this_month", label: "This Month" },
+  { value: "last_month", label: "Last Month" },
+  { value: "custom", label: "Custom Range" },
 ];
 
 const MANAGER_STATUS_OPTIONS: Array<{
@@ -178,10 +178,10 @@ function FilterPill({
     <button
       type="button"
       onClick={onClick}
-      className={`h-8 rounded-lg px-2.5 text-[11px] font-semibold transition ${
+      className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition ${
         active
-          ? "bg-[var(--forest-emerald)] text-white"
-          : "bg-[#f3f5f7] text-slate-600 hover:bg-[#e8edf2]"
+          ? "border-[var(--forest-emerald)] bg-[#e9f8ef] text-[var(--forest-emerald)]"
+          : "border-[#e6ebf0] bg-white text-[#334155] hover:bg-[#f8faf9]"
       }`}
     >
       {label}
@@ -221,24 +221,60 @@ export function ReportsFiltersControl({
       const trigger = triggerRef.current;
       if (!trigger) return;
       const rect = trigger.getBoundingClientRect();
-      const width = Math.min(360, window.innerWidth - 24);
+      const width = Math.min(380, window.innerWidth - 24);
       const left = Math.min(
         Math.max(12, rect.left),
         Math.max(12, window.innerWidth - width - 12),
       );
       const gap = 10;
       const spaceBelow = window.innerHeight - rect.bottom - 16;
-      const maxHeight = Math.max(280, spaceBelow);
+      const spaceAbove = rect.top - 16;
+      const minComfortable = 420;
 
-      setPanelStyle({
-        position: "fixed",
-        top: rect.bottom + gap,
-        left,
-        width,
-        maxHeight,
-        overflowY: "auto",
-        zIndex: 80,
-      });
+      if (spaceBelow < minComfortable && spaceAbove < minComfortable) {
+        const maxHeight = Math.min(window.innerHeight - 32, 560);
+        setPanelStyle({
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          bottom: "auto",
+          width,
+          maxHeight,
+          overflowY: "auto",
+          transform: "translate(-50%, -50%)",
+          zIndex: 80,
+        });
+        return;
+      }
+
+      const openUpward = spaceBelow < minComfortable && spaceAbove > spaceBelow;
+      const maxHeight = Math.max(320, openUpward ? spaceAbove : spaceBelow);
+
+      if (openUpward) {
+        setPanelStyle({
+          position: "fixed",
+          top: "auto",
+          bottom: window.innerHeight - rect.top + gap,
+          left,
+          width,
+          maxHeight,
+          overflowY: "auto",
+          transform: "none",
+          zIndex: 80,
+        });
+      } else {
+        setPanelStyle({
+          position: "fixed",
+          top: rect.bottom + gap,
+          bottom: "auto",
+          left,
+          width,
+          maxHeight,
+          overflowY: "auto",
+          transform: "none",
+          zIndex: 80,
+        });
+      }
     }
 
     placePanel();
@@ -264,7 +300,6 @@ export function ReportsFiltersControl({
       >
         <Filter className="size-3.5" />
         Filters
-        <ChevronDown className="size-3.5 opacity-60" />
         {chips.length > 0 ? (
           <span className="grid min-w-4 place-items-center rounded-full bg-[var(--forest-emerald)] px-1 text-[10px] font-bold text-white">
             {chips.length}
@@ -433,10 +468,10 @@ export function ReportsFiltersControl({
                   ) : null}
                 </section>
 
-                <div className="mt-5 flex items-center justify-between gap-2 border-t border-[#edf1f5] pt-3">
+                <div className="sticky bottom-0 mt-5 grid grid-cols-2 gap-2 bg-white pt-1">
                   <button
                     type="button"
-                    className="h-9 rounded-xl px-3 text-xs font-semibold text-slate-500 hover:bg-slate-50"
+                    className="h-10 rounded-xl border border-[#e6ebf0] bg-white text-xs font-semibold text-[#0b1220]"
                     onClick={() => {
                       onApply(EMPTY_REPORTS_FILTERS);
                       setOpen(false);
@@ -446,13 +481,13 @@ export function ReportsFiltersControl({
                   </button>
                   <button
                     type="button"
-                    className="h-9 rounded-xl bg-[var(--forest-emerald)] px-4 text-xs font-semibold text-white"
+                    className="h-10 rounded-xl bg-[var(--forest-emerald)] text-xs font-semibold text-white"
                     onClick={() => {
                       onApply(draft);
                       setOpen(false);
                     }}
                   >
-                    Apply
+                    Apply filters
                   </button>
                 </div>
               </div>

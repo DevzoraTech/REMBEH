@@ -2021,43 +2021,45 @@ function OpenOperationView({
             Preparing close-day report...
           </section>
         )
-      ) : null}
+      ) : (
+        <>
+          <section className="grid gap-3 xl:grid-cols-[0.95fr_1.35fr]">
+            <CashMovementCard operation={operation} />
+            <AgentFloatBoard
+              operation={operation}
+              onIssueFloat={
+                canOperateBranch ? () => onAction("issue-float") : undefined
+              }
+              canIssue={
+                editable &&
+                canManageFloat &&
+                !loadingAgents &&
+                assignableAgentsCount > 0 &&
+                operation.floatRemaining > 0
+              }
+            />
+          </section>
 
-      <section className="grid gap-3 xl:grid-cols-[0.95fr_1.35fr]">
-        <CashMovementCard operation={operation} />
-        <AgentFloatBoard
-          operation={operation}
-          onIssueFloat={
-            canOperateBranch ? () => onAction("issue-float") : undefined
-          }
-          canIssue={
-            editable &&
-            canManageFloat &&
-            !loadingAgents &&
-            assignableAgentsCount > 0 &&
-            operation.floatRemaining > 0
-          }
-        />
-      </section>
-
-      <section className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
-        <DayExpensesStrip
-          operation={operation}
-          onRecordExpense={() => onAction("expense")}
-          canRecord={editable && canRecordExpense}
-        />
-        <DayAttentionCard
-          items={attentionItems}
-          closed={!editable && operation.status === "CLOSED"}
-          canOperate={canOperateBranch && editable}
-          onAction={onAction}
-          onCloseDay={
-            canOperateBranch && editable && canClose && allReturnsRecorded
-              ? () => onAction("close-day")
-              : undefined
-          }
-        />
-      </section>
+          <section className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+            <DayExpensesStrip
+              operation={operation}
+              onRecordExpense={() => onAction("expense")}
+              canRecord={editable && canRecordExpense}
+            />
+            <DayAttentionCard
+              items={attentionItems}
+              closed={false}
+              canOperate={canOperateBranch && editable}
+              onAction={onAction}
+              onCloseDay={
+                canOperateBranch && editable && canClose && allReturnsRecorded
+                  ? () => onAction("close-day")
+                  : undefined
+              }
+            />
+          </section>
+        </>
+      )}
     </div>
   );
 }
