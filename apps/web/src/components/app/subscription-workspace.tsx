@@ -58,30 +58,55 @@ const TRIAL_FEATURES = [
   "Full access for your first month",
   "Covers every branch you open",
   "No payment required yet",
-  "Loans, repayments, and reports",
-  "Ideal while you set up",
 ];
 
 const PRO_FEATURES = [
   "Everything in your free trial",
   "One branch, fully unlocked",
-  "Loans, agents, and daily operations",
   "Pay by mobile money or card",
-  "Built for growing branch teams",
 ];
 
 const BRANCH_FEATURES = [
   "Subscribe only where you operate",
   "Other branches stay open if one lapses",
-  "Two days to renew before a pause",
-  "Owner or manager can renew",
-  "Cancel or renew any time",
+  "Renew anytime from this page",
 ];
 
 function authHeaders(session: RembehSession) {
   return {
     Authorization: `${session.tokenType} ${session.accessToken}`,
   };
+}
+
+/** Never surface provider/backend wording to end users. */
+function friendlyError(raw: unknown): string {
+  const text =
+    raw instanceof Error
+      ? raw.message
+      : typeof raw === "string"
+        ? raw
+        : formatApiError(raw as string | string[] | undefined);
+  const lower = text.toLowerCase();
+  if (
+    !text.trim() ||
+    lower.includes("internal") ||
+    lower.includes("server") ||
+    lower.includes("exception") ||
+    lower.includes("pesapal") ||
+    lower.includes("prisma") ||
+    lower.includes("nest") ||
+    lower.includes("stack") ||
+    lower.includes("econn") ||
+    lower.includes("timeout") ||
+    lower.includes("fetch failed") ||
+    lower.includes("network")
+  ) {
+    return "We couldn’t complete that. Please try again.";
+  }
+  if (text.length > 140) {
+    return "We couldn’t complete that. Please try again.";
+  }
+  return text;
 }
 
 function statusCopy(
@@ -92,7 +117,7 @@ function statusCopy(
     return {
       label: "Free trial",
       tone: "good" as const,
-      detail: "Subscribe early — paid time starts after the trial",
+      detail: "Paid time starts after the trial",
     };
   }
   switch (row.status) {
@@ -111,14 +136,14 @@ function statusCopy(
         tone: "warn" as const,
         detail:
           row.daysUntilGraceEnd != null
-            ? `${Math.max(0, row.daysUntilGraceEnd)} day${row.daysUntilGraceEnd === 1 ? "" : "s"} left`
-            : "Renew to keep this branch open",
+            ? `${Math.max(0, row.daysUntilGraceEnd)}d left`
+            : "Renew to keep open",
       };
     case "LOCKED":
       return {
         label: "Paused",
         tone: "bad" as const,
-        detail: "Renew to reopen this branch",
+        detail: "Renew to reopen",
       };
     case "TRIAL":
       return { label: "Free trial", tone: "good" as const, detail: null };
@@ -132,10 +157,11 @@ function actionLabel(
   trialActive: boolean,
 ) {
   if (!row.canCheckout) return null;
-  if (row.status === "LOCKED") return "Renew";
-  if (row.status === "GRACE" || row.status === "PAST_DUE") return "Renew";
+  if (row.status === "LOCKED" || row.status === "GRACE" || row.status === "PAST_DUE") {
+    return "Renew";
+  }
   if (row.status === "ACTIVE") return "Extend";
-  if (row.status === "TRIAL") return trialActive ? "Subscribe early" : "Subscribe";
+  if (row.status === "TRIAL") return trialActive ? "Subscribe" : "Subscribe";
   return "Subscribe";
 }
 
@@ -218,11 +244,7 @@ function SubscriptionWorkspaceContent({
       }
       setSummary(payload);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "We couldn’t load subscription details.",
-      );
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -272,15 +294,11 @@ function SubscriptionWorkspaceContent({
         throw new Error(formatApiError(payload.message));
       }
       if (!payload.redirectUrl) {
-        throw new Error("Payment page is unavailable right now. Try again.");
+        throw new Error("unavailable");
       }
       window.location.assign(payload.redirectUrl);
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "We couldn’t start payment. Please try again.",
-      );
+      setError(friendlyError(err));
       setPayingBranchId(null);
     }
   }
@@ -295,25 +313,25 @@ function SubscriptionWorkspaceContent({
     return <AppBootSkeleton />;
   }
 
-  const amount = summary?.plan.amount ?? 150_000;
+  const amount = summary?.plan.amount ?? 100_000;
   const currency = summary?.plan.currency ?? "UGX";
   const isBranchScope = summary?.scope === "branch" || mode === "manager";
   const priceLabel = formatMoney(amount, currency);
 
   return (
     <AppShell session={session} workspace={workspace} user={user}>
-      <div className="mx-auto max-w-6xl space-y-5 px-1 pb-10 sm:px-2">
+      <div className="mx-auto max-w-6xl space-y-3 px-1 pb-6 sm:px-2">
         <OwnerHeader
           title="Subscription"
           subtitle={
             isBranchScope
-              ? "Your branch plan and renewal."
-              : "Plans for every branch in your organisation."
+              ? "Your branch plan."
+              : "Plans for every branch."
           }
           search={search}
           onSearchChange={setSearch}
           showSearch={
-            !isBranchScope && Boolean(summary && summary.branches.length > 4)
+            !isBranchScope && Boolean(summary && summary.branches.length > 5)
           }
           showReportsButton={mode === "owner"}
           searchPlaceholder="Find a branch…"
@@ -323,64 +341,50 @@ function SubscriptionWorkspaceContent({
         />
 
         {paid ? (
-          <p className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-950">
-            Payment received. We’re updating your plan now.
+          <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-950">
+            Payment received. Updating your plan…
           </p>
         ) : null}
 
         {error ? (
-          <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-950">
+          <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-950">
             {error}
           </p>
         ) : null}
 
-        <section className="relative overflow-hidden rounded-[28px] bg-[#04140f] px-5 py-10 text-white shadow-[0_28px_80px_rgba(0,30,24,0.28)] sm:px-8 sm:py-12 lg:px-10">
+        <section className="relative overflow-hidden rounded-2xl bg-[#04140f] px-4 py-5 text-white shadow-[0_18px_48px_rgba(0,30,24,0.22)] sm:px-6 sm:py-6">
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-0 opacity-40"
+            className="pointer-events-none absolute inset-0 opacity-35"
             style={{
               backgroundImage:
-                "radial-gradient(ellipse 80% 55% at 90% -10%, rgba(57,255,136,0.18), transparent 55%), radial-gradient(ellipse 70% 50% at 0% 110%, rgba(15,138,108,0.22), transparent 50%)",
-            }}
-          />
-          <div
-            aria-hidden
-            className="pointer-events-none absolute -right-6 top-4 h-52 w-72 opacity-25"
-            style={{
-              backgroundImage:
-                "repeating-linear-gradient(-18deg, transparent, transparent 14px, rgba(57,255,136,0.14) 14px, rgba(57,255,136,0.14) 15px)",
-              maskImage:
-                "radial-gradient(ellipse at center, black 20%, transparent 75%)",
+                "radial-gradient(ellipse 70% 50% at 90% 0%, rgba(57,255,136,0.16), transparent 55%)",
             }}
           />
 
-          <div className="relative mx-auto max-w-3xl text-center">
-            <h2 className="font-[family-name:var(--font-display)] text-[clamp(1.9rem,4vw,2.85rem)] font-medium leading-[1.1] tracking-[-0.02em] text-white">
-              Choose the right plan.
-            </h2>
-            <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-white/68 sm:text-[15px]">
-              Start free, then keep each branch on Pro — billed monthly for the
-              locations you run.
-            </p>
+          <div className="relative flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2 className="font-[family-name:var(--font-display)] text-[clamp(1.35rem,2.5vw,1.75rem)] leading-tight tracking-[-0.02em]">
+                Choose your plan.
+              </h2>
+              <p className="mt-1 text-xs text-white/65 sm:text-sm">
+                Free trial first, then Pro per branch each month.
+              </p>
+            </div>
             {summary?.trial.active ? (
-              <p className="mt-5 inline-flex rounded-full border border-[#39ff88]/35 bg-[#39ff88]/10 px-4 py-1.5 text-xs font-semibold tracking-wide text-[#7dffb5]">
-                Free trial · {summary.trial.daysRemaining} day
-                {summary.trial.daysRemaining === 1 ? "" : "s"} left
+              <p className="rounded-full border border-[#39ff88]/30 bg-[#39ff88]/10 px-3 py-1 text-[11px] font-semibold text-[#7dffb5]">
+                Trial · {summary.trial.daysRemaining}d left
               </p>
-            ) : (
-              <p className="mt-5 inline-flex rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-xs font-semibold tracking-wide text-white/70">
-                Monthly · per branch
-              </p>
-            )}
+            ) : null}
           </div>
 
           {loading && !summary ? (
-            <div className="relative mt-12 flex justify-center text-sm text-white/60">
+            <div className="relative mt-6 flex justify-center text-sm text-white/60">
               <Loader2 className="mr-2 size-4 animate-spin" />
-              Loading plans…
+              Loading…
             </div>
           ) : (
-            <div className="relative mx-auto mt-10 grid max-w-5xl items-end gap-5 lg:grid-cols-3">
+            <div className="relative mt-4 grid gap-3 sm:grid-cols-3">
               <PlanCard
                 name="Trial"
                 priceLabel="Free"
@@ -393,7 +397,7 @@ function SubscriptionWorkspaceContent({
                 priceHint="/ branch / month"
                 features={PRO_FEATURES}
                 featured
-                ctaLabel={isBranchScope ? "Subscribe below" : "See branches"}
+                ctaLabel="Branches"
                 onCta={scrollToBranches}
               />
               <PlanCard
@@ -407,61 +411,58 @@ function SubscriptionWorkspaceContent({
 
         <section
           id="your-branches"
-          className="scroll-mt-6 overflow-hidden rounded-[24px] border border-[var(--line)] bg-white shadow-[0_16px_40px_rgba(15,23,42,0.05)]"
+          className="scroll-mt-4 overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-[0_10px_28px_rgba(15,23,42,0.04)]"
         >
-          <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--line)] px-5 py-5 sm:px-7">
+          <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-4 py-3 sm:px-5">
             <div>
-              <h3 className="font-[family-name:var(--font-display)] text-2xl tracking-[-0.02em] text-[#070b18]">
-                {isBranchScope ? "Your branch" : "Your branches"}
+              <h3 className="text-sm font-semibold text-[#070b18]">
+                {isBranchScope ? "Your branch" : "Branches"}
               </h3>
-              <p className="mt-1 text-sm text-slate-600">
+              <p className="text-xs text-slate-500">
                 {isBranchScope
-                  ? "Current plan for this location — you can renew here."
-                  : "Current plan for each location. Subscribe or renew any branch."}
+                  ? "Current plan — renew here."
+                  : "Current plan for each location."}
               </p>
             </div>
             <button
               type="button"
               onClick={() => void load()}
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[var(--line)] bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+              className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--line)] px-2.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
             >
-              <RefreshCw className="size-3.5" />
+              <RefreshCw className="size-3" />
               Refresh
             </button>
           </div>
 
-          <div className="px-5 py-5 sm:px-7 sm:pb-7">
+          <div className="px-3 py-3 sm:px-4">
             {loading && !summary ? (
-              <div className="flex items-center gap-2 text-sm text-slate-500">
+              <div className="flex items-center gap-2 py-4 text-sm text-slate-500">
                 <Loader2 className="size-4 animate-spin" />
                 Loading…
               </div>
             ) : null}
 
             {summary && visibleBranches.length === 0 ? (
-              <p className="rounded-2xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+              <p className="rounded-xl bg-slate-50 px-3 py-6 text-center text-sm text-slate-500">
                 {summary.branches.length === 0
                   ? isBranchScope
-                    ? "No branch is assigned to your account yet."
-                    : "Add a branch to start managing plans."
+                    ? "No branch assigned yet."
+                    : "Add a branch to manage plans."
                   : "No branches match that search."}
               </p>
             ) : null}
 
             {summary && visibleBranches.length > 0 ? (
-              <div className="overflow-hidden rounded-2xl border border-[var(--line)]">
+              <div className="overflow-hidden rounded-xl border border-[var(--line)]">
                 <table className="min-w-full text-left text-sm">
-                  <thead className="bg-[#f0f4f6] text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                  <thead className="bg-[#f0f4f6] text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                     <tr>
-                      <th className="px-4 py-3 font-semibold">Branch</th>
-                      <th className="px-4 py-3 font-semibold">Status</th>
-                      <th className="hidden px-4 py-3 font-semibold md:table-cell">
+                      <th className="px-3 py-2 font-semibold">Branch</th>
+                      <th className="px-3 py-2 font-semibold">Status</th>
+                      <th className="hidden px-3 py-2 font-semibold sm:table-cell">
                         Renews
                       </th>
-                      <th className="hidden px-4 py-3 font-semibold sm:table-cell">
-                        Plan
-                      </th>
-                      <th className="px-4 py-3 text-right font-semibold">
+                      <th className="px-3 py-2 text-right font-semibold">
                         Action
                       </th>
                     </tr>
@@ -472,45 +473,36 @@ function SubscriptionWorkspaceContent({
                       const label = actionLabel(row, summary.trial.active);
                       const paying = payingBranchId === row.branchId;
                       return (
-                        <tr
-                          key={row.branchId}
-                          className="align-middle transition hover:bg-[#f8fafb]"
-                        >
-                          <td className="px-4 py-4">
-                            <p className="font-semibold text-[#070b18]">
+                        <tr key={row.branchId} className="align-middle">
+                          <td className="px-3 py-2.5">
+                            <p className="text-[13px] font-semibold text-[#070b18]">
                               {row.branchName}
                             </p>
-                            {copy.detail ? (
-                              <p className="mt-0.5 text-xs text-slate-500 md:hidden">
-                                {copy.detail}
-                              </p>
-                            ) : null}
+                            <p className="text-[11px] text-slate-500 sm:hidden">
+                              {copy.detail ?? priceLabel}
+                            </p>
                           </td>
-                          <td className="px-4 py-4">
+                          <td className="px-3 py-2.5">
                             <StatusPill tone={copy.tone} label={copy.label} />
                           </td>
-                          <td className="hidden px-4 py-4 text-slate-600 md:table-cell">
+                          <td className="hidden px-3 py-2.5 text-xs text-slate-600 sm:table-cell">
                             {copy.detail ?? "—"}
                           </td>
-                          <td className="hidden px-4 py-4 text-slate-600 sm:table-cell">
-                            {priceLabel}
-                            <span className="text-slate-400"> / mo</span>
-                          </td>
-                          <td className="px-4 py-4 text-right">
+                          <td className="px-3 py-2.5 text-right">
                             {label ? (
                               <button
                                 type="button"
                                 disabled={paying}
                                 onClick={() => void startCheckout(row.branchId)}
-                                className="inline-flex h-10 min-w-[8rem] items-center justify-center gap-1.5 rounded-full border border-[#003f35] bg-[#003f35] px-4 text-xs font-semibold text-white transition hover:bg-[#025144] disabled:opacity-70"
+                                className="inline-flex h-8 min-w-[5.75rem] items-center justify-center gap-1 rounded-full bg-[#003f35] px-3 text-[11px] font-semibold text-white hover:bg-[#025144] disabled:opacity-70"
                               >
                                 {paying ? (
-                                  <Loader2 className="size-3.5 animate-spin" />
+                                  <Loader2 className="size-3 animate-spin" />
                                 ) : null}
-                                {paying ? "Opening…" : label}
+                                {paying ? "…" : label}
                               </button>
                             ) : (
-                              <span className="text-xs font-medium text-emerald-700">
+                              <span className="text-[11px] font-medium text-emerald-700">
                                 Included
                               </span>
                             )}
@@ -550,45 +542,42 @@ function PlanCard({
 }) {
   return (
     <article
-      className={`relative flex flex-col rounded-[22px] border px-6 py-7 ${
+      className={`relative flex flex-col rounded-xl border px-4 py-4 ${
         featured
-          ? "border-[#39ff88]/70 bg-[#061a14] shadow-[0_24px_60px_rgba(0,0,0,0.35)] lg:-translate-y-3 lg:py-9"
+          ? "border-[#39ff88]/65 bg-[#061a14] sm:-translate-y-1"
           : accent === "active"
-            ? "border-[#39ff88]/45 bg-black/25"
-            : "border-[#39ff88]/28 bg-black/20"
+            ? "border-[#39ff88]/40 bg-black/25"
+            : "border-[#39ff88]/22 bg-black/20"
       }`}
     >
       {featured ? (
-        <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-[#39ff88] px-3 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#04140f]">
+        <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-[#39ff88] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-[#04140f]">
           Recommended
         </span>
       ) : null}
 
-      <h3 className="font-[family-name:var(--font-display)] text-[1.65rem] leading-none tracking-[-0.02em] text-white">
+      <h3 className="font-[family-name:var(--font-display)] text-xl leading-none tracking-[-0.02em]">
         {name}
         <span className="text-[#39ff88]">.</span>
       </h3>
-      <div className="mt-3 h-px w-full bg-[#39ff88]/25" />
+      <div className="mt-2 h-px w-full bg-[#39ff88]/20" />
+      <p className="mt-3 font-[family-name:var(--font-display)] text-[1.35rem] leading-none tracking-[-0.03em]">
+        {priceLabel}
+      </p>
+      {priceHint ? (
+        <p className="mt-1 text-[10px] font-medium text-white/50">{priceHint}</p>
+      ) : (
+        <p className="mt-1 text-[10px] text-transparent">.</p>
+      )}
 
-      <div className="mt-5">
-        <p className="font-[family-name:var(--font-display)] text-[clamp(1.7rem,2.8vw,2.25rem)] leading-none tracking-[-0.03em] text-white">
-          {priceLabel}
-        </p>
-        {priceHint ? (
-          <p className="mt-2 text-xs font-medium text-white/55">{priceHint}</p>
-        ) : (
-          <p className="mt-2 text-xs font-medium text-transparent">.</p>
-        )}
-      </div>
-
-      <ul className="mt-6 flex-1 space-y-3">
+      <ul className="mt-3 space-y-1.5">
         {features.map((item) => (
           <li
             key={item}
-            className="flex gap-2.5 text-[13px] leading-snug text-white/78"
+            className="flex gap-1.5 text-[11px] leading-snug text-white/75"
           >
             <Check
-              className="mt-0.5 size-4 shrink-0 text-[#39ff88]"
+              className="mt-0.5 size-3.5 shrink-0 text-[#39ff88]"
               strokeWidth={2.75}
             />
             <span>{item}</span>
@@ -600,7 +589,7 @@ function PlanCard({
         <button
           type="button"
           onClick={onCta}
-          className="mt-8 inline-flex h-11 w-full items-center justify-center rounded-full border border-[#39ff88] bg-transparent text-sm font-semibold text-white transition hover:bg-[#39ff88]/12"
+          className="mt-4 inline-flex h-9 w-full items-center justify-center rounded-full border border-[#39ff88] text-xs font-semibold text-white transition hover:bg-[#39ff88]/12"
         >
           {ctaLabel}
         </button>
@@ -624,9 +613,9 @@ function StatusPill({
   }[tone];
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset ${styles}`}
+      className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${styles}`}
     >
-      {tone === "bad" ? <Lock className="size-3" /> : null}
+      {tone === "bad" ? <Lock className="size-2.5" /> : null}
       {label}
     </span>
   );

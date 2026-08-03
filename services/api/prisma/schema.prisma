@@ -1157,7 +1157,7 @@ model TenantBilling {
   @@map("tenant_billing")
 }
 
-/// SaaS plan catalog. Seeded with Pro (UGX 150,000 / month / branch).
+/// SaaS plan catalog. Seeded with Pro (UGX monthly / branch).
 model SubscriptionPlan {
   id          String               @id @default(uuid()) @db.Uuid
   code        String               @unique

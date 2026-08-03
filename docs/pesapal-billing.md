@@ -5,7 +5,7 @@ REMBEH bills **per branch** after an organisation-wide free trial.
 ## Product rules
 
 - New organisations get a **30-day free trial** covering all current and future branches.
-- After the trial, each branch needs **Pro** at **UGX 150,000 / month**.
+- After the trial, each branch needs **Pro** at **UGX 100,000 / month** (temporary while the payment provider limit is raised; product target remains UGX 150,000).
 - Unpaid branches enter a **2-day grace** period with reminders, then lock **that branch only**.
 - Owners pay from **Subscription** (`/owner/subscription`) via Pesapal hosted checkout (mobile money + cards).
 

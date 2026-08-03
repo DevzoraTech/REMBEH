@@ -164,7 +164,22 @@ export class BillingService implements OnModuleInit {
     const existing = await this.prisma.subscriptionPlan.findUnique({
       where: { code: PRO_PLAN_CODE },
     });
-    if (existing) return existing;
+    if (existing) {
+      const amount = Number(existing.amount);
+      if (amount !== PRO_PLAN_AMOUNT_UGX || !existing.isActive) {
+        return this.prisma.subscriptionPlan.update({
+          where: { id: existing.id },
+          data: {
+            amount: new Prisma.Decimal(PRO_PLAN_AMOUNT_UGX),
+            currency: 'UGX',
+            interval: 'MONTHLY',
+            isActive: true,
+            name: 'Pro',
+          },
+        });
+      }
+      return existing;
+    }
 
     return this.prisma.subscriptionPlan.create({
       data: {
@@ -225,7 +240,7 @@ export class BillingService implements OnModuleInit {
     const canManageAll = user.permissions.includes(BILLING_PERMISSIONS.manage);
     if (!canManageAll && !user.branchId) {
       throw new ForbiddenException(
-        'You need a branch assignment to view subscription.',
+        'You can only view the plan for your branch.',
       );
     }
 
@@ -332,19 +347,15 @@ export class BillingService implements OnModuleInit {
   ): Promise<BillingCheckoutResponseContract> {
     const canManageAll = user.permissions.includes(BILLING_PERMISSIONS.manage);
     if (!canManageAll && user.branchId !== branchId) {
-      throw new ForbiddenException(
-        'You can only pay for your own branch.',
-      );
+      throw new ForbiddenException('You can only pay for your own branch.');
     }
     if (!canManageAll && !user.branchId) {
-      throw new ForbiddenException(
-        'You need a branch assignment to pay.',
-      );
+      throw new ForbiddenException('You can only pay for your own branch.');
     }
 
     if (!this.pesapal.isConfigured()) {
       throw new ServiceUnavailableException(
-        'Payments are not available right now. Try again later.',
+        'Payments are unavailable right now. Please try again later.',
       );
     }
 
@@ -378,8 +389,8 @@ export class BillingService implements OnModuleInit {
       `${this.configService.get<string>('API_PUBLIC_URL')?.trim() || ''}/api/v1/billing/pesapal/callback`;
 
     if (!apiCallback) {
-      throw new BadRequestException(
-        'Payment return URL is not configured.',
+      throw new ServiceUnavailableException(
+        'Payments are unavailable right now. Please try again later.',
       );
     }
 
@@ -418,7 +429,7 @@ export class BillingService implements OnModuleInit {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Payment could not be started.';
-      this.logger.error(`Pesapal checkout failed: ${message}`);
+      this.logger.error(`Checkout provider failed: ${message}`);
       await this.prisma.subscriptionPayment.update({
         where: { id: payment.id },
         data: { status: SubscriptionPaymentStatus.FAILED },
@@ -432,7 +443,7 @@ export class BillingService implements OnModuleInit {
         data: { status: SubscriptionPaymentStatus.FAILED },
       });
       throw new ServiceUnavailableException(
-        'Payment page is unavailable right now. Please try again.',
+        'Payments are unavailable right now. Please try again later.',
       );
     }
 
@@ -761,18 +772,11 @@ export class BillingService implements OnModuleInit {
       lower.includes('transaction amount')
     ) {
       return new BadRequestException(
-        'Pesapal declined UGX 150,000 for this merchant account. Ask Pesapal support to raise your transaction limit, then try again.',
-      );
-    }
-    if (lower.includes('not configured') || lower.includes('auth failed')) {
-      return new ServiceUnavailableException(
-        'Payments are not available right now. Please try again later.',
+        'This payment couldn’t be completed. Please try again later.',
       );
     }
     return new BadRequestException(
-      message.length > 180
-        ? 'Payment could not be started. Please try again or contact support.'
-        : message,
+      'We couldn’t start payment. Please try again.',
     );
   }
 
