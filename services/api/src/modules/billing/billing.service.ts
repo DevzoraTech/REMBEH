@@ -125,9 +125,9 @@ export class BillingService implements OnModuleInit {
       graceEndsAt: sub.graceEndsAt?.toISOString() ?? null,
       currentPeriodEnd: sub.currentPeriodEnd?.toISOString() ?? null,
       message: locked
-        ? 'This branch subscription has expired. Ask the account owner to renew Pro on Subscription.'
+        ? 'This branch is paused. Renew on Subscription to continue.'
         : sub.status === BranchSubscriptionStatus.GRACE
-          ? 'Subscription grace period — renew soon to keep this branch unlocked.'
+          ? 'Renew soon to keep this branch open.'
           : null,
     };
   }
@@ -222,13 +222,23 @@ export class BillingService implements OnModuleInit {
   }
 
   async getSummary(user: AuthenticatedUser): Promise<BillingSummaryContract> {
-    this.assertCanManage(user);
+    const canManageAll = user.permissions.includes(BILLING_PERMISSIONS.manage);
+    if (!canManageAll && !user.branchId) {
+      throw new ForbiddenException(
+        'You need a branch assignment to view subscription.',
+      );
+    }
+
     const billing = await this.ensureTenantBilling(user.tenantId);
     const plan = await this.ensureProPlan();
     await this.syncTenantSubscriptions(user.tenantId);
 
+    const branchWhere = canManageAll
+      ? { tenantId: user.tenantId }
+      : { tenantId: user.tenantId, id: user.branchId! };
+
     const branches = await this.prisma.branch.findMany({
-      where: { tenantId: user.tenantId },
+      where: branchWhere,
       orderBy: { name: 'asc' },
       include: { subscription: true },
     });
@@ -243,7 +253,7 @@ export class BillingService implements OnModuleInit {
     }
 
     const refreshed = await this.prisma.branch.findMany({
-      where: { tenantId: user.tenantId },
+      where: branchWhere,
       orderBy: { name: 'asc' },
       include: { subscription: true },
     });
@@ -278,31 +288,20 @@ export class BillingService implements OnModuleInit {
               (sub.graceEndsAt.getTime() - now) / (24 * 60 * 60 * 1000),
             )
           : null,
-        canCheckout:
-          !trialActive ||
-          sub.status === BranchSubscriptionStatus.GRACE ||
-          sub.status === BranchSubscriptionStatus.LOCKED ||
-          sub.status === BranchSubscriptionStatus.PAST_DUE ||
-          sub.status === BranchSubscriptionStatus.ACTIVE,
+        canCheckout: false,
         reminder,
       };
     });
 
-    // During org trial, checkout is optional; after trial every unpaid branch can pay.
     for (const row of rows) {
-      if (trialActive && row.status === BranchSubscriptionStatus.TRIAL) {
-        row.canCheckout = false;
-      } else if (
+      if (
         row.status === BranchSubscriptionStatus.GRACE ||
         row.status === BranchSubscriptionStatus.LOCKED ||
         row.status === BranchSubscriptionStatus.PAST_DUE ||
-        (row.status === BranchSubscriptionStatus.ACTIVE &&
-          row.daysUntilPeriodEnd != null &&
-          row.daysUntilPeriodEnd <= 7)
+        row.status === BranchSubscriptionStatus.ACTIVE ||
+        row.status === BranchSubscriptionStatus.TRIAL
       ) {
         row.canCheckout = true;
-      } else if (row.status === BranchSubscriptionStatus.ACTIVE) {
-        row.canCheckout = true; // allow early renew
       }
     }
 
@@ -320,6 +319,8 @@ export class BillingService implements OnModuleInit {
         endsAt: billing.trialEndsAt.toISOString(),
         daysRemaining,
       },
+      scope: canManageAll ? 'organisation' : 'branch',
+      canPay: true,
       branches: rows,
       reminders,
     };
@@ -329,10 +330,21 @@ export class BillingService implements OnModuleInit {
     user: AuthenticatedUser,
     branchId: string,
   ): Promise<BillingCheckoutResponseContract> {
-    this.assertCanManage(user);
+    const canManageAll = user.permissions.includes(BILLING_PERMISSIONS.manage);
+    if (!canManageAll && user.branchId !== branchId) {
+      throw new ForbiddenException(
+        'You can only pay for your own branch.',
+      );
+    }
+    if (!canManageAll && !user.branchId) {
+      throw new ForbiddenException(
+        'You need a branch assignment to pay.',
+      );
+    }
+
     if (!this.pesapal.isConfigured()) {
       throw new ServiceUnavailableException(
-        'Pesapal is not configured. Set PESAPAL_CONSUMER_KEY and PESAPAL_CONSUMER_SECRET.',
+        'Payments are not available right now. Try again later.',
       );
     }
 
@@ -348,45 +360,26 @@ export class BillingService implements OnModuleInit {
       throw new NotFoundException('Branch not found.');
     }
 
-    let subscription = branch.subscription;
-    if (!subscription) {
-      subscription = await this.provisionBranchSubscription({
+    if (!branch.subscription) {
+      await this.provisionBranchSubscription({
         tenantId: user.tenantId,
         branchId: branch.id,
       });
     }
 
-    const billing = await this.prisma.tenantBilling.findUniqueOrThrow({
-      where: { tenantId: user.tenantId },
-    });
-    if (
-      billing.trialEndsAt.getTime() > Date.now() &&
-      subscription.status === BranchSubscriptionStatus.TRIAL
-    ) {
-      throw new BadRequestException(
-        'This organisation is still on the free trial. Billing starts when the trial ends.',
-      );
-    }
-
-    const owner = await this.prisma.user.findFirst({
-      where: {
-        tenantId: user.tenantId,
-        roles: { some: { role: { name: 'Account Owner' } } },
-      },
+    const payer = await this.prisma.user.findUnique({
+      where: { id: user.userId },
       select: { email: true, phone: true, displayName: true },
     });
 
     const merchantReference = `sub_${branch.id.slice(0, 8)}_${randomUUID().replaceAll('-', '').slice(0, 12)}`;
-    const webAppUrl =
-      this.configService.get<string>('WEB_APP_URL')?.trim() ||
-      'https://rembeh.antikra.com';
     const apiCallback =
       this.configService.get<string>('PESAPAL_CALLBACK_URL')?.trim() ||
       `${this.configService.get<string>('API_PUBLIC_URL')?.trim() || ''}/api/v1/billing/pesapal/callback`;
 
     if (!apiCallback) {
       throw new BadRequestException(
-        'PESAPAL_CALLBACK_URL (or API_PUBLIC_URL) must be set for checkout.',
+        'Payment return URL is not configured.',
       );
     }
 
@@ -402,7 +395,7 @@ export class BillingService implements OnModuleInit {
       },
     });
 
-    const nameParts = (owner?.displayName || user.displayName || 'Owner').split(
+    const nameParts = (payer?.displayName || user.displayName || 'REMBEH').split(
       /\s+/,
     );
     const order = await this.pesapal.submitOrder({
@@ -412,11 +405,11 @@ export class BillingService implements OnModuleInit {
       description: `REMBEH Pro — ${branch.name}`,
       callbackUrl: `${apiCallback}?branchId=${branch.id}`,
       billingAddress: {
-        email_address: owner?.email || user.email,
-        phone_number: owner?.phone,
+        email_address: payer?.email || user.email,
+        phone_number: payer?.phone,
         country_code: 'UG',
         first_name: nameParts[0] || 'REMBEH',
-        last_name: nameParts.slice(1).join(' ') || 'Owner',
+        last_name: nameParts.slice(1).join(' ') || 'User',
       },
     });
 
@@ -428,12 +421,8 @@ export class BillingService implements OnModuleInit {
       },
     });
 
-    // Also encode return path for the hosted page redirect UX
-    const redirectUrl = order.redirect_url!;
-    void webAppUrl;
-
     return {
-      redirectUrl,
+      redirectUrl: order.redirect_url!,
       merchantReference,
       orderTrackingId: order.order_tracking_id ?? null,
     };
@@ -484,7 +473,7 @@ export class BillingService implements OnModuleInit {
 
     const params = new URLSearchParams({ paid: '1' });
     if (payment?.branchId) params.set('branch', payment.branchId);
-    return `${webAppUrl}/owner/subscription?${params.toString()}`;
+    return `${webAppUrl}/subscription?${params.toString()}`;
   }
 
   async assertBranchSubscriptionActive(tenantId: string, branchId: string) {
@@ -499,7 +488,7 @@ export class BillingService implements OnModuleInit {
 
     if (sub.status === BranchSubscriptionStatus.LOCKED) {
       throw new HttpException(
-        'This branch subscription has expired. Renew Pro on the Subscription page to continue.',
+        'This branch is paused. Renew on Subscription to continue.',
         HttpStatus.PAYMENT_REQUIRED,
       );
     }
@@ -722,10 +711,10 @@ export class BillingService implements OnModuleInit {
             ),
           )
         : GRACE_DAYS;
-      return `${branchName} subscription ended — renew within ${days} day${days === 1 ? '' : 's'} to avoid lock.`;
+      return `${branchName} needs renewing within ${days} day${days === 1 ? '' : 's'} to stay open.`;
     }
     if (sub.status === BranchSubscriptionStatus.LOCKED) {
-      return `${branchName} is locked until Pro is renewed.`;
+      return `${branchName} is paused — renew to continue.`;
     }
     if (
       sub.status === BranchSubscriptionStatus.ACTIVE &&
@@ -744,7 +733,7 @@ export class BillingService implements OnModuleInit {
   private assertCanManage(user: AuthenticatedUser) {
     if (!user.permissions.includes(BILLING_PERMISSIONS.manage)) {
       throw new ForbiddenException(
-        'Only the account owner can manage subscriptions.',
+        'Only the account owner can manage all branch subscriptions.',
       );
     }
   }

@@ -28,6 +28,9 @@ export type BillingSummaryContract = {
     endsAt: string;
     daysRemaining: number;
   };
+  /** organisation = all branches (owner); branch = caller's branch only (manager). */
+  scope: 'organisation' | 'branch';
+  canPay: boolean;
   branches: BranchBillingRowContract[];
   reminders: string[];
 };

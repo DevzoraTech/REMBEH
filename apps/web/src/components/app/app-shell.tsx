@@ -189,6 +189,12 @@ export function AppShell({ children, session, user }: AppShellProps) {
           operatorRole === "manager" &&
           Boolean(session.permissions.includes("operation.read")),
       },
+      {
+        href: "/subscription",
+        label: "Subscription",
+        icon: CreditCard,
+        enabled: operatorRole === "manager",
+      },
     ];
 
     return (operatorRole === "owner" ? ownerPrimary : managerPrimary).filter(
@@ -248,6 +254,7 @@ export function AppShell({ children, session, user }: AppShellProps) {
     const redirects: Array<[string, string]> = [
       ["/dashboard", "/owner"],
       ["/branches", "/owner/branches"],
+      ["/subscription", "/owner/subscription"],
       ["/operations", "/owner/reports"],
       ["/loans", "/owner/portfolio"],
       ["/clients", "/owner/borrowers"],
@@ -261,7 +268,9 @@ export function AppShell({ children, session, user }: AppShellProps) {
       ([from]) => pathname === from || pathname.startsWith(`${from}/`),
     );
     if (match) {
-      router.replace(match[1]);
+      const suffix =
+        typeof window !== "undefined" ? window.location.search : "";
+      router.replace(`${match[1]}${suffix}`);
     }
   }, [operatorRole, pathname, router]);
 
@@ -406,17 +415,34 @@ export function AppShell({ children, session, user }: AppShellProps) {
           <div className="mb-4 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-950">
             <Lock className="mt-0.5 size-4 shrink-0" />
             <div>
-              <p className="font-semibold">Branch subscription required</p>
+              <p className="font-semibold">This branch is paused</p>
               <p className="mt-0.5 text-rose-900/90">
-                {branchBilling.message ||
-                  "Ask the account owner to renew Pro on the Subscription page. Reads stay available; lending and collections are blocked."}
+                Renew your plan to continue lending and collections.
               </p>
+              <Link
+                href="/subscription"
+                className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-rose-950 underline underline-offset-2"
+              >
+                Open Subscription
+                <ArrowRight className="size-3" />
+              </Link>
             </div>
           </div>
-        ) : branchBilling?.status === "GRACE" && branchBilling.message ? (
-          <div className="mb-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-            <ShieldAlert className="mt-0.5 size-4 shrink-0" />
-            <p>{branchBilling.message}</p>
+        ) : branchBilling?.status === "GRACE" ? (
+          <div className="mb-4 flex items-start justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <div className="flex items-start gap-3">
+              <ShieldAlert className="mt-0.5 size-4 shrink-0" />
+              <p>
+                {branchBilling.message ||
+                  "Renew soon to keep this branch open."}
+              </p>
+            </div>
+            <Link
+              href="/subscription"
+              className="shrink-0 text-xs font-semibold underline underline-offset-2"
+            >
+              Renew
+            </Link>
           </div>
         ) : null}
         {children}
