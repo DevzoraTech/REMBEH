@@ -208,12 +208,15 @@ export class PesapalClient implements OnModuleInit {
       },
     );
     const payload = (await response.json()) as PesapalSubmitOrderResponse;
+    const errorMessage =
+      payload.error?.message ||
+      payload.message ||
+      (!response.ok ? `Pesapal submit order failed (${response.status})` : '');
     if (!response.ok || !payload.redirect_url) {
-      throw new Error(
-        payload.error?.message ||
-          payload.message ||
-          `Pesapal submit order failed (${response.status})`,
+      this.logger.warn(
+        `Pesapal SubmitOrder failed status=${response.status} body=${JSON.stringify(payload).slice(0, 500)}`,
       );
+      throw new Error(errorMessage || 'Pesapal submit order failed.');
     }
     return payload;
   }

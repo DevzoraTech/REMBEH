@@ -54,11 +54,28 @@ type CheckoutResponse = {
   redirectUrl: string;
 };
 
+const TRIAL_FEATURES = [
+  "Full access for your first month",
+  "Covers every branch you open",
+  "No payment required yet",
+  "Loans, repayments, and reports",
+  "Ideal while you set up",
+];
+
 const PRO_FEATURES = [
-  "Loans, repayments, and daily operations",
-  "Agents and borrower records",
-  "Reports for your branch",
+  "Everything in your free trial",
+  "One branch, fully unlocked",
+  "Loans, agents, and daily operations",
   "Pay by mobile money or card",
+  "Built for growing branch teams",
+];
+
+const BRANCH_FEATURES = [
+  "Subscribe only where you operate",
+  "Other branches stay open if one lapses",
+  "Two days to renew before a pause",
+  "Owner or manager can renew",
+  "Cancel or renew any time",
 ];
 
 function authHeaders(session: RembehSession) {
@@ -75,7 +92,7 @@ function statusCopy(
     return {
       label: "Free trial",
       tone: "good" as const,
-      detail: "You can subscribe now — paid time starts after the trial",
+      detail: "Subscribe early — paid time starts after the trial",
     };
   }
   switch (row.status) {
@@ -104,11 +121,7 @@ function statusCopy(
         detail: "Renew to reopen this branch",
       };
     case "TRIAL":
-      return {
-        label: "Free trial",
-        tone: "good" as const,
-        detail: null,
-      };
+      return { label: "Free trial", tone: "good" as const, detail: null };
     default:
       return { label: "—", tone: "muted" as const, detail: null };
   }
@@ -272,6 +285,12 @@ function SubscriptionWorkspaceContent({
     }
   }
 
+  function scrollToBranches() {
+    document
+      .getElementById("your-branches")
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   if (!ready || !session || !workspace || !user) {
     return <AppBootSkeleton />;
   }
@@ -279,10 +298,11 @@ function SubscriptionWorkspaceContent({
   const amount = summary?.plan.amount ?? 150_000;
   const currency = summary?.plan.currency ?? "UGX";
   const isBranchScope = summary?.scope === "branch" || mode === "manager";
+  const priceLabel = formatMoney(amount, currency);
 
   return (
     <AppShell session={session} workspace={workspace} user={user}>
-      <div className="mx-auto max-w-5xl space-y-5 px-1 pb-10 sm:px-2">
+      <div className="mx-auto max-w-6xl space-y-5 px-1 pb-10 sm:px-2">
         <OwnerHeader
           title="Subscription"
           subtitle={
@@ -292,7 +312,9 @@ function SubscriptionWorkspaceContent({
           }
           search={search}
           onSearchChange={setSearch}
-          showSearch={!isBranchScope && Boolean(summary && summary.branches.length > 4)}
+          showSearch={
+            !isBranchScope && Boolean(summary && summary.branches.length > 4)
+          }
           showReportsButton={mode === "owner"}
           searchPlaceholder="Find a branch…"
           settingsHref={mode === "owner" ? "/owner/settings" : "/settings"}
@@ -312,84 +334,112 @@ function SubscriptionWorkspaceContent({
           </p>
         ) : null}
 
-        <section className="overflow-hidden rounded-[22px] border border-[var(--line)] bg-white shadow-[0_14px_36px_rgba(15,23,42,0.05)]">
-          <div className="border-b border-[var(--line)] bg-gradient-to-br from-[#003f35] via-[#0a5c4d] to-[#0f8a6c] px-5 py-6 text-white sm:px-7 sm:py-7">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/70">
-                  REMBEH Pro
-                </p>
-                <h2 className="mt-1 font-[family-name:var(--font-display)] text-[clamp(1.6rem,3vw,2.1rem)] leading-tight tracking-[-0.02em]">
-                  {formatMoney(amount, currency)}
-                  <span className="ml-2 text-base font-sans font-medium text-white/75">
-                    / branch / month
-                  </span>
-                </h2>
-                <p className="mt-2 max-w-xl text-sm text-white/75">
-                  {isBranchScope
-                    ? "Keep your branch open with a monthly Pro plan."
-                    : "Each branch has its own monthly plan after the free trial."}
-                </p>
-              </div>
-              {summary?.trial.active ? (
-                <div className="rounded-2xl border border-white/20 bg-white/10 px-4 py-3 backdrop-blur-sm">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-white/70">
-                    Free trial
-                  </p>
-                  <p className="mt-1 text-lg font-semibold">
-                    {summary.trial.daysRemaining} day
-                    {summary.trial.daysRemaining === 1 ? "" : "s"} left
-                  </p>
-                </div>
-              ) : null}
-            </div>
-            <ul className="mt-5 grid gap-2 sm:grid-cols-2">
-              {PRO_FEATURES.map((item) => (
-                <li
-                  key={item}
-                  className="flex items-start gap-2 text-sm text-white/85"
-                >
-                  <Check
-                    className="mt-0.5 size-4 shrink-0 text-[#7dffb5]"
-                    strokeWidth={2.75}
-                  />
-                  {item}
-                </li>
-              ))}
-            </ul>
+        <section className="relative overflow-hidden rounded-[28px] bg-[#04140f] px-5 py-10 text-white shadow-[0_28px_80px_rgba(0,30,24,0.28)] sm:px-8 sm:py-12 lg:px-10">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 opacity-40"
+            style={{
+              backgroundImage:
+                "radial-gradient(ellipse 80% 55% at 90% -10%, rgba(57,255,136,0.18), transparent 55%), radial-gradient(ellipse 70% 50% at 0% 110%, rgba(15,138,108,0.22), transparent 50%)",
+            }}
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -right-6 top-4 h-52 w-72 opacity-25"
+            style={{
+              backgroundImage:
+                "repeating-linear-gradient(-18deg, transparent, transparent 14px, rgba(57,255,136,0.14) 14px, rgba(57,255,136,0.14) 15px)",
+              maskImage:
+                "radial-gradient(ellipse at center, black 20%, transparent 75%)",
+            }}
+          />
+
+          <div className="relative mx-auto max-w-3xl text-center">
+            <h2 className="font-[family-name:var(--font-display)] text-[clamp(1.9rem,4vw,2.85rem)] font-medium leading-[1.1] tracking-[-0.02em] text-white">
+              Choose the right plan.
+            </h2>
+            <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-white/68 sm:text-[15px]">
+              Start free, then keep each branch on Pro — billed monthly for the
+              locations you run.
+            </p>
+            {summary?.trial.active ? (
+              <p className="mt-5 inline-flex rounded-full border border-[#39ff88]/35 bg-[#39ff88]/10 px-4 py-1.5 text-xs font-semibold tracking-wide text-[#7dffb5]">
+                Free trial · {summary.trial.daysRemaining} day
+                {summary.trial.daysRemaining === 1 ? "" : "s"} left
+              </p>
+            ) : (
+              <p className="mt-5 inline-flex rounded-full border border-white/15 bg-white/5 px-4 py-1.5 text-xs font-semibold tracking-wide text-white/70">
+                Monthly · per branch
+              </p>
+            )}
           </div>
 
-          <div className="px-5 py-5 sm:px-7 sm:py-6">
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div>
-                <h3 className="text-base font-semibold text-[#070b18]">
-                  {isBranchScope ? "Your branch" : "Branches"}
-                </h3>
-                <p className="mt-0.5 text-sm text-slate-500">
-                  {isBranchScope
-                    ? "Current plan status for this location."
-                    : "Current plan for each location."}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => void load()}
-                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[var(--line)] bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
-              >
-                <RefreshCw className="size-3.5" />
-                Refresh
-              </button>
+          {loading && !summary ? (
+            <div className="relative mt-12 flex justify-center text-sm text-white/60">
+              <Loader2 className="mr-2 size-4 animate-spin" />
+              Loading plans…
             </div>
+          ) : (
+            <div className="relative mx-auto mt-10 grid max-w-5xl items-end gap-5 lg:grid-cols-3">
+              <PlanCard
+                name="Trial"
+                priceLabel="Free"
+                features={TRIAL_FEATURES}
+                accent={summary?.trial.active ? "active" : "default"}
+              />
+              <PlanCard
+                name="Pro"
+                priceLabel={priceLabel}
+                priceHint="/ branch / month"
+                features={PRO_FEATURES}
+                featured
+                ctaLabel={isBranchScope ? "Subscribe below" : "See branches"}
+                onCta={scrollToBranches}
+              />
+              <PlanCard
+                name="Branches"
+                priceLabel="Flexible"
+                features={BRANCH_FEATURES}
+              />
+            </div>
+          )}
+        </section>
 
+        <section
+          id="your-branches"
+          className="scroll-mt-6 overflow-hidden rounded-[24px] border border-[var(--line)] bg-white shadow-[0_16px_40px_rgba(15,23,42,0.05)]"
+        >
+          <div className="flex flex-wrap items-end justify-between gap-3 border-b border-[var(--line)] px-5 py-5 sm:px-7">
+            <div>
+              <h3 className="font-[family-name:var(--font-display)] text-2xl tracking-[-0.02em] text-[#070b18]">
+                {isBranchScope ? "Your branch" : "Your branches"}
+              </h3>
+              <p className="mt-1 text-sm text-slate-600">
+                {isBranchScope
+                  ? "Current plan for this location — you can renew here."
+                  : "Current plan for each location. Subscribe or renew any branch."}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void load()}
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[var(--line)] bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+            >
+              <RefreshCw className="size-3.5" />
+              Refresh
+            </button>
+          </div>
+
+          <div className="px-5 py-5 sm:px-7 sm:pb-7">
             {loading && !summary ? (
-              <div className="mt-8 flex items-center gap-2 text-sm text-slate-500">
+              <div className="flex items-center gap-2 text-sm text-slate-500">
                 <Loader2 className="size-4 animate-spin" />
                 Loading…
               </div>
             ) : null}
 
             {summary && visibleBranches.length === 0 ? (
-              <p className="mt-8 rounded-2xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+              <p className="rounded-2xl bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
                 {summary.branches.length === 0
                   ? isBranchScope
                     ? "No branch is assigned to your account yet."
@@ -399,14 +449,17 @@ function SubscriptionWorkspaceContent({
             ) : null}
 
             {summary && visibleBranches.length > 0 ? (
-              <div className="mt-5 overflow-hidden rounded-2xl border border-[var(--line)]">
+              <div className="overflow-hidden rounded-2xl border border-[var(--line)]">
                 <table className="min-w-full text-left text-sm">
                   <thead className="bg-[#f0f4f6] text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                     <tr>
                       <th className="px-4 py-3 font-semibold">Branch</th>
                       <th className="px-4 py-3 font-semibold">Status</th>
-                      <th className="hidden px-4 py-3 font-semibold sm:table-cell">
+                      <th className="hidden px-4 py-3 font-semibold md:table-cell">
                         Renews
+                      </th>
+                      <th className="hidden px-4 py-3 font-semibold sm:table-cell">
+                        Plan
                       </th>
                       <th className="px-4 py-3 text-right font-semibold">
                         Action
@@ -419,30 +472,37 @@ function SubscriptionWorkspaceContent({
                       const label = actionLabel(row, summary.trial.active);
                       const paying = payingBranchId === row.branchId;
                       return (
-                        <tr key={row.branchId} className="align-middle">
-                          <td className="px-4 py-3.5">
+                        <tr
+                          key={row.branchId}
+                          className="align-middle transition hover:bg-[#f8fafb]"
+                        >
+                          <td className="px-4 py-4">
                             <p className="font-semibold text-[#070b18]">
                               {row.branchName}
                             </p>
                             {copy.detail ? (
-                              <p className="mt-0.5 text-xs text-slate-500 sm:hidden">
+                              <p className="mt-0.5 text-xs text-slate-500 md:hidden">
                                 {copy.detail}
                               </p>
                             ) : null}
                           </td>
-                          <td className="px-4 py-3.5">
+                          <td className="px-4 py-4">
                             <StatusPill tone={copy.tone} label={copy.label} />
                           </td>
-                          <td className="hidden px-4 py-3.5 text-slate-600 sm:table-cell">
+                          <td className="hidden px-4 py-4 text-slate-600 md:table-cell">
                             {copy.detail ?? "—"}
                           </td>
-                          <td className="px-4 py-3.5 text-right">
+                          <td className="hidden px-4 py-4 text-slate-600 sm:table-cell">
+                            {priceLabel}
+                            <span className="text-slate-400"> / mo</span>
+                          </td>
+                          <td className="px-4 py-4 text-right">
                             {label ? (
                               <button
                                 type="button"
                                 disabled={paying}
                                 onClick={() => void startCheckout(row.branchId)}
-                                className="inline-flex h-9 min-w-[6.5rem] items-center justify-center gap-1.5 rounded-xl bg-[#003f35] px-3 text-xs font-semibold text-white transition hover:bg-[#025144] disabled:opacity-70"
+                                className="inline-flex h-10 min-w-[8rem] items-center justify-center gap-1.5 rounded-full border border-[#003f35] bg-[#003f35] px-4 text-xs font-semibold text-white transition hover:bg-[#025144] disabled:opacity-70"
                               >
                                 {paying ? (
                                   <Loader2 className="size-3.5 animate-spin" />
@@ -466,6 +526,86 @@ function SubscriptionWorkspaceContent({
         </section>
       </div>
     </AppShell>
+  );
+}
+
+function PlanCard({
+  name,
+  priceLabel,
+  priceHint,
+  features,
+  featured,
+  accent,
+  ctaLabel,
+  onCta,
+}: {
+  name: string;
+  priceLabel: string;
+  priceHint?: string;
+  features: string[];
+  featured?: boolean;
+  accent?: "default" | "active";
+  ctaLabel?: string;
+  onCta?: () => void;
+}) {
+  return (
+    <article
+      className={`relative flex flex-col rounded-[22px] border px-6 py-7 ${
+        featured
+          ? "border-[#39ff88]/70 bg-[#061a14] shadow-[0_24px_60px_rgba(0,0,0,0.35)] lg:-translate-y-3 lg:py-9"
+          : accent === "active"
+            ? "border-[#39ff88]/45 bg-black/25"
+            : "border-[#39ff88]/28 bg-black/20"
+      }`}
+    >
+      {featured ? (
+        <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-[#39ff88] px-3 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] text-[#04140f]">
+          Recommended
+        </span>
+      ) : null}
+
+      <h3 className="font-[family-name:var(--font-display)] text-[1.65rem] leading-none tracking-[-0.02em] text-white">
+        {name}
+        <span className="text-[#39ff88]">.</span>
+      </h3>
+      <div className="mt-3 h-px w-full bg-[#39ff88]/25" />
+
+      <div className="mt-5">
+        <p className="font-[family-name:var(--font-display)] text-[clamp(1.7rem,2.8vw,2.25rem)] leading-none tracking-[-0.03em] text-white">
+          {priceLabel}
+        </p>
+        {priceHint ? (
+          <p className="mt-2 text-xs font-medium text-white/55">{priceHint}</p>
+        ) : (
+          <p className="mt-2 text-xs font-medium text-transparent">.</p>
+        )}
+      </div>
+
+      <ul className="mt-6 flex-1 space-y-3">
+        {features.map((item) => (
+          <li
+            key={item}
+            className="flex gap-2.5 text-[13px] leading-snug text-white/78"
+          >
+            <Check
+              className="mt-0.5 size-4 shrink-0 text-[#39ff88]"
+              strokeWidth={2.75}
+            />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+
+      {ctaLabel && onCta ? (
+        <button
+          type="button"
+          onClick={onCta}
+          className="mt-8 inline-flex h-11 w-full items-center justify-center rounded-full border border-[#39ff88] bg-transparent text-sm font-semibold text-white transition hover:bg-[#39ff88]/12"
+        >
+          {ctaLabel}
+        </button>
+      ) : null}
+    </article>
   );
 }
 

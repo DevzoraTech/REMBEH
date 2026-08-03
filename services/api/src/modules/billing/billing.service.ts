@@ -398,20 +398,43 @@ export class BillingService implements OnModuleInit {
     const nameParts = (payer?.displayName || user.displayName || 'REMBEH').split(
       /\s+/,
     );
-    const order = await this.pesapal.submitOrder({
-      id: merchantReference,
-      currency: plan.currency,
-      amount: Number(plan.amount),
-      description: `REMBEH Pro — ${branch.name}`,
-      callbackUrl: `${apiCallback}?branchId=${branch.id}`,
-      billingAddress: {
-        email_address: payer?.email || user.email,
-        phone_number: payer?.phone,
-        country_code: 'UG',
-        first_name: nameParts[0] || 'REMBEH',
-        last_name: nameParts.slice(1).join(' ') || 'User',
-      },
-    });
+
+    let order;
+    try {
+      order = await this.pesapal.submitOrder({
+        id: merchantReference,
+        currency: plan.currency,
+        amount: Number(plan.amount),
+        description: `REMBEH Pro — ${branch.name}`,
+        callbackUrl: `${apiCallback}?branchId=${branch.id}`,
+        billingAddress: {
+          email_address: payer?.email || user.email,
+          phone_number: payer?.phone,
+          country_code: 'UG',
+          first_name: nameParts[0] || 'REMBEH',
+          last_name: nameParts.slice(1).join(' ') || 'User',
+        },
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Payment could not be started.';
+      this.logger.error(`Pesapal checkout failed: ${message}`);
+      await this.prisma.subscriptionPayment.update({
+        where: { id: payment.id },
+        data: { status: SubscriptionPaymentStatus.FAILED },
+      });
+      throw this.toCheckoutHttpException(message);
+    }
+
+    if (!order.redirect_url) {
+      await this.prisma.subscriptionPayment.update({
+        where: { id: payment.id },
+        data: { status: SubscriptionPaymentStatus.FAILED },
+      });
+      throw new ServiceUnavailableException(
+        'Payment page is unavailable right now. Please try again.',
+      );
+    }
 
     await this.prisma.subscriptionPayment.update({
       where: { id: payment.id },
@@ -422,7 +445,7 @@ export class BillingService implements OnModuleInit {
     });
 
     return {
-      redirectUrl: order.redirect_url!,
+      redirectUrl: order.redirect_url,
       merchantReference,
       orderTrackingId: order.order_tracking_id ?? null,
     };
@@ -728,6 +751,29 @@ export class BillingService implements OnModuleInit {
       }
     }
     return null;
+  }
+
+  private toCheckoutHttpException(message: string) {
+    const lower = message.toLowerCase();
+    if (
+      lower.includes('exceeds limit') ||
+      lower.includes('amount exceeds') ||
+      lower.includes('transaction amount')
+    ) {
+      return new BadRequestException(
+        'Pesapal declined UGX 150,000 for this merchant account. Ask Pesapal support to raise your transaction limit, then try again.',
+      );
+    }
+    if (lower.includes('not configured') || lower.includes('auth failed')) {
+      return new ServiceUnavailableException(
+        'Payments are not available right now. Please try again later.',
+      );
+    }
+    return new BadRequestException(
+      message.length > 180
+        ? 'Payment could not be started. Please try again or contact support.'
+        : message,
+    );
   }
 
   private assertCanManage(user: AuthenticatedUser) {
