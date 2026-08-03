@@ -43,6 +43,7 @@ import {
   UserIdentityConflictError,
 } from './branches.repository';
 import { BRANCH_PERMISSIONS } from './branches.permissions';
+import { BillingService } from '../billing/billing.service';
 import { AcceptBranchStaffInvitationDto } from './dto/accept-branch-staff-invitation.dto';
 import { CreateBranchDto } from './dto/create-branch.dto';
 import { InviteBranchStaffDto } from './dto/invite-branch-staff.dto';
@@ -160,6 +161,7 @@ type StaffMemberRecord = StaffUserRecord & {
 export class BranchesService {
   constructor(
     private readonly branchesRepository: BranchesRepository,
+    private readonly billingService: BillingService,
     private readonly configService: ConfigService,
     private readonly jwtTokenService: JwtTokenService,
     private readonly notificationsService: NotificationsService,
@@ -203,6 +205,11 @@ export class BranchesService {
       workingHours: dto.workingHours
         ? this.toJsonInputValue(dto.workingHours)
         : undefined,
+    });
+
+    await this.billingService.provisionBranchSubscription({
+      tenantId: user.tenantId,
+      branchId: branch.id,
     });
 
     return {

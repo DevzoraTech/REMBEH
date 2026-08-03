@@ -16,6 +16,7 @@ import { LoansModule } from './modules/loans/loans.module';
 import { LoanProductsModule } from './modules/loan-products/loan-products.module';
 import { OperationsModule } from './modules/operations/operations.module';
 import { AppUpdateModule } from './modules/app-update/app-update.module';
+import { BillingModule } from './modules/billing/billing.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { PlatformModule } from './modules/platform/platform.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
@@ -34,6 +35,7 @@ import { StorageModule } from './modules/storage/storage.module';
     RealtimeModule,
     NotificationsModule,
     AuthModule,
+    BillingModule,
     BorrowerListsModule,
     AgentsModule,
     BranchesModule,

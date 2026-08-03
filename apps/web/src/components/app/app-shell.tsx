@@ -5,6 +5,7 @@ import {
   Building2,
   CalendarDays,
   ClipboardCheck,
+  CreditCard,
   FileText,
   HandCoins,
   LayoutDashboard,
@@ -15,6 +16,7 @@ import {
   ShieldAlert,
   Users,
   UserRound,
+  Lock,
   X,
 } from "lucide-react";
 import Image from "next/image";
@@ -59,6 +61,11 @@ export function AppShell({ children, session, user }: AppShellProps) {
   const railSidebarLeaveTimer = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const [branchBilling, setBranchBilling] = useState<{
+    locked: boolean;
+    message: string | null;
+    status: string | null;
+  } | null>(null);
   const railSidebarExpanded = railSidebarPinned || railSidebarHover;
   const operatorRole = resolveOperatorRole(session, user);
   const homeHref = operatorRole === "owner" ? "/owner" : "/dashboard";
@@ -74,6 +81,12 @@ export function AppShell({ children, session, user }: AppShellProps) {
         href: "/owner/branches",
         label: "Branches",
         icon: Building2,
+        enabled: operatorRole === "owner",
+      },
+      {
+        href: "/owner/subscription",
+        label: "Subscription",
+        icon: CreditCard,
         enabled: operatorRole === "owner",
       },
       {
@@ -199,6 +212,36 @@ export function AppShell({ children, session, user }: AppShellProps) {
           cta: "Invite Agents",
           collapsedLabel: "Invite agents",
         };
+
+  useEffect(() => {
+    if (operatorRole !== "manager") return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch(`${apiBaseUrl}/billing/my-branch`, {
+          headers: {
+            Authorization: `${session.tokenType} ${session.accessToken}`,
+          },
+        });
+        const payload = await readApiJson<{
+          locked?: boolean;
+          message?: string | null;
+          status?: string | null;
+        }>(response);
+        if (cancelled || !response.ok) return;
+        setBranchBilling({
+          locked: Boolean(payload.locked),
+          message: payload.message ?? null,
+          status: payload.status ?? null,
+        });
+      } catch {
+        // Non-blocking: managers can still browse read-only without this check.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [operatorRole, session.accessToken, session.tokenType]);
 
   useEffect(() => {
     if (operatorRole !== "owner") return;
@@ -359,6 +402,23 @@ export function AppShell({ children, session, user }: AppShellProps) {
 
       {/* Keep content inset at the rail width so hover-expand overlays instead of shifting the page. */}
       <main className="min-h-screen px-4 py-5 sm:px-5 lg:pl-[96px] lg:pr-5 lg:pt-5">
+        {branchBilling?.locked ? (
+          <div className="mb-4 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-950">
+            <Lock className="mt-0.5 size-4 shrink-0" />
+            <div>
+              <p className="font-semibold">Branch subscription required</p>
+              <p className="mt-0.5 text-rose-900/90">
+                {branchBilling.message ||
+                  "Ask the account owner to renew Pro on the Subscription page. Reads stay available; lending and collections are blocked."}
+              </p>
+            </div>
+          </div>
+        ) : branchBilling?.status === "GRACE" && branchBilling.message ? (
+          <div className="mb-4 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <ShieldAlert className="mt-0.5 size-4 shrink-0" />
+            <p>{branchBilling.message}</p>
+          </div>
+        ) : null}
         {children}
       </main>
     </div>

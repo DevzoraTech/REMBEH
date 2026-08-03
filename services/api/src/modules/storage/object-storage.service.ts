@@ -29,15 +29,19 @@ export type SignatureObjectKeys = {
 };
 
 /**
- * Professional per-tenant object layout (never dump at bucket root):
+ * Organised object layout (never dump at bucket root):
  *
- * tenants/{tenantId}/
+ * tenants/{organisationId}/                         # organisation
  *   meta/company.json
- *   loans/{loanApplicationId}/
- *     media/{type}/{uuid}.{ext}
- *     signatures/{role}/{uuid}/signature.png|strokes.json|metadata.json
- *     documents/SignedLoanAgreement-{version}.pdf
- *   products/   (optional future config snapshots)
+ *   products/...
+ *   branches/{branchId}/                            # branch
+ *     media/{mediaType}/{applicationId}/...         # file type
+ *     signatures/{signerRole}/{applicationId}/...
+ *     loan-agreements/{applicationId}/...
+ *     agent-profiles/{userId}/...
+ *
+ * Existing objects keep their stored keys in the DB; only new writes use
+ * this layout.
  */
 @Injectable()
 export class ObjectStorageService implements OnModuleInit {
@@ -100,25 +104,30 @@ export class ObjectStorageService implements OnModuleInit {
     );
   }
 
-  /** tenants/{tenantId}/ */
+  /** tenants/{organisationId}/ */
   buildTenantPrefix(tenantId: string) {
     return `tenants/${sanitizePathSegment(tenantId)}/`;
   }
 
-  /** tenants/{tenantId}/meta/company.json */
+  /** tenants/{organisationId}/branches/{branchId}/ */
+  buildBranchPrefix(tenantId: string, branchId: string) {
+    return `${this.buildTenantPrefix(tenantId)}branches/${sanitizePathSegment(branchId)}/`;
+  }
+
+  /** tenants/{organisationId}/meta/company.json */
   buildTenantCompanyMetaKey(tenantId: string) {
     return `${this.buildTenantPrefix(tenantId)}meta/company.json`;
   }
 
-  /** tenants/{tenantId}/products/{name} */
+  /** tenants/{organisationId}/products/{name} */
   buildTenantProductConfigKey(tenantId: string, name: string) {
     const safe = sanitizePathSegment(name.toLowerCase());
     return `${this.buildTenantPrefix(tenantId)}products/${safe}`;
   }
 
   /**
-   * Creates the tenant root marker object so every company has a dedicated
-   * prefix from registration day one.
+   * Creates the organisation root marker object so every company has a
+   * dedicated prefix from registration day one.
    */
   async provisionTenantPrefix(input: {
     tenantId: string;
@@ -151,11 +160,12 @@ export class ObjectStorageService implements OnModuleInit {
   }
 
   /**
-   * Hierarchical loan media key:
-   * tenants/{tenantId}/loans/{loanApplicationId}/media/{mediaType}/{uuid}.{ext}
+   * Loan media:
+   * tenants/{org}/branches/{branch}/media/{mediaType}/{applicationId}/{uuid}.{ext}
    */
   buildObjectKey(input: {
     tenantId: string;
+    branchId: string;
     applicationId: string;
     mediaType: string;
     extension?: string;
@@ -165,41 +175,67 @@ export class ObjectStorageService implements OnModuleInit {
 
   buildMediaObjectKey(input: {
     tenantId: string;
+    branchId: string;
     applicationId: string;
     mediaType: string;
     extension?: string;
   }) {
     const ext = sanitizeExtension(input.extension) || 'bin';
     const mediaType = sanitizePathSegment(input.mediaType.toLowerCase());
-    return `tenants/${input.tenantId}/loans/${input.applicationId}/media/${mediaType}/${randomUUID()}.${ext}`;
+    const applicationId = sanitizePathSegment(input.applicationId);
+    return `${this.buildBranchPrefix(input.tenantId, input.branchId)}media/${mediaType}/${applicationId}/${randomUUID()}.${ext}`;
   }
 
   /**
    * Agent profile selfie:
-   * tenants/{tenantId}/agents/{userId}/profile/{uuid}.{ext}
+   * tenants/{org}/branches/{branch}/agent-profiles/{userId}/{uuid}.{ext}
    */
   buildAgentProfilePhotoKey(input: {
     tenantId: string;
+    branchId: string;
     userId: string;
     extension?: string;
   }) {
     const ext = sanitizeExtension(input.extension) || 'jpg';
-    return `tenants/${input.tenantId}/agents/${input.userId}/profile/${randomUUID()}.${ext}`;
+    const userId = sanitizePathSegment(input.userId);
+    return `${this.buildBranchPrefix(input.tenantId, input.branchId)}agent-profiles/${userId}/${randomUUID()}.${ext}`;
   }
 
   /**
-   * Signature asset folder:
-   * tenants/{tenantId}/loans/{loanApplicationId}/signatures/{signerRole}/{uuid}/
+   * Accepts current and legacy agent-profile key prefixes so in-flight
+   * uploads / older objects still confirm cleanly.
+   */
+  isAgentProfilePhotoKey(input: {
+    tenantId: string;
+    userId: string;
+    storageKey: string;
+  }) {
+    const tenant = sanitizePathSegment(input.tenantId);
+    const userId = sanitizePathSegment(input.userId);
+    const modern = new RegExp(
+      `^tenants/${tenant}/branches/[^/]+/agent-profiles/${userId}/`,
+    );
+    const legacy = `tenants/${tenant}/agents/${userId}/profile/`;
+    return (
+      modern.test(input.storageKey) || input.storageKey.startsWith(legacy)
+    );
+  }
+
+  /**
+   * Signature assets:
+   * tenants/{org}/branches/{branch}/signatures/{signerRole}/{applicationId}/{uuid}/
    *   signature.png | strokes.json | metadata.json
    */
   buildSignatureObjectKeys(input: {
     tenantId: string;
+    branchId: string;
     applicationId: string;
     signerRole: string;
   }): SignatureObjectKeys {
     const role = sanitizePathSegment(input.signerRole.toLowerCase());
+    const applicationId = sanitizePathSegment(input.applicationId);
     const assetId = randomUUID();
-    const base = `tenants/${input.tenantId}/loans/${input.applicationId}/signatures/${role}/${assetId}`;
+    const base = `${this.buildBranchPrefix(input.tenantId, input.branchId)}signatures/${role}/${applicationId}/${assetId}`;
     return {
       assetId,
       signaturePngKey: `${base}/signature.png`,
@@ -209,14 +245,17 @@ export class ObjectStorageService implements OnModuleInit {
   }
 
   /**
-   * tenants/{tenantId}/loans/{loanApplicationId}/documents/SignedLoanAgreement-{version}.pdf
+   * Signed loan agreement:
+   * tenants/{org}/branches/{branch}/loan-agreements/{applicationId}/SignedLoanAgreement-{version}.pdf
    */
   buildSignedAgreementKey(input: {
     tenantId: string;
+    branchId: string;
     applicationId: string;
     version: number;
   }) {
-    return `tenants/${input.tenantId}/loans/${input.applicationId}/documents/SignedLoanAgreement-${input.version}.pdf`;
+    const applicationId = sanitizePathSegment(input.applicationId);
+    return `${this.buildBranchPrefix(input.tenantId, input.branchId)}loan-agreements/${applicationId}/SignedLoanAgreement-${input.version}.pdf`;
   }
 
   async presignPut(input: {

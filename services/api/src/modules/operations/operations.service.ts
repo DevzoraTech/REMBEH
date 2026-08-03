@@ -12,6 +12,7 @@ import {
   isPrismaUniqueConstraintError,
 } from '../../common/database/prisma-errors';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
+import { BillingService } from '../billing/billing.service';
 import { CloseBranchOperationDto } from './dto/close-branch-operation.dto';
 import { OpenBranchOperationDto } from './dto/open-branch-operation.dto';
 import { RecordAgentReturnDto } from './dto/record-agent-return.dto';
@@ -59,6 +60,7 @@ export class OperationsService {
   constructor(
     private readonly repository: OperationsRepository,
     private readonly realtime: RealtimeGateway,
+    private readonly billingService: BillingService,
   ) {}
 
   async getToday(
@@ -414,6 +416,10 @@ export class OperationsService {
     if (!branch) {
       throw new NotFoundException('Branch was not found.');
     }
+    await this.billingService.assertBranchSubscriptionActive(
+      user.tenantId,
+      branch.id,
+    );
 
     const bounds = this.parseDayBounds(dto.date);
     this.assertCanChangeDay(bounds.dateOnly);

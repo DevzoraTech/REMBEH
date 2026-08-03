@@ -20,6 +20,7 @@ import {
   normalizeInternationalPhoneNumber,
 } from '../../common/security/identity-normalization';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
+import { BillingService } from '../billing/billing.service';
 import { BorrowerListsService } from '../borrower-lists/borrower-lists.service';
 import { IdentityVerificationService } from '../identity-verification/identity-verification.service';
 import { OPERATIONS_PERMISSIONS } from '../operations/operations.permissions';
@@ -106,6 +107,7 @@ export class LoanApplicationsService {
     private readonly realtimeGateway: RealtimeGateway,
     private readonly loanProducts: LoanProductsService,
     private readonly borrowerLists: BorrowerListsService,
+    private readonly billingService: BillingService,
   ) {}
 
   async createDraft(
@@ -207,8 +209,11 @@ export class LoanApplicationsService {
   }
 
   /**
-   * Generates the loan agreement once, then serves the stored PDF on later
-   * downloads so the agreement remains identical after signing.
+   * Serves the signed loan agreement PDF from object storage.
+   * The PDF is generated once when the loan is given (submit). Download and
+   * view always reuse that stored object. If a legacy loan has no stored PDF
+   * yet (or the object was lost), this generates and stores it once as a
+   * backfill — never rewriting an existing good object.
    */
   async getAgreementPdf(
     user: AuthenticatedUser,
@@ -216,36 +221,69 @@ export class LoanApplicationsService {
   ): Promise<{ pdfBytes: Buffer; fileName: string; contentHash: string }> {
     const application = await this.requireAccessibleApplication(user, id);
 
-    const storedUsesIssueDate =
-      (application.signedAgreementVersion ?? 0) >=
-      AGREEMENT_LOAN_ISSUE_DATE_VERSION;
+    const stored = await this.tryReadStoredAgreement(application);
+    if (stored) {
+      return stored;
+    }
 
-    if (application.signedAgreementKey && storedUsesIssueDate) {
-      const storedPdf = await this.objectStorage.getObjectBytes(
-        application.signedAgreementKey,
-      );
-      if (storedPdf) {
-        return {
-          pdfBytes: Buffer.from(storedPdf),
-          fileName: this.agreementFileName(application),
-          contentHash: application.signedAgreementHash ?? '',
-        };
-      }
-      this.logger.warn(
-        `Stored loan agreement PDF missing for ${application.id}; regenerating.`,
-      );
-    } else if (application.signedAgreementKey) {
-      this.logger.warn(
-        `Stored loan agreement PDF for ${application.id} predates loan issue-date agreement version; regenerating.`,
+    if (!this.loanIssuedAt(application)) {
+      throw new BadRequestException(
+        'Loan agreement is available after the loan has been given.',
       );
     }
 
+    this.logger.warn(
+      `No reusable stored loan agreement for ${application.id}; generating and storing once.`,
+    );
     const generated = await this.generateAndStoreSignedAgreement(application);
 
     return {
       pdfBytes: Buffer.from(generated.pdfBytes),
       fileName: this.agreementFileName(generated.application),
       contentHash: generated.contentHash,
+    };
+  }
+
+  /**
+   * Prefer the stored bucket PDF when present and current enough.
+   * Pre-v2 objects (before issue-date fields) are treated as missing so they
+   * are regenerated once into the current format and then reused forever.
+   */
+  private async tryReadStoredAgreement(
+    application: LoanApplicationRecord,
+  ): Promise<{
+    pdfBytes: Buffer;
+    fileName: string;
+    contentHash: string;
+  } | null> {
+    if (!application.signedAgreementKey) {
+      return null;
+    }
+
+    const storedUsesIssueDate =
+      (application.signedAgreementVersion ?? 0) >=
+      AGREEMENT_LOAN_ISSUE_DATE_VERSION;
+    if (!storedUsesIssueDate) {
+      this.logger.warn(
+        `Stored loan agreement for ${application.id} predates issue-date version; will regenerate once.`,
+      );
+      return null;
+    }
+
+    const storedPdf = await this.objectStorage.getObjectBytes(
+      application.signedAgreementKey,
+    );
+    if (!storedPdf) {
+      this.logger.warn(
+        `Stored loan agreement PDF missing in bucket for ${application.id} (key=${application.signedAgreementKey}).`,
+      );
+      return null;
+    }
+
+    return {
+      pdfBytes: Buffer.from(storedPdf),
+      fileName: this.agreementFileName(application),
+      contentHash: application.signedAgreementHash ?? '',
     };
   }
 
@@ -514,6 +552,7 @@ export class LoanApplicationsService {
 
     const storageKey = this.objectStorage.buildObjectKey({
       tenantId: user.tenantId,
+      branchId: application.branchId,
       applicationId: application.id,
       mediaType: dto.mediaType,
       extension,
@@ -606,6 +645,7 @@ export class LoanApplicationsService {
 
     const keys = this.objectStorage.buildSignatureObjectKeys({
       tenantId: user.tenantId,
+      branchId: application.branchId,
       applicationId: application.id,
       signerRole: dto.signerRole,
     });
@@ -752,6 +792,10 @@ export class LoanApplicationsService {
     id: string,
   ): Promise<LoanApplicationResponseContract> {
     const application = await this.requireWritableDraft(user, id);
+    await this.billingService.assertBranchSubscriptionActive(
+      user.tenantId,
+      application.branchId,
+    );
     if (application.nationalId?.trim()) {
       await this.borrowerLists.assertCanReceiveLoan(
         user,
@@ -789,9 +833,20 @@ export class LoanApplicationsService {
       paymentStartDate,
     });
 
-    if (this.hasAllLockedSignatures(submitted)) {
+    // Generate + store the signed agreement on the day the loan is given.
+    // Later view/download always reuse this bucket object.
+    try {
       const generated = await this.generateAndStoreSignedAgreement(submitted);
       submitted = generated.application;
+      this.logger.log(
+        `Loan agreement stored for ${submitted.id} at ${submitted.signedAgreementKey} (v${submitted.signedAgreementVersion}).`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Loan ${submitted.id} was issued but agreement PDF failed to store. It will be generated on first view/download.`,
+        error instanceof Error ? error.stack : error,
+      );
+      // Loan is already live; do not roll back. First download backfills the PDF.
     }
 
     this.realtimeGateway.broadcastLoanApplication(
@@ -799,7 +854,9 @@ export class LoanApplicationsService {
       { ...this.toEventPayload(submitted), tenantId: user.tenantId },
     );
 
-    return { application: this.toContract(submitted) };
+    return {
+      application: await this.toContractWithPreviews(submitted),
+    };
   }
 
   private assertReadyForSubmit(application: LoanApplicationRecord) {
@@ -1110,6 +1167,7 @@ export class LoanApplicationsService {
 
     const storageKey = this.objectStorage.buildSignedAgreementKey({
       tenantId: application.tenantId,
+      branchId: application.branchId,
       applicationId: application.id,
       version: agreementVersion,
     });

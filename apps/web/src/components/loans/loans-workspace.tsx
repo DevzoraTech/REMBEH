@@ -166,9 +166,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
   const [selectedBorrowerId, setSelectedBorrowerId] = useState("");
   const [borrowersLoading, setBorrowersLoading] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [detailApplicationId, setDetailApplicationId] = useState<string | null>(
-    null,
-  );
+  const [detailLoan, setDetailLoan] = useState<LoanRow | null>(null);
   const [editingApplicationId, setEditingApplicationId] = useState<
     string | null
   >(null);
@@ -629,7 +627,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
         </section>
 
         <section className="rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-3.5">
+          <div className="relative z-20 flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-3.5">
             <div className="flex min-w-0 flex-wrap items-center gap-3">
               <h2 className="text-[15px] font-semibold text-[#0b1220]">
                 {isManager ? "Loan Records" : "All Loans"}
@@ -646,6 +644,11 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                 <option value="closed">Closed Loans</option>
                 <option value="overdue">Overdue Loans</option>
               </select>
+              <LoansFiltersControl
+                officers={officerOptions}
+                applied={advancedFilters}
+                onApply={setAdvancedFilters}
+              />
             </div>
             <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
               {canCreate ? (
@@ -676,162 +679,272 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
             </div>
           </div>
 
-          <div className="relative z-20 border-b border-[#edf1f5] px-4 py-3">
-            <LoansFiltersControl
-              officers={officerOptions}
-              applied={advancedFilters}
-              onApply={setAdvancedFilters}
-            />
-          </div>
-
           <div className="overflow-hidden rounded-b-[16px]">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1240px] table-fixed text-left text-xs">
-              <thead className="bg-[#f8faf9] text-[10px] font-semibold text-slate-500">
-                <tr>
-                  <th className="w-[8%] px-3 py-2.5">Loan ID</th>
-                  <th className="w-[12%] px-3 py-2.5">Borrower</th>
-                  <th className="w-[9%] px-3 py-2.5">Loan Type</th>
-                  <th className="w-[9%] px-3 py-2.5 text-right">Principal</th>
-                  <th className="w-[10%] px-3 py-2.5 text-right">
-                    Total Repayable
-                  </th>
-                  <th className="w-[8%] px-3 py-2.5 text-right">Repaid</th>
-                  <th className="w-[9%] px-3 py-2.5 text-right">Outstanding</th>
-                  <th className="w-[10%] px-3 py-2.5">Next Due</th>
-                  <th className="w-[9%] px-3 py-2.5">Status</th>
-                  <th className="w-[10%] px-3 py-2.5">Issued By</th>
-                  <th className="w-[6%] px-3 py-2.5 text-right">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#edf1f5]">
-                {loading ? (
-                  <tr>
-                    <td
-                      colSpan={11}
-                      className="px-3 py-8 text-center text-slate-500"
+            {/* Mobile / narrow: stacked loan cards — no horizontal scroll */}
+            <div className="divide-y divide-[#edf1f5] xl:hidden">
+              {loading ? (
+                <p className="px-4 py-8 text-center text-sm text-slate-500">
+                  Loading loans...
+                </p>
+              ) : filtered.length === 0 ? (
+                <p className="px-4 py-8 text-center text-sm text-slate-500">
+                  No loans match this view.
+                </p>
+              ) : (
+                paged.items.map((loan) => {
+                  const dueState = resolveLoanDueState(loan);
+                  const selected = detailLoan?.id === loan.id;
+                  return (
+                    <article
+                      key={loan.id}
+                      className={`cursor-pointer px-4 py-3.5 transition-colors hover:bg-[#eef7f2] ${
+                        selected
+                          ? "bg-[#eef7f2] shadow-[inset_3px_0_0_0_#07885f]"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        if (loan.applicationId) setDetailLoan(loan);
+                      }}
                     >
-                      Loading loans...
-                    </td>
-                  </tr>
-                ) : filtered.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={11}
-                      className="px-3 py-8 text-center text-slate-500"
-                    >
-                      No loans match this view.
-                    </td>
-                  </tr>
-                ) : (
-                  paged.items.map((loan) => {
-                    const dueState = resolveLoanDueState(loan);
-                    return (
-                      <tr
-                        key={loan.id}
-                        className="cursor-pointer transition-colors hover:bg-[#eef7f2]"
-                        onClick={() => {
-                          if (loan.applicationId) {
-                            setDetailApplicationId(loan.applicationId);
-                          }
-                        }}
-                      >
-                        <td className="px-3 py-3">
-                          <p className="truncate font-bold tabular-nums text-[#0b1220]">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-mono text-[11px] font-semibold text-slate-500">
                             {shortLoanId(loan.id)}
                           </p>
-                        </td>
-                        <td className="px-3 py-3">
-                          <p className="truncate font-semibold text-[#0b1220]">
+                          <p className="mt-0.5 truncate text-[13px] font-semibold text-[#0b1220]">
                             {loan.borrowerName}
                           </p>
-                          <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                          <p className="truncate text-[11px] text-slate-500">
                             {loan.phone}
                           </p>
-                        </td>
-                        <td className="px-3 py-3">
+                        </div>
+                        <div
+                          className="shrink-0"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <LoanStatusBadge dueState={dueState} />
+                        </div>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                        <LoanCardMetric
+                          label="Principal"
+                          value={
+                            <Money
+                              value={loan.principal}
+                              currency={currency}
+                              stack
+                            />
+                          }
+                        />
+                        <LoanCardMetric
+                          label="Total repayable"
+                          value={
+                            <Money
+                              value={loanTotalRepayable(loan)}
+                              currency={currency}
+                              stack
+                            />
+                          }
+                        />
+                        <LoanCardMetric
+                          label="Repaid"
+                          value={
+                            <Money
+                              value={loan.paidAmount}
+                              currency={currency}
+                              stack
+                              className="text-[var(--forest-emerald)]"
+                            />
+                          }
+                        />
+                        <LoanCardMetric
+                          label="Outstanding"
+                          value={
+                            <Money
+                              value={loan.balance}
+                              currency={currency}
+                              stack
+                            />
+                          }
+                        />
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-end justify-between gap-2">
+                        <div className="min-w-0 text-[11px] text-slate-600">
                           <p className="truncate">
                             {loan.loanTypeName
                               ? titleCase(loan.loanTypeName)
-                              : "-"}
+                              : "—"}
                           </p>
-                        </td>
-                        <td className="px-3 py-3 text-right font-bold tabular-nums">
-                          <Money value={loan.principal} currency={currency} />
-                        </td>
-                        <td className="px-3 py-3 text-right font-bold tabular-nums">
-                          <Money
-                            value={loanTotalRepayable(loan)}
-                            currency={currency}
-                          />
-                        </td>
-                        <td className="px-3 py-3 text-right font-bold tabular-nums text-[var(--forest-emerald)]">
-                          <Money value={loan.paidAmount} currency={currency} />
-                        </td>
-                        <td className="px-3 py-3 text-right font-bold tabular-nums">
-                          <Money value={loan.balance} currency={currency} />
-                        </td>
-                        <td className="px-3 py-3">
-                          <NextDueCell loan={loan} dueState={dueState} />
-                        </td>
-                        <td className="px-3 py-3">
-                          <LoanStatusBadge dueState={dueState} />
-                        </td>
-                        <td className="px-3 py-3">
-                          <p className="truncate text-slate-700">
-                            {loan.officerName?.trim() || "-"}
+                          <p className="mt-0.5 truncate">
+                            By {loan.officerName?.trim() || "—"}
                           </p>
-                        </td>
-                        <td className="px-3 py-3">
+                          <div className="mt-1">
+                            <NextDueCell loan={loan} dueState={dueState} />
+                          </div>
+                        </div>
+                        <div onClick={(event) => event.stopPropagation()}>
                           <RowActions
                             label={`Actions for ${loan.borrowerName}`}
                             busy={agreementBusyId === loan.id}
-                            items={[
-                              {
-                                label: "View details",
-                                disabled: !loan.applicationId,
-                                onSelect: () => {
-                                  if (loan.applicationId) {
-                                    setDetailApplicationId(loan.applicationId);
-                                  }
-                                },
-                              },
-                              {
-                                label: "Record repayment",
-                                disabled:
-                                  !canRecordRepayment ||
-                                  loan.balance <= 0 ||
-                                  loan.status === "CLOSED",
-                                onSelect: () => setRepaymentLoan(loan),
-                              },
-                              {
-                                label: "View borrower",
-                                href: `/clients/${loan.customerId}`,
-                              },
-                              {
-                                label: "Loan agreement",
-                                disabled: !loan.applicationId,
-                                onSelect: () => {
-                                  if (loan.applicationId) {
-                                    void downloadLoanAgreement(
-                                      loan.applicationId,
-                                      loan.id,
-                                    );
-                                  }
-                                },
-                              },
-                            ]}
+                            items={loanRowActions(
+                              loan,
+                              canRecordRepayment,
+                              setDetailLoan,
+                              setRepaymentLoan,
+                              downloadLoanAgreement,
+                            )}
                           />
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Desktop: full-width table, no horizontal scroll */}
+            <div className="hidden xl:block">
+              <table className="w-full table-fixed text-left text-[11px]">
+                <thead className="bg-[#f8faf9] text-[10px] font-semibold text-slate-500">
+                  <tr>
+                    <th className="w-[7%] px-2 py-2.5">Loan ID</th>
+                    <th className="w-[14%] px-2 py-2.5">Borrower</th>
+                    <th className="w-[11%] px-2 py-2.5">Loan Type</th>
+                    <th className="w-[9%] px-2 py-2.5 text-right">Principal</th>
+                    <th className="w-[10%] px-2 py-2.5 text-right">
+                      Total Repayable
+                    </th>
+                    <th className="w-[9%] px-2 py-2.5 text-right">Repaid</th>
+                    <th className="w-[10%] px-2 py-2.5 text-right">
+                      Outstanding
+                    </th>
+                    <th className="w-[11%] px-2 py-2.5">Next Due</th>
+                    <th className="w-[8%] px-2 py-2.5">Status</th>
+                    <th className="w-[8%] px-2 py-2.5">Issued By</th>
+                    <th className="w-[3%] px-1 py-2.5 text-right">
+                      <span className="sr-only">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#edf1f5]">
+                  {loading ? (
+                    <tr>
+                      <td
+                        colSpan={11}
+                        className="px-3 py-8 text-center text-slate-500"
+                      >
+                        Loading loans...
+                      </td>
+                    </tr>
+                  ) : filtered.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={11}
+                        className="px-3 py-8 text-center text-slate-500"
+                      >
+                        No loans match this view.
+                      </td>
+                    </tr>
+                  ) : (
+                    paged.items.map((loan) => {
+                      const dueState = resolveLoanDueState(loan);
+                      const selected = detailLoan?.id === loan.id;
+                      return (
+                        <tr
+                          key={loan.id}
+                          className={`cursor-pointer transition-colors hover:bg-[#eef7f2] ${
+                            selected
+                              ? "bg-[#eef7f2] shadow-[inset_3px_0_0_0_#07885f]"
+                              : ""
+                          }`}
+                          onClick={() => {
+                            if (loan.applicationId) {
+                              setDetailLoan(loan);
+                            }
+                          }}
+                        >
+                          <td className="px-2 py-2.5 align-top">
+                            <p className="break-all font-bold tabular-nums text-[#0b1220]">
+                              {shortLoanId(loan.id)}
+                            </p>
+                          </td>
+                          <td className="px-2 py-2.5 align-top">
+                            <p className="break-words font-semibold leading-snug text-[#0b1220]">
+                              {loan.borrowerName}
+                            </p>
+                            <p className="mt-0.5 break-all text-[10px] text-slate-500">
+                              {loan.phone}
+                            </p>
+                          </td>
+                          <td className="px-2 py-2.5 align-top">
+                            <p className="break-words leading-snug">
+                              {loan.loanTypeName
+                                ? titleCase(loan.loanTypeName)
+                                : "-"}
+                            </p>
+                          </td>
+                          <td className="px-2 py-2.5 align-top text-right">
+                            <Money
+                              value={loan.principal}
+                              currency={currency}
+                              stack
+                            />
+                          </td>
+                          <td className="px-2 py-2.5 align-top text-right">
+                            <Money
+                              value={loanTotalRepayable(loan)}
+                              currency={currency}
+                              stack
+                            />
+                          </td>
+                          <td className="px-2 py-2.5 align-top text-right text-[var(--forest-emerald)]">
+                            <Money
+                              value={loan.paidAmount}
+                              currency={currency}
+                              stack
+                            />
+                          </td>
+                          <td className="px-2 py-2.5 align-top text-right">
+                            <Money
+                              value={loan.balance}
+                              currency={currency}
+                              stack
+                            />
+                          </td>
+                          <td className="px-2 py-2.5 align-top">
+                            <NextDueCell loan={loan} dueState={dueState} />
+                          </td>
+                          <td className="px-2 py-2.5 align-top">
+                            <LoanStatusBadge dueState={dueState} />
+                          </td>
+                          <td className="px-2 py-2.5 align-top">
+                            <p className="break-words leading-snug text-slate-700">
+                              {loan.officerName?.trim() || "-"}
+                            </p>
+                          </td>
+                          <td
+                            className="px-1 py-2.5 align-top"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <RowActions
+                              label={`Actions for ${loan.borrowerName}`}
+                              busy={agreementBusyId === loan.id}
+                              items={loanRowActions(
+                                loan,
+                                canRecordRepayment,
+                                setDetailLoan,
+                                setRepaymentLoan,
+                                downloadLoanAgreement,
+                              )}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
           <PaginationControls
             page={paged.currentPage}
             pageSize={paged.pageSize}
@@ -975,10 +1088,32 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
       {state.session ? (
         <>
           <ApplicationDetailDrawer
-            applicationId={detailApplicationId}
+            applicationId={detailLoan?.applicationId ?? null}
             accessToken={state.session.accessToken}
             tokenType={state.session.tokenType}
-            onClose={() => setDetailApplicationId(null)}
+            customerId={detailLoan?.customerId}
+            loanDisplayId={detailLoan ? shortLoanId(detailLoan.id) : null}
+            loanStatusLabel={
+              detailLoan
+                ? loanDueStatusLabel(resolveLoanDueState(detailLoan))
+                : null
+            }
+            loan={
+              detailLoan
+                ? {
+                    id: detailLoan.id,
+                    borrowerName: detailLoan.borrowerName,
+                    phone: detailLoan.phone,
+                    loanTypeName: detailLoan.loanTypeName,
+                    principal: detailLoan.principal,
+                    currency: detailLoan.currency || currency,
+                    disbursedAt: detailLoan.disbursedAt,
+                    officerName: detailLoan.officerName,
+                    officerPublicId: detailLoan.officerPublicId ?? null,
+                  }
+                : null
+            }
+            onClose={() => setDetailLoan(null)}
           />
           {isManager ? (
             <LoanApplicationFormDrawer
@@ -1300,6 +1435,69 @@ function resolveLoanDueState(loan: LoanRow): LoanDueState {
     return "due_today";
   }
   return "active";
+}
+
+function loanDueStatusLabel(state: LoanDueState) {
+  if (state === "overdue") return "Overdue";
+  if (state === "due_today") return "Due Today";
+  if (state === "closed") return "Closed";
+  return "Active";
+}
+
+function LoanCardMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: ReactNode;
+}) {
+  return (
+    <div className="min-w-0 rounded-xl bg-[#f7faf8] px-2.5 py-2">
+      <p className="text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+        {label}
+      </p>
+      <div className="mt-1 flex justify-end">{value}</div>
+    </div>
+  );
+}
+
+function loanRowActions(
+  loan: LoanRow,
+  canRecordRepayment: boolean,
+  setDetailLoan: (loan: LoanRow) => void,
+  setRepaymentLoan: (loan: LoanRow) => void,
+  downloadLoanAgreement: (applicationId: string, loanId: string) => void,
+) {
+  return [
+    {
+      label: "View details",
+      disabled: !loan.applicationId,
+      onSelect: () => {
+        if (loan.applicationId) setDetailLoan(loan);
+      },
+    },
+    {
+      label: "Record repayment",
+      disabled:
+        !canRecordRepayment ||
+        loan.balance <= 0 ||
+        loan.status === "CLOSED",
+      onSelect: () => setRepaymentLoan(loan),
+    },
+    {
+      label: "View borrower",
+      href: `/clients/${loan.customerId}`,
+    },
+    {
+      label: "Loan agreement",
+      disabled: !loan.applicationId,
+      onSelect: () => {
+        if (loan.applicationId) {
+          void downloadLoanAgreement(loan.applicationId, loan.id);
+        }
+      },
+    },
+  ];
 }
 
 function NextDueCell({

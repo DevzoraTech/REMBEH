@@ -30,11 +30,13 @@ export const REMBEH_MODULES: RembehModuleDefinition[] = [
     permissions: [
       'workspace.read',
       'workspace.update',
+      'billing.manage',
       ...BRANCH_PERMISSION_LIST,
     ],
     menu: [
       { label: 'Dashboard', route: '/dashboard', surface: 'both' },
       { label: 'Branches', route: '/branches', surface: 'web' },
+      { label: 'Subscription', route: '/owner/subscription', surface: 'web' },
       { label: 'Settings', route: '/settings', surface: 'web' },
     ],
     events: [

@@ -10,6 +10,7 @@ import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { generateAgentPublicId } from '../../common/security/agent-public-id';
 import { PrismaService } from '../../database/prisma.service';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
+import { BillingService } from '../billing/billing.service';
 import {
   computeLoanPricing,
   resolveBaseRepayable,
@@ -50,6 +51,7 @@ export class CollectionsService {
     private readonly smsService: SmsService,
     private readonly prisma: PrismaService,
     private readonly objectStorage: ObjectStorageService,
+    private readonly billingService: BillingService,
   ) {}
 
   async getSummary(
@@ -517,6 +519,10 @@ export class CollectionsService {
         'A branch assignment is required to record repayments.',
       );
     }
+    await this.billingService.assertBranchSubscriptionActive(
+      user.tenantId,
+      user.branchId,
+    );
 
     const loan = await this.repository.findLoanById({
       ...this.scope(user),

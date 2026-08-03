@@ -1,23 +1,28 @@
-# S3 object layout (per company / tenant)
+# S3 object layout (per organisation → branch → file type)
 
-REMBEH never stores objects at the bucket root. Every company gets a dedicated
-prefix when the workspace is registered.
+REMBEH never stores objects at the bucket root. Every organisation gets a
+dedicated prefix when the workspace is registered. Branch and file-type
+folders keep records easy to browse and audit.
 
 ## Layout
 
 ```
-tenants/{tenantId}/
+tenants/{organisationId}/
   meta/company.json
-  agents/{userId}/
-    profile/{uuid}.{ext}     # agent professional selfie (once per agent)
-  loans/{loanApplicationId}/
-    media/{mediaType}/{uuid}.{ext}   # includes PASSPORT (applicant photo)
-    signatures/{signerRole}/{uuid}/
+  products/                                    # org-level config snapshots
+  branches/{branchId}/
+    media/{mediaType}/{applicationId}/{uuid}.{ext}
+      # e.g. media/passport/…, media/nin_front/…
+    signatures/{signerRole}/{applicationId}/{assetId}/
       signature.png
       strokes.json
       metadata.json
-    documents/SignedLoanAgreement-{version}.pdf
-  products/                  # reserved for future config snapshots
+    loan-agreements/{applicationId}/SignedLoanAgreement-{version}.pdf
+    agent-profiles/{userId}/{uuid}.{ext}
+```
+
+Existing objects keep the key already stored in the database. **New** uploads
+and agreement PDFs use the organisation → branch → file-type layout above.
 
 ## Platform releases (not tenant-scoped)
 
@@ -28,7 +33,6 @@ releases/mobile/android/build-{buildNumber}/rembeh-v{version}.apk
 ```
 
 See [`docs/mobile-releases.md`](mobile-releases.md).
-```
 
 ## Provisioning
 

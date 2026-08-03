@@ -67,6 +67,7 @@ import {
   useOwnerSession,
 } from "../owner-common";
 import { Money } from "../../../components/app/money";
+import { StepTimeline } from "../../../components/app/step-timeline";
 
 const emptyBranchForm = {
   branchName: "",
@@ -1523,41 +1524,35 @@ function RecentBranchActivityCard({
           View all
         </Link>
       </div>
-      <div className="mt-3 divide-y divide-[#edf1f5]">
-        {activities.length === 0 ? (
-          <p className="py-8 text-center text-sm font-semibold text-slate-500">
-            No recent activity yet.
-          </p>
-        ) : (
-          activities.slice(0, 3).map((activity) => (
-            <Link
-              key={activity.id}
-              href={activity.href}
-              className="flex items-center gap-3 py-3"
-            >
-              <QuickActionIcon tone={activity.tone}>
-                {activity.icon === "report" ? (
-                  <ClipboardCheck className="size-4" />
-                ) : activity.icon === "loan" ? (
-                  <Banknote className="size-4" />
-                ) : (
-                  <Users className="size-4" />
-                )}
-              </QuickActionIcon>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-xs font-semibold text-[#111827]">
-                  {activity.title}
-                </span>
-                <span className="mt-0.5 block truncate text-[11px] font-semibold text-slate-500">
-                  {activity.detail}
-                </span>
-              </span>
-              <span className="text-[11px] font-semibold text-slate-500">
-                {activity.time}
-              </span>
-            </Link>
-          ))
-        )}
+      <div className="mt-3">
+        <StepTimeline
+          items={activities.slice(0, 5).map((activity) => ({
+            id: activity.id,
+            title: activity.title,
+            detail: activity.detail,
+            tone:
+              activity.tone === "gold"
+                ? "amber"
+                : activity.tone === "blue"
+                  ? "blue"
+                  : "green",
+            icon:
+              activity.icon === "report" ? (
+                <ClipboardCheck />
+              ) : activity.icon === "loan" ? (
+                <Banknote />
+              ) : (
+                <Users />
+              ),
+            meta: activity.time,
+            href: activity.href,
+          }))}
+          empty={
+            <p className="py-8 text-center text-sm font-semibold text-slate-500">
+              No recent activity yet.
+            </p>
+          }
+        />
       </div>
     </section>
   );

@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   StreamableFile,
   UseGuards,
 } from '@nestjs/common';
@@ -52,21 +53,23 @@ export class LoanApplicationsController {
   }
 
   /**
-   * Regenerates the filled Loan-agreement DOCX → PDF and streams it.
-   * Always uses latest application / company / guarantor / fine fields.
+   * Streams the stored loan agreement PDF (generated when the loan was given).
+   * Use `?inline=1` to open in the browser; otherwise downloads as an attachment.
    */
   @Get(':id/agreement.pdf')
   @RequirePermissions(LOAN_APPLICATION_PERMISSIONS.read)
-  @Header('Cache-Control', 'no-store')
+  @Header('Cache-Control', 'private, max-age=60')
   async downloadAgreementPdf(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
+    @Query('inline') inline?: string,
   ) {
     const { pdfBytes, fileName } =
       await this.loanApplicationsService.getAgreementPdf(user, id);
+    const asInline = inline === '1' || inline === 'true';
     return new StreamableFile(pdfBytes, {
       type: 'application/pdf',
-      disposition: `attachment; filename="${fileName}"`,
+      disposition: `${asInline ? 'inline' : 'attachment'}; filename="${fileName}"`,
     });
   }
 

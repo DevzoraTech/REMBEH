@@ -35,6 +35,7 @@ import {
 } from "../agents/agent-status-confirm-modal";
 import { AgentPhoto } from "./agent-photo";
 import { Money } from "./money";
+import { StepTimeline, type StepTone } from "./step-timeline";
 
 type AgentAccountability = {
   date: string;
@@ -775,43 +776,30 @@ export function AgentDetailDrawer({
                   <h3 className="text-[15px] font-bold tracking-[-0.01em] text-[#0b1220]">
                     3. Access History
                   </h3>
-                  <div className="mt-3 overflow-hidden rounded-2xl border border-[#e8edf2] bg-white">
-                    {accessHistory.length === 0 ? (
-                      <p className="px-4 py-8 text-center text-sm text-slate-500">
-                        No access history yet.
-                      </p>
-                    ) : (
-                      <ul className="divide-y divide-[#f0f3f6]">
-                        {accessHistory.map((item) => (
-                          <li
-                            key={item.id}
-                            className="flex items-start gap-3 px-4 py-3.5"
-                          >
-                            <span
-                              className={`mt-0.5 grid size-9 shrink-0 place-items-center rounded-full ${accessHistoryTone(item.type)}`}
-                            >
-                              {accessHistoryIcon(item.type)}
+                  <div className="mt-3 overflow-hidden rounded-2xl border border-[#e8edf2] bg-white px-4 py-4">
+                    <StepTimeline
+                      items={accessHistory.map((item) => ({
+                        id: item.id,
+                        title: item.title,
+                        detail: (
+                          <span>
+                            {item.detail}
+                            <span className="text-slate-400">
+                              {" "}
+                              · by {item.actorName}
                             </span>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-[13px] font-semibold text-[#0b1220]">
-                                {item.title}
-                              </p>
-                              <p className="mt-0.5 text-[12px] text-slate-500">
-                                {item.detail}
-                              </p>
-                            </div>
-                            <div className="shrink-0 text-right">
-                              <p className="whitespace-nowrap text-[12px] font-medium text-slate-400">
-                                {formatDateTime(item.occurredAt)}
-                              </p>
-                              <p className="mt-0.5 text-[11px] text-slate-400">
-                                by {item.actorName}
-                              </p>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                          </span>
+                        ),
+                        tone: accessHistoryStepTone(item.type),
+                        icon: accessHistoryIcon(item.type),
+                        meta: formatDateTime(item.occurredAt),
+                      }))}
+                      empty={
+                        <p className="py-4 text-center text-sm text-slate-500">
+                          No access history yet.
+                        </p>
+                      }
+                    />
                   </div>
                 </section>
               </div>
@@ -831,56 +819,32 @@ export function AgentDetailDrawer({
                 actionLabel="View all issued loans →"
                 actionHref="/loans"
               >
-                {issuedLoans.length === 0 ? (
-                  <EmptyRow message="No issued loans yet." />
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[620px] text-left text-[13px]">
-                      <thead className="border-b border-[#edf1f5] text-[12px] font-medium text-slate-500">
-                        <tr>
-                          <th className="px-3 py-2.5 font-medium">Borrower</th>
-                          <th className="px-3 py-2.5 font-medium">Loan ID</th>
-                          <th className="px-3 py-2.5 text-right font-medium">
-                            Principal Amount
-                          </th>
-                          <th className="px-3 py-2.5 font-medium">Issued On</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#f0f3f6]">
-                        {visibleLoans.map((loan) => (
-                          <tr key={loan.id} className="bg-white">
-                            <td className="px-3 py-3">
-                              {loan.customerId ? (
-                                <Link
-                                  href={`/clients/${loan.customerId}`}
-                                  className="font-medium text-[#0b1220] hover:text-[var(--forest-emerald)]"
-                                >
-                                  {loan.clientName}
-                                </Link>
-                              ) : (
-                                <span className="font-medium text-[#0b1220]">
-                                  {loan.clientName}
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-3 py-3 font-medium tabular-nums text-[#0b1220]">
-                              {displayLoanId(loan.loanId ?? loan.id)}
-                            </td>
-                            <td className="px-3 py-3 text-right font-semibold tabular-nums text-[#0b1220]">
-                              <Money
-                                value={loan.principalAmount}
-                                currency={currency}
-                              />
-                            </td>
-                            <td className="px-3 py-3 whitespace-nowrap text-slate-500">
-                              {formatDateTime(loan.submittedAt)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                <div className="px-3 py-3">
+                  <StepTimeline
+                    items={visibleLoans.map((loan) => ({
+                      id: loan.id,
+                      title: "Loan issued",
+                      detail: (
+                        <span>
+                          {loan.clientName} ·{" "}
+                          <Money
+                            value={loan.principalAmount}
+                            currency={currency}
+                          />
+                          {" · "}
+                          {displayLoanId(loan.loanId ?? loan.id)}
+                        </span>
+                      ),
+                      tone: "green",
+                      icon: <Banknote />,
+                      meta: formatDateTime(loan.submittedAt),
+                      href: loan.customerId
+                        ? `/clients/${loan.customerId}`
+                        : undefined,
+                    }))}
+                    empty={<EmptyRow message="No issued loans yet." />}
+                  />
+                </div>
               </ActivitySection>
 
               <ActivitySection
@@ -888,51 +852,27 @@ export function AgentDetailDrawer({
                 actionLabel="View all collected repayments →"
                 actionHref="/collections/daily"
               >
-                {collections.length === 0 ? (
-                  <EmptyRow message="No repayments collected yet." />
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[620px] text-left text-[13px]">
-                      <thead className="border-b border-[#edf1f5] text-[12px] font-medium text-slate-500">
-                        <tr>
-                          <th className="px-3 py-2.5 font-medium">Borrower</th>
-                          <th className="px-3 py-2.5 text-right font-medium">
-                            Amount Collected
-                          </th>
-                          <th className="px-3 py-2.5 font-medium">
-                            Loan Reference
-                          </th>
-                          <th className="px-3 py-2.5 font-medium">
-                            Collected On
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[#f0f3f6]">
-                        {visibleRepayments.map((row) => (
-                          <tr key={row.id} className="bg-white">
-                            <td className="px-3 py-3">
-                              <Link
-                                href={`/clients/${row.customerId}`}
-                                className="font-medium text-[#0b1220] hover:text-[var(--forest-emerald)]"
-                              >
-                                {row.clientName}
-                              </Link>
-                            </td>
-                            <td className="px-3 py-3 text-right font-semibold tabular-nums text-[#0b1220]">
-                              <Money value={row.amount} currency={currency} />
-                            </td>
-                            <td className="px-3 py-3 font-medium tabular-nums text-[#0b1220]">
-                              {displayLoanId(row.loanId)}
-                            </td>
-                            <td className="px-3 py-3 whitespace-nowrap text-slate-500">
-                              {formatDateTime(row.paidAt)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                <div className="px-3 py-3">
+                  <StepTimeline
+                    items={visibleRepayments.map((row) => ({
+                      id: row.id,
+                      title: "Repayment recorded",
+                      detail: (
+                        <span>
+                          {row.clientName} ·{" "}
+                          <Money value={row.amount} currency={currency} />
+                          {" · "}
+                          {displayLoanId(row.loanId)}
+                        </span>
+                      ),
+                      tone: "green",
+                      icon: <Banknote />,
+                      meta: formatDateTime(row.paidAt),
+                      href: `/clients/${row.customerId}`,
+                    }))}
+                    empty={<EmptyRow message="No repayments collected yet." />}
+                  />
+                </div>
               </ActivitySection>
 
               <ActivitySection
@@ -940,36 +880,19 @@ export function AgentDetailDrawer({
                 actionLabel="View full activity history →"
                 onAction={() => setShowAllOther(true)}
               >
-                {otherActivity.length === 0 ? (
-                  <EmptyRow message="No other activity yet." />
-                ) : (
-                  <ul className="divide-y divide-[#f0f3f6]">
-                    {visibleOther.map((item) => (
-                      <li
-                        key={item.id}
-                        className="flex items-start gap-3 px-3 py-3.5"
-                      >
-                        <span
-                          className={`mt-0.5 grid size-9 shrink-0 place-items-center rounded-full ${otherActivityTone(item.type)}`}
-                        >
-                          {otherActivityIcon(item.type)}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="text-[13px] leading-snug text-[#0b1220]">
-                            <span className="font-semibold">{item.title}</span>
-                            <span className="text-slate-500">
-                              {" "}
-                              — {item.detail}
-                            </span>
-                          </p>
-                        </div>
-                        <p className="shrink-0 whitespace-nowrap pt-0.5 text-[12px] font-medium text-slate-400">
-                          {formatDateTime(item.occurredAt)}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <div className="px-3 py-3">
+                  <StepTimeline
+                    items={visibleOther.map((item) => ({
+                      id: item.id,
+                      title: item.title,
+                      detail: item.detail,
+                      tone: otherActivityStepTone(item.type),
+                      icon: otherActivityIcon(item.type),
+                      meta: formatDateTime(item.occurredAt),
+                    }))}
+                    empty={<EmptyRow message="No other activity yet." />}
+                  />
+                </div>
               </ActivitySection>
             </div>
           )}
@@ -1151,36 +1074,34 @@ function statusBadgeClass(status: string) {
   return "bg-slate-100 text-slate-600";
 }
 
-function otherActivityTone(type: OtherActivity["type"]) {
-  if (type === "FLOAT_RECEIVED") return "bg-[#eaf4ff] text-[#2078dc]";
-  if (type === "RECONCILIATION_COMPLETED") return "bg-[#e9f8ef] text-[#07885f]";
-  if (type === "ACCOUNT_SUSPENDED") return "bg-red-50 text-red-700";
-  return "bg-[#e9f8ef] text-[#07885f]";
+function otherActivityStepTone(type: OtherActivity["type"]): StepTone {
+  if (type === "FLOAT_RECEIVED") return "blue";
+  if (type === "RECONCILIATION_COMPLETED") return "green";
+  if (type === "ACCOUNT_SUSPENDED") return "red";
+  return "green";
 }
 
 function otherActivityIcon(type: OtherActivity["type"]) {
-  if (type === "FLOAT_RECEIVED") return <Banknote className="size-3.5" />;
-  if (type === "RECONCILIATION_COMPLETED")
-    return <CheckCircle2 className="size-3.5" />;
-  if (type === "ACCOUNT_SUSPENDED") return <ShieldAlert className="size-3.5" />;
-  return <ShieldCheck className="size-3.5" />;
+  if (type === "FLOAT_RECEIVED") return <Banknote />;
+  if (type === "RECONCILIATION_COMPLETED") return <CheckCircle2 />;
+  if (type === "ACCOUNT_SUSPENDED") return <ShieldAlert />;
+  return <ShieldCheck />;
 }
 
-function accessHistoryTone(type: AccessHistoryItem["type"]) {
-  if (type === "ACCOUNT_CREATED") return "bg-[#eaf4ff] text-[#2078dc]";
-  if (type === "FIRST_SIGN_IN") return "bg-[#eef2ff] text-[#4f46e5]";
-  if (type === "ACCOUNT_SUSPENDED") return "bg-[#fff4e8] text-[#d97706]";
-  if (type === "ACCOUNT_REACTIVATED") return "bg-[#e9f8ef] text-[#07885f]";
-  if (type === "PASSWORD_RESET") return "bg-[#eaf4ff] text-[#2078dc]";
-  return "bg-slate-100 text-slate-600";
+function accessHistoryStepTone(type: AccessHistoryItem["type"]): StepTone {
+  if (type === "ACCOUNT_CREATED") return "blue";
+  if (type === "FIRST_SIGN_IN") return "violet";
+  if (type === "ACCOUNT_SUSPENDED") return "amber";
+  if (type === "ACCOUNT_REACTIVATED") return "green";
+  if (type === "PASSWORD_RESET") return "blue";
+  return "slate";
 }
 
 function accessHistoryIcon(type: AccessHistoryItem["type"]) {
-  if (type === "ACCOUNT_CREATED") return <UserPlus className="size-3.5" />;
-  if (type === "FIRST_SIGN_IN") return <LogIn className="size-3.5" />;
-  if (type === "ACCOUNT_SUSPENDED") return <PauseCircle className="size-3.5" />;
-  if (type === "ACCOUNT_REACTIVATED")
-    return <CheckCircle2 className="size-3.5" />;
-  if (type === "PASSWORD_RESET") return <KeyRound className="size-3.5" />;
-  return <LogOut className="size-3.5" />;
+  if (type === "ACCOUNT_CREATED") return <UserPlus />;
+  if (type === "FIRST_SIGN_IN") return <LogIn />;
+  if (type === "ACCOUNT_SUSPENDED") return <PauseCircle />;
+  if (type === "ACCOUNT_REACTIVATED") return <CheckCircle2 />;
+  if (type === "PASSWORD_RESET") return <KeyRound />;
+  return <LogOut />;
 }

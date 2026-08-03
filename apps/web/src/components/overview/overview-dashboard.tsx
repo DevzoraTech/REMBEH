@@ -28,6 +28,7 @@ import {
 import { AppShell } from "../app/app-shell";
 import { Money } from "../app/money";
 import { AppBootSkeleton, SkeletonBlock } from "../app/skeleton";
+import { StepTimeline } from "../app/step-timeline";
 import {
   OwnerHeader,
   Tooltip,
@@ -1049,30 +1050,37 @@ function RecentActivityCard({
       emptyText="New loans, repayments and submitted reports will appear here as they happen."
       hasRows={rows.length > 0}
     >
-      {rows.map((item) => (
-        <div key={item.id} className="flex h-[52px] w-full items-center gap-2.5">
-          <ActivityIcon icon={item.icon} tone={item.tone} />
-          <div className="min-w-0 flex-1 overflow-hidden">
-            <p className="truncate text-xs font-medium text-[#111827]">
-              {item.title}
-            </p>
-            <p className="mt-0.5 truncate text-[11px] font-normal text-slate-500">
-              {item.meta}
-            </p>
-          </div>
-          {item.amountValue != null ? (
-            <p className="min-w-[94px] shrink-0 truncate text-right text-xs font-medium tabular-nums text-[var(--forest-emerald)]">
-              <Money
-                value={item.amountValue}
-                currency={item.amountCurrency ?? "UGX"}
-              />
-            </p>
-          ) : null}
-          <p className="w-16 shrink-0 text-right text-[11px] font-semibold text-slate-500">
-            {item.time}
-          </p>
-        </div>
-      ))}
+      <StepTimeline
+        items={rows.map((item) => ({
+          id: item.id,
+          title: item.title,
+          detail: (
+            <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span className="truncate">{item.meta}</span>
+              {item.amountValue != null ? (
+                <span className="font-semibold tabular-nums text-[var(--forest-emerald)]">
+                  <Money
+                    value={item.amountValue}
+                    currency={item.amountCurrency ?? "UGX"}
+                  />
+                </span>
+              ) : null}
+            </span>
+          ),
+          tone:
+            item.tone === "gold"
+              ? "amber"
+              : item.tone === "violet"
+                ? "violet"
+                : item.tone === "blue"
+                  ? "blue"
+                  : "green",
+          icon: (
+            <ActivityIconGlyph icon={item.icon} />
+          ),
+          meta: item.time,
+        }))}
+      />
     </OverviewSidePanel>
   );
 }
@@ -1805,32 +1813,15 @@ function PerformanceDonutChart({
   );
 }
 
-function ActivityIcon({
+function ActivityIconGlyph({
   icon,
-  tone,
 }: {
   icon: ActivityItem["icon"];
-  tone: ActivityItem["tone"];
 }) {
-  const toneClass = {
-    green: "bg-emerald-50 text-[var(--forest-emerald)]",
-    blue: "bg-blue-50 text-blue-600",
-    violet: "bg-violet-50 text-violet-600",
-    gold: "bg-orange-50 text-orange-600",
-  }[tone];
-  const Icon =
-    icon === "check"
-      ? CheckCircle2
-      : icon === "loan"
-        ? Folder
-        : icon === "report"
-          ? FileText
-          : Banknote;
-  return (
-    <span className={`grid size-8 shrink-0 place-items-center rounded-xl ${toneClass}`}>
-      <Icon className="size-4" />
-    </span>
-  );
+  if (icon === "check") return <CheckCircle2 />;
+  if (icon === "loan") return <Folder />;
+  if (icon === "report") return <FileText />;
+  return <Banknote />;
 }
 
 function OverviewSkeleton() {

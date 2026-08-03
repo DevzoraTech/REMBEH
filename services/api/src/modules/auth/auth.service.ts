@@ -45,6 +45,7 @@ import {
 } from '../notifications/notifications.contracts';
 import { NOTIFICATION_EVENTS } from '../notifications/notifications.events';
 import { NotificationsService } from '../notifications/notifications.service';
+import { TRIAL_DAYS } from '../billing/billing.permissions';
 import { REMBEH_MODULES } from '../platform/module-registry';
 import { ObjectStorageService } from '../storage/object-storage.service';
 import { AUTH_EVENTS } from './auth.events';
@@ -224,6 +225,18 @@ export class AuthService {
           })),
         });
 
+        const trialStartsAt = new Date();
+        const trialEndsAt = new Date(
+          trialStartsAt.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000,
+        );
+        await tx.tenantBilling.create({
+          data: {
+            tenantId: tenant.id,
+            trialStartsAt,
+            trialEndsAt,
+          },
+        });
+
         const emailChallenge = await tx.otpChallenge.create({
           data: {
             tenantId: tenant.id,
@@ -272,7 +285,7 @@ export class AuthService {
       });
     } catch {
       // Registration must succeed even if object storage is temporarily unavailable.
-      // Keys remain under tenants/{tenantId}/ once uploads begin.
+      // Keys remain under tenants/{organisationId}/branches/{branchId}/… once uploads begin.
     }
 
     const emailDelivery = await this.notificationsService.sendEmailOtp({
@@ -642,11 +655,17 @@ export class AuthService {
   async presignProfilePhotoUpload(
     userId: string,
     tenantId: string,
+    branchId: string | null,
     dto: { mimeType: string; extension?: string; fileName?: string },
   ) {
     const mime = dto.mimeType.toLowerCase();
     if (!mime.startsWith('image/')) {
       throw new BadRequestException('Profile photo must be an image.');
+    }
+    if (!branchId) {
+      throw new BadRequestException(
+        'A branch assignment is required before uploading a profile photo.',
+      );
     }
     const extension =
       dto.extension ||
@@ -655,6 +674,7 @@ export class AuthService {
       'jpg';
     const storageKey = this.objectStorage.buildAgentProfilePhotoKey({
       tenantId,
+      branchId,
       userId,
       extension,
     });
@@ -680,8 +700,13 @@ export class AuthService {
     if (dto.byteSize < 1) {
       throw new BadRequestException('Profile photo is empty.');
     }
-    const expectedPrefix = `tenants/${tenantId}/agents/${userId}/profile/`;
-    if (!dto.storageKey.startsWith(expectedPrefix)) {
+    if (
+      !this.objectStorage.isAgentProfilePhotoKey({
+        tenantId,
+        userId,
+        storageKey: dto.storageKey,
+      })
+    ) {
       throw new BadRequestException(
         'storageKey does not match this agent profile.',
       );

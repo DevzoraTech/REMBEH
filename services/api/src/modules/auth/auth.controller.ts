@@ -82,6 +82,7 @@ export class AuthController {
     return this.authService.presignProfilePhotoUpload(
       user.userId,
       user.tenantId,
+      user.branchId,
       dto,
     );
   }

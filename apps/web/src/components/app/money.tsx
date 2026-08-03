@@ -11,6 +11,8 @@ type MoneyProps = {
   amountClassName?: string;
   /** Appended after the amount, e.g. " all time". */
   suffix?: ReactNode;
+  /** Stack currency above amount — better for narrow table columns. */
+  stack?: boolean;
 };
 
 /**
@@ -25,8 +27,30 @@ export function Money({
   currencyClassName = "",
   amountClassName = "",
   suffix,
+  stack = false,
 }: MoneyProps) {
   const amount = formatMoneyAmount(value);
+
+  if (stack) {
+    return (
+      <span
+        className={`inline-flex max-w-full min-w-0 flex-col items-end leading-tight tabular-nums ${className}`}
+      >
+        <span
+          className={`text-[9px] font-semibold uppercase tracking-[0.04em] text-slate-500 ${currencyClassName}`}
+        >
+          {sign ? `${sign} ` : ""}
+          {currency}
+        </span>
+        <span className={`break-all text-[11px] font-bold ${amountClassName}`}>
+          {amount}
+        </span>
+        {suffix ? (
+          <span className="text-[10px] font-medium text-slate-500">{suffix}</span>
+        ) : null}
+      </span>
+    );
+  }
 
   return (
     <span
