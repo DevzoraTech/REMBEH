@@ -80,10 +80,12 @@ type PaymentRow = {
   date: string;
   branchId: string;
   branchName: string;
+  kind?: "subscription" | "sms";
   transaction: string;
   periodLabel: string | null;
   amount: number;
   currency: string;
+  credits?: number | null;
   paymentMethod: string;
   status: string;
   receipt: string | null;
@@ -431,13 +433,15 @@ function SubscriptionWorkspaceContent({
     }
   }
 
-  async function startSmsTopUp(amountUgx: number) {
-    if (!session || !focusedBranchId) return;
+  async function startSmsTopUp(amountUgx: number, branchId?: string) {
+    const targetBranchId = branchId ?? focusedBranchId;
+    if (!session || !targetBranchId) return;
     setToppingUpAmount(amountUgx);
+    setPayingBranchId(targetBranchId);
     setError(null);
     try {
       const response = await fetch(
-        `${apiBaseUrl}/sms-credits/branches/${focusedBranchId}/top-up`,
+        `${apiBaseUrl}/sms-credits/branches/${targetBranchId}/top-up`,
         {
           method: "POST",
           headers: {
@@ -460,6 +464,7 @@ function SubscriptionWorkspaceContent({
     } catch (err) {
       setError(friendlyError(err));
       setToppingUpAmount(null);
+      setPayingBranchId(null);
     }
   }
 
@@ -703,72 +708,92 @@ function SubscriptionWorkspaceContent({
 
         {/* SMS credits (prepaid per branch) */}
         {focusedBranchId ? (
-          <section className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="flex items-start gap-3">
-                <div className="grid size-10 place-items-center rounded-xl bg-[#e8f1fb] text-[#2b6cb0]">
-                  <MessageSquare className="size-5" strokeWidth={2} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-[#070b18]">
-                    SMS credits
-                  </h3>
-                  <p className="mt-1 max-w-xl text-xs leading-relaxed text-slate-500">
-                    Buy message credits for borrower SMS from this branch. Loan
-                    application messages use your balance. Top up anytime.
-                  </p>
-                </div>
-              </div>
-              <div className="rounded-xl border border-[var(--line)] bg-[#f6f8fb] px-4 py-2 text-right">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                  Remaining
-                </p>
-                {smsLoading && !smsWallet ? (
-                  <Loader2 className="ml-auto mt-1 size-4 animate-spin text-slate-400" />
-                ) : (
-                  <p className="mt-0.5 text-lg font-bold tabular-nums text-[#070b18]">
-                    {smsWallet?.creditsRemaining ?? 0}
-                    <span className="ml-1 text-xs font-semibold text-slate-500">
-                      SMS
+          <section className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#e8f1fb] text-[#2b6cb0]">
+                  <MessageSquare className="size-3.5" strokeWidth={2.25} />
+                </span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-semibold text-[#070b18]">
+                      SMS credits
+                    </h3>
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#f6f8fb] px-2 py-0.5 text-[11px] font-bold tabular-nums text-[#070b18]">
+                      {smsLoading && !smsWallet ? (
+                        <Loader2 className="size-3 animate-spin text-slate-400" />
+                      ) : (
+                        <>
+                          {(smsWallet?.creditsRemaining ?? 0).toLocaleString(
+                            "en-UG",
+                          )}{" "}
+                          left
+                        </>
+                      )}
                     </span>
+                    {!smsWallet?.canSendSms && !smsLoading ? (
+                      <span className="text-[11px] font-medium text-amber-700">
+                        Top up to keep messaging
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-0.5 text-[11px] text-slate-500">
+                    Keep borrower SMS running for this branch.
                   </p>
-                )}
+                </div>
               </div>
-            </div>
 
-            {!smsWallet?.canSendSms && !smsLoading ? (
-              <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-950">
-                No SMS credits left. Top up to send borrower messages from this
-                branch.
-              </p>
-            ) : null}
-
-            <div className="mt-4 flex flex-wrap gap-2">
-              {(smsWallet?.topUpPresets ?? []).map((preset) => {
-                const busy = toppingUpAmount === preset.amountUgx;
-                return (
-                  <button
-                    key={preset.amountUgx}
-                    type="button"
-                    disabled={toppingUpAmount != null}
-                    onClick={() => void startSmsTopUp(preset.amountUgx)}
-                    className="inline-flex h-10 min-w-[9.5rem] flex-col items-center justify-center rounded-xl border border-[var(--line)] bg-[#f6f8fb] px-3 text-center transition hover:border-[#07885f] hover:bg-[#f3faf6] disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {busy ? (
-                      <Loader2 className="size-4 animate-spin text-[#07885f]" />
-                    ) : (
-                      <>
-                        <span className="text-xs font-semibold text-[#070b18]">
-                          {formatMoney(preset.amountUgx, preset.currency)}
-                        </span>
-                        <span className="text-[10px] font-medium text-slate-500">
-                          {preset.credits} SMS
-                        </span>
-                      </>
-                    )}
-                  </button>
-                );
-              })}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {(smsWallet?.topUpPresets ?? []).map((preset, index) => {
+                  const busy = toppingUpAmount === preset.amountUgx;
+                  const popular = index === 1;
+                  return (
+                    <button
+                      key={preset.amountUgx}
+                      type="button"
+                      disabled={toppingUpAmount != null}
+                      onClick={() => void startSmsTopUp(preset.amountUgx)}
+                      className={`inline-flex h-9 items-center gap-2 rounded-lg border px-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                        popular
+                          ? "border-[#07885f] bg-[#07885f] text-white hover:bg-[#067352]"
+                          : "border-[var(--line)] bg-[#f6f8fb] text-[#070b18] hover:border-[#07885f] hover:bg-[#f3faf6]"
+                      }`}
+                    >
+                      {busy ? (
+                        <Loader2
+                          className={`size-3.5 animate-spin ${
+                            popular ? "text-white" : "text-[#07885f]"
+                          }`}
+                        />
+                      ) : (
+                        <>
+                          <span className="min-w-0">
+                            <span className="block text-[11px] font-bold leading-none tabular-nums">
+                              {formatMoney(preset.amountUgx, preset.currency)}
+                            </span>
+                            <span
+                              className={`mt-0.5 block text-[10px] font-medium leading-none ${
+                                popular ? "text-white/80" : "text-slate-500"
+                              }`}
+                            >
+                              {preset.credits.toLocaleString("en-UG")} SMS
+                            </span>
+                          </span>
+                          <span
+                            className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] ${
+                              popular
+                                ? "bg-white/20 text-white"
+                                : "bg-white text-[#07885f]"
+                            }`}
+                          >
+                            Buy
+                          </span>
+                        </>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </section>
         ) : null}
@@ -779,7 +804,7 @@ function SubscriptionWorkspaceContent({
             <div className="flex items-center gap-2">
               <FileText className="size-4 text-[#07885f]" />
               <h3 className="text-sm font-semibold text-[#070b18]">
-                Subscription history
+                Payment history
               </h3>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -854,7 +879,12 @@ function SubscriptionWorkspaceContent({
                   </thead>
                   <tbody className="divide-y divide-[var(--line)] bg-white">
                     {filteredPayments.map((row) => {
-                      const retrying = payingBranchId === row.branchId;
+                      const isSms = row.kind === "sms";
+                      const retrying =
+                        payingBranchId === row.branchId &&
+                        (isSms
+                          ? toppingUpAmount === Math.round(row.amount)
+                          : toppingUpAmount == null);
                       const failed = row.status === "Failed" || row.canRetry;
                       const isPaid = row.status === "Paid";
                       return (
@@ -866,7 +896,19 @@ function SubscriptionWorkspaceContent({
                             {row.branchName}
                           </td>
                           <td className="px-3 py-2.5 text-[13px] text-slate-700">
-                            {row.transaction}
+                            <span className="inline-flex flex-wrap items-center gap-1.5">
+                              <span>{row.transaction}</span>
+                              {isSms ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-[#e8f1fb] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-[#2b6cb0]">
+                                  <MessageSquare className="size-2.5" />
+                                  SMS
+                                </span>
+                              ) : (
+                                <span className="inline-flex rounded-full bg-[#e9f8ef] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-[#07885f]">
+                                  Plan
+                                </span>
+                              )}
+                            </span>
                           </td>
                           <td className="hidden px-3 py-2.5 text-xs text-slate-600 md:table-cell">
                             {row.periodLabel ?? "—"}
@@ -896,8 +938,17 @@ function SubscriptionWorkspaceContent({
                             {failed ? (
                               <button
                                 type="button"
-                                disabled={retrying}
-                                onClick={() => void startCheckout(row.branchId)}
+                                disabled={retrying || toppingUpAmount != null}
+                                onClick={() => {
+                                  if (isSms) {
+                                    void startSmsTopUp(
+                                      Math.round(row.amount),
+                                      row.branchId,
+                                    );
+                                    return;
+                                  }
+                                  void startCheckout(row.branchId);
+                                }}
                                 className="inline-flex h-8 min-w-[4.5rem] items-center justify-center gap-1 rounded-full bg-rose-600 px-3 text-[11px] font-semibold text-white hover:bg-rose-700 disabled:opacity-70"
                               >
                                 {retrying ? (

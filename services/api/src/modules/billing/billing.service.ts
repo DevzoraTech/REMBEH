@@ -206,25 +206,35 @@ export class BillingService implements OnModuleInit {
       ? { tenantId: user.tenantId }
       : { tenantId: user.tenantId, branchId: user.branchId! };
 
-    const rows = await this.prisma.subscriptionPayment.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      take: 100,
-      include: {
-        branch: { select: { name: true } },
-        plan: { select: { name: true } },
-      },
-    });
+    const [subscriptionRows, smsRows] = await Promise.all([
+      this.prisma.subscriptionPayment.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        include: {
+          branch: { select: { name: true } },
+          plan: { select: { name: true } },
+        },
+      }),
+      this.prisma.smsCreditPayment.findMany({
+        where,
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+        include: {
+          branch: { select: { name: true } },
+        },
+      }),
+    ]);
 
-    return {
-      payments: rows.map((row) => {
+    const subscriptionPayments: SubscriptionPaymentRowContract[] =
+      subscriptionRows.map((row) => {
         const paid = row.status === SubscriptionPaymentStatus.COMPLETED;
         const failed = row.status === SubscriptionPaymentStatus.FAILED;
         const periodStart = row.paidAt ?? row.createdAt;
         const periodEnd = new Date(
           periodStart.getTime() + 30 * 24 * 60 * 60 * 1000,
         );
-        const priorPaid = rows.some(
+        const priorPaid = subscriptionRows.some(
           (other) =>
             other.branchId === row.branchId &&
             other.id !== row.id &&
@@ -236,6 +246,7 @@ export class BillingService implements OnModuleInit {
           date: (row.paidAt ?? row.createdAt).toISOString(),
           branchId: row.branchId,
           branchName: row.branch.name,
+          kind: 'subscription' as const,
           transaction: paid
             ? priorPaid
               ? 'Pro renewal'
@@ -246,6 +257,7 @@ export class BillingService implements OnModuleInit {
             : null,
           amount: Number(row.amount),
           currency: row.currency,
+          credits: null,
           paymentMethod: this.paymentMethodFromPayload(row.rawPayload),
           status: paid ? 'Paid' : failed ? 'Failed' : 'Pending',
           receipt: paid
@@ -253,8 +265,38 @@ export class BillingService implements OnModuleInit {
             : null,
           canRetry: failed,
         };
-      }),
-    };
+      });
+
+    const smsPayments: SubscriptionPaymentRowContract[] = smsRows.map(
+      (row) => {
+        const paid = row.status === SubscriptionPaymentStatus.COMPLETED;
+        const failed = row.status === SubscriptionPaymentStatus.FAILED;
+        return {
+          id: row.id,
+          date: (row.paidAt ?? row.createdAt).toISOString(),
+          branchId: row.branchId,
+          branchName: row.branch.name,
+          kind: 'sms' as const,
+          transaction: 'SMS top-up',
+          periodLabel: `${row.credits.toLocaleString('en-UG')} SMS`,
+          amount: Number(row.amount),
+          currency: row.currency,
+          credits: row.credits,
+          paymentMethod: this.paymentMethodFromPayload(row.rawPayload),
+          status: paid ? 'Paid' : failed ? 'Failed' : 'Pending',
+          receipt: paid
+            ? `#${row.merchantReference.slice(-8).toUpperCase()}`
+            : null,
+          canRetry: failed,
+        };
+      },
+    );
+
+    const payments = [...subscriptionPayments, ...smsPayments].sort(
+      (a, b) => Date.parse(b.date) - Date.parse(a.date),
+    );
+
+    return { payments: payments.slice(0, 100) };
   }
 
   async ensureTenantBilling(tenantId: string) {

@@ -62,10 +62,14 @@ export type SubscriptionPaymentRowContract = {
   date: string;
   branchId: string;
   branchName: string;
+  /** subscription = Pro plan; sms = prepaid SMS top-up */
+  kind: 'subscription' | 'sms';
   transaction: string;
   periodLabel: string | null;
   amount: number;
   currency: string;
+  /** SMS credits purchased (SMS rows only). */
+  credits: number | null;
   paymentMethod: string;
   status: string;
   receipt: string | null;

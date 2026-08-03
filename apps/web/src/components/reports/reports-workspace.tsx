@@ -161,7 +161,6 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
     EMPTY_REPORTS_FILTERS,
   );
   const [search, setSearch] = useState("");
-  const [view, setView] = useState<ReportView>("report");
   const [actionNotes, setActionNotes] = useState("");
   const [loading, setLoading] = useState(true);
   const [actingId, setActingId] = useState<string | null>(null);
@@ -422,7 +421,7 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
 
         <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#edf1f5] px-4 py-4">
-            <div>
+            <div className="min-w-0">
               <h2 className="text-[15px] font-semibold text-[#0b1220]">
                 Report Records
               </h2>
@@ -430,7 +429,7 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
                 Select a report to inspect cash movements.
               </p>
             </div>
-            <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+            <div className="ml-auto flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2 sm:flex-initial">
               {advancedFilters.status === "SENT_TO_OWNER" ? (
                 <button
                   type="button"
@@ -445,45 +444,19 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
                   Show All Statuses
                 </button>
               ) : null}
-              <button
-                type="button"
-                className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8faf9] disabled:opacity-60"
-                disabled={
-                  !selectedReport || !selectedSnapshot || Boolean(exportingId)
-                }
-                onClick={() => {
-                  if (!selectedReport || !selectedSnapshot) return;
-                  void exportReport(
-                    selectedReport,
-                    selectedSnapshot,
-                    currency,
-                    setExportingId,
-                  );
-                }}
-              >
-                {exportingId ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Download className="size-3.5" />
-                )}
-                Export
-              </button>
+              <ReportsFiltersControl
+                mode={mode}
+                branches={branches.map((branch) => ({
+                  id: branch.id,
+                  name: branch.name,
+                }))}
+                applied={advancedFilters}
+                onApply={setAdvancedFilters}
+              />
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5 border-b border-[#edf1f5] px-4 py-3">
-            <ReportsFiltersControl
-              mode={mode}
-              branches={branches.map((branch) => ({
-                id: branch.id,
-                name: branch.name,
-              }))}
-              applied={advancedFilters}
-              onApply={setAdvancedFilters}
-            />
-          </div>
-
-          <div className="border-b border-[#edf1f5]">
+          <div>
             <div className="hidden grid-cols-[0.9fr_0.85fr_1fr_1fr_1.15fr_1.05fr_0.95fr_0.7fr] gap-3 border-b border-[#dfe5eb] bg-[#e8edf2] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-600 lg:grid">
               <span>Report</span>
               <span>Date</span>
@@ -494,7 +467,7 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
               <span>Status</span>
               <span className="text-right">Actions</span>
             </div>
-            <div className="max-h-[320px] overflow-y-auto">
+            <div className="max-h-[min(70vh,720px)] overflow-y-auto">
               {loading ? (
                 <div className="space-y-2 p-4">
                   {Array.from({ length: 4 }).map((_, i) => (
@@ -543,7 +516,6 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
                         onClick={() => {
                           setSelectedId(report.id);
                           setActionNotes("");
-                          setView("report");
                         }}
                       >
                         <p className="truncate text-sm font-semibold text-[#0b1220]">
@@ -619,112 +591,6 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
               )}
             </div>
           </div>
-
-          {!selectedReport || !selectedSnapshot ? (
-            <div className="grid min-h-[320px] place-items-center px-4 py-16 text-center">
-              <div>
-                <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-emerald-50 text-[var(--forest-emerald)]">
-                  <FileText className="size-6" />
-                </span>
-                <p className="mt-4 text-sm font-semibold text-[#0b1220]">
-                  Select a report above
-                </p>
-                <p className="mt-1 max-w-sm text-xs font-medium text-slate-500">
-                  Cash summary, agent handover, and approval actions will appear
-                  here.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="space-y-3 p-3.5 sm:p-4">
-              <div className="flex flex-wrap items-start justify-between gap-2.5">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-base font-bold tracking-[-0.02em] text-[#0b1220]">
-                      {dailyReportCode(selectedReport.operationDate)}
-                    </h3>
-                    <StatusPill status={selectedReport.status} />
-                  </div>
-                  <p className="mt-1 text-[11px] font-medium text-slate-500">
-                    {selectedReport.branchName}
-                    <span className="px-1.5 text-slate-300">·</span>
-                    {formatDate(selectedReport.operationDate)}
-                    <span className="px-1.5 text-slate-300">·</span>
-                    Closed by{" "}
-                    {textValue(
-                      selectedSnapshot.operation.closedByName,
-                      selectedReport.managerReviewedByName ?? "Manager",
-                    )}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex h-9 items-center rounded-xl border border-[#e6ebf0] bg-[#f8faf9] p-1">
-                    <ViewTab
-                      active={view === "report"}
-                      icon={<FileText className="size-3.5" />}
-                      label="Summary"
-                      onClick={() => setView("report")}
-                    />
-                    <ViewTab
-                      active={view === "excel"}
-                      icon={<FileSpreadsheet className="size-3.5" />}
-                      label="Ledger"
-                      onClick={() => setView("excel")}
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-[#0b1220] shadow-[0_8px_18px_rgba(15,23,42,0.035)] disabled:opacity-55"
-                    disabled={exportingId === selectedReport.id}
-                    onClick={() =>
-                      void exportReport(
-                        selectedReport,
-                        selectedSnapshot,
-                        currency,
-                        setExportingId,
-                      )
-                    }
-                  >
-                    {exportingId === selectedReport.id ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <Download className="size-3.5" />
-                    )}
-                    Download Excel
-                  </button>
-                </div>
-              </div>
-
-              {view === "report" ? (
-                <ReportSummaryView
-                  report={selectedReport}
-                  snapshot={selectedSnapshot}
-                  currency={currency}
-                  notes={actionNotes}
-                  setNotes={setActionNotes}
-                  approving={actingId === selectedReport.id}
-                  mode={mode}
-                  onAction={() => void submitReportAction(selectedReport)}
-                />
-              ) : (
-                <div className="space-y-4">
-                  <LedgerTable
-                    report={selectedReport}
-                    snapshot={selectedSnapshot}
-                    currency={currency}
-                  />
-                  <ReportActionCard
-                    report={selectedReport}
-                    notes={actionNotes}
-                    setNotes={setActionNotes}
-                    approving={actingId === selectedReport.id}
-                    mode={mode}
-                    onAction={() => void submitReportAction(selectedReport)}
-                  />
-                </div>
-              )}
-            </div>
-          )}
         </section>
       </div>
 
@@ -748,7 +614,6 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
               onClick={() => {
                 setSelectedId(actionMenuReport.id);
                 setActionNotes("");
-                setView("report");
                 setActionMenu(null);
               }}
             >
