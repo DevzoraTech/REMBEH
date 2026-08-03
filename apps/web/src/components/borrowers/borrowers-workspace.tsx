@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AlertTriangle,
   ArrowDown,
   ArrowUp,
   Building2,
@@ -204,11 +205,14 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
         branchFilter === "all" ||
         borrower.branchName === branchFilter;
 
-      const verified = Boolean(borrower.verifiedAt);
+      const status = resolveBorrowerVerification(borrower);
       const matchesVerification =
         advancedFilters.verification === "all" ||
-        (advancedFilters.verification === "verified" && verified) ||
-        (advancedFilters.verification === "pending" && !verified);
+        (advancedFilters.verification === "verified" &&
+          status === "verified") ||
+        (advancedFilters.verification === "pending" &&
+          status === "not_verified") ||
+        (advancedFilters.verification === "issue" && status === "issue");
 
       const activeCount = borrower.activeLoanCount ?? 0;
       const hasOverdue = Boolean(borrower.hasOverdueLoan);
@@ -237,7 +241,11 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
         borrower.branchName ?? "",
         borrower.registeredByName ?? "",
         String(borrower.loanCount),
-        verified ? "verified confirmed" : "pending awaiting check",
+        resolveBorrowerVerification(borrower) === "verified"
+          ? "verified confirmed"
+          : resolveBorrowerVerification(borrower) === "issue"
+            ? "verification issue needs correction"
+            : "not verified unverified",
       ]
         .join(" ")
         .toLowerCase();
@@ -383,7 +391,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
             context="Identity details confirmed"
             pendingHint={
               summary.pending > 0
-                ? `${formatNumber(summary.pending)} pending verification`
+                ? `${formatNumber(summary.pending)} not verified`
                 : null
             }
           />
@@ -472,13 +480,13 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
                   <thead className="border-b border-[#dfe5eb] bg-[#e8edf2] text-[10px] font-semibold text-slate-600">
                     <tr>
                       <th className="w-[26%] px-3 py-2.5">Borrower</th>
-                      <th className="w-[14%] px-3 py-2.5">Phone</th>
-                      <th className="w-[14%] px-3 py-2.5">National ID</th>
+                      <th className="w-[18%] px-3 py-2.5">Contact</th>
+                      <th className="w-[12%] px-3 py-2.5">National ID</th>
                       {!isManager ? (
                         <th className="w-[12%] px-3 py-2.5">Branch</th>
                       ) : null}
-                      <th className="w-[10%] px-3 py-2.5">Loans</th>
-                      <th className="w-[12%] px-3 py-2.5">Status</th>
+                      <th className="w-[8%] px-3 py-2.5">Loans</th>
+                      <th className="w-[12%] px-3 py-2.5">Verification</th>
                       <th className="w-[12%] px-3 py-2.5">Joined</th>
                       <th className="w-[8%] px-3 py-2.5 text-right">Actions</th>
                     </tr>
@@ -512,8 +520,15 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
                             </div>
                           </div>
                         </td>
-                        <td className="px-3 py-3 text-[11px] font-medium text-[#0b1220]">
-                          {borrower.phone || "—"}
+                        <td className="px-3 py-3">
+                          <p className="truncate text-[11px] font-medium text-[#0b1220]">
+                            {borrower.phone || "—"}
+                          </p>
+                          <p className="mt-0.5 truncate text-[11px] font-medium text-slate-500">
+                            {borrower.email?.trim()
+                              ? borrower.email.trim()
+                              : "No email provide"}
+                          </p>
                         </td>
                         <td className="px-3 py-3 text-[11px] font-medium tabular-nums text-[#0b1220]">
                           {borrower.nationalId ?? "—"}
@@ -530,7 +545,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
                         </td>
                         <td className="px-3 py-3">
                           <BorrowerStatus
-                            verified={Boolean(borrower.verifiedAt)}
+                            status={resolveBorrowerVerification(borrower)}
                           />
                         </td>
                         <td className="px-3 py-3 text-[11px] font-medium text-[#0b1220]">
@@ -620,9 +635,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
                   [actionMenuBorrower],
                   {
                     branch: actionMenuBorrower.branchName ?? "all",
-                    verification: actionMenuBorrower.verifiedAt
-                      ? "verified"
-                      : "pending",
+                    verification: resolveBorrowerVerification(actionMenuBorrower),
                     loanStatus: "all",
                     search: actionMenuBorrower.fullName,
                   },
@@ -767,7 +780,7 @@ function buildBorrowersSummary(borrowers: OwnerBorrower[]) {
   let newLastMonth = 0;
 
   for (const borrower of borrowers) {
-    if (borrower.verifiedAt) verified += 1;
+    if (resolveBorrowerVerification(borrower) === "verified") verified += 1;
     if ((borrower.activeLoanCount ?? 0) > 0) activeLoan += 1;
     const created = new Date(borrower.createdAt);
     if (
@@ -864,7 +877,9 @@ function BorrowerDetailDrawer({
               {initials(borrower.fullName)}
             </span>
             <div className="min-w-0">
-              <BorrowerStatus verified={Boolean(borrower.verifiedAt)} />
+              <BorrowerStatus
+                status={resolveBorrowerVerification(borrower)}
+              />
               <p className="mt-1.5 text-xs font-medium text-slate-500">
                 {formatNumber(borrower.loanCount)}{" "}
                 {borrower.loanCount === 1 ? "loan" : "loans"}
@@ -874,6 +889,12 @@ function BorrowerDetailDrawer({
         </div>
         <div className="mt-4 space-y-1.5">
           <InfoLine label="Phone" value={borrower.phone || "—"} />
+          <InfoLine
+            label="Email"
+            value={
+              borrower.email?.trim() ? borrower.email.trim() : "No email provide"
+            }
+          />
           <InfoLine label="National ID" value={borrower.nationalId ?? "—"} />
           <InfoLine
             label="Security"
@@ -898,17 +919,39 @@ function BorrowerDetailDrawer({
   );
 }
 
-function BorrowerStatus({ verified }: { verified: boolean }) {
+function resolveBorrowerVerification(
+  borrower: OwnerBorrower,
+): "verified" | "not_verified" | "issue" {
+  if (borrower.verificationStatus === "ISSUE") return "issue";
+  if (borrower.verificationStatus === "VERIFIED") return "verified";
+  if (borrower.verificationStatus === "NOT_VERIFIED") return "not_verified";
+  return borrower.verifiedAt ? "verified" : "not_verified";
+}
+
+function BorrowerStatus({
+  status,
+}: {
+  status: "verified" | "not_verified" | "issue";
+}) {
+  if (status === "verified") {
+    return (
+      <span className="inline-flex h-6 items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 text-[11px] font-semibold text-[var(--forest-emerald)]">
+        <Check className="size-3" />
+        Verified
+      </span>
+    );
+  }
+  if (status === "issue") {
+    return (
+      <span className="inline-flex h-6 items-center gap-1.5 rounded-full bg-rose-50 px-2.5 text-[11px] font-semibold text-rose-700">
+        <AlertTriangle className="size-3" />
+        Verification issue
+      </span>
+    );
+  }
   return (
-    <span
-      className={`inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-semibold ${
-        verified
-          ? "bg-emerald-50 text-[var(--forest-emerald)]"
-          : "bg-amber-50 text-amber-800"
-      }`}
-    >
-      {verified ? <Check className="size-3" /> : null}
-      {verified ? "Verified" : "Pending"}
+    <span className="inline-flex h-6 items-center gap-1.5 rounded-full bg-slate-100 px-2.5 text-[11px] font-semibold text-slate-600">
+      Not verified
     </span>
   );
 }
@@ -963,9 +1006,9 @@ async function exportBorrowers(
     const worksheet = workbook.addWorksheet("Borrowers");
 
     worksheet.addRow(["REMBEH Borrower Register"]);
-    worksheet.mergeCells(1, 1, 1, 8);
+    worksheet.mergeCells(1, 1, 1, 9);
     worksheet.addRow([`Generated: ${new Date().toLocaleString("en-UG")}`]);
-    worksheet.mergeCells(2, 1, 2, 8);
+    worksheet.mergeCells(2, 1, 2, 9);
     worksheet.addRow([
       "Filters",
       filters.search.trim() || "All searches",
@@ -974,7 +1017,9 @@ async function exportBorrowers(
         ? "All verification"
         : filters.verification === "verified"
           ? "Verified"
-          : "Pending verification",
+          : filters.verification === "issue"
+            ? "Verification issue"
+            : "Not verified",
       filters.loanStatus === "all"
         ? "All loan statuses"
         : titleCase(filters.loanStatus.replaceAll("_", " ")),
@@ -984,11 +1029,12 @@ async function exportBorrowers(
     worksheet.addRow([
       "Borrower",
       "Phone",
+      "Email",
       "National ID",
       "Security",
       "Branch",
       "Loans",
-      "Status",
+      "Verification",
       "Joined",
     ]);
 
@@ -996,11 +1042,16 @@ async function exportBorrowers(
       worksheet.addRow([
         borrower.fullName,
         borrower.phone,
+        borrower.email?.trim() || "No email provide",
         borrower.nationalId ?? "",
         borrower.collateralType ? titleCase(borrower.collateralType) : "",
         borrower.branchName ?? "",
         borrower.loanCount,
-        borrower.verifiedAt ? "Verified" : "Pending",
+        borrower.verificationStatus === "ISSUE"
+          ? "Verification issue"
+          : borrower.verifiedAt || borrower.verificationStatus === "VERIFIED"
+            ? "Verified"
+            : "Not verified",
         formatDate(borrower.createdAt),
       ]);
     });
@@ -1008,6 +1059,7 @@ async function exportBorrowers(
     worksheet.columns = [
       { width: 28 },
       { width: 18 },
+      { width: 28 },
       { width: 20 },
       { width: 24 },
       { width: 22 },
@@ -1016,7 +1068,7 @@ async function exportBorrowers(
       { width: 16 },
     ];
     worksheet.views = [{ state: "frozen", ySplit: 5 }];
-    worksheet.autoFilter = "A5:H5";
+    worksheet.autoFilter = "A5:I5";
     worksheet.getRow(1).height = 26;
     worksheet.getRow(1).font = {
       bold: true,

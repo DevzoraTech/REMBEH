@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import {
   RembehSession,
   isSessionExpired,
   readAuthState,
 } from "../../lib/auth-session";
+import { playNotificationSound } from "../../lib/notification-sound";
 import {
   OwnerBranch,
   OwnerLoan,
@@ -320,9 +321,13 @@ export function useOwnerNotifications(scope: NotificationScope = "owner") {
     () => (cache?.key.startsWith(`${scope}:`) ? cache.items : []),
   );
   const [loading, setLoading] = useState(!cache);
+  const knownIdsRef = useRef<Set<string> | null>(null);
+  const primedRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
+    knownIdsRef.current = null;
+    primedRef.current = false;
 
     async function refresh(force = false) {
       const auth = readAuthState();
@@ -340,7 +345,20 @@ export function useOwnerNotifications(scope: NotificationScope = "owner") {
           force,
           scope,
         });
-        if (!cancelled) setItems(next);
+        if (cancelled) return;
+
+        const nextIds = new Set(next.map((item) => item.id));
+        if (primedRef.current && knownIdsRef.current) {
+          const hasNew = next.some(
+            (item) => !knownIdsRef.current!.has(item.id),
+          );
+          if (hasNew) {
+            playNotificationSound();
+          }
+        }
+        knownIdsRef.current = nextIds;
+        primedRef.current = true;
+        setItems(next);
       } catch {
         if (!cancelled && !cache) setItems([]);
       } finally {
@@ -354,9 +372,13 @@ export function useOwnerNotifications(scope: NotificationScope = "owner") {
       void refresh(true);
     }
     window.addEventListener(INVALIDATE_EVENT, onInvalidate);
+    const interval = window.setInterval(() => {
+      void refresh(true);
+    }, 45_000);
     return () => {
       cancelled = true;
       window.removeEventListener(INVALIDATE_EVENT, onInvalidate);
+      window.clearInterval(interval);
     };
   }, [scope]);
 

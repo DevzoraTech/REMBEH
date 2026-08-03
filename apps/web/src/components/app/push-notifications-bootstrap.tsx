@@ -61,6 +61,16 @@ export function PushNotificationsBootstrap({ enabled }: { enabled: boolean }) {
         unsubscribe = await listenForForegroundPush((title, body) => {
           console.info("[push]", title, body);
         });
+
+        if ("serviceWorker" in navigator) {
+          navigator.serviceWorker.addEventListener("message", (event) => {
+            if (event.data?.type === "rembeh-notification-sound") {
+              void import("../../lib/notification-sound").then((mod) =>
+                mod.playNotificationSound(),
+              );
+            }
+          });
+        }
       } catch (error) {
         console.error("[push] bootstrap failed", error);
       }

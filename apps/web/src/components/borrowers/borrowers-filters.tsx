@@ -16,7 +16,11 @@ import {
   type OfficerOption,
 } from "../loans/loans-filters";
 
-export type VerificationFilter = "all" | "verified" | "pending";
+export type VerificationFilter =
+  | "all"
+  | "verified"
+  | "pending"
+  | "issue";
 export type BorrowerLoanStatusFilter =
   | "all"
   | "active"
@@ -57,7 +61,8 @@ const VERIFICATION_OPTIONS: Array<{
 }> = [
   { value: "all", label: "All" },
   { value: "verified", label: "Verified" },
-  { value: "pending", label: "Pending verification" },
+  { value: "pending", label: "Not verified" },
+  { value: "issue", label: "Verification issue" },
 ];
 
 const LOAN_STATUS_OPTIONS: Array<{

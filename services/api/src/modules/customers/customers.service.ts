@@ -60,10 +60,34 @@ export class CustomersService {
       branchId: canSeeAllBranches ? null : user.branchId,
     });
 
+    const scoped = customers.filter((customer) => customer.branchId);
+    const riskHits = await this.customersRepository.listRiskHits({
+      tenantId: user.tenantId,
+      customerIds: scoped.map((customer) => customer.id),
+      nationalIds: scoped
+        .map((customer) => customer.nationalId)
+        .filter((value): value is string => Boolean(value?.trim())),
+    });
+    const riskCustomerIds = new Set(
+      riskHits
+        .map((hit) => hit.customerId)
+        .filter((value): value is string => Boolean(value)),
+    );
+    const riskNationalIds = new Set(
+      riskHits.map((hit) => hit.nationalId.trim().toUpperCase()),
+    );
+
     return {
-      customers: customers
-        .filter((customer) => customer.branchId)
-        .map((customer) => this.toCustomerContract(customer)),
+      customers: scoped.map((customer) =>
+        this.toCustomerContract(customer, {
+          riskHit:
+            riskCustomerIds.has(customer.id) ||
+            Boolean(
+              customer.nationalId &&
+                riskNationalIds.has(customer.nationalId.trim().toUpperCase()),
+            ),
+        }),
+      ),
     };
   }
 
@@ -93,8 +117,16 @@ export class CustomersService {
       throw new NotFoundException('Customer not found.');
     }
 
+    const riskHits = await this.customersRepository.listRiskHits({
+      tenantId: user.tenantId,
+      customerIds: [customer.id],
+      nationalIds: customer.nationalId ? [customer.nationalId] : [],
+    });
+
     return {
-      customer: await this.toCustomerDetailContract(customer),
+      customer: await this.toCustomerDetailContract(customer, {
+        riskHit: riskHits.length > 0,
+      }),
     };
   }
 
@@ -144,6 +176,7 @@ export class CustomersService {
 
   private toCustomerContract(
     customer: Customer | CustomerListRecord | CustomerDetailRecord,
+    options?: { riskHit?: boolean },
   ): CustomerApiContract {
     const latestApplication = this.latestApplication(customer);
     const registeredBy = this.registeredBy(customer);
@@ -164,12 +197,55 @@ export class CustomersService {
       registeredByName: registeredBy.name,
       registeredByPublicId: registeredBy.publicId,
       verifiedAt: customer.verifiedAt?.toISOString() ?? null,
+      verificationStatus: this.resolveVerificationStatus(
+        customer,
+        options?.riskHit ?? false,
+      ),
       createdAt: customer.createdAt.toISOString(),
     };
   }
 
+  private resolveVerificationStatus(
+    customer: Customer | CustomerListRecord | CustomerDetailRecord,
+    riskHit: boolean,
+  ): CustomerApiContract['verificationStatus'] {
+    if (riskHit) return 'ISSUE';
+
+    const applications =
+      'loanApplications' in customer && Array.isArray(customer.loanApplications)
+        ? customer.loanApplications
+        : [];
+
+    if (
+      applications.some(
+        (application) =>
+          'status' in application && application.status === 'REJECTED',
+      )
+    ) {
+      return 'ISSUE';
+    }
+
+    if (customer.verifiedAt) return 'VERIFIED';
+
+    if (
+      applications.some(
+        (application) =>
+          ('verifiedAt' in application && application.verifiedAt) ||
+          ('status' in application &&
+            (application.status === 'VERIFIED' ||
+              application.status === 'SUBMITTED')),
+      )
+    ) {
+      // SUBMITTED means NIN already passed Smile — treat as verified identity.
+      return 'VERIFIED';
+    }
+
+    return 'NOT_VERIFIED';
+  }
+
   private async toCustomerDetailContract(
     customer: CustomerDetailRecord,
+    options?: { riskHit?: boolean },
   ): Promise<CustomerDetailContract> {
     const recentPayments = customer.loans
       .flatMap((loan) =>
@@ -188,7 +264,7 @@ export class CustomersService {
       .slice(0, 12);
 
     return {
-      ...this.toCustomerContract(customer),
+      ...this.toCustomerContract(customer, options),
       branchName: customer.branch?.name ?? null,
       loans: customer.loans.map((loan) => {
         const paidAmount = this.roundMoney(

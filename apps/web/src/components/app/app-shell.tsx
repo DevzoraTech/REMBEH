@@ -34,6 +34,7 @@ import {
 } from "../../lib/auth-session";
 import { resolveOperatorRole } from "../../lib/roles";
 import { PushNotificationsBootstrap } from "./push-notifications-bootstrap";
+import { playNotificationSound } from "../../lib/notification-sound";
 
 type AppShellProps = {
   children: ReactNode;
@@ -282,6 +283,7 @@ export function AppShell({ children, session, user }: AppShellProps) {
       // sessionStorage may be unavailable; still show once in-memory this mount.
     }
     setGraceModalOpen(true);
+    playNotificationSound();
   }, [branchBilling, operatorRole, session.accessToken]);
 
   useEffect(() => {

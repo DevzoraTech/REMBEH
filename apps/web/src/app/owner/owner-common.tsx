@@ -133,6 +133,7 @@ export type OwnerBorrower = {
   fullName: string;
   phone: string;
   nationalId: string | null;
+  email?: string | null;
   collateralType: string | null;
   city: string | null;
   loanCount: number;
@@ -141,6 +142,7 @@ export type OwnerBorrower = {
   registeredByName?: string | null;
   registeredByPublicId?: string | null;
   verifiedAt: string | null;
+  verificationStatus?: "VERIFIED" | "NOT_VERIFIED" | "ISSUE";
   createdAt: string;
 };
 

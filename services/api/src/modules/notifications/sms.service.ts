@@ -98,17 +98,19 @@ export class SmsService {
       return { ok: false, message: 'Pahappa credentials are not configured.' };
     }
 
-    const baseUrl = this.pahappaBaseUrl();
+    const baseUrl = this.pahappaApiUrl();
     const payload = {
       method: 'Balance',
       userdata: {
-        username: this.configService.get<string>('PAHAPPA_USERNAME')!.trim(),
+        username:
+          this.configService.get<string>('PAHAPPA_USERNAME')?.trim() ||
+          this.configService.get<string>('EGOSMS_USERNAME')!.trim(),
         password: this.pahappaPassword(),
       },
     };
 
     try {
-      const response = await fetch(`${baseUrl}/json/`, {
+      const response = await fetch(baseUrl, {
         method: 'POST',
         headers: {
           Accept: 'application/json',
@@ -146,7 +148,9 @@ export class SmsService {
       .toLowerCase();
 
     if (
-      (configured === 'pahappa' || configured === 'egosms') &&
+      (configured === 'pahappa' ||
+        configured === 'egosms' ||
+        configured === 'auto') &&
       this.hasPahappaKeys()
     ) {
       return 'pahappa';
@@ -177,9 +181,15 @@ export class SmsService {
 
   private hasPahappaKeys() {
     return Boolean(
-      this.configService.get<string>('PAHAPPA_USERNAME')?.trim() &&
+      (
+        this.configService.get<string>('PAHAPPA_USERNAME')?.trim() ||
+        this.configService.get<string>('EGOSMS_USERNAME')?.trim()
+      ) &&
         this.pahappaPassword() &&
-        this.configService.get<string>('PAHAPPA_SENDER')?.trim(),
+        (
+          this.configService.get<string>('PAHAPPA_SENDER')?.trim() ||
+          this.configService.get<string>('EGOSMS_SENDER')?.trim()
+        ),
     );
   }
 
@@ -188,35 +198,53 @@ export class SmsService {
     return (
       this.configService.get<string>('PAHAPPA_API_KEY')?.trim() ||
       this.configService.get<string>('PAHAPPA_PASSWORD')?.trim() ||
+      this.configService.get<string>('EGOSMS_PASSWORD')?.trim() ||
       ''
     );
   }
 
-  private pahappaBaseUrl() {
-    const configured = this.configService
-      .get<string>('PAHAPPA_BASE_URL')
-      ?.trim()
-      .replace(/\/$/, '');
-    if (configured) return configured;
+  private pahappaApiUrl() {
+    const configured =
+      this.configService.get<string>('PAHAPPA_BASE_URL')?.trim() ||
+      this.configService.get<string>('EGOSMS_API_URL')?.trim() ||
+      this.configService.get<string>('PAHAPPA_SMS_API_URL')?.trim() ||
+      '';
+    if (configured) {
+      const cleaned = configured.replace(/\/$/, '');
+      if (/\/json$/i.test(cleaned) || /\/json\/$/i.test(configured)) {
+        return cleaned.endsWith('/') ? cleaned : `${cleaned}/`;
+      }
+      return `${cleaned}/json/`;
+    }
     const sandbox =
       this.configService.get<string>('PAHAPPA_SANDBOX')?.trim().toLowerCase() ===
-      'true';
+        'true' ||
+      this.configService.get<string>('EGOSMS_SANDBOX')?.trim().toLowerCase() ===
+        'true';
+    // Match Carmie EgoSMS / Pahappa production endpoint.
     return sandbox
-      ? 'https://sandbox.egosms.co/api/v1'
-      : 'https://www.egosms.co/api/v1';
+      ? 'http://sandbox.egosms.co/api/v1/json/'
+      : 'https://comms.egosms.co/api/v1/json/';
   }
 
   private async sendPahappa(
     destination: string,
     body: string,
   ): Promise<SmsDeliveryResult> {
-    const username = this.configService.get<string>('PAHAPPA_USERNAME')!.trim();
+    const username =
+      this.configService.get<string>('PAHAPPA_USERNAME')?.trim() ||
+      this.configService.get<string>('EGOSMS_USERNAME')?.trim() ||
+      '';
     const password = this.pahappaPassword();
-    const sender = this.configService.get<string>('PAHAPPA_SENDER')!.trim();
+    const sender =
+      this.configService.get<string>('PAHAPPA_SENDER')?.trim() ||
+      this.configService.get<string>('EGOSMS_SENDER')?.trim() ||
+      'REMBEH';
     const priority =
       this.configService.get<string>('PAHAPPA_PRIORITY')?.trim() || '0';
     const number = this.toEgosmsNumber(destination);
     const message = body.slice(0, 480);
+    const apiUrl = this.pahappaApiUrl();
 
     const payload = {
       method: 'SendSms',
@@ -232,7 +260,7 @@ export class SmsService {
     };
 
     try {
-      const response = await fetch(`${this.pahappaBaseUrl()}/json/`, {
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           Accept: 'application/json',
@@ -240,10 +268,21 @@ export class SmsService {
         },
         body: JSON.stringify(payload),
       });
-      const raw = (await response.json().catch(() => ({}))) as Record<
-        string,
-        unknown
-      >;
+      const rawText = await response.text();
+      let raw: Record<string, unknown> = {};
+      try {
+        raw = JSON.parse(rawText) as Record<string, unknown>;
+      } catch {
+        this.logger.warn(
+          `Pahappa SMS non-JSON response: ${rawText.slice(0, 240)}`,
+        );
+        return {
+          provider: 'pahappa',
+          delivered: false,
+          destination,
+          message: 'Pahappa SMS returned an invalid response.',
+        };
+      }
       const status = String(raw.Status ?? raw.status ?? '').toUpperCase();
       const reference = String(
         raw.MsgFollowUpUniqueCode ?? raw.msgFollowUpUniqueCode ?? '',
@@ -262,6 +301,9 @@ export class SmsService {
         };
       }
 
+      this.logger.log(
+        `Pahappa SMS sent to ${number} followUp=${reference || 'n/a'}`,
+      );
       return {
         provider: 'pahappa',
         delivered: true,

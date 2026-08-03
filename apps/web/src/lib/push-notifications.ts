@@ -3,6 +3,7 @@
 import { getToken, onMessage, type MessagePayload } from "firebase/messaging";
 import { apiBaseUrl, readApiJson } from "./api";
 import { getFirebaseMessaging } from "./firebase";
+import { playNotificationSound } from "./notification-sound";
 import { readAuthState } from "./auth-session";
 
 const VAPID_KEY = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY ?? "";
@@ -119,6 +120,7 @@ export async function listenForForegroundPush(
     const body =
       payload.notification?.body ?? payload.data?.body ?? "New notification";
     const href = payload.data?.href;
+    playNotificationSound();
     onPayload(title, body, href);
     if (Notification.permission === "granted") {
       const note = new Notification(title, {

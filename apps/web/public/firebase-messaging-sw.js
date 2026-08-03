@@ -31,6 +31,15 @@ messaging.onBackgroundMessage((payload) => {
     payload.notification?.body || payload.data?.body || "New notification";
   const href = absoluteHref(payload.data?.href || "/owner");
 
+  // Ask open tabs to play the in-app chime (SW cannot use AudioContext).
+  self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(
+    (clientList) => {
+      for (const client of clientList) {
+        client.postMessage({ type: "rembeh-notification-sound" });
+      }
+    },
+  );
+
   // Always show — some browsers skip auto-display depending on payload shape.
   return self.registration.showNotification(title, {
     body,
@@ -38,6 +47,7 @@ messaging.onBackgroundMessage((payload) => {
     badge: self.location.origin + "/rembeh-icon.png",
     data: { href },
     requireInteraction: true,
+    silent: false,
   });
 });
 

@@ -29,6 +29,8 @@ const customerMediaSelect = {
 
 const applicationSummarySelect = {
   id: true,
+  status: true,
+  verifiedAt: true,
   templateName: true,
   loanProductTemplate: { select: { name: true } },
   loanPurpose: true,
@@ -225,6 +227,40 @@ export class CustomersRepository {
       });
 
       return customer;
+    });
+  }
+
+  /** National IDs / customer IDs present on blacklist or watchlist. */
+  async listRiskHits(input: {
+    tenantId: string;
+    customerIds: string[];
+    nationalIds: string[];
+  }) {
+    if (input.customerIds.length === 0 && input.nationalIds.length === 0) {
+      return [] as Array<{
+        customerId: string | null;
+        nationalId: string;
+        type: string;
+      }>;
+    }
+
+    return this.prisma.borrowerListEntry.findMany({
+      where: {
+        tenantId: input.tenantId,
+        OR: [
+          ...(input.customerIds.length
+            ? [{ customerId: { in: input.customerIds } }]
+            : []),
+          ...(input.nationalIds.length
+            ? [{ nationalId: { in: input.nationalIds } }]
+            : []),
+        ],
+      },
+      select: {
+        customerId: true,
+        nationalId: true,
+        type: true,
+      },
     });
   }
 }

@@ -17,6 +17,8 @@ export type CustomerApiContract = {
   registeredByName: string | null;
   registeredByPublicId: string | null;
   verifiedAt: string | null;
+  /** Derived: VERIFIED | NOT_VERIFIED | ISSUE */
+  verificationStatus: 'VERIFIED' | 'NOT_VERIFIED' | 'ISSUE';
   createdAt: string;
 };
 
