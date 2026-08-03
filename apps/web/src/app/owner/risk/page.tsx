@@ -386,7 +386,10 @@ export default function OwnerRiskPage() {
                   </tr>
                 ) : (
                   paged.items.map((entry) => (
-                    <tr key={entry.id} className="bg-white hover:bg-[#fbfdfc]">
+                    <tr
+                      key={entry.id}
+                      className="bg-white transition-colors hover:bg-[#eef7f2]"
+                    >
                       <td className="px-4 py-3.5">
                         <p className="font-bold text-[#0b1220]">
                           {entry.borrowerName ?? "Unnamed borrower"}

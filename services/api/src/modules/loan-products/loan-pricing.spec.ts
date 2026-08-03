@@ -1,4 +1,4 @@
-import { computeLoanPricing } from './loan-pricing';
+import { computeLoanPricing, resolveBaseRepayable } from './loan-pricing';
 
 describe('computeLoanPricing', () => {
   it('computes flat percent interest and total repayable (no duration factor)', () => {
@@ -67,5 +67,37 @@ describe('computeLoanPricing', () => {
 
     expect(reducing.interestAmount).toBe(flat.interestAmount);
     expect(compound.interestAmount).toBe(flat.interestAmount);
+  });
+});
+
+describe('resolveBaseRepayable', () => {
+  it('keeps a wallet opening that already matches flat pricing', () => {
+    expect(
+      resolveBaseRepayable({
+        openingBalance: 1_130_000,
+        pricedTotal: 1_130_000,
+        principal: 1_000_000,
+      }),
+    ).toBe(1_130_000);
+  });
+
+  it('replaces principal-only openings with flat pricing', () => {
+    expect(
+      resolveBaseRepayable({
+        openingBalance: 2_500_000,
+        pricedTotal: 2_905_400,
+        principal: 2_500_000,
+      }),
+    ).toBe(2_905_400);
+  });
+
+  it('replaces legacy annualized openings with flat pricing', () => {
+    expect(
+      resolveBaseRepayable({
+        openingBalance: 4_560_879.45,
+        pricedTotal: 5_180_400,
+        principal: 4_500_000,
+      }),
+    ).toBe(5_180_400);
   });
 });

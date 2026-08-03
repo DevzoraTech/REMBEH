@@ -34,6 +34,7 @@ import {
   type SuspendReason,
 } from "../agents/agent-status-confirm-modal";
 import { AgentPhoto } from "./agent-photo";
+import { Money } from "./money";
 
 type AgentAccountability = {
   date: string;
@@ -866,7 +867,10 @@ export function AgentDetailDrawer({
                               {displayLoanId(loan.loanId ?? loan.id)}
                             </td>
                             <td className="px-3 py-3 text-right font-semibold tabular-nums text-[#0b1220]">
-                              {formatMoney(loan.principalAmount, currency)}
+                              <Money
+                                value={loan.principalAmount}
+                                currency={currency}
+                              />
                             </td>
                             <td className="px-3 py-3 whitespace-nowrap text-slate-500">
                               {formatDateTime(loan.submittedAt)}
@@ -915,7 +919,7 @@ export function AgentDetailDrawer({
                               </Link>
                             </td>
                             <td className="px-3 py-3 text-right font-semibold tabular-nums text-[#0b1220]">
-                              {formatMoney(row.amount, currency)}
+                              <Money value={row.amount} currency={currency} />
                             </td>
                             <td className="px-3 py-3 font-medium tabular-nums text-[#0b1220]">
                               {displayLoanId(row.loanId)}
@@ -1075,10 +1079,6 @@ function displayLoanId(id: string) {
   if (/^LN[-_]/i.test(id)) return id.toUpperCase();
   const compact = id.replace(/-/g, "").slice(0, 6).toUpperCase();
   return `LN-${compact}`;
-}
-
-function formatMoney(value: number, currency: string) {
-  return `${currency} ${Math.round(value).toLocaleString("en-UG")}`;
 }
 
 function formatDateTime(value: string) {

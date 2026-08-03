@@ -31,13 +31,13 @@ import { RowActions } from "../app/row-actions";
 import { AppBootSkeleton } from "../app/skeleton";
 import {
   OwnerRepayment,
-  formatMoney,
   formatNumber,
   ownerFetch,
   sumBy,
   titleCase,
 } from "../../app/owner/owner-common";
 import { OwnerHeader } from "../../app/owner/owner-header";
+import { Money } from "../app/money";
 import {
   RembehBranch,
   RembehSession,
@@ -265,17 +265,6 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
                   className={`size-4 ${loading ? "animate-spin" : ""}`}
                 />
               </button>
-              <button
-                type="button"
-                onClick={() =>
-                  void exportPayments(filtered, currency, setExporting)
-                }
-                disabled={exporting || filtered.length === 0}
-                className="inline-flex h-9 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3.5 text-xs font-semibold text-white shadow-[0_12px_24px_rgba(15,143,104,0.28)] transition hover:brightness-105 disabled:opacity-60"
-              >
-                <Download className="size-3.5" />
-                {exporting ? "Exporting" : "Export"}
-              </button>
             </>
           }
         />
@@ -303,7 +292,7 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
             icon={<TrendingUp className="size-4" />}
             tone="green"
             label="Amount Collected"
-            value={formatMoney(collectedTotal, currency)}
+            value={<Money value={collectedTotal} currency={currency} />}
             detail="Total Received"
           />
           <MetricCard
@@ -331,6 +320,17 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
             <h2 className="text-[15px] font-semibold text-[#0b1220]">
               {isManager ? "Branch Payments" : "All Payments"}
             </h2>
+            <button
+              type="button"
+              onClick={() =>
+                void exportPayments(filtered, currency, setExporting)
+              }
+              disabled={exporting || filtered.length === 0}
+              className="ml-auto inline-flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8faf9] disabled:opacity-60"
+            >
+              <Download className="size-3.5" />
+              {exporting ? "Exporting" : "Export"}
+            </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 border-b border-[#edf1f5] px-4 py-3">
@@ -527,7 +527,7 @@ function PaymentRow({
       : payment.loanId;
 
   return (
-    <article className="grid gap-3 px-4 py-3.5 transition hover:bg-[#fbfdfc] xl:grid-cols-[1.45fr_1.05fr_1fr_0.95fr_0.9fr_0.85fr_1.05fr_42px] xl:items-center">
+    <article className="grid gap-3 px-4 py-3.5 transition-colors hover:bg-[#eef7f2] xl:grid-cols-[1.45fr_1.05fr_1fr_0.95fr_0.9fr_0.85fr_1.05fr_42px] xl:items-center">
       <div className="flex min-w-0 items-center gap-3">
         <span
           className={`grid size-10 shrink-0 place-items-center rounded-full text-xs font-semibold ${avatarTone(toneIndex)}`}
@@ -583,7 +583,7 @@ function PaymentRow({
 
       <Field label="Amount">
         <p className="text-sm font-bold tabular-nums text-[var(--forest-emerald)] xl:text-right">
-          {formatMoney(payment.amount, currency)}
+          <Money value={payment.amount} currency={currency} />
         </p>
       </Field>
 
@@ -650,7 +650,7 @@ function MetricCard({
 }: {
   icon: ReactNode;
   label: string;
-  value: string;
+  value: ReactNode;
   detail: string;
   tone: "green" | "blue" | "violet";
 }) {

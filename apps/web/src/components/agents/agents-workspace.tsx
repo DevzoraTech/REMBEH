@@ -421,7 +421,7 @@ export function AgentsWorkspace() {
                   {pagedAgents.items.map((agent, index) => (
                     <tr
                       key={agent.id}
-                      className="cursor-pointer transition hover:bg-[#fbfdfc]"
+                      className="cursor-pointer transition-colors hover:bg-[#eef7f2]"
                       onClick={() => {
                         setActionMenu(null);
                         setSelectedAgentId(agent.id);

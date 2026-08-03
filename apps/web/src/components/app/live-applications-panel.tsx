@@ -7,6 +7,7 @@ import { formatClock, groupByLocalDate } from "../../lib/date-groups";
 import { connectRealtime, type LoanApplicationEvent } from "../../lib/realtime";
 import { ApplicationDetailDrawer } from "./application-detail-drawer";
 import { DateGroupHeader } from "./date-group-header";
+import { Money } from "./money";
 
 type ApplicationRow = {
   id: string;
@@ -168,7 +169,7 @@ export function LiveApplicationsPanel({
                         </p>
                       </div>
                       <p className="shrink-0 text-sm font-bold tabular-nums text-[var(--midnight-navy)]">
-                        {formatAmount(item.amountRequested)}
+                        <Money value={item.amountRequested} currency="UGX" />
                       </p>
                     </button>
                   </li>
@@ -189,6 +190,3 @@ export function LiveApplicationsPanel({
   );
 }
 
-function formatAmount(value: number) {
-  return new Intl.NumberFormat("en-UG").format(value);
-}

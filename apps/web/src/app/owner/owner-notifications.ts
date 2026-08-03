@@ -13,6 +13,7 @@ import {
   OwnerReport,
   authHeaders,
   formatNumber,
+  isLoanScheduleOverdue,
 } from "./owner-common";
 
 export type NotificationScope = "owner" | "manager";
@@ -142,11 +143,7 @@ export async function loadOwnerNotifications(
         branch.manager.status !== "ACTIVE" ||
         branch.manager.inviteStatus === "PENDING",
     );
-    const overdueLoans = loans.filter((loan) => {
-      if (!loan.dueDate) return false;
-      if (loan.status === "CLOSED" || loan.status === "REJECTED") return false;
-      return new Date(loan.dueDate).getTime() < Date.now() && loan.balance > 0;
-    });
+    const overdueLoans = loans.filter(isLoanScheduleOverdue);
     const blacklisted = riskEntries.filter(
       (entry) => entry.type === "BLACKLISTED",
     );

@@ -26,6 +26,7 @@ import {
   useState,
 } from "react";
 import { AppShell } from "../app/app-shell";
+import { Money } from "../app/money";
 import { AppBootSkeleton, SkeletonBlock } from "../app/skeleton";
 import {
   OwnerHeader,
@@ -45,6 +46,7 @@ import {
   formatDate,
   formatMoney,
   formatNumber,
+  isLoanScheduleOverdue,
   ownerFetch,
   previousDateLabel,
   sumBy,
@@ -74,7 +76,8 @@ type ActivityItem = {
   id: string;
   title: string;
   meta: string;
-  amount?: string;
+  amountValue?: number;
+  amountCurrency?: string;
   time: string;
   tone: "green" | "blue" | "violet" | "gold";
   icon: "check" | "loan" | "report" | "cash";
@@ -452,7 +455,11 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
     () =>
       query
         ? activities.filter((item) =>
-            [item.title, item.meta, item.amount ?? ""]
+            [
+              item.title,
+              item.meta,
+              item.amountValue != null ? String(item.amountValue) : "",
+            ]
               .join(" ")
               .toLowerCase()
               .includes(query),
@@ -522,7 +529,7 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
           <TopStatCard
             icon={<WalletCards className="size-5" />}
             label="Total Loan Balance"
-            value={formatMoney(totalLoanBalance, currency)}
+            value={<Money value={totalLoanBalance} currency={currency} />}
             hint={branchScopeHint}
             change={loanBalanceChange}
             tone="green"
@@ -530,7 +537,7 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
           <TopStatCard
             icon={<Banknote className="size-5" />}
             label={isManager ? "Today's repayments" : "Collected Today"}
-            value={formatMoney(collectedToday, currency)}
+            value={<Money value={collectedToday} currency={currency} />}
             hint={branchScopeHint}
             change={collectedTodayChange}
             tone="green"
@@ -659,8 +666,8 @@ function TopStatCard({
 }: {
   icon: ReactNode;
   label: string;
-  value: string;
-  hint: string;
+  value: ReactNode;
+  hint: ReactNode;
   change?: string;
   tone: "green" | "blue" | "violet" | "gold";
   className?: string;
@@ -865,17 +872,17 @@ function BranchPerformanceCard({
               </div>
               <div className="flex min-w-0 justify-end text-right">
                 <p className="max-w-full break-words text-[11px] font-medium tabular-nums text-[#111827]">
-                  {formatPlainMoney(row.loanTotal, currency)}
+                  <Money value={row.loanTotal} currency={currency} />
                 </p>
               </div>
               <div className="flex min-w-0 justify-end text-right">
                 <p className="max-w-full break-words text-[11px] font-medium tabular-nums text-[#111827]">
-                  {formatPlainMoney(row.collectedToday, currency)}
+                  <Money value={row.collectedToday} currency={currency} />
                 </p>
               </div>
               <div className="flex min-w-0 flex-col items-end text-right">
                 <p className="max-w-full break-words text-[11px] font-medium tabular-nums text-[#111827]">
-                  {formatPlainMoney(row.overdueAmount, currency)}
+                  <Money value={row.overdueAmount} currency={currency} />
                 </p>
                 <p className="mt-0.5 truncate text-[10px] font-medium text-slate-500">
                   {formatNumber(row.overdueLoanCount)}{" "}
@@ -1053,9 +1060,12 @@ function RecentActivityCard({
               {item.meta}
             </p>
           </div>
-          {item.amount ? (
+          {item.amountValue != null ? (
             <p className="min-w-[94px] shrink-0 truncate text-right text-xs font-medium tabular-nums text-[var(--forest-emerald)]">
-              {item.amount}
+              <Money
+                value={item.amountValue}
+                currency={item.amountCurrency ?? "UGX"}
+              />
             </p>
           ) : null}
           <p className="w-16 shrink-0 text-right text-[11px] font-semibold text-slate-500">
@@ -1541,7 +1551,9 @@ function LineChart({
                   key={item.key}
                   color={item.color}
                   label={item.label}
-                  value={formatMoney(active[item.key], currency)}
+                  value={
+                    <Money value={active[item.key]} currency={currency} />
+                  }
                   delta={
                     previous
                       ? active[item.key] - previous[item.key]
@@ -1575,7 +1587,7 @@ function HoverStat({
 }: {
   color: string;
   label: string;
-  value: string;
+  value: ReactNode;
   delta?: number | null;
   currency?: string;
 }) {
@@ -1712,7 +1724,7 @@ function PerformanceDonutChart({
               {activeItem?.label ?? "Total"}
             </p>
             <p className="mt-0.5 text-xl font-bold tabular-nums text-[#070b18]">
-              {compactMoney(activeItem?.value ?? total, currency)}
+              <Money value={activeItem?.value ?? total} currency={currency} />
             </p>
             <p className="mt-0.5 text-[10px] font-medium text-slate-400">
               {percent(activeItem?.value ?? total, total).replace(/[()]/g, "")}
@@ -1768,7 +1780,7 @@ function PerformanceDonutChart({
                     {item.label}
                   </span>
                   <span className="text-xs font-bold tabular-nums text-[#111827]">
-                    {formatPlainMoney(item.value, currency)}
+                    <Money value={item.value} currency={currency} />
                   </span>
                 </div>
                 <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-[#edf2f0]">
@@ -1992,7 +2004,8 @@ function buildActivities(
     id: `repayment-${repayment.id}`,
     title: `Payment collected from ${repayment.clientName}`,
     meta: `By ${repayment.recordedByName}`,
-    amount: formatMoney(repayment.amount, currency),
+    amountValue: repayment.amount,
+    amountCurrency: currency,
     time: timeAgo(repayment.recordedAt),
     tone: "green" as const,
     icon: "check" as const,
@@ -2002,7 +2015,8 @@ function buildActivities(
     id: `loan-${loan.id}`,
     title: `New loan issued to ${loan.borrowerName}`,
     meta: [loan.officerName, loan.loanTypeName].filter(Boolean).join(" · ") || "Loan issued",
-    amount: formatMoney(loan.principal, currency),
+    amountValue: loan.principal,
+    amountCurrency: currency,
     time: timeAgo(loan.disbursedAt ?? loan.createdAt),
     tone: "blue" as const,
     icon: "loan" as const,
@@ -2109,7 +2123,7 @@ function buildAlerts({
           } have missed repayments for more than 8 days.`,
           time: "Today",
           tone: "red",
-          href: links.loans,
+          href: `${links.loans}?repayment=${encodeURIComponent("8+")}`,
         });
       }
       if (overdueExposure.highRiskCount > 0) {
@@ -2121,7 +2135,7 @@ function buildAlerts({
           } have missed repayments for more than 4 days.`,
           time: "Today",
           tone: "gold",
-          href: links.loans,
+          href: `${links.loans}?repayment=${encodeURIComponent("4-7")}`,
         });
       }
       if (overdueExposure.followUpCount > 0) {
@@ -2133,7 +2147,7 @@ function buildAlerts({
           } have missed repayments for more than 2 days.`,
           time: "Today",
           tone: "gold",
-          href: links.loans,
+          href: `${links.loans}?repayment=${encodeURIComponent("2-3")}`,
         });
       }
     }
@@ -2344,10 +2358,6 @@ function compactMoney(value: number, currency: string) {
   return `${sign}${Math.round(abs)}`;
 }
 
-function formatPlainMoney(value: number, currency: string) {
-  return formatMoney(value, currency).replace(`${currency} `, "");
-}
-
 function percent(value: number, total: number) {
   if (total <= 0) return "(0%)";
   return `(${Math.round((value / total) * 100)}%)`;
@@ -2431,10 +2441,7 @@ function endOfMonth(date: Date) {
 }
 
 function isOverdueLoan(loan: OwnerLoan) {
-  if (!loan.dueDate || loan.status === "CLOSED") return false;
-  const due = new Date(loan.dueDate);
-  due.setHours(23, 59, 59, 999);
-  return due < new Date() && loan.balance > 0;
+  return isLoanScheduleOverdue(loan);
 }
 
 function timeAgo(value: string | null | undefined) {

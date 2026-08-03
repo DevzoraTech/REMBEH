@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Loader2, X } from "lucide-react";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import { AgentPhoto } from "./agent-photo";
+import { Money } from "./money";
 
 type MediaItem = {
   id: string;
@@ -360,7 +361,9 @@ function ApplicationDetailBody({
       <Section title="loan terms">
         <Row
           label="principal"
-          value={formatAmount(detail.principalAmount)}
+          value={
+            <Money value={detail.principalAmount} currency="UGX" />
+          }
         />
         <Row
           label="interest rate"
@@ -380,15 +383,33 @@ function ApplicationDetailBody({
         />
         <Row
           label="processing fee"
-          value={formatAmount(detail.processingFee)}
+          value={<Money value={detail.processingFee} currency="UGX" />}
         />
         <Row
           label="interest amount"
-          value={formatAmount(detail.pricing?.interestAmount ?? null)}
+          value={
+            detail.pricing?.interestAmount != null ? (
+              <Money
+                value={detail.pricing.interestAmount}
+                currency="UGX"
+              />
+            ) : (
+              "—"
+            )
+          }
         />
         <Row
           label="total repayable"
-          value={formatAmount(detail.pricing?.totalRepayable ?? null)}
+          value={
+            detail.pricing?.totalRepayable != null ? (
+              <Money
+                value={detail.pricing.totalRepayable}
+                currency="UGX"
+              />
+            ) : (
+              "—"
+            )
+          }
         />
         <Row label="collateral" value={detail.collateralType || "—"} />
       </Section>
@@ -555,7 +576,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-3 text-sm">
       <span className="text-slate-500 capitalize">{label}</span>
@@ -564,11 +585,6 @@ function Row({ label, value }: { label: string; value: string }) {
       </span>
     </div>
   );
-}
-
-function formatAmount(value: number | null | undefined) {
-  if (value == null) return "—";
-  return new Intl.NumberFormat("en-UG").format(value);
 }
 
 function formatGender(value: ApplicationDetail["gender"]) {

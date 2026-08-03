@@ -10,8 +10,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { AppShell } from "../../../components/app/app-shell";
+import { Money } from "../../../components/app/money";
 import {
   DEFAULT_PAGE_SIZE,
   PaginationControls,
@@ -41,6 +42,7 @@ type ClientLoan = {
   balance: number;
   openingBalance: number | null;
   finesTotal: number;
+  totalRepayable?: number;
   isFined: boolean;
   disbursedAt: string | null;
   paymentStartDate: string | null;
@@ -261,16 +263,16 @@ export default function ClientDetailPage() {
               <StatCard label="loans" value={String(totals.loans)} />
               <StatCard
                 label="principal"
-                value={formatMoney(totals.principal)}
+                value={<Money value={totals.principal} currency="UGX" />}
               />
               <StatCard
                 label="outstanding"
-                value={formatMoney(totals.outstanding)}
+                value={<Money value={totals.outstanding} currency="UGX" />}
                 tone="warn"
               />
               <StatCard
                 label="paid"
-                value={formatMoney(totals.paid)}
+                value={<Money value={totals.paid} currency="UGX" />}
                 tone="good"
               />
             </div>
@@ -341,7 +343,7 @@ export default function ClientDetailPage() {
                         {pagedLoans.items.map((loan) => (
                           <tr
                             key={loan.id}
-                            className="odd:bg-white even:bg-[#fbfdfc]"
+                            className="odd:bg-white even:bg-[#fbfdfc] transition-colors hover:bg-[#eef7f2]"
                           >
                             <td className="px-2 py-3 font-semibold text-[var(--midnight-navy)]">
                               <span className="block truncate">
@@ -377,17 +379,26 @@ export default function ClientDetailPage() {
                             </td>
                             <td className="hidden px-2 py-3 text-right tabular-nums sm:table-cell">
                               <span className="block break-words">
-                                {formatMoney(loan.principal)}
+                                <Money
+                                  value={loan.principal}
+                                  currency={loan.currency || "UGX"}
+                                />
                               </span>
                             </td>
                             <td className="hidden px-2 py-3 text-right tabular-nums text-[var(--forest-emerald)] xl:table-cell">
                               <span className="block break-words">
-                                {formatMoney(loan.paidAmount)}
+                                <Money
+                                  value={loan.paidAmount}
+                                  currency={loan.currency || "UGX"}
+                                />
                               </span>
                             </td>
                             <td className="px-2 py-3 text-right font-bold tabular-nums text-[var(--midnight-navy)]">
                               <span className="block break-words">
-                                {formatMoney(loan.balance)}
+                                <Money
+                                  value={loan.balance}
+                                  currency={loan.currency || "UGX"}
+                                />
                               </span>
                             </td>
                             <td className="px-2 py-3 text-right">
@@ -492,7 +503,7 @@ export default function ClientDetailPage() {
                           </td>
                           <td className="px-3 py-3 text-right font-bold tabular-nums text-[var(--forest-emerald)]">
                             <span className="block truncate">
-                              {formatMoney(payment.amount)}
+                              <Money value={payment.amount} currency="UGX" />
                             </span>
                           </td>
                           <td className="px-3 py-3 text-slate-600">
@@ -564,7 +575,7 @@ function StatCard({
   tone,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   tone?: "good" | "warn";
 }) {
   const valueClass =
@@ -637,15 +648,18 @@ function InfoRow({
   value,
 }: {
   label: string;
-  value: string | null | undefined;
+  value: ReactNode;
 }) {
+  const empty =
+    value == null ||
+    (typeof value === "string" && value.trim() === "");
   return (
     <div className="grid grid-cols-[108px_minmax(0,1fr)] gap-3 py-2.5 text-xs">
       <dt className="font-semibold capitalize tracking-[0.06em] text-slate-500">
         {label}
       </dt>
       <dd className="min-w-0 truncate font-medium text-[var(--midnight-navy)]">
-        {value?.trim() || "—"}
+        {empty ? "—" : value}
       </dd>
     </div>
   );
@@ -705,18 +719,69 @@ function LoanDetailPanel({
               />
               <InfoRow label="status" value={loanStatusLabel(loan)} />
               <InfoRow label="collateral" value={loan.collateralType} />
-              <InfoRow label="principal" value={formatMoney(loan.principal)} />
-              <InfoRow label="paid" value={formatMoney(loan.paidAmount)} />
-              <InfoRow label="balance" value={formatMoney(loan.balance)} />
+              <InfoRow
+                label="principal"
+                value={
+                  <Money
+                    value={loan.principal}
+                    currency={loan.currency || "UGX"}
+                  />
+                }
+              />
+              <InfoRow
+                label="paid"
+                value={
+                  <Money
+                    value={loan.paidAmount}
+                    currency={loan.currency || "UGX"}
+                  />
+                }
+              />
+              <InfoRow
+                label="balance"
+                value={
+                  <Money
+                    value={loan.balance}
+                    currency={loan.currency || "UGX"}
+                  />
+                }
+              />
+              <InfoRow
+                label="total repayable"
+                value={
+                  <Money
+                    value={
+                      loan.totalRepayable ??
+                      (loan.openingBalance != null
+                        ? loan.openingBalance + loan.finesTotal
+                        : loan.balance + loan.paidAmount)
+                    }
+                    currency={loan.currency || "UGX"}
+                  />
+                }
+              />
               <InfoRow
                 label="opening balance"
                 value={
-                  loan.openingBalance == null
-                    ? "—"
-                    : formatMoney(loan.openingBalance)
+                  loan.openingBalance == null ? (
+                    "—"
+                  ) : (
+                    <Money
+                      value={loan.openingBalance}
+                      currency={loan.currency || "UGX"}
+                    />
+                  )
                 }
               />
-              <InfoRow label="fines" value={formatMoney(loan.finesTotal)} />
+              <InfoRow
+                label="fines"
+                value={
+                  <Money
+                    value={loan.finesTotal}
+                    currency={loan.currency || "UGX"}
+                  />
+                }
+              />
               <InfoRow
                 label="repayments"
                 value={String(loan.repaymentsCount)}
@@ -895,10 +960,6 @@ function DocumentPreview({
       </div>
     </div>
   );
-}
-
-function formatMoney(value: number) {
-  return `UGX ${new Intl.NumberFormat("en-UG").format(value)}`;
 }
 
 function formatDate(value: string | null) {

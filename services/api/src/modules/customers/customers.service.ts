@@ -13,6 +13,10 @@ import {
   normalizeInternationalPhoneNumber,
 } from '../../common/security/identity-normalization';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
+import {
+  computeLoanPricing,
+  resolveBaseRepayable,
+} from '../loan-products/loan-pricing';
 import { ObjectStorageService } from '../storage/object-storage.service';
 import {
   CustomerApiContract,
@@ -191,15 +195,41 @@ export class CustomersService {
         );
         const lastPayment = loan.repayments[0] ?? null;
 
+        const principal = this.decimalToNumber(loan.principal) ?? 0;
+        const balance = this.decimalToNumber(loan.balance) ?? 0;
+        const openingBalance = this.decimalToNumber(loan.wallet?.openingBalance);
+        const finesTotal = this.decimalToNumber(loan.finesTotal) ?? 0;
+        const rate =
+          this.decimalToNumber(loan.application?.interestRatePercent) ?? 0;
+        const fee =
+          this.decimalToNumber(loan.application?.processingFee) ?? 0;
+        const days = loan.application?.durationDays ?? 1;
+        const priced = computeLoanPricing({
+          principalAmount: principal,
+          interestRatePercent: rate,
+          durationDays: days > 0 ? days : 1,
+          processingFee: fee,
+        });
+        const baseRepayable = resolveBaseRepayable({
+          openingBalance,
+          pricedTotal: priced.totalRepayable,
+          principal,
+          paidAmount,
+          balance,
+          finesTotal,
+        });
+        const totalRepayable = this.roundMoney(baseRepayable + finesTotal);
+
         return {
           id: loan.id,
           applicationId: loan.application?.id ?? null,
           status: loan.status,
           currency: loan.currency,
-          principal: this.decimalToNumber(loan.principal) ?? 0,
-          balance: this.decimalToNumber(loan.balance) ?? 0,
-          openingBalance: this.decimalToNumber(loan.wallet?.openingBalance),
-          finesTotal: this.decimalToNumber(loan.finesTotal) ?? 0,
+          principal,
+          balance,
+          openingBalance,
+          finesTotal,
+          totalRepayable,
           isFined: loan.isFined || (loan.wallet?.isFined ?? false),
           disbursedAt: loan.disbursedAt?.toISOString() ?? null,
           paymentStartDate: loan.paymentStartDate?.toISOString() ?? null,

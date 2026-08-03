@@ -17,6 +17,8 @@ const loanListInclude = {
       templateName: true,
       durationDays: true,
       paymentStartDate: true,
+      processingFee: true,
+      interestRatePercent: true,
       loanProductTemplate: { select: { name: true } },
       officer: {
         select: {
@@ -29,6 +31,7 @@ const loanListInclude = {
   wallet: {
     select: {
       openingBalance: true,
+      finesTotal: true,
     },
   },
   repayments: {
@@ -56,7 +59,10 @@ export class LoansRepository {
       },
       include: loanListInclude,
       orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
-      take: input.limit ?? 300,
+      // Branch-scoped lists are complete; cross-branch owner lists stay capped.
+      ...(input.branchId
+        ? {}
+        : { take: input.limit ?? 2_000 }),
     });
   }
 }

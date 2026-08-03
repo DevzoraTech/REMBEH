@@ -30,7 +30,9 @@ import type { Worksheet } from "exceljs";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/app/app-shell";
+import { Money } from "../../components/app/money";
 import { AppBootSkeleton, SkeletonBlock } from "../../components/app/skeleton";
+import { formatMoney } from "../owner/owner-common";
 import { OwnerHeader, Tooltip } from "../owner/owner-header";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import {
@@ -1687,7 +1689,7 @@ function OpeningView({
               Available cash
             </p>
             <p className="mt-0.5 text-lg font-bold tabular-nums text-[#0b1220]">
-              {formatMoney(openingTotal)}
+              <Money value={openingTotal} currency="UGX" />
             </p>
             {form.floatSetAside !== "" &&
             Number(form.floatSetAside) > openingTotal ? (
@@ -1927,15 +1929,28 @@ function OpenOperationView({
         <DayTopStat
           icon={<WalletCards className="size-5" />}
           label="Cash Left"
-          value={formatMoney(cashPosition)}
-          hint={`Opening ${formatMoney(operation.cashAvailableAtOpening)}`}
+          value={<Money value={cashPosition} currency="UGX" />}
+          hint={
+            <>
+              Opening{" "}
+              <Money
+                value={operation.cashAvailableAtOpening}
+                currency="UGX"
+              />
+            </>
+          }
           tooltip="Cash currently on hand at the branch for this operations day."
           tone="green"
         />
         <DayTopStat
           icon={<Landmark className="size-5" />}
           label="Expected Close"
-          value={formatMoney(operation.expectedClosingBalance)}
+          value={
+            <Money
+              value={operation.expectedClosingBalance}
+              currency="UGX"
+            />
+          }
           hint="Target Cash Left"
           tooltip="Expected cash left after float, returns, and expenses."
           tone="green"
@@ -1943,15 +1958,22 @@ function OpenOperationView({
         <DayTopStat
           icon={<UserRoundPlus className="size-5" />}
           label="Float out"
-          value={formatMoney(operation.floatIssued)}
-          hint={`${formatMoney(operation.floatRemaining)} still assignable`}
+          value={<Money value={operation.floatIssued} currency="UGX" />}
+          hint={
+            <>
+              <Money value={operation.floatRemaining} currency="UGX" /> still
+              assignable
+            </>
+          }
           tooltip="Total float issued to agents today, with how much remains to assign."
           tone="gold"
         />
         <DayTopStat
           icon={<RotateCcw className="size-5" />}
           label="Cash returned"
-          value={formatMoney(operation.cashReturnedByAgents)}
+          value={
+            <Money value={operation.cashReturnedByAgents} currency="UGX" />
+          }
           hint={`${agentsBack} of ${agentsOut || 0} agents back`}
           tooltip="Cash returned by agents so far today."
           tone="blue"
@@ -1959,8 +1981,15 @@ function OpenOperationView({
         <DayTopStat
           icon={<Banknote className="size-5" />}
           label="Repayments"
-          value={formatMoney(operation.collectionsReceived)}
-          hint={`${operation.loansIssuedCount} loans · ${formatMoney(operation.expensesTotal)} expenses`}
+          value={
+            <Money value={operation.collectionsReceived} currency="UGX" />
+          }
+          hint={
+            <>
+              {operation.loansIssuedCount} loans ·{" "}
+              <Money value={operation.expensesTotal} currency="UGX" /> expenses
+            </>
+          }
           tooltip="Repayments received today, with loans issued and expenses recorded."
           tone="violet"
           className="sm:col-span-2 xl:col-span-1"
@@ -2179,29 +2208,43 @@ function ComputerisedReportView({
       <div className="grid grid-cols-3 gap-2 lg:grid-cols-6">
         <ReportMetric
           label="Opening Cash"
-          value={formatMoney(operation.cashAvailableAtOpening)}
+          value={
+            <Money
+              value={operation.cashAvailableAtOpening}
+              currency="UGX"
+            />
+          }
         />
         <ReportMetric
           label="Float Distributed"
-          value={formatMoney(operation.floatIssued)}
+          value={<Money value={operation.floatIssued} currency="UGX" />}
         />
         <ReportMetric
           label="Returned Cash"
-          value={formatMoney(operation.cashReturnedByAgents)}
+          value={
+            <Money value={operation.cashReturnedByAgents} currency="UGX" />
+          }
         />
         <ReportMetric
           label="Expenses"
-          value={formatMoney(operation.expensesTotal)}
+          value={<Money value={operation.expensesTotal} currency="UGX" />}
           danger
         />
         <ReportMetric
           label="Expected Close"
-          value={formatMoney(operation.expectedClosingBalance)}
+          value={
+            <Money
+              value={operation.expectedClosingBalance}
+              currency="UGX"
+            />
+          }
           highlight
         />
         <ReportMetric
           label="Counted Cash"
-          value={formatMoney(operation.closingBalance ?? 0)}
+          value={
+            <Money value={operation.closingBalance ?? 0} currency="UGX" />
+          }
         />
       </div>
 
@@ -2209,31 +2252,43 @@ function ComputerisedReportView({
         <ReportBlock title="Opening Cash">
           <StatementRow
             label="Previous closing balance"
-            value={formatMoney(operation.openingBalance)}
+            value={<Money value={operation.openingBalance} currency="UGX" />}
           />
           <StatementRow
             label="Top-ups added today"
-            value={formatMoney(operation.topUpsTotal)}
+            value={<Money value={operation.topUpsTotal} currency="UGX" />}
           />
           <StatementRow
             label="Total opening balance"
-            value={formatMoney(operation.cashAvailableAtOpening)}
+            value={
+              <Money
+                value={operation.cashAvailableAtOpening}
+                currency="UGX"
+              />
+            }
             strong
           />
         </ReportBlock>
         <ReportBlock title="Closing Result">
           <StatementRow
             label="Expected closing balance"
-            value={formatMoney(operation.expectedClosingBalance)}
+            value={
+              <Money
+                value={operation.expectedClosingBalance}
+                currency="UGX"
+              />
+            }
             strong
           />
           <StatementRow
             label="Counted cash"
-            value={formatMoney(operation.closingBalance ?? 0)}
+            value={
+              <Money value={operation.closingBalance ?? 0} currency="UGX" />
+            }
           />
           <StatementRow
             label="Variance"
-            value={formatVariance(operation.closingVariance)}
+            value={<VarianceLabel value={operation.closingVariance} />}
             danger={(operation.closingVariance ?? 0) !== 0}
           />
         </ReportBlock>
@@ -2244,22 +2299,39 @@ function ComputerisedReportView({
           <ReportMiniStat
             label="Loans issued"
             value={`${operation.loansIssuedCount}`}
-            hint={formatMoney(operation.loansIssuedPrincipal)}
+            hint={
+              <Money
+                value={operation.loansIssuedPrincipal}
+                currency="UGX"
+              />
+            }
           />
           <ReportMiniStat
             label="Repayments"
             value={`${operation.collectionsCount}`}
-            hint={formatMoney(operation.collectionsReceived)}
+            hint={
+              <Money
+                value={operation.collectionsReceived}
+                currency="UGX"
+              />
+            }
           />
           <ReportMiniStat
             label="Processing fees"
-            value={formatMoney(operation.processingFeesTotal)}
+            value={
+              <Money value={operation.processingFeesTotal} currency="UGX" />
+            }
             hint="Included in handover"
           />
           <ReportMiniStat
             label="Agents returned"
             value={`${operation.agentsReturnedCount}/${operation.agentsWithFloatCount}`}
-            hint={formatMoney(operation.expectedAgentReturnTotal)}
+            hint={
+              <Money
+                value={operation.expectedAgentReturnTotal}
+                currency="UGX"
+              />
+            }
           />
         </div>
       </ReportBlock>
@@ -2274,7 +2346,7 @@ function ComputerisedReportView({
             id: topUp.id,
             label: topUp.description || "Cash top-up",
             meta: `${formatClock(topUp.addedAt)} · ${topUp.recordedByName}`,
-            value: formatMoney(topUp.amount),
+            value: <Money value={topUp.amount} currency="UGX" />,
           }))}
         />
         <ReportRecordList
@@ -2284,7 +2356,7 @@ function ComputerisedReportView({
             id: expense.id,
             label: categoryLabel(expense.category),
             meta: `${formatClock(expense.incurredAt)} · ${expense.recordedByName}`,
-            value: formatMoney(expense.amount),
+            value: <Money value={expense.amount} currency="UGX" />,
           }))}
         />
       </div>
@@ -2661,7 +2733,7 @@ function ReportMetric({
   danger = false,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   highlight?: boolean;
   danger?: boolean;
 }) {
@@ -2712,8 +2784,8 @@ function ReportMiniStat({
   hint,
 }: {
   label: string;
-  value: string;
-  hint: string;
+  value: ReactNode;
+  hint: ReactNode;
 }) {
   return (
     <div className="rounded-xl border border-[#edf1f5] bg-[#fbfcfd] px-3 py-2.5">
@@ -2787,7 +2859,7 @@ function ReportAmount({
         strong ? "font-bold text-[var(--midnight-navy)]" : "font-semibold"
       }`}
     >
-      {formatCompactMoney(value)}
+      <Money value={value} currency="UGX" />
     </td>
   );
 }
@@ -2799,7 +2871,7 @@ function ReportRecordList({
 }: {
   title: string;
   empty: string;
-  rows: { id: string; label: string; meta: string; value: string }[];
+  rows: { id: string; label: string; meta: string; value: ReactNode }[];
 }) {
   return (
     <ReportBlock title={title}>
@@ -2962,8 +3034,8 @@ function DayTopStat({
 }: {
   icon: ReactNode;
   label: string;
-  value: string;
-  hint: string;
+  value: ReactNode;
+  hint: ReactNode;
   tooltip: string;
   tone: "green" | "blue" | "violet" | "gold";
   className?: string;
@@ -3069,7 +3141,10 @@ function CashMovementCard({ operation }: { operation: DailyOperation }) {
             Close
           </p>
           <p className="text-[11px] font-bold tabular-nums text-[var(--forest-emerald)]">
-            {formatCompactMoney(operation.expectedClosingBalance)}
+            <Money
+              value={operation.expectedClosingBalance}
+              currency="UGX"
+            />
           </p>
         </div>
       </div>
@@ -3100,11 +3175,17 @@ function CashMovementCard({ operation }: { operation: DailyOperation }) {
             <p
               className={`text-right text-[11px] font-bold tabular-nums ${amountTone[row.tone]}`}
             >
-              {row.signed === "plus"
-                ? `+${formatCompactMoney(row.amount)}`
-                : row.signed === "minus"
-                  ? `−${formatCompactMoney(row.amount)}`
-                  : formatCompactMoney(row.amount)}
+              <Money
+                value={row.amount}
+                currency="UGX"
+                sign={
+                  row.signed === "plus"
+                    ? "+"
+                    : row.signed === "minus"
+                      ? "−"
+                      : undefined
+                }
+              />
             </p>
           </div>
         ))}
@@ -3131,11 +3212,16 @@ function AgentFloatBoard({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-bold text-[#0b1220]">Agent float</p>
-          <p className="mt-0.5 text-[10px] font-medium text-slate-500">
-            {operation.agentReturns.length} agent
-            {operation.agentReturns.length === 1 ? "" : "s"} ·{" "}
-            {formatCompactMoney(operation.floatIssued)} issued
-            {pendingCount > 0 ? ` · ${pendingCount} pending` : ""}
+          <p className="mt-0.5 inline-flex flex-wrap items-baseline gap-1 text-[10px] font-medium text-slate-500">
+            <span>
+              {operation.agentReturns.length} agent
+              {operation.agentReturns.length === 1 ? "" : "s"} ·
+            </span>
+            <Money value={operation.floatIssued} currency="UGX" />
+            <span>
+              issued
+              {pendingCount > 0 ? ` · ${pendingCount} pending` : ""}
+            </span>
           </p>
         </div>
         {onIssueFloat ? (
@@ -3262,7 +3348,7 @@ function AgentTableCell({
             : "font-semibold text-[#111827]"
         }`}
       >
-        {formatCompactMoney(value)}
+        <Money value={value} currency="UGX" />
       </p>
     </div>
   );
@@ -3290,9 +3376,9 @@ function DayExpensesStrip({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="text-sm font-bold text-[#0b1220]">Expenses</p>
-          <p className="mt-0.5 text-[11px] font-medium text-slate-500">
-            {operation.expensesCount} recorded ·{" "}
-            {formatMoney(operation.expensesTotal)}
+          <p className="mt-0.5 inline-flex flex-wrap items-baseline gap-1 text-[11px] font-medium text-slate-500">
+            <span>{operation.expensesCount} recorded ·</span>
+            <Money value={operation.expensesTotal} currency="UGX" />
           </p>
         </div>
         <ActionChip
@@ -3333,7 +3419,7 @@ function DayExpensesStrip({
                   </p>
                 </div>
                 <p className="text-right text-[11px] font-bold tabular-nums text-[#0b1220]">
-                  {formatCompactMoney(expense.amount)}
+                  <Money value={expense.amount} currency="UGX" />
                 </p>
                 <p className="text-right text-[10px] font-medium tabular-nums text-slate-500">
                   {formatClock(expense.incurredAt)}
@@ -3849,9 +3935,15 @@ function OperationActionDrawer({
                             <p className="truncate text-xs font-bold text-[#0b1220]">
                               {agentReturn.agentName}
                             </p>
-                            <p className="truncate text-[10px] font-medium text-slate-500">
-                              {agentReturn.agentPublicId ?? "No agent id"} ·
-                              expected {formatCompactMoney(agentReturn.expectedReturn)}
+                            <p className="inline-flex max-w-full flex-wrap items-baseline gap-1 truncate text-[10px] font-medium text-slate-500">
+                              <span>
+                                {agentReturn.agentPublicId ?? "No agent id"} ·
+                                expected
+                              </span>
+                              <Money
+                                value={agentReturn.expectedReturn}
+                                currency="UGX"
+                              />
                             </p>
                           </div>
                           <ReturnBadge status={agentReturn.status} />
@@ -3865,11 +3957,21 @@ function OperationActionDrawer({
                     <div className="grid grid-cols-2 gap-2">
                       <PanelHint
                         label="Float given"
-                        value={formatMoney(selectedReturn.amountGiven)}
+                        value={
+                          <Money
+                            value={selectedReturn.amountGiven}
+                            currency="UGX"
+                          />
+                        }
                       />
                       <PanelHint
                         label="Expected back"
-                        value={formatMoney(selectedReturn.expectedReturn)}
+                        value={
+                          <Money
+                            value={selectedReturn.expectedReturn}
+                            currency="UGX"
+                          />
+                        }
                       />
                     </div>
                     <MoneyField
@@ -3893,7 +3995,9 @@ function OperationActionDrawer({
                               : "amber"
                         }
                       >
-                        Variance {formatVariance(returnVariance)}
+                        <>
+                          Variance <VarianceLabel value={returnVariance} />
+                        </>
                       </DrawerAlert>
                     ) : null}
                     <TextAreaField
@@ -3926,7 +4030,12 @@ function OperationActionDrawer({
                 )}
                 <PanelHint
                   label="Expected closing balance"
-                  value={formatMoney(operation.expectedClosingBalance)}
+                  value={
+                    <Money
+                      value={operation.expectedClosingBalance}
+                      currency="UGX"
+                    />
+                  }
                   accent
                 />
                 <MoneyField
@@ -3947,8 +4056,10 @@ function OperationActionDrawer({
                           : "amber"
                     }
                   >
-                    Variance {formatVariance(variance)}
-                    {needsCloseNote ? " · notes required" : ""}
+                    <>
+                      Variance <VarianceLabel value={variance} />
+                      {needsCloseNote ? " · notes required" : ""}
+                    </>
                   </DrawerAlert>
                 ) : null}
                 <TextAreaField
@@ -4006,11 +4117,18 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
       stats: (operation: DailyOperation) => [
         {
           label: "Cash Left",
-          value: formatMoney(operation.branchCashRemaining),
+          value: (
+            <Money value={operation.branchCashRemaining} currency="UGX" />
+          ),
         },
         {
           label: "Top-ups Today",
-          value: formatMoney(operation.topUpsTotal ?? operation.cashAddedToday),
+          value: (
+            <Money
+              value={operation.topUpsTotal ?? operation.cashAddedToday}
+              currency="UGX"
+            />
+          ),
         },
       ],
     },
@@ -4022,11 +4140,13 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
       stats: (operation: DailyOperation) => [
         {
           label: "Cash Left",
-          value: formatMoney(operation.branchCashRemaining),
+          value: (
+            <Money value={operation.branchCashRemaining} currency="UGX" />
+          ),
         },
         {
           label: "Expenses",
-          value: formatMoney(operation.expensesTotal),
+          value: <Money value={operation.expensesTotal} currency="UGX" />,
         },
       ],
     },
@@ -4038,11 +4158,11 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
       stats: (operation: DailyOperation) => [
         {
           label: "Assignable",
-          value: formatMoney(operation.floatRemaining),
+          value: <Money value={operation.floatRemaining} currency="UGX" />,
         },
         {
           label: "Already out",
-          value: formatMoney(operation.floatIssued),
+          value: <Money value={operation.floatIssued} currency="UGX" />,
         },
       ],
     },
@@ -4054,7 +4174,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
       stats: (operation: DailyOperation) => [
         {
           label: "Assignable",
-          value: formatMoney(operation.floatRemaining),
+          value: <Money value={operation.floatRemaining} currency="UGX" />,
         },
         {
           label: "Agents out",
@@ -4070,7 +4190,12 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
       stats: (operation: DailyOperation) => [
         {
           label: "Expected back",
-          value: formatMoney(operation.expectedAgentReturnTotal),
+          value: (
+            <Money
+              value={operation.expectedAgentReturnTotal}
+              currency="UGX"
+            />
+          ),
         },
         {
           label: "Agents back",
@@ -4086,7 +4211,12 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
       stats: (operation: DailyOperation) => [
         {
           label: "Expected close",
-          value: formatMoney(operation.expectedClosingBalance),
+          value: (
+            <Money
+              value={operation.expectedClosingBalance}
+              currency="UGX"
+            />
+          ),
         },
         {
           label: "Returns",
@@ -4094,7 +4224,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
         },
       ],
     },
-  } as const;
+  };
   return configs[panel];
 }
 
@@ -4167,7 +4297,7 @@ function StatementRow({
   danger = false,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   strong?: boolean;
   muted?: boolean;
   danger?: boolean;
@@ -4211,7 +4341,7 @@ function MiniRecord({
   status,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   meta: string;
   status?: string;
 }) {
@@ -4246,7 +4376,7 @@ function TableMoney({
         strong ? "font-bold text-[var(--midnight-navy)]" : "font-semibold"
       }`}
     >
-      {formatCompactMoney(value)}
+      <Money value={value} currency="UGX" />
     </td>
   );
 }
@@ -4276,7 +4406,7 @@ function PanelHint({
   accent = false,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   accent?: boolean;
 }) {
   return (
@@ -4348,7 +4478,7 @@ function FloatPanelForm({
       <DrawerSection title="Assign float" />
       <PanelHint
         label="Assignable float left"
-        value={formatMoney(amountLeft)}
+        value={<Money value={amountLeft} currency="UGX" />}
         accent
       />
       {options.length === 0 ? (
@@ -4446,7 +4576,7 @@ function TopUpList({ operation }: { operation: DailyOperation }) {
                 </p>
               </div>
               <p className="shrink-0 text-xs font-bold tabular-nums text-[var(--forest-emerald)]">
-                +{formatCompactMoney(topUp.amount)}
+                <Money value={topUp.amount} currency="UGX" sign="+" />
               </p>
             </div>
           ))}
@@ -4496,7 +4626,7 @@ function AgentReturnsPanel({
           </p>
         </div>
         <span className="text-xs font-bold tabular-nums text-[var(--midnight-navy)]">
-          {formatMoney(operation.cashReturnedByAgents)}
+          <Money value={operation.cashReturnedByAgents} currency="UGX" />
         </span>
       </header>
       {operation.agentReturns.length === 0 ? (
@@ -4538,7 +4668,10 @@ function AgentReturnsPanel({
                   {returned ? (
                     <span className="text-right">
                       <span className="block font-bold tabular-nums">
-                        {formatCompactMoney(agentReturn.amountReturned ?? 0)}
+                        <Money
+                          value={agentReturn.amountReturned ?? 0}
+                          currency="UGX"
+                        />
                       </span>
                       <span
                         className={`mt-0.5 block text-[10px] font-semibold ${
@@ -4549,7 +4682,7 @@ function AgentReturnsPanel({
                               : "text-[var(--forest-emerald)]"
                         }`}
                       >
-                        {formatVariance(agentReturn.variance)}
+                        <VarianceLabel value={agentReturn.variance} />
                       </span>
                     </span>
                   ) : editable && canRecordReturn ? (
@@ -4666,11 +4799,13 @@ function CloseDayCard({
         <div className="space-y-2 p-4">
           <DetailRow
             label="Closing balance"
-            value={formatMoney(operation.closingBalance ?? 0)}
+            value={
+              <Money value={operation.closingBalance ?? 0} currency="UGX" />
+            }
           />
           <DetailRow
             label="Variance"
-            value={formatVariance(operation.closingVariance)}
+            value={<VarianceLabel value={operation.closingVariance} />}
           />
           {operation.closingNotes ? (
             <p className="text-xs text-slate-600">{operation.closingNotes}</p>
@@ -4686,11 +4821,16 @@ function CloseDayCard({
         <p className="text-sm font-bold text-[var(--midnight-navy)]">
           Close day
         </p>
-        <p className="mt-0.5 text-xs text-slate-500">
-          Expected: {formatMoney(operation.expectedClosingBalance)}
+        <p className="mt-0.5 inline-flex flex-wrap items-baseline gap-1 text-xs text-slate-500">
+          <span>Expected:</span>
+          <Money
+            value={operation.expectedClosingBalance}
+            currency="UGX"
+          />
         </p>
-        <p className="mt-0.5 text-xs text-slate-500">
-          Loan processing fees: {formatMoney(operation.processingFeesTotal)}
+        <p className="mt-0.5 inline-flex flex-wrap items-baseline gap-1 text-xs text-slate-500">
+          <span>Loan processing fees:</span>
+          <Money value={operation.processingFeesTotal} currency="UGX" />
         </p>
       </header>
       <div className="space-y-3 p-4">
@@ -4728,7 +4868,9 @@ function CloseDayCard({
                   : "text-amber-700"
             }`}
           >
-            Variance: {formatVariance(variance)}
+            <>
+              Variance: <VarianceLabel value={variance} />
+            </>
           </p>
         ) : null}
         <label>
@@ -4788,8 +4930,9 @@ function ExpenseFormCard({
         <p className="text-sm font-bold text-[var(--midnight-navy)]">
           Record expense
         </p>
-        <p className="mt-0.5 text-xs text-slate-500">
-          Remaining cash: {formatMoney(operation.branchCashRemaining)}
+        <p className="mt-0.5 inline-flex flex-wrap items-baseline gap-1 text-xs text-slate-500">
+          <span>Remaining cash:</span>
+          <Money value={operation.branchCashRemaining} currency="UGX" />
         </p>
       </header>
       <div className="space-y-3 p-4">
@@ -4868,7 +5011,7 @@ function ExpenseList({ operation }: { operation: DailyOperation }) {
           Expenses
         </p>
         <span className="text-xs font-bold tabular-nums text-[var(--midnight-navy)]">
-          {formatMoney(operation.expensesTotal)}
+          <Money value={operation.expensesTotal} currency="UGX" />
         </span>
       </header>
       {operation.expenses.length === 0 ? (
@@ -4897,7 +5040,7 @@ function ExpenseList({ operation }: { operation: DailyOperation }) {
                 </span>
               </span>
               <span className="text-right font-bold tabular-nums">
-                {formatMoney(expense.amount)}
+                <Money value={expense.amount} currency="UGX" />
               </span>
               <span className="truncate text-xs text-slate-600">
                 {expense.recordedByName}
@@ -4928,7 +5071,7 @@ function MoneyField({
     <label className="block">
       <span className="text-[11px] font-semibold text-slate-600">{label}</span>
       <div className="relative mt-1.5">
-        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[11px] font-bold text-slate-400">
+        <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500">
           UGX
         </span>
         <input
@@ -4961,12 +5104,12 @@ function MoneyCell({
       <span className="text-xs text-slate-500 lg:hidden">
         {strong ? "Expected" : "Amount"}
       </span>
-      {formatCompactMoney(value)}
+      <Money value={value} currency="UGX" />
     </span>
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: string }) {
+function DetailRow({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="border-b border-[#edf1f5] px-1 py-2.5 last:border-b-0">
       <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
@@ -5350,15 +5493,23 @@ function formatCompactMoney(value: number) {
   }).format(value);
 }
 
-function formatMoney(value: number) {
-  return `UGX ${formatCompactMoney(value)}`;
-}
-
+/** Plain-string variance for excel exports and alerts that must stay text. */
 function formatVariance(value: number | null) {
   if (value == null) return "Not set";
   if (value === 0) return "Balanced";
   const absolute = formatMoney(Math.abs(value));
   return value < 0 ? `Short ${absolute}` : `Over ${absolute}`;
+}
+
+function VarianceLabel({ value }: { value: number | null }) {
+  if (value == null) return <>Not set</>;
+  if (value === 0) return <>Balanced</>;
+  return (
+    <span className="inline-flex items-baseline gap-1">
+      <span>{value < 0 ? "Short" : "Over"}</span>
+      <Money value={Math.abs(value)} currency="UGX" />
+    </span>
+  );
 }
 
 function formatClock(value: string) {

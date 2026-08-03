@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Loader2, X } from "lucide-react";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import { AgentPhoto } from "./agent-photo";
+import { Money } from "./money";
 
 type PaymentDetail = {
   id: string;
@@ -115,9 +116,14 @@ export function PaymentDetailDrawer({
               payment
             </p>
             <h2 className="text-lg font-bold text-[var(--midnight-navy)]">
-              {detail
-                ? `${formatAmount(detail.amount)} ${detail.currency || ""}`.trim()
-                : "Loading…"}
+              {detail ? (
+                <Money
+                  value={detail.amount}
+                  currency={detail.currency || "UGX"}
+                />
+              ) : (
+                "Loading…"
+              )}
             </h2>
             {detail ? (
               <p className="text-xs text-slate-500">
@@ -145,7 +151,15 @@ export function PaymentDetailDrawer({
           ) : detail ? (
             <div className="space-y-5">
               <Section title="payment">
-                <Row label="amount" value={formatAmount(detail.amount)} />
+                <Row
+                  label="amount"
+                  value={
+                    <Money
+                      value={detail.amount}
+                      currency={detail.currency || "UGX"}
+                    />
+                  }
+                />
                 <Row label="method" value={methodLabel(detail.method)} />
                 <Row
                   label="paid at"
@@ -162,26 +176,46 @@ export function PaymentDetailDrawer({
               <Section title="loan">
                 <Row
                   label="loan amount"
-                  value={formatAmount(detail.loanAmount)}
+                  value={
+                    <Money
+                      value={detail.loanAmount}
+                      currency={detail.currency || "UGX"}
+                    />
+                  }
                 />
                 <Row
                   label="total paid"
-                  value={formatAmount(detail.amountPaid)}
+                  value={
+                    <Money
+                      value={detail.amountPaid}
+                      currency={detail.currency || "UGX"}
+                    />
+                  }
                 />
                 <Row
                   label="outstanding"
                   value={
-                    detail.loanOutstanding != null
-                      ? formatAmount(detail.loanOutstanding)
-                      : "—"
+                    detail.loanOutstanding != null ? (
+                      <Money
+                        value={detail.loanOutstanding}
+                        currency={detail.currency || "UGX"}
+                      />
+                    ) : (
+                      "—"
+                    )
                   }
                 />
                 <Row
                   label="fines total"
                   value={
-                    detail.finesTotal != null && detail.finesTotal > 0
-                      ? formatAmount(detail.finesTotal)
-                      : "—"
+                    detail.finesTotal != null && detail.finesTotal > 0 ? (
+                      <Money
+                        value={detail.finesTotal}
+                        currency={detail.currency || "UGX"}
+                      />
+                    ) : (
+                      "—"
+                    )
                   }
                 />
                 <Row label="fined" value={detail.isFined ? "yes" : "no"} />
@@ -232,7 +266,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-3 text-sm">
       <span className="text-slate-500 capitalize">{label}</span>
@@ -241,11 +275,6 @@ function Row({ label, value }: { label: string; value: string }) {
       </span>
     </div>
   );
-}
-
-function formatAmount(value: number | null | undefined) {
-  if (value == null) return "—";
-  return new Intl.NumberFormat("en-UG").format(value);
 }
 
 function formatDateTime(value: string) {

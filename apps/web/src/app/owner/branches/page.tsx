@@ -66,6 +66,7 @@ import {
   sumBy,
   useOwnerSession,
 } from "../owner-common";
+import { Money } from "../../../components/app/money";
 
 const emptyBranchForm = {
   branchName: "",
@@ -459,7 +460,7 @@ function OwnerBranchesPageContent() {
           <BranchStatCard
             icon={<WalletCards className="size-5" />}
             label="Total Outstanding"
-            value={formatMoney(outstandingTotal, currency)}
+            value={<Money value={outstandingTotal} currency={currency} />}
             detail="Across portfolio"
             tone="green"
           />
@@ -893,7 +894,7 @@ function AttentionBranchRow({
 
   return (
     <article
-      className={`grid cursor-pointer gap-3 px-4 ${compact ? "py-2.5" : "py-4"} text-left transition hover:bg-[#fbfdfc] xl:grid-cols-[1.35fr_1.2fr_72px_88px_88px_42px] xl:items-center`}
+      className={`grid cursor-pointer gap-3 px-4 ${compact ? "py-2.5" : "py-4"} text-left transition-colors hover:bg-[#eef7f2] xl:grid-cols-[1.35fr_1.2fr_72px_88px_88px_42px] xl:items-center`}
       onClick={onOpenAttention}
     >
       <div className="flex min-w-0 items-start justify-between gap-3 xl:contents">
@@ -1029,7 +1030,7 @@ function BranchRow({
 
   return (
     <article
-      className={`grid gap-3 px-4 ${compact ? "py-2.5" : "py-4"} text-left transition hover:bg-[#fbfdfc] xl:grid-cols-[1.4fr_1.05fr_1fr_64px_66px_104px_72px_42px] xl:items-center`}
+      className={`grid gap-3 px-4 ${compact ? "py-2.5" : "py-4"} text-left transition-colors hover:bg-[#eef7f2] xl:grid-cols-[1.4fr_1.05fr_1fr_64px_66px_104px_72px_42px] xl:items-center`}
       onClick={onOpenDetails}
     >
       <div className="flex min-w-0 items-start justify-between gap-3 xl:contents">
@@ -1145,7 +1146,7 @@ function BranchRow({
         </BranchField>
         <BranchField label="Outstanding">
           <p className="break-words text-xs font-semibold tabular-nums text-[var(--forest-emerald)] xl:text-right">
-            {formatMoney(metrics.outstanding, currency)}
+            <Money value={metrics.outstanding} currency={currency} />
           </p>
         </BranchField>
       </div>
@@ -1211,8 +1212,8 @@ function BranchStatCard({
 }: {
   icon: ReactNode;
   label: string;
-  value: string;
-  detail: string;
+  value: ReactNode;
+  detail: ReactNode;
   tone: "green" | "violet" | "blue" | "gold";
   change?: string;
   detailAction?: {
@@ -1436,7 +1437,7 @@ function QuickActionButton({
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-3 border-b border-[#edf1f5] px-3 py-3 text-left last:border-b-0 hover:bg-[#fbfdfc]"
+      className="flex w-full items-center gap-3 border-b border-[#edf1f5] px-3 py-3 text-left last:border-b-0 transition-colors hover:bg-[#eef7f2]"
       onClick={onClick}
     >
       <QuickActionIcon tone={tone}>{icon}</QuickActionIcon>
@@ -1469,7 +1470,7 @@ function QuickActionLink({
   return (
     <Link
       href={href}
-      className="flex items-center gap-3 border-b border-[#edf1f5] px-3 py-3 text-left last:border-b-0 hover:bg-[#fbfdfc]"
+      className="flex items-center gap-3 border-b border-[#edf1f5] px-3 py-3 text-left last:border-b-0 transition-colors hover:bg-[#eef7f2]"
     >
       <QuickActionIcon tone={tone}>{icon}</QuickActionIcon>
       <span className="min-w-0 flex-1">
@@ -1746,7 +1747,7 @@ function BranchDetailDrawer({
         <div className="mt-3 grid grid-cols-2 gap-2">
           <MiniMetric
             label="Outstanding"
-            value={formatMoney(metrics.outstanding, currency)}
+            value={<Money value={metrics.outstanding} currency={currency} />}
           />
           <MiniMetric
             label="Borrowers"
@@ -2230,22 +2231,30 @@ function AttentionBranchDrawer({
                     <div>
                       <p className="text-slate-400">Installment</p>
                       <p className="mt-0.5 font-semibold tabular-nums text-[#0b1224]">
-                        {formatMoney(borrower.installmentAmount, currency)}
+                        <Money
+                          value={borrower.installmentAmount}
+                          currency={currency}
+                        />
                       </p>
                     </div>
                     <div>
                       <p className="text-slate-400">Short</p>
                       <p className="mt-0.5 font-semibold tabular-nums text-[#0b1224]">
-                        {formatMoney(short, currency)}
+                        <Money value={short} currency={currency} />
                       </p>
                     </div>
                   </div>
                   <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-slate-500">
-                    <span>
-                      Expected {formatMoney(borrower.expectedAmount, currency)}
+                    <span className="inline-flex items-center gap-1">
+                      Expected{" "}
+                      <Money
+                        value={borrower.expectedAmount}
+                        currency={currency}
+                      />
                     </span>
-                    <span>
-                      Paid {formatMoney(borrower.paidAmount, currency)}
+                    <span className="inline-flex items-center gap-1">
+                      Paid{" "}
+                      <Money value={borrower.paidAmount} currency={currency} />
                     </span>
                   </div>
                 </div>
@@ -2347,7 +2356,7 @@ function SidePanel({
   );
 }
 
-function MiniMetric({ label, value }: { label: string; value: string }) {
+function MiniMetric({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="rounded-xl border border-[#edf1f4] bg-white px-2.5 py-2">
       <p className="text-[10px] font-medium text-slate-500">{label}</p>

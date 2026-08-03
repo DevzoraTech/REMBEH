@@ -7,10 +7,7 @@ import {
   ChevronDown,
   Download,
   Filter,
-  Grid2X2,
-  List,
   MapPin,
-  Plus,
   RefreshCw,
   ShieldCheck,
   UserCheck,
@@ -51,8 +48,6 @@ import {
 import { resolveOperatorRole } from "../../lib/roles";
 
 export type BorrowersMode = "owner" | "manager";
-
-type TableMode = "list" | "grid";
 
 type BorrowersSession = {
   session: RembehSession | null;
@@ -107,14 +102,12 @@ function useBorrowersSession(mode: BorrowersMode): BorrowersSession {
 
 export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
   const state = useBorrowersSession(mode);
-  const router = useRouter();
   const isManager = mode === "manager";
   const [borrowers, setBorrowers] = useState<OwnerBorrower[]>([]);
   const [search, setSearch] = useState("");
   const [branchFilter, setBranchFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [collateralFilter, setCollateralFilter] = useState("all");
-  const [tableMode, setTableMode] = useState<TableMode>("list");
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [page, setPage] = useState(1);
   const [selectedBorrower, setSelectedBorrower] =
@@ -123,8 +116,6 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const canCreateLoan =
-    isManager && Boolean(state.session?.permissions.includes("loan.create"));
 
   const loadBorrowers = useCallback(async () => {
     if (!state.session) return;
@@ -277,51 +268,17 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
           settingsHref={isManager ? "/settings" : "/owner/settings"}
           notificationScope={mode}
           actions={
-            <>
-              <button
-                type="button"
-                onClick={() => void loadBorrowers()}
-                disabled={loading}
-                aria-label="Refresh Borrowers"
-                className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-50 disabled:opacity-60"
-              >
-                <RefreshCw
-                  className={`size-4 ${loading ? "animate-spin" : ""}`}
-                />
-              </button>
-              {canCreateLoan ? (
-                <button
-                  type="button"
-                  onClick={() => router.push("/loans?new=1")}
-                  className="flex h-9 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3.5 text-xs font-semibold text-white shadow-[0_12px_24px_rgba(15,143,104,0.28)] transition hover:brightness-105"
-                >
-                  <Plus className="size-3.5" />
-                  New Loan
-                </button>
-              ) : null}
-              <button
-                type="button"
-                disabled={exporting || filtered.length === 0}
-                onClick={() =>
-                  void exportBorrowers(
-                    filtered,
-                    {
-                      branch: isManager
-                        ? state.branch?.name ?? "Your branch"
-                        : branchFilter,
-                      status: statusFilter,
-                      collateral: collateralFilter,
-                      search,
-                    },
-                    setExporting,
-                  )
-                }
-                className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8faf9] disabled:opacity-60"
-              >
-                <Download className="size-3.5" />
-                {exporting ? "Exporting" : "Export"}
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={() => void loadBorrowers()}
+              disabled={loading}
+              aria-label="Refresh Borrowers"
+              className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-50 disabled:opacity-60"
+            >
+              <RefreshCw
+                className={`size-4 ${loading ? "animate-spin" : ""}`}
+              />
+            </button>
           }
         />
         <p className="-mt-2 text-sm font-medium text-slate-500">
@@ -391,32 +348,28 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
             <h2 className="text-[15px] font-semibold text-[#0b1220]">
               {isManager ? "Branch Borrowers" : "All Borrowers"}
             </h2>
-            <div className="flex h-9 items-center rounded-xl border border-[#e6ebf0] bg-white p-1 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
-              <button
-                type="button"
-                onClick={() => setTableMode("list")}
-                className={`grid size-7 place-items-center rounded-lg transition ${
-                  tableMode === "list"
-                    ? "bg-emerald-50 text-[var(--forest-emerald)]"
-                    : "text-slate-400 hover:bg-[#f8faf9]"
-                }`}
-                aria-label="List view"
-              >
-                <List className="size-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setTableMode("grid")}
-                className={`grid size-7 place-items-center rounded-lg transition ${
-                  tableMode === "grid"
-                    ? "bg-emerald-50 text-[var(--forest-emerald)]"
-                    : "text-slate-400 hover:bg-[#f8faf9]"
-                }`}
-                aria-label="Grid view"
-              >
-                <Grid2X2 className="size-3.5" />
-              </button>
-            </div>
+            <button
+              type="button"
+              disabled={exporting || filtered.length === 0}
+              onClick={() =>
+                void exportBorrowers(
+                  filtered,
+                  {
+                    branch: isManager
+                      ? state.branch?.name ?? "Your branch"
+                      : branchFilter,
+                    status: statusFilter,
+                    collateral: collateralFilter,
+                    search,
+                  },
+                  setExporting,
+                )
+              }
+              className="ml-auto flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8faf9] disabled:opacity-60"
+            >
+              <Download className="size-3.5" />
+              {exporting ? "Exporting" : "Export"}
+            </button>
           </div>
 
           <div
@@ -495,24 +448,6 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
             <EmptyBorrowersState
               hasFilters={Boolean(search.trim()) || activeFilterCount > 0}
               onClear={resetFilters}
-            />
-          ) : tableMode === "grid" ? (
-            <BorrowerGrid
-              rows={pageRows}
-              showBranch={!isManager}
-              onView={setSelectedBorrower}
-              onExport={(borrower) =>
-                void exportBorrowers(
-                  [borrower],
-                  {
-                    branch: borrower.branchName ?? "all",
-                    status: borrower.verifiedAt ? "verified" : "pending",
-                    collateral: borrower.collateralType ?? "all",
-                    search: borrower.fullName,
-                  },
-                  setExporting,
-                )
-              }
             />
           ) : (
             <BorrowerTable
@@ -665,7 +600,7 @@ function BorrowerListRow({
 
   return (
     <article
-      className={`grid cursor-pointer gap-3 px-4 py-3.5 text-[13px] transition hover:bg-[#fbfdfc] lg:items-center lg:gap-3 ${gridClass}`}
+      className={`grid cursor-pointer gap-3 px-4 py-3.5 text-[13px] transition-colors hover:bg-[#eef7f2] lg:items-center lg:gap-3 ${gridClass}`}
       onClick={() => onView(borrower)}
     >
       <div className="flex min-w-0 items-start justify-between gap-3 lg:contents">
@@ -719,75 +654,6 @@ function BorrowerListRow({
         />
       </div>
     </article>
-  );
-}
-
-function BorrowerGrid({
-  rows,
-  showBranch,
-  onView,
-  onExport,
-}: {
-  rows: OwnerBorrower[];
-  showBranch: boolean;
-  onView: (borrower: OwnerBorrower) => void;
-  onExport: (borrower: OwnerBorrower) => void;
-}) {
-  return (
-    <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
-      {rows.map((borrower, index) => (
-        <article
-          key={borrower.id}
-          className="cursor-pointer rounded-2xl border border-[#e6ebf0] bg-white p-3.5 shadow-[0_10px_22px_rgba(15,23,42,0.04)]"
-          onClick={() => onView(borrower)}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <span
-                className={`grid size-9 shrink-0 place-items-center rounded-full text-xs font-medium ${avatarTone(index)}`}
-              >
-                {initials(borrower.fullName)}
-              </span>
-              <div className="min-w-0">
-                <p className="truncate text-[13px] font-medium text-[#0b1224]">
-                  {borrower.fullName}
-                </p>
-                <p className="mt-0.5 text-[11px] font-medium text-slate-500">
-                  Joined {formatDate(borrower.createdAt)}
-                </p>
-              </div>
-            </div>
-            <div onClick={(event) => event.stopPropagation()}>
-              <RowActions
-                label={`Actions For ${borrower.fullName}`}
-                items={[
-                  { label: "View Borrower", onSelect: () => onView(borrower) },
-                  {
-                    label: "Export Borrower",
-                    onSelect: () => onExport(borrower),
-                  },
-                ]}
-              />
-            </div>
-          </div>
-          <div className="mt-3 grid gap-1.5 text-xs font-medium text-[#17213a]">
-            <InfoLine label="Phone" value={borrower.phone || "-"} />
-            <InfoLine label="National ID" value={borrower.nationalId ?? "-"} />
-            <InfoLine
-              label="Security"
-              value={
-                borrower.collateralType
-                  ? titleCase(borrower.collateralType)
-                  : "-"
-              }
-            />
-            {showBranch ? (
-              <InfoLine label="Branch" value={borrower.branchName ?? "-"} />
-            ) : null}
-          </div>
-        </article>
-      ))}
-    </div>
   );
 }
 

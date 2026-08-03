@@ -1,17 +1,18 @@
 "use client";
 
 import {
+  AlertCircle,
+  ArrowDown,
+  ArrowUp,
   Banknote,
-  CheckCircle2,
-  Clock3,
   Download,
-  Folder,
+  FileText,
   Loader2,
+  Percent,
   Plus,
   RefreshCw,
   Search,
   UserRound,
-  WalletCards,
   X,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -25,19 +26,34 @@ import {
   PaginationControls,
   paginateItems,
 } from "../app/pagination";
+import { RowActions } from "../app/row-actions";
 import { AppBootSkeleton, SkeletonBlock } from "../app/skeleton";
-import { WorkspaceStatCard } from "../app/workspace-stat-card";
 import {
   OwnerLoan,
   formatDate,
-  formatMoney,
+  formatMoneyAmount,
   formatNumber,
+  isLoanScheduleOverdue,
+  loanTotalRepayable,
   ownerFetch,
   sumBy,
   titleCase,
 } from "../../app/owner/owner-common";
 import { OwnerHeader } from "../../app/owner/owner-header";
+import { Money } from "../app/money";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
+import {
+  EMPTY_LOANS_FILTERS,
+  LoansAdvancedFilters,
+  LoansFiltersControl,
+  loanMatchesDateIssued,
+  loanMatchesOfficer,
+  loanMatchesPrincipalRange,
+  loanMatchesRepaymentPosition,
+  loansFiltersFromSearchParams,
+  type OfficerOption,
+} from "./loans-filters";
+import { RecordRepaymentModal } from "./record-repayment-modal";
 import {
   RembehBranch,
   RembehSession,
@@ -134,7 +150,9 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
   const [loans, setLoans] = useState<LoanRow[]>([]);
   const [borrowers, setBorrowers] = useState<BorrowerRow[]>([]);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<PortfolioFilter>("active");
+  const [filter, setFilter] = useState<PortfolioFilter>("all");
+  const [advancedFilters, setAdvancedFilters] =
+    useState<LoansAdvancedFilters>(EMPTY_LOANS_FILTERS);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [loading, setLoading] = useState(true);
@@ -154,18 +172,36 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
   const [editingApplicationId, setEditingApplicationId] = useState<
     string | null
   >(null);
+  const [repaymentLoan, setRepaymentLoan] = useState<LoanRow | null>(null);
+  const [agreementBusyId, setAgreementBusyId] = useState<string | null>(null);
   const currency = state.workspace?.currency ?? "UGX";
   const canCreate =
     isManager && Boolean(state.session?.permissions.includes("loan.create"));
+  const canRecordRepayment = Boolean(
+    state.session?.permissions.includes("collection.create"),
+  );
 
   useEffect(() => {
-    if (!canCreate || !state.ready) return;
+    if (!state.ready) return;
     const params = new URLSearchParams(window.location.search);
-    if (params.get("new") !== "1") return;
-    setPanelError(null);
-    setCreateMode("new");
-    setAddOpen(true);
-    router.replace(isManager ? "/loans" : "/owner/portfolio", { scroll: false });
+    const fromUrl = loansFiltersFromSearchParams(params);
+    if (Object.keys(fromUrl).length > 0) {
+      setAdvancedFilters((current) => ({ ...current, ...fromUrl }));
+      if (fromUrl.repayment && fromUrl.repayment !== "all") {
+        setFilter("all");
+      }
+    }
+    if (canCreate && params.get("new") === "1") {
+      setPanelError(null);
+      setCreateMode("new");
+      setAddOpen(true);
+      params.delete("new");
+      const next = params.toString();
+      router.replace(
+        `${isManager ? "/loans" : "/owner/portfolio"}${next ? `?${next}` : ""}`,
+        { scroll: false },
+      );
+    }
   }, [canCreate, isManager, router, state.ready]);
 
   const loadLoans = useCallback(async () => {
@@ -219,18 +255,46 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
     return () => window.clearTimeout(boot);
   }, [loadLoans, state.ready, state.session]);
 
+  const officerOptions = useMemo<OfficerOption[]>(() => {
+    const map = new Map<string, string>();
+    for (const loan of loans) {
+      const label = loan.officerName?.trim();
+      if (!label) continue;
+      const key = loan.officerPublicId?.trim() || label.toLowerCase();
+      if (!map.has(key)) map.set(key, label);
+    }
+    return Array.from(map.entries())
+      .map(([key, label]) => ({ key, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [loans]);
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const today = new Date();
+    const now = new Date();
     return loans.filter((loan) => {
       if (filter === "active" && !ACTIVE_STATUSES.has(loan.status)) return false;
       if (filter === "closed" && loan.status !== "CLOSED") return false;
+      if (filter === "overdue" && !isLoanScheduleOverdue(loan)) {
+        return false;
+      }
+
+      if (!loanMatchesOfficer(loan, advancedFilters)) return false;
+
+      if (!loanMatchesDateIssued(loanIssueDate(loan), advancedFilters, now)) {
+        return false;
+      }
+
+      const overdueDays = resolveOverdueDays(loan, now);
       if (
-        filter === "overdue" &&
-        (!loan.dueDate || new Date(loan.dueDate) >= today || loan.balance <= 0)
+        !loanMatchesRepaymentPosition(overdueDays, advancedFilters.repayment)
       ) {
         return false;
       }
+
+      if (!loanMatchesPrincipalRange(loan.principal, advancedFilters)) {
+        return false;
+      }
+
       if (!q) return true;
       const digits = q.replace(/\D/g, "");
       const haystack = [
@@ -258,19 +322,26 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
       }
       return false;
     });
-  }, [filter, loans, search]);
+  }, [advancedFilters, filter, loans, search]);
 
   useEffect(() => {
     setPage(1);
-  }, [filter, search]);
+  }, [advancedFilters, filter, search]);
 
-  const activeLoans = loans.filter((loan) => ACTIVE_STATUSES.has(loan.status));
-  const overdueLoans = loans.filter(
-    (loan) =>
-      loan.dueDate &&
-      new Date(loan.dueDate) < new Date() &&
-      loan.balance > 0,
-  );
+  useEffect(() => {
+    if (!state.ready || typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const current = url.searchParams.get("repayment");
+    const next =
+      advancedFilters.repayment === "all" ? null : advancedFilters.repayment;
+    if (current === next) return;
+    if (next) url.searchParams.set("repayment", next);
+    else url.searchParams.delete("repayment");
+    url.searchParams.delete("new");
+    router.replace(`${url.pathname}${url.search}`, { scroll: false });
+  }, [advancedFilters.repayment, router, state.ready]);
+
+  const summary = useMemo(() => buildLoansSummary(loans), [loans]);
   const paged = useMemo(
     () => paginateItems(filtered, page, pageSize),
     [filtered, page, pageSize],
@@ -289,6 +360,54 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
       )
       .slice(0, 12);
   }, [borrowerSearch, borrowers]);
+
+  async function downloadLoanAgreement(applicationId: string, loanId: string) {
+    if (!state.session || agreementBusyId) return;
+    setAgreementBusyId(loanId);
+    setError(null);
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/loan-applications/${applicationId}/agreement.pdf`,
+        {
+          headers: {
+            Authorization: `${state.session.tokenType} ${state.session.accessToken}`,
+          },
+        },
+      );
+      if (!response.ok) {
+        let message = "Could not download loan agreement.";
+        try {
+          const payload = (await response.json()) as {
+            message?: string | string[];
+          };
+          message = formatApiError(payload.message);
+        } catch {
+          // non-JSON body
+        }
+        throw new Error(message);
+      }
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const disposition = response.headers.get("content-disposition");
+      const match = disposition?.match(/filename="?([^"]+)"?/i);
+      anchor.href = objectUrl;
+      anchor.download = match?.[1] ?? `loan-agreement-${shortLoanId(loanId)}.pdf`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(objectUrl);
+      setNotice("Loan agreement downloaded.");
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not download loan agreement.",
+      );
+    } finally {
+      setAgreementBusyId(null);
+    }
+  }
 
   async function startApplication() {
     if (!state.session || creating) return;
@@ -393,56 +512,127 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
           </p>
         ) : null}
 
-        <section className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-5">
-          <WorkspaceStatCard
-            icon={<Folder className="size-4" />}
-            label="Total Loans Given"
-            value={formatNumber(loans.length)}
-            tone="green"
+        <section className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+          <LoansSummaryCard
+            title="Loans Issued"
+            icon={<FileText className="size-4" />}
+            value={{ amount: formatNumber(summary.issuedThisMonth) }}
+            context="this month"
+            monthDelta={{
+              value: summary.issuedThisMonth - summary.issuedLastMonth,
+              format: "number",
+            }}
+            secondary={{
+              amount: formatNumber(summary.issuedAllTime),
+              suffix: "all time",
+            }}
+            rows={[
+              {
+                label: "active",
+                value: { amount: formatNumber(summary.activeCount) },
+                tone: "good",
+              },
+              {
+                label: "closed",
+                value: { amount: formatNumber(summary.closedCount) },
+                tone: "neutral",
+              },
+            ]}
           />
-          <WorkspaceStatCard
-            icon={<WalletCards className="size-4" />}
-            label="Active Loans"
-            value={formatNumber(activeLoans.length)}
-            tone="green"
+          <LoansSummaryCard
+            title="Overdue Loans"
+            icon={<AlertCircle className="size-4" />}
+            value={{ amount: formatNumber(summary.overdueCount) }}
+            context={`${summary.overduePercentLabel} of active loans`}
+            rows={[
+              {
+                label: "overdue balance",
+                value: {
+                  currency,
+                  amount: formatMoneyAmount(summary.overdueBalance),
+                },
+                tone: "warn",
+              },
+              {
+                label: "overdue by 2+ days",
+                value: {
+                  amount: formatNumber(summary.overdueBy2PlusCount),
+                  suffix: "loans",
+                },
+                tone: "warn",
+              },
+            ]}
           />
-          <WorkspaceStatCard
+          <LoansSummaryCard
+            title="Principal Issued"
             icon={<Banknote className="size-4" />}
-            label="Amount Given"
-            value={formatMoney(
-              sumBy(loans, (loan) => loan.principal),
+            value={{
               currency,
-            )}
-            tone="blue"
+              amount: formatMoneyAmount(summary.principalThisMonth),
+            }}
+            context="this month"
+            monthDelta={{
+              value: summary.principalThisMonth - summary.principalLastMonth,
+              format: "money",
+            }}
+            secondary={{
+              currency,
+              amount: formatMoneyAmount(summary.principalAllTime),
+              suffix: "all time",
+            }}
+            rows={[
+              {
+                label: "outstanding",
+                value: {
+                  currency,
+                  amount: formatMoneyAmount(summary.outstanding),
+                },
+                tone: "warn",
+              },
+              {
+                label: "repaid",
+                value: {
+                  currency,
+                  amount: formatMoneyAmount(summary.repaid),
+                },
+                tone: "good",
+              },
+            ]}
           />
-          <WorkspaceStatCard
-            icon={<Clock3 className="size-4" />}
-            label="Total Loan Balance"
-            value={formatMoney(
-              sumBy(activeLoans, (loan) => loan.balance),
+          <LoansSummaryCard
+            title="Expected Interest"
+            icon={<Percent className="size-4" />}
+            value={{
               currency,
-            )}
-            hint={`${overdueLoans.length} Overdue`}
-            tone="gold"
-          />
-          <WorkspaceStatCard
-            icon={<CheckCircle2 className="size-4" />}
-            label="Total Repaid"
-            value={formatMoney(
-              sumBy(loans, (loan) => loan.paidAmount),
-              currency,
-            )}
-            hint="Across All Loans"
-            tone="violet"
-            className="sm:col-span-2 xl:col-span-1"
+              amount: formatMoneyAmount(summary.expectedInterest),
+            }}
+            context="from active loans"
+            rows={[
+              {
+                label: "not overdue",
+                value: {
+                  currency,
+                  amount: formatMoneyAmount(summary.interestNotOverdue),
+                },
+                tone: "good",
+              },
+              {
+                label: "at risk",
+                value: {
+                  currency,
+                  amount: formatMoneyAmount(summary.interestAtRisk),
+                },
+                tone: "warn",
+              },
+            ]}
           />
         </section>
 
-        <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+        <section className="rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-3.5">
             <div className="flex min-w-0 flex-wrap items-center gap-3">
               <h2 className="text-[15px] font-semibold text-[#0b1220]">
-                {isManager ? "Branch Loans" : "All Loans"}
+                {isManager ? "Loan Records" : "All Loans"}
               </h2>
               <select
                 value={filter}
@@ -451,8 +641,8 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                 }
                 className="h-9 w-full rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold outline-none sm:w-[170px]"
               >
-                <option value="active">Active Loans</option>
                 <option value="all">All Loans</option>
+                <option value="active">Active Loans</option>
                 <option value="closed">Closed Loans</option>
                 <option value="overdue">Overdue Loans</option>
               </select>
@@ -486,28 +676,41 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
             </div>
           </div>
 
+          <div className="relative z-20 border-b border-[#edf1f5] px-4 py-3">
+            <LoansFiltersControl
+              officers={officerOptions}
+              applied={advancedFilters}
+              onApply={setAdvancedFilters}
+            />
+          </div>
+
+          <div className="overflow-hidden rounded-b-[16px]">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] table-fixed text-left text-xs">
+            <table className="w-full min-w-[1240px] table-fixed text-left text-xs">
               <thead className="bg-[#f8faf9] text-[10px] font-semibold text-slate-500">
                 <tr>
-                  <th className="w-[16%] px-3 py-2.5">Loan ID</th>
-                  <th className="w-[19%] px-3 py-2.5">Borrower</th>
-                  <th className="w-[15%] px-3 py-2.5">Loan type</th>
-                  <th className="w-[13%] px-3 py-2.5 text-right">Amount Given</th>
-                  <th className="w-[13%] px-3 py-2.5 text-right">
-                    Total Repaid
+                  <th className="w-[8%] px-3 py-2.5">Loan ID</th>
+                  <th className="w-[12%] px-3 py-2.5">Borrower</th>
+                  <th className="w-[9%] px-3 py-2.5">Loan Type</th>
+                  <th className="w-[9%] px-3 py-2.5 text-right">Principal</th>
+                  <th className="w-[10%] px-3 py-2.5 text-right">
+                    Total Repayable
                   </th>
-                  <th className="w-[13%] px-3 py-2.5 text-right">
-                    Total Loan Balance
+                  <th className="w-[8%] px-3 py-2.5 text-right">Repaid</th>
+                  <th className="w-[9%] px-3 py-2.5 text-right">Outstanding</th>
+                  <th className="w-[10%] px-3 py-2.5">Next Due</th>
+                  <th className="w-[9%] px-3 py-2.5">Status</th>
+                  <th className="w-[10%] px-3 py-2.5">Issued By</th>
+                  <th className="w-[6%] px-3 py-2.5 text-right">
+                    <span className="sr-only">Actions</span>
                   </th>
-                  <th className="w-[11%] px-3 py-2.5">Due</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#edf1f5]">
                 {loading ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={11}
                       className="px-3 py-8 text-center text-slate-500"
                     >
                       Loading loans...
@@ -516,57 +719,115 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                 ) : filtered.length === 0 ? (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={11}
                       className="px-3 py-8 text-center text-slate-500"
                     >
                       No loans match this view.
                     </td>
                   </tr>
                 ) : (
-                  paged.items.map((loan) => (
-                    <tr
-                      key={loan.id}
-                      className={
-                        isManager && loan.applicationId
-                          ? "cursor-pointer transition hover:bg-[#fbfdfc]"
-                          : undefined
-                      }
-                      onClick={() => {
-                        if (isManager && loan.applicationId) {
-                          setDetailApplicationId(loan.applicationId);
-                        }
-                      }}
-                    >
-                      <td className="px-3 py-3">
-                        <p className="truncate font-bold tabular-nums text-[#0b1220]">
-                          {shortLoanId(loan.id)}
-                        </p>
-                      </td>
-                      <td className="px-3 py-3">
-                        <p className="truncate font-semibold text-[#0b1220]">
-                          {loan.borrowerName}
-                        </p>
-                        <p className="mt-0.5 truncate text-[11px] text-slate-500">
-                          {loan.phone}
-                        </p>
-                      </td>
-                      <td className="px-3 py-3">
-                        {loan.loanTypeName
-                          ? titleCase(loan.loanTypeName)
-                          : "-"}
-                      </td>
-                      <td className="px-3 py-3 text-right font-bold tabular-nums">
-                        {formatMoney(loan.principal, currency)}
-                      </td>
-                      <td className="px-3 py-3 text-right font-bold tabular-nums text-[var(--forest-emerald)]">
-                        {formatMoney(loan.paidAmount, currency)}
-                      </td>
-                      <td className="px-3 py-3 text-right font-bold tabular-nums">
-                        {formatMoney(loan.balance, currency)}
-                      </td>
-                      <td className="px-3 py-3">{formatDate(loan.dueDate)}</td>
-                    </tr>
-                  ))
+                  paged.items.map((loan) => {
+                    const dueState = resolveLoanDueState(loan);
+                    return (
+                      <tr
+                        key={loan.id}
+                        className="cursor-pointer transition-colors hover:bg-[#eef7f2]"
+                        onClick={() => {
+                          if (loan.applicationId) {
+                            setDetailApplicationId(loan.applicationId);
+                          }
+                        }}
+                      >
+                        <td className="px-3 py-3">
+                          <p className="truncate font-bold tabular-nums text-[#0b1220]">
+                            {shortLoanId(loan.id)}
+                          </p>
+                        </td>
+                        <td className="px-3 py-3">
+                          <p className="truncate font-semibold text-[#0b1220]">
+                            {loan.borrowerName}
+                          </p>
+                          <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                            {loan.phone}
+                          </p>
+                        </td>
+                        <td className="px-3 py-3">
+                          <p className="truncate">
+                            {loan.loanTypeName
+                              ? titleCase(loan.loanTypeName)
+                              : "-"}
+                          </p>
+                        </td>
+                        <td className="px-3 py-3 text-right font-bold tabular-nums">
+                          <Money value={loan.principal} currency={currency} />
+                        </td>
+                        <td className="px-3 py-3 text-right font-bold tabular-nums">
+                          <Money
+                            value={loanTotalRepayable(loan)}
+                            currency={currency}
+                          />
+                        </td>
+                        <td className="px-3 py-3 text-right font-bold tabular-nums text-[var(--forest-emerald)]">
+                          <Money value={loan.paidAmount} currency={currency} />
+                        </td>
+                        <td className="px-3 py-3 text-right font-bold tabular-nums">
+                          <Money value={loan.balance} currency={currency} />
+                        </td>
+                        <td className="px-3 py-3">
+                          <NextDueCell loan={loan} dueState={dueState} />
+                        </td>
+                        <td className="px-3 py-3">
+                          <LoanStatusBadge dueState={dueState} />
+                        </td>
+                        <td className="px-3 py-3">
+                          <p className="truncate text-slate-700">
+                            {loan.officerName?.trim() || "-"}
+                          </p>
+                        </td>
+                        <td className="px-3 py-3">
+                          <RowActions
+                            label={`Actions for ${loan.borrowerName}`}
+                            busy={agreementBusyId === loan.id}
+                            items={[
+                              {
+                                label: "View details",
+                                disabled: !loan.applicationId,
+                                onSelect: () => {
+                                  if (loan.applicationId) {
+                                    setDetailApplicationId(loan.applicationId);
+                                  }
+                                },
+                              },
+                              {
+                                label: "Record repayment",
+                                disabled:
+                                  !canRecordRepayment ||
+                                  loan.balance <= 0 ||
+                                  loan.status === "CLOSED",
+                                onSelect: () => setRepaymentLoan(loan),
+                              },
+                              {
+                                label: "View borrower",
+                                href: `/clients/${loan.customerId}`,
+                              },
+                              {
+                                label: "Loan agreement",
+                                disabled: !loan.applicationId,
+                                onSelect: () => {
+                                  if (loan.applicationId) {
+                                    void downloadLoanAgreement(
+                                      loan.applicationId,
+                                      loan.id,
+                                    );
+                                  }
+                                },
+                              },
+                            ]}
+                          />
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -582,6 +843,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
               setPage(1);
             }}
           />
+          </div>
         </section>
       </div>
 
@@ -710,7 +972,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
         </div>
       ) : null}
 
-      {isManager && state.session ? (
+      {state.session ? (
         <>
           <ApplicationDetailDrawer
             applicationId={detailApplicationId}
@@ -718,14 +980,37 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
             tokenType={state.session.tokenType}
             onClose={() => setDetailApplicationId(null)}
           />
-          <LoanApplicationFormDrawer
-            applicationId={editingApplicationId}
+          {isManager ? (
+            <LoanApplicationFormDrawer
+              applicationId={editingApplicationId}
+              accessToken={state.session.accessToken}
+              tokenType={state.session.tokenType}
+              onClose={() => setEditingApplicationId(null)}
+              onSubmitted={() => {
+                setEditingApplicationId(null);
+                setNotice("Loan given.");
+                void loadLoans();
+              }}
+            />
+          ) : null}
+          <RecordRepaymentModal
+            open={Boolean(repaymentLoan)}
+            loan={
+              repaymentLoan
+                ? {
+                    id: repaymentLoan.id,
+                    borrowerName: repaymentLoan.borrowerName,
+                    phone: repaymentLoan.phone,
+                    balance: repaymentLoan.balance,
+                    currency: repaymentLoan.currency || currency,
+                  }
+                : null
+            }
             accessToken={state.session.accessToken}
             tokenType={state.session.tokenType}
-            onClose={() => setEditingApplicationId(null)}
-            onSubmitted={() => {
-              setEditingApplicationId(null);
-              setNotice("Loan given.");
+            onClose={() => setRepaymentLoan(null)}
+            onRecorded={() => {
+              setNotice("Repayment recorded.");
               void loadLoans();
             }}
           />
@@ -733,6 +1018,414 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
       ) : null}
     </AppShell>
   );
+}
+
+const SUMMARY_ROW_TONE = {
+  good: {
+    shell: "bg-[#eef9f2]",
+    dot: "bg-[#17a36a]",
+  },
+  warn: {
+    shell: "bg-[#fff3e8]",
+    dot: "bg-[#f0a04b]",
+  },
+  neutral: {
+    shell: "bg-[#f3f5f7]",
+    dot: "bg-[#94a3b8]",
+  },
+} as const;
+
+type SummaryAmount = {
+  amount: string;
+  currency?: string;
+  suffix?: string;
+};
+
+type MonthDelta = {
+  value: number;
+  format: "number" | "money";
+};
+
+function LoansSummaryCard({
+  title,
+  icon,
+  value,
+  context,
+  monthDelta,
+  secondary,
+  rows,
+}: {
+  title: string;
+  icon: ReactNode;
+  value: SummaryAmount;
+  context: string;
+  monthDelta?: MonthDelta;
+  secondary?: SummaryAmount;
+  rows: Array<{
+    label: string;
+    value: SummaryAmount;
+    tone: keyof typeof SUMMARY_ROW_TONE;
+  }>;
+}) {
+  return (
+    <article className="overflow-hidden rounded-[14px] border border-[#e8edf2] bg-white p-3 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+      <div className="flex items-center gap-2">
+        <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[#e9f8ef] text-[#07885f] [&_svg]:size-3.5">
+          {icon}
+        </span>
+        <h3 className="truncate text-[13px] font-bold tracking-[-0.02em] text-[#0b1220]">
+          {title}
+        </h3>
+      </div>
+
+      <div className="mt-2.5 flex items-stretch gap-2">
+        <div className="flex min-w-0 flex-[1.15] flex-col justify-center overflow-hidden pr-0.5">
+          <SummaryMetric value={value} size="lg" />
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
+            <p className="text-[11px] font-medium leading-tight text-slate-500">
+              {context}
+            </p>
+            {monthDelta ? <MonthDeltaBadge delta={monthDelta} /> : null}
+          </div>
+          {secondary ? (
+            <div className="mt-1 min-w-0">
+              <SummaryMetric value={secondary} size="sm" />
+            </div>
+          ) : null}
+        </div>
+
+        <div className="w-px shrink-0 bg-[#edf1f5]" aria-hidden />
+
+        <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
+          {rows.map((row) => {
+            const tone = SUMMARY_ROW_TONE[row.tone];
+            return (
+              <div
+                key={row.label}
+                className={`flex min-w-0 items-start gap-1.5 rounded-lg px-1.5 py-1.5 ${tone.shell}`}
+              >
+                <span
+                  className={`mt-1 size-2 shrink-0 rounded-full ${tone.dot}`}
+                />
+                <div className="min-w-0 flex-1 overflow-hidden">
+                  <SummaryMetric value={row.value} size="chip" />
+                  <p className="mt-0.5 truncate text-[10px] font-medium capitalize leading-tight text-slate-500">
+                    {row.label}
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function MonthDeltaBadge({ delta }: { delta: MonthDelta }) {
+  const up = delta.value > 0;
+  const down = delta.value < 0;
+  const absolute = Math.abs(delta.value);
+  const label =
+    delta.format === "money"
+      ? formatMoneyAmount(absolute)
+      : formatNumber(absolute);
+  const tone = down
+    ? "bg-[#fdecec] text-[#c23b3b]"
+    : "bg-[#e9f8ef] text-[#07885f]";
+
+  return (
+    <>
+      <span
+        className={`inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${tone}`}
+      >
+        {down ? (
+          <ArrowDown className="size-2.5 stroke-[2.5]" />
+        ) : (
+          <ArrowUp className="size-2.5 stroke-[2.5]" />
+        )}
+        {up || down ? label : formatNumber(0)}
+      </span>
+      <span className="text-[10px] font-medium text-slate-400">
+        vs last month
+      </span>
+    </>
+  );
+}
+
+function SummaryMetric({
+  value,
+  size,
+}: {
+  value: SummaryAmount;
+  size: "lg" | "sm" | "chip";
+}) {
+  const amountClass =
+    size === "lg"
+      ? "text-[clamp(0.95rem,1.35vw,1.35rem)] font-bold leading-none tracking-[-0.03em] text-[#0b1220]"
+      : size === "sm"
+        ? "text-[11px] font-semibold leading-none text-[#334155]"
+        : "text-[clamp(0.68rem,0.95vw,0.78rem)] font-bold leading-none tracking-[-0.02em] text-[#0b1220]";
+
+  const currencyClass =
+    size === "lg"
+      ? "text-[9px] font-semibold uppercase tracking-[0.04em] text-slate-500"
+      : size === "sm"
+        ? "text-[9px] font-semibold uppercase tracking-[0.03em] text-slate-500"
+        : "text-[8px] font-semibold uppercase tracking-[0.03em] text-slate-500";
+
+  // Money: stack currency above amount so full figures stay readable in tight cards.
+  if (value.currency) {
+    return (
+      <div className="min-w-0 max-w-full tabular-nums">
+        <p className={currencyClass}>{value.currency}</p>
+        <p
+          className={`mt-0.5 min-w-0 truncate whitespace-nowrap ${amountClass}`}
+          title={`${value.currency} ${value.amount}`}
+        >
+          {value.amount}
+        </p>
+        {value.suffix ? (
+          <p className="mt-0.5 text-[10px] font-medium text-slate-500">
+            {value.suffix}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <p className="inline-flex max-w-full min-w-0 items-baseline gap-1 tabular-nums">
+      <span className={`min-w-0 truncate ${amountClass}`}>{value.amount}</span>
+      {value.suffix ? (
+        <span className="shrink-0 text-[0.85em] font-medium text-slate-500">
+          {value.suffix}
+        </span>
+      ) : null}
+    </p>
+  );
+}
+
+function buildLoansSummary(loans: LoanRow[]) {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const issuedThisMonth = loans.filter((loan) =>
+    isOnOrAfter(loanIssueDate(loan), monthStart),
+  );
+  const issuedLastMonth = loans.filter((loan) => {
+    const issued = loanIssueDate(loan);
+    return isOnOrAfter(issued, lastMonthStart) && issued < monthStart;
+  });
+  const activeLoans = loans.filter((loan) => ACTIVE_STATUSES.has(loan.status));
+  const closedCount = loans.filter((loan) => loan.status === "CLOSED").length;
+
+  let interestNotOverdue = 0;
+  let interestAtRisk = 0;
+  let overdueCount = 0;
+  let overdueBy2PlusCount = 0;
+  let overdueBalance = 0;
+  for (const loan of activeLoans) {
+    const interest = expectedInterestForLoan(loan);
+    const overdueDays = resolveOverdueDays(loan, now);
+    if (overdueDays >= 4) {
+      interestAtRisk += interest;
+    } else {
+      interestNotOverdue += interest;
+    }
+    if (overdueDays >= 1) {
+      overdueCount += 1;
+      overdueBalance += Math.max(0, loan.balance);
+      if (overdueDays >= 2) overdueBy2PlusCount += 1;
+    }
+  }
+
+  const overduePercent =
+    activeLoans.length > 0 ? (overdueCount / activeLoans.length) * 100 : 0;
+  const overduePercentLabel =
+    overduePercent >= 10
+      ? `${Math.round(overduePercent)}%`
+      : `${overduePercent.toFixed(1)}%`;
+
+  return {
+    issuedThisMonth: issuedThisMonth.length,
+    issuedLastMonth: issuedLastMonth.length,
+    issuedAllTime: loans.length,
+    activeCount: activeLoans.length,
+    closedCount,
+    overdueCount,
+    overduePercentLabel,
+    overdueBalance,
+    overdueBy2PlusCount,
+    principalThisMonth: sumBy(issuedThisMonth, (loan) => loan.principal),
+    principalLastMonth: sumBy(issuedLastMonth, (loan) => loan.principal),
+    principalAllTime: sumBy(loans, (loan) => loan.principal),
+    outstanding: sumBy(activeLoans, (loan) => loan.balance),
+    repaid: sumBy(loans, (loan) => loan.paidAmount),
+    expectedInterest: interestNotOverdue + interestAtRisk,
+    interestNotOverdue,
+    interestAtRisk,
+  };
+}
+
+function expectedInterestForLoan(loan: LoanRow) {
+  if (typeof loan.expectedInterest === "number") {
+    return Math.max(0, loan.expectedInterest);
+  }
+  const base =
+    typeof loan.openingBalance === "number"
+      ? loan.openingBalance
+      : loanTotalRepayable(loan) - Math.max(0, loan.finesTotal ?? 0);
+  return Math.max(
+    0,
+    base - loan.principal - Math.max(0, loan.processingFee ?? 0),
+  );
+}
+
+function resolveOverdueDays(loan: LoanRow, today: Date) {
+  if (typeof loan.overdueDays === "number") return Math.max(0, loan.overdueDays);
+  return loanOverdueDaysFallback(loan, today);
+}
+
+type LoanDueState = "closed" | "overdue" | "due_today" | "active";
+
+function resolveLoanDueState(loan: LoanRow): LoanDueState {
+  if (loan.status === "CLOSED" || loan.status === "WRITTEN_OFF" || loan.balance <= 0) {
+    return "closed";
+  }
+  const overdueDays = resolveOverdueDays(loan, new Date());
+  const label = loan.nextDueLabel?.trim().toLowerCase() ?? "";
+  if (overdueDays >= 2 || label === "overdue") return "overdue";
+  if (loan.nextDueIsToday || overdueDays === 1 || label === "due today") {
+    return "due_today";
+  }
+  return "active";
+}
+
+function NextDueCell({
+  loan,
+  dueState,
+}: {
+  loan: LoanRow;
+  dueState: LoanDueState;
+}) {
+  if (dueState === "closed") {
+    return <span className="text-slate-400">—</span>;
+  }
+
+  const dateLabel = formatDate(loan.nextDueDate ?? loan.dueDate);
+  const overdueDays = resolveOverdueDays(loan, new Date());
+
+  return (
+    <div className="min-w-0">
+      <p className="truncate font-medium tabular-nums text-[#0b1220]">
+        {dateLabel}
+      </p>
+      {dueState === "overdue" ? (
+        <p className="mt-0.5 truncate text-[10px] font-semibold text-[#c23b3b]">
+          {overdueDays} day{overdueDays === 1 ? "" : "s"} overdue
+        </p>
+      ) : null}
+      {dueState === "due_today" ? (
+        <p className="mt-0.5 truncate text-[10px] font-semibold text-[#d97706]">
+          Due today
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function LoanStatusBadge({ dueState }: { dueState: LoanDueState }) {
+  const tone =
+    dueState === "closed"
+      ? "bg-[#f3f5f7] text-slate-600"
+      : dueState === "overdue"
+        ? "bg-[#fdecec] text-[#c23b3b]"
+        : dueState === "due_today"
+          ? "bg-[#fff3e8] text-[#d97706]"
+          : "bg-[#e9f8ef] text-[#07885f]";
+  const label =
+    dueState === "closed"
+      ? "Closed"
+      : dueState === "overdue"
+        ? "Overdue"
+        : dueState === "due_today"
+          ? "Due Today"
+          : "Active";
+
+  return (
+    <span
+      className={`inline-flex max-w-full truncate rounded-full px-2 py-0.5 text-[10px] font-semibold ${tone}`}
+    >
+      {label}
+    </span>
+  );
+}
+
+function formatLoanStatus(status: string, overdueDays?: number) {
+  const normalized = status.toUpperCase();
+  if (normalized === "CLOSED") return "Closed";
+  if (normalized === "WRITTEN_OFF") return "Written Off";
+  if (
+    normalized === "IN_ARREARS" ||
+    (typeof overdueDays === "number" && overdueDays >= 1)
+  ) {
+    return "Overdue";
+  }
+  if (
+    normalized === "DISBURSED" ||
+    normalized === "CURRENT" ||
+    normalized === "RESTRUCTURED" ||
+    normalized === "APPROVED" ||
+    normalized === "SUBMITTED"
+  ) {
+    return "Active";
+  }
+  return titleCase(status.replaceAll("_", " "));
+}
+
+/** Fallback when API overdueDays is missing (legacy payloads). */
+function loanOverdueDaysFallback(loan: LoanRow, today: Date) {
+  if (loan.balance <= 0 || loan.installmentAmount <= 0) return 0;
+  const startRaw = loan.paymentStartDate ?? loan.disbursedAt ?? loan.createdAt;
+  const startAt = new Date(startRaw);
+  if (Number.isNaN(startAt.getTime())) return 0;
+
+  const start = startOfLocalDay(startAt);
+  const todayStart = startOfLocalDay(today);
+  if (todayStart < start) return 0;
+
+  const dueAt = loan.dueDate ? new Date(loan.dueDate) : null;
+  const end =
+    dueAt && !Number.isNaN(dueAt.getTime()) && dueAt < todayStart
+      ? startOfLocalDay(dueAt)
+      : todayStart;
+  const elapsedDays =
+    Math.floor((end.getTime() - start.getTime()) / 86_400_000) + 1;
+  const expectedDays =
+    loan.durationDays != null && loan.durationDays > 0
+      ? Math.min(elapsedDays, loan.durationDays)
+      : elapsedDays;
+  if (expectedDays <= 0) return 0;
+
+  const coveredDays = Math.min(
+    expectedDays,
+    Math.floor(Math.max(0, loan.paidAmount) / loan.installmentAmount),
+  );
+  return Math.max(0, expectedDays - coveredDays);
+}
+
+function loanIssueDate(loan: LoanRow) {
+  return new Date(loan.disbursedAt ?? loan.createdAt);
+}
+
+function isOnOrAfter(value: Date, boundary: Date) {
+  if (Number.isNaN(value.getTime())) return false;
+  return value.getTime() >= boundary.getTime();
+}
+
+function startOfLocalDay(value: Date) {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
 }
 
 function ChoiceButton({
@@ -772,17 +1465,20 @@ async function exportPortfolio(
     const { Workbook } = await import("exceljs");
     const workbook = new Workbook();
     const worksheet = workbook.addWorksheet("Portfolio");
-    worksheet.addRow(["REMBEH Portfolio"]);
-    worksheet.mergeCells(1, 1, 1, 8);
+    worksheet.addRow(["REMBEH Loan Records"]);
+    worksheet.mergeCells(1, 1, 1, 11);
     worksheet.addRow([
-      "Loan Id",
+      "Loan ID",
       "Borrower",
       "Phone",
       "Loan Type",
-      "Amount Given",
-      "Total Repaid",
-      "Total Loan Balance",
+      "Principal",
+      "Total Repayable",
+      "Repaid",
+      "Outstanding",
+      "Next Due",
       "Status",
+      "Issued By",
     ]);
     rows.forEach((loan) => {
       worksheet.addRow([
@@ -791,19 +1487,26 @@ async function exportPortfolio(
         loan.phone,
         loan.loanTypeName ? titleCase(loan.loanTypeName) : "",
         loan.principal,
+        loanTotalRepayable(loan),
         loan.paidAmount,
         loan.balance,
-        loan.status,
+        loan.nextDueLabel?.trim() ||
+          formatDate(loan.nextDueDate ?? loan.dueDate),
+        formatLoanStatus(loan.status, loan.overdueDays),
+        loan.officerName?.trim() || "",
       ]);
     });
     worksheet.columns = [
       { width: 18 },
       { width: 24 },
+      { width: 16 },
       { width: 18 },
-      { width: 18 },
+      { width: 14 },
       { width: 16 },
-      { width: 16 },
-      { width: 16 },
+      { width: 14 },
+      { width: 14 },
+      { width: 14 },
+      { width: 12 },
       { width: 18 },
     ];
     worksheet.getRow(1).font = { bold: true, size: 16 };
@@ -813,7 +1516,7 @@ async function exportPortfolio(
       pattern: "solid",
       fgColor: { argb: "FF0F8F68" },
     };
-    [5, 6, 7].forEach((column) => {
+    [5, 6, 7, 8].forEach((column) => {
       worksheet.getColumn(column).numFmt = `"${currency}" #,##0`;
     });
     const buffer = await workbook.xlsx.writeBuffer();
@@ -823,7 +1526,7 @@ async function exportPortfolio(
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = "rembeh-portfolio.xlsx";
+    link.download = "rembeh-loan-records.xlsx";
     link.click();
     URL.revokeObjectURL(url);
   } finally {

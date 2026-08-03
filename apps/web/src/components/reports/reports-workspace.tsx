@@ -38,7 +38,6 @@ import {
   OwnerReport,
   authHeaders,
   formatDate,
-  formatMoney,
   formatNumber,
   ownerFetch,
   sumBy,
@@ -46,6 +45,7 @@ import {
 } from "../../app/owner/owner-common";
 import { OwnerHeader } from "../../app/owner/owner-header";
 import { invalidateOwnerNotifications } from "../../app/owner/owner-notifications";
+import { Money } from "../app/money";
 
 type ReportStatusFilter =
   | "all"
@@ -329,42 +329,17 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
           reportsHref={isManager ? "/reports" : "/owner/reports"}
           notificationScope={mode}
           actions={
-            <>
-              <button
-                type="button"
-                onClick={() => void loadReports()}
-                disabled={loading}
-                aria-label="Refresh reports"
-                className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#25314b] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8faf9] disabled:opacity-60"
-              >
-                <RefreshCw
-                  className={`size-4 ${loading ? "animate-spin" : ""}`}
-                />
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-9 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3.5 text-xs font-semibold text-white shadow-[0_12px_24px_rgba(15,143,104,0.28)] transition hover:brightness-105 disabled:opacity-60"
-                disabled={
-                  !selectedReport || !selectedSnapshot || Boolean(exportingId)
-                }
-                onClick={() => {
-                  if (!selectedReport || !selectedSnapshot) return;
-                  void exportReport(
-                    selectedReport,
-                    selectedSnapshot,
-                    currency,
-                    setExportingId,
-                  );
-                }}
-              >
-                {exportingId ? (
-                  <Loader2 className="size-3.5 animate-spin" />
-                ) : (
-                  <Download className="size-3.5" />
-                )}
-                Export
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={() => void loadReports()}
+              disabled={loading}
+              aria-label="Refresh reports"
+              className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#25314b] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8faf9] disabled:opacity-60"
+            >
+              <RefreshCw
+                className={`size-4 ${loading ? "animate-spin" : ""}`}
+              />
+            </button>
           }
         />
         <p className="-mt-2 text-sm font-medium text-slate-500">
@@ -428,10 +403,12 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
             icon={<Scale className="size-4" />}
             tone="blue"
             label="Cash Difference"
-            value={formatMoney(
-              sumBy(reports, (report) => report.closingVariance ?? 0),
-              currency,
-            )}
+            value={
+              <Money
+                value={sumBy(reports, (report) => report.closingVariance ?? 0)}
+                currency={currency}
+              />
+            }
             detail="Counted Cash vs Expected"
           />
         </section>
@@ -448,15 +425,40 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
                   : "Select a report, inspect cash movement, then approve."}
               </p>
             </div>
-            {status === "SENT_TO_OWNER" ? (
+            <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+              {status === "SENT_TO_OWNER" ? (
+                <button
+                  type="button"
+                  onClick={() => setStatus("all")}
+                  className="h-9 rounded-xl border border-[#e6ebf0] bg-white px-3 text-[11px] font-semibold text-slate-600 transition hover:bg-[#f8faf9]"
+                >
+                  Show All Statuses
+                </button>
+              ) : null}
               <button
                 type="button"
-                onClick={() => setStatus("all")}
-                className="h-8 rounded-xl border border-[#e6ebf0] bg-white px-3 text-[11px] font-semibold text-slate-600 transition hover:bg-[#f8faf9]"
+                className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8faf9] disabled:opacity-60"
+                disabled={
+                  !selectedReport || !selectedSnapshot || Boolean(exportingId)
+                }
+                onClick={() => {
+                  if (!selectedReport || !selectedSnapshot) return;
+                  void exportReport(
+                    selectedReport,
+                    selectedSnapshot,
+                    currency,
+                    setExportingId,
+                  );
+                }}
               >
-                Show All Statuses
+                {exportingId ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Download className="size-3.5" />
+                )}
+                Export
               </button>
-            ) : null}
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 border-b border-[#edf1f5] px-4 py-3">
@@ -569,14 +571,17 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
                         {formatDate(report.operationDate)}
                       </p>
                       <p className="text-xs font-semibold tabular-nums text-[#0b1220] lg:text-right">
-                        {formatMoney(report.expectedClosingBalance, currency)}
+                        <Money
+                          value={report.expectedClosingBalance}
+                          currency={currency}
+                        />
                       </p>
                       <p
                         className={`text-xs font-semibold tabular-nums lg:text-right ${
                           variance !== 0 ? "text-red-600" : "text-[#0b1220]"
                         }`}
                       >
-                        {formatMoney(variance, currency)}
+                        <Money value={variance} currency={currency} />
                       </p>
                       <p className="truncate text-xs font-semibold text-slate-600">
                         {report.managerReviewedByName ?? "Manager"}
@@ -713,7 +718,7 @@ function MetricCard({
 }: {
   icon: ReactNode;
   label: string;
-  value: string;
+  value: ReactNode;
   detail: string;
   tone: "green" | "gold" | "violet" | "blue";
   onClick?: () => void;
@@ -842,19 +847,24 @@ function ReportSummaryView({
         <HeroStat
           icon={<WalletCards className="size-3.5" />}
           label="Expected Close"
-          value={formatMoney(report.expectedClosingBalance, currency)}
+          value={
+            <Money
+              value={report.expectedClosingBalance}
+              currency={currency}
+            />
+          }
           tone="green"
         />
         <HeroStat
           icon={<Banknote className="size-3.5" />}
           label="Counted Cash"
-          value={formatMoney(report.closingBalance ?? 0, currency)}
+          value={<Money value={report.closingBalance ?? 0} currency={currency} />}
           tone="blue"
         />
         <HeroStat
           icon={<Scale className="size-3.5" />}
           label="Cash Difference"
-          value={formatMoney(variance, currency)}
+          value={<Money value={variance} currency={currency} />}
           tone={variance !== 0 ? "red" : "slate"}
           hint={variance === 0 ? "Balanced" : "Needs attention"}
         />
@@ -864,40 +874,60 @@ function ReportSummaryView({
         <Panel title="Opening cash" icon={<ArrowRightLeft className="size-3.5" />}>
           <LineRow
             label="Previous closing balance"
-            value={formatMoney(
-              numberValue(opening.previousClosingBalance),
-              currency,
-            )}
+            value={
+              <Money
+                value={numberValue(opening.previousClosingBalance)}
+                currency={currency}
+              />
+            }
           />
           <LineRow
             label="Top-ups added today"
-            value={formatMoney(numberValue(opening.cashAddedToday), currency)}
+            value={
+              <Money
+                value={numberValue(opening.cashAddedToday)}
+                currency={currency}
+              />
+            }
           />
           <LineRow
             label="Total opening balance"
-            value={formatMoney(
-              numberValue(opening.totalOpeningBalance) ||
-                numberValue(summary.openingCash),
-              currency,
-            )}
+            value={
+              <Money
+                value={
+                  numberValue(opening.totalOpeningBalance) ||
+                  numberValue(summary.openingCash)
+                }
+                currency={currency}
+              />
+            }
             strong
           />
         </Panel>
         <Panel title="Day movement" icon={<HandCoins className="size-3.5" />}>
           <LineRow
             label="Float distributed"
-            value={formatMoney(numberValue(summary.floatDistributed), currency)}
+            value={
+              <Money
+                value={numberValue(summary.floatDistributed)}
+                currency={currency}
+              />
+            }
           />
           <LineRow
             label="Cash returned by agents"
-            value={formatMoney(
-              numberValue(summary.cashReturnedByAgents),
-              currency,
-            )}
+            value={
+              <Money
+                value={numberValue(summary.cashReturnedByAgents)}
+                currency={currency}
+              />
+            }
           />
           <LineRow
             label="Expenses"
-            value={formatMoney(numberValue(summary.expenses), currency)}
+            value={
+              <Money value={numberValue(summary.expenses)} currency={currency} />
+            }
             danger={numberValue(summary.expenses) > 0}
           />
         </Panel>
@@ -908,36 +938,47 @@ function ReportSummaryView({
           icon={<FileText className="size-3.5" />}
           label="Loans Given"
           value={formatNumber(numberValue(summary.loansIssuedCount))}
-          hint={formatMoney(
-            numberValue(summary.loansIssuedPrincipal),
-            currency,
-          )}
+          hint={
+            <Money
+              value={numberValue(summary.loansIssuedPrincipal)}
+              currency={currency}
+            />
+          }
         />
         <MiniKpi
           icon={<HandCoins className="size-3.5" />}
           label="Repayments"
           value={formatNumber(numberValue(summary.collectionsCount))}
-          hint={formatMoney(
-            numberValue(summary.collectionsReceived),
-            currency,
-          )}
+          hint={
+            <Money
+              value={numberValue(summary.collectionsReceived)}
+              currency={currency}
+            />
+          }
         />
         <MiniKpi
           icon={<Banknote className="size-3.5" />}
           label="Processing Fees"
-          value={formatMoney(numberValue(summary.processingFees), currency)}
+          value={
+            <Money
+              value={numberValue(summary.processingFees)}
+              currency={currency}
+            />
+          }
           hint="From New Loans"
         />
         <MiniKpi
           icon={<Users className="size-3.5" />}
           label="Agents Back"
           value={`${agentsReturned}/${snapshot.agentReturns.length}`}
-          hint={formatMoney(
-            sumBy(snapshot.agentReturns, (row) =>
-              numberValue(row.expectedReturn),
-            ),
-            currency,
-          )}
+          hint={
+            <Money
+              value={sumBy(snapshot.agentReturns, (row) =>
+                numberValue(row.expectedReturn),
+              )}
+              currency={currency}
+            />
+          }
         />
       </section>
 
@@ -972,15 +1013,15 @@ function ReportSummaryView({
                   return (
                     <tr
                       key={row.floatId ?? row.agentId ?? index}
-                      className={
+                      className={`transition-colors hover:bg-[#eef7f2] ${
                         status === "PENDING"
                           ? "bg-amber-50/30"
                           : status === "SHORT"
                             ? "bg-red-50/30"
                             : status === "RETURNED"
                               ? "bg-emerald-50/20"
-                              : undefined
-                      }
+                              : ""
+                      }`}
                     >
                       <td className="px-2 py-2">
                         <div className="flex min-w-0 items-center gap-2">
@@ -998,25 +1039,28 @@ function ReportSummaryView({
                         </div>
                       </td>
                       <td className="px-2 py-2 text-right text-[11px] font-semibold tabular-nums">
-                        {formatMoney(numberValue(row.amountGiven), currency)}
+                        <Money
+                          value={numberValue(row.amountGiven)}
+                          currency={currency}
+                        />
                       </td>
                       <td className="px-2 py-2 text-right text-[11px] tabular-nums text-slate-600">
-                        {formatMoney(
-                          numberValue(row.amountDisbursed),
-                          currency,
-                        )}
+                        <Money
+                          value={numberValue(row.amountDisbursed)}
+                          currency={currency}
+                        />
                       </td>
                       <td className="px-2 py-2 text-right text-[11px] tabular-nums text-slate-600">
-                        {formatMoney(
-                          numberValue(row.amountCollected),
-                          currency,
-                        )}
+                        <Money
+                          value={numberValue(row.amountCollected)}
+                          currency={currency}
+                        />
                       </td>
                       <td className="px-2 py-2 text-right text-[11px] font-semibold tabular-nums">
-                        {formatMoney(
-                          numberValue(row.expectedReturn),
-                          currency,
-                        )}
+                        <Money
+                          value={numberValue(row.expectedReturn)}
+                          currency={currency}
+                        />
                       </td>
                       <td className="px-2 py-2">
                         <StatusPill status={status} />
@@ -1038,7 +1082,12 @@ function ReportSummaryView({
             id: topUp.id ?? `topup-${index}`,
             label: topUp.description || "Cash top-up",
             meta: `${formatClock(topUp.addedAt)} · ${topUp.recordedByName ?? "Manager"}`,
-            value: formatMoney(numberValue(topUp.amount), currency),
+            value: (
+              <Money
+                value={numberValue(topUp.amount)}
+                currency={currency}
+              />
+            ),
           }))}
         />
         <RecordList
@@ -1048,7 +1097,12 @@ function ReportSummaryView({
             id: expense.id ?? `expense-${index}`,
             label: categoryLabel(expense.category),
             meta: `${formatClock(expense.incurredAt)} · ${expense.recordedByName ?? "Manager"}`,
-            value: formatMoney(numberValue(expense.amount), currency),
+            value: (
+              <Money
+                value={numberValue(expense.amount)}
+                currency={currency}
+              />
+            ),
           }))}
         />
         <Panel title="Timeline" icon={<Clock3 className="size-3.5" />}>
@@ -1096,9 +1150,9 @@ function HeroStat({
 }: {
   icon: ReactNode;
   label: string;
-  value: string;
+  value: ReactNode;
   tone: "green" | "blue" | "red" | "slate";
-  hint?: string;
+  hint?: ReactNode;
 }) {
   const wrap = {
     green: "border-emerald-100 bg-emerald-50/50",
@@ -1174,7 +1228,7 @@ function LineRow({
   danger,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   strong?: boolean;
   danger?: boolean;
 }) {
@@ -1204,8 +1258,8 @@ function MiniKpi({
 }: {
   icon: ReactNode;
   label: string;
-  value: string;
-  hint: string;
+  value: ReactNode;
+  hint: ReactNode;
 }) {
   return (
     <article className="rounded-[13px] border border-[#e6ebf0] bg-white px-3 py-2.5 shadow-[0_8px_18px_rgba(15,23,42,0.03)]">
@@ -1234,7 +1288,7 @@ function RecordList({
 }: {
   title: string;
   empty: string;
-  rows: Array<{ id: string; label: string; meta: string; value: string }>;
+  rows: Array<{ id: string; label: string; meta: string; value: ReactNode }>;
 }) {
   return (
     <Panel title={title}>
@@ -1773,8 +1827,9 @@ function AgentHandoverExcel({
                   <td className="border border-[#d0d9d4] px-2 py-1.5 font-semibold text-slate-600">
                     {titleCase((row.status ?? "PENDING").replaceAll("_", " "))}
                     {variance != null && variance !== 0 ? (
-                      <span className="mt-0.5 block text-[10px] font-bold text-red-700">
-                        Var {formatMoney(variance, currency)}
+                      <span className="mt-0.5 flex items-center gap-1 text-[10px] font-bold text-red-700">
+                        Var{" "}
+                        <Money value={variance} currency={currency} />
                       </span>
                     ) : null}
                   </td>
@@ -1900,7 +1955,7 @@ function ExcelSummaryCell({
           danger ? "text-red-700" : "text-[#1a2b22]"
         }`}
       >
-        {formatMoney(value, currency)}
+        <Money value={value} currency={currency} />
       </p>
     </td>
   );
@@ -1929,7 +1984,7 @@ function ExcelMoneyCell({
         total ? "border-[#c6d2cc] bg-[#dfe8e3] font-bold" : "font-semibold"
       }`}
     >
-      {value == null ? "—" : formatMoney(value, currency)}
+      {value == null ? "—" : <Money value={value} currency={currency} />}
     </td>
   );
 }

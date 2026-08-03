@@ -42,3 +42,34 @@ export function computeLoanPricing(input: {
 function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
+
+/**
+ * Resolve the base repayable used for schedules / Total Repayable.
+ * Prefer flat product pricing when the wallet snapshot is principal-only
+ * or still on the legacy days/365 formula.
+ */
+export function resolveBaseRepayable(input: {
+  openingBalance: number | null | undefined;
+  pricedTotal: number;
+  principal: number;
+  paidAmount?: number;
+  balance?: number;
+  finesTotal?: number;
+}) {
+  const priced = roundMoney(input.pricedTotal);
+  if (input.openingBalance == null) {
+    const balance = Math.max(0, input.balance ?? 0);
+    const paid = Math.max(0, input.paidAmount ?? 0);
+    const fines = Math.max(0, input.finesTotal ?? 0);
+    return roundMoney(Math.max(0, balance + paid - fines));
+  }
+  const opening = roundMoney(input.openingBalance);
+  if (Math.abs(opening - priced) < 1) return opening;
+
+  const principalOnly = Math.abs(opening - input.principal) < 1;
+  const legacyAnnualized =
+    !principalOnly && opening + 1 < priced && opening > input.principal;
+  if (principalOnly || legacyAnnualized) return priced;
+
+  return opening;
+}

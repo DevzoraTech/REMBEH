@@ -23,6 +23,8 @@ export type CustomerLoanSummaryContract = {
   balance: number;
   openingBalance: number | null;
   finesTotal: number;
+  /** openingBalance + finesTotal (or balance + paid when opening missing). */
+  totalRepayable: number;
   isFined: boolean;
   disbursedAt: string | null;
   paymentStartDate: string | null;

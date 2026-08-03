@@ -10,7 +10,10 @@ import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { generateAgentPublicId } from '../../common/security/agent-public-id';
 import { PrismaService } from '../../database/prisma.service';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
-import { computeLoanPricing } from '../loan-products/loan-pricing';
+import {
+  computeLoanPricing,
+  resolveBaseRepayable,
+} from '../loan-products/loan-pricing';
 import { SmsService } from '../notifications/sms.service';
 import { REALTIME_EVENTS } from '../realtime/realtime.events';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -768,15 +771,28 @@ export class CollectionsService {
       ),
     );
     const openingBalance = this.decimalToNumber(loan.wallet?.openingBalance);
+    const balance = this.decimalToNumber(loan.balance) ?? 0;
+    const finesTotal =
+      this.decimalToNumber(loan.finesTotal) ??
+      this.decimalToNumber(loan.wallet?.finesTotal) ??
+      0;
+    const baseRepayable = resolveBaseRepayable({
+      openingBalance,
+      pricedTotal: pricing.totalRepayable,
+      principal: pricing.principalAmount,
+      paidAmount: recordedPaidAmount,
+      balance,
+      finesTotal,
+    });
     const schedule = computeCollectionSchedule({
       principalAmount: pricing.principalAmount,
       interestRatePercent: pricing.interestRatePercent,
       durationDays: pricing.durationDays,
       processingFee: pricing.processingFee,
-      balance: this.decimalToNumber(loan.balance) ?? 0,
+      balance,
       recordedPaidAmount,
-      // Keep submit-time snapshot for daily schedule / interest display.
-      totalRepayableOverride: openingBalance ?? undefined,
+      // Prefer corrected flat repayable when wallet snapshot is stale/wrong.
+      totalRepayableOverride: baseRepayable,
       startDate,
     });
     const last = repayments[0] ?? null;
@@ -801,12 +817,7 @@ export class CollectionsService {
       agentPhotoUrl: historyPhotos[index] ?? null,
       note: row.note,
     }));
-    const finesTotal =
-      this.decimalToNumber(loan.finesTotal) ??
-      this.decimalToNumber(loan.wallet?.finesTotal) ??
-      0;
     const isFined = loan.isFined || (loan.wallet?.isFined ?? false);
-    const baseRepayable = openingBalance ?? schedule.totalRepayable;
     const fineHistory = (loan.fines ?? []).map((row) => ({
       id: row.id,
       periodIndex: row.periodIndex,

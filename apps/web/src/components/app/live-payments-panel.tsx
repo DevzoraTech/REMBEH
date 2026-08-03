@@ -7,6 +7,7 @@ import { formatClock, groupByLocalDate } from "../../lib/date-groups";
 import { connectRealtime, type PaymentMadeEvent } from "../../lib/realtime";
 import { AgentPhoto } from "./agent-photo";
 import { DateGroupHeader } from "./date-group-header";
+import { Money } from "./money";
 import { PaymentDetailDrawer } from "./payment-detail-drawer";
 
 type PaymentRow = {
@@ -176,7 +177,7 @@ export function LivePaymentsPanel({
                         </div>
                       </div>
                       <p className="shrink-0 text-sm font-bold tabular-nums text-[var(--forest-emerald)]">
-                        {formatAmount(item.amount)}
+                        <Money value={item.amount} currency="UGX" />
                       </p>
                     </button>
                   </li>
@@ -195,10 +196,6 @@ export function LivePaymentsPanel({
       />
     </>
   );
-}
-
-function formatAmount(value: number) {
-  return new Intl.NumberFormat("en-UG").format(value);
 }
 
 function methodLabel(method: string) {

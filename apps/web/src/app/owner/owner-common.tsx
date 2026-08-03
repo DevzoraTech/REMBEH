@@ -71,7 +71,17 @@ export type OwnerLoan = {
   principal: number;
   balance: number;
   paidAmount: number;
+  openingBalance?: number | null;
+  finesTotal?: number;
+  /** openingBalance + finesTotal (API); prefer over client recomputation. */
+  totalRepayable?: number;
+  expectedInterest?: number;
+  processingFee?: number;
   installmentAmount: number;
+  overdueDays?: number;
+  nextDueLabel?: string;
+  nextDueIsToday?: boolean;
+  nextDueDate?: string | null;
   currency: string;
   officerName: string | null;
   branchId: string;
@@ -82,6 +92,39 @@ export type OwnerLoan = {
   disbursedAt: string | null;
   updatedAt: string;
 };
+
+/** Full obligation: prefer API totalRepayable, else opening + fines, else balance + paid. */
+export function loanTotalRepayable(loan: {
+  totalRepayable?: number;
+  openingBalance?: number | null;
+  finesTotal?: number;
+  balance: number;
+  paidAmount: number;
+}) {
+  if (typeof loan.totalRepayable === "number") {
+    return Math.max(0, loan.totalRepayable);
+  }
+  if (typeof loan.openingBalance === "number") {
+    return Math.max(0, loan.openingBalance) + Math.max(0, loan.finesTotal ?? 0);
+  }
+  return Math.max(0, loan.balance) + Math.max(0, loan.paidAmount);
+}
+
+/** Schedule-overdue when API overdueDays is present; else maturity fallback. */
+export function isLoanScheduleOverdue(loan: {
+  status: string;
+  balance: number;
+  overdueDays?: number;
+  dueDate?: string | null;
+}) {
+  if (loan.balance <= 0 || loan.status === "CLOSED") return false;
+  if (typeof loan.overdueDays === "number") return loan.overdueDays >= 1;
+  if (loan.status === "IN_ARREARS") return true;
+  if (!loan.dueDate) return false;
+  const due = new Date(loan.dueDate);
+  due.setHours(23, 59, 59, 999);
+  return due < new Date();
+}
 
 export type OwnerBorrower = {
   id: string;
@@ -383,15 +426,21 @@ export async function ownerFetch<T>(session: RembehSession, path: string) {
   return payload;
 }
 
+/** Plain-string money for exports, toasts, and non-React text. */
 export function formatMoney(
   value: number | null | undefined,
   currency = "UGX",
 ) {
-  return `${currency} ${Math.round(value ?? 0).toLocaleString("en-UG")}`;
+  return `${currency} ${formatMoneyAmount(value)}`;
+}
+
+/** Numeric amount only (no currency code). */
+export function formatMoneyAmount(value: number | null | undefined) {
+  return Math.round(value ?? 0).toLocaleString("en-UG");
 }
 
 export function formatNumber(value: number | null | undefined) {
-  return Math.round(value ?? 0).toLocaleString("en-UG");
+  return formatMoneyAmount(value);
 }
 
 export function formatDate(value: string | null | undefined) {
