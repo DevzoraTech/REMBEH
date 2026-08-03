@@ -51,6 +51,11 @@ import { invalidateOwnerNotifications } from "../../app/owner/owner-notification
 import { Money } from "../app/money";
 import { TableSearchField } from "../app/table-search-field";
 import {
+  buildDailyReportDocumentFromSnapshot,
+  type DailyReportStatus,
+} from "./daily-reconciliation-report";
+import { exportDailyReconciliationPdf } from "./daily-reconciliation-pdf";
+import {
   EMPTY_REPORTS_FILTERS,
   ReportsFiltersControl,
   dailyReportCode,
@@ -2301,7 +2306,21 @@ async function exportReport(
   setExportingId(report.id);
   try {
     if (format === "pdf") {
-      exportSummaryReportPdf(report, snapshot, currency);
+      const document = buildDailyReportDocumentFromSnapshot(
+        {
+          ...report,
+          status: report.status as DailyReportStatus,
+        },
+        currency,
+        {
+          managerNotes: report.managerNotes ?? null,
+          ownerNotes: report.ownerNotes ?? null,
+          returnedAt: report.returnedAt ?? null,
+          returnedByName: report.returnedByName ?? null,
+          returnNotes: report.returnNotes ?? null,
+        },
+      );
+      exportDailyReconciliationPdf(document);
       return;
     }
 
@@ -2433,228 +2452,4 @@ async function exportReport(
   }
 }
 
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
 
-function exportSummaryReportPdf(
-  report: OwnerReport,
-  snapshot: ReportSnapshot,
-  currency: string,
-) {
-  const money = (value: number) => formatMoney(value, currency);
-  const opening = snapshot.openingCash;
-  const summary = snapshot.summary;
-  const variance = report.closingVariance ?? 0;
-  const agentsReturned = snapshot.agentReturns.filter(
-    (row) => row.amountReturned != null || row.status === "RETURNED",
-  ).length;
-  const reportCode = dailyReportCode(report.operationDate);
-
-  const agentRows =
-    snapshot.agentReturns.length === 0
-      ? `<tr><td colspan="6" class="empty">No agent float recorded for this day.</td></tr>`
-      : snapshot.agentReturns
-          .map(
-            (row) => `
-            <tr>
-              <td>
-                <strong>${escapeHtml(row.agentName ?? "Agent")}</strong>
-                <div class="muted">${escapeHtml(row.status ?? "PENDING")}</div>
-              </td>
-              <td class="num">${escapeHtml(money(numberValue(row.amountGiven)))}</td>
-              <td class="num">${escapeHtml(money(numberValue(row.amountDisbursed)))}</td>
-              <td class="num">${escapeHtml(money(numberValue(row.amountCollected)))}</td>
-              <td class="num">${escapeHtml(money(numberValue(row.expectedReturn)))}</td>
-              <td class="num"><strong>${escapeHtml(
-                row.amountReturned == null
-                  ? "—"
-                  : money(numberValue(row.amountReturned)),
-              )}</strong></td>
-            </tr>`,
-          )
-          .join("");
-
-  const topUpRows =
-    snapshot.topUps.length === 0
-      ? `<p class="empty">No top-ups recorded.</p>`
-      : snapshot.topUps
-          .map(
-            (row) => `
-            <div class="record">
-              <div>
-                <strong>${escapeHtml(row.description || "Cash top-up")}</strong>
-                <div class="muted">${escapeHtml(row.recordedByName ?? "")}</div>
-              </div>
-              <div class="num"><strong>${escapeHtml(money(numberValue(row.amount)))}</strong></div>
-            </div>`,
-          )
-          .join("");
-
-  const expenseRows =
-    snapshot.expenses.length === 0
-      ? `<p class="empty">No expenses recorded.</p>`
-      : snapshot.expenses
-          .map(
-            (row) => `
-            <div class="record">
-              <div>
-                <strong>${escapeHtml(titleCase(row.category ?? "Other"))}</strong>
-                <div class="muted">${escapeHtml(row.recordedByName ?? "")}</div>
-              </div>
-              <div class="num"><strong>${escapeHtml(money(numberValue(row.amount)))}</strong></div>
-            </div>`,
-          )
-          .join("");
-
-  const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>${escapeHtml(reportCode)} · Daily report</title>
-  <style>
-    * { box-sizing: border-box; }
-    body { margin: 0; padding: 28px; color: #0b1220; font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; background: #fff; }
-    h1 { margin: 0; font-size: 22px; letter-spacing: -0.02em; }
-    h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: #0f8f68; }
-    .eyebrow { margin: 0 0 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #0f8f68; }
-    .meta { margin: 6px 0 0; font-size: 12px; color: #64748b; }
-    .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 22px 0 16px; }
-    .metric, .block { border: 1px solid #e6ebf0; border-radius: 12px; background: #f8faf9; padding: 12px; }
-    .metric label { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; }
-    .metric strong { display: block; margin-top: 6px; font-size: 14px; }
-    .metric.highlight { background: #eef7f2; border-color: #cfe8db; }
-    .metric.danger strong { color: #b42318; }
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
-    .block { background: #fff; }
-    .row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid #edf1f5; font-size: 12px; }
-    .row:last-child { border-bottom: 0; }
-    .row.strong { font-weight: 700; }
-    .row.danger { color: #b42318; }
-    .mini { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-    .mini-item { border: 1px solid #edf1f5; border-radius: 10px; padding: 10px; background: #f8faf9; }
-    .mini-item label { display: block; font-size: 10px; color: #64748b; font-weight: 600; }
-    .mini-item strong { display: block; margin-top: 4px; font-size: 14px; }
-    .mini-item .muted { margin-top: 2px; color: #64748b; font-size: 10px; }
-    table { width: 100%; border-collapse: collapse; font-size: 11px; }
-    th { text-align: left; background: #e8edf2; color: #475569; font-size: 10px; padding: 8px 6px; }
-    td { padding: 8px 6px; border-bottom: 1px solid #edf1f5; vertical-align: top; }
-    .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .muted { color: #64748b; font-size: 10px; font-weight: 500; }
-    .empty { color: #64748b; font-size: 12px; margin: 0; padding: 8px 0; }
-    .record { display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 10px; padding: 8px 0; border-bottom: 1px solid #edf1f5; font-size: 12px; }
-    .record:last-child { border-bottom: 0; }
-    @media print { body { padding: 12px; } .metric, .block, .mini-item { break-inside: avoid; } }
-  </style>
-</head>
-<body>
-  <p class="eyebrow">Daily report</p>
-  <h1>${escapeHtml(reportCode)}</h1>
-  <p class="meta">
-    ${escapeHtml(report.branchName)} · ${escapeHtml(formatDate(report.operationDate))} ·
-    ${escapeHtml(statusLabel(report.status))}
-  </p>
-
-  <div class="metrics">
-    <div class="metric highlight"><label>Expected Close</label><strong>${escapeHtml(money(report.expectedClosingBalance))}</strong></div>
-    <div class="metric"><label>Counted Cash</label><strong>${escapeHtml(money(report.closingBalance ?? 0))}</strong></div>
-    <div class="metric ${variance !== 0 ? "danger" : ""}"><label>Cash Difference</label><strong>${escapeHtml(money(variance))}</strong></div>
-  </div>
-
-  <div class="grid-2">
-    <div class="block">
-      <h2>Opening cash</h2>
-      <div class="row"><span>Previous closing balance</span><span class="num">${escapeHtml(money(numberValue(opening.previousClosingBalance)))}</span></div>
-      <div class="row"><span>Top-ups added today</span><span class="num">${escapeHtml(money(numberValue(opening.cashAddedToday)))}</span></div>
-      <div class="row strong"><span>Total opening balance</span><span class="num">${escapeHtml(
-        money(
-          numberValue(opening.totalOpeningBalance) ||
-            numberValue(summary.openingCash),
-        ),
-      )}</span></div>
-    </div>
-    <div class="block">
-      <h2>Day movement</h2>
-      <div class="row"><span>Float distributed</span><span class="num">${escapeHtml(money(numberValue(summary.floatDistributed)))}</span></div>
-      <div class="row"><span>Cash returned by agents</span><span class="num">${escapeHtml(money(numberValue(summary.cashReturnedByAgents)))}</span></div>
-      <div class="row ${numberValue(summary.expenses) > 0 ? "danger" : ""}"><span>Expenses</span><span class="num">${escapeHtml(money(numberValue(summary.expenses)))}</span></div>
-    </div>
-  </div>
-
-  <div class="block" style="margin-bottom:12px">
-    <h2>Field activity</h2>
-    <div class="mini">
-      <div class="mini-item">
-        <label>Loans Given</label>
-        <strong>${escapeHtml(formatNumber(numberValue(summary.loansIssuedCount)))}</strong>
-        <div class="muted">${escapeHtml(money(numberValue(summary.loansIssuedPrincipal)))}</div>
-      </div>
-      <div class="mini-item">
-        <label>Repayments</label>
-        <strong>${escapeHtml(formatNumber(numberValue(summary.collectionsCount)))}</strong>
-        <div class="muted">${escapeHtml(money(numberValue(summary.collectionsReceived)))}</div>
-      </div>
-      <div class="mini-item">
-        <label>Processing Fees</label>
-        <strong>${escapeHtml(money(numberValue(summary.processingFees)))}</strong>
-        <div class="muted">From New Loans</div>
-      </div>
-      <div class="mini-item">
-        <label>Agents Back</label>
-        <strong>${agentsReturned}/${snapshot.agentReturns.length}</strong>
-        <div class="muted">${escapeHtml(
-          money(
-            sumBy(snapshot.agentReturns, (row) => numberValue(row.expectedReturn)),
-          ),
-        )}</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="block" style="margin-bottom:12px">
-    <h2>Agent handover</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Agent</th>
-          <th class="num">Float</th>
-          <th class="num">Loans</th>
-          <th class="num">Repayments</th>
-          <th class="num">Expected</th>
-          <th class="num">Returned</th>
-        </tr>
-      </thead>
-      <tbody>${agentRows}</tbody>
-    </table>
-  </div>
-
-  <div class="grid-2">
-    <div class="block"><h2>Top-ups</h2>${topUpRows}</div>
-    <div class="block"><h2>Expenses</h2>${expenseRows}</div>
-  </div>
-  <script>
-    window.onload = function () {
-      window.focus();
-      window.print();
-    };
-  </script>
-</body>
-</html>`;
-
-  const printWindow = window.open(
-    "",
-    "_blank",
-    "noopener,noreferrer,width=960,height=720",
-  );
-  if (!printWindow) {
-    throw new Error("Allow pop-ups to export the PDF document.");
-  }
-  printWindow.document.open();
-  printWindow.document.write(html);
-  printWindow.document.close();
-}

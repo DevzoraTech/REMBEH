@@ -1,12 +1,17 @@
 "use client";
 
 import {
-  formatDate,
-  formatMoney,
   formatNumber,
   type OwnerReport,
 } from "../../app/owner/owner-common";
+import {
+  buildDailyReportDocumentFromSnapshot,
+  type DailyReportStatus,
+} from "./daily-reconciliation-report";
+import { exportDailyReconciliationPdf } from "./daily-reconciliation-pdf";
 import { dailyReportCode } from "./reports-filters";
+
+export { openPrintDocument } from "./daily-reconciliation-pdf";
 
 type ReportAgentReturn = {
   floatId?: string;
@@ -87,15 +92,6 @@ function statusLabel(value: string) {
   return value.replaceAll("_", " ");
 }
 
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
 export async function exportOwnedReport(
   report: OwnerReport,
   currency: string,
@@ -103,7 +99,21 @@ export async function exportOwnedReport(
 ) {
   const snapshot = readReportSnapshot(report);
   if (format === "pdf") {
-    exportSummaryReportPdf(report, snapshot, currency);
+    const document = buildDailyReportDocumentFromSnapshot(
+      {
+        ...report,
+        status: report.status as DailyReportStatus,
+      },
+      currency,
+      {
+        managerNotes: report.managerNotes ?? null,
+        ownerNotes: report.ownerNotes ?? null,
+        returnedAt: report.returnedAt ?? null,
+        returnedByName: report.returnedByName ?? null,
+        returnNotes: report.returnNotes ?? null,
+      },
+    );
+    exportDailyReconciliationPdf(document);
     return;
   }
 
@@ -252,34 +262,3 @@ export async function exportOwnedReport(
   URL.revokeObjectURL(url);
 }
 
-function exportSummaryReportPdf(
-  report: OwnerReport,
-  snapshot: ReportSnapshot,
-  currency: string,
-) {
-  const money = (value: number) => formatMoney(value, currency);
-  const expected = report.expectedClosingBalance;
-  const counted = report.closingBalance ?? 0;
-  const variance = Math.round(counted - expected);
-  const reportCode = dailyReportCode(report.operationDate);
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8" /><title>${escapeHtml(reportCode)}</title>
-  <style>body{font-family:Segoe UI,Arial,sans-serif;padding:28px;color:#0b1220}h1{margin:0 0 8px;font-size:22px}.meta{color:#64748b;font-size:12px;margin-bottom:18px}.row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #edf1f5;font-size:13px}.strong{font-weight:700}</style></head><body>
-  <h1>${escapeHtml(reportCode)}</h1>
-  <p class="meta">${escapeHtml(report.branchName)} · ${escapeHtml(formatDate(report.operationDate))} · ${escapeHtml(statusLabel(report.status))}</p>
-  <div class="row strong"><span>Expected Cash</span><span>${escapeHtml(money(expected))}</span></div>
-  <div class="row strong"><span>Counted Cash</span><span>${escapeHtml(money(counted))}</span></div>
-  <div class="row strong"><span>Cash Variance</span><span>${escapeHtml(money(variance))}</span></div>
-  <div class="row"><span>Opening balance</span><span>${escapeHtml(money(numberValue(snapshot.openingCash.previousClosingBalance)))}</span></div>
-  <div class="row"><span>Top-ups</span><span>${escapeHtml(money(numberValue(snapshot.summary.topUpsAdded)))}</span></div>
-  <div class="row"><span>Repayments</span><span>${escapeHtml(money(report.collectionsReceived))}</span></div>
-  <div class="row"><span>Processing fees</span><span>${escapeHtml(money(report.processingFeesTotal))}</span></div>
-  <div class="row"><span>Loans issued</span><span>${escapeHtml(money(report.loansIssuedPrincipal))}</span></div>
-  <div class="row"><span>Expenses</span><span>${escapeHtml(money(report.expensesTotal))}</span></div>
-  <script>window.onload=function(){window.focus();window.print();}</script>
-  </body></html>`;
-  const printWindow = window.open("", "_blank", "noopener,noreferrer,width=960,height=720");
-  if (!printWindow) throw new Error("Allow pop-ups to export the PDF document.");
-  printWindow.document.open();
-  printWindow.document.write(html);
-  printWindow.document.close();
-}

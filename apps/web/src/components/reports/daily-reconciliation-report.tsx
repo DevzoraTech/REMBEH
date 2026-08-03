@@ -9,7 +9,6 @@ import {
   FileText,
   Info,
   Loader2,
-  MoreHorizontal,
   Scale,
   Send,
   WalletCards,
@@ -163,12 +162,11 @@ export function DailyReconciliationReport({
   onBack?: () => void;
   className?: string;
 }) {
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const reportCode =
     document.displayReportNumber ??
     dailyReportCode(document.operationDate) ??
     document.reportNumber;
-  const statusLabel = documentReportStatusLabel(document.status);
   const canManagerSend =
     mode === "manager" &&
     (document.status === "MANAGER_REVIEW" ||
@@ -182,7 +180,7 @@ export function DailyReconciliationReport({
       : null;
 
   return (
-    <div className={`space-y-4 ${className}`}>
+    <div className={`space-y-3 ${className}`}>
       {showBack ? (
         <button
           type="button"
@@ -194,56 +192,40 @@ export function DailyReconciliationReport({
         </button>
       ) : null}
 
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2.5">
-            <span className="grid size-9 place-items-center rounded-xl bg-emerald-50 text-[var(--forest-emerald)]">
-              <FileText className="size-4" />
-            </span>
-            <h1 className="text-xl font-bold tracking-[-0.02em] text-[#0b1220]">
-              Daily Report
-            </h1>
-            <span className="rounded-full border border-[#e6ebf0] bg-[#f4f6f8] px-2.5 py-1 text-[11px] font-semibold text-slate-600">
-              {reportCode}
-            </span>
-            <StatusBadge status={document.status} label={statusLabel} />
-          </div>
-          <p className="mt-2 text-sm font-medium text-slate-500">
-            {formatDate(document.operationDate)} • {document.branchName} •
-            Prepared by {document.preparedBy}
-          </p>
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="grid size-8 place-items-center rounded-xl bg-emerald-50 text-[var(--forest-emerald)]">
+            <FileText className="size-4" />
+          </span>
+          <h1 className="text-lg font-bold tracking-[-0.02em] text-[#0b1220]">
+            Daily Report
+          </h1>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            disabled={exporting}
-            onClick={onExportExcel}
-            className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#0b1220] shadow-[0_6px_14px_rgba(15,23,42,0.04)] transition hover:bg-[#f8faf9] disabled:opacity-55"
-          >
-            {exporting ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Download className="size-3.5" />
-            )}
-            Download Excel
-          </button>
           <div className="relative">
             <button
               type="button"
-              aria-label="More export options"
-              className="inline-flex size-10 items-center justify-center rounded-xl border border-[#e6ebf0] bg-white text-slate-600 shadow-[0_6px_14px_rgba(15,23,42,0.04)] transition hover:bg-[#f8faf9]"
-              onClick={() => setMoreOpen((open) => !open)}
+              disabled={exporting}
+              aria-expanded={exportOpen}
+              aria-haspopup="menu"
+              onClick={() => setExportOpen((open) => !open)}
+              className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#0b1220] shadow-[0_6px_14px_rgba(15,23,42,0.04)] transition hover:bg-[#f8faf9] disabled:opacity-55"
             >
-              <MoreHorizontal className="size-4" />
+              {exporting ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Download className="size-3.5" />
+              )}
+              Export
             </button>
-            {moreOpen ? (
+            {exportOpen ? (
               <>
                 <button
                   type="button"
                   className="fixed inset-0 z-40 cursor-default"
-                  aria-label="Close menu"
-                  onClick={() => setMoreOpen(false)}
+                  aria-label="Close export menu"
+                  onClick={() => setExportOpen(false)}
                 />
                 <div
                   role="menu"
@@ -254,24 +236,24 @@ export function DailyReconciliationReport({
                     role="menuitem"
                     className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#0b1220] hover:bg-[#f4f7f6]"
                     onClick={() => {
-                      setMoreOpen(false);
-                      onExportPdf();
+                      setExportOpen(false);
+                      onExportExcel();
                     }}
                   >
-                    <FileText className="size-3.5 text-slate-500" />
-                    PDF document
+                    <FileSpreadsheet className="size-3.5 text-slate-500" />
+                    Excel
                   </button>
                   <button
                     type="button"
                     role="menuitem"
                     className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#0b1220] hover:bg-[#f4f7f6]"
                     onClick={() => {
-                      setMoreOpen(false);
-                      onExportExcel();
+                      setExportOpen(false);
+                      onExportPdf();
                     }}
                   >
-                    <FileSpreadsheet className="size-3.5 text-slate-500" />
-                    Excel
+                    <FileText className="size-3.5 text-slate-500" />
+                    PDF document
                   </button>
                 </div>
               </>
@@ -282,7 +264,7 @@ export function DailyReconciliationReport({
               type="button"
               disabled={acting}
               onClick={onPrimaryAction}
-              className="inline-flex h-10 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-4 text-xs font-bold text-white shadow-[0_10px_22px_rgba(15,143,104,0.28)] transition hover:brightness-105 disabled:opacity-55"
+              className="inline-flex h-9 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-4 text-xs font-bold text-white shadow-[0_10px_22px_rgba(15,143,104,0.28)] transition hover:brightness-105 disabled:opacity-55"
             >
               {acting ? (
                 <Loader2 className="size-3.5 animate-spin" />
@@ -461,14 +443,29 @@ function SummaryDocument({
     0,
   );
 
+  const showOpeningDetail =
+    Math.round(document.openingBalance) !== 0 ||
+    Boolean(document.previousReportReference);
+  const showTopUpsDetail = topUpsTotal !== 0 || document.topUps.length > 0;
+  const showRepaymentsDetail =
+    Math.round(document.collectionsReceived) !== 0 ||
+    document.collectionsCount > 0;
+  const showFeesDetail = Math.round(document.processingFeesTotal) !== 0;
+  const showLoansDetail =
+    Math.round(document.loansIssuedPrincipal) !== 0 ||
+    document.loansIssuedCount > 0;
+  const showExpensesDetail =
+    Math.round(document.expensesTotal) !== 0 || document.expensesCount > 0;
+  const showFloatDetail = Math.round(document.floatIssued) !== 0;
+
   return (
     <article className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-      <div className="space-y-7 px-5 py-6 sm:px-7">
+      <div className="space-y-4 px-4 py-4 sm:px-5">
         <div>
-          <h2 className="text-center text-[15px] font-bold uppercase tracking-[0.08em] text-[#0b1220]">
+          <h2 className="text-center text-[13px] font-bold uppercase tracking-[0.08em] text-[#0b1220]">
             Daily Reconciliation Report
           </h2>
-          <div className="mt-4 overflow-hidden rounded-xl border border-[#e6ebf0]">
+          <div className="mt-3 overflow-hidden rounded-xl border border-[#e6ebf0]">
             <dl className="grid grid-cols-1 sm:grid-cols-2">
               <MetaCell label="Report ID" value={reportCode} />
               <MetaCell label="Prepared By" value={document.preparedBy} />
@@ -493,8 +490,8 @@ function SummaryDocument({
           </div>
         </div>
 
-        <Section title="1. Cash Position">
-          <div className="grid gap-3 sm:grid-cols-3">
+        <Section title="Cash Position">
+          <div className="grid gap-2.5 sm:grid-cols-3">
             <CashCard
               icon={<WalletCards className="size-4" />}
               label="Expected Cash"
@@ -531,7 +528,7 @@ function SummaryDocument({
           </div>
         </Section>
 
-        <Section title="2. Cash Movement Summary">
+        <Section title="Cash Movement Summary">
           <ReportTable
             columns={[
               "Cash Movement",
@@ -593,133 +590,141 @@ function SummaryDocument({
               </span>,
             ]}
           />
-          <p className="mt-2 text-[11px] italic text-slate-500">
-            Expected closing cash = opening balance + top-ups + repayments +
-            processing fees − loans issued − expenses. Float issued and agent
-            cash returns are shown in sections 7 and 9; when handovers balance
-            they net out and do not change expected closing cash.
+          <p className="mt-1.5 text-[11px] italic text-slate-500">
+            Expected closing cash = opening + top-ups + repayments + fees −
+            loans − expenses. Float and agent returns net out when handovers
+            balance.
           </p>
         </Section>
 
-        <Section title="3. Balance Carried Forward Reference">
-          <ReportTable
-            columns={["Reference", "Description", "Date", `Amount (${currency})`]}
-            align={[false, false, false, true]}
-            rows={
-              document.openingBalance > 0 || document.previousReportReference
-                ? [
-                    [
-                      document.previousReportReference?.reportNumber ??
-                        "Opening balance",
-                      "Daily reconciliation report",
-                      formatDate(
-                        document.previousReportReference?.operationDate ??
-                          document.operationDate,
-                      ),
-                      amt(document.openingBalance),
-                    ],
-                  ]
-                : []
-            }
-            empty="No carried-forward balance reference."
-          />
-        </Section>
+        {showOpeningDetail ? (
+          <Section title="Balance Carried Forward Reference">
+            <ReportTable
+              columns={[
+                "Reference",
+                "Description",
+                "Date",
+                `Amount (${currency})`,
+              ]}
+              align={[false, false, false, true]}
+              rows={[
+                [
+                  document.previousReportReference?.reportNumber ??
+                    "Opening balance",
+                  "Daily reconciliation report",
+                  formatDate(
+                    document.previousReportReference?.operationDate ??
+                      document.operationDate,
+                  ),
+                  amt(document.openingBalance),
+                ],
+              ]}
+            />
+          </Section>
+        ) : null}
 
-        <Section title="4. Capital Top-ups">
-          <ReportTable
-            columns={["#", "Source", "Receipt / Reference", "Date", `Amount (${currency})`]}
-            align={[true, false, false, false, true]}
-            rows={document.topUps.map((row, index) => [
-              String(index + 1),
-              row.source,
-              row.reference || "—",
-              formatDate(row.date),
-              <span key={row.id} className="font-semibold text-[var(--forest-emerald)]">
-                {amt(row.amount)}
-              </span>,
-            ])}
-            empty="No capital top-ups recorded."
-            footer={
-              topUpsTotal > 0 || document.topUps.length > 0
-                ? [
-                    "",
-                    "Total Capital Top-ups",
-                    "",
-                    "",
-                    <span
-                      key="t"
-                      className="font-bold text-[var(--forest-emerald)]"
-                    >
-                      {amt(topUpsTotal)}
-                    </span>,
-                  ]
-                : undefined
-            }
-          />
-        </Section>
+        {showTopUpsDetail ? (
+          <Section title="Capital Top-ups">
+            <ReportTable
+              columns={[
+                "#",
+                "Source",
+                "Receipt / Reference",
+                "Date",
+                `Amount (${currency})`,
+              ]}
+              align={[true, false, false, false, true]}
+              rows={document.topUps.map((row, index) => [
+                String(index + 1),
+                row.source,
+                row.reference || "—",
+                formatDate(row.date),
+                <span
+                  key={row.id}
+                  className="font-semibold text-[var(--forest-emerald)]"
+                >
+                  {amt(row.amount)}
+                </span>,
+              ])}
+              footer={[
+                "",
+                "Total Capital Top-ups",
+                "",
+                "",
+                <span
+                  key="t"
+                  className="font-bold text-[var(--forest-emerald)]"
+                >
+                  {amt(topUpsTotal)}
+                </span>,
+              ]}
+            />
+          </Section>
+        ) : null}
 
-        <Section title="5. Repayments Collected">
-          <ReportTable
-            columns={["#", "Scheme / Product", "Transactions", `Amount (${currency})`]}
-            align={[true, false, true, true]}
-            rows={repaymentsRows.map((row, index) => [
-              String(index + 1),
-              row.product,
-              formatNumber(row.transactions),
-              amt(row.amount),
-            ])}
-            empty="No repayments collected."
-            footer={
-              document.collectionsReceived > 0 || repaymentsRows.length > 0
-                ? [
-                    "",
-                    "Total Repayments Collected",
-                    formatNumber(document.collectionsCount),
-                    <span
-                      key="t"
-                      className="font-bold text-[var(--forest-emerald)]"
-                    >
-                      {amt(document.collectionsReceived)}
-                    </span>,
-                  ]
-                : undefined
-            }
-          />
-        </Section>
+        {showRepaymentsDetail ? (
+          <Section title="Repayments Collected">
+            <ReportTable
+              columns={[
+                "#",
+                "Scheme / Product",
+                "Transactions",
+                `Amount (${currency})`,
+              ]}
+              align={[true, false, true, true]}
+              rows={repaymentsRows.map((row, index) => [
+                String(index + 1),
+                row.product,
+                formatNumber(row.transactions),
+                amt(row.amount),
+              ])}
+              footer={[
+                "",
+                "Total Repayments Collected",
+                formatNumber(document.collectionsCount),
+                <span
+                  key="t"
+                  className="font-bold text-[var(--forest-emerald)]"
+                >
+                  {amt(document.collectionsReceived)}
+                </span>,
+              ]}
+            />
+          </Section>
+        ) : null}
 
-        <Section title="6. Processing Fees Received">
-          <ReportTable
-            columns={["#", "Scheme / Product", "Transactions", `Amount (${currency})`]}
-            align={[true, false, true, true]}
-            rows={feesRows.map((row, index) => [
-              String(index + 1),
-              row.product,
-              formatNumber(row.transactions),
-              amt(row.amount),
-            ])}
-            empty="No processing fees received."
-            footer={
-              document.processingFeesTotal > 0 || feesRows.length > 0
-                ? [
-                    "",
-                    "Total Processing Fees Received",
-                    formatNumber(feesEntryCount),
-                    <span
-                      key="t"
-                      className="font-bold text-[var(--forest-emerald)]"
-                    >
-                      {amt(document.processingFeesTotal)}
-                    </span>,
-                  ]
-                : undefined
-            }
-          />
-          <p className="mt-3 text-right text-[11px] font-medium text-slate-400">
-            Page 1 of 2
-          </p>
-        </Section>
+        {showFeesDetail ? (
+          <Section title="Processing Fees Received">
+            <ReportTable
+              columns={[
+                "#",
+                "Scheme / Product",
+                "Transactions",
+                `Amount (${currency})`,
+              ]}
+              align={[true, false, true, true]}
+              rows={feesRows.map((row, index) => [
+                String(index + 1),
+                row.product,
+                formatNumber(row.transactions),
+                amt(row.amount),
+              ])}
+              footer={[
+                "",
+                "Total Processing Fees Received",
+                formatNumber(feesEntryCount),
+                <span
+                  key="t"
+                  className="font-bold text-[var(--forest-emerald)]"
+                >
+                  {amt(document.processingFeesTotal)}
+                </span>,
+              ]}
+            />
+          </Section>
+        ) : null}
 
-        <Section title="7. Agent Handover and Reconciliation">
+        <Section title="Agent Handover and Reconciliation">
           <ReportTable
             columns={[
               "Description",
@@ -750,134 +755,113 @@ function SummaryDocument({
               ],
             ]}
           />
-          <p className="mt-2 text-[11px] text-slate-500">
-            {agentsPending > 0
-              ? `${agentsPending} agent${agentsPending === 1 ? "" : "s"} still pending handover.`
-              : "All agents must submit their handover before end of day."}
-          </p>
+          {agentsPending > 0 ? (
+            <p className="mt-1.5 text-[11px] text-slate-500">
+              {agentsPending} agent{agentsPending === 1 ? "" : "s"} still
+              pending handover.
+            </p>
+          ) : null}
         </Section>
 
-        <Section title="8. Loans Issued">
-          <ReportTable
-            columns={[
-              "Product Type",
-              "Loans Issued",
-              `Total Amount (${currency})`,
-              `Recovered Today (${currency})`,
-              `Outstanding Balance (${currency})`,
-            ]}
-            align={[false, true, true, true, true]}
-            rows={loansRows.map((row) => [
-              row.product,
-              formatNumber(row.count),
-              amt(row.amount),
-              amt(row.recoveredToday),
-              <span
-                key={row.product}
-                className="font-semibold text-[var(--forest-emerald)]"
-              >
-                {amt(row.outstandingBalance)}
-              </span>,
-            ])}
-            empty="No loans issued."
-            footer={
-              document.loansIssuedCount > 0 || loansRows.length > 0
-                ? [
-                    "Total",
-                    <strong key="c">
-                      {formatNumber(document.loansIssuedCount)}
-                    </strong>,
-                    <strong key="a">
-                      {amt(document.loansIssuedPrincipal)}
-                    </strong>,
-                    <strong key="r">
-                      {amt(
-                        loansRows.reduce(
-                          (sum, row) => sum + row.recoveredToday,
-                          0,
-                        ),
-                      )}
-                    </strong>,
-                    <strong key="o" className="text-[var(--forest-emerald)]">
-                      {amt(
-                        loansRows.reduce(
-                          (sum, row) => sum + row.outstandingBalance,
-                          0,
-                        ),
-                      )}
-                    </strong>,
-                  ]
-                : undefined
-            }
-          />
-        </Section>
+        {showLoansDetail ? (
+          <Section title="Loans Issued">
+            <ReportTable
+              columns={[
+                "Product Type",
+                "Loans Issued",
+                `Total Amount (${currency})`,
+                `Recovered Today (${currency})`,
+                `Outstanding Balance (${currency})`,
+              ]}
+              align={[false, true, true, true, true]}
+              rows={loansRows.map((row) => [
+                row.product,
+                formatNumber(row.count),
+                amt(row.amount),
+                amt(row.recoveredToday),
+                <span
+                  key={row.product}
+                  className="font-semibold text-[var(--forest-emerald)]"
+                >
+                  {amt(row.outstandingBalance)}
+                </span>,
+              ])}
+              footer={[
+                "Total",
+                <strong key="c">
+                  {formatNumber(document.loansIssuedCount)}
+                </strong>,
+                <strong key="a">{amt(document.loansIssuedPrincipal)}</strong>,
+                <strong key="r">
+                  {amt(
+                    loansRows.reduce(
+                      (sum, row) => sum + row.recoveredToday,
+                      0,
+                    ),
+                  )}
+                </strong>,
+                <strong key="o" className="text-[var(--forest-emerald)]">
+                  {amt(
+                    loansRows.reduce(
+                      (sum, row) => sum + row.outstandingBalance,
+                      0,
+                    ),
+                  )}
+                </strong>,
+              ]}
+            />
+          </Section>
+        ) : null}
 
-        <Section title="9. Float Distributed to Agents">
-          <ReportTable
-            columns={["Description", "Agents", `Total Float (${currency})`]}
-            align={[false, true, true]}
-            rows={
-              document.floatIssued > 0
-                ? [
-                    [
-                      "Float distributed to agents",
-                      String(document.agentsWithFloatCount),
-                      amt(document.floatIssued),
-                    ],
-                  ]
-                : []
-            }
-            empty="No float distributed."
-            footer={
-              document.floatIssued > 0
-                ? [
-                    "Total",
-                    <strong key="a">{document.agentsWithFloatCount}</strong>,
-                    <strong key="f">{amt(document.floatIssued)}</strong>,
-                  ]
-                : undefined
-            }
-          />
-        </Section>
+        {showFloatDetail ? (
+          <Section title="Float Distributed to Agents">
+            <ReportTable
+              columns={["Description", "Agents", `Total Float (${currency})`]}
+              align={[false, true, true]}
+              rows={[
+                [
+                  "Float distributed to agents",
+                  String(document.agentsWithFloatCount),
+                  amt(document.floatIssued),
+                ],
+              ]}
+              footer={[
+                "Total",
+                <strong key="a">{document.agentsWithFloatCount}</strong>,
+                <strong key="f">{amt(document.floatIssued)}</strong>,
+              ]}
+            />
+          </Section>
+        ) : null}
 
-        <Section title="10. Expenses Recorded">
-          <ReportTable
-            columns={[
-              "Expense Category",
-              "No. of Transactions",
-              `Total Amount (${currency})`,
-            ]}
-            align={[false, true, true]}
-            rows={expensesByCategory.map((row) => [
-              row.category,
-              formatNumber(row.count),
-              amt(row.amount),
-            ])}
-            empty="No expenses recorded."
-            footer={
-              document.expensesCount > 0 || expensesByCategory.length > 0
-                ? [
-                    "Total",
-                    <strong key="c">
-                      {formatNumber(
-                        expenseCategoryCount || document.expensesCount,
-                      )}
-                    </strong>,
-                    <strong key="a">
-                      {amt(
-                        Math.round(expenseCategoryTotal) ===
-                          Math.round(document.expensesTotal)
-                          ? document.expensesTotal
-                          : document.expensesTotal,
-                      )}
-                    </strong>,
-                  ]
-                : undefined
-            }
-          />
-        </Section>
+        {showExpensesDetail ? (
+          <Section title="Expenses Recorded">
+            <ReportTable
+              columns={[
+                "Expense Category",
+                "No. of Transactions",
+                `Total Amount (${currency})`,
+              ]}
+              align={[false, true, true]}
+              rows={expensesByCategory.map((row) => [
+                row.category,
+                formatNumber(row.count),
+                amt(row.amount),
+              ])}
+              footer={[
+                "Total",
+                <strong key="c">
+                  {formatNumber(
+                    expenseCategoryCount || document.expensesCount,
+                  )}
+                </strong>,
+                <strong key="a">{amt(document.expensesTotal)}</strong>,
+              ]}
+            />
+          </Section>
+        ) : null}
 
-        <Section title="11. Report Review History">
+        <Section title="Report Review History">
           <ReportTable
             columns={["Reviewed By", "Role", "Action", "Review Date", "Comment"]}
             align={[false, false, false, false, false]}
@@ -886,7 +870,7 @@ function SummaryDocument({
           />
         </Section>
 
-        <Section title="12. Owner Review">
+        <Section title="Owner Review">
           <ReportTable
             columns={["Reviewed By", "Role", "Review Date", "Status", "Comment"]}
             align={[false, false, false, false, false]}
@@ -917,16 +901,6 @@ function SummaryDocument({
           />
         </Section>
 
-        <Section title="13. Manager's Closing Notes">
-          <div className="rounded-xl border border-[#e6ebf0] bg-[#f8faf9] px-4 py-3 text-sm leading-relaxed text-[#0b1220]">
-            {document.closingNotes?.trim() ||
-              document.managerNotes?.trim() ||
-              "No closing notes recorded."}
-          </div>
-          <p className="mt-3 text-right text-[11px] font-medium text-slate-400">
-            Page 2 of 2
-          </p>
-        </Section>
       </div>
     </article>
   );
@@ -1236,10 +1210,8 @@ function Section({
   children: ReactNode;
 }) {
   return (
-    <section>
-      <h3 className="mb-3 text-sm font-bold text-[var(--forest-emerald)]">
-        {title}
-      </h3>
+    <section className="space-y-1.5">
+      <h3 className="text-sm font-bold text-[var(--forest-emerald)]">{title}</h3>
       {children}
     </section>
   );
@@ -1247,11 +1219,11 @@ function Section({
 
 function MetaCell({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="grid grid-cols-[140px_minmax(0,1fr)] border-b border-[#edf1f5] sm:border-r sm:odd:border-r sm:[&:nth-child(2n)]:border-r-0">
-      <dt className="bg-[#f4f7f6] px-3 py-2.5 text-[11px] font-semibold text-slate-500">
+    <div className="grid grid-cols-[120px_minmax(0,1fr)] border-b border-[#edf1f5] sm:border-r sm:odd:border-r sm:[&:nth-child(2n)]:border-r-0">
+      <dt className="bg-[#f4f7f6] px-2.5 py-2 text-[10px] font-semibold text-slate-500">
         {label}
       </dt>
-      <dd className="px-3 py-2.5 text-sm font-semibold text-[#0b1220]">
+      <dd className="px-2.5 py-2 text-xs font-semibold text-[#0b1220]">
         {value}
       </dd>
     </div>
@@ -1272,20 +1244,20 @@ function CashCard({
   badge?: ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-[#e6ebf0] bg-[#f8faf9] px-3.5 py-3">
+    <div className="rounded-xl border border-[#e6ebf0] bg-[#f8faf9] px-3 py-2.5">
       <div className="flex items-center gap-2 text-[var(--forest-emerald)]">
         {icon}
-        <p className="text-[11px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
           {label}
         </p>
       </div>
-      <p className="mt-2 text-lg font-bold tabular-nums text-[#0b1220]">
-        <span className="mr-1 text-[11px] font-semibold text-slate-500">
+      <p className="mt-1.5 text-base font-bold tabular-nums text-[#0b1220]">
+        <span className="mr-1 text-[10px] font-semibold text-slate-500">
           {currency}
         </span>
         {value}
       </p>
-      {badge ? <div className="mt-1">{badge}</div> : null}
+      {badge ? <div className="mt-0.5">{badge}</div> : null}
     </div>
   );
 }
@@ -1311,7 +1283,7 @@ function ReportTable({
             {columns.map((column, index) => (
               <th
                 key={column}
-                className={`px-3 py-2.5 ${align[index] ? "text-right" : ""}`}
+                className={`px-2.5 py-2 ${align[index] ? "text-right" : ""}`}
               >
                 {column}
               </th>
@@ -1323,7 +1295,7 @@ function ReportTable({
             <tr>
               <td
                 colSpan={columns.length}
-                className="px-3 py-6 text-center text-[11px] font-medium text-slate-500"
+                className="px-2.5 py-4 text-center text-[11px] font-medium text-slate-500"
               >
                 {empty ?? "No records."}
               </td>
@@ -1334,7 +1306,7 @@ function ReportTable({
                 {row.map((cell, cellIndex) => (
                   <td
                     key={cellIndex}
-                    className={`px-3 py-2.5 text-[#0b1220] ${
+                    className={`px-2.5 py-2 text-[#0b1220] ${
                       align[cellIndex]
                         ? "text-right tabular-nums font-semibold"
                         : "font-medium"
