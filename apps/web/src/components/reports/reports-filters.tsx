@@ -57,7 +57,7 @@ const MANAGER_STATUS_OPTIONS: Array<{
   label: string;
 }> = [
   { value: "all", label: "All" },
-  { value: "MANAGER_REVIEW", label: "Draft" },
+  { value: "MANAGER_REVIEW", label: "Ready to send" },
   { value: "SENT_TO_OWNER", label: "Awaiting Approval" },
   { value: "OWNER_APPROVED", label: "Approved" },
   { value: "RETURNED_TO_MANAGER", label: "Returned" },
@@ -78,7 +78,7 @@ export function reportStatusOptions(mode: "owner" | "manager") {
 }
 
 export function reportStatusLabel(status: string) {
-  if (status === "MANAGER_REVIEW") return "Draft";
+  if (status === "MANAGER_REVIEW") return "Ready to send";
   if (status === "SENT_TO_OWNER") return "Awaiting Approval";
   if (status === "OWNER_APPROVED") return "Approved";
   if (status === "RETURNED_TO_MANAGER") return "Returned";

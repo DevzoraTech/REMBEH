@@ -271,23 +271,28 @@ export class BillingService implements OnModuleInit {
       (row) => {
         const paid = row.status === SubscriptionPaymentStatus.COMPLETED;
         const failed = row.status === SubscriptionPaymentStatus.FAILED;
+        const isWelcome = row.merchantReference.startsWith('pro_welcome_');
         return {
           id: row.id,
           date: (row.paidAt ?? row.createdAt).toISOString(),
           branchId: row.branchId,
           branchName: row.branch.name,
           kind: 'sms' as const,
-          transaction: 'SMS top-up',
+          transaction: isWelcome
+            ? 'Pro plan welcome SMS credits'
+            : 'SMS top-up',
           periodLabel: `${row.credits.toLocaleString('en-UG')} SMS`,
           amount: Number(row.amount),
           currency: row.currency,
           credits: row.credits,
-          paymentMethod: this.paymentMethodFromPayload(row.rawPayload),
+          paymentMethod: isWelcome
+            ? 'Included with Pro'
+            : this.paymentMethodFromPayload(row.rawPayload),
           status: paid ? 'Paid' : failed ? 'Failed' : 'Pending',
           receipt: paid
             ? `#${row.merchantReference.slice(-8).toUpperCase()}`
             : null,
-          canRetry: failed,
+          canRetry: failed && !isWelcome,
         };
       },
     );
@@ -901,6 +906,15 @@ export class BillingService implements OnModuleInit {
       return;
     }
 
+    const priorCompleted = await this.prisma.subscriptionPayment.count({
+      where: {
+        branchId: payment.branchId,
+        status: SubscriptionPaymentStatus.COMPLETED,
+        id: { not: payment.id },
+      },
+    });
+    const isFirstPlanPurchase = priorCompleted === 0;
+
     const now = new Date();
     const sub = await this.prisma.branchSubscription.findUnique({
       where: { branchId: payment.branchId },
@@ -938,6 +952,25 @@ export class BillingService implements OnModuleInit {
     this.logger.log(
       `Branch ${payment.branchId} subscription activated until ${periodEnd.toISOString()}`,
     );
+
+    if (isFirstPlanPurchase) {
+      try {
+        const welcome = await this.smsCreditsService.grantProWelcomeSmsCredits({
+          tenantId: payment.tenantId,
+          branchId: payment.branchId,
+        });
+        if (welcome.granted) {
+          this.logger.log(
+            `Branch ${payment.branchId} received ${welcome.credits} Pro welcome SMS credits`,
+          );
+        }
+      } catch (error) {
+        this.logger.error(
+          `Failed to grant Pro welcome SMS credits for branch ${payment.branchId}`,
+          error instanceof Error ? error.stack : error,
+        );
+      }
+    }
   }
 
   private reminderFor(

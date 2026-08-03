@@ -18,6 +18,12 @@ import { SmsCreditsService } from './sms-credits.service';
 export class SmsCreditsController {
   constructor(private readonly smsCreditsService: SmsCreditsService) {}
 
+  /** Manager: own branch. Owner: sum across branches. */
+  @Get('balance')
+  getBalance(@CurrentUser() user: AuthenticatedUser) {
+    return this.smsCreditsService.getBalance(user);
+  }
+
   /** Manager: own branch. Owner: optional ?branchId= */
   @Get('wallet')
   getWallet(

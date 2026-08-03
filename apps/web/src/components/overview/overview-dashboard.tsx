@@ -233,7 +233,6 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
   const [dailyStatuses, setDailyStatuses] = useState<OwnerBranchDailyStatus[]>(
     [],
   );
-  const [search, setSearch] = useState("");
   const [performancePeriod, setPerformancePeriod] =
     useState<PerformancePeriod>("7d");
   const [performanceView, setPerformanceView] =
@@ -439,44 +438,6 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
     todayActivity.collections.length +
     todayActivity.newBorrowers.length +
     todayActivity.fullySettled.length;
-  const query = search.trim().toLowerCase();
-  const visibleBranchPerformance = useMemo(
-    () =>
-      query
-        ? branchPerformance.filter((row) =>
-            [row.branch.name, row.branch.address, row.branch.manager?.name ?? ""]
-              .join(" ")
-              .toLowerCase()
-              .includes(query),
-          )
-        : branchPerformance,
-    [branchPerformance, query],
-  );
-  const visibleActivities = useMemo(
-    () =>
-      query
-        ? activities.filter((item) =>
-            [
-              item.title,
-              item.meta,
-              item.amountValue != null ? String(item.amountValue) : "",
-            ]
-              .join(" ")
-              .toLowerCase()
-              .includes(query),
-          )
-        : activities,
-    [activities, query],
-  );
-  const visibleAlerts = useMemo(
-    () =>
-      query
-        ? alerts.filter((alert) =>
-            [alert.title, alert.detail].join(" ").toLowerCase().includes(query),
-          )
-        : alerts,
-    [alerts, query],
-  );
 
   if (!state.ready || !state.session) return <AppBootSkeleton />;
 
@@ -503,14 +464,6 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
         <OwnerHeader
           subtitle={`${greeting()}, ${firstName(state.user?.name ?? (isManager ? "Manager" : "Owner"))} 👋`}
           title="Here's what's happening today"
-          search={search}
-          onSearchChange={setSearch}
-          searchPlaceholder="Search Overview..."
-          searchTooltip={
-            isManager
-              ? "Search today's activity, alerts and reports on this page."
-              : "Search branches, today's activity, alerts and reports on this page."
-          }
           settingsHref={links.settings}
           reportsHref={links.reports}
           notificationScope={mode}
@@ -601,13 +554,13 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
                 />
               </div>
               <div className="min-w-0">
-                <AlertsCard alerts={visibleAlerts} href={links.risk} />
+                <AlertsCard alerts={alerts} href={links.risk} />
               </div>
             </section>
 
             <section className="grid items-stretch gap-3">
               <RecentActivityCard
-                activities={visibleActivities}
+                activities={activities}
                 href={links.reports}
               />
             </section>
@@ -624,7 +577,7 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
                 onViewChange={setPerformanceView}
               />
               <BranchPerformanceCard
-                rows={visibleBranchPerformance}
+                rows={branchPerformance}
                 currency={currency}
                 href={links.branches}
                 title="Branch Performance"
@@ -644,10 +597,10 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
 
             <section className="grid items-stretch gap-3 xl:grid-cols-[2fr_1fr]">
               <RecentActivityCard
-                activities={visibleActivities}
+                activities={activities}
                 href={links.reports}
               />
-              <AlertsCard alerts={visibleAlerts} href={links.risk} />
+              <AlertsCard alerts={alerts} href={links.risk} />
             </section>
           </>
         )}

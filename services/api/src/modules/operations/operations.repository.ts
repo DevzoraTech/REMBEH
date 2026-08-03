@@ -886,6 +886,116 @@ export class OperationsRepository {
     });
   }
 
+  sumLoansIssuedByProduct(input: {
+    tenantId: string;
+    branchId: string;
+    dayStart: Date;
+    dayEnd: Date;
+  }) {
+    return this.prisma.loanApplication.groupBy({
+      by: ['templateName'],
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        status: LoanApplicationStatus.SUBMITTED,
+        submittedAt: {
+          gte: input.dayStart,
+          lte: input.dayEnd,
+        },
+      },
+      _sum: { principalAmount: true, processingFee: true },
+      _count: { _all: true },
+    });
+  }
+
+  listLoansIssuedToday(input: {
+    tenantId: string;
+    branchId: string;
+    dayStart: Date;
+    dayEnd: Date;
+  }) {
+    return this.prisma.loanApplication.findMany({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        status: LoanApplicationStatus.SUBMITTED,
+        submittedAt: {
+          gte: input.dayStart,
+          lte: input.dayEnd,
+        },
+      },
+      select: {
+        id: true,
+        templateName: true,
+        principalAmount: true,
+        processingFee: true,
+        loanId: true,
+        loan: {
+          select: {
+            id: true,
+            balance: true,
+            repayments: {
+              where: {
+                paidAt: {
+                  gte: input.dayStart,
+                  lte: input.dayEnd,
+                },
+              },
+              select: { amount: true },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  listCollectionsWithProduct(input: {
+    tenantId: string;
+    branchId: string;
+    dayStart: Date;
+    dayEnd: Date;
+  }) {
+    return this.prisma.repayment.findMany({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        paidAt: {
+          gte: input.dayStart,
+          lte: input.dayEnd,
+        },
+      },
+      select: {
+        id: true,
+        amount: true,
+        loan: {
+          select: {
+            application: {
+              select: { templateName: true },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  findReportForOperationDate(input: {
+    tenantId: string;
+    branchId: string;
+    operationDate: Date;
+  }) {
+    return this.prisma.branchOperationReport.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        operationDate: input.operationDate,
+      },
+      select: {
+        reportNumber: true,
+        operationDate: true,
+      },
+    });
+  }
+
   sumLoansIssuedForAgent(input: {
     tenantId: string;
     branchId: string;

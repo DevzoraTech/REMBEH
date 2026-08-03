@@ -27,6 +27,8 @@ import {
   DailyOperationReportContract,
   DailyOperationResponseContract,
   OwnerBranchDailyStatusResponseContract,
+  OwnerOperationReportDetailResponseContract,
+  OwnerOperationReportListItemContract,
   OwnerOperationReportListResponseContract,
 } from './operations.contracts';
 import { OPERATIONS_EVENTS } from './operations.events';
@@ -343,33 +345,93 @@ export class OperationsService {
     });
 
     return {
-      reports: reports.map((report) => {
-        const snapshot = this.reportSnapshotSummary(report.snapshot);
-        return {
-          id: report.id,
-          operationId: report.operationId,
-          branchId: report.branchId,
-          branchName: report.branch?.name ?? report.operation.branch.name,
-          reportNumber: report.reportNumber,
-          operationDate: this.formatDateLabel(report.operationDate),
-          status: report.status,
-          generatedAt: report.generatedAt.toISOString(),
-          managerReviewedAt: report.managerReviewedAt?.toISOString() ?? null,
-          managerReviewedByName: report.managerReviewedBy?.displayName ?? null,
-          ownerApprovedAt: report.ownerApprovedAt?.toISOString() ?? null,
-          ownerApprovedByName: report.ownerApprovedBy?.displayName ?? null,
-          expectedClosingBalance: snapshot.expectedClosingBalance,
-          closingBalance: snapshot.countedCash,
-          closingVariance: snapshot.variance,
-          loansIssuedCount: snapshot.loansIssuedCount,
-          loansIssuedPrincipal: snapshot.loansIssuedPrincipal,
-          collectionsReceived: snapshot.collectionsReceived,
-          processingFeesTotal: snapshot.processingFees,
-          expensesTotal: snapshot.expenses,
-          cashReturnedByAgents: snapshot.cashReturnedByAgents,
-          snapshot: report.snapshot,
-        };
-      }),
+      reports: reports.map((report) => this.toOwnerReportListItem(report)),
+    };
+  }
+
+  async getOwnerReport(
+    user: AuthenticatedUser,
+    reportId: string,
+  ): Promise<OwnerOperationReportDetailResponseContract> {
+    const canOwnerList =
+      user.permissions.includes(OPERATIONS_PERMISSIONS.approve) &&
+      user.permissions.includes(BRANCH_PERMISSIONS.create);
+    const canManagerList =
+      user.permissions.includes(OPERATIONS_PERMISSIONS.reportReview) ||
+      user.permissions.includes(OPERATIONS_PERMISSIONS.close) ||
+      user.permissions.includes(OPERATIONS_PERMISSIONS.read);
+
+    if (!canOwnerList && !canManagerList) {
+      throw new ForbiddenException('Missing permission to view reports.');
+    }
+
+    const report = await this.repository.findReportById({
+      tenantId: user.tenantId,
+      reportId,
+    });
+    if (!report) {
+      throw new NotFoundException('Report was not found.');
+    }
+
+    if (!canOwnerList) {
+      if (!user.branchId || report.branchId !== user.branchId) {
+        throw new ForbiddenException('Branch scope is required.');
+      }
+    }
+
+    return { report: this.toOwnerReportListItem(report) };
+  }
+
+  private toOwnerReportListItem(report: {
+    id: string;
+    operationId: string;
+    branchId: string;
+    reportNumber: string;
+    operationDate: Date;
+    status: BranchOperationReportStatus;
+    generatedAt: Date;
+    managerReviewedAt: Date | null;
+    managerNotes: string | null;
+    ownerApprovedAt: Date | null;
+    ownerNotes: string | null;
+    returnedAt: Date | null;
+    returnNotes: string | null;
+    snapshot: Prisma.JsonValue;
+    managerReviewedBy?: { displayName: string } | null;
+    ownerApprovedBy?: { displayName: string } | null;
+    returnedBy?: { displayName: string } | null;
+    branch?: { name: string } | null;
+    operation: { branch: { name: string } };
+  }): OwnerOperationReportListItemContract {
+    const snapshot = this.reportSnapshotSummary(report.snapshot);
+    return {
+      id: report.id,
+      operationId: report.operationId,
+      branchId: report.branchId,
+      branchName: report.branch?.name ?? report.operation.branch.name,
+      reportNumber: report.reportNumber,
+      operationDate: this.formatDateLabel(report.operationDate),
+      status: report.status,
+      generatedAt: report.generatedAt.toISOString(),
+      managerReviewedAt: report.managerReviewedAt?.toISOString() ?? null,
+      managerReviewedByName: report.managerReviewedBy?.displayName ?? null,
+      managerNotes: report.managerNotes,
+      ownerApprovedAt: report.ownerApprovedAt?.toISOString() ?? null,
+      ownerApprovedByName: report.ownerApprovedBy?.displayName ?? null,
+      ownerNotes: report.ownerNotes,
+      returnedAt: report.returnedAt?.toISOString() ?? null,
+      returnedByName: report.returnedBy?.displayName ?? null,
+      returnNotes: report.returnNotes,
+      expectedClosingBalance: snapshot.expectedClosingBalance,
+      closingBalance: snapshot.countedCash,
+      closingVariance: snapshot.variance,
+      loansIssuedCount: snapshot.loansIssuedCount,
+      loansIssuedPrincipal: snapshot.loansIssuedPrincipal,
+      collectionsReceived: snapshot.collectionsReceived,
+      processingFeesTotal: snapshot.processingFees,
+      expensesTotal: snapshot.expenses,
+      cashReturnedByAgents: snapshot.cashReturnedByAgents,
+      snapshot: report.snapshot,
     };
   }
 
@@ -1015,6 +1077,9 @@ export class OperationsService {
       expenses,
       topUps,
       agentFloats,
+      loansIssuedToday,
+      collectionsWithProduct,
+      previousClosed,
     ] = await Promise.all([
       this.repository.sumFloatIssued({
         tenantId: operation.tenantId,
@@ -1050,7 +1115,32 @@ export class OperationsService {
         branchId: operation.branchId,
         floatDate: operation.operationDate,
       }),
+      this.repository.listLoansIssuedToday({
+        tenantId: operation.tenantId,
+        branchId: operation.branchId,
+        dayStart,
+        dayEnd,
+      }),
+      this.repository.listCollectionsWithProduct({
+        tenantId: operation.tenantId,
+        branchId: operation.branchId,
+        dayStart,
+        dayEnd,
+      }),
+      this.repository.findLatestClosedBefore({
+        tenantId: operation.tenantId,
+        branchId: operation.branchId,
+        beforeDate: operation.operationDate,
+      }),
     ]);
+
+    const previousReport =
+      previousClosed == null
+        ? null
+        : await this.repository.findReportForOperation({
+            tenantId: operation.tenantId,
+            operationId: previousClosed.id,
+          });
 
     const agentIds = agentFloats.map((float) => float.agentId);
     const [loansByAgentRows, collectionsByAgentRows] =
@@ -1130,6 +1220,11 @@ export class OperationsService {
       ? this.decimalToNumber(operation.closingBalance)
       : null;
 
+    const loansByProduct = this.buildLoansByProduct(loansIssuedToday);
+    const feesByProduct = this.buildFeesByProduct(loansIssuedToday);
+    const repaymentsByProduct =
+      this.buildRepaymentsByProduct(collectionsWithProduct);
+
     return {
       id: operation.id,
       branchId: operation.branchId,
@@ -1189,6 +1284,21 @@ export class OperationsService {
       collectionsCount: collectionsAgg._count._all,
       collectionsReceived,
       notes: operation.notes,
+      loansByProduct,
+      repaymentsByProduct,
+      feesByProduct,
+      previousReportReference:
+        previousClosed == null
+          ? null
+          : {
+              reportNumber:
+                previousReport?.reportNumber ??
+                this.buildDailyReportCode(
+                  this.formatDateLabel(previousClosed.operationDate),
+                ),
+              operationDate: this.formatDateLabel(previousClosed.operationDate),
+              amount: this.decimalToNumber(previousClosed.closingBalance),
+            },
     };
   }
 
@@ -1283,7 +1393,7 @@ export class OperationsService {
     operation: DailyOperationContract,
   ): Prisma.InputJsonObject {
     return {
-      version: 1,
+      version: 2,
       reportType: 'daily_operations_close',
       operation: {
         id: operation.id,
@@ -1333,9 +1443,119 @@ export class OperationsService {
       agentReturns: operation.agentReturns,
       topUps: operation.topUps,
       expenses: operation.expenses,
+      loansByProduct: operation.loansByProduct,
+      repaymentsByProduct: operation.repaymentsByProduct,
+      feesByProduct: operation.feesByProduct,
+      previousReportReference: operation.previousReportReference,
       closingNotes: operation.closingNotes,
       generatedAt: new Date().toISOString(),
     };
+  }
+
+  private buildLoansByProduct(
+    loans: Awaited<
+      ReturnType<OperationsRepository['listLoansIssuedToday']>
+    >,
+  ) {
+    const map = new Map<
+      string,
+      {
+        product: string;
+        count: number;
+        amount: number;
+        recoveredToday: number;
+        outstandingBalance: number;
+      }
+    >();
+    for (const loan of loans) {
+      const product = loan.templateName?.trim() || 'Loan';
+      const principal = this.decimalToNumber(loan.principalAmount);
+      const recovered = this.roundMoney(
+        (loan.loan?.repayments ?? []).reduce(
+          (total, repayment) => total + this.decimalToNumber(repayment.amount),
+          0,
+        ),
+      );
+      const outstanding = loan.loan
+        ? this.decimalToNumber(loan.loan.balance)
+        : this.roundMoney(Math.max(principal - recovered, 0));
+      const current = map.get(product) ?? {
+        product,
+        count: 0,
+        amount: 0,
+        recoveredToday: 0,
+        outstandingBalance: 0,
+      };
+      current.count += 1;
+      current.amount = this.roundMoney(current.amount + principal);
+      current.recoveredToday = this.roundMoney(
+        current.recoveredToday + recovered,
+      );
+      current.outstandingBalance = this.roundMoney(
+        current.outstandingBalance + outstanding,
+      );
+      map.set(product, current);
+    }
+    return [...map.values()].sort((a, b) => b.amount - a.amount);
+  }
+
+  private buildFeesByProduct(
+    loans: Awaited<
+      ReturnType<OperationsRepository['listLoansIssuedToday']>
+    >,
+  ) {
+    const map = new Map<
+      string,
+      { product: string; count: number; amount: number }
+    >();
+    for (const loan of loans) {
+      const fee = this.decimalToNumber(loan.processingFee);
+      if (fee <= 0) continue;
+      const product = loan.templateName?.trim() || 'Loan';
+      const current = map.get(product) ?? {
+        product,
+        count: 0,
+        amount: 0,
+      };
+      current.count += 1;
+      current.amount = this.roundMoney(current.amount + fee);
+      map.set(product, current);
+    }
+    return [...map.values()].sort((a, b) => b.amount - a.amount);
+  }
+
+  private buildRepaymentsByProduct(
+    repayments: Awaited<
+      ReturnType<OperationsRepository['listCollectionsWithProduct']>
+    >,
+  ) {
+    const map = new Map<
+      string,
+      { product: string; count: number; amount: number }
+    >();
+    for (const repayment of repayments) {
+      const product =
+        repayment.loan.application?.templateName?.trim() || 'Loan repayment';
+      const current = map.get(product) ?? {
+        product,
+        count: 0,
+        amount: 0,
+      };
+      current.count += 1;
+      current.amount = this.roundMoney(
+        current.amount + this.decimalToNumber(repayment.amount),
+      );
+      map.set(product, current);
+    }
+    return [...map.values()].sort((a, b) => b.amount - a.amount);
+  }
+
+  private buildDailyReportCode(operationDate: string) {
+    const [year, month, day] = operationDate.split('-');
+    if (!year || !month || !day || year.length < 4) {
+      return `DR${operationDate.replaceAll('-', '')}`;
+    }
+    return `DR${day}${month}${year.slice(2)}`;
   }
 
   private toReportContract(

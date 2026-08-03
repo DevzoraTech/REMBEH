@@ -112,6 +112,15 @@ export class OperationsController {
     return this.operationsService.closeBranch(user, dto);
   }
 
+  @Get('reports/:reportId')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.read)
+  getOwnerReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('reportId', ParseUUIDPipe) reportId: string,
+  ) {
+    return this.operationsService.getOwnerReport(user, reportId);
+  }
+
   @Post('reports/:reportId/manager-confirm')
   @RequirePermissions(OPERATIONS_PERMISSIONS.reportReview)
   managerConfirmReport(

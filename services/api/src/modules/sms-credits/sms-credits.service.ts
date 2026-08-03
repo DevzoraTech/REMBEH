@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { Prisma, SubscriptionPaymentStatus } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
+import { isPrismaUniqueConstraintError } from '../../common/database/prisma-errors';
 import { PrismaService } from '../../database/prisma.service';
 import { BILLING_PERMISSIONS } from '../billing/billing.permissions';
 import { PesapalClient } from '../billing/pesapal.client';
@@ -17,9 +18,11 @@ import { SmsService } from '../notifications/sms.service';
 import {
   BRANCH_SMS_TOP_UP_PRESETS_UGX,
   BRANCH_SMS_UNIT_PRICE_UGX,
+  PRO_PLAN_WELCOME_SMS_CREDITS,
   creditsForTopUpAmount,
 } from './sms-credits.constants';
 import type {
+  SmsBalanceContract,
   SmsTopUpCheckoutContract,
   SmsWalletContract,
 } from './sms-credits.contracts';
@@ -42,6 +45,51 @@ export class SmsCreditsService {
     const branch = await this.resolveBranch(user, branchId);
     const wallet = await this.ensureWallet(user.tenantId, branch.id);
     return this.toWalletContract(branch.id, branch.name, wallet.creditsRemaining);
+  }
+
+  /**
+   * Remaining SMS for header chrome.
+   * Managers: own branch. Owners: sum across all branch wallets.
+   */
+  async getBalance(user: AuthenticatedUser): Promise<SmsBalanceContract> {
+    if (!user.tenantId?.trim()) {
+      throw new ForbiddenException('Account access is required.');
+    }
+
+    if (user.branchId?.trim()) {
+      const branch = await this.resolveBranch(user, user.branchId);
+      const wallet = await this.ensureWallet(user.tenantId, branch.id);
+      return {
+        creditsRemaining: wallet.creditsRemaining,
+        canSendSms: wallet.creditsRemaining > 0,
+        scope: 'branch',
+        branchId: branch.id,
+        branchName: branch.name,
+      };
+    }
+
+    if (!user.permissions.includes(BILLING_PERMISSIONS.manage)) {
+      throw new ForbiddenException(
+        'You can only view SMS credits for your own branch.',
+      );
+    }
+
+    const wallets = await this.prisma.branchSmsWallet.findMany({
+      where: { tenantId: user.tenantId },
+      select: { creditsRemaining: true },
+    });
+    const creditsRemaining = wallets.reduce(
+      (sum, row) => sum + row.creditsRemaining,
+      0,
+    );
+
+    return {
+      creditsRemaining,
+      canSendSms: creditsRemaining > 0,
+      scope: 'account',
+      branchId: null,
+      branchName: null,
+    };
   }
 
   async startTopUp(
@@ -252,8 +300,77 @@ export class SmsCreditsService {
   }
 
   /**
-   * Debit one branch SMS credit and send. Skips silently when unpaid/empty
-   * (SMS is optional). Platform SMS must use SmsService.sendText directly.
+   * One-time Pro welcome pack: 140 SMS credits on a branch's first completed
+   * plan purchase. Idempotent via a unique welcome payment row per branch.
+   */
+  async grantProWelcomeSmsCredits(input: {
+    tenantId: string;
+    branchId: string;
+  }): Promise<{ granted: boolean; credits: number }> {
+    const merchantReference = `pro_welcome_${input.branchId.replaceAll('-', '')}`;
+    const existing = await this.prisma.smsCreditPayment.findUnique({
+      where: { merchantReference },
+      select: { id: true, status: true },
+    });
+    if (existing?.status === SubscriptionPaymentStatus.COMPLETED) {
+      return { granted: false, credits: 0 };
+    }
+
+    const wallet = await this.ensureWallet(input.tenantId, input.branchId);
+    const credits = PRO_PLAN_WELCOME_SMS_CREDITS;
+    const now = new Date();
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        if (existing) {
+          await tx.smsCreditPayment.update({
+            where: { id: existing.id },
+            data: {
+              status: SubscriptionPaymentStatus.COMPLETED,
+              credits,
+              paidAt: now,
+            },
+          });
+        } else {
+          await tx.smsCreditPayment.create({
+            data: {
+              tenantId: input.tenantId,
+              branchId: input.branchId,
+              walletId: wallet.id,
+              merchantReference,
+              amount: 0,
+              currency: 'UGX',
+              credits,
+              status: SubscriptionPaymentStatus.COMPLETED,
+              paidAt: now,
+            },
+          });
+        }
+        await tx.branchSmsWallet.update({
+          where: { id: wallet.id },
+          data: {
+            creditsRemaining: { increment: credits },
+            lifetimePurchased: { increment: credits },
+          },
+        });
+      });
+    } catch (error) {
+      if (isPrismaUniqueConstraintError(error)) {
+        return { granted: false, credits: 0 };
+      }
+      throw error;
+    }
+
+    this.logger.log(
+      `Pro welcome SMS +${credits} for branch ${input.branchId}`,
+    );
+    return { granted: true, credits };
+  }
+
+  /**
+   * Debit one branch SMS credit and send.
+   * Never sends when the branch has no credit left (returns sent: false).
+   * Platform SMS (OTP, billing reminders) must use SmsService.sendText directly.
    */
   async sendBranchSms(input: {
     tenantId: string;

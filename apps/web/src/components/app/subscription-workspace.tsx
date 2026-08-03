@@ -98,7 +98,8 @@ const PRO_BENEFITS = [
   "Agent and branch operations",
   "Reports and exports",
   "Full business analytics",
-  "SMS notifications alerts and reminders",
+  "Free SMS Notifications Credit — 140 SMS on first purchase",
+  "Borrower and operations workflows",
   "Cloud backup and synchronisation",
   "Ongoing product updates",
   "24hr support",
@@ -226,7 +227,19 @@ function SubscriptionWorkspaceContent({
   const [toppingUpAmount, setToppingUpAmount] = useState<number | null>(null);
   const paid = searchParams.get("paid") === "1";
   const smsPaid = searchParams.get("smsPaid") === "1";
+  const tabParam = searchParams.get("tab");
+  const [activeTab, setActiveTab] = useState<"plan" | "sms">(
+    tabParam === "sms" || smsPaid ? "sms" : "plan",
+  );
   const nextPath = mode === "owner" ? "/owner/subscription" : "/subscription";
+
+  useEffect(() => {
+    if (tabParam === "sms" || smsPaid) {
+      setActiveTab("sms");
+    } else if (tabParam === "plan" || paid) {
+      setActiveTab("plan");
+    }
+  }, [tabParam, smsPaid, paid]);
 
   useEffect(() => {
     const boot = window.setTimeout(() => {
@@ -381,8 +394,18 @@ function SubscriptionWorkspaceContent({
     );
   }, [summary, focusedBranchId]);
 
+  const planPayments = useMemo(
+    () => payments.filter((row) => (row.kind ?? "subscription") !== "sms"),
+    [payments],
+  );
+  const smsPayments = useMemo(
+    () => payments.filter((row) => row.kind === "sms"),
+    [payments],
+  );
+
   const filteredPayments = useMemo(() => {
-    return payments.filter((row) => {
+    const source = activeTab === "sms" ? smsPayments : planPayments;
+    return source.filter((row) => {
       if (statusFilter !== "all") {
         if (row.status.toLowerCase() !== statusFilter.toLowerCase()) {
           return false;
@@ -400,7 +423,24 @@ function SubscriptionWorkspaceContent({
       }
       return true;
     });
-  }, [payments, statusFilter, dateFrom, dateTo]);
+  }, [
+    activeTab,
+    planPayments,
+    smsPayments,
+    statusFilter,
+    dateFrom,
+    dateTo,
+  ]);
+
+  function switchTab(tab: "plan" | "sms") {
+    setActiveTab(tab);
+    setStatusFilter("all");
+    setDateFrom("");
+    setDateTo("");
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", tab);
+    window.history.replaceState({}, "", url.toString());
+  }
 
   async function startCheckout(branchId: string) {
     if (!session) return;
@@ -546,10 +586,11 @@ function SubscriptionWorkspaceContent({
       <div className="mx-auto max-w-6xl space-y-4 px-1 pb-6 sm:px-2">
         <OwnerHeader
           title="Subscription"
-          subtitle={`Manage the plan and billing for ${branchName}.`}
-          search=""
-          onSearchChange={() => undefined}
-          showSearch={false}
+          subtitle={
+            activeTab === "sms"
+              ? `Manage prepaid SMS credits for ${branchName}.`
+              : `Manage the plan and billing for ${branchName}.`
+          }
           showReportsButton={mode === "owner"}
           settingsHref={mode === "owner" ? "/owner/settings" : "/settings"}
           reportsHref={mode === "owner" ? "/owner/reports" : "/reports"}
@@ -592,219 +633,267 @@ function SubscriptionWorkspaceContent({
           </p>
         ) : null}
 
-        {loading && !summary ? (
-          <div className="flex items-center justify-center gap-2 rounded-2xl border border-[var(--line)] bg-white py-16 text-sm text-slate-500">
-            <Loader2 className="size-4 animate-spin" />
-            Loading…
-          </div>
-        ) : (
-          <section className="grid gap-3 lg:grid-cols-3">
-            {/* A) Current subscription */}
-            <article className="flex flex-col rounded-2xl border border-sky-100 bg-[#f3f8fd] p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
-              <span className="inline-flex w-fit rounded-full bg-[#e8f1fb] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#2b6cb0]">
-                Current subscription
-              </span>
-              <div className="mt-4 flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h2 className="font-[family-name:var(--font-display)] text-2xl tracking-[-0.03em] text-[#070b18]">
-                    {statusTitle}
-                  </h2>
-                  <p className="mt-1 text-sm font-medium text-slate-600">
-                    {daysCopy}
-                  </p>
-                  <p className="mt-3 text-xs leading-relaxed text-slate-500">
-                    {bodyCopy}
-                  </p>
-                </div>
-                <DaysRing daysLeft={daysLeft} total={ringTotal} />
-              </div>
-              <div className="mt-auto border-t border-[var(--line)] pt-4">
-                <div className="flex items-center justify-between gap-2 text-xs">
-                  <span className="text-slate-500">Current cost</span>
-                  <span className="font-semibold text-[#070b18]">
-                    {isTrial || isPaused
-                      ? formatMoney(0, currency)
-                      : priceLabel}
-                  </span>
-                </div>
-                <div className="mt-1.5 flex items-center justify-between gap-2 text-xs">
-                  <span className="text-slate-500">
-                    {isTrial ? "After trial" : "Renews"}
-                  </span>
-                  <span className="font-semibold text-[#070b18]">
-                    {priceLabel} / month
-                  </span>
-                </div>
-              </div>
-            </article>
+        <nav className="flex gap-5 border-b border-[var(--line)]">
+          <button
+            type="button"
+            onClick={() => switchTab("plan")}
+            className={`relative shrink-0 pb-3 text-sm font-semibold transition ${
+              activeTab === "plan"
+                ? "text-[var(--forest-emerald)]"
+                : "text-slate-500 hover:text-[#0b1220]"
+            }`}
+          >
+            Plan
+            {activeTab === "plan" ? (
+              <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-[var(--forest-emerald)]" />
+            ) : null}
+          </button>
+          <button
+            type="button"
+            onClick={() => switchTab("sms")}
+            className={`relative inline-flex shrink-0 items-center gap-1.5 pb-3 text-sm font-semibold transition ${
+              activeTab === "sms"
+                ? "text-[var(--forest-emerald)]"
+                : "text-slate-500 hover:text-[#0b1220]"
+            }`}
+          >
+            <MessageSquare className="size-3.5" />
+            SMS notifications
+            {activeTab === "sms" ? (
+              <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-[var(--forest-emerald)]" />
+            ) : null}
+          </button>
+        </nav>
 
-            {/* B) Plan */}
-            <article className="flex flex-col rounded-2xl border border-emerald-100 bg-[#f3faf6] p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
-              <span className="inline-flex w-fit rounded-full bg-[#e9f8ef] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#07885f]">
-                Plan
-              </span>
-              <h2 className="mt-4 font-[family-name:var(--font-display)] text-2xl tracking-[-0.03em] text-[#070b18]">
-                Pro
-              </h2>
-              <p className="mt-1 text-lg font-semibold text-[#07885f]">
-                {priceLabel} / month
-              </p>
-              <ul className="mt-4 flex-1 space-y-2">
-                {PRO_BENEFITS.map((item) => (
-                  <li
-                    key={item}
-                    className="flex gap-2 text-[12px] leading-snug text-slate-700"
-                  >
-                    <Check
-                      className="mt-0.5 size-3.5 shrink-0 text-[#07885f]"
-                      strokeWidth={2.75}
-                    />
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-              <button
-                type="button"
-                disabled={!canSubscribe || subscribePaying}
-                onClick={handleSubscribe}
-                className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#07885f] text-sm font-semibold text-white shadow-[0_12px_24px_rgba(7,136,95,0.22)] transition hover:bg-[#067352] disabled:cursor-not-allowed disabled:opacity-55"
-              >
-                {subscribePaying ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : null}
-                Subscribe
-              </button>
-            </article>
+        {activeTab === "plan" ? (
+          loading && !summary ? (
+            <div className="flex items-center justify-center gap-2 rounded-2xl border border-[var(--line)] bg-white py-16 text-sm text-slate-500">
+              <Loader2 className="size-4 animate-spin" />
+              Loading…
+            </div>
+          ) : (
+            <section className="grid gap-3 lg:grid-cols-3">
+              <article className="flex flex-col rounded-2xl border border-sky-100 bg-[#f3f8fd] p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+                <span className="inline-flex w-fit rounded-full bg-[#e8f1fb] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#2b6cb0]">
+                  Current subscription
+                </span>
+                <div className="mt-4 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="font-[family-name:var(--font-display)] text-2xl tracking-[-0.03em] text-[#070b18]">
+                      {statusTitle}
+                    </h2>
+                    <p className="mt-1 text-sm font-medium text-slate-600">
+                      {daysCopy}
+                    </p>
+                    <p className="mt-3 text-xs leading-relaxed text-slate-500">
+                      {bodyCopy}
+                    </p>
+                  </div>
+                  <DaysRing daysLeft={daysLeft} total={ringTotal} />
+                </div>
+                <div className="mt-auto border-t border-[var(--line)] pt-4">
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="text-slate-500">Current cost</span>
+                    <span className="font-semibold text-[#070b18]">
+                      {isTrial || isPaused
+                        ? formatMoney(0, currency)
+                        : priceLabel}
+                    </span>
+                  </div>
+                  <div className="mt-1.5 flex items-center justify-between gap-2 text-xs">
+                    <span className="text-slate-500">
+                      {isTrial ? "After trial" : "Renews"}
+                    </span>
+                    <span className="font-semibold text-[#070b18]">
+                      {priceLabel} / month
+                    </span>
+                  </div>
+                </div>
+              </article>
 
-            {/* C) Support */}
-            <article className="flex flex-col rounded-2xl border border-sky-100 bg-[#f3f8fd] p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
-              <div className="grid size-11 place-items-center rounded-2xl bg-[#e8f1fb] text-[#2b6cb0]">
-                <Headset className="size-5" strokeWidth={2} />
-              </div>
-              <h2 className="mt-4 font-[family-name:var(--font-display)] text-xl tracking-[-0.02em] text-[#070b18]">
-                Need help? We&apos;re here for you.
-              </h2>
-              <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                Questions about billing, renewals, or unlocking a paused branch?
-                Our team can walk you through it.
-              </p>
-              <div className="mt-5 rounded-xl border border-[var(--line)] bg-[#f6f8fb] px-4 py-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                  Email
+              <article className="flex flex-col rounded-2xl border border-emerald-100 bg-[#f3faf6] p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+                <span className="inline-flex w-fit rounded-full bg-[#e9f8ef] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#07885f]">
+                  Plan
+                </span>
+                <h2 className="mt-4 font-[family-name:var(--font-display)] text-2xl tracking-[-0.03em] text-[#070b18]">
+                  Pro
+                </h2>
+                <p className="mt-1 text-lg font-semibold text-[#07885f]">
+                  {priceLabel} / month
                 </p>
-                <a
-                  href="mailto:support@rembeh.com"
-                  className="mt-1 block text-sm font-semibold text-[#07885f] hover:underline"
+                <ul className="mt-4 flex-1 space-y-2">
+                  {PRO_BENEFITS.map((item) => (
+                    <li
+                      key={item}
+                      className="flex gap-2 text-[12px] leading-snug text-slate-700"
+                    >
+                      <Check
+                        className="mt-0.5 size-3.5 shrink-0 text-[#07885f]"
+                        strokeWidth={2.75}
+                      />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+                <button
+                  type="button"
+                  disabled={!canSubscribe || subscribePaying}
+                  onClick={handleSubscribe}
+                  className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#07885f] text-sm font-semibold text-white shadow-[0_12px_24px_rgba(7,136,95,0.22)] transition hover:bg-[#067352] disabled:cursor-not-allowed disabled:opacity-55"
                 >
-                  support@rembeh.com
-                </a>
+                  {subscribePaying ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : null}
+                  Subscribe
+                </button>
+              </article>
+
+              <article className="flex flex-col rounded-2xl border border-sky-100 bg-[#f3f8fd] p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+                <div className="grid size-11 place-items-center rounded-2xl bg-[#e8f1fb] text-[#2b6cb0]">
+                  <Headset className="size-5" strokeWidth={2} />
+                </div>
+                <h2 className="mt-4 font-[family-name:var(--font-display)] text-xl tracking-[-0.02em] text-[#070b18]">
+                  Need help? We&apos;re here for you.
+                </h2>
+                <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                  Questions about billing, renewals, or unlocking a paused
+                  branch? Our team can walk you through it.
+                </p>
+                <div className="mt-5 rounded-xl border border-[var(--line)] bg-[#f6f8fb] px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                    Email
+                  </p>
+                  <a
+                    href="mailto:support@rembeh.com"
+                    className="mt-1 block text-sm font-semibold text-[#07885f] hover:underline"
+                  >
+                    support@rembeh.com
+                  </a>
+                </div>
+                <p className="mt-auto pt-4 text-xs text-slate-500">
+                  Response within 24 hours on business days.
+                </p>
+              </article>
+            </section>
+          )
+        ) : (
+          <section className="space-y-3">
+            <article className="rounded-2xl border border-sky-100 bg-[#f3f8fd] p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[#e8f1fb] text-[#2b6cb0]">
+                    <MessageSquare className="size-5" strokeWidth={2} />
+                  </span>
+                  <div className="min-w-0">
+                    <span className="inline-flex w-fit rounded-full bg-[#e8f1fb] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#2b6cb0]">
+                      SMS notifications
+                    </span>
+                    <h2 className="mt-3 font-[family-name:var(--font-display)] text-2xl tracking-[-0.03em] text-[#070b18]">
+                      Prepaid SMS credits
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Buy credits for borrower alerts and reminders on this
+                      branch. OTP and platform messages stay free.
+                    </p>
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-sm font-bold tabular-nums text-[#070b18] ring-1 ring-[#d7e3f0]">
+                        {smsLoading && !smsWallet ? (
+                          <Loader2 className="size-3.5 animate-spin text-slate-400" />
+                        ) : (
+                          <>
+                            {(smsWallet?.creditsRemaining ?? 0).toLocaleString(
+                              "en-UG",
+                            )}{" "}
+                            credits left
+                          </>
+                        )}
+                      </span>
+                      {!smsWallet?.canSendSms && !smsLoading ? (
+                        <span className="text-xs font-medium text-amber-700">
+                          Top up to keep messaging
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
               </div>
-              <p className="mt-auto pt-4 text-xs text-slate-500">
-                Response within 24 hours on business days.
-              </p>
             </article>
+
+            {focusedBranchId ? (
+              <article className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+                <h3 className="text-sm font-semibold text-[#070b18]">
+                  Top up SMS credits
+                </h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  Choose a pack for{" "}
+                  {focusedBranch?.branchName ?? "this branch"}.
+                </p>
+                <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                  {(smsWallet?.topUpPresets ?? []).map((preset, index) => {
+                    const busy = toppingUpAmount === preset.amountUgx;
+                    const popular = index === 1;
+                    return (
+                      <button
+                        key={preset.amountUgx}
+                        type="button"
+                        disabled={toppingUpAmount != null}
+                        onClick={() => void startSmsTopUp(preset.amountUgx)}
+                        className={`flex min-h-[88px] flex-col items-start justify-between rounded-xl border px-3.5 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                          popular
+                            ? "border-[#07885f] bg-[#07885f] text-white hover:bg-[#067352]"
+                            : "border-[var(--line)] bg-[#f6f8fb] text-[#070b18] hover:border-[#07885f] hover:bg-[#f3faf6]"
+                        }`}
+                      >
+                        {busy ? (
+                          <Loader2
+                            className={`size-4 animate-spin ${
+                              popular ? "text-white" : "text-[#07885f]"
+                            }`}
+                          />
+                        ) : (
+                          <>
+                            <span>
+                              <span className="block text-lg font-bold tabular-nums">
+                                {formatMoney(preset.amountUgx, preset.currency)}
+                              </span>
+                              <span
+                                className={`mt-1 block text-xs font-medium ${
+                                  popular ? "text-white/80" : "text-slate-500"
+                                }`}
+                              >
+                                {preset.credits.toLocaleString("en-UG")} SMS
+                              </span>
+                            </span>
+                            <span
+                              className={`mt-3 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] ${
+                                popular
+                                  ? "bg-white/20 text-white"
+                                  : "bg-white text-[#07885f]"
+                              }`}
+                            >
+                              Buy
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </article>
+            ) : (
+              <p className="rounded-xl border border-[var(--line)] bg-white px-4 py-8 text-center text-sm text-slate-500">
+                Select a branch to manage SMS credits.
+              </p>
+            )}
           </section>
         )}
 
-        {/* SMS credits (prepaid per branch) */}
-        {focusedBranchId ? (
-          <section className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
-            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-[#e8f1fb] text-[#2b6cb0]">
-                  <MessageSquare className="size-3.5" strokeWidth={2.25} />
-                </span>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-sm font-semibold text-[#070b18]">
-                      SMS credits
-                    </h3>
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#f6f8fb] px-2 py-0.5 text-[11px] font-bold tabular-nums text-[#070b18]">
-                      {smsLoading && !smsWallet ? (
-                        <Loader2 className="size-3 animate-spin text-slate-400" />
-                      ) : (
-                        <>
-                          {(smsWallet?.creditsRemaining ?? 0).toLocaleString(
-                            "en-UG",
-                          )}{" "}
-                          left
-                        </>
-                      )}
-                    </span>
-                    {!smsWallet?.canSendSms && !smsLoading ? (
-                      <span className="text-[11px] font-medium text-amber-700">
-                        Top up to keep messaging
-                      </span>
-                    ) : null}
-                  </div>
-                  <p className="mt-0.5 text-[11px] text-slate-500">
-                    Keep borrower SMS running for this branch.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-1.5">
-                {(smsWallet?.topUpPresets ?? []).map((preset, index) => {
-                  const busy = toppingUpAmount === preset.amountUgx;
-                  const popular = index === 1;
-                  return (
-                    <button
-                      key={preset.amountUgx}
-                      type="button"
-                      disabled={toppingUpAmount != null}
-                      onClick={() => void startSmsTopUp(preset.amountUgx)}
-                      className={`inline-flex h-9 items-center gap-2 rounded-lg border px-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                        popular
-                          ? "border-[#07885f] bg-[#07885f] text-white hover:bg-[#067352]"
-                          : "border-[var(--line)] bg-[#f6f8fb] text-[#070b18] hover:border-[#07885f] hover:bg-[#f3faf6]"
-                      }`}
-                    >
-                      {busy ? (
-                        <Loader2
-                          className={`size-3.5 animate-spin ${
-                            popular ? "text-white" : "text-[#07885f]"
-                          }`}
-                        />
-                      ) : (
-                        <>
-                          <span className="min-w-0">
-                            <span className="block text-[11px] font-bold leading-none tabular-nums">
-                              {formatMoney(preset.amountUgx, preset.currency)}
-                            </span>
-                            <span
-                              className={`mt-0.5 block text-[10px] font-medium leading-none ${
-                                popular ? "text-white/80" : "text-slate-500"
-                              }`}
-                            >
-                              {preset.credits.toLocaleString("en-UG")} SMS
-                            </span>
-                          </span>
-                          <span
-                            className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] ${
-                              popular
-                                ? "bg-white/20 text-white"
-                                : "bg-white text-[#07885f]"
-                            }`}
-                          >
-                            Buy
-                          </span>
-                        </>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </section>
-        ) : null}
-
-        {/* Subscription history */}
         <section className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] px-4 py-3 sm:px-5">
             <div className="flex items-center gap-2">
               <FileText className="size-4 text-[#07885f]" />
               <h3 className="text-sm font-semibold text-[#070b18]">
-                Payment history
+                {activeTab === "sms" ? "SMS payment history" : "Plan payment history"}
               </h3>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -851,8 +940,10 @@ function SubscriptionWorkspaceContent({
               </div>
             ) : filteredPayments.length === 0 ? (
               <p className="rounded-xl bg-slate-50 px-3 py-8 text-center text-sm text-slate-500">
-                {payments.length === 0
-                  ? "No payments yet."
+                {(activeTab === "sms" ? smsPayments : planPayments).length === 0
+                  ? activeTab === "sms"
+                    ? "No SMS top-ups yet."
+                    : "No plan payments yet."
                   : "No payments match these filters."}
               </p>
             ) : (
@@ -864,7 +955,7 @@ function SubscriptionWorkspaceContent({
                       <th className="px-3 py-2 font-semibold">Branch</th>
                       <th className="px-3 py-2 font-semibold">Transaction</th>
                       <th className="hidden px-3 py-2 font-semibold md:table-cell">
-                        Period
+                        {activeTab === "sms" ? "Credits" : "Period"}
                       </th>
                       <th className="px-3 py-2 font-semibold">Amount</th>
                       <th className="hidden px-3 py-2 font-semibold lg:table-cell">
@@ -896,25 +987,19 @@ function SubscriptionWorkspaceContent({
                             {row.branchName}
                           </td>
                           <td className="px-3 py-2.5 text-[13px] text-slate-700">
-                            <span className="inline-flex flex-wrap items-center gap-1.5">
-                              <span>{row.transaction}</span>
-                              {isSms ? (
-                                <span className="inline-flex items-center gap-1 rounded-full bg-[#e8f1fb] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-[#2b6cb0]">
-                                  <MessageSquare className="size-2.5" />
-                                  SMS
-                                </span>
-                              ) : (
-                                <span className="inline-flex rounded-full bg-[#e9f8ef] px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] text-[#07885f]">
-                                  Plan
-                                </span>
-                              )}
-                            </span>
+                            {row.transaction}
                           </td>
                           <td className="hidden px-3 py-2.5 text-xs text-slate-600 md:table-cell">
-                            {row.periodLabel ?? "—"}
+                            {isSms
+                              ? row.credits != null
+                                ? `${row.credits.toLocaleString("en-UG")} SMS`
+                                : "—"
+                              : (row.periodLabel ?? "—")}
                           </td>
                           <td className="whitespace-nowrap px-3 py-2.5 text-[13px] font-semibold text-[#070b18]">
-                            {formatMoney(row.amount, row.currency)}
+                            {row.amount === 0 && row.kind === "sms"
+                              ? "Free"
+                              : formatMoney(row.amount, row.currency)}
                           </td>
                           <td className="hidden px-3 py-2.5 lg:table-cell">
                             <PaymentMethodBadge

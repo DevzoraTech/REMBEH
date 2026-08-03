@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   ClipboardList,
   Clock3,
-  Download,
   Eye,
   FileSpreadsheet,
   FileText,
@@ -50,6 +49,7 @@ import {
 import { OwnerHeader } from "../../app/owner/owner-header";
 import { invalidateOwnerNotifications } from "../../app/owner/owner-notifications";
 import { Money } from "../app/money";
+import { TableSearchField } from "../app/table-search-field";
 import {
   EMPTY_REPORTS_FILTERS,
   ReportsFiltersControl,
@@ -59,8 +59,9 @@ import {
   type ReportsAdvancedFilters,
 } from "./reports-filters";
 
-type ReportView = "report" | "excel";
 export type ReportsMode = "owner" | "manager";
+
+type ReportView = "report" | "excel";
 
 type ReportAgentReturn = {
   floatId?: string;
@@ -205,6 +206,9 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
           "reportId",
         );
         if (fromUrl && nextReports.some((report) => report.id === fromUrl)) {
+          router.replace(
+            `${isManager ? "/reports" : "/owner/reports"}/${fromUrl}`,
+          );
           return fromUrl;
         }
         if (current && nextReports.some((report) => report.id === current)) {
@@ -219,7 +223,7 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
     } finally {
       setLoading(false);
     }
-  }, [advancedFilters, isManager, state.session]);
+  }, [advancedFilters, isManager, router, state.session]);
 
   useEffect(() => {
     const boot = window.setTimeout(() => {
@@ -230,13 +234,16 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
     return () => window.clearTimeout(boot);
   }, [loadReports, state.ready, state.session]);
 
+  const scopedReports = useMemo(() => {
+    return reports.filter((report) =>
+      reportMatchesDate(report.operationDate, advancedFilters),
+    );
+  }, [advancedFilters, reports]);
+
   const filteredReports = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return reports.filter((report) => {
-      if (!reportMatchesDate(report.operationDate, advancedFilters)) {
-        return false;
-      }
-      if (!q) return true;
+    if (!q) return scopedReports;
+    return scopedReports.filter((report) => {
       const code = dailyReportCode(report.operationDate).toLowerCase();
       const statusText = reportStatusLabel(report.status).toLowerCase();
       return [
@@ -251,11 +258,11 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
         state.user?.name ?? "",
       ].some((value) => value.toLowerCase().includes(q));
     });
-  }, [advancedFilters, reports, search, state.user?.name]);
+  }, [scopedReports, search, state.user?.name]);
 
   const selectedReport =
-    filteredReports.find((report) => report.id === selectedId) ??
-    filteredReports[0] ??
+    reports.find((report) => report.id === selectedId) ??
+    scopedReports[0] ??
     null;
   const selectedSnapshot = selectedReport
     ? readReportSnapshot(selectedReport)
@@ -323,14 +330,6 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
         <OwnerHeader
           title="Daily Reports"
           subtitle="Review reconciled branch operations, submit reports for approval, and track cash differences."
-          search={search}
-          onSearchChange={setSearch}
-          searchTooltip={
-            isManager
-              ? "Search report code, date or status for your branch."
-              : "Search report code, branch, date, status or manager."
-          }
-          searchPlaceholder="Search Reports..."
           showReportsButton={false}
           settingsHref={isManager ? "/settings" : "/owner/settings"}
           reportsHref={isManager ? "/reports" : "/owner/reports"}
@@ -366,7 +365,7 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
             icon={<ClipboardList className="size-4" />}
             tone="green"
             label="Total Reports"
-            value={formatNumber(filteredReports.length)}
+            value={formatNumber(scopedReports.length)}
             detail={
               advancedFilters.status === "all"
                 ? isManager
@@ -430,6 +429,16 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
               </p>
             </div>
             <div className="ml-auto flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2 sm:flex-initial">
+              <TableSearchField
+                value={search}
+                onChange={setSearch}
+                placeholder="Search Reports..."
+                title={
+                  isManager
+                    ? "Search report code, date or status for your branch."
+                    : "Search report code, branch, date, status or manager."
+                }
+              />
               {advancedFilters.status === "SENT_TO_OWNER" ? (
                 <button
                   type="button"
@@ -515,7 +524,9 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
                         className="min-w-0 text-left"
                         onClick={() => {
                           setSelectedId(report.id);
-                          setActionNotes("");
+                          router.push(
+                            `${isManager ? "/reports" : "/owner/reports"}/${report.id}`,
+                          );
                         }}
                       >
                         <p className="truncate text-sm font-semibold text-[#0b1220]">
@@ -532,7 +543,9 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
                         className="text-left text-xs font-semibold text-slate-600"
                         onClick={() => {
                           setSelectedId(report.id);
-                          setActionNotes("");
+                          router.push(
+                            `${isManager ? "/reports" : "/owner/reports"}/${report.id}`,
+                          );
                         }}
                       >
                         {formatDate(report.operationDate)}
@@ -612,9 +625,10 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
               role="menuitem"
               className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#0b1220] hover:bg-[#f4f7f6]"
               onClick={() => {
-                setSelectedId(actionMenuReport.id);
-                setActionNotes("");
                 setActionMenu(null);
+                router.push(
+                  `${isManager ? "/reports" : "/owner/reports"}/${actionMenuReport.id}`,
+                );
               }}
             >
               <Eye className="size-3.5 text-slate-500" />
@@ -636,12 +650,37 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
                   actionMenuReport,
                   snapshot,
                   currency,
+                  "excel",
                   setExportingId,
                 );
               }}
             >
-              <Download className="size-3.5 text-slate-500" />
-              Download
+              <FileSpreadsheet className="size-3.5 text-slate-500" />
+              Excel
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={
+                exportingId === actionMenuReport.id ||
+                !readReportSnapshot(actionMenuReport)
+              }
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#0b1220] hover:bg-[#f4f7f6] disabled:cursor-not-allowed disabled:opacity-45"
+              onClick={() => {
+                const snapshot = readReportSnapshot(actionMenuReport);
+                setActionMenu(null);
+                if (!snapshot) return;
+                void exportReport(
+                  actionMenuReport,
+                  snapshot,
+                  currency,
+                  "pdf",
+                  setExportingId,
+                );
+              }}
+            >
+              <FileText className="size-3.5 text-slate-500" />
+              PDF document
             </button>
             {isManager ? (
               <>
@@ -1695,7 +1734,7 @@ function LedgerTable({
           Sheet {sheet === "daily" ? "1" : "2"} of 2 ·{" "}
           {sheet === "daily" ? "Daily Report" : "Agent Handover"}
         </span>
-        <span>Use Download Excel for the real .xlsx file</span>
+        <span>Use Export → Excel for the real .xlsx file</span>
       </div>
     </div>
   );
@@ -2256,10 +2295,16 @@ async function exportReport(
   report: OwnerReport,
   snapshot: ReportSnapshot,
   currency: string,
+  format: "excel" | "pdf",
   setExportingId: (id: string | null) => void,
 ) {
   setExportingId(report.id);
   try {
+    if (format === "pdf") {
+      exportSummaryReportPdf(report, snapshot, currency);
+      return;
+    }
+
     const { Workbook } = await import("exceljs");
     const workbook = new Workbook();
     const worksheet = workbook.addWorksheet("Daily Report");
@@ -2386,4 +2431,230 @@ async function exportReport(
   } finally {
     setExportingId(null);
   }
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function exportSummaryReportPdf(
+  report: OwnerReport,
+  snapshot: ReportSnapshot,
+  currency: string,
+) {
+  const money = (value: number) => formatMoney(value, currency);
+  const opening = snapshot.openingCash;
+  const summary = snapshot.summary;
+  const variance = report.closingVariance ?? 0;
+  const agentsReturned = snapshot.agentReturns.filter(
+    (row) => row.amountReturned != null || row.status === "RETURNED",
+  ).length;
+  const reportCode = dailyReportCode(report.operationDate);
+
+  const agentRows =
+    snapshot.agentReturns.length === 0
+      ? `<tr><td colspan="6" class="empty">No agent float recorded for this day.</td></tr>`
+      : snapshot.agentReturns
+          .map(
+            (row) => `
+            <tr>
+              <td>
+                <strong>${escapeHtml(row.agentName ?? "Agent")}</strong>
+                <div class="muted">${escapeHtml(row.status ?? "PENDING")}</div>
+              </td>
+              <td class="num">${escapeHtml(money(numberValue(row.amountGiven)))}</td>
+              <td class="num">${escapeHtml(money(numberValue(row.amountDisbursed)))}</td>
+              <td class="num">${escapeHtml(money(numberValue(row.amountCollected)))}</td>
+              <td class="num">${escapeHtml(money(numberValue(row.expectedReturn)))}</td>
+              <td class="num"><strong>${escapeHtml(
+                row.amountReturned == null
+                  ? "—"
+                  : money(numberValue(row.amountReturned)),
+              )}</strong></td>
+            </tr>`,
+          )
+          .join("");
+
+  const topUpRows =
+    snapshot.topUps.length === 0
+      ? `<p class="empty">No top-ups recorded.</p>`
+      : snapshot.topUps
+          .map(
+            (row) => `
+            <div class="record">
+              <div>
+                <strong>${escapeHtml(row.description || "Cash top-up")}</strong>
+                <div class="muted">${escapeHtml(row.recordedByName ?? "")}</div>
+              </div>
+              <div class="num"><strong>${escapeHtml(money(numberValue(row.amount)))}</strong></div>
+            </div>`,
+          )
+          .join("");
+
+  const expenseRows =
+    snapshot.expenses.length === 0
+      ? `<p class="empty">No expenses recorded.</p>`
+      : snapshot.expenses
+          .map(
+            (row) => `
+            <div class="record">
+              <div>
+                <strong>${escapeHtml(titleCase(row.category ?? "Other"))}</strong>
+                <div class="muted">${escapeHtml(row.recordedByName ?? "")}</div>
+              </div>
+              <div class="num"><strong>${escapeHtml(money(numberValue(row.amount)))}</strong></div>
+            </div>`,
+          )
+          .join("");
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(reportCode)} · Daily report</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 28px; color: #0b1220; font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; background: #fff; }
+    h1 { margin: 0; font-size: 22px; letter-spacing: -0.02em; }
+    h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: #0f8f68; }
+    .eyebrow { margin: 0 0 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #0f8f68; }
+    .meta { margin: 6px 0 0; font-size: 12px; color: #64748b; }
+    .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 22px 0 16px; }
+    .metric, .block { border: 1px solid #e6ebf0; border-radius: 12px; background: #f8faf9; padding: 12px; }
+    .metric label { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #64748b; }
+    .metric strong { display: block; margin-top: 6px; font-size: 14px; }
+    .metric.highlight { background: #eef7f2; border-color: #cfe8db; }
+    .metric.danger strong { color: #b42318; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+    .block { background: #fff; }
+    .row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid #edf1f5; font-size: 12px; }
+    .row:last-child { border-bottom: 0; }
+    .row.strong { font-weight: 700; }
+    .row.danger { color: #b42318; }
+    .mini { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .mini-item { border: 1px solid #edf1f5; border-radius: 10px; padding: 10px; background: #f8faf9; }
+    .mini-item label { display: block; font-size: 10px; color: #64748b; font-weight: 600; }
+    .mini-item strong { display: block; margin-top: 4px; font-size: 14px; }
+    .mini-item .muted { margin-top: 2px; color: #64748b; font-size: 10px; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th { text-align: left; background: #e8edf2; color: #475569; font-size: 10px; padding: 8px 6px; }
+    td { padding: 8px 6px; border-bottom: 1px solid #edf1f5; vertical-align: top; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .muted { color: #64748b; font-size: 10px; font-weight: 500; }
+    .empty { color: #64748b; font-size: 12px; margin: 0; padding: 8px 0; }
+    .record { display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 10px; padding: 8px 0; border-bottom: 1px solid #edf1f5; font-size: 12px; }
+    .record:last-child { border-bottom: 0; }
+    @media print { body { padding: 12px; } .metric, .block, .mini-item { break-inside: avoid; } }
+  </style>
+</head>
+<body>
+  <p class="eyebrow">Daily report</p>
+  <h1>${escapeHtml(reportCode)}</h1>
+  <p class="meta">
+    ${escapeHtml(report.branchName)} · ${escapeHtml(formatDate(report.operationDate))} ·
+    ${escapeHtml(statusLabel(report.status))}
+  </p>
+
+  <div class="metrics">
+    <div class="metric highlight"><label>Expected Close</label><strong>${escapeHtml(money(report.expectedClosingBalance))}</strong></div>
+    <div class="metric"><label>Counted Cash</label><strong>${escapeHtml(money(report.closingBalance ?? 0))}</strong></div>
+    <div class="metric ${variance !== 0 ? "danger" : ""}"><label>Cash Difference</label><strong>${escapeHtml(money(variance))}</strong></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="block">
+      <h2>Opening cash</h2>
+      <div class="row"><span>Previous closing balance</span><span class="num">${escapeHtml(money(numberValue(opening.previousClosingBalance)))}</span></div>
+      <div class="row"><span>Top-ups added today</span><span class="num">${escapeHtml(money(numberValue(opening.cashAddedToday)))}</span></div>
+      <div class="row strong"><span>Total opening balance</span><span class="num">${escapeHtml(
+        money(
+          numberValue(opening.totalOpeningBalance) ||
+            numberValue(summary.openingCash),
+        ),
+      )}</span></div>
+    </div>
+    <div class="block">
+      <h2>Day movement</h2>
+      <div class="row"><span>Float distributed</span><span class="num">${escapeHtml(money(numberValue(summary.floatDistributed)))}</span></div>
+      <div class="row"><span>Cash returned by agents</span><span class="num">${escapeHtml(money(numberValue(summary.cashReturnedByAgents)))}</span></div>
+      <div class="row ${numberValue(summary.expenses) > 0 ? "danger" : ""}"><span>Expenses</span><span class="num">${escapeHtml(money(numberValue(summary.expenses)))}</span></div>
+    </div>
+  </div>
+
+  <div class="block" style="margin-bottom:12px">
+    <h2>Field activity</h2>
+    <div class="mini">
+      <div class="mini-item">
+        <label>Loans Given</label>
+        <strong>${escapeHtml(formatNumber(numberValue(summary.loansIssuedCount)))}</strong>
+        <div class="muted">${escapeHtml(money(numberValue(summary.loansIssuedPrincipal)))}</div>
+      </div>
+      <div class="mini-item">
+        <label>Repayments</label>
+        <strong>${escapeHtml(formatNumber(numberValue(summary.collectionsCount)))}</strong>
+        <div class="muted">${escapeHtml(money(numberValue(summary.collectionsReceived)))}</div>
+      </div>
+      <div class="mini-item">
+        <label>Processing Fees</label>
+        <strong>${escapeHtml(money(numberValue(summary.processingFees)))}</strong>
+        <div class="muted">From New Loans</div>
+      </div>
+      <div class="mini-item">
+        <label>Agents Back</label>
+        <strong>${agentsReturned}/${snapshot.agentReturns.length}</strong>
+        <div class="muted">${escapeHtml(
+          money(
+            sumBy(snapshot.agentReturns, (row) => numberValue(row.expectedReturn)),
+          ),
+        )}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="block" style="margin-bottom:12px">
+    <h2>Agent handover</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Agent</th>
+          <th class="num">Float</th>
+          <th class="num">Loans</th>
+          <th class="num">Repayments</th>
+          <th class="num">Expected</th>
+          <th class="num">Returned</th>
+        </tr>
+      </thead>
+      <tbody>${agentRows}</tbody>
+    </table>
+  </div>
+
+  <div class="grid-2">
+    <div class="block"><h2>Top-ups</h2>${topUpRows}</div>
+    <div class="block"><h2>Expenses</h2>${expenseRows}</div>
+  </div>
+  <script>
+    window.onload = function () {
+      window.focus();
+      window.print();
+    };
+  </script>
+</body>
+</html>`;
+
+  const printWindow = window.open(
+    "",
+    "_blank",
+    "noopener,noreferrer,width=960,height=720",
+  );
+  if (!printWindow) {
+    throw new Error("Allow pop-ups to export the PDF document.");
+  }
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
 }

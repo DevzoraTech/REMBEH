@@ -8,13 +8,13 @@ import {
   ClipboardCheck,
   Folder,
   MessageCircleQuestion,
-  Search,
   Settings,
 } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { BranchSubscriptionMenu } from "../../components/app/branch-subscription-menu";
+import { SmsCreditsHeaderBadge } from "../../components/app/sms-credits-header-badge";
 import { formatNumber } from "./owner-common";
 import {
   useOwnerNotifications,
@@ -28,13 +28,8 @@ export function OwnerHeader({
   eyebrow,
   title,
   subtitle,
-  search,
-  onSearchChange,
-  searchTooltip,
-  searchPlaceholder = "Search anything...",
   actions,
   showReportsButton = true,
-  showSearch = true,
   settingsHref = "/owner/settings",
   reportsHref = "/owner/reports",
   notificationScope = "owner",
@@ -42,16 +37,10 @@ export function OwnerHeader({
   eyebrow?: string;
   title: string;
   subtitle?: string;
-  search: string;
-  onSearchChange: (value: string) => void;
-  /** Optional; omitted when the search placeholder already explains the field. */
-  searchTooltip?: string;
-  searchPlaceholder?: string;
   /** @deprecated Notifications are shared account-wide via OwnerHeader. */
   notifications?: OwnerNotificationItem[];
   actions?: ReactNode;
   showReportsButton?: boolean;
-  showSearch?: boolean;
   settingsHref?: string;
   reportsHref?: string;
   notificationScope?: "owner" | "manager";
@@ -60,7 +49,10 @@ export function OwnerHeader({
   const { enabled: tooltipsEnabled, setTooltipsEnabled } = useTooltipsEnabled();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const smsManageHref =
+    notificationScope === "manager"
+      ? "/subscription?tab=sms"
+      : "/owner/subscription?tab=sms";
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
@@ -72,21 +64,6 @@ export function OwnerHeader({
     document.addEventListener("mousedown", handlePointerDown);
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, []);
-
-  useEffect(() => {
-    if (!showSearch) return;
-
-    function onKeyDown(event: KeyboardEvent) {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
-      }
-    }
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [showSearch]);
 
   return (
     <header className="flex flex-wrap items-start justify-between gap-3">
@@ -103,24 +80,7 @@ export function OwnerHeader({
         </h1>
       </div>
       <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
-        {showSearch ? (
-          <label className="flex h-9 min-w-[180px] max-w-[280px] flex-1 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)] sm:min-w-[220px] sm:max-w-[315px]">
-            <Search className="size-3.5 shrink-0 text-slate-400" />
-            <input
-              ref={searchInputRef}
-              value={search}
-              onChange={(event) => onSearchChange(event.target.value)}
-              type="search"
-              placeholder={searchPlaceholder}
-              title={searchTooltip}
-              aria-label={searchPlaceholder}
-              className="min-w-0 flex-1 bg-transparent text-xs font-medium text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
-            />
-            <span className="hidden rounded-lg border border-[#e8edf2] px-2 py-0.5 text-[11px] font-bold text-slate-400 sm:inline">
-              ⌘K
-            </span>
-          </label>
-        ) : null}
+        <SmsCreditsHeaderBadge manageHref={smsManageHref} />
 
         {notificationScope === "manager" ? (
           <BranchSubscriptionMenu manageHref="/subscription" />

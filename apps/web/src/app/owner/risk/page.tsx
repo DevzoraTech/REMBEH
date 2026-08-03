@@ -222,10 +222,6 @@ export default function OwnerRiskPage() {
           eyebrow="Risk"
           title="Risk register"
           subtitle="Blacklist and watchlist for borrowers who need extra care."
-          search={search}
-          onSearchChange={updateSearch}
-          searchTooltip="Search by name, national ID, phone, or reason."
-          searchPlaceholder="Search name, ID, phone..."
           showReportsButton={false}
           actions={
             <>
@@ -341,7 +337,8 @@ export default function OwnerRiskPage() {
                 value={search}
                 onChange={(event) => updateSearch(event.target.value)}
                 className="min-w-0 flex-1 bg-transparent text-xs font-medium text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
-                placeholder="Filter this list..."
+                placeholder="Search name, ID, phone..."
+                aria-label="Search risk entries"
               />
             </label>
           </div>

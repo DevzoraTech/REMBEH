@@ -391,9 +391,6 @@ function OwnerBranchesPageContent() {
         <OwnerHeader
           eyebrow="Account Network"
           title="Branches"
-          search={search}
-          onSearchChange={setSearch}
-          searchTooltip="Search branches, managers, locations and branch activity."
           actions={
             <button
               type="button"

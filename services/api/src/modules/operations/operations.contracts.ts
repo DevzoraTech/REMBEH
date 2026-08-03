@@ -60,6 +60,14 @@ export type DailyOperationAgentReturnContract = {
   status: DailyOperationAgentReturnStatusContract;
 };
 
+export type DailyOperationProductBreakdownContract = {
+  product: string;
+  count: number;
+  amount: number;
+  recoveredToday?: number;
+  outstandingBalance?: number;
+};
+
 export type DailyOperationContract = {
   id: string;
   branchId: string;
@@ -99,6 +107,14 @@ export type DailyOperationContract = {
   collectionsCount: number;
   collectionsReceived: number;
   notes: string | null;
+  loansByProduct: DailyOperationProductBreakdownContract[];
+  repaymentsByProduct: DailyOperationProductBreakdownContract[];
+  feesByProduct: DailyOperationProductBreakdownContract[];
+  previousReportReference: {
+    reportNumber: string;
+    operationDate: string;
+    amount: number;
+  } | null;
 };
 
 export type DailyOperationReportContract = {
@@ -151,8 +167,13 @@ export type OwnerOperationReportListItemContract = {
   generatedAt: string;
   managerReviewedAt: string | null;
   managerReviewedByName: string | null;
+  managerNotes: string | null;
   ownerApprovedAt: string | null;
   ownerApprovedByName: string | null;
+  ownerNotes: string | null;
+  returnedAt: string | null;
+  returnedByName: string | null;
+  returnNotes: string | null;
   expectedClosingBalance: number;
   closingBalance: number | null;
   closingVariance: number | null;
@@ -163,6 +184,10 @@ export type OwnerOperationReportListItemContract = {
   expensesTotal: number;
   cashReturnedByAgents: number;
   snapshot: unknown;
+};
+
+export type OwnerOperationReportDetailResponseContract = {
+  report: OwnerOperationReportListItemContract;
 };
 
 export type OwnerOperationReportListResponseContract = {

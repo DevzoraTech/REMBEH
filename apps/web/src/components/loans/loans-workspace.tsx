@@ -41,6 +41,7 @@ import {
 } from "../../app/owner/owner-common";
 import { OwnerHeader } from "../../app/owner/owner-header";
 import { Money } from "../app/money";
+import { TableSearchField } from "../app/table-search-field";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import {
   EMPTY_LOANS_FILTERS,
@@ -498,10 +499,6 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
         <OwnerHeader
           eyebrow={isManager ? undefined : "All Branches"}
           title="Loans"
-          search={search}
-          onSearchChange={setSearch}
-          searchPlaceholder="Search Loans..."
-          searchTooltip="Search by borrower, loan ID, phone, national ID, loan type, officer, status or amount."
           showReportsButton={false}
           settingsHref={isManager ? "/settings" : "/owner/settings"}
           notificationScope={mode}
@@ -658,6 +655,12 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
               <h2 className="text-[15px] font-semibold text-[#0b1220]">
                 {isManager ? "Loan Records" : "All Loans"}
               </h2>
+              <TableSearchField
+                value={search}
+                onChange={setSearch}
+                placeholder="Search Loans..."
+                title="Search by borrower, loan ID, phone, national ID, loan type, officer, status or amount."
+              />
               <select
                 value={filter}
                 onChange={(event) =>

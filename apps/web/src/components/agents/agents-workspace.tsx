@@ -33,6 +33,7 @@ import {
 } from "../app/pagination";
 import { AppBootSkeleton, TableSkeleton } from "../app/skeleton";
 import { OwnerHeader } from "../../app/owner/owner-header";
+import { TableSearchField } from "../app/table-search-field";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import {
   RembehBranch,
@@ -95,7 +96,6 @@ export function AgentsWorkspace() {
   const [counts, setCounts] = useState<AgentsResponse["counts"] | null>(null);
   const [selectedDate] = useState(todayInputValue);
   const [search, setSearch] = useState("");
-  const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [loading, setLoading] = useState(true);
@@ -118,7 +118,7 @@ export function AgentsWorkspace() {
     session?.permissions.includes("branch.create"),
   );
   const loadAgents = useCallback(
-    async (activeSession: RembehSession, q: string, date: string) => {
+    async (activeSession: RembehSession, date: string) => {
       const requestId = agentsRequestId.current + 1;
       agentsRequestId.current = requestId;
       setLoading(true);
@@ -126,7 +126,6 @@ export function AgentsWorkspace() {
       try {
         const params = new URLSearchParams();
         params.set("date", date);
-        if (q.trim()) params.set("q", q.trim());
         const url = `${apiBaseUrl}/agents?${params.toString()}`;
         const response = await fetch(url, {
           headers: {
@@ -185,17 +184,11 @@ export function AgentsWorkspace() {
         return;
       }
 
-      void loadAgents(auth.session, query, selectedDate);
+      void loadAgents(auth.session, selectedDate);
     }, 0);
 
     return () => window.clearTimeout(boot);
-  }, [router, query, selectedDate, loadAgents]);
-
-  useEffect(() => {
-    const searchSync = window.setTimeout(() => setQuery(search), 250);
-    return () => window.clearTimeout(searchSync);
-  }, [search]);
-
+  }, [router, selectedDate, loadAgents]);
   useEffect(() => {
     if (!actionMenu) return;
 
@@ -243,7 +236,7 @@ export function AgentsWorkspace() {
       if (!response.ok) {
         throw new Error(formatApiError(payload.message));
       }
-      await loadAgents(session, query, selectedDate);
+      await loadAgents(session, selectedDate);
       setActionMenu(null);
       setStatusConfirm(null);
     } catch (caught) {
@@ -303,9 +296,34 @@ export function AgentsWorkspace() {
     ? (agents.find((agent) => agent.id === actionMenu.agentId) ?? null)
     : null;
 
+  const filteredAgents = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return agents;
+    const digits = q.replace(/\D/g, "");
+    return agents.filter((agent) => {
+      const haystack = [
+        agent.name,
+        agent.publicId ?? "",
+        agent.phone ?? "",
+        agent.email ?? "",
+        agent.branchName ?? "",
+        agent.status,
+      ]
+        .join(" ")
+        .toLowerCase();
+      if (haystack.includes(q)) return true;
+      if (digits.length >= 3) {
+        return [agent.phone ?? "", agent.publicId ?? ""].some((value) =>
+          value.replace(/\D/g, "").includes(digits),
+        );
+      }
+      return false;
+    });
+  }, [agents, search]);
+
   const pagedAgents = useMemo(
-    () => paginateItems(agents, page, pageSize),
-    [agents, page, pageSize],
+    () => paginateItems(filteredAgents, page, pageSize),
+    [filteredAgents, page, pageSize],
   );
 
   if (!session) {
@@ -322,20 +340,13 @@ export function AgentsWorkspace() {
       <div className="mx-auto max-w-[1400px] space-y-5 animate-rise">
         <OwnerHeader
           title="Agents"
-          search={search}
-          onSearchChange={(value) => {
-            setSearch(value);
-            setPage(1);
-          }}
-          searchPlaceholder="Search Agents..."
-          searchTooltip="Search by agent name, ID, phone, email or branch."
           showReportsButton={false}
           settingsHref="/settings"
           notificationScope="manager"
           actions={
             <button
               type="button"
-              onClick={() => void loadAgents(session, query, selectedDate)}
+              onClick={() => void loadAgents(session, selectedDate)}
               disabled={loading}
               aria-label="Refresh Agents"
               className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-50 disabled:opacity-60"
@@ -400,10 +411,20 @@ export function AgentsWorkspace() {
           </p>
         ) : (
           <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-            <div className="border-b border-[#edf1f5] px-4 py-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-3.5">
               <h2 className="text-[15px] font-semibold text-[#0b1220]">
                 Branch Agents
               </h2>
+              <TableSearchField
+                value={search}
+                onChange={(value) => {
+                  setSearch(value);
+                  setPage(1);
+                }}
+                placeholder="Search Agents..."
+                title="Search by agent name, ID, phone, email or branch."
+                className="ml-auto"
+              />
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[760px] table-fixed text-left text-xs">
@@ -418,7 +439,17 @@ export function AgentsWorkspace() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#edf1f5]">
-                  {pagedAgents.items.map((agent, index) => (
+                  {pagedAgents.items.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="px-4 py-12 text-center text-sm text-slate-500"
+                      >
+                        No agents match this search.
+                      </td>
+                    </tr>
+                  ) : (
+                    pagedAgents.items.map((agent, index) => (
                     <tr
                       key={agent.id}
                       className="cursor-pointer transition-colors hover:bg-[#eef7f2]"
@@ -486,14 +517,15 @@ export function AgentsWorkspace() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                  ))
+                  )}
                 </tbody>
               </table>
             </div>
             <PaginationControls
               page={pagedAgents.currentPage}
               pageSize={pageSize}
-              total={agents.length}
+              total={filteredAgents.length}
               itemLabel="agents"
               onPageChange={setPage}
               onPageSizeChange={(nextPageSize) => {
@@ -512,7 +544,7 @@ export function AgentsWorkspace() {
         canManage={canManage}
         currency={workspace?.currency ?? "UGX"}
         onClose={() => setSelectedAgentId(null)}
-        onChanged={() => void loadAgents(session, query, selectedDate)}
+        onChanged={() => void loadAgents(session, selectedDate)}
       />
       {actionMenu && actionMenuAgent ? (
         <>

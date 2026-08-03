@@ -38,6 +38,7 @@ import {
   titleCase,
 } from "../../app/owner/owner-common";
 import { OwnerHeader } from "../../app/owner/owner-header";
+import { TableSearchField } from "../app/table-search-field";
 import {
   RembehBranch,
   RembehSession,
@@ -319,10 +320,6 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
       <div className="mx-auto max-w-[1400px] space-y-5 animate-rise">
         <OwnerHeader
           title="Borrowers"
-          search={search}
-          onSearchChange={updateSearch}
-          searchPlaceholder="Search Borrowers..."
-          searchTooltip="Search by name, phone, national ID, city or branch."
           showReportsButton={false}
           settingsHref={isManager ? "/settings" : "/owner/settings"}
           notificationScope={mode}
@@ -415,6 +412,12 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
                 <h2 className="text-[15px] font-semibold text-[#0b1220]">
                   Borrower Records
                 </h2>
+                <TableSearchField
+                  value={search}
+                  onChange={updateSearch}
+                  placeholder="Search Borrowers..."
+                  title="Search by name, phone, national ID, city or branch."
+                />
                 {!isManager ? (
                   <label className="relative flex h-9 min-w-0 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-[#0b1224] shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
                     <Building2 className="size-3.5 shrink-0 text-slate-500" />

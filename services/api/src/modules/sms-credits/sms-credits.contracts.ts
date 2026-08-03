@@ -10,6 +10,15 @@ export type SmsWalletContract = {
   }>;
 };
 
+/** Header / account balance (branch for managers, sum for owners). */
+export type SmsBalanceContract = {
+  creditsRemaining: number;
+  canSendSms: boolean;
+  scope: 'branch' | 'account';
+  branchId: string | null;
+  branchName: string | null;
+};
+
 export type SmsTopUpCheckoutContract = {
   redirectUrl: string;
   merchantReference: string;

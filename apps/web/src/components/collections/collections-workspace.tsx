@@ -38,6 +38,7 @@ import {
 } from "../../app/owner/owner-common";
 import { OwnerHeader } from "../../app/owner/owner-header";
 import { Money } from "../app/money";
+import { TableSearchField } from "../app/table-search-field";
 import {
   RembehBranch,
   RembehSession,
@@ -162,13 +163,17 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
     setPage(1);
   }, [filter, methodFilter, search, pageSize]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+  const scopedPayments = useMemo(() => {
     return repayments.filter((payment) => {
       const method = payment.method.toUpperCase().replace(/\s+/g, "_");
-      const matchesMethod =
-        methodFilter === "all" || method === methodFilter;
-      if (!q) return matchesMethod;
+      return methodFilter === "all" || method === methodFilter;
+    });
+  }, [methodFilter, repayments]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return scopedPayments;
+    return scopedPayments.filter((payment) => {
       const digits = q.replace(/\D/g, "");
       const shortLoan = payment.loanId.slice(0, 8);
       const haystack = [
@@ -184,15 +189,15 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
       ]
         .join(" ")
         .toLowerCase();
-      const matchesSearch =
+      return (
         haystack.includes(q) ||
         (digits.length >= 3 &&
           [payment.phone, payment.loanId].some((value) =>
             value.replace(/\D/g, "").includes(digits),
-          ));
-      return matchesMethod && matchesSearch;
+          ))
+      );
     });
-  }, [methodFilter, repayments, search]);
+  }, [scopedPayments, search]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -204,16 +209,16 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
   );
 
   const uniqueBorrowers = useMemo(
-    () => new Set(filtered.map((item) => item.customerId)).size,
-    [filtered],
+    () => new Set(scopedPayments.map((item) => item.customerId)).size,
+    [scopedPayments],
   );
   const collectedTotal = useMemo(
-    () => sumBy(filtered, (payment) => payment.amount),
-    [filtered],
+    () => sumBy(scopedPayments, (payment) => payment.amount),
+    [scopedPayments],
   );
   const dateRangeLabel = useMemo(
-    () => rangeLabelForFilter(filter, filtered),
-    [filter, filtered],
+    () => rangeLabelForFilter(filter, scopedPayments),
+    [filter, scopedPayments],
   );
 
   async function copyValue(key: string, value: string) {
@@ -238,10 +243,6 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
       <div className="mx-auto max-w-[1400px] space-y-5 animate-rise">
         <OwnerHeader
           title="Repayments"
-          search={search}
-          onSearchChange={setSearch}
-          searchPlaceholder="Search Repayments..."
-          searchTooltip="Search by borrower, phone, loan ID, payment method, amount or officer."
           showReportsButton={false}
           settingsHref={isManager ? "/settings" : "/owner/settings"}
           notificationScope={mode}
@@ -285,7 +286,7 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
             icon={<Banknote className="size-4" />}
             tone="green"
             label="Total Payments"
-            value={formatNumber(filtered.length)}
+            value={formatNumber(scopedPayments.length)}
             detail={filter === "collectedToday" ? "Collected Today" : "In This List"}
           />
           <MetricCard
@@ -334,6 +335,12 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 border-b border-[#edf1f5] px-4 py-3">
+            <TableSearchField
+              value={search}
+              onChange={setSearch}
+              placeholder="Search Repayments..."
+              title="Search by borrower, phone, loan ID, payment method, amount or officer."
+            />
             <div className="relative">
               <button
                 type="button"

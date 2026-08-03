@@ -15,6 +15,7 @@ import {
   HandCoins,
   Loader2,
   RefreshCw,
+  Search,
   ShieldAlert,
   UserRound,
   WalletCards,
@@ -254,10 +255,6 @@ function OwnerSettingsContent() {
           eyebrow="Settings"
           title="Settings"
           subtitle="Manage your account, loan types, and alerts."
-          search={search}
-          onSearchChange={setSearch}
-          searchTooltip="Search settings."
-          searchPlaceholder="Search settings..."
           showReportsButton={false}
           actions={
             <button
@@ -284,6 +281,17 @@ function OwnerSettingsContent() {
 
         <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
           <aside className="h-fit overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white p-2 shadow-[0_14px_34px_rgba(15,23,42,0.055)] lg:sticky lg:top-[72px]">
+            <label className="mb-2 flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+              <Search className="size-3.5 shrink-0 text-slate-400" />
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search settings..."
+                aria-label="Search settings"
+                className="min-w-0 flex-1 bg-transparent text-xs font-medium text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
+              />
+            </label>
             <nav className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
               {filteredSections.map((item) => {
                 const Icon = item.icon;

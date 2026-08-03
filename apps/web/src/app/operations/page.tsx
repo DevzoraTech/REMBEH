@@ -7,6 +7,7 @@ import {
   Building2,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
   CircleDollarSign,
   ClipboardCheck,
   Download,
@@ -32,6 +33,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/app/app-shell";
 import { Money } from "../../components/app/money";
 import { AppBootSkeleton, SkeletonBlock } from "../../components/app/skeleton";
+import {
+  buildDailyReportDocumentFromOperation,
+  DailyReconciliationReport,
+  type DailyReportViewTab,
+} from "../../components/reports/daily-reconciliation-report";
 import { formatMoney } from "../owner/owner-common";
 import { OwnerHeader, Tooltip } from "../owner/owner-header";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
@@ -91,6 +97,30 @@ type DailyOperation = {
   collectionsCount: number;
   collectionsReceived: number;
   notes: string | null;
+  loansByProduct?: Array<{
+    product: string;
+    count: number;
+    amount: number;
+    recoveredToday?: number;
+    outstandingBalance?: number;
+  }>;
+  repaymentsByProduct?: Array<{
+    product: string;
+    count?: number;
+    transactions?: number;
+    amount: number;
+  }>;
+  feesByProduct?: Array<{
+    product: string;
+    count?: number;
+    transactions?: number;
+    amount: number;
+  }>;
+  previousReportReference?: {
+    reportNumber: string;
+    operationDate: string;
+    amount: number;
+  } | null;
 };
 
 type OperationReportStatus =
@@ -347,7 +377,7 @@ export default function OperationsPage() {
   const [agentReturnForm, setAgentReturnForm] =
     useState<AgentReturnForm>(emptyAgentReturnForm);
   const [closingForm, setClosingForm] = useState<ClosingForm>(emptyClosingForm);
-  const [reportView, setReportView] = useState<"report" | "excel">("report");
+  const [reportView, setReportView] = useState<DailyReportViewTab>("summary");
   const [managerReportNotes, setManagerReportNotes] = useState("");
   const [ownerReportNotes, setOwnerReportNotes] = useState("");
   const [activePanel, setActivePanel] = useState<OperationActionPanel>(null);
@@ -1051,13 +1081,24 @@ export default function OperationsPage() {
     }
   }
 
-  async function exportDailyOperationReport() {
+  async function exportDailyOperationReport(format: "excel" | "pdf") {
     if (!operation || !report || exportingReport) return;
     setExportingReport(true);
     setError(null);
     setNotice(null);
 
     try {
+      if (format === "pdf") {
+        exportSummaryReportPdf({
+          operation,
+          report,
+          workspaceName: workspace?.name ?? "REMBEH",
+          currency: workspace?.currency ?? "UGX",
+        });
+        setNotice("PDF ready — use Print to save the document.");
+        return;
+      }
+
       const { Workbook } = await import("exceljs");
       const workbook = new Workbook();
       const exportedAt = new Date();
@@ -1245,7 +1286,7 @@ export default function OperationsPage() {
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      setNotice("Report exported.");
+      setNotice("Excel report downloaded.");
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Could not export report.",
@@ -1298,10 +1339,6 @@ export default function OperationsPage() {
           title={
             operatorRole === "owner" ? "Operation Reports" : "Daily Operations"
           }
-          search=""
-          onSearchChange={() => undefined}
-          searchTooltip="Use the date control to switch the operations day."
-          showSearch={false}
           showReportsButton={operatorRole === "manager"}
           settingsHref={
             operatorRole === "owner" ? "/owner/settings" : "/settings"
@@ -1421,6 +1458,7 @@ export default function OperationsPage() {
         ) : operation ? (
           <OpenOperationView
             operation={operation}
+            currency={workspace?.currency ?? "UGX"}
             canOperateBranch={canOperateBranch}
             editable={canFinishOpenOperation}
             canRecordTopUp={canRecordTopUp}
@@ -1446,7 +1484,7 @@ export default function OperationsPage() {
             setOwnerReportNotes={setOwnerReportNotes}
             onManagerConfirmReport={() => void managerConfirmReport()}
             onOwnerApproveReport={() => void ownerApproveReport()}
-            onExportReport={() => void exportDailyOperationReport()}
+            onExportReport={(format) => void exportDailyOperationReport(format)}
             onAction={openActionPanel}
           />
         ) : pendingClosureOperation ? (
@@ -1744,6 +1782,7 @@ function OpeningView({
 
 function OpenOperationView({
   operation,
+  currency,
   canOperateBranch,
   editable,
   canRecordTopUp,
@@ -1773,6 +1812,7 @@ function OpenOperationView({
   onAction,
 }: {
   operation: DailyOperation;
+  currency: string;
   canOperateBranch: boolean;
   editable: boolean;
   canRecordTopUp: boolean;
@@ -1785,7 +1825,7 @@ function OpenOperationView({
   assignableAgentsCount: number;
   addFloatAgentsCount: number;
   report: DailyOperationReport | null;
-  reportView: "report" | "excel";
+  reportView: DailyReportViewTab;
   canReviewReport: boolean;
   canApproveReport: boolean;
   managerReportNotes: string;
@@ -1793,14 +1833,63 @@ function OpenOperationView({
   reviewingReport: boolean;
   approvingReport: boolean;
   exportingReport: boolean;
-  setReportView: (view: "report" | "excel") => void;
+  setReportView: (view: DailyReportViewTab) => void;
   setManagerReportNotes: (value: string) => void;
   setOwnerReportNotes: (value: string) => void;
   onManagerConfirmReport: () => void;
   onOwnerApproveReport: () => void;
-  onExportReport: () => void;
+  onExportReport: (format: "excel" | "pdf") => void;
   onAction: (panel: Exclude<OperationActionPanel, null>) => void;
 }) {
+  if (operation.status === "CLOSED") {
+    if (!report) {
+      return (
+        <section className="rounded-[14px] border border-[#e6ebf0] bg-white px-4 py-4 text-sm font-medium text-slate-500">
+          Preparing close-day report...
+        </section>
+      );
+    }
+
+    const document = buildDailyReportDocumentFromOperation(
+      operation,
+      report,
+      currency,
+    );
+    const mode = canApproveReport
+      ? "owner"
+      : canReviewReport
+        ? "manager"
+        : "readonly";
+    const comment = canApproveReport ? ownerReportNotes : managerReportNotes;
+    const setComment = canApproveReport
+      ? setOwnerReportNotes
+      : setManagerReportNotes;
+
+    return (
+      <DailyReconciliationReport
+        document={document}
+        mode={mode}
+        tab={reportView}
+        onTabChange={setReportView}
+        comment={comment}
+        onCommentChange={setComment}
+        acting={reviewingReport || approvingReport}
+        exporting={exportingReport}
+        onExportExcel={() => onExportReport("excel")}
+        onExportPdf={() => onExportReport("pdf")}
+        onPrimaryAction={
+          canApproveReport && report.status === "SENT_TO_OWNER"
+            ? onOwnerApproveReport
+            : canReviewReport &&
+                (report.status === "MANAGER_REVIEW" ||
+                  report.status === "RETURNED_TO_MANAGER")
+              ? onManagerConfirmReport
+              : undefined
+        }
+      />
+    );
+  }
+
   const allReturnsRecorded =
     operation.agentsReturnedCount === operation.agentsWithFloatCount;
   const cashPosition =
@@ -1996,70 +2085,41 @@ function OpenOperationView({
         />
       </section>
 
-      {operation.status === "CLOSED" ? (
-        report ? (
-          <OperationReportSection
-            operation={operation}
-            report={report}
-            view={reportView}
-            canReviewReport={canReviewReport}
-            canApproveReport={canApproveReport}
-            managerNotes={managerReportNotes}
-            ownerNotes={ownerReportNotes}
-            reviewing={reviewingReport}
-            approving={approvingReport}
-            exporting={exportingReport}
-            setView={setReportView}
-            setManagerNotes={setManagerReportNotes}
-            setOwnerNotes={setOwnerReportNotes}
-            onManagerConfirm={onManagerConfirmReport}
-            onOwnerApprove={onOwnerApproveReport}
-            onExport={onExportReport}
-          />
-        ) : (
-          <section className="rounded-[14px] border border-[#e6ebf0] bg-white px-4 py-4 text-sm font-medium text-slate-500">
-            Preparing close-day report...
-          </section>
-        )
-      ) : (
-        <>
-          <section className="grid gap-3 xl:grid-cols-[0.95fr_1.35fr]">
-            <CashMovementCard operation={operation} />
-            <AgentFloatBoard
-              operation={operation}
-              onIssueFloat={
-                canOperateBranch ? () => onAction("issue-float") : undefined
-              }
-              canIssue={
-                editable &&
-                canManageFloat &&
-                !loadingAgents &&
-                assignableAgentsCount > 0 &&
-                operation.floatRemaining > 0
-              }
-            />
-          </section>
+      <section className="grid gap-3 xl:grid-cols-[0.95fr_1.35fr]">
+        <CashMovementCard operation={operation} />
+        <AgentFloatBoard
+          operation={operation}
+          onIssueFloat={
+            canOperateBranch ? () => onAction("issue-float") : undefined
+          }
+          canIssue={
+            editable &&
+            canManageFloat &&
+            !loadingAgents &&
+            assignableAgentsCount > 0 &&
+            operation.floatRemaining > 0
+          }
+        />
+      </section>
 
-          <section className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
-            <DayExpensesStrip
-              operation={operation}
-              onRecordExpense={() => onAction("expense")}
-              canRecord={editable && canRecordExpense}
-            />
-            <DayAttentionCard
-              items={attentionItems}
-              closed={false}
-              canOperate={canOperateBranch && editable}
-              onAction={onAction}
-              onCloseDay={
-                canOperateBranch && editable && canClose && allReturnsRecorded
-                  ? () => onAction("close-day")
-                  : undefined
-              }
-            />
-          </section>
-        </>
-      )}
+      <section className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
+        <DayExpensesStrip
+          operation={operation}
+          onRecordExpense={() => onAction("expense")}
+          canRecord={editable && canRecordExpense}
+        />
+        <DayAttentionCard
+          items={attentionItems}
+          closed={false}
+          canOperate={canOperateBranch && editable}
+          onAction={onAction}
+          onCloseDay={
+            canOperateBranch && editable && canClose && allReturnsRecorded
+              ? () => onAction("close-day")
+              : undefined
+          }
+        />
+      </section>
     </div>
   );
 }
@@ -2097,8 +2157,10 @@ function OperationReportSection({
   setOwnerNotes: (value: string) => void;
   onManagerConfirm: () => void;
   onOwnerApprove: () => void;
-  onExport: () => void;
+  onExport: (format: "excel" | "pdf") => void;
 }) {
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+
   return (
     <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[#edf1f5] bg-[#f8faf9]/80 px-5 py-4">
@@ -2129,19 +2191,73 @@ function OperationReportSection({
               onClick={() => setView("excel")}
             />
           </div>
-          <button
-            type="button"
-            className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#0b1220] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-50 disabled:opacity-55"
-            disabled={exporting}
-            onClick={onExport}
-          >
-            {exporting ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <Download className="size-3.5" />
-            )}
-            Export
-          </button>
+          <div className="relative">
+            <button
+              type="button"
+              className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#0b1220] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-50 disabled:opacity-55"
+              disabled={exporting}
+              aria-expanded={exportMenuOpen}
+              aria-haspopup="menu"
+              onClick={() => setExportMenuOpen((open) => !open)}
+            >
+              {exporting ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Download className="size-3.5" />
+              )}
+              Export
+              <ChevronDown className="size-3.5 text-slate-400" />
+            </button>
+            {exportMenuOpen ? (
+              <>
+                <button
+                  type="button"
+                  className="fixed inset-0 z-40 cursor-default"
+                  aria-label="Close export menu"
+                  onClick={() => setExportMenuOpen(false)}
+                />
+                <div
+                  role="menu"
+                  className="absolute right-0 z-50 mt-1.5 w-[220px] rounded-xl border border-[#e6ebf0] bg-white p-1 shadow-[0_14px_34px_rgba(15,23,42,0.16)]"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#0b1220] hover:bg-[#f4f7f6]"
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      onExport("excel");
+                    }}
+                  >
+                    <FileSpreadsheet className="size-3.5 text-slate-500" />
+                    <span>
+                      <span className="block">Excel</span>
+                      <span className="mt-0.5 block text-[10px] font-medium text-slate-500">
+                        Matches ledger view
+                      </span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#0b1220] hover:bg-[#f4f7f6]"
+                    onClick={() => {
+                      setExportMenuOpen(false);
+                      onExport("pdf");
+                    }}
+                  >
+                    <FileText className="size-3.5 text-slate-500" />
+                    <span>
+                      <span className="block">PDF document</span>
+                      <span className="mt-0.5 block text-[10px] font-medium text-slate-500">
+                        Matches summary view
+                      </span>
+                    </span>
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </div>
         </div>
       </header>
 
@@ -5288,10 +5404,10 @@ function buildExcelRows(operation: DailyOperation) {
 }
 
 function reportStatusLabel(status: OperationReportStatus) {
-  if (status === "MANAGER_REVIEW") return "Manager Review";
-  if (status === "SENT_TO_OWNER") return "Sent To Owner";
-  if (status === "OWNER_APPROVED") return "Owner Approved";
-  if (status === "RETURNED_TO_MANAGER") return "Returned To Manager";
+  if (status === "MANAGER_REVIEW") return "Ready to send";
+  if (status === "SENT_TO_OWNER") return "Awaiting Approval";
+  if (status === "OWNER_APPROVED") return "Approved";
+  if (status === "RETURNED_TO_MANAGER") return "Returned";
   return status;
 }
 
@@ -5473,6 +5589,292 @@ function excelBorder() {
     bottom: { style: "thin" as const, color: { argb: "FFD5DDD9" } },
     right: { style: "thin" as const, color: { argb: "FFD5DDD9" } },
   };
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function exportSummaryReportPdf({
+  operation,
+  report,
+  workspaceName,
+  currency,
+}: {
+  operation: DailyOperation;
+  report: DailyOperationReport;
+  workspaceName: string;
+  currency: string;
+}) {
+  const money = (value: number) => formatMoney(value, currency);
+  const varianceText = formatVariance(operation.closingVariance);
+  const agentRows =
+    operation.agentReturns.length === 0
+      ? `<tr><td colspan="6" class="empty">No agent float was issued for this day.</td></tr>`
+      : operation.agentReturns
+          .map(
+            (agentReturn) => `
+            <tr>
+              <td>
+                <strong>${escapeHtml(agentReturn.agentName)}</strong>
+                <div class="muted">${escapeHtml(returnStatusLabel(agentReturn.status))}</div>
+              </td>
+              <td class="num">${escapeHtml(money(agentReturn.amountGiven))}</td>
+              <td class="num">${escapeHtml(money(agentReturn.amountDisbursed))}</td>
+              <td class="num">${escapeHtml(money(agentReturn.amountCollected))}</td>
+              <td class="num">${escapeHtml(money(agentReturn.processingFees))}</td>
+              <td class="num"><strong>${escapeHtml(money(agentReturn.amountReturned ?? 0))}</strong></td>
+            </tr>`,
+          )
+          .join("");
+
+  const topUpRows =
+    operation.topUps.length === 0
+      ? `<p class="empty">No top-ups recorded.</p>`
+      : operation.topUps
+          .map(
+            (topUp) => `
+            <div class="record">
+              <div>
+                <strong>${escapeHtml(topUp.description || "Cash top-up")}</strong>
+                <div class="muted">${escapeHtml(`${formatClock(topUp.addedAt)} · ${topUp.recordedByName}`)}</div>
+              </div>
+              <div class="num"><strong>${escapeHtml(money(topUp.amount))}</strong></div>
+            </div>`,
+          )
+          .join("");
+
+  const expenseRows =
+    operation.expenses.length === 0
+      ? `<p class="empty">No expenses recorded.</p>`
+      : operation.expenses
+          .map(
+            (expense) => `
+            <div class="record">
+              <div>
+                <strong>${escapeHtml(categoryLabel(expense.category))}</strong>
+                <div class="muted">${escapeHtml(`${formatClock(expense.incurredAt)} · ${expense.recordedByName}`)}</div>
+              </div>
+              <div class="num"><strong>${escapeHtml(money(expense.amount))}</strong></div>
+            </div>`,
+          )
+          .join("");
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(report.reportNumber)} · Daily report</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 28px;
+      color: #0b1220;
+      font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      background: #fff;
+    }
+    h1 { margin: 0; font-size: 22px; letter-spacing: -0.02em; }
+    h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: #0f8f68; }
+    .eyebrow { margin: 0 0 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #0f8f68; }
+    .meta { margin: 6px 0 0; font-size: 12px; color: #64748b; }
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin: 22px 0 16px;
+    }
+    .metric, .block, .detail {
+      border: 1px solid #e6ebf0;
+      border-radius: 12px;
+      background: #f8faf9;
+      padding: 12px;
+    }
+    .metric label, .detail label {
+      display: block;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #64748b;
+    }
+    .metric strong, .detail strong { display: block; margin-top: 6px; font-size: 14px; }
+    .metric.highlight { background: #eef7f2; border-color: #cfe8db; }
+    .metric.danger strong { color: #b42318; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+    .block { background: #fff; }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 7px 0;
+      border-bottom: 1px solid #edf1f5;
+      font-size: 12px;
+    }
+    .row:last-child { border-bottom: 0; }
+    .row.strong { font-weight: 700; }
+    .row.danger { color: #b42318; }
+    .mini {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .mini-item {
+      border: 1px solid #edf1f5;
+      border-radius: 10px;
+      padding: 10px;
+      background: #f8faf9;
+    }
+    .mini-item label { display: block; font-size: 10px; color: #64748b; font-weight: 600; }
+    .mini-item strong { display: block; margin-top: 4px; font-size: 14px; }
+    .mini-item .muted { margin-top: 2px; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    th {
+      text-align: left;
+      background: #e8edf2;
+      color: #475569;
+      font-size: 10px;
+      padding: 8px 6px;
+    }
+    td { padding: 8px 6px; border-bottom: 1px solid #edf1f5; vertical-align: top; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .muted { color: #64748b; font-size: 10px; font-weight: 500; }
+    .empty { color: #64748b; font-size: 12px; margin: 0; padding: 8px 0; }
+    .record {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 120px;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid #edf1f5;
+      font-size: 12px;
+    }
+    .record:last-child { border-bottom: 0; }
+    .footer {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 14px;
+    }
+    @media print {
+      body { padding: 12px; }
+      .metric, .block, .detail, .mini-item { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <p class="eyebrow">Close-day report</p>
+  <h1>${escapeHtml(report.reportNumber)}</h1>
+  <p class="meta">
+    ${escapeHtml(workspaceName)} · ${escapeHtml(operation.branchName)} ·
+    ${escapeHtml(formatDateOnly(report.operationDate))} ·
+    ${escapeHtml(reportStatusLabel(report.status))}
+  </p>
+
+  <div class="metrics">
+    <div class="metric"><label>Opening Cash</label><strong>${escapeHtml(money(operation.cashAvailableAtOpening))}</strong></div>
+    <div class="metric"><label>Float Distributed</label><strong>${escapeHtml(money(operation.floatIssued))}</strong></div>
+    <div class="metric"><label>Returned Cash</label><strong>${escapeHtml(money(operation.cashReturnedByAgents))}</strong></div>
+    <div class="metric danger"><label>Expenses</label><strong>${escapeHtml(money(operation.expensesTotal))}</strong></div>
+    <div class="metric highlight"><label>Expected Close</label><strong>${escapeHtml(money(operation.expectedClosingBalance))}</strong></div>
+    <div class="metric"><label>Counted Cash</label><strong>${escapeHtml(money(operation.closingBalance ?? 0))}</strong></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="block">
+      <h2>Opening Cash</h2>
+      <div class="row"><span>Previous closing balance</span><span class="num">${escapeHtml(money(operation.openingBalance))}</span></div>
+      <div class="row"><span>Top-ups added today</span><span class="num">${escapeHtml(money(operation.topUpsTotal))}</span></div>
+      <div class="row strong"><span>Total opening balance</span><span class="num">${escapeHtml(money(operation.cashAvailableAtOpening))}</span></div>
+    </div>
+    <div class="block">
+      <h2>Closing Result</h2>
+      <div class="row strong"><span>Expected closing balance</span><span class="num">${escapeHtml(money(operation.expectedClosingBalance))}</span></div>
+      <div class="row"><span>Counted cash</span><span class="num">${escapeHtml(money(operation.closingBalance ?? 0))}</span></div>
+      <div class="row ${(operation.closingVariance ?? 0) !== 0 ? "danger" : ""}"><span>Variance</span><span class="num">${escapeHtml(varianceText)}</span></div>
+    </div>
+  </div>
+
+  <div class="block" style="margin-bottom:12px">
+    <h2>Field Activity</h2>
+    <div class="mini">
+      <div class="mini-item">
+        <label>Loans issued</label>
+        <strong>${operation.loansIssuedCount}</strong>
+        <div class="muted">${escapeHtml(money(operation.loansIssuedPrincipal))}</div>
+      </div>
+      <div class="mini-item">
+        <label>Repayments</label>
+        <strong>${operation.collectionsCount}</strong>
+        <div class="muted">${escapeHtml(money(operation.collectionsReceived))}</div>
+      </div>
+      <div class="mini-item">
+        <label>Processing fees</label>
+        <strong>${escapeHtml(money(operation.processingFeesTotal))}</strong>
+        <div class="muted">Included in handover</div>
+      </div>
+      <div class="mini-item">
+        <label>Agents returned</label>
+        <strong>${operation.agentsReturnedCount}/${operation.agentsWithFloatCount}</strong>
+        <div class="muted">${escapeHtml(money(operation.expectedAgentReturnTotal))}</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="block" style="margin-bottom:12px">
+    <h2>Agent Handover</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Agent</th>
+          <th class="num">Float</th>
+          <th class="num">Loans</th>
+          <th class="num">Repayments</th>
+          <th class="num">Fees</th>
+          <th class="num">Returned</th>
+        </tr>
+      </thead>
+      <tbody>${agentRows}</tbody>
+    </table>
+  </div>
+
+  <div class="grid-2">
+    <div class="block">
+      <h2>Top-ups</h2>
+      ${topUpRows}
+    </div>
+    <div class="block">
+      <h2>Expenses</h2>
+      ${expenseRows}
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="detail"><label>Opened By</label><strong>${escapeHtml(operation.openedByName)}</strong></div>
+    <div class="detail"><label>Closed By</label><strong>${escapeHtml(operation.closedByName ?? "Not recorded")}</strong></div>
+    <div class="detail"><label>Generated</label><strong>${escapeHtml(formatDateTime(report.generatedAt))}</strong></div>
+  </div>
+  <script>
+    window.onload = function () {
+      window.focus();
+      window.print();
+    };
+  </script>
+</body>
+</html>`;
+
+  const printWindow = window.open("", "_blank", "noopener,noreferrer,width=960,height=720");
+  if (!printWindow) {
+    throw new Error("Allow pop-ups to export the PDF document.");
+  }
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
 }
 
 function formatFileDate(value: Date) {

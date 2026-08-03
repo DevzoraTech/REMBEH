@@ -172,8 +172,13 @@ export type OwnerReport = {
   generatedAt: string;
   managerReviewedAt: string | null;
   managerReviewedByName: string | null;
+  managerNotes?: string | null;
   ownerApprovedAt: string | null;
   ownerApprovedByName: string | null;
+  ownerNotes?: string | null;
+  returnedAt?: string | null;
+  returnedByName?: string | null;
+  returnNotes?: string | null;
   expectedClosingBalance: number;
   closingBalance: number | null;
   closingVariance: number | null;
