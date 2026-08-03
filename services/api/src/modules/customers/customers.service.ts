@@ -193,6 +193,7 @@ export class CustomersService {
       city: this.city(latestApplication),
       loanCount: this.loanCount(customer),
       activeLoanCount: this.activeLoanCount(customer),
+      activeLoanId: this.activeLoanId(customer),
       hasOverdueLoan: this.hasOverdueLoan(customer),
       registeredByName: registeredBy.name,
       registeredByPublicId: registeredBy.publicId,
@@ -263,9 +264,18 @@ export class CustomersService {
       .sort((a, b) => Date.parse(b.paidAt) - Date.parse(a.paidAt))
       .slice(0, 12);
 
+    const addressSource =
+      this.latestApplication(customer) ??
+      customer.loans.find((loan) => loan.application)?.application ??
+      null;
+
     return {
       ...this.toCustomerContract(customer, options),
       branchName: customer.branch?.name ?? null,
+      district: addressSource?.district?.trim() || null,
+      subCounty: addressSource?.subCounty?.trim() || null,
+      parish: addressSource?.parish?.trim() || null,
+      village: addressSource?.village?.trim() || null,
       loans: customer.loans.map((loan) => {
         const paidAmount = this.roundMoney(
           loan.repayments.reduce(
@@ -492,6 +502,7 @@ export class CustomersService {
       | {
           district?: string | null;
           subCounty?: string | null;
+          parish?: string | null;
           village?: string | null;
         }
       | null
@@ -500,6 +511,7 @@ export class CustomersService {
     return (
       application?.district?.trim() ||
       application?.subCounty?.trim() ||
+      application?.parish?.trim() ||
       application?.village?.trim() ||
       null
     );
@@ -522,6 +534,18 @@ export class CustomersService {
     return customer.loans.filter((loan) =>
       ACTIVE_LOAN_STATUSES.has(String(loan.status)),
     ).length;
+  }
+
+  private activeLoanId(
+    customer: Customer | CustomerListRecord | CustomerDetailRecord,
+  ): string | null {
+    if (!('loans' in customer) || !Array.isArray(customer.loans)) {
+      return null;
+    }
+    const active = customer.loans.find((loan) =>
+      ACTIVE_LOAN_STATUSES.has(String(loan.status)),
+    );
+    return active?.id ?? null;
   }
 
   private hasOverdueLoan(

@@ -12,6 +12,8 @@ export type CustomerApiContract = {
   loanCount: number;
   /** Open / in-progress loans (not closed / written off / rejected / draft). */
   activeLoanCount: number;
+  /** Present when the borrower has exactly one open / in-progress loan. */
+  activeLoanId: string | null;
   /** True when any loan is in arrears or has overdue fines. */
   hasOverdueLoan: boolean;
   registeredByName: string | null;
@@ -75,6 +77,11 @@ export type CustomerPaymentContract = {
 };
 
 export type CustomerDetailContract = CustomerApiContract & {
+  /** Address from the borrower’s latest loan application (KYC). */
+  district: string | null;
+  subCounty: string | null;
+  parish: string | null;
+  village: string | null;
   loans: CustomerLoanSummaryContract[];
   documents: CustomerDocumentContract[];
   recentPayments: CustomerPaymentContract[];

@@ -81,6 +81,8 @@ type BorrowerRow = {
   nationalId: string | null;
   collateralType: string | null;
   loanCount: number;
+  activeLoanCount?: number;
+  activeLoanId?: string | null;
 };
 
 const ACTIVE_STATUSES = new Set([
@@ -202,6 +204,22 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
       );
     }
   }, [canCreate, isManager, router, state.ready]);
+
+  useEffect(() => {
+    if (!loans.length) return;
+    const params = new URLSearchParams(window.location.search);
+    const loanId = params.get("loanId");
+    if (!loanId) return;
+    const match = loans.find((loan) => loan.id === loanId);
+    if (!match) return;
+    setDetailLoan(match);
+    params.delete("loanId");
+    const next = params.toString();
+    router.replace(
+      `${isManager ? "/loans" : "/owner/portfolio"}${next ? `?${next}` : ""}`,
+      { scroll: false },
+    );
+  }, [isManager, loans, router]);
 
   const loadLoans = useCallback(async () => {
     if (!state.session) return;
@@ -350,9 +368,12 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
     [filtered, page, pageSize],
   );
   const filteredBorrowers = useMemo(() => {
+    const eligible = borrowers.filter(
+      (borrower) => (borrower.activeLoanCount ?? 0) === 0,
+    );
     const q = borrowerSearch.trim().toLowerCase();
-    if (!q) return borrowers.slice(0, 8);
-    return borrowers
+    if (!q) return eligible.slice(0, 8);
+    return eligible
       .filter((borrower) =>
         [
           borrower.fullName,
@@ -1036,7 +1057,10 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                       ))}
                     </div>
                   ) : filteredBorrowers.length === 0 ? (
-                    <p className="text-sm text-slate-500">No borrowers found.</p>
+                    <p className="text-sm text-slate-500">
+                      No eligible borrowers. Borrowers with an active loan cannot
+                      start another.
+                    </p>
                   ) : (
                     <div className="divide-y divide-[#edf1f5] rounded-xl border border-[#e6ebf0]">
                       {filteredBorrowers.map((borrower) => (

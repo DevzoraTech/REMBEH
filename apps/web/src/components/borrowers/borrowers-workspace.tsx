@@ -48,6 +48,7 @@ import {
   readAuthState,
 } from "../../lib/auth-session";
 import { resolveOperatorRole } from "../../lib/roles";
+import { BorrowerDetailDrawer } from "./borrower-detail-drawer";
 import {
   BorrowersFiltersControl,
   EMPTY_BORROWERS_FILTERS,
@@ -130,6 +131,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
   const [page, setPage] = useState(1);
   const [selectedBorrower, setSelectedBorrower] =
     useState<OwnerBorrower | null>(null);
+  const [openLoanId, setOpenLoanId] = useState<string | null>(null);
   const [actionMenu, setActionMenu] = useState<ActionMenuState | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -594,10 +596,18 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
         )}
       </div>
 
-      {selectedBorrower ? (
+      {selectedBorrower && state.session ? (
         <BorrowerDetailDrawer
           borrower={selectedBorrower}
-          onClose={() => setSelectedBorrower(null)}
+          session={state.session}
+          canRecordRepayment={Boolean(
+            state.session.permissions.includes("collection.create"),
+          )}
+          initialOpenLoanId={openLoanId}
+          onClose={() => {
+            setSelectedBorrower(null);
+            setOpenLoanId(null);
+          }}
         />
       ) : null}
 
@@ -620,30 +630,25 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
               className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#0b1220] hover:bg-[#f4f7f6]"
               onClick={() => {
                 setActionMenu(null);
+                setOpenLoanId(null);
                 setSelectedBorrower(actionMenuBorrower);
               }}
             >
-              View Borrower
+              View details
             </button>
             <button
               type="button"
               role="menuitem"
-              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#0b1220] hover:bg-[#f4f7f6]"
+              disabled={!actionMenuBorrower.activeLoanId}
+              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#0b1220] hover:bg-[#f4f7f6] disabled:cursor-not-allowed disabled:opacity-45"
               onClick={() => {
+                if (!actionMenuBorrower.activeLoanId) return;
                 setActionMenu(null);
-                void exportBorrowers(
-                  [actionMenuBorrower],
-                  {
-                    branch: actionMenuBorrower.branchName ?? "all",
-                    verification: resolveBorrowerVerification(actionMenuBorrower),
-                    loanStatus: "all",
-                    search: actionMenuBorrower.fullName,
-                  },
-                  setExporting,
-                );
+                setOpenLoanId(actionMenuBorrower.activeLoanId);
+                setSelectedBorrower(actionMenuBorrower);
               }}
             >
-              Export Borrower
+              View active loan
             </button>
           </div>
         </>
@@ -837,88 +842,6 @@ function EmptyBorrowersState({
   );
 }
 
-function BorrowerDetailDrawer({
-  borrower,
-  onClose,
-}: {
-  borrower: OwnerBorrower;
-  onClose: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-[rgba(8,15,31,0.36)] backdrop-blur-[2px]">
-      <button
-        type="button"
-        className="absolute inset-0 cursor-default"
-        aria-label="Close Borrower Details"
-        onClick={onClose}
-      />
-      <aside className="relative h-full w-full max-w-[400px] overflow-y-auto bg-white p-4 shadow-[-18px_0_44px_rgba(15,23,42,0.18)]">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-medium text-[#0b936b]">
-              Borrower Details
-            </p>
-            <h2 className="mt-1.5 text-xl font-bold tracking-[-0.03em] text-[#0b1220]">
-              {borrower.fullName}
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="grid size-9 place-items-center rounded-xl border border-[#e4e9ef] text-[#0b1220]"
-            aria-label="Close"
-          >
-            <X className="size-4" />
-          </button>
-        </div>
-        <div className="mt-4 rounded-2xl border border-[#e5ebf0] bg-[#fbfcfd] p-3">
-          <div className="flex items-center gap-3">
-            <span className="grid size-10 place-items-center rounded-full bg-[#e2f6ec] text-xs font-semibold text-[#087f5d]">
-              {initials(borrower.fullName)}
-            </span>
-            <div className="min-w-0">
-              <BorrowerStatus
-                status={resolveBorrowerVerification(borrower)}
-              />
-              <p className="mt-1.5 text-xs font-medium text-slate-500">
-                {formatNumber(borrower.loanCount)}{" "}
-                {borrower.loanCount === 1 ? "loan" : "loans"}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="mt-4 space-y-1.5">
-          <InfoLine label="Phone" value={borrower.phone || "—"} />
-          <InfoLine
-            label="Email"
-            value={
-              borrower.email?.trim() ? borrower.email.trim() : "No email provide"
-            }
-          />
-          <InfoLine label="National ID" value={borrower.nationalId ?? "—"} />
-          <InfoLine
-            label="Security"
-            value={
-              borrower.collateralType ? titleCase(borrower.collateralType) : "—"
-            }
-          />
-          <InfoLine label="Branch" value={borrower.branchName ?? "—"} />
-          <InfoLine
-            label="Registered by"
-            value={borrower.registeredByName ?? "—"}
-          />
-          <InfoLine label="City" value={borrower.city ?? "—"} />
-          <InfoLine label="Joined" value={formatDate(borrower.createdAt)} />
-          <InfoLine
-            label="Verified"
-            value={borrower.verifiedAt ? formatDate(borrower.verifiedAt) : "—"}
-          />
-        </div>
-      </aside>
-    </div>
-  );
-}
-
 function resolveBorrowerVerification(
   borrower: OwnerBorrower,
 ): "verified" | "not_verified" | "issue" {
@@ -950,20 +873,10 @@ function BorrowerStatus({
     );
   }
   return (
-    <span className="inline-flex h-6 items-center gap-1.5 rounded-full bg-slate-100 px-2.5 text-[11px] font-semibold text-slate-600">
+    <span className="inline-flex h-6 items-center gap-1.5 rounded-full bg-[#fff4e8] px-2.5 text-[11px] font-semibold text-[#c97900]">
+      <span className="size-1.5 rounded-full bg-[#f0a04b]" />
       Not verified
     </span>
-  );
-}
-
-function InfoLine({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-[#edf1f4] bg-white px-3 py-2.5 text-xs">
-      <span className="font-medium text-slate-500">{label}</span>
-      <span className="min-w-0 truncate text-right font-semibold text-[#0b1220]">
-        {value}
-      </span>
-    </div>
   );
 }
 

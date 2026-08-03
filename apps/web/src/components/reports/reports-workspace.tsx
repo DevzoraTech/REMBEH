@@ -7,13 +7,16 @@ import {
   ClipboardList,
   Clock3,
   Download,
+  Eye,
   FileSpreadsheet,
   FileText,
-  Filter,
   HandCoins,
   Loader2,
+  MoreVertical,
+  Pencil,
   RefreshCw,
   Scale,
+  Send,
   Users,
   WalletCards,
 } from "lucide-react";
@@ -38,6 +41,7 @@ import {
   OwnerReport,
   authHeaders,
   formatDate,
+  formatMoney,
   formatNumber,
   ownerFetch,
   sumBy,
@@ -46,13 +50,15 @@ import {
 import { OwnerHeader } from "../../app/owner/owner-header";
 import { invalidateOwnerNotifications } from "../../app/owner/owner-notifications";
 import { Money } from "../app/money";
+import {
+  EMPTY_REPORTS_FILTERS,
+  ReportsFiltersControl,
+  dailyReportCode,
+  reportMatchesDate,
+  reportStatusLabel,
+  type ReportsAdvancedFilters,
+} from "./reports-filters";
 
-type ReportStatusFilter =
-  | "all"
-  | "MANAGER_REVIEW"
-  | "SENT_TO_OWNER"
-  | "OWNER_APPROVED"
-  | "RETURNED_TO_MANAGER";
 type ReportView = "report" | "excel";
 export type ReportsMode = "owner" | "manager";
 
@@ -92,21 +98,6 @@ type ReportSnapshot = {
   expenses: ReportRecord[];
   closingNotes: string | null;
 };
-
-const OWNER_STATUS_OPTIONS: Array<{ value: ReportStatusFilter; label: string }> = [
-  { value: "all", label: "All Statuses" },
-  { value: "SENT_TO_OWNER", label: "Needs Your Review" },
-  { value: "OWNER_APPROVED", label: "Approved" },
-  { value: "RETURNED_TO_MANAGER", label: "Sent Back" },
-];
-
-const MANAGER_STATUS_OPTIONS: Array<{ value: ReportStatusFilter; label: string }> = [
-  { value: "all", label: "All Statuses" },
-  { value: "MANAGER_REVIEW", label: "Ready To Send" },
-  { value: "SENT_TO_OWNER", label: "Sent To Owner" },
-  { value: "OWNER_APPROVED", label: "Approved" },
-  { value: "RETURNED_TO_MANAGER", label: "Sent Back" },
-];
 
 type ReportsSession = {
   session: RembehSession | null;
@@ -161,19 +152,25 @@ function useReportsSession(mode: ReportsMode): ReportsSession {
 
 export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
   const state = useReportsSession(mode);
+  const router = useRouter();
   const isManager = mode === "manager";
-  const statusOptions = isManager ? MANAGER_STATUS_OPTIONS : OWNER_STATUS_OPTIONS;
   const [branches, setBranches] = useState<OwnerBranch[]>([]);
   const [reports, setReports] = useState<OwnerReport[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [branchId, setBranchId] = useState("all");
-  const [status, setStatus] = useState<ReportStatusFilter>("all");
+  const [advancedFilters, setAdvancedFilters] = useState<ReportsAdvancedFilters>(
+    EMPTY_REPORTS_FILTERS,
+  );
   const [search, setSearch] = useState("");
   const [view, setView] = useState<ReportView>("report");
   const [actionNotes, setActionNotes] = useState("");
   const [loading, setLoading] = useState(true);
   const [actingId, setActingId] = useState<string | null>(null);
   const [exportingId, setExportingId] = useState<string | null>(null);
+  const [actionMenu, setActionMenu] = useState<{
+    reportId: string;
+    top: number;
+    left: number;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -185,8 +182,15 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (!isManager && branchId !== "all") params.set("branchId", branchId);
-      if (status !== "all") params.set("status", status);
+      if (!isManager && advancedFilters.branchId) {
+        params.set("branchId", advancedFilters.branchId);
+      }
+      if (advancedFilters.status !== "all") {
+        params.set("status", advancedFilters.status);
+      }
+      const range = dateRangeQuery(advancedFilters);
+      if (range.from) params.set("from", range.from);
+      if (range.to) params.set("to", range.to);
       const [branchPayload, reportPayload] = await Promise.all([
         ownerFetch<{ branches?: OwnerBranch[] }>(state.session, "/branches"),
         ownerFetch<{ reports?: OwnerReport[] }>(
@@ -216,7 +220,7 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
     } finally {
       setLoading(false);
     }
-  }, [branchId, isManager, state.session, status]);
+  }, [advancedFilters, isManager, state.session]);
 
   useEffect(() => {
     const boot = window.setTimeout(() => {
@@ -229,22 +233,26 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
 
   const filteredReports = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return reports;
     return reports.filter((report) => {
-      const statusLabel = report.status.replaceAll("_", " ").toLowerCase();
+      if (!reportMatchesDate(report.operationDate, advancedFilters)) {
+        return false;
+      }
+      if (!q) return true;
+      const code = dailyReportCode(report.operationDate).toLowerCase();
+      const statusText = reportStatusLabel(report.status).toLowerCase();
       return [
+        code,
         report.reportNumber,
         report.branchName,
         report.operationDate,
         report.status,
-        statusLabel,
+        statusText,
         report.managerReviewedByName ?? "",
         report.ownerApprovedByName ?? "",
-        String(report.loansIssuedCount),
-        String(report.collectionsReceived),
+        state.user?.name ?? "",
       ].some((value) => value.toLowerCase().includes(q));
     });
-  }, [reports, search]);
+  }, [advancedFilters, reports, search, state.user?.name]);
 
   const selectedReport =
     filteredReports.find((report) => report.id === selectedId) ??
@@ -256,10 +264,8 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
 
   const waitingReports = reports.filter((r) => r.status === "SENT_TO_OWNER");
   const approvedReports = reports.filter((r) => r.status === "OWNER_APPROVED");
-  const filtersActive =
-    search.trim().length > 0 ||
-    (!isManager && branchId !== "all") ||
-    status !== "all";
+  const actionMenuReport =
+    reports.find((report) => report.id === actionMenu?.reportId) ?? null;
 
   async function submitReportAction(report: OwnerReport) {
     if (!state.session || actingId) return;
@@ -285,7 +291,9 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
       setActionNotes("");
       setNotice(
         isManager
-          ? "Report sent to owner successfully."
+          ? report.status === "RETURNED_TO_MANAGER"
+            ? "Report resubmitted to owner successfully."
+            : "Report sent to owner successfully."
           : "Report approved successfully.",
       );
       invalidateOwnerNotifications();
@@ -314,14 +322,14 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
     >
       <div className="mx-auto max-w-[1440px] space-y-5 animate-rise">
         <OwnerHeader
-          eyebrow="Daily Close"
-          title="Reports"
+          title="Daily Reports"
+          subtitle="Review reconciled branch operations, submit reports for approval, and track cash differences."
           search={search}
           onSearchChange={setSearch}
           searchTooltip={
             isManager
-              ? "Search report number, date or status for your branch."
-              : "Search report number, branch, date, status or manager."
+              ? "Search report code, date or status for your branch."
+              : "Search report code, branch, date, status or manager."
           }
           searchPlaceholder="Search Reports..."
           showReportsButton={false}
@@ -342,11 +350,6 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
             </button>
           }
         />
-        <p className="-mt-2 text-sm font-medium text-slate-500">
-          {isManager
-            ? "Review your close-day reports, verify cash position, and send them to the owner."
-            : "Review branch close-day reports, verify cash position, and approve with confidence."}
-        </p>
 
         {notice ? (
           <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-[var(--forest-emerald)]">
@@ -366,17 +369,17 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
             label="Total Reports"
             value={formatNumber(filteredReports.length)}
             detail={
-              status === "all"
+              advancedFilters.status === "all"
                 ? isManager
                   ? "This Branch"
                   : "In This List"
-                : statusLabel(status)
+                : reportStatusLabel(advancedFilters.status)
             }
           />
           <MetricCard
             icon={<Clock3 className="size-4" />}
             tone="gold"
-            label={isManager ? "Sent To Owner" : "Needs Your Review"}
+            label={isManager ? "Awaiting Approval" : "Needs Your Review"}
             value={formatNumber(waitingReports.length)}
             detail={
               isManager
@@ -387,10 +390,14 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
             }
             onClick={
               waitingReports.length > 0
-                ? () => setStatus("SENT_TO_OWNER")
+                ? () =>
+                    setAdvancedFilters((current) => ({
+                      ...current,
+                      status: "SENT_TO_OWNER",
+                    }))
                 : undefined
             }
-            active={status === "SENT_TO_OWNER"}
+            active={advancedFilters.status === "SENT_TO_OWNER"}
           />
           <MetricCard
             icon={<CheckCircle2 className="size-4" />}
@@ -417,19 +424,22 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
           <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#edf1f5] px-4 py-4">
             <div>
               <h2 className="text-[15px] font-semibold text-[#0b1220]">
-                Close-day workspace
+                Report Records
               </h2>
               <p className="mt-0.5 text-xs font-medium text-slate-500">
-                {isManager
-                  ? "Select a report, inspect cash movement, then send to owner."
-                  : "Select a report, inspect cash movement, then approve."}
+                Select a report to inspect cash movements.
               </p>
             </div>
             <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-              {status === "SENT_TO_OWNER" ? (
+              {advancedFilters.status === "SENT_TO_OWNER" ? (
                 <button
                   type="button"
-                  onClick={() => setStatus("all")}
+                  onClick={() =>
+                    setAdvancedFilters((current) => ({
+                      ...current,
+                      status: "all",
+                    }))
+                  }
                   className="h-9 rounded-xl border border-[#e6ebf0] bg-white px-3 text-[11px] font-semibold text-slate-600 transition hover:bg-[#f8faf9]"
                 >
                   Show All Statuses
@@ -462,63 +472,29 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5 border-b border-[#edf1f5] px-4 py-3">
-            {isManager ? (
-              <span className="inline-flex h-10 items-center rounded-xl border border-[#e6ebf0] bg-[#f8faf9] px-3 text-xs font-semibold text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
-                {state.branch?.name ?? branches[0]?.name ?? "Your branch"}
-              </span>
-            ) : (
-              <select
-                value={branchId}
-                onChange={(event) => setBranchId(event.target.value)}
-                className="h-10 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-[#0b1224] outline-none shadow-[0_8px_18px_rgba(15,23,42,0.035)]"
-              >
-                <option value="all">All branches</option>
-                {branches.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            <select
-              value={status}
-              onChange={(event) =>
-                setStatus(event.target.value as ReportStatusFilter)
-              }
-              className="h-10 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-[#0b1224] outline-none shadow-[0_8px_18px_rgba(15,23,42,0.035)]"
-            >
-              {statusOptions.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              disabled={!filtersActive}
-              onClick={() => {
-                setSearch("");
-                setBranchId("all");
-                setStatus("all");
-              }}
-              className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.035)] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Filter className="size-3.5" />
-              Clear
-            </button>
+            <ReportsFiltersControl
+              mode={mode}
+              branches={branches.map((branch) => ({
+                id: branch.id,
+                name: branch.name,
+              }))}
+              applied={advancedFilters}
+              onApply={setAdvancedFilters}
+            />
           </div>
 
           <div className="border-b border-[#edf1f5]">
-            <div className="hidden grid-cols-[1.3fr_1.1fr_0.9fr_1fr_1fr_1.1fr_0.95fr] gap-3 border-b border-[#dfe5eb] bg-[#e8edf2] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-600 lg:grid">
-              <span>Branch</span>
+            <div className="hidden grid-cols-[0.9fr_0.85fr_1fr_1fr_1.15fr_1.05fr_0.95fr_0.7fr] gap-3 border-b border-[#dfe5eb] bg-[#e8edf2] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-600 lg:grid">
               <span>Report</span>
               <span>Date</span>
-              <span className="text-right">Expected</span>
-              <span className="text-right">Variance</span>
-              <span>Manager</span>
+              <span className="text-right">Expected Cash</span>
+              <span className="text-right">Counted Cash</span>
+              <span>Variance</span>
+              <span>Prepared By</span>
               <span>Status</span>
+              <span className="text-right">Actions</span>
             </div>
-            <div className="max-h-[240px] overflow-y-auto">
+            <div className="max-h-[320px] overflow-y-auto">
               {loading ? (
                 <div className="space-y-2 p-4">
                   {Array.from({ length: 4 }).map((_, i) => (
@@ -541,55 +517,103 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
               ) : (
                 filteredReports.map((report) => {
                   const active = selectedReport?.id === report.id;
-                  const variance = report.closingVariance ?? 0;
+                  const snapshot = readReportSnapshot(report);
+                  const closedBy = textValue(
+                    snapshot.operation.closedByName,
+                    "",
+                  );
+                  const preparedByName =
+                    report.managerReviewedByName?.trim() ||
+                    closedBy ||
+                    (isManager
+                      ? state.user?.name?.trim() || "Manager"
+                      : "—");
                   return (
-                    <button
+                    <div
                       key={report.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedId(report.id);
-                        setActionNotes("");
-                      }}
-                      className={`grid w-full grid-cols-1 gap-2 border-b border-[#edf1f5] px-4 py-3 text-left transition last:border-b-0 lg:grid-cols-[1.3fr_1.1fr_0.9fr_1fr_1fr_1.1fr_0.95fr] lg:items-center lg:gap-3 ${
+                      className={`grid w-full grid-cols-1 gap-2 border-b border-[#edf1f5] px-4 py-3 text-left transition last:border-b-0 lg:grid-cols-[0.9fr_0.85fr_1fr_1fr_1.15fr_1.05fr_0.95fr_0.7fr] lg:items-center lg:gap-3 ${
                         active
                           ? "bg-emerald-50/70"
                           : "bg-white hover:bg-[#f8faf9]"
                       }`}
                     >
-                      <div className="min-w-0">
+                      <button
+                        type="button"
+                        className="min-w-0 text-left"
+                        onClick={() => {
+                          setSelectedId(report.id);
+                          setActionNotes("");
+                          setView("report");
+                        }}
+                      >
                         <p className="truncate text-sm font-semibold text-[#0b1220]">
-                          {report.branchName}
+                          {dailyReportCode(report.operationDate)}
                         </p>
-                        <p className="mt-0.5 text-[11px] font-medium text-slate-500 lg:hidden">
-                          {report.reportNumber}
-                        </p>
-                      </div>
-                      <p className="hidden truncate text-xs font-semibold text-slate-600 lg:block">
-                        {report.reportNumber}
-                      </p>
-                      <p className="text-xs font-semibold text-slate-600">
+                        {!isManager ? (
+                          <p className="mt-0.5 truncate text-[11px] font-medium text-slate-500">
+                            {report.branchName}
+                          </p>
+                        ) : null}
+                      </button>
+                      <button
+                        type="button"
+                        className="text-left text-xs font-semibold text-slate-600"
+                        onClick={() => {
+                          setSelectedId(report.id);
+                          setActionNotes("");
+                        }}
+                      >
                         {formatDate(report.operationDate)}
-                      </p>
+                      </button>
                       <p className="text-xs font-semibold tabular-nums text-[#0b1220] lg:text-right">
                         <Money
                           value={report.expectedClosingBalance}
                           currency={currency}
                         />
                       </p>
-                      <p
-                        className={`text-xs font-semibold tabular-nums lg:text-right ${
-                          variance !== 0 ? "text-red-600" : "text-[#0b1220]"
-                        }`}
-                      >
-                        <Money value={variance} currency={currency} />
+                      <p className="text-xs font-semibold tabular-nums text-[#0b1220] lg:text-right">
+                        <Money
+                          value={report.closingBalance ?? 0}
+                          currency={currency}
+                        />
                       </p>
+                      <div>
+                        <VarianceLabel
+                          variance={report.closingVariance}
+                          currency={currency}
+                        />
+                      </div>
                       <p className="truncate text-xs font-semibold text-slate-600">
-                        {report.managerReviewedByName ?? "Manager"}
+                        {preparedByName}
                       </p>
                       <div>
                         <StatusPill status={report.status} />
                       </div>
-                    </button>
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          className="grid size-8 place-items-center rounded-lg border border-[#e6ebf0] bg-white text-[#0b1220] hover:bg-slate-50"
+                          aria-label="Report actions"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            const rect = (
+                              event.currentTarget as HTMLButtonElement
+                            ).getBoundingClientRect();
+                            const menuWidth = 188;
+                            setActionMenu({
+                              reportId: report.id,
+                              top: rect.bottom + 6,
+                              left: Math.min(
+                                rect.right - menuWidth,
+                                window.innerWidth - menuWidth - 12,
+                              ),
+                            });
+                          }}
+                        >
+                          <MoreVertical className="size-4" />
+                        </button>
+                      </div>
+                    </div>
                   );
                 })
               )}
@@ -617,7 +641,7 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h3 className="text-base font-bold tracking-[-0.02em] text-[#0b1220]">
-                      {selectedReport.reportNumber}
+                      {dailyReportCode(selectedReport.operationDate)}
                     </h3>
                     <StatusPill status={selectedReport.status} />
                   </div>
@@ -703,6 +727,98 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
           )}
         </section>
       </div>
+
+      {actionMenu && actionMenuReport ? (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-40 cursor-default"
+            aria-label="Close report actions"
+            onClick={() => setActionMenu(null)}
+          />
+          <div
+            role="menu"
+            className="fixed z-50 w-[188px] rounded-xl border border-[#e6ebf0] bg-white p-1 text-left shadow-[0_14px_34px_rgba(15,23,42,0.16)]"
+            style={{ top: actionMenu.top, left: actionMenu.left }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#0b1220] hover:bg-[#f4f7f6]"
+              onClick={() => {
+                setSelectedId(actionMenuReport.id);
+                setActionNotes("");
+                setView("report");
+                setActionMenu(null);
+              }}
+            >
+              <Eye className="size-3.5 text-slate-500" />
+              View report
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={
+                exportingId === actionMenuReport.id ||
+                !readReportSnapshot(actionMenuReport)
+              }
+              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#0b1220] hover:bg-[#f4f7f6] disabled:cursor-not-allowed disabled:opacity-45"
+              onClick={() => {
+                const snapshot = readReportSnapshot(actionMenuReport);
+                setActionMenu(null);
+                if (!snapshot) return;
+                void exportReport(
+                  actionMenuReport,
+                  snapshot,
+                  currency,
+                  setExportingId,
+                );
+              }}
+            >
+              <Download className="size-3.5 text-slate-500" />
+              Download
+            </button>
+            {isManager ? (
+              <>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={
+                    actionMenuReport.status !== "MANAGER_REVIEW" &&
+                    actionMenuReport.status !== "RETURNED_TO_MANAGER"
+                  }
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#0b1220] hover:bg-[#f4f7f6] disabled:cursor-not-allowed disabled:opacity-45"
+                  onClick={() => {
+                    setActionMenu(null);
+                    router.push("/operations");
+                  }}
+                >
+                  <Pencil className="size-3.5 text-slate-500" />
+                  Edit returned report
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={
+                    actionMenuReport.status !== "RETURNED_TO_MANAGER" ||
+                    actingId === actionMenuReport.id
+                  }
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#0b1220] hover:bg-[#f4f7f6] disabled:cursor-not-allowed disabled:opacity-45"
+                  onClick={() => {
+                    const report = actionMenuReport;
+                    setActionMenu(null);
+                    setSelectedId(report.id);
+                    void submitReportAction(report);
+                  }}
+                >
+                  <Send className="size-3.5 text-slate-500" />
+                  Resubmit report
+                </button>
+              </>
+            ) : null}
+          </div>
+        </>
+      ) : null}
     </AppShell>
   );
 }
@@ -783,7 +899,36 @@ function StatusPill({ status }: { status: string }) {
     <span
       className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold ring-1 ring-inset ${style}`}
     >
-      {statusLabel(status)}
+      {reportStatusLabel(status)}
+    </span>
+  );
+}
+
+function VarianceLabel({
+  variance,
+  currency,
+}: {
+  variance: number | null | undefined;
+  currency: string;
+}) {
+  if (variance == null || !Number.isFinite(variance) || variance === 0) {
+    return (
+      <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-[var(--forest-emerald)]">
+        Matched
+      </span>
+    );
+  }
+  const amount = Math.abs(variance);
+  if (variance > 0) {
+    return (
+      <span className="text-xs font-semibold text-amber-700">
+        {formatMoney(amount, currency)} excess
+      </span>
+    );
+  }
+  return (
+    <span className="text-xs font-semibold text-red-600">
+      {formatMoney(amount, currency)} shortage
     </span>
   );
 }
@@ -1415,7 +1560,11 @@ function ReportActionCard({
               ) : (
                 <CheckCircle2 className="size-3.5" />
               )}
-              {isManager ? "Send to owner" : "Approve report"}
+              {isManager
+                ? report.status === "RETURNED_TO_MANAGER"
+                  ? "Resubmit report"
+                  : "Send to owner"
+                : "Approve report"}
             </button>
           </>
         ) : (
@@ -1469,7 +1618,7 @@ function LedgerTable({
       <div className="flex flex-wrap items-center gap-2 border-b border-[#8f9a94] bg-[#217346] px-3 py-2 text-white">
         <FileSpreadsheet className="size-4 shrink-0 opacity-90" />
         <p className="min-w-0 flex-1 truncate text-xs font-semibold tracking-wide">
-          {report.reportNumber}.xlsx — {report.branchName}
+          {dailyReportCode(report.operationDate)}.xlsx — {report.branchName}
         </p>
         <span className="rounded bg-white/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em]">
           Excel view
@@ -1555,7 +1704,7 @@ function LedgerTable({
               <ExcelMergedRow
                 rowNumber={3}
                 cols={7}
-                value={`${report.reportNumber} — ${statusLabel(report.status)}`}
+                value={`${dailyReportCode(report.operationDate)} — ${statusLabel(report.status)}`}
                 muted
               />
               <tr>
@@ -2171,12 +2320,55 @@ function initials(name: string) {
 }
 
 function statusLabel(value: string) {
-  if (value === "MANAGER_REVIEW") return "Ready To Send";
-  if (value === "SENT_TO_OWNER") return "Needs Review";
-  if (value === "OWNER_APPROVED") return "Approved";
-  if (value === "RETURNED_TO_MANAGER") return "Sent Back";
-  if (value === "PENDING") return "Pending";
-  return titleCase(value.replaceAll("_", " ").toLowerCase());
+  return reportStatusLabel(value);
+}
+
+function dateRangeQuery(filters: ReportsAdvancedFilters): {
+  from?: string;
+  to?: string;
+} {
+  if (filters.datePreset === "all") return {};
+  if (filters.datePreset === "custom") {
+    return {
+      from: filters.customFrom || undefined,
+      to: filters.customTo || undefined,
+    };
+  }
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const toIso = (value: Date) => {
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, "0");
+    const d = String(value.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  };
+
+  if (filters.datePreset === "today") {
+    const day = toIso(today);
+    return { from: day, to: day };
+  }
+  if (filters.datePreset === "this_week") {
+    const weekStart = new Date(today);
+    const day = weekStart.getDay();
+    const diff = day === 0 ? 6 : day - 1;
+    weekStart.setDate(weekStart.getDate() - diff);
+    return { from: toIso(weekStart), to: toIso(today) };
+  }
+  if (filters.datePreset === "this_month") {
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    return { from: toIso(monthStart), to: toIso(today) };
+  }
+  if (filters.datePreset === "last_month") {
+    const lastMonthStart = new Date(
+      today.getFullYear(),
+      today.getMonth() - 1,
+      1,
+    );
+    const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
+    return { from: toIso(lastMonthStart), to: toIso(lastMonthEnd) };
+  }
+  return {};
 }
 
 function statusHelp(value: string) {
@@ -2190,7 +2382,7 @@ function statusHelp(value: string) {
     return "This report is finished and saved.";
   }
   if (value === "RETURNED_TO_MANAGER") {
-    return "Sent back for correction before it can be submitted again.";
+    return "Returned for correction before it can be submitted again.";
   }
   return "This report is ready to review.";
 }
@@ -2210,7 +2402,7 @@ async function exportReport(
     worksheet.mergeCells(1, 1, 1, 7);
     worksheet.addRow([
       report.branchName,
-      report.reportNumber,
+      dailyReportCode(report.operationDate),
       report.operationDate,
       statusLabel(report.status),
     ]);
@@ -2320,7 +2512,7 @@ async function exportReport(
     const link = document.createElement("a");
     link.href = url;
     link.download =
-      `${report.reportNumber}-${report.branchName}`.replace(
+      `${dailyReportCode(report.operationDate)}-${report.branchName}`.replace(
         /[^a-z0-9-]+/gi,
         "_",
       ) + ".xlsx";

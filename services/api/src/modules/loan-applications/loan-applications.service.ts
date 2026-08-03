@@ -23,6 +23,7 @@ import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import { BillingService } from '../billing/billing.service';
 import { BorrowerListsService } from '../borrower-lists/borrower-lists.service';
 import { IdentityVerificationService } from '../identity-verification/identity-verification.service';
+import { SmsCreditsService } from '../sms-credits/sms-credits.service';
 import { OPERATIONS_PERMISSIONS } from '../operations/operations.permissions';
 import { REALTIME_EVENTS } from '../realtime/realtime.events';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -108,6 +109,7 @@ export class LoanApplicationsService {
     private readonly loanProducts: LoanProductsService,
     private readonly borrowerLists: BorrowerListsService,
     private readonly billingService: BillingService,
+    private readonly smsCreditsService: SmsCreditsService,
   ) {}
 
   async createDraft(
@@ -146,6 +148,12 @@ export class LoanApplicationsService {
 
     if (!customer?.branchId) {
       throw new NotFoundException('Borrower was not found.');
+    }
+
+    if (customer.loans.length > 0) {
+      throw new ConflictException(
+        'This borrower already has an active loan. Close it before starting another.',
+      );
     }
 
     if (customer.nationalId?.trim()) {
@@ -802,6 +810,18 @@ export class LoanApplicationsService {
         application.nationalId,
       );
     }
+    if (application.customerId) {
+      await this.assertCustomerHasNoActiveLoan(
+        user.tenantId,
+        application.customerId,
+      );
+    } else if (application.phone?.trim()) {
+      await this.assertPhoneHasNoActiveLoan(
+        user.tenantId,
+        application.phone,
+        application.nationalId,
+      );
+    }
     this.assertReadyForSubmit(application);
     await this.assertAgentFloatCanCoverLoan(user, application);
 
@@ -853,6 +873,12 @@ export class LoanApplicationsService {
       REALTIME_EVENTS.loanApplicationSubmitted,
       { ...this.toEventPayload(submitted), tenantId: user.tenantId },
     );
+
+    void this.sendLoanApplicationSms(submitted).catch((error) => {
+      this.logger.warn(
+        `Loan application SMS failed for ${submitted.id}: ${String(error)}`,
+      );
+    });
 
     return {
       application: await this.toContractWithPreviews(submitted),
@@ -1253,6 +1279,74 @@ export class LoanApplicationsService {
     if (!user.branchId) {
       throw new ForbiddenException(
         'Loan applications require a branch assignment.',
+      );
+    }
+  }
+
+  private async assertCustomerHasNoActiveLoan(
+    tenantId: string,
+    customerId: string,
+  ) {
+    const active = await this.repository.countActiveLoansForCustomer({
+      tenantId,
+      customerId,
+    });
+    if (active > 0) {
+      throw new ConflictException(
+        'This borrower already has an active loan. Close it before starting another.',
+      );
+    }
+  }
+
+  private async assertPhoneHasNoActiveLoan(
+    tenantId: string,
+    phone: string,
+    nationalId?: string | null,
+  ) {
+    const active = await this.repository.countActiveLoansForIdentity({
+      tenantId,
+      phone,
+      nationalId,
+    });
+    if (active > 0) {
+      throw new ConflictException(
+        'This borrower already has an active loan. Close it before starting another.',
+      );
+    }
+  }
+
+  private async sendLoanApplicationSms(application: LoanApplicationRecord) {
+    const phone = application.phone?.trim();
+    if (!phone) return;
+
+    const amount = Number(application.principalAmount ?? 0);
+    const amountLabel = Number.isFinite(amount)
+      ? `UGX ${amount.toLocaleString('en-UG', {
+          maximumFractionDigits: 0,
+        })}`
+      : 'your loan';
+    const start = application.paymentStartDate
+      ? application.paymentStartDate.toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+        })
+      : null;
+    const body =
+      `REMBEH: Your loan application for ${amountLabel} is now active` +
+      (start ? `. Repayments start on ${start}` : '') +
+      '. Keep this message for your records.';
+
+    const result = await this.smsCreditsService.sendBranchSms({
+      tenantId: application.tenantId,
+      branchId: application.branchId,
+      destination: phone,
+      body,
+      purpose: 'loan_application',
+    });
+    if (!result.sent) {
+      this.logger.log(
+        `Loan application SMS not sent for ${application.id}: ${result.reason ?? 'skipped'}`,
       );
     }
   }

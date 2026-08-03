@@ -7,6 +7,7 @@ import {
   FileText,
   Headset,
   Loader2,
+  MessageSquare,
   RefreshCw,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -60,6 +61,18 @@ type BillingSummary = {
 
 type CheckoutResponse = {
   redirectUrl: string;
+};
+
+type SmsWallet = {
+  branchId: string;
+  branchName: string;
+  creditsRemaining: number;
+  canSendSms: boolean;
+  topUpPresets: Array<{
+    amountUgx: number;
+    currency: string;
+    credits: number;
+  }>;
 };
 
 type PaymentRow = {
@@ -206,7 +219,11 @@ function SubscriptionWorkspaceContent({
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [smsWallet, setSmsWallet] = useState<SmsWallet | null>(null);
+  const [smsLoading, setSmsLoading] = useState(false);
+  const [toppingUpAmount, setToppingUpAmount] = useState<number | null>(null);
   const paid = searchParams.get("paid") === "1";
+  const smsPaid = searchParams.get("smsPaid") === "1";
   const nextPath = mode === "owner" ? "/owner/subscription" : "/subscription";
 
   useEffect(() => {
@@ -285,6 +302,33 @@ function SubscriptionWorkspaceContent({
     }
   }, [session]);
 
+  const loadSmsWallet = useCallback(
+    async (branchId: string) => {
+      if (!session || !branchId) return;
+      setSmsLoading(true);
+      try {
+        const params = new URLSearchParams({ branchId });
+        const response = await fetch(
+          `${apiBaseUrl}/sms-credits/wallet?${params.toString()}`,
+          { headers: authHeaders(session) },
+        );
+        const payload = await readApiJson<
+          SmsWallet & { message?: string | string[] }
+        >(response);
+        if (!response.ok) {
+          throw new Error(formatApiError(payload.message));
+        }
+        setSmsWallet(payload);
+      } catch (err) {
+        setError(friendlyError(err));
+        setSmsWallet(null);
+      } finally {
+        setSmsLoading(false);
+      }
+    },
+    [session],
+  );
+
   const load = useCallback(async () => {
     await Promise.all([loadSummary(), loadPayments()]);
   }, [loadSummary, loadPayments]);
@@ -295,12 +339,13 @@ function SubscriptionWorkspaceContent({
   }, [ready, session, load]);
 
   useEffect(() => {
-    if (!paid || !session) return;
+    if ((!paid && !smsPaid) || !session) return;
     const timer = window.setTimeout(() => {
       void load();
+      if (focusedBranchId) void loadSmsWallet(focusedBranchId);
     }, 1600);
     return () => window.clearTimeout(timer);
-  }, [paid, session, load]);
+  }, [paid, smsPaid, session, load, focusedBranchId, loadSmsWallet]);
 
   useEffect(() => {
     if (!summary?.branches.length) return;
@@ -308,10 +353,22 @@ function SubscriptionWorkspaceContent({
       if (current && summary.branches.some((b) => b.branchId === current)) {
         return current;
       }
+      const fromQuery = searchParams.get("branch");
+      if (
+        fromQuery &&
+        summary.branches.some((b) => b.branchId === fromQuery)
+      ) {
+        return fromQuery;
+      }
       const checkoutable = summary.branches.find((b) => b.canCheckout);
       return checkoutable?.branchId ?? summary.branches[0]?.branchId ?? null;
     });
-  }, [summary]);
+  }, [summary, searchParams]);
+
+  useEffect(() => {
+    if (!session || !focusedBranchId) return;
+    void loadSmsWallet(focusedBranchId);
+  }, [session, focusedBranchId, loadSmsWallet]);
 
   const focusedBranch = useMemo(() => {
     if (!summary || !focusedBranchId) return null;
@@ -371,6 +428,38 @@ function SubscriptionWorkspaceContent({
     } catch (err) {
       setError(friendlyError(err));
       setPayingBranchId(null);
+    }
+  }
+
+  async function startSmsTopUp(amountUgx: number) {
+    if (!session || !focusedBranchId) return;
+    setToppingUpAmount(amountUgx);
+    setError(null);
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/sms-credits/branches/${focusedBranchId}/top-up`,
+        {
+          method: "POST",
+          headers: {
+            ...authHeaders(session),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ amountUgx }),
+        },
+      );
+      const payload = await readApiJson<
+        CheckoutResponse & { message?: string | string[] }
+      >(response);
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      if (!payload.redirectUrl) {
+        throw new Error("unavailable");
+      }
+      window.location.assign(payload.redirectUrl);
+    } catch (err) {
+      setError(friendlyError(err));
+      setToppingUpAmount(null);
     }
   }
 
@@ -486,6 +575,12 @@ function SubscriptionWorkspaceContent({
           </p>
         ) : null}
 
+        {smsPaid ? (
+          <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-950">
+            SMS top-up received. Updating your balance…
+          </p>
+        ) : null}
+
         {error ? (
           <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-950">
             {error}
@@ -500,7 +595,7 @@ function SubscriptionWorkspaceContent({
         ) : (
           <section className="grid gap-3 lg:grid-cols-3">
             {/* A) Current subscription */}
-            <article className="flex flex-col rounded-2xl border border-[var(--line)] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+            <article className="flex flex-col rounded-2xl border border-sky-100 bg-[#f3f8fd] p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
               <span className="inline-flex w-fit rounded-full bg-[#e8f1fb] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#2b6cb0]">
                 Current subscription
               </span>
@@ -539,7 +634,7 @@ function SubscriptionWorkspaceContent({
             </article>
 
             {/* B) Plan */}
-            <article className="flex flex-col rounded-2xl border border-[var(--line)] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+            <article className="flex flex-col rounded-2xl border border-emerald-100 bg-[#f3faf6] p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
               <span className="inline-flex w-fit rounded-full bg-[#e9f8ef] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#07885f]">
                 Plan
               </span>
@@ -577,8 +672,8 @@ function SubscriptionWorkspaceContent({
             </article>
 
             {/* C) Support */}
-            <article className="flex flex-col rounded-2xl border border-[var(--line)] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
-              <div className="grid size-11 place-items-center rounded-2xl bg-[#e9f8ef] text-[#07885f]">
+            <article className="flex flex-col rounded-2xl border border-sky-100 bg-[#f3f8fd] p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+              <div className="grid size-11 place-items-center rounded-2xl bg-[#e8f1fb] text-[#2b6cb0]">
                 <Headset className="size-5" strokeWidth={2} />
               </div>
               <h2 className="mt-4 font-[family-name:var(--font-display)] text-xl tracking-[-0.02em] text-[#070b18]">
@@ -605,6 +700,78 @@ function SubscriptionWorkspaceContent({
             </article>
           </section>
         )}
+
+        {/* SMS credits (prepaid per branch) */}
+        {focusedBranchId ? (
+          <section className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="grid size-10 place-items-center rounded-xl bg-[#e8f1fb] text-[#2b6cb0]">
+                  <MessageSquare className="size-5" strokeWidth={2} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold text-[#070b18]">
+                    SMS credits
+                  </h3>
+                  <p className="mt-1 max-w-xl text-xs leading-relaxed text-slate-500">
+                    Buy message credits for borrower SMS from this branch. Loan
+                    application messages use your balance. Top up anytime.
+                  </p>
+                </div>
+              </div>
+              <div className="rounded-xl border border-[var(--line)] bg-[#f6f8fb] px-4 py-2 text-right">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                  Remaining
+                </p>
+                {smsLoading && !smsWallet ? (
+                  <Loader2 className="ml-auto mt-1 size-4 animate-spin text-slate-400" />
+                ) : (
+                  <p className="mt-0.5 text-lg font-bold tabular-nums text-[#070b18]">
+                    {smsWallet?.creditsRemaining ?? 0}
+                    <span className="ml-1 text-xs font-semibold text-slate-500">
+                      SMS
+                    </span>
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {!smsWallet?.canSendSms && !smsLoading ? (
+              <p className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-950">
+                No SMS credits left. Top up to send borrower messages from this
+                branch.
+              </p>
+            ) : null}
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              {(smsWallet?.topUpPresets ?? []).map((preset) => {
+                const busy = toppingUpAmount === preset.amountUgx;
+                return (
+                  <button
+                    key={preset.amountUgx}
+                    type="button"
+                    disabled={toppingUpAmount != null}
+                    onClick={() => void startSmsTopUp(preset.amountUgx)}
+                    className="inline-flex h-10 min-w-[9.5rem] flex-col items-center justify-center rounded-xl border border-[var(--line)] bg-[#f6f8fb] px-3 text-center transition hover:border-[#07885f] hover:bg-[#f3faf6] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {busy ? (
+                      <Loader2 className="size-4 animate-spin text-[#07885f]" />
+                    ) : (
+                      <>
+                        <span className="text-xs font-semibold text-[#070b18]">
+                          {formatMoney(preset.amountUgx, preset.currency)}
+                        </span>
+                        <span className="text-[10px] font-medium text-slate-500">
+                          {preset.credits} SMS
+                        </span>
+                      </>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
 
         {/* Subscription history */}
         <section className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-[0_10px_28px_rgba(15,23,42,0.04)]">

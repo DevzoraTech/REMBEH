@@ -112,6 +112,76 @@ export class LoanApplicationsRepository {
         phone: true,
         nationalId: true,
         verifiedAt: true,
+        loans: {
+          where: {
+            status: {
+              in: [
+                LoanStatus.SUBMITTED,
+                LoanStatus.APPROVED,
+                LoanStatus.DISBURSED,
+                LoanStatus.CURRENT,
+                LoanStatus.IN_ARREARS,
+                LoanStatus.RESTRUCTURED,
+              ],
+            },
+          },
+          select: { id: true, status: true },
+          take: 1,
+        },
+      },
+    });
+  }
+
+  countActiveLoansForCustomer(input: {
+    tenantId: string;
+    customerId: string;
+  }) {
+    return this.prisma.loan.count({
+      where: {
+        tenantId: input.tenantId,
+        customerId: input.customerId,
+        status: {
+          in: [
+            LoanStatus.SUBMITTED,
+            LoanStatus.APPROVED,
+            LoanStatus.DISBURSED,
+            LoanStatus.CURRENT,
+            LoanStatus.IN_ARREARS,
+            LoanStatus.RESTRUCTURED,
+          ],
+        },
+      },
+    });
+  }
+
+  countActiveLoansForIdentity(input: {
+    tenantId: string;
+    phone?: string | null;
+    nationalId?: string | null;
+  }) {
+    const phone = input.phone?.trim();
+    const nationalId = input.nationalId?.trim().toUpperCase();
+    if (!phone && !nationalId) return Promise.resolve(0);
+
+    return this.prisma.loan.count({
+      where: {
+        tenantId: input.tenantId,
+        status: {
+          in: [
+            LoanStatus.SUBMITTED,
+            LoanStatus.APPROVED,
+            LoanStatus.DISBURSED,
+            LoanStatus.CURRENT,
+            LoanStatus.IN_ARREARS,
+            LoanStatus.RESTRUCTURED,
+          ],
+        },
+        customer: {
+          OR: [
+            ...(phone ? [{ phone }] : []),
+            ...(nationalId ? [{ nationalId }] : []),
+          ],
+        },
       },
     });
   }

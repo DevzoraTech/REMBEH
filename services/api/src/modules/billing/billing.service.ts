@@ -3,11 +3,13 @@ import {
   ForbiddenException,
   HttpException,
   HttpStatus,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
   OnModuleInit,
   ServiceUnavailableException,
+  forwardRef,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import {
@@ -35,6 +37,7 @@ import { PesapalClient } from './pesapal.client';
 import { ConfigService } from '@nestjs/config';
 import { SmsService } from '../notifications/sms.service';
 import { FcmPushService } from '../notifications/fcm-push.service';
+import { SmsCreditsService } from '../sms-credits/sms-credits.service';
 
 @Injectable()
 export class BillingService implements OnModuleInit {
@@ -46,6 +49,8 @@ export class BillingService implements OnModuleInit {
     private readonly configService: ConfigService,
     private readonly smsService: SmsService,
     private readonly fcmPushService: FcmPushService,
+    @Inject(forwardRef(() => SmsCreditsService))
+    private readonly smsCreditsService: SmsCreditsService,
   ) {}
 
   async onModuleInit() {
@@ -603,6 +608,7 @@ export class BillingService implements OnModuleInit {
       };
     }
 
+    await this.smsCreditsService.finalizeIfSmsPayment(trackingId);
     await this.finalizePesapalPayment(trackingId);
 
     return {
@@ -618,13 +624,27 @@ export class BillingService implements OnModuleInit {
     OrderMerchantReference?: string;
   }) {
     const trackingId = query.OrderTrackingId?.trim();
+    let smsBranchId: string | null = null;
     if (trackingId) {
-      await this.finalizePesapalPayment(trackingId);
+      const smsHandled =
+        await this.smsCreditsService.finalizeIfSmsPayment(trackingId);
+      if (smsHandled) {
+        smsBranchId =
+          await this.smsCreditsService.findCompletedSmsBranchId(trackingId);
+      } else {
+        await this.finalizePesapalPayment(trackingId);
+      }
     }
 
     const webAppUrl =
       this.configService.get<string>('WEB_APP_URL')?.trim() ||
       'https://rembeh.antikra.com';
+
+    if (smsBranchId) {
+      const params = new URLSearchParams({ smsPaid: '1', branch: smsBranchId });
+      return `${webAppUrl}/subscription?${params.toString()}`;
+    }
+
     const payment = trackingId
       ? await this.prisma.subscriptionPayment.findFirst({
           where: { orderTrackingId: trackingId },
@@ -800,7 +820,6 @@ export class BillingService implements OnModuleInit {
       },
     });
     if (!payment) {
-      this.logger.warn(`No subscription payment for tracking ${orderTrackingId}`);
       return;
     }
 
@@ -1004,6 +1023,7 @@ export class BillingService implements OnModuleInit {
           : `${input.branchName} subscription expired. Renew within ${GRACE_DAYS} days to keep the branch open.`;
 
       for (const owner of owners) {
+        // Subscription reminders stay automated (SMS + in-app push).
         if (owner.phone) {
           await this.smsService.sendText({
             destination: owner.phone,

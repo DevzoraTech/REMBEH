@@ -37,6 +37,7 @@ const applicationSummarySelect = {
   collateralType: true,
   district: true,
   subCounty: true,
+  parish: true,
   village: true,
   updatedAt: true,
   createdAt: true,
@@ -97,6 +98,7 @@ const customerDetailInclude = {
           collateralType: true,
           district: true,
           subCounty: true,
+          parish: true,
           village: true,
           media: {
             select: customerMediaSelect,

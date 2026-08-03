@@ -5,6 +5,8 @@ import { BillingModule } from '../billing/billing.module';
 import { BorrowerListsModule } from '../borrower-lists/borrower-lists.module';
 import { IdentityVerificationModule } from '../identity-verification/identity-verification.module';
 import { LoanProductsModule } from '../loan-products/loan-products.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { SmsCreditsModule } from '../sms-credits/sms-credits.module';
 import { LoanApplicationsController } from './loan-applications.controller';
 import { LoanApplicationsRepository } from './loan-applications.repository';
 import { LoanApplicationsService } from './loan-applications.service';
@@ -17,6 +19,8 @@ import { LoanApplicationsService } from './loan-applications.service';
     BorrowerListsModule,
     IdentityVerificationModule,
     LoanProductsModule,
+    NotificationsModule,
+    SmsCreditsModule,
   ],
   controllers: [LoanApplicationsController],
   providers: [LoanApplicationsService, LoanApplicationsRepository],

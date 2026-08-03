@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { LoanStatus, Prisma, TenantStatus } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
-import { SmsService } from '../notifications/sms.service';
 import { REALTIME_EVENTS } from '../realtime/realtime.events';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import {
@@ -30,7 +29,6 @@ export class LoanFinesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly repository: LoanProductsRepository,
-    private readonly smsService: SmsService,
     private readonly realtime: RealtimeGateway,
     private readonly configService: ConfigService,
   ) {}
@@ -395,17 +393,7 @@ export class LoanFinesService {
         },
       );
 
-      void this.sendFineSms({
-        destination: input.customerPhone,
-        amount,
-        currency: input.currency,
-        periodIndex: input.periodIndex,
-        finePeriodDays: input.finePeriodDays,
-        outstanding: result.outstanding,
-        companyName: result.companyName,
-      }).catch((error) => {
-        this.logger.warn(`Fine SMS failed: ${String(error)}`);
-      });
+      // Overdue fine SMS is manual-only — do not auto-send.
 
       return { nextBalance: result.nextBalance };
     } catch (error) {
@@ -421,41 +409,6 @@ export class LoanFinesService {
       );
       return null;
     }
-  }
-
-  private async sendFineSms(input: {
-    destination: string;
-    amount: number;
-    currency: string;
-    periodIndex: number;
-    finePeriodDays: number;
-    outstanding: number;
-    companyName: string;
-  }) {
-    if (!input.destination?.trim()) {
-      return;
-    }
-    const amountLabel = `${input.currency} ${input.amount.toLocaleString(
-      'en-UG',
-      {
-        minimumFractionDigits: 0,
-        maximumFractionDigits: 0,
-      },
-    )}`;
-    const outstandingLabel = `${input.currency} ${input.outstanding.toLocaleString(
-      'en-UG',
-      { minimumFractionDigits: 0, maximumFractionDigits: 0 },
-    )}`;
-    const body =
-      `REMBEH overdue fine: ${amountLabel} added to your loan at ${input.companyName} ` +
-      `(period ${input.periodIndex}, every ${input.finePeriodDays} day` +
-      `${input.finePeriodDays === 1 ? '' : 's'} unpaid after due date). ` +
-      `New outstanding: ${outstandingLabel}. Please pay to avoid further fines.`;
-
-    await this.smsService.sendText({
-      destination: input.destination,
-      body,
-    });
   }
 
   /** Exposed for tests / docs — maturity helper. */

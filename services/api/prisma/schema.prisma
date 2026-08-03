@@ -236,6 +236,9 @@ model Tenant {
   billing                  TenantBilling?
   branchSubscriptions      BranchSubscription[]
   subscriptionPayments     SubscriptionPayment[]
+  branchSmsWallets         BranchSmsWallet[]
+  smsCreditPayments        SmsCreditPayment[]
+  smsUsageLogs             SmsUsageLog[]
 
   @@map("tenants")
 }
@@ -271,6 +274,9 @@ model Branch {
   operationReports         BranchOperationReport[]
   subscription             BranchSubscription?
   subscriptionPayments     SubscriptionPayment[]
+  smsWallet                BranchSmsWallet?
+  smsCreditPayments        SmsCreditPayment[]
+  smsUsageLogs             SmsUsageLog[]
 
   @@unique([tenantId, name])
   @@index([tenantId, name])
@@ -1220,4 +1226,68 @@ model SubscriptionPayment {
   @@index([tenantId, branchId, status])
   @@index([orderTrackingId])
   @@map("subscription_payments")
+}
+
+/// Prepaid SMS credits for a branch. Balance is message count, not cash.
+model BranchSmsWallet {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  branchId         String   @unique @map("branch_id") @db.Uuid
+  /// Remaining SMS messages the branch may send.
+  creditsRemaining Int      @default(0) @map("credits_remaining")
+  lifetimePurchased Int     @default(0) @map("lifetime_purchased")
+  lifetimeUsed     Int      @default(0) @map("lifetime_used")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch           Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  payments         SmsCreditPayment[]
+  usageLogs        SmsUsageLog[]
+
+  @@index([tenantId])
+  @@map("branch_sms_wallets")
+}
+
+/// Pesapal top-ups that credit a branch SMS wallet.
+model SmsCreditPayment {
+  id                String                    @id @default(uuid()) @db.Uuid
+  tenantId          String                    @map("tenant_id") @db.Uuid
+  branchId          String                    @map("branch_id") @db.Uuid
+  walletId          String                    @map("wallet_id") @db.Uuid
+  merchantReference String                    @unique @map("merchant_reference")
+  orderTrackingId   String?                   @map("order_tracking_id")
+  amount            Decimal                   @db.Decimal(14, 2)
+  currency          String                    @default("UGX")
+  /// SMS credits granted when this payment completes.
+  credits           Int
+  status            SubscriptionPaymentStatus @default(PENDING)
+  rawPayload        Json?                     @map("raw_payload")
+  paidAt            DateTime?                 @map("paid_at")
+  createdAt         DateTime                  @default(now()) @map("created_at")
+  updatedAt         DateTime                  @updatedAt @map("updated_at")
+  tenant            Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch            Branch                    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  wallet            BranchSmsWallet           @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, branchId, status])
+  @@index([orderTrackingId])
+  @@map("sms_credit_payments")
+}
+
+/// Audit of branch-funded SMS sends (one credit per successful send).
+model SmsUsageLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  branchId    String   @map("branch_id") @db.Uuid
+  walletId    String   @map("wallet_id") @db.Uuid
+  purpose     String
+  destination String
+  bodyPreview String   @map("body_preview")
+  createdAt   DateTime @default(now()) @map("created_at")
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch      Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  wallet      BranchSmsWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, branchId, createdAt])
+  @@map("sms_usage_logs")
 }

@@ -138,6 +138,7 @@ export type OwnerBorrower = {
   city: string | null;
   loanCount: number;
   activeLoanCount?: number;
+  activeLoanId?: string | null;
   hasOverdueLoan?: boolean;
   registeredByName?: string | null;
   registeredByPublicId?: string | null;

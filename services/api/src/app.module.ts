@@ -21,6 +21,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { PlatformModule } from './modules/platform/platform.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
+import { SmsCreditsModule } from './modules/sms-credits/sms-credits.module';
 import { StorageModule } from './modules/storage/storage.module';
 
 @Module({
@@ -36,6 +37,7 @@ import { StorageModule } from './modules/storage/storage.module';
     NotificationsModule,
     AuthModule,
     BillingModule,
+    SmsCreditsModule,
     BorrowerListsModule,
     AgentsModule,
     BranchesModule,

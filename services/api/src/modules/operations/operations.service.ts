@@ -1242,7 +1242,7 @@ export class OperationsService {
     });
     if (existing) return existing;
 
-    const reportNumber = this.buildReportNumber(operation.id, contract);
+    const reportNumber = this.buildReportNumber(operation.branchId, contract);
     const snapshot = this.buildReportSnapshot(contract);
     try {
       return await this.repository.createOperationReport({
@@ -1267,12 +1267,16 @@ export class OperationsService {
   }
 
   private buildReportNumber(
-    operationId: string,
+    branchId: string,
     contract: DailyOperationContract,
   ) {
-    return `DOR-${contract.operationDate.replaceAll('-', '')}-${operationId
-      .slice(0, 8)
-      .toUpperCase()}`;
+    const [year, month, day] = contract.operationDate.split('-');
+    const code =
+      year && month && day && year.length >= 4
+        ? `DR${day}${month}${year.slice(2)}`
+        : `DR${contract.operationDate.replaceAll('-', '')}`;
+    // Persist a branch fragment so multi-branch tenants stay unique; UI shows DRDDMMYY.
+    return `${code}-${branchId.replaceAll('-', '').slice(0, 6).toUpperCase()}`;
   }
 
   private buildReportSnapshot(

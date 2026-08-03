@@ -141,6 +141,8 @@ type ApplicationDetailDrawerProps = {
   canRecordRepayment?: boolean;
   onRecordRepayment?: () => void;
   refreshKey?: number;
+  /** Stack above another side panel (e.g. borrower details). */
+  elevated?: boolean;
   onClose: () => void;
 };
 
@@ -161,6 +163,7 @@ export function ApplicationDetailDrawer({
   canRecordRepayment = false,
   onRecordRepayment,
   refreshKey = 0,
+  elevated = false,
   onClose,
 }: ApplicationDetailDrawerProps) {
   const [detail, setDetail] = useState<ApplicationDetail | null>(null);
@@ -386,6 +389,9 @@ export function ApplicationDetailDrawer({
 
   if (!applicationId) return null;
 
+  const rootZ = elevated ? "z-[55]" : "z-50";
+  const previewZ = elevated ? "z-[70]" : "z-[60]";
+
   const statusLabel =
     loanStatusLabel ||
     (detail ? formatPrimaryStatus(detail) : null);
@@ -421,7 +427,7 @@ export function ApplicationDetailDrawer({
   const passport = detail?.media.find((item) => item.type === "PASSPORT");
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-[rgba(8,15,31,0.36)] backdrop-blur-[2px]">
+    <div className={`fixed inset-0 ${rootZ} flex justify-end bg-[rgba(8,15,31,0.36)] backdrop-blur-[2px]`}>
       <button
         type="button"
         className="absolute inset-0 cursor-default"
@@ -610,7 +616,7 @@ export function ApplicationDetailDrawer({
       </aside>
 
       {preview ? (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 p-4">
+        <div className={`fixed inset-0 ${previewZ} flex items-center justify-center bg-black/80 p-4`}>
           <button
             type="button"
             className="absolute inset-0 cursor-default"
