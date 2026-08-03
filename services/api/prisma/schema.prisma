@@ -194,6 +194,73 @@ enum SubscriptionPaymentStatus {
   REVERSED
 }
 
+enum SmsBundleStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+
+enum SmsPurchaseStatus {
+  PAYMENT_PENDING
+  AWAITING_PAYMENT
+  PAYMENT_CONFIRMED
+  CREDIT_PROCESSING
+  CREDITED
+  PAYMENT_FAILED
+  CANCELLED_BY_USER
+  PAYMENT_MISMATCH
+  MANUAL_REVIEW
+  EXPIRED
+  REFUNDED
+  REVERSED
+}
+
+enum SmsWalletLedgerEntryType {
+  BUNDLE_PURCHASE
+  GRANT
+  RESERVE
+  RELEASE
+  DEBIT_CONFIRMED
+  ADJUSTMENT
+  REFUND
+}
+
+enum SmsWalletLedgerDirection {
+  CREDIT
+  DEBIT
+}
+
+enum SmsMessageStatus {
+  PENDING_VALIDATION
+  RESERVED
+  /// Provider accepted the submit; debit settled. Not the same as handset delivery.
+  PROVIDER_ACCEPTED
+  SENT
+  FAILED_VALIDATION
+  FAILED_INSUFFICIENT_CREDITS
+  BLOCKED_PROVIDER_UNAVAILABLE
+  PROVIDER_FAILED
+  /// Immediate provider response was uncertain; reservation held pending reconciliation.
+  PROVIDER_UNCERTAIN
+  RELEASED
+}
+
+enum SmsDeliveryStatus {
+  NOT_APPLICABLE
+  PENDING
+  DELIVERED
+  FAILED
+  UNKNOWN
+}
+
+enum SmsCallbackProcessingStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  IGNORED
+  FAILED
+}
+
 model Tenant {
   id                       String                   @id @default(uuid()) @db.Uuid
   name                     String
@@ -239,6 +306,11 @@ model Tenant {
   branchSmsWallets         BranchSmsWallet[]
   smsCreditPayments        SmsCreditPayment[]
   smsUsageLogs             SmsUsageLog[]
+  smsPurchases             SmsPurchase[]
+  smsWalletLedgers         SmsWalletLedger[]
+  smsMessages              SmsMessage[]
+  smsCallbackEvents        SmsCallbackEvent[]
+  smsProviderRequestLogs   SmsProviderRequestLog[]
 
   @@map("tenants")
 }
@@ -277,6 +349,10 @@ model Branch {
   smsWallet                BranchSmsWallet?
   smsCreditPayments        SmsCreditPayment[]
   smsUsageLogs             SmsUsageLog[]
+  smsPurchases             SmsPurchase[]
+  smsWalletLedgers         SmsWalletLedger[]
+  smsMessages              SmsMessage[]
+  smsProviderRequestLogs   SmsProviderRequestLog[]
 
   @@unique([tenantId, name])
   @@index([tenantId, name])
@@ -1228,27 +1304,35 @@ model SubscriptionPayment {
   @@map("subscription_payments")
 }
 
-/// Prepaid SMS credits for a branch. Balance is message count, not cash.
+/// Prepaid SMS wallet for a branch. Wallet is the authority for sending.
 model BranchSmsWallet {
-  id               String   @id @default(uuid()) @db.Uuid
-  tenantId         String   @map("tenant_id") @db.Uuid
-  branchId         String   @unique @map("branch_id") @db.Uuid
-  /// Remaining SMS messages the branch may send.
-  creditsRemaining Int      @default(0) @map("credits_remaining")
-  lifetimePurchased Int     @default(0) @map("lifetime_purchased")
-  lifetimeUsed     Int      @default(0) @map("lifetime_used")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
-  tenant           Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  branch           Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  payments         SmsCreditPayment[]
-  usageLogs        SmsUsageLog[]
+  id                 String            @id @default(uuid()) @db.Uuid
+  tenantId           String            @map("tenant_id") @db.Uuid
+  branchId           String            @unique @map("branch_id") @db.Uuid
+  /// Units ready to reserve/send.
+  availableUnits     Int               @default(0) @map("available_units")
+  /// Units reserved for in-flight sends.
+  reservedUnits      Int               @default(0) @map("reserved_units")
+  lifetimePurchased  Int               @default(0) @map("lifetime_purchased")
+  lifetimeUsed       Int               @default(0) @map("lifetime_used")
+  status             String            @default("ACTIVE")
+  version            Int               @default(0)
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+  tenant             Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch             Branch            @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  payments           SmsCreditPayment[]
+  usageLogs          SmsUsageLog[]
+  purchases          SmsPurchase[]
+  ledgerEntries      SmsWalletLedger[]
+  messages           SmsMessage[]
+  providerRequestLogs SmsProviderRequestLog[]
 
   @@index([tenantId])
   @@map("branch_sms_wallets")
 }
 
-/// Pesapal top-ups that credit a branch SMS wallet.
+/// Legacy Pesapal top-ups (historical). New purchases use SmsPurchase.
 model SmsCreditPayment {
   id                String                    @id @default(uuid()) @db.Uuid
   tenantId          String                    @map("tenant_id") @db.Uuid
@@ -1258,7 +1342,6 @@ model SmsCreditPayment {
   orderTrackingId   String?                   @map("order_tracking_id")
   amount            Decimal                   @db.Decimal(14, 2)
   currency          String                    @default("UGX")
-  /// SMS credits granted when this payment completes.
   credits           Int
   status            SubscriptionPaymentStatus @default(PENDING)
   rawPayload        Json?                     @map("raw_payload")
@@ -1274,20 +1357,192 @@ model SmsCreditPayment {
   @@map("sms_credit_payments")
 }
 
-/// Audit of branch-funded SMS sends (one credit per successful send).
+/// Legacy usage rows (historical). New sends use SmsMessage + ledger.
 model SmsUsageLog {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @map("tenant_id") @db.Uuid
-  branchId    String   @map("branch_id") @db.Uuid
-  walletId    String   @map("wallet_id") @db.Uuid
+  id          String          @id @default(uuid()) @db.Uuid
+  tenantId    String          @map("tenant_id") @db.Uuid
+  branchId    String          @map("branch_id") @db.Uuid
+  walletId    String          @map("wallet_id") @db.Uuid
   purpose     String
   destination String
-  bodyPreview String   @map("body_preview")
-  createdAt   DateTime @default(now()) @map("created_at")
-  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  branch      Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  bodyPreview String          @map("body_preview")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch      Branch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
   wallet      BranchSmsWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, branchId, createdAt])
   @@map("sms_usage_logs")
+}
+
+/// Versioned SMS bundle catalogue. Frontend sends only bundleId.
+model SmsBundle {
+  id            String          @id @default(uuid()) @db.Uuid
+  code          String          @unique
+  name          String
+  priceUgx      Int             @map("price_ugx")
+  smsUnits      Int             @map("sms_units")
+  effectiveRate Decimal         @map("effective_rate") @db.Decimal(12, 4)
+  status        SmsBundleStatus @default(ACTIVE)
+  version       Int             @default(1)
+  activeFrom    DateTime        @default(now()) @map("active_from")
+  activeTo      DateTime?       @map("active_to")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+  purchases     SmsPurchase[]
+
+  @@index([status, activeFrom])
+  @@map("sms_bundles")
+}
+
+/// Bundle purchase attempt before/after Pesapal.
+model SmsPurchase {
+  id                   String            @id @default(uuid()) @db.Uuid
+  tenantId             String            @map("tenant_id") @db.Uuid
+  branchId             String            @map("branch_id") @db.Uuid
+  walletId             String            @map("wallet_id") @db.Uuid
+  bundleId             String            @map("bundle_id") @db.Uuid
+  bundleVersion        Int               @map("bundle_version")
+  bundleNameSnapshot   String            @map("bundle_name_snapshot")
+  initiatedByUserId    String            @map("initiated_by_user_id") @db.Uuid
+  amountExpected       Int               @map("amount_expected")
+  currency             String            @default("UGX")
+  smsUnitsExpected     Int               @map("sms_units_expected")
+  merchantReference    String            @unique @map("merchant_reference")
+  pesapalOrderTrackingId String?         @map("pesapal_order_tracking_id")
+  externalTransactionId  String?         @map("external_transaction_id")
+  status               SmsPurchaseStatus @default(PAYMENT_PENDING)
+  rawPayload           Json?             @map("raw_payload")
+  creditedAt           DateTime?         @map("credited_at")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+  expiresAt            DateTime          @map("expires_at")
+  tenant               Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch               Branch            @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  wallet               BranchSmsWallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  bundle               SmsBundle         @relation(fields: [bundleId], references: [id])
+
+  @@unique([externalTransactionId])
+  @@index([tenantId, branchId, status])
+  @@index([pesapalOrderTrackingId])
+  @@index([branchId, bundleId, initiatedByUserId, status, createdAt])
+  @@map("sms_purchases")
+}
+
+/// Immutable wallet ledger.
+model SmsWalletLedger {
+  id            String                    @id @default(uuid()) @db.Uuid
+  tenantId      String                    @map("tenant_id") @db.Uuid
+  branchId      String                    @map("branch_id") @db.Uuid
+  walletId      String                    @map("wallet_id") @db.Uuid
+  entryType     SmsWalletLedgerEntryType  @map("entry_type")
+  direction     SmsWalletLedgerDirection
+  units         Int
+  balanceBefore Int                       @map("balance_before")
+  balanceAfter  Int                       @map("balance_after")
+  referenceType String                    @map("reference_type")
+  referenceId   String                    @map("reference_id")
+  description   String
+  createdBy     String?                   @map("created_by")
+  createdAt     DateTime                  @default(now()) @map("created_at")
+  tenant        Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch        Branch                    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  wallet        BranchSmsWallet           @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, branchId, createdAt])
+  @@index([walletId, createdAt])
+  @@index([referenceType, referenceId])
+  @@map("sms_wallet_ledger")
+}
+
+/// Raw Pesapal / provider callback audit.
+model SmsCallbackEvent {
+  id                    String                      @id @default(uuid()) @db.Uuid
+  tenantId              String?                     @map("tenant_id") @db.Uuid
+  provider              String                      @default("pesapal")
+  externalTransactionId String?                     @map("external_transaction_id")
+  merchantReference     String?                     @map("merchant_reference")
+  payloadHash           String                      @map("payload_hash")
+  rawPayload            Json                        @map("raw_payload")
+  receivedAt            DateTime                    @default(now()) @map("received_at")
+  processingStatus      SmsCallbackProcessingStatus @default(RECEIVED) @map("processing_status")
+  tenant                Tenant?                     @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([merchantReference])
+  @@index([externalTransactionId])
+  @@index([receivedAt])
+  @@map("sms_callback_events")
+}
+
+/// Outbound SMS intent with reservation lifecycle.
+model SmsMessage {
+  id                 String            @id @default(uuid()) @db.Uuid
+  tenantId           String            @map("tenant_id") @db.Uuid
+  branchId           String            @map("branch_id") @db.Uuid
+  walletId           String            @map("wallet_id") @db.Uuid
+  recipientId        String?           @map("recipient_id")
+  recipientPhone     String            @map("recipient_phone")
+  messageType        String            @map("message_type")
+  messageBody        String            @map("message_body") @db.Text
+  triggerSource      String            @map("trigger_source")
+  triggerReferenceId String?           @map("trigger_reference_id")
+  requestedByUserId  String?           @map("requested_by_user_id") @db.Uuid
+  status             SmsMessageStatus  @default(PENDING_VALIDATION)
+  /// Acceptance ≠ delivery (Step 9).
+  deliveryStatus     SmsDeliveryStatus @default(NOT_APPLICABLE) @map("delivery_status")
+  encodingType       String?           @map("encoding_type")
+  characterCount     Int?              @map("character_count")
+  segmentsRequired   Int?              @map("segments_required")
+  idempotencyKey     String?           @unique @map("idempotency_key")
+  /// Retry chain: points at the previous attempt (never overwrite it).
+  parentMessageId    String?           @map("parent_message_id") @db.Uuid
+  attemptNumber      Int               @default(1) @map("attempt_number")
+  providerMessageId  String?           @map("provider_message_id")
+  failureReason      String?           @map("failure_reason")
+  /// When reservation must be reconciled if still RESERVED / PROVIDER_UNCERTAIN.
+  reservationExpiresAt DateTime?       @map("reservation_expires_at")
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+  sentAt             DateTime?         @map("sent_at")
+  deliveredAt        DateTime?         @map("delivered_at")
+  tenant             Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch             Branch            @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  wallet             BranchSmsWallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  parentMessage      SmsMessage?       @relation("SmsMessageRetries", fields: [parentMessageId], references: [id], onDelete: SetNull)
+  retryAttempts      SmsMessage[]      @relation("SmsMessageRetries")
+  providerRequestLogs SmsProviderRequestLog[]
+
+  @@index([tenantId, branchId, createdAt])
+  @@index([status, createdAt])
+  @@index([status, reservationExpiresAt])
+  @@index([parentMessageId])
+  @@map("sms_messages")
+}
+
+/// Non-sensitive provider request/response audit (never store credentials).
+model SmsProviderRequestLog {
+  id                String          @id @default(uuid()) @db.Uuid
+  tenantId          String?         @map("tenant_id") @db.Uuid
+  branchId          String?         @map("branch_id") @db.Uuid
+  walletId          String?         @map("wallet_id") @db.Uuid
+  smsMessageId      String?         @map("sms_message_id") @db.Uuid
+  provider          String          @default("pahappa")
+  requestTime       DateTime        @map("request_time")
+  providerEndpoint  String          @map("provider_endpoint")
+  requestReference  String          @map("request_reference")
+  requestMetadata   Json            @map("request_metadata")
+  responseCode      String?         @map("response_code")
+  providerMessageId String?         @map("provider_message_id")
+  responseTimeMs    Int             @map("response_time_ms")
+  outcome           String
+  createdAt         DateTime        @default(now()) @map("created_at")
+  tenant            Tenant?         @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  branch            Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  wallet            BranchSmsWallet? @relation(fields: [walletId], references: [id], onDelete: SetNull)
+  smsMessage        SmsMessage?     @relation(fields: [smsMessageId], references: [id], onDelete: SetNull)
+
+  @@index([smsMessageId])
+  @@index([requestReference])
+  @@index([requestTime])
+  @@map("sms_provider_request_logs")
 }

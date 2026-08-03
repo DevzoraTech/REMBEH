@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'node:crypto';
+import { evaluatePahappaImmediateResponse } from './pahappa-response';
 
 export type SmsProviderName =
   | 'mock'
@@ -7,12 +9,36 @@ export type SmsProviderName =
   | 'africastalking'
   | 'pahappa';
 
+/** Immediate provider response classification (Step 7). */
+export type SmsProviderOutcome =
+  | 'accepted'
+  | 'rejected'
+  | 'ambiguous'
+  | 'skipped';
+
+/** Non-sensitive provider call audit fields (never include credentials). */
+export type SmsProviderRequestLogPayload = {
+  requestTime: string;
+  providerEndpoint: string;
+  requestReference: string;
+  requestMetadata: Record<string, unknown>;
+  responseCode: string | null;
+  providerMessageId: string | null;
+  responseTimeMs: number;
+  outcome: SmsProviderOutcome;
+};
+
 export type SmsDeliveryResult = {
   provider: SmsProviderName;
+  /** True only on definite provider acceptance. */
   delivered: boolean;
+  outcome: SmsProviderOutcome;
   destination: string;
   message: string;
   providerReference?: string;
+  /** Stable rejection reason when outcome === 'rejected'. */
+  failureReason?: string;
+  providerLog?: SmsProviderRequestLogPayload;
 };
 
 export type PaymentRecordedSmsInput = {
@@ -39,6 +65,8 @@ export class SmsService {
   async sendText(input: {
     destination: string;
     body: string;
+    /** Correlates provider logs with sms_messages.id when available. */
+    requestReference?: string;
   }): Promise<SmsDeliveryResult> {
     const provider = this.resolveProvider();
     const destination = this.normalizeDestination(input.destination);
@@ -47,19 +75,24 @@ export class SmsService {
       return {
         provider,
         delivered: false,
+        outcome: 'skipped',
         destination: input.destination,
         message: 'Invalid SMS destination.',
       };
     }
 
     if (provider === 'pahappa') {
-      return this.sendPahappa(destination, input.body);
+      return this.sendPahappa(destination, input.body, input.requestReference);
     }
     if (provider === 'twilio') {
-      return this.sendTwilio(destination, input.body);
+      return this.sendTwilio(destination, input.body, input.requestReference);
     }
     if (provider === 'africastalking') {
-      return this.sendAfricasTalking(destination, input.body);
+      return this.sendAfricasTalking(
+        destination,
+        input.body,
+        input.requestReference,
+      );
     }
 
     this.logger.log(
@@ -68,6 +101,7 @@ export class SmsService {
     return {
       provider: 'mock',
       delivered: false,
+      outcome: 'skipped',
       destination,
       message: 'SMS stub logged (SMS_PROVIDER=mock or keys missing).',
     };
@@ -230,6 +264,7 @@ export class SmsService {
   private async sendPahappa(
     destination: string,
     body: string,
+    requestReference?: string,
   ): Promise<SmsDeliveryResult> {
     const username =
       this.configService.get<string>('PAHAPPA_USERNAME')?.trim() ||
@@ -245,7 +280,12 @@ export class SmsService {
     const number = this.toEgosmsNumber(destination);
     const message = body.slice(0, 480);
     const apiUrl = this.pahappaApiUrl();
+    const reference =
+      requestReference?.trim() || `sms_${randomUUID().replaceAll('-', '')}`;
+    const requestTime = new Date();
+    const startedAt = Date.now();
 
+    // Credentials are sent to the provider but never written to logs.
     const payload = {
       method: 'SendSms',
       userdata: { username, password },
@@ -259,6 +299,15 @@ export class SmsService {
       ],
     };
 
+    const requestMetadata: Record<string, unknown> = {
+      method: 'SendSms',
+      destinationMsisdn: number,
+      senderId: sender.slice(0, 11),
+      priority,
+      characterCount: message.length,
+      hasCredentials: Boolean(username && password),
+    };
+
     try {
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -268,63 +317,177 @@ export class SmsService {
         },
         body: JSON.stringify(payload),
       });
+      const responseTimeMs = Date.now() - startedAt;
       const rawText = await response.text();
       let raw: Record<string, unknown> = {};
       try {
         raw = JSON.parse(rawText) as Record<string, unknown>;
       } catch {
-        this.logger.warn(
-          `Pahappa SMS non-JSON response: ${rawText.slice(0, 240)}`,
-        );
+        const providerLog = this.buildProviderLog({
+          requestTime,
+          providerEndpoint: apiUrl,
+          requestReference: reference,
+          requestMetadata,
+          responseCode: `HTTP_${response.status}`,
+          providerMessageId: null,
+          responseTimeMs,
+          outcome: 'ambiguous',
+        });
+        this.writeProviderAuditLog(providerLog);
         return {
           provider: 'pahappa',
           delivered: false,
+          outcome: 'ambiguous',
           destination,
           message: 'Pahappa SMS returned an invalid response.',
+          providerLog,
         };
       }
+
       const status = String(raw.Status ?? raw.status ?? '').toUpperCase();
-      const reference = String(
-        raw.MsgFollowUpUniqueCode ?? raw.msgFollowUpUniqueCode ?? '',
+      const providerMessageId =
+        String(
+          raw.MsgFollowUpUniqueCode ??
+            raw.msgFollowUpUniqueCode ??
+            raw.MessageId ??
+            raw.messageId ??
+            '',
+        ).trim() || null;
+      const providerDetail = String(
+        raw.Message ?? raw.message ?? `HTTP ${response.status}`,
       );
 
-      if (!response.ok || status !== 'OK') {
-        const detail = String(
-          raw.Message ?? raw.message ?? `HTTP ${response.status}`,
-        );
-        this.logger.warn(`Pahappa SMS failed: ${detail}`);
+      // Step 7 — evaluate immediate provider response.
+      const evaluation = evaluatePahappaImmediateResponse({
+        httpOk: response.ok,
+        status,
+        providerMessageId,
+        providerDetail,
+      });
+
+      if (evaluation.outcome === 'accepted') {
+        const providerLog = this.buildProviderLog({
+          requestTime,
+          providerEndpoint: apiUrl,
+          requestReference: reference,
+          requestMetadata,
+          responseCode: status || `HTTP_${response.status}`,
+          providerMessageId,
+          responseTimeMs,
+          outcome: 'accepted',
+        });
+        this.writeProviderAuditLog(providerLog);
         return {
           provider: 'pahappa',
-          delivered: false,
+          delivered: true,
+          outcome: 'accepted',
           destination,
-          message: `Pahappa SMS could not be sent: ${detail}`,
+          message: 'SMS accepted by Pahappa EgoSMS.',
+          providerReference: providerMessageId ?? undefined,
+          providerLog,
         };
       }
 
-      this.logger.log(
-        `Pahappa SMS sent to ${number} followUp=${reference || 'n/a'}`,
-      );
-      return {
-        provider: 'pahappa',
-        delivered: true,
-        destination,
-        message: 'SMS sent via Pahappa EgoSMS.',
-        providerReference: reference || undefined,
-      };
-    } catch (error) {
-      this.logger.warn(`Pahappa SMS error: ${String(error)}`);
+      const outcome = evaluation.outcome;
+      const failureReason =
+        evaluation.outcome === 'rejected'
+          ? evaluation.reason
+          : 'provider_ambiguous';
+      const providerLog = this.buildProviderLog({
+        requestTime,
+        providerEndpoint: apiUrl,
+        requestReference: reference,
+        requestMetadata: {
+          ...requestMetadata,
+          providerDetail: providerDetail.slice(0, 240),
+          failureReason,
+        },
+        responseCode: status || `HTTP_${response.status}`,
+        providerMessageId,
+        responseTimeMs,
+        outcome,
+      });
+      this.writeProviderAuditLog(providerLog);
       return {
         provider: 'pahappa',
         delivered: false,
+        outcome,
+        destination,
+        message: `Pahappa SMS could not be sent: ${providerDetail}`,
+        providerReference: providerMessageId ?? undefined,
+        failureReason,
+        providerLog,
+      };
+    } catch (error) {
+      const responseTimeMs = Date.now() - startedAt;
+      const providerLog = this.buildProviderLog({
+        requestTime,
+        providerEndpoint: apiUrl,
+        requestReference: reference,
+        requestMetadata: {
+          ...requestMetadata,
+          error: error instanceof Error ? error.name : 'request_failed',
+        },
+        responseCode: null,
+        providerMessageId: null,
+        responseTimeMs,
+        outcome: 'ambiguous',
+      });
+      this.writeProviderAuditLog(providerLog);
+      return {
+        provider: 'pahappa',
+        delivered: false,
+        outcome: 'ambiguous',
         destination,
         message: 'Pahappa SMS request failed.',
+        providerLog,
       };
     }
+  }
+
+  private buildProviderLog(input: {
+    requestTime: Date;
+    providerEndpoint: string;
+    requestReference: string;
+    requestMetadata: Record<string, unknown>;
+    responseCode: string | null;
+    providerMessageId: string | null;
+    responseTimeMs: number;
+    outcome: SmsProviderOutcome;
+  }): SmsProviderRequestLogPayload {
+    return {
+      requestTime: input.requestTime.toISOString(),
+      providerEndpoint: input.providerEndpoint,
+      requestReference: input.requestReference,
+      requestMetadata: input.requestMetadata,
+      responseCode: input.responseCode,
+      providerMessageId: input.providerMessageId,
+      responseTimeMs: input.responseTimeMs,
+      outcome: input.outcome,
+    };
+  }
+
+  /** Console audit only — never includes passwords/API keys. */
+  private writeProviderAuditLog(log: SmsProviderRequestLogPayload) {
+    this.logger.log(
+      JSON.stringify({
+        type: 'sms_provider_request',
+        requestTime: log.requestTime,
+        providerEndpoint: log.providerEndpoint,
+        requestReference: log.requestReference,
+        requestMetadata: log.requestMetadata,
+        responseCode: log.responseCode,
+        providerMessageId: log.providerMessageId,
+        responseTimeMs: log.responseTimeMs,
+        outcome: log.outcome,
+      }),
+    );
   }
 
   private async sendTwilio(
     destination: string,
     body: string,
+    requestReference?: string,
   ): Promise<SmsDeliveryResult> {
     const accountSid = this.configService
       .get<string>('TWILIO_ACCOUNT_SID')!
@@ -339,42 +502,97 @@ export class SmsService {
       From: from,
       Body: body,
     });
+    const reference =
+      requestReference?.trim() || `sms_${randomUUID().replaceAll('-', '')}`;
+    const requestTime = new Date();
+    const startedAt = Date.now();
+    const endpoint = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
 
     try {
-      const response = await fetch(
-        `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Basic ${auth}`,
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: params.toString(),
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${auth}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
         },
-      );
+        body: params.toString(),
+      });
+      const responseTimeMs = Date.now() - startedAt;
       if (!response.ok) {
-        const text = await response.text();
-        this.logger.warn(`Twilio SMS failed: ${response.status} ${text}`);
+        const providerLog = this.buildProviderLog({
+          requestTime,
+          providerEndpoint: endpoint,
+          requestReference: reference,
+          requestMetadata: {
+            method: 'Messages.create',
+            destinationMsisdn: destination,
+            from,
+          },
+          responseCode: `HTTP_${response.status}`,
+          providerMessageId: null,
+          responseTimeMs,
+          outcome: 'rejected',
+        });
+        this.writeProviderAuditLog(providerLog);
         return {
           provider: 'twilio',
           delivered: false,
+          outcome: 'rejected',
           destination,
           message: 'Twilio SMS could not be sent.',
+          providerLog,
         };
       }
+      const raw = (await response.json().catch(() => ({}))) as {
+        sid?: string;
+      };
+      const providerLog = this.buildProviderLog({
+        requestTime,
+        providerEndpoint: endpoint,
+        requestReference: reference,
+        requestMetadata: {
+          method: 'Messages.create',
+          destinationMsisdn: destination,
+          from,
+        },
+        responseCode: `HTTP_${response.status}`,
+        providerMessageId: raw.sid ?? null,
+        responseTimeMs,
+        outcome: 'accepted',
+      });
+      this.writeProviderAuditLog(providerLog);
       return {
         provider: 'twilio',
         delivered: true,
+        outcome: 'accepted',
         destination,
-        message: 'SMS sent via Twilio.',
+        message: 'SMS accepted by Twilio.',
+        providerReference: raw.sid,
+        providerLog,
       };
     } catch (error) {
-      this.logger.warn(`Twilio SMS error: ${String(error)}`);
+      const providerLog = this.buildProviderLog({
+        requestTime,
+        providerEndpoint: endpoint,
+        requestReference: reference,
+        requestMetadata: {
+          method: 'Messages.create',
+          destinationMsisdn: destination,
+          error: error instanceof Error ? error.name : 'request_failed',
+        },
+        responseCode: null,
+        providerMessageId: null,
+        responseTimeMs: Date.now() - startedAt,
+        outcome: 'ambiguous',
+      });
+      this.writeProviderAuditLog(providerLog);
       return {
         provider: 'twilio',
         delivered: false,
+        outcome: 'ambiguous',
         destination,
         message: 'Twilio SMS request failed.',
+        providerLog,
       };
     }
   }
@@ -382,6 +600,7 @@ export class SmsService {
   private async sendAfricasTalking(
     destination: string,
     body: string,
+    requestReference?: string,
   ): Promise<SmsDeliveryResult> {
     const username = this.configService
       .get<string>('AFRICASTALKING_USERNAME')!
@@ -400,44 +619,94 @@ export class SmsService {
     });
     if (from) params.set('from', from);
 
+    const reference =
+      requestReference?.trim() || `sms_${randomUUID().replaceAll('-', '')}`;
+    const requestTime = new Date();
+    const startedAt = Date.now();
+    const endpoint = 'https://api.africastalking.com/version1/messaging';
+
     try {
-      const response = await fetch(
-        'https://api.africastalking.com/version1/messaging',
-        {
-          method: 'POST',
-          headers: {
-            apiKey,
-            Accept: 'application/json',
-            'Content-Type': 'application/x-www-form-urlencoded',
-          },
-          body: params.toString(),
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          apiKey,
+          Accept: 'application/json',
+          'Content-Type': 'application/x-www-form-urlencoded',
         },
-      );
+        body: params.toString(),
+      });
+      const responseTimeMs = Date.now() - startedAt;
       if (!response.ok) {
-        const text = await response.text();
-        this.logger.warn(
-          `Africa's Talking SMS failed: ${response.status} ${text}`,
-        );
+        const providerLog = this.buildProviderLog({
+          requestTime,
+          providerEndpoint: endpoint,
+          requestReference: reference,
+          requestMetadata: {
+            method: 'messaging',
+            destinationMsisdn: destination,
+            from: from ?? null,
+          },
+          responseCode: `HTTP_${response.status}`,
+          providerMessageId: null,
+          responseTimeMs,
+          outcome: 'rejected',
+        });
+        this.writeProviderAuditLog(providerLog);
         return {
           provider: 'africastalking',
           delivered: false,
+          outcome: 'rejected',
           destination,
           message: "Africa's Talking SMS could not be sent.",
+          providerLog,
         };
       }
+      const providerLog = this.buildProviderLog({
+        requestTime,
+        providerEndpoint: endpoint,
+        requestReference: reference,
+        requestMetadata: {
+          method: 'messaging',
+          destinationMsisdn: destination,
+          from: from ?? null,
+        },
+        responseCode: `HTTP_${response.status}`,
+        providerMessageId: null,
+        responseTimeMs,
+        outcome: 'accepted',
+      });
+      this.writeProviderAuditLog(providerLog);
       return {
         provider: 'africastalking',
         delivered: true,
+        outcome: 'accepted',
         destination,
-        message: "SMS sent via Africa's Talking.",
+        message: "SMS accepted by Africa's Talking.",
+        providerLog,
       };
     } catch (error) {
-      this.logger.warn(`Africa's Talking SMS error: ${String(error)}`);
+      const providerLog = this.buildProviderLog({
+        requestTime,
+        providerEndpoint: endpoint,
+        requestReference: reference,
+        requestMetadata: {
+          method: 'messaging',
+          destinationMsisdn: destination,
+          error: error instanceof Error ? error.name : 'request_failed',
+        },
+        responseCode: null,
+        providerMessageId: null,
+        responseTimeMs: Date.now() - startedAt,
+        outcome: 'ambiguous',
+      });
+      this.writeProviderAuditLog(providerLog);
       return {
         provider: 'africastalking',
         delivered: false,
+        outcome: 'ambiguous',
         destination,
         message: "Africa's Talking SMS request failed.",
+        providerLog,
       };
     }
   }

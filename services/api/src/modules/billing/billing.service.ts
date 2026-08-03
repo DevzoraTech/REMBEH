@@ -15,6 +15,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   BranchSubscriptionStatus,
   Prisma,
+  SmsPurchaseStatus,
   SubscriptionPaymentStatus,
 } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
@@ -206,25 +207,34 @@ export class BillingService implements OnModuleInit {
       ? { tenantId: user.tenantId }
       : { tenantId: user.tenantId, branchId: user.branchId! };
 
-    const [subscriptionRows, smsRows] = await Promise.all([
-      this.prisma.subscriptionPayment.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        take: 100,
-        include: {
-          branch: { select: { name: true } },
-          plan: { select: { name: true } },
-        },
-      }),
-      this.prisma.smsCreditPayment.findMany({
-        where,
-        orderBy: { createdAt: 'desc' },
-        take: 100,
-        include: {
-          branch: { select: { name: true } },
-        },
-      }),
-    ]);
+    const [subscriptionRows, smsPurchaseRows, smsLegacyRows] =
+      await Promise.all([
+        this.prisma.subscriptionPayment.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          take: 100,
+          include: {
+            branch: { select: { name: true } },
+            plan: { select: { name: true } },
+          },
+        }),
+        this.prisma.smsPurchase.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          take: 100,
+          include: {
+            branch: { select: { name: true } },
+          },
+        }),
+        this.prisma.smsCreditPayment.findMany({
+          where,
+          orderBy: { createdAt: 'desc' },
+          take: 100,
+          include: {
+            branch: { select: { name: true } },
+          },
+        }),
+      ]);
 
     const subscriptionPayments: SubscriptionPaymentRowContract[] =
       subscriptionRows.map((row) => {
@@ -267,8 +277,37 @@ export class BillingService implements OnModuleInit {
         };
       });
 
-    const smsPayments: SubscriptionPaymentRowContract[] = smsRows.map(
-      (row) => {
+    const smsPurchasePayments: SubscriptionPaymentRowContract[] =
+      smsPurchaseRows.map((row) => {
+        const paid = row.status === SmsPurchaseStatus.CREDITED;
+        const failed =
+          row.status === SmsPurchaseStatus.PAYMENT_FAILED ||
+          row.status === SmsPurchaseStatus.PAYMENT_MISMATCH ||
+          row.status === SmsPurchaseStatus.EXPIRED ||
+          row.status === SmsPurchaseStatus.CANCELLED_BY_USER;
+        return {
+          id: row.id,
+          date: (row.creditedAt ?? row.createdAt).toISOString(),
+          branchId: row.branchId,
+          branchName: row.branch.name,
+          kind: 'sms' as const,
+          transaction: row.bundleNameSnapshot,
+          periodLabel: `${row.smsUnitsExpected.toLocaleString('en-UG')} SMS`,
+          amount: row.amountExpected,
+          currency: row.currency,
+          credits: row.smsUnitsExpected,
+          paymentMethod: this.paymentMethodFromPayload(row.rawPayload),
+          status: paid ? 'Paid' : failed ? 'Failed' : 'Pending',
+          receipt: paid
+            ? `#${row.merchantReference.slice(-8).toUpperCase()}`
+            : null,
+          canRetry: failed,
+          bundleId: row.bundleId,
+        };
+      });
+
+    const smsLegacyPayments: SubscriptionPaymentRowContract[] =
+      smsLegacyRows.map((row) => {
         const paid = row.status === SubscriptionPaymentStatus.COMPLETED;
         const failed = row.status === SubscriptionPaymentStatus.FAILED;
         const isWelcome = row.merchantReference.startsWith('pro_welcome_');
@@ -292,14 +331,15 @@ export class BillingService implements OnModuleInit {
           receipt: paid
             ? `#${row.merchantReference.slice(-8).toUpperCase()}`
             : null,
-          canRetry: failed && !isWelcome,
+          canRetry: false,
         };
-      },
-    );
+      });
 
-    const payments = [...subscriptionPayments, ...smsPayments].sort(
-      (a, b) => Date.parse(b.date) - Date.parse(a.date),
-    );
+    const payments = [
+      ...subscriptionPayments,
+      ...smsPurchasePayments,
+      ...smsLegacyPayments,
+    ].sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
 
     return { payments: payments.slice(0, 100) };
   }

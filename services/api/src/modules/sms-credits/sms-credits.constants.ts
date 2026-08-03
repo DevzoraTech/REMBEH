@@ -1,21 +1,31 @@
 /**
- * Branch SMS prepaid pricing (server-only).
- *
- * Branches buy message credits at UGX 40 per SMS. Supplier tariffs and company
- * margin must never appear in API responses or the web UI.
+ * Branch SMS prepaid — catalogue-driven bundles (server prices only).
+ * Frontend must never send price or unit counts on purchase.
  */
-export const BRANCH_SMS_UNIT_PRICE_UGX = 40;
 
-/** Suggested top-up amounts shown in the app (UGX). */
-export const BRANCH_SMS_TOP_UP_PRESETS_UGX = [10_000, 20_000, 50_000] as const;
-
-/**
- * One-time SMS credits granted when a branch completes its first Pro plan
- * purchase (not renewals).
- */
+/** One-time SMS credits granted on a branch's first Pro plan purchase. */
 export const PRO_PLAN_WELCOME_SMS_CREDITS = 140;
 
-export function creditsForTopUpAmount(amountUgx: number): number {
-  if (!Number.isFinite(amountUgx) || amountUgx <= 0) return 0;
-  return Math.floor(amountUgx / BRANCH_SMS_UNIT_PRICE_UGX);
-}
+/** Reuse an unexpired pending purchase for the same branch+bundle+user. */
+export const SMS_PURCHASE_DUPLICATE_WINDOW_MS = 5 * 60 * 1000;
+
+/** How long a checkout stays payable before expiry. */
+export const SMS_PURCHASE_EXPIRES_MS = 30 * 60 * 1000;
+
+/** Ledger reference type for Pro welcome grant (idempotent per branch). */
+export const SMS_WELCOME_GRANT_REFERENCE_TYPE = 'pro_welcome_grant';
+
+/** Hold uncertain provider responses before reconciliation releases the reserve. */
+export const SMS_UNCERTAIN_RESERVATION_TTL_MS = 15 * 60 * 1000;
+
+/** Stale RESERVED rows (send never finished) are released by the reconciler. */
+export const SMS_RESERVED_STALE_TTL_MS = 10 * 60 * 1000;
+
+/** Statuses that may be retried by a user (not uncertain — control #7). */
+export const SMS_RETRYABLE_STATUSES = [
+  'PROVIDER_FAILED',
+  'BLOCKED_PROVIDER_UNAVAILABLE',
+  'FAILED_VALIDATION',
+  'FAILED_INSUFFICIENT_CREDITS',
+  'RELEASED',
+] as const;

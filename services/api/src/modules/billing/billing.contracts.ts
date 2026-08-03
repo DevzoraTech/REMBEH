@@ -74,4 +74,6 @@ export type SubscriptionPaymentRowContract = {
   status: string;
   receipt: string | null;
   canRetry: boolean;
+  /** Present for catalogue SMS purchases (retry reuses bundleId). */
+  bundleId?: string | null;
 };

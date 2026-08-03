@@ -18,6 +18,12 @@ import { SmsCreditsService } from './sms-credits.service';
 export class SmsCreditsController {
   constructor(private readonly smsCreditsService: SmsCreditsService) {}
 
+  /** Active catalogue — server prices only. */
+  @Get('bundles')
+  listBundles() {
+    return this.smsCreditsService.listBundles();
+  }
+
   /** Manager: own branch. Owner: sum across branches. */
   @Get('balance')
   getBalance(@CurrentUser() user: AuthenticatedUser) {
@@ -33,16 +39,36 @@ export class SmsCreditsController {
     return this.smsCreditsService.getWallet(user, branchId);
   }
 
-  @Post('branches/:branchId/top-up')
-  startTopUp(
+  @Get('ledger')
+  listLedger(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('branchId', ParseUUIDPipe) branchId: string,
-    @Body() body: { amountUgx?: number },
+    @Query('branchId') branchId?: string,
   ) {
-    return this.smsCreditsService.startTopUp(
-      user,
-      branchId,
-      Number(body?.amountUgx),
-    );
+    return this.smsCreditsService.listLedger(user, branchId);
+  }
+
+  /** Body: { bundleId, branchId? } — never price/units from client. */
+  @Post('purchases')
+  startPurchase(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: { bundleId?: string; branchId?: string },
+  ) {
+    return this.smsCreditsService.startPurchase(user, {
+      bundleId: body?.bundleId ?? '',
+      branchId: body?.branchId,
+    });
+  }
+
+  /**
+   * Workflow C — retry a failed message as a new attempt.
+   * Body may optionally override destination/body after edits.
+   */
+  @Post('messages/:messageId/retry')
+  retryMessage(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
+    @Body() body?: { destination?: string; body?: string },
+  ) {
+    return this.smsCreditsService.retryBranchSms(user, messageId, body);
   }
 }

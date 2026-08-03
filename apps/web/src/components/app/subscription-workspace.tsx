@@ -66,13 +66,20 @@ type CheckoutResponse = {
 type SmsWallet = {
   branchId: string;
   branchName: string;
-  creditsRemaining: number;
+  availableUnits: number;
+  reservedUnits: number;
   canSendSms: boolean;
-  topUpPresets: Array<{
-    amountUgx: number;
-    currency: string;
-    credits: number;
-  }>;
+  creditsRemaining?: number;
+};
+
+type SmsBundle = {
+  id: string;
+  code: string;
+  name: string;
+  priceUgx: number;
+  smsUnits: number;
+  currency: string;
+  version: number;
 };
 
 type PaymentRow = {
@@ -90,6 +97,7 @@ type PaymentRow = {
   status: string;
   receipt: string | null;
   canRetry: boolean;
+  bundleId?: string | null;
 };
 
 const PRO_BENEFITS = [
@@ -223,8 +231,12 @@ function SubscriptionWorkspaceContent({
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [smsWallet, setSmsWallet] = useState<SmsWallet | null>(null);
+  const [smsBundles, setSmsBundles] = useState<SmsBundle[]>([]);
   const [smsLoading, setSmsLoading] = useState(false);
-  const [toppingUpAmount, setToppingUpAmount] = useState<number | null>(null);
+  const [confirmBundle, setConfirmBundle] = useState<SmsBundle | null>(null);
+  const [purchasingBundleId, setPurchasingBundleId] = useState<string | null>(
+    null,
+  );
   const paid = searchParams.get("paid") === "1";
   const smsPaid = searchParams.get("smsPaid") === "1";
   const tabParam = searchParams.get("tab");
@@ -323,17 +335,29 @@ function SubscriptionWorkspaceContent({
       setSmsLoading(true);
       try {
         const params = new URLSearchParams({ branchId });
-        const response = await fetch(
-          `${apiBaseUrl}/sms-credits/wallet?${params.toString()}`,
-          { headers: authHeaders(session) },
-        );
-        const payload = await readApiJson<
+        const [walletRes, bundlesRes] = await Promise.all([
+          fetch(`${apiBaseUrl}/sms-credits/wallet?${params.toString()}`, {
+            headers: authHeaders(session),
+          }),
+          fetch(`${apiBaseUrl}/sms-credits/bundles`, {
+            headers: authHeaders(session),
+          }),
+        ]);
+        const walletPayload = await readApiJson<
           SmsWallet & { message?: string | string[] }
-        >(response);
-        if (!response.ok) {
-          throw new Error(formatApiError(payload.message));
+        >(walletRes);
+        if (!walletRes.ok) {
+          throw new Error(formatApiError(walletPayload.message));
         }
-        setSmsWallet(payload);
+        setSmsWallet(walletPayload);
+
+        const bundlesPayload = await readApiJson<{
+          bundles?: SmsBundle[];
+          message?: string | string[];
+        }>(bundlesRes);
+        if (bundlesRes.ok) {
+          setSmsBundles(bundlesPayload.bundles ?? []);
+        }
       } catch (err) {
         setError(friendlyError(err));
         setSmsWallet(null);
@@ -473,24 +497,21 @@ function SubscriptionWorkspaceContent({
     }
   }
 
-  async function startSmsTopUp(amountUgx: number, branchId?: string) {
+  async function startSmsPurchase(bundleId: string, branchId?: string) {
     const targetBranchId = branchId ?? focusedBranchId;
-    if (!session || !targetBranchId) return;
-    setToppingUpAmount(amountUgx);
+    if (!session || !targetBranchId || !bundleId) return;
+    setPurchasingBundleId(bundleId);
     setPayingBranchId(targetBranchId);
     setError(null);
     try {
-      const response = await fetch(
-        `${apiBaseUrl}/sms-credits/branches/${targetBranchId}/top-up`,
-        {
-          method: "POST",
-          headers: {
-            ...authHeaders(session),
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ amountUgx }),
+      const response = await fetch(`${apiBaseUrl}/sms-credits/purchases`, {
+        method: "POST",
+        headers: {
+          ...authHeaders(session),
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({ bundleId, branchId: targetBranchId }),
+      });
       const payload = await readApiJson<
         CheckoutResponse & { message?: string | string[] }
       >(response);
@@ -503,7 +524,7 @@ function SubscriptionWorkspaceContent({
       window.location.assign(payload.redirectUrl);
     } catch (err) {
       setError(friendlyError(err));
-      setToppingUpAmount(null);
+      setPurchasingBundleId(null);
       setPayingBranchId(null);
     }
   }
@@ -622,9 +643,30 @@ function SubscriptionWorkspaceContent({
         ) : null}
 
         {smsPaid ? (
-          <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-950">
-            SMS top-up received. Updating your balance…
-          </p>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+            <p className="font-semibold">SMS credits received</p>
+            <p className="mt-1 text-emerald-900/90">
+              {smsLoading && !smsWallet ? (
+                "Updating your balance…"
+              ) : (
+                <>
+                  New available balance:{" "}
+                  <span className="font-bold tabular-nums">
+                    {(
+                      smsWallet?.availableUnits ??
+                      smsWallet?.creditsRemaining ??
+                      0
+                    ).toLocaleString("en-UG")}{" "}
+                    SMS
+                  </span>
+                  {focusedBranch?.branchName
+                    ? ` on ${focusedBranch.branchName}`
+                    : ""}
+                  .
+                </>
+              )}
+            </p>
+          </div>
         ) : null}
 
         {error ? (
@@ -792,7 +834,7 @@ function SubscriptionWorkspaceContent({
                       Prepaid SMS credits
                     </h2>
                     <p className="mt-1 text-sm text-slate-600">
-                      Buy credits for borrower alerts and reminders on this
+                      Buy a bundle for borrower alerts and reminders on this
                       branch. OTP and platform messages stay free.
                     </p>
                     <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -801,16 +843,26 @@ function SubscriptionWorkspaceContent({
                           <Loader2 className="size-3.5 animate-spin text-slate-400" />
                         ) : (
                           <>
-                            {(smsWallet?.creditsRemaining ?? 0).toLocaleString(
-                              "en-UG",
-                            )}{" "}
-                            credits left
+                            {(
+                              smsWallet?.availableUnits ??
+                              smsWallet?.creditsRemaining ??
+                              0
+                            ).toLocaleString("en-UG")}{" "}
+                            available
                           </>
                         )}
                       </span>
+                      {(smsWallet?.reservedUnits ?? 0) > 0 ? (
+                        <span className="text-xs font-medium text-slate-500">
+                          {(smsWallet?.reservedUnits ?? 0).toLocaleString(
+                            "en-UG",
+                          )}{" "}
+                          reserved
+                        </span>
+                      ) : null}
                       {!smsWallet?.canSendSms && !smsLoading ? (
                         <span className="text-xs font-medium text-amber-700">
-                          Top up to keep messaging
+                          Buy a bundle to keep messaging
                         </span>
                       ) : null}
                     </div>
@@ -819,66 +871,139 @@ function SubscriptionWorkspaceContent({
               </div>
             </article>
 
-            {focusedBranchId ? (
-              <article className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+            {confirmBundle && focusedBranchId ? (
+              <article className="rounded-2xl border border-[#07885f]/40 bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
                 <h3 className="text-sm font-semibold text-[#070b18]">
-                  Top up SMS credits
+                  Confirm purchase
                 </h3>
                 <p className="mt-1 text-xs text-slate-500">
-                  Choose a pack for{" "}
-                  {focusedBranch?.branchName ?? "this branch"}.
+                  Review the details from the catalogue, then continue to
+                  payment.
                 </p>
-                <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                  {(smsWallet?.topUpPresets ?? []).map((preset, index) => {
-                    const busy = toppingUpAmount === preset.amountUgx;
-                    const popular = index === 1;
-                    return (
-                      <button
-                        key={preset.amountUgx}
-                        type="button"
-                        disabled={toppingUpAmount != null}
-                        onClick={() => void startSmsTopUp(preset.amountUgx)}
-                        className={`flex min-h-[88px] flex-col items-start justify-between rounded-xl border px-3.5 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                          popular
-                            ? "border-[#07885f] bg-[#07885f] text-white hover:bg-[#067352]"
-                            : "border-[var(--line)] bg-[#f6f8fb] text-[#070b18] hover:border-[#07885f] hover:bg-[#f3faf6]"
-                        }`}
-                      >
-                        {busy ? (
-                          <Loader2
-                            className={`size-4 animate-spin ${
-                              popular ? "text-white" : "text-[#07885f]"
-                            }`}
-                          />
-                        ) : (
-                          <>
-                            <span>
-                              <span className="block text-lg font-bold tabular-nums">
-                                {formatMoney(preset.amountUgx, preset.currency)}
-                              </span>
-                              <span
-                                className={`mt-1 block text-xs font-medium ${
-                                  popular ? "text-white/80" : "text-slate-500"
-                                }`}
-                              >
-                                {preset.credits.toLocaleString("en-UG")} SMS
-                              </span>
+                <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+                  <div className="rounded-xl bg-[#f6f8fb] px-3 py-2">
+                    <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                      Bundle
+                    </dt>
+                    <dd className="mt-0.5 font-semibold text-[#070b18]">
+                      {confirmBundle.name}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl bg-[#f6f8fb] px-3 py-2">
+                    <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                      Branch
+                    </dt>
+                    <dd className="mt-0.5 font-semibold text-[#070b18]">
+                      {focusedBranch?.branchName ?? "This branch"}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl bg-[#f6f8fb] px-3 py-2">
+                    <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                      SMS units
+                    </dt>
+                    <dd className="mt-0.5 font-semibold tabular-nums text-[#070b18]">
+                      {confirmBundle.smsUnits.toLocaleString("en-UG")}
+                    </dd>
+                  </div>
+                  <div className="rounded-xl bg-[#f6f8fb] px-3 py-2">
+                    <dt className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                      Amount
+                    </dt>
+                    <dd className="mt-0.5 font-semibold tabular-nums text-[#070b18]">
+                      {formatMoney(
+                        confirmBundle.priceUgx,
+                        confirmBundle.currency,
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={purchasingBundleId != null}
+                    onClick={() =>
+                      void startSmsPurchase(confirmBundle.id, focusedBranchId)
+                    }
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#07885f] px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(7,136,95,0.22)] transition hover:bg-[#067352] disabled:opacity-55"
+                  >
+                    {purchasingBundleId === confirmBundle.id ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : null}
+                    Continue to payment
+                  </button>
+                  <button
+                    type="button"
+                    disabled={purchasingBundleId != null}
+                    onClick={() => setConfirmBundle(null)}
+                    className="inline-flex h-10 items-center justify-center rounded-xl border border-[var(--line)] px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-55"
+                  >
+                    Back
+                  </button>
+                </div>
+              </article>
+            ) : focusedBranchId ? (
+              <article className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+                <h3 className="text-sm font-semibold text-[#070b18]">
+                  Choose an SMS bundle
+                </h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  Packs for {focusedBranch?.branchName ?? "this branch"}. Prices
+                  come from the server catalogue.
+                </p>
+                {smsLoading && smsBundles.length === 0 ? (
+                  <div className="mt-4 flex items-center gap-2 text-sm text-slate-500">
+                    <Loader2 className="size-4 animate-spin" />
+                    Loading bundles…
+                  </div>
+                ) : smsBundles.length === 0 ? (
+                  <p className="mt-4 text-sm text-slate-500">
+                    No SMS bundles are available right now.
+                  </p>
+                ) : (
+                  <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                    {smsBundles.map((bundle, index) => {
+                      const popular = index === 1;
+                      return (
+                        <button
+                          key={bundle.id}
+                          type="button"
+                          disabled={purchasingBundleId != null}
+                          onClick={() => setConfirmBundle(bundle)}
+                          className={`flex min-h-[88px] flex-col items-start justify-between rounded-xl border px-3.5 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                            popular
+                              ? "border-[#07885f] bg-[#07885f] text-white hover:bg-[#067352]"
+                              : "border-[var(--line)] bg-[#f6f8fb] text-[#070b18] hover:border-[#07885f] hover:bg-[#f3faf6]"
+                          }`}
+                        >
+                          <span>
+                            <span className="block text-sm font-semibold">
+                              {bundle.name}
+                            </span>
+                            <span className="mt-1 block text-lg font-bold tabular-nums">
+                              {formatMoney(bundle.priceUgx, bundle.currency)}
                             </span>
                             <span
-                              className={`mt-3 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] ${
-                                popular
-                                  ? "bg-white/20 text-white"
-                                  : "bg-white text-[#07885f]"
+                              className={`mt-1 block text-xs font-medium ${
+                                popular ? "text-white/80" : "text-slate-500"
                               }`}
                             >
-                              Buy
+                              {bundle.smsUnits.toLocaleString("en-UG")} SMS
                             </span>
-                          </>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
+                          </span>
+                          <span
+                            className={`mt-3 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.04em] ${
+                              popular
+                                ? "bg-white/20 text-white"
+                                : "bg-white text-[#07885f]"
+                            }`}
+                          >
+                            Select
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </article>
             ) : (
               <p className="rounded-xl border border-[var(--line)] bg-white px-4 py-8 text-center text-sm text-slate-500">
@@ -942,7 +1067,7 @@ function SubscriptionWorkspaceContent({
               <p className="rounded-xl bg-slate-50 px-3 py-8 text-center text-sm text-slate-500">
                 {(activeTab === "sms" ? smsPayments : planPayments).length === 0
                   ? activeTab === "sms"
-                    ? "No SMS top-ups yet."
+                    ? "No SMS purchases yet."
                     : "No plan payments yet."
                   : "No payments match these filters."}
               </p>
@@ -974,8 +1099,8 @@ function SubscriptionWorkspaceContent({
                       const retrying =
                         payingBranchId === row.branchId &&
                         (isSms
-                          ? toppingUpAmount === Math.round(row.amount)
-                          : toppingUpAmount == null);
+                          ? purchasingBundleId === row.bundleId
+                          : purchasingBundleId == null);
                       const failed = row.status === "Failed" || row.canRetry;
                       const isPaid = row.status === "Paid";
                       return (
@@ -1023,13 +1148,20 @@ function SubscriptionWorkspaceContent({
                             {failed ? (
                               <button
                                 type="button"
-                                disabled={retrying || toppingUpAmount != null}
+                                disabled={
+                                  retrying || purchasingBundleId != null
+                                }
                                 onClick={() => {
                                   if (isSms) {
-                                    void startSmsTopUp(
-                                      Math.round(row.amount),
-                                      row.branchId,
-                                    );
+                                    if (row.bundleId) {
+                                      void startSmsPurchase(
+                                        row.bundleId,
+                                        row.branchId,
+                                      );
+                                      return;
+                                    }
+                                    setActiveTab("sms");
+                                    setFocusedBranchId(row.branchId);
                                     return;
                                   }
                                   void startCheckout(row.branchId);

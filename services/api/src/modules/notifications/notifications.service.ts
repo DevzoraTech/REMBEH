@@ -146,6 +146,124 @@ export class NotificationsService {
     };
   }
 
+  /** User receipt after SMS bundle credits land. */
+  async sendSmsPurchaseReceiptEmail(input: {
+    destination: string;
+    payerName: string;
+    branchName: string;
+    bundleName: string;
+    amountUgx: number;
+    smsUnits: number;
+    newBalance: number;
+    reference: string;
+  }): Promise<{ delivered: boolean }> {
+    const from = this.getEmailFromHeader();
+    const apiKey = this.getResendApiKey();
+    if (!apiKey) {
+      this.logger.warn('SMS receipt email skipped — Resend not configured.');
+      return { delivered: false };
+    }
+
+    const amountLabel = `UGX ${input.amountUgx.toLocaleString('en-UG')}`;
+    const unitsLabel = input.smsUnits.toLocaleString('en-UG');
+    const balanceLabel = input.newBalance.toLocaleString('en-UG');
+    const ref = input.reference.slice(-8).toUpperCase();
+
+    const text = [
+      `Hello ${input.payerName},`,
+      '',
+      `Your REMBEH SMS purchase was credited.`,
+      '',
+      `Bundle: ${input.bundleName}`,
+      `Branch: ${input.branchName}`,
+      `Amount: ${amountLabel}`,
+      `SMS units: ${unitsLabel}`,
+      `New balance: ${balanceLabel} SMS`,
+      `Reference: #${ref}`,
+      '',
+      '— REMBEH by Antikra',
+    ].join('\n');
+
+    const html = [
+      '<div style="font-family:Arial,Helvetica,sans-serif;color:#14213d;line-height:1.5;max-width:520px">',
+      '<p style="margin:0 0 4px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#0f8a6c">REMBEH</p>',
+      '<h1 style="font-size:20px;margin:0 0 12px">SMS credits receipt</h1>',
+      `<p style="margin:0 0 12px">Hello ${input.payerName}, your SMS purchase was credited.</p>`,
+      '<ul style="margin:0 0 16px;padding-left:18px;font-size:14px">',
+      `<li><strong>Bundle:</strong> ${input.bundleName}</li>`,
+      `<li><strong>Branch:</strong> ${input.branchName}</li>`,
+      `<li><strong>Amount:</strong> ${amountLabel}</li>`,
+      `<li><strong>SMS units:</strong> ${unitsLabel}</li>`,
+      `<li><strong>New balance:</strong> ${balanceLabel} SMS</li>`,
+      `<li><strong>Reference:</strong> #${ref}</li>`,
+      '</ul>',
+      '<p style="margin:0;color:#52606d;font-size:12px">— REMBEH by Antikra</p>',
+      '</div>',
+    ].join('');
+
+    const response = await this.sendResendEmail({
+      apiKey,
+      from,
+      to: input.destination,
+      subject: `REMBEH SMS receipt — ${input.bundleName}`,
+      text,
+      html,
+    });
+    if (!response.ok) {
+      const detail = await this.readResendError(response);
+      this.logger.warn(`SMS receipt email failed: ${detail}`);
+      return { delivered: false };
+    }
+    return { delivered: true };
+  }
+
+  /** Ops / owner alert when SMS credits are successfully credited. */
+  async sendSmsPurchaseAdminAlertEmail(input: {
+    destination: string;
+    branchName: string;
+    bundleName: string;
+    amountUgx: number;
+    smsUnits: number;
+    reference: string;
+    tenantId: string;
+  }): Promise<{ delivered: boolean }> {
+    const from = this.getEmailFromHeader();
+    const apiKey = this.getResendApiKey();
+    if (!apiKey) {
+      return { delivered: false };
+    }
+
+    const amountLabel = `UGX ${input.amountUgx.toLocaleString('en-UG')}`;
+    const unitsLabel = input.smsUnits.toLocaleString('en-UG');
+    const text = [
+      'SMS wallet credit confirmed',
+      '',
+      `Branch: ${input.branchName}`,
+      `Bundle: ${input.bundleName}`,
+      `Amount: ${amountLabel}`,
+      `Units: ${unitsLabel}`,
+      `Reference: ${input.reference}`,
+      `Tenant: ${input.tenantId}`,
+      '',
+      '— REMBEH ops',
+    ].join('\n');
+
+    const response = await this.sendResendEmail({
+      apiKey,
+      from,
+      to: input.destination,
+      subject: `[REMBEH] SMS credited — ${input.branchName}`,
+      text,
+      html: `<pre style="font-family:monospace;white-space:pre-wrap">${text}</pre>`,
+    });
+    if (!response.ok) {
+      const detail = await this.readResendError(response);
+      this.logger.warn(`SMS admin alert email failed: ${detail}`);
+      return { delivered: false };
+    }
+    return { delivered: true };
+  }
+
   private missingEmailConfigResult(
     from: string,
     destination: string,

@@ -1343,6 +1343,9 @@ export class LoanApplicationsService {
       destination: phone,
       body,
       purpose: 'loan_application',
+      triggerSource: 'loan_application_activated',
+      triggerReferenceId: application.id,
+      idempotencyKey: `loan_application_active_${application.id}`,
     });
     if (!result.sent) {
       this.logger.log(

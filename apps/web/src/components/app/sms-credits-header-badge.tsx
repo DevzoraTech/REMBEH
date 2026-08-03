@@ -8,7 +8,8 @@ import { readAuthState } from "../../lib/auth-session";
 import { formatNumber } from "../../app/owner/owner-common";
 
 type SmsBalance = {
-  creditsRemaining: number;
+  availableUnits?: number;
+  creditsRemaining?: number;
   canSendSms: boolean;
   scope: "branch" | "account";
   branchId: string | null;
@@ -90,7 +91,10 @@ export function SmsCreditsHeaderBadge({
 
   if (!balance) return null;
 
-  const credits = Math.max(0, Math.floor(balance.creditsRemaining));
+  const credits = Math.max(
+    0,
+    Math.floor(balance.availableUnits ?? balance.creditsRemaining ?? 0),
+  );
   const tone = toneForCredits(credits);
   const scopeHint =
     balance.scope === "branch" && balance.branchName
@@ -101,7 +105,7 @@ export function SmsCreditsHeaderBadge({
     <Link
       href={manageHref}
       title={`${tone.label} (${scopeHint})`}
-      aria-label={`${formatNumber(credits)} SMS remaining. ${tone.label}`}
+      aria-label={`${formatNumber(credits)} SMS available. ${tone.label}`}
       className={`inline-flex h-9 items-center gap-2 rounded-xl border px-2.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition ${tone.wrap}`}
     >
       <span className={`size-1.5 shrink-0 rounded-full ${tone.dot}`} />
