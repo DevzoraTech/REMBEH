@@ -9,9 +9,15 @@ type PesapalTokenResponse = {
   message?: string;
 };
 
-type PesapalIpnResponse = {
+type PesapalIpnItem = {
   ipn_id?: string;
   url?: string;
+  ipn_status?: number;
+  ipn_status_decription?: string;
+  notification_type?: number;
+};
+
+type PesapalIpnResponse = PesapalIpnItem & {
   error?: { message?: string };
   status?: string;
   message?: string;
@@ -21,7 +27,7 @@ type PesapalSubmitOrderResponse = {
   order_tracking_id?: string;
   merchant_reference?: string;
   redirect_url?: string;
-  error?: { message?: string; code?: string };
+  error?: { message?: string; code?: string; error_type?: string };
   status?: string;
   message?: string;
 };
@@ -95,11 +101,10 @@ export class PesapalClient implements OnModuleInit {
     });
     const payload = (await response.json()) as PesapalTokenResponse;
     if (!response.ok || !payload.token) {
-      throw new Error(
-        payload.error?.message ||
-          payload.message ||
-          `Pesapal auth failed (${response.status})`,
+      this.logger.warn(
+        `Pesapal auth failed: ${JSON.stringify(payload).slice(0, 300)}`,
       );
+      throw new Error('Payment auth failed.');
     }
 
     this.cachedToken = payload.token;
@@ -115,23 +120,48 @@ export class PesapalClient implements OnModuleInit {
   async ensureIpnId(): Promise<string> {
     if (this.ipnId) return this.ipnId;
 
-    const ipnUrl =
-      this.configService.get<string>('PESAPAL_IPN_URL')?.trim() ||
-      (() => {
-        const callback = this.configService
-          .get<string>('PESAPAL_CALLBACK_URL')
-          ?.trim();
-        return callback
-          ? callback.replace(/\/callback\/?(\?.*)?$/, '/ipn')
-          : '';
-      })();
+    const ipnUrl = this.ipnUrl();
     if (!ipnUrl) {
-      throw new Error(
-        'PESAPAL_IPN_URL or PESAPAL_CALLBACK_URL is required to register IPN.',
-      );
+      throw new Error('Payment notification URL is missing.');
     }
 
     const token = await this.getAccessToken();
+
+    // Prefer an already-registered active IPN for our URL.
+    try {
+      const listResponse = await fetch(
+        `${this.baseUrl()}/api/URLSetup/GetIpnList`,
+        {
+          method: 'GET',
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+      const listPayload = (await listResponse.json()) as
+        | PesapalIpnItem[]
+        | { error?: { message?: string } };
+      if (Array.isArray(listPayload)) {
+        const match = listPayload.find(
+          (item) =>
+            item.url?.replace(/\/$/, '') === ipnUrl.replace(/\/$/, '') &&
+            item.ipn_id &&
+            (item.ipn_status === 1 ||
+              item.ipn_status_decription?.toLowerCase() === 'active'),
+        );
+        if (match?.ipn_id) {
+          this.ipnId = match.ipn_id;
+          this.logger.log(`Pesapal IPN reused: ${this.ipnId}`);
+          return this.ipnId;
+        }
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Pesapal GetIpnList failed: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+
     const response = await fetch(
       `${this.baseUrl()}/api/URLSetup/RegisterIPN`,
       {
@@ -150,13 +180,9 @@ export class PesapalClient implements OnModuleInit {
     const payload = (await response.json()) as PesapalIpnResponse;
     if (!response.ok || !payload.ipn_id) {
       this.logger.warn(
-        `Pesapal IPN register failed: ${payload.error?.message || payload.message || response.status}`,
+        `Pesapal IPN register failed: ${JSON.stringify(payload).slice(0, 400)}`,
       );
-      throw new Error(
-        payload.error?.message ||
-          payload.message ||
-          'Could not register Pesapal IPN.',
-      );
+      throw new Error('Could not register payment notifications.');
     }
 
     this.ipnId = payload.ipn_id;
@@ -170,6 +196,8 @@ export class PesapalClient implements OnModuleInit {
     amount: number;
     description: string;
     callbackUrl: string;
+    cancellationUrl?: string;
+    branchName?: string;
     billingAddress: {
       email_address: string;
       phone_number?: string | null;
@@ -181,6 +209,34 @@ export class PesapalClient implements OnModuleInit {
     const token = await this.getAccessToken();
     const notificationId = await this.ensureIpnId();
 
+    // Pesapal: merchant ref max 50, alphanumeric + - _ . :
+    const merchantId = input.id.replace(/[^a-zA-Z0-9._:-]/g, '_').slice(0, 50);
+    const description = input.description.slice(0, 100);
+    const amount = Math.round(Number(input.amount) * 100) / 100;
+
+    const body: Record<string, unknown> = {
+      id: merchantId,
+      currency: input.currency,
+      amount,
+      description,
+      callback_url: input.callbackUrl,
+      redirect_mode: 'TOP_WINDOW',
+      notification_id: notificationId,
+      billing_address: {
+        email_address: input.billingAddress.email_address,
+        phone_number: this.normalizePhone(input.billingAddress.phone_number),
+        country_code: input.billingAddress.country_code || 'UG',
+        first_name: input.billingAddress.first_name || 'REMBEH',
+        last_name: input.billingAddress.last_name || 'User',
+      },
+    };
+    if (input.cancellationUrl) {
+      body.cancellation_url = input.cancellationUrl;
+    }
+    if (input.branchName?.trim()) {
+      body.branch = input.branchName.trim().slice(0, 80);
+    }
+
     const response = await fetch(
       `${this.baseUrl()}/api/Transactions/SubmitOrderRequest`,
       {
@@ -190,33 +246,19 @@ export class PesapalClient implements OnModuleInit {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          id: input.id,
-          currency: input.currency,
-          amount: input.amount,
-          description: input.description,
-          callback_url: input.callbackUrl,
-          notification_id: notificationId,
-          billing_address: {
-            email_address: input.billingAddress.email_address,
-            phone_number: input.billingAddress.phone_number || undefined,
-            country_code: input.billingAddress.country_code || 'UG',
-            first_name: input.billingAddress.first_name || 'REMBEH',
-            last_name: input.billingAddress.last_name || 'Owner',
-          },
-        }),
+        body: JSON.stringify(body),
       },
     );
     const payload = (await response.json()) as PesapalSubmitOrderResponse;
-    const errorMessage =
-      payload.error?.message ||
-      payload.message ||
-      (!response.ok ? `Pesapal submit order failed (${response.status})` : '');
-    if (!response.ok || !payload.redirect_url) {
+    if (!payload.redirect_url) {
       this.logger.warn(
         `Pesapal SubmitOrder failed status=${response.status} body=${JSON.stringify(payload).slice(0, 500)}`,
       );
-      throw new Error(errorMessage || 'Pesapal submit order failed.');
+      throw new Error(
+        payload.error?.message ||
+          payload.message ||
+          'Payment could not be started.',
+      );
     }
     return payload;
   }
@@ -239,14 +281,33 @@ export class PesapalClient implements OnModuleInit {
     });
     const payload =
       (await response.json()) as PesapalTransactionStatusResponse;
-    if (!response.ok) {
-      throw new Error(
-        payload.error?.message ||
-          payload.message ||
-          `Pesapal status failed (${response.status})`,
+    if (!response.ok || payload.error?.message) {
+      this.logger.warn(
+        `Pesapal status failed: ${JSON.stringify(payload).slice(0, 400)}`,
       );
+      throw new Error('Could not verify payment status.');
     }
     return payload;
+  }
+
+  private ipnUrl() {
+    return (
+      this.configService.get<string>('PESAPAL_IPN_URL')?.trim() ||
+      (() => {
+        const callback = this.configService
+          .get<string>('PESAPAL_CALLBACK_URL')
+          ?.trim();
+        return callback
+          ? callback.replace(/\/callback\/?(\?.*)?$/, '/ipn')
+          : '';
+      })()
+    );
+  }
+
+  private normalizePhone(phone?: string | null) {
+    if (!phone?.trim()) return undefined;
+    const digits = phone.replace(/[^\d+]/g, '');
+    return digits || undefined;
   }
 
   private consumerKey() {

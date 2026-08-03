@@ -313,7 +313,7 @@ function SubscriptionWorkspaceContent({
     return <AppBootSkeleton />;
   }
 
-  const amount = summary?.plan.amount ?? 100_000;
+  const amount = summary?.plan.amount ?? 30_000;
   const currency = summary?.plan.currency ?? "UGX";
   const isBranchScope = summary?.scope === "branch" || mode === "manager";
   const priceLabel = formatMoney(amount, currency);

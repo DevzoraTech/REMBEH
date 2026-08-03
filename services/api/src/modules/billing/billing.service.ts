@@ -410,14 +410,20 @@ export class BillingService implements OnModuleInit {
       /\s+/,
     );
 
+    const webAppUrl =
+      this.configService.get<string>('WEB_APP_URL')?.trim() ||
+      'https://rembeh.antikra.com';
+
     let order;
     try {
       order = await this.pesapal.submitOrder({
         id: merchantReference,
         currency: plan.currency,
         amount: Number(plan.amount),
-        description: `REMBEH Pro — ${branch.name}`,
-        callbackUrl: `${apiCallback}?branchId=${branch.id}`,
+        description: `REMBEH Pro — ${branch.name}`.slice(0, 100),
+        callbackUrl: apiCallback,
+        cancellationUrl: `${webAppUrl}/subscription`,
+        branchName: branch.name,
         billingAddress: {
           email_address: payer?.email || user.email,
           phone_number: payer?.phone,
@@ -662,12 +668,14 @@ export class BillingService implements OnModuleInit {
     const description = (
       status.payment_status_description || ''
     ).toLowerCase();
-    const code = String(status.payment_status_code ?? '');
+    // Pesapal status_code: 0 INVALID, 1 COMPLETED, 2 FAILED, 3 REVERSED
+    const statusCode = Number(
+      (status as { status_code?: number | string }).status_code ??
+        status.payment_status_code ??
+        NaN,
+    );
     const completed =
-      description.includes('completed') ||
-      description === 'success' ||
-      code === '1' ||
-      code === '0';
+      statusCode === 1 || description.includes('completed');
 
     if (!completed) {
       await this.prisma.subscriptionPayment.update({
@@ -676,9 +684,14 @@ export class BillingService implements OnModuleInit {
           orderTrackingId,
           rawPayload: status as Prisma.InputJsonValue,
           status:
-            description.includes('failed') || description.includes('invalid')
+            statusCode === 2 ||
+            statusCode === 0 ||
+            description.includes('failed') ||
+            description.includes('invalid')
               ? SubscriptionPaymentStatus.FAILED
-              : SubscriptionPaymentStatus.PENDING,
+              : statusCode === 3 || description.includes('reversed')
+                ? SubscriptionPaymentStatus.REVERSED
+                : SubscriptionPaymentStatus.PENDING,
         },
       });
       return;
