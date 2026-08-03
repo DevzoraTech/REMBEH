@@ -65,10 +65,18 @@ export function AppShell({ children, session, user }: AppShellProps) {
     locked: boolean;
     message: string | null;
     status: string | null;
+    daysUntilGraceEnd: number | null;
+    branchName: string | null;
   } | null>(null);
+  const [graceModalOpen, setGraceModalOpen] = useState(false);
   const railSidebarExpanded = railSidebarPinned || railSidebarHover;
   const operatorRole = resolveOperatorRole(session, user);
   const homeHref = operatorRole === "owner" ? "/owner" : "/dashboard";
+  const isSubscriptionPage =
+    pathname === "/subscription" || pathname.startsWith("/subscription/");
+  const branchLocked =
+    operatorRole === "manager" && Boolean(branchBilling?.locked);
+
   const primaryNav = useMemo(() => {
     const ownerPrimary = [
       {
@@ -197,13 +205,19 @@ export function AppShell({ children, session, user }: AppShellProps) {
       },
     ];
 
-    return (operatorRole === "owner" ? ownerPrimary : managerPrimary).filter(
-      (item) => item.enabled,
-    );
-  }, [operatorRole, session.permissions]);
+    const items = (
+      operatorRole === "owner" ? ownerPrimary : managerPrimary
+    ).filter((item) => item.enabled);
 
-  const sidebarPromo =
-    operatorRole === "owner"
+    if (branchLocked) {
+      return items.filter((item) => item.href === "/subscription");
+    }
+    return items;
+  }, [branchLocked, operatorRole, session.permissions]);
+
+  const sidebarPromo = branchLocked
+    ? null
+    : operatorRole === "owner"
       ? {
           href: "/owner/branches",
           title: "Scale your lending",
@@ -214,7 +228,8 @@ export function AppShell({ children, session, user }: AppShellProps) {
       : {
           href: "/agents",
           title: "Grow your branch",
-          description: "Invite agents so repayments and field work stay covered.",
+          description:
+            "Invite agents so repayments and field work stay covered.",
           cta: "Invite Agents",
           collapsedLabel: "Invite agents",
         };
@@ -233,12 +248,19 @@ export function AppShell({ children, session, user }: AppShellProps) {
           locked?: boolean;
           message?: string | null;
           status?: string | null;
+          daysUntilGraceEnd?: number | null;
+          branchName?: string | null;
         }>(response);
         if (cancelled || !response.ok) return;
         setBranchBilling({
           locked: Boolean(payload.locked),
           message: payload.message ?? null,
           status: payload.status ?? null,
+          daysUntilGraceEnd:
+            typeof payload.daysUntilGraceEnd === "number"
+              ? payload.daysUntilGraceEnd
+              : null,
+          branchName: payload.branchName ?? null,
         });
       } catch {
         // Non-blocking: managers can still browse read-only without this check.
@@ -249,6 +271,33 @@ export function AppShell({ children, session, user }: AppShellProps) {
     };
   }, [operatorRole, session.accessToken, session.tokenType]);
 
+  useEffect(() => {
+    if (operatorRole !== "manager" || !branchBilling) return;
+    if (branchBilling.status !== "GRACE" || branchBilling.locked) return;
+
+    const key = `rembeh-grace-modal:${session.accessToken.slice(-16)}`;
+    try {
+      if (window.sessionStorage.getItem(key) === "1") return;
+    } catch {
+      // sessionStorage may be unavailable; still show once in-memory this mount.
+    }
+    setGraceModalOpen(true);
+  }, [branchBilling, operatorRole, session.accessToken]);
+
+  useEffect(() => {
+    if (!branchLocked || isSubscriptionPage) return;
+    router.replace("/subscription");
+  }, [branchLocked, isSubscriptionPage, router]);
+
+  function dismissGraceModal() {
+    const key = `rembeh-grace-modal:${session.accessToken.slice(-16)}`;
+    try {
+      window.sessionStorage.setItem(key, "1");
+    } catch {
+      // ignore
+    }
+    setGraceModalOpen(false);
+  }
   useEffect(() => {
     if (operatorRole !== "owner") return;
     const redirects: Array<[string, string]> = [
@@ -277,6 +326,7 @@ export function AppShell({ children, session, user }: AppShellProps) {
   useEffect(() => {
     if (
       operatorRole !== "manager" ||
+      branchLocked ||
       pathname === "/operations" ||
       pathname.startsWith("/operations/") ||
       !session.permissions.includes("operation.read")
@@ -312,6 +362,7 @@ export function AppShell({ children, session, user }: AppShellProps) {
       cancelled = true;
     };
   }, [
+    branchLocked,
     operatorRole,
     pathname,
     router,
@@ -356,6 +407,8 @@ export function AppShell({ children, session, user }: AppShellProps) {
       </div>
     );
   }
+
+  const graceDays = Math.max(0, branchBilling?.daysUntilGraceEnd ?? 0);
 
   return (
     <div className="min-h-screen bg-[#f6f8fb] text-[var(--slate-text)]">
@@ -411,7 +464,7 @@ export function AppShell({ children, session, user }: AppShellProps) {
 
       {/* Keep content inset at the rail width so hover-expand overlays instead of shifting the page. */}
       <main className="min-h-screen px-4 py-5 sm:px-5 lg:pl-[96px] lg:pr-5 lg:pt-5">
-        {branchBilling?.locked ? (
+        {branchLocked && !isSubscriptionPage ? (
           <div className="mb-4 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-950">
             <Lock className="mt-0.5 size-4 shrink-0" />
             <div>
@@ -419,34 +472,55 @@ export function AppShell({ children, session, user }: AppShellProps) {
               <p className="mt-0.5 text-rose-900/90">
                 Renew your plan to continue lending and collections.
               </p>
-              <Link
-                href="/subscription"
-                className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-rose-950 underline underline-offset-2"
-              >
-                Open Subscription
-                <ArrowRight className="size-3" />
-              </Link>
             </div>
-          </div>
-        ) : branchBilling?.status === "GRACE" ? (
-          <div className="mb-4 flex items-start justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-            <div className="flex items-start gap-3">
-              <ShieldAlert className="mt-0.5 size-4 shrink-0" />
-              <p>
-                {branchBilling.message ||
-                  "Renew soon to keep this branch open."}
-              </p>
-            </div>
-            <Link
-              href="/subscription"
-              className="shrink-0 text-xs font-semibold underline underline-offset-2"
-            >
-              Renew
-            </Link>
           </div>
         ) : null}
         {children}
       </main>
+
+      {graceModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(10,18,32,0.55)] px-4 backdrop-blur-[2px]">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="grace-modal-title"
+            className="w-full max-w-md rounded-2xl border border-[var(--line)] bg-white p-6 shadow-[0_24px_64px_rgba(15,23,42,0.22)]"
+          >
+            <div className="grid size-11 place-items-center rounded-2xl bg-amber-50 text-amber-700">
+              <ShieldAlert className="size-5" />
+            </div>
+            <h2
+              id="grace-modal-title"
+              className="mt-4 font-[family-name:var(--font-display)] text-xl tracking-[-0.02em] text-[#070b18]"
+            >
+              Subscription expired
+            </h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">
+              {branchBilling?.branchName
+                ? `${branchBilling.branchName} is in a grace period. `
+                : "Your branch is in a grace period. "}
+              You have {graceDays} day{graceDays === 1 ? "" : "s"} left to renew
+              before the branch is locked.
+            </p>
+            <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={dismissGraceModal}
+                className="inline-flex h-10 items-center justify-center rounded-xl border border-[var(--line)] bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Exit
+              </button>
+              <Link
+                href="/subscription"
+                onClick={dismissGraceModal}
+                className="inline-flex h-10 items-center justify-center rounded-xl bg-[#07885f] px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(7,136,95,0.22)] hover:bg-[#067352]"
+              >
+                Renew
+              </Link>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -483,7 +557,7 @@ function RailSidebar({
     description: string;
     cta: string;
     collapsedLabel: string;
-  };
+  } | null;
   expanded: boolean;
   pinned: boolean;
   onCloseMobile: () => void;
@@ -639,72 +713,74 @@ function RailSidebar({
           })}
         </nav>
 
-        <div
-          className={`mt-2 shrink-0 overflow-hidden rounded-2xl border border-white/12 bg-white/[0.045] shadow-[0_14px_30px_rgba(0,21,17,0.14)] transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [@media(max-height:720px)]:p-2 ${
-            collapsed ? "p-3 lg:p-2" : "p-3"
-          }`}
-        >
-          <div className={collapsed ? "hidden lg:block" : "hidden"}>
-            <RailSidebarTooltip label={promo.collapsedLabel} show>
+        {promo ? (
+          <div
+            className={`mt-2 shrink-0 overflow-hidden rounded-2xl border border-white/12 bg-white/[0.045] shadow-[0_14px_30px_rgba(0,21,17,0.14)] transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [@media(max-height:720px)]:p-2 ${
+              collapsed ? "p-3 lg:p-2" : "p-3"
+            }`}
+          >
+            <div className={collapsed ? "hidden lg:block" : "hidden"}>
+              <RailSidebarTooltip label={promo.collapsedLabel} show>
+                <Link
+                  href={promo.href}
+                  onClick={onCloseMobile}
+                  className="grid h-10 w-full place-items-center rounded-xl bg-[#19a876] text-white shadow-[0_10px_20px_rgba(25,168,118,0.2)] transition hover:bg-[#15986b]"
+                  aria-label={promo.collapsedLabel}
+                >
+                  <Users className="size-4" />
+                </Link>
+              </RailSidebarTooltip>
+            </div>
+            <div
+              className={`transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                collapsed
+                  ? "max-h-0 opacity-0 lg:pointer-events-none lg:max-h-0"
+                  : "max-h-40 opacity-100"
+              } ${collapsed ? "lg:hidden" : ""}`}
+            >
+              <div className="flex items-start gap-2.5">
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#d9f7e7] text-[#006b4f]">
+                  <Users className="size-[18px]" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-white">{promo.title}</p>
+                  <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-white/64 [@media(max-height:720px)]:line-clamp-1">
+                    {promo.description}
+                  </p>
+                </div>
+              </div>
               <Link
                 href={promo.href}
                 onClick={onCloseMobile}
-                className="grid h-10 w-full place-items-center rounded-xl bg-[#19a876] text-white shadow-[0_10px_20px_rgba(25,168,118,0.2)] transition hover:bg-[#15986b]"
-                aria-label={promo.collapsedLabel}
+                className="mt-3 flex h-8 items-center justify-between rounded-xl bg-[#19a876] px-3 text-[11px] font-medium text-white shadow-[0_10px_20px_rgba(25,168,118,0.2)] transition hover:bg-[#15986b] [@media(max-height:720px)]:mt-2 [@media(max-height:720px)]:h-7"
               >
-                <Users className="size-4" />
+                {promo.cta}
+                <ArrowRight className="size-3.5" />
               </Link>
-            </RailSidebarTooltip>
-          </div>
-          <div
-            className={`transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-              collapsed
-                ? "max-h-0 opacity-0 lg:pointer-events-none lg:max-h-0"
-                : "max-h-40 opacity-100"
-            } ${collapsed ? "lg:hidden" : ""}`}
-          >
-            <div className="flex items-start gap-2.5">
-              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#d9f7e7] text-[#006b4f]">
-                <Users className="size-[18px]" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-white">{promo.title}</p>
-                <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-white/64 [@media(max-height:720px)]:line-clamp-1">
-                  {promo.description}
-                </p>
-              </div>
             </div>
-            <Link
-              href={promo.href}
-              onClick={onCloseMobile}
-              className="mt-3 flex h-8 items-center justify-between rounded-xl bg-[#19a876] px-3 text-[11px] font-medium text-white shadow-[0_10px_20px_rgba(25,168,118,0.2)] transition hover:bg-[#15986b] [@media(max-height:720px)]:mt-2 [@media(max-height:720px)]:h-7"
-            >
-              {promo.cta}
-              <ArrowRight className="size-3.5" />
-            </Link>
-          </div>
-          <div className={`lg:hidden ${collapsed ? "" : "hidden"}`}>
-            <div className="flex items-start gap-2.5">
-              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#d9f7e7] text-[#006b4f]">
-                <Users className="size-[18px]" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-white">{promo.title}</p>
-                <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-white/64">
-                  {promo.description}
-                </p>
+            <div className={`lg:hidden ${collapsed ? "" : "hidden"}`}>
+              <div className="flex items-start gap-2.5">
+                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#d9f7e7] text-[#006b4f]">
+                  <Users className="size-[18px]" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-white">{promo.title}</p>
+                  <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-white/64">
+                    {promo.description}
+                  </p>
+                </div>
               </div>
+              <Link
+                href={promo.href}
+                onClick={onCloseMobile}
+                className="mt-3 flex h-8 items-center justify-between rounded-xl bg-[#19a876] px-3 text-[11px] font-medium text-white"
+              >
+                {promo.cta}
+                <ArrowRight className="size-3.5" />
+              </Link>
             </div>
-            <Link
-              href={promo.href}
-              onClick={onCloseMobile}
-              className="mt-3 flex h-8 items-center justify-between rounded-xl bg-[#19a876] px-3 text-[11px] font-medium text-white"
-            >
-              {promo.cta}
-              <ArrowRight className="size-3.5" />
-            </Link>
           </div>
-        </div>
+        ) : null}
 
         <div className="mt-3 shrink-0 border-t border-white/14 pt-3 [@media(max-height:720px)]:mt-2 [@media(max-height:720px)]:pt-2">
           <RailSidebarTooltip

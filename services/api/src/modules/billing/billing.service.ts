@@ -21,6 +21,8 @@ import { PrismaService } from '../../database/prisma.service';
 import {
   BillingCheckoutResponseContract,
   BillingSummaryContract,
+  BranchBillingStatusContract,
+  SubscriptionPaymentRowContract,
 } from './billing.contracts';
 import {
   BILLING_PERMISSIONS,
@@ -31,6 +33,8 @@ import {
 } from './billing.permissions';
 import { PesapalClient } from './pesapal.client';
 import { ConfigService } from '@nestjs/config';
+import { SmsService } from '../notifications/sms.service';
+import { FcmPushService } from '../notifications/fcm-push.service';
 
 @Injectable()
 export class BillingService implements OnModuleInit {
@@ -40,6 +44,8 @@ export class BillingService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly pesapal: PesapalClient,
     private readonly configService: ConfigService,
+    private readonly smsService: SmsService,
+    private readonly fcmPushService: FcmPushService,
   ) {}
 
   async onModuleInit() {
@@ -95,40 +101,154 @@ export class BillingService implements OnModuleInit {
     }
   }
 
-  async getMyBranchStatus(user: AuthenticatedUser) {
+  async getMyBranchStatus(
+    user: AuthenticatedUser,
+  ): Promise<BranchBillingStatusContract> {
+    const plan = await this.ensureProPlan();
+    const planAmount = Number(plan.amount);
+    const planCurrency = plan.currency || 'UGX';
+
     if (!user.branchId) {
       return {
-        branchId: null as string | null,
-        status: null as string | null,
+        branchId: null,
+        branchName: null,
+        status: null,
         locked: false,
-        message: null as string | null,
+        graceEndsAt: null,
+        currentPeriodEnd: null,
+        daysUntilGraceEnd: null,
+        daysUntilPeriodEnd: null,
+        trialDaysRemaining: null,
+        trialEndsAt: null,
+        planAmount,
+        planCurrency,
+        message: null,
       };
     }
 
-    await this.ensureTenantBilling(user.tenantId);
+    const billing = await this.ensureTenantBilling(user.tenantId);
     await this.syncTenantSubscriptions(user.tenantId);
     let sub = await this.prisma.branchSubscription.findUnique({
       where: { branchId: user.branchId },
+      include: { branch: { select: { name: true } } },
     });
     if (!sub) {
-      sub = await this.provisionBranchSubscription({
+      await this.provisionBranchSubscription({
         tenantId: user.tenantId,
         branchId: user.branchId,
       });
+      sub = await this.prisma.branchSubscription.findUnique({
+        where: { branchId: user.branchId },
+        include: { branch: { select: { name: true } } },
+      });
     }
 
-    const locked = sub.status === BranchSubscriptionStatus.LOCKED;
+    const now = Date.now();
+    const locked = sub?.status === BranchSubscriptionStatus.LOCKED;
+    const trialActive = billing.trialEndsAt.getTime() > now;
+    const trialDaysRemaining = trialActive
+      ? Math.max(
+          0,
+          Math.ceil(
+            (billing.trialEndsAt.getTime() - now) / (24 * 60 * 60 * 1000),
+          ),
+        )
+      : null;
+
     return {
       branchId: user.branchId,
-      status: sub.status,
-      locked,
-      graceEndsAt: sub.graceEndsAt?.toISOString() ?? null,
-      currentPeriodEnd: sub.currentPeriodEnd?.toISOString() ?? null,
+      branchName: sub?.branch.name ?? null,
+      status: sub?.status ?? null,
+      locked: Boolean(locked),
+      graceEndsAt: sub?.graceEndsAt?.toISOString() ?? null,
+      currentPeriodEnd: sub?.currentPeriodEnd?.toISOString() ?? null,
+      daysUntilGraceEnd: sub?.graceEndsAt
+        ? Math.max(
+            0,
+            Math.ceil(
+              (sub.graceEndsAt.getTime() - now) / (24 * 60 * 60 * 1000),
+            ),
+          )
+        : null,
+      daysUntilPeriodEnd: sub?.currentPeriodEnd
+        ? Math.ceil(
+            (sub.currentPeriodEnd.getTime() - now) / (24 * 60 * 60 * 1000),
+          )
+        : null,
+      trialDaysRemaining,
+      trialEndsAt: billing.trialEndsAt.toISOString(),
+      planAmount,
+      planCurrency,
       message: locked
         ? 'This branch is paused. Renew on Subscription to continue.'
-        : sub.status === BranchSubscriptionStatus.GRACE
-          ? 'Renew soon to keep this branch open.'
+        : sub?.status === BranchSubscriptionStatus.GRACE
+          ? 'Your subscription has expired. Renew now to keep this branch open.'
           : null,
+    };
+  }
+
+  async listPayments(
+    user: AuthenticatedUser,
+  ): Promise<{ payments: SubscriptionPaymentRowContract[] }> {
+    const canManageAll = user.permissions.includes(BILLING_PERMISSIONS.manage);
+    if (!canManageAll && !user.branchId) {
+      throw new ForbiddenException(
+        'You can only view payments for your branch.',
+      );
+    }
+
+    const where = canManageAll
+      ? { tenantId: user.tenantId }
+      : { tenantId: user.tenantId, branchId: user.branchId! };
+
+    const rows = await this.prisma.subscriptionPayment.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      include: {
+        branch: { select: { name: true } },
+        plan: { select: { name: true } },
+      },
+    });
+
+    return {
+      payments: rows.map((row) => {
+        const paid = row.status === SubscriptionPaymentStatus.COMPLETED;
+        const failed = row.status === SubscriptionPaymentStatus.FAILED;
+        const periodStart = row.paidAt ?? row.createdAt;
+        const periodEnd = new Date(
+          periodStart.getTime() + 30 * 24 * 60 * 60 * 1000,
+        );
+        const priorPaid = rows.some(
+          (other) =>
+            other.branchId === row.branchId &&
+            other.id !== row.id &&
+            other.status === SubscriptionPaymentStatus.COMPLETED &&
+            other.createdAt < row.createdAt,
+        );
+        return {
+          id: row.id,
+          date: (row.paidAt ?? row.createdAt).toISOString(),
+          branchId: row.branchId,
+          branchName: row.branch.name,
+          transaction: paid
+            ? priorPaid
+              ? 'Pro renewal'
+              : 'Pro subscription'
+            : 'Pro subscription',
+          periodLabel: paid
+            ? `${this.formatShortDate(periodStart)} – ${this.formatShortDate(periodEnd)}`
+            : null,
+          amount: Number(row.amount),
+          currency: row.currency,
+          paymentMethod: this.paymentMethodFromPayload(row.rawPayload),
+          status: paid ? 'Paid' : failed ? 'Failed' : 'Pending',
+          receipt: paid
+            ? `#${row.merchantReference.slice(-8).toUpperCase()}`
+            : null,
+          canRetry: failed,
+        };
+      }),
     };
   }
 
@@ -610,6 +730,12 @@ export class BillingService implements OnModuleInit {
             lastReminderAt: now,
           },
         });
+        void this.notifyOwnersBranchNeedsSubscription({
+          tenantId,
+          branchId: branch.id,
+          branchName: branch.name,
+          kind: 'grace',
+        });
         continue;
       }
 
@@ -629,6 +755,12 @@ export class BillingService implements OnModuleInit {
             lastReminderAt: now,
           },
         });
+        void this.notifyOwnersBranchNeedsSubscription({
+          tenantId,
+          branchId: branch.id,
+          branchName: branch.name,
+          kind: 'grace',
+        });
         continue;
       }
 
@@ -642,7 +774,14 @@ export class BillingService implements OnModuleInit {
           data: {
             status: BranchSubscriptionStatus.LOCKED,
             lockedAt: now,
+            lastReminderAt: now,
           },
+        });
+        void this.notifyOwnersBranchNeedsSubscription({
+          tenantId,
+          branchId: branch.id,
+          branchName: branch.name,
+          kind: 'locked',
         });
       }
     }
@@ -775,6 +914,119 @@ export class BillingService implements OnModuleInit {
       }
     }
     return null;
+  }
+
+  private paymentMethodFromPayload(raw: Prisma.JsonValue | null): string {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      // No provider payload yet (checkout created, payment not finished).
+      return '';
+    }
+    const record = raw as Record<string, unknown>;
+    const candidates = [
+      record.payment_method,
+      record.payment_method_type,
+      record.PaymentMethod,
+      record.payment_account,
+      record.channel,
+    ]
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter(Boolean);
+
+    if (candidates.length === 0) {
+      return '';
+    }
+
+    const method = candidates.join(' ').toLowerCase();
+
+    // Mobile money first — never classify as card.
+    if (method.includes('airtel')) return 'Airtel Money';
+    if (method.includes('mtn') || method.includes('momo')) {
+      return 'MTN Mobile Money';
+    }
+    if (method.includes('mobile money') || method.includes('mobilemoney')) {
+      return 'Mobile Money';
+    }
+
+    if (method.includes('visa')) return 'Visa Card';
+    if (method.includes('master')) return 'Mastercard';
+    if (
+      /\b(debit|credit)\b/.test(method) ||
+      (/\bcard\b/.test(method) && !method.includes('mobile'))
+    ) {
+      return 'Card';
+    }
+
+    // Unknown provider string — surface it as-is rather than guessing.
+    return candidates[0];
+  }
+
+  private formatShortDate(value: Date) {
+    return value.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  }
+
+  private async notifyOwnersBranchNeedsSubscription(input: {
+    tenantId: string;
+    branchId: string;
+    branchName: string;
+    kind: 'grace' | 'locked';
+  }) {
+    try {
+      const owners = await this.prisma.user.findMany({
+        where: {
+          tenantId: input.tenantId,
+          status: 'ACTIVE',
+          roles: {
+            some: {
+              role: {
+                name: 'Account Owner',
+              },
+            },
+          },
+        },
+        select: {
+          id: true,
+          phone: true,
+          displayName: true,
+        },
+      });
+
+      const title =
+        input.kind === 'locked'
+          ? `${input.branchName} is paused`
+          : `${input.branchName} needs renewing`;
+      const body =
+        input.kind === 'locked'
+          ? `${input.branchName} did not renew in time and is now locked. Open Subscription to restore access.`
+          : `${input.branchName} subscription expired. Renew within ${GRACE_DAYS} days to keep the branch open.`;
+
+      for (const owner of owners) {
+        if (owner.phone) {
+          await this.smsService.sendText({
+            destination: owner.phone,
+            body: `REMBEH: ${body}`,
+          });
+        }
+        await this.fcmPushService.sendToUser(input.tenantId, owner.id, {
+          title,
+          body,
+          href: '/owner/subscription',
+          data: {
+            type: 'billing',
+            branchId: input.branchId,
+          },
+        });
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Owner billing notify failed for ${input.branchName}: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
   }
 
   private toCheckoutHttpException(message: string) {

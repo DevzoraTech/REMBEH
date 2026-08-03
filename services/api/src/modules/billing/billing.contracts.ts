@@ -40,3 +40,34 @@ export type BillingCheckoutResponseContract = {
   merchantReference: string;
   orderTrackingId: string | null;
 };
+
+export type BranchBillingStatusContract = {
+  branchId: string | null;
+  branchName: string | null;
+  status: string | null;
+  locked: boolean;
+  graceEndsAt: string | null;
+  currentPeriodEnd: string | null;
+  daysUntilGraceEnd: number | null;
+  daysUntilPeriodEnd: number | null;
+  trialDaysRemaining: number | null;
+  trialEndsAt: string | null;
+  planAmount: number;
+  planCurrency: string;
+  message: string | null;
+};
+
+export type SubscriptionPaymentRowContract = {
+  id: string;
+  date: string;
+  branchId: string;
+  branchName: string;
+  transaction: string;
+  periodLabel: string | null;
+  amount: number;
+  currency: string;
+  paymentMethod: string;
+  status: string;
+  receipt: string | null;
+  canRetry: boolean;
+};

@@ -585,7 +585,7 @@ function OwnerBranchesPageContent() {
             </div>
 
             {listMode === "attention" ? (
-              <div className="hidden grid-cols-[1.35fr_1.2fr_72px_88px_88px_42px] gap-3 border-b border-[#edf1f5] bg-[#f8faf9] px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500 xl:grid">
+              <div className="hidden grid-cols-[1.35fr_1.2fr_72px_88px_88px_42px] gap-3 border-b border-[#dfe5eb] bg-[#e8edf2] px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-600 xl:grid">
                 <span>Branch</span>
                 <span>Why it needs attention</span>
                 <Tooltip label="Share of expected repayments received in the last 7 days. Exact rate is in the panel.">
@@ -598,7 +598,7 @@ function OwnerBranchesPageContent() {
                 <span className="text-right">Open</span>
               </div>
             ) : (
-              <div className="hidden grid-cols-[1.4fr_1.05fr_1fr_64px_66px_104px_72px_42px] gap-3 border-b border-[#edf1f5] bg-[#f8faf9] px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500 xl:grid">
+              <div className="hidden grid-cols-[1.4fr_1.05fr_1fr_64px_66px_104px_72px_42px] gap-3 border-b border-[#dfe5eb] bg-[#e8edf2] px-4 py-3 text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-600 xl:grid">
                 <span>Branch</span>
                 <span>Location</span>
                 <span>Manager</span>
@@ -2047,7 +2047,7 @@ function AttentionBranchDrawer({
           </div>
 
           <div className="overflow-hidden rounded-2xl border border-[#e5ebf0] bg-white">
-            <div className="grid grid-cols-[1fr_52px_52px_48px] gap-2 border-b border-[#edf1f5] bg-[#fbfcfd] px-3 py-2 text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-400">
+            <div className="grid grid-cols-[1fr_52px_52px_48px] gap-2 border-b border-[#dfe5eb] bg-[#e8edf2] px-3 py-2 text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-600">
               <span>Day</span>
               <span className="text-right">Exp</span>
               <span className="text-right">Got</span>

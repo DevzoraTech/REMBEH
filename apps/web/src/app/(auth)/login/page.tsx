@@ -130,10 +130,33 @@ function LoginForm() {
         user: payload.user,
         branch: payload.branch,
       });
-      const fallback =
-        resolveOperatorRole(payload.session, payload.user) === "owner"
-          ? "/owner"
-          : "/dashboard";
+
+      const role = resolveOperatorRole(payload.session, payload.user);
+      let fallback = role === "owner" ? "/owner" : "/dashboard";
+
+      // After grace, locked managers only have the Subscription module.
+      if (role === "manager") {
+        try {
+          const billingRes = await fetch(`${apiBaseUrl}/billing/my-branch`, {
+            headers: {
+              Authorization: `${payload.session.tokenType} ${payload.session.accessToken}`,
+            },
+          });
+          const billing = await readApiJson<{
+            locked?: boolean;
+            status?: string;
+          }>(billingRes);
+          if (
+            billingRes.ok &&
+            (billing.locked || billing.status === "LOCKED")
+          ) {
+            fallback = "/subscription";
+          }
+        } catch {
+          // Fall through to dashboard; app-shell still enforces lock.
+        }
+      }
+
       router.replace(resolveSafeNextPath(searchParams.get("next"), fallback));
     } catch (caughtError) {
       setError(

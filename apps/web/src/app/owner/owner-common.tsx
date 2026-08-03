@@ -136,6 +136,10 @@ export type OwnerBorrower = {
   collateralType: string | null;
   city: string | null;
   loanCount: number;
+  activeLoanCount?: number;
+  hasOverdueLoan?: boolean;
+  registeredByName?: string | null;
+  registeredByPublicId?: string | null;
   verifiedAt: string | null;
   createdAt: string;
 };

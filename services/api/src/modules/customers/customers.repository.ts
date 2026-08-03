@@ -38,6 +38,12 @@ const applicationSummarySelect = {
   village: true,
   updatedAt: true,
   createdAt: true,
+  officer: {
+    select: {
+      displayName: true,
+      publicId: true,
+    },
+  },
 } satisfies Prisma.LoanApplicationSelect;
 
 const applicationDetailSelect = {
@@ -52,8 +58,16 @@ const customerListInclude = {
   branch: { select: { id: true, name: true } },
   loanApplications: {
     select: applicationSummarySelect,
-    orderBy: { updatedAt: 'desc' as const },
-    take: 1,
+    orderBy: { createdAt: 'asc' as const },
+    take: 20,
+  },
+  loans: {
+    select: {
+      id: true,
+      status: true,
+      balance: true,
+      isFined: true,
+    },
   },
   _count: { select: { loans: true } },
 } satisfies Prisma.CustomerInclude;
@@ -144,7 +158,7 @@ export class CustomersRepository {
       },
       include: customerListInclude,
       orderBy: { createdAt: 'desc' },
-      take: input.limit ?? 100,
+      take: input.limit ?? 2000,
     });
   }
 

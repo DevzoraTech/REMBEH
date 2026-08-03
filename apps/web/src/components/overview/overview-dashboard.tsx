@@ -833,7 +833,7 @@ function BranchPerformanceCard({
   return (
     <section className="rounded-[14px] border border-[#e6ebf0] bg-white p-3.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
       <PanelHeader title={title} href={href} />
-      <div className="mt-3 grid grid-cols-[1fr_80px_86px_86px] gap-2 border-b border-[#edf1f5] pb-2 text-[10px] font-medium text-slate-500">
+      <div className="mt-3 -mx-1 grid grid-cols-[1fr_80px_86px_86px] gap-2 border-b border-[#dfe5eb] bg-[#e8edf2] px-2 py-2 text-[10px] font-semibold text-slate-600">
         <span>{isManager ? "Focus" : "Branch"}</span>
         <span className="block w-full text-right">Loan ({currency})</span>
         <span className="block w-full text-right">Collected</span>

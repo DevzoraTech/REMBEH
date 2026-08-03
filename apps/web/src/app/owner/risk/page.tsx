@@ -349,7 +349,7 @@ export default function OwnerRiskPage() {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[820px] table-fixed text-left text-xs">
               <thead>
-                <tr className="border-b border-[#edf1f5] bg-[#f8faf9] text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+                <tr className="border-b border-[#dfe5eb] bg-[#e8edf2] text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-600">
                   <th className="w-[24%] px-4 py-3">Borrower</th>
                   <th className="w-[16%] px-3 py-3">National ID</th>
                   <th className="w-[14%] px-3 py-3">Phone</th>

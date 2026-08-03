@@ -167,6 +167,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
   const [borrowersLoading, setBorrowersLoading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [detailLoan, setDetailLoan] = useState<LoanRow | null>(null);
+  const [detailRefreshKey, setDetailRefreshKey] = useState(0);
   const [editingApplicationId, setEditingApplicationId] = useState<
     string | null
   >(null);
@@ -212,11 +213,15 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
         "/loans",
       );
       const next = payload.loans ?? [];
-      setLoans(
+      const scoped =
         isManager && state.branch?.id
           ? next.filter((loan) => loan.branchId === state.branch?.id)
-          : next,
-      );
+          : next;
+      setLoans(scoped);
+      setDetailLoan((current) => {
+        if (!current) return null;
+        return scoped.find((loan) => loan.id === current.id) ?? current;
+      });
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Could not load portfolio.",
@@ -805,7 +810,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
             {/* Desktop: full-width table, no horizontal scroll */}
             <div className="hidden xl:block">
               <table className="w-full table-fixed text-left text-[11px]">
-                <thead className="bg-[#f8faf9] text-[10px] font-semibold text-slate-500">
+                <thead className="border-b border-[#dfe5eb] bg-[#e8edf2] text-[10px] font-semibold text-slate-600">
                   <tr>
                     <th className="w-[7%] px-2 py-2.5">Loan ID</th>
                     <th className="w-[14%] px-2 py-2.5">Borrower</th>
@@ -1110,9 +1115,30 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                     disbursedAt: detailLoan.disbursedAt,
                     officerName: detailLoan.officerName,
                     officerPublicId: detailLoan.officerPublicId ?? null,
+                    balance: detailLoan.balance,
+                    paidAmount: detailLoan.paidAmount,
+                    totalRepayable: loanTotalRepayable(detailLoan),
+                    openingBalance: detailLoan.openingBalance,
+                    expectedInterest: expectedInterestForLoan(detailLoan),
+                    processingFee: detailLoan.processingFee,
+                    installmentAmount: detailLoan.installmentAmount,
+                    overdueDays: resolveOverdueDays(detailLoan, new Date()),
+                    nextDueDate: detailLoan.nextDueDate,
+                    durationDays: detailLoan.durationDays,
+                    dueDate: detailLoan.dueDate,
+                    status: detailLoan.status,
                   }
                 : null
             }
+            canRecordRepayment={canRecordRepayment}
+            onRecordRepayment={
+              detailLoan && canRecordRepayment
+                ? () => {
+                    setRepaymentLoan(detailLoan);
+                  }
+                : undefined
+            }
+            refreshKey={detailRefreshKey}
             onClose={() => setDetailLoan(null)}
           />
           {isManager ? (
@@ -1146,6 +1172,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
             onClose={() => setRepaymentLoan(null)}
             onRecorded={() => {
               setNotice("Repayment recorded.");
+              setDetailRefreshKey((key) => key + 1);
               void loadLoans();
             }}
           />

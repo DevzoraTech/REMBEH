@@ -3,10 +3,14 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  AlertCircle,
   Banknote,
+  Calculator,
   CalendarDays,
   CheckCircle2,
+  CreditCard,
   FileText,
+  Hourglass,
   Loader2,
   MoreVertical,
   Send,
@@ -14,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
+import { formatMoneyAmount } from "../../app/owner/owner-common";
 import { AgentPhoto } from "./agent-photo";
 import { Money } from "./money";
 import { StepTimeline, type StepTone } from "./step-timeline";
@@ -111,6 +116,18 @@ type LoanContext = {
   disbursedAt: string | null;
   officerName: string | null;
   officerPublicId: string | null;
+  balance?: number | null;
+  paidAmount?: number | null;
+  totalRepayable?: number | null;
+  openingBalance?: number | null;
+  expectedInterest?: number | null;
+  processingFee?: number | null;
+  installmentAmount?: number | null;
+  overdueDays?: number | null;
+  nextDueDate?: string | null;
+  durationDays?: number | null;
+  dueDate?: string | null;
+  status?: string | null;
 };
 
 type ApplicationDetailDrawerProps = {
@@ -121,6 +138,9 @@ type ApplicationDetailDrawerProps = {
   loanDisplayId?: string | null;
   loanStatusLabel?: string | null;
   loan?: LoanContext | null;
+  canRecordRepayment?: boolean;
+  onRecordRepayment?: () => void;
+  refreshKey?: number;
   onClose: () => void;
 };
 
@@ -138,6 +158,9 @@ export function ApplicationDetailDrawer({
   loanDisplayId,
   loanStatusLabel,
   loan,
+  canRecordRepayment = false,
+  onRecordRepayment,
+  refreshKey = 0,
   onClose,
 }: ApplicationDetailDrawerProps) {
   const [detail, setDetail] = useState<ApplicationDetail | null>(null);
@@ -145,7 +168,7 @@ export function ApplicationDetailDrawer({
     useState<LoanCollectionDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<DetailTab>("parties");
+  const [tab, setTab] = useState<DetailTab>("summary");
   const [menuOpen, setMenuOpen] = useState(false);
   const [preview, setPreview] = useState<{ src: string; alt: string } | null>(
     null,
@@ -266,6 +289,10 @@ export function ApplicationDetailDrawer({
   }
 
   useEffect(() => {
+    setTab("summary");
+  }, [applicationId]);
+
+  useEffect(() => {
     let cancelled = false;
     const boot = window.setTimeout(() => {
       if (!applicationId) {
@@ -277,7 +304,6 @@ export function ApplicationDetailDrawer({
 
       setLoading(true);
       setError(null);
-      setTab("parties");
       setMenuOpen(false);
       setDownloadError(null);
 
@@ -346,7 +372,7 @@ export function ApplicationDetailDrawer({
       cancelled = true;
       window.clearTimeout(boot);
     };
-  }, [applicationId, accessToken, tokenType, loan?.id]);
+  }, [applicationId, accessToken, tokenType, loan?.id, refreshKey]);
 
   const activities = useMemo(
     () =>
@@ -403,7 +429,7 @@ export function ApplicationDetailDrawer({
         onClick={onClose}
       />
       <aside className="relative z-10 flex h-full w-full max-w-[760px] flex-col border-l border-[#e6ebf0] bg-white shadow-[-18px_0_44px_rgba(15,23,42,0.18)]">
-        <header className="border-b border-[#edf1f5] px-5 pt-4">
+        <header className="px-5 pt-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
@@ -512,21 +538,24 @@ export function ApplicationDetailDrawer({
             </span>
           </div>
 
-          <div className="mt-3 flex gap-5">
-            {TABS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setTab(item.id)}
-                className={`border-b-2 pb-2.5 text-[13px] font-semibold transition ${
-                  tab === item.id
-                    ? "border-[#07885f] text-[#07885f]"
-                    : "border-transparent text-slate-500 hover:text-[#0b1220]"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
+          <div className="mt-4 -mx-5 flex gap-6 border-b border-[#edf1f5] px-5">
+            {TABS.map((item) => {
+              const active = tab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setTab(item.id)}
+                  className={`-mb-px border-b-2 pb-2.5 text-[13px] font-semibold transition ${
+                    active
+                      ? "border-[#07885f] text-[#07885f]"
+                      : "border-transparent text-slate-500 hover:text-[#0b1220]"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
           </div>
         </header>
 
@@ -546,15 +575,38 @@ export function ApplicationDetailDrawer({
               loan={loan}
               collectionDetail={collectionDetail}
               activities={activities}
-              downloadingPdf={downloadingPdf}
-              viewingPdf={viewingPdf}
-              downloadError={downloadError}
               onPreview={setPreview}
-              onViewAgreement={() => void viewAgreementPdf()}
-              onDownloadAgreement={() => void downloadAgreementPdf()}
             />
           ) : null}
         </div>
+
+        {loan ? (
+          <div className="shrink-0 border-t border-[#edf1f5] bg-white px-5 py-4">
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                disabled={!canRecordRepayment || !onRecordRepayment}
+                onClick={() => onRecordRepayment?.()}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#07885f] px-3 text-[13px] font-semibold text-white transition hover:bg-[#067352] disabled:cursor-not-allowed disabled:opacity-55"
+              >
+                <CreditCard className="size-4 shrink-0" />
+                Record Repayment
+              </button>
+              <button
+                type="button"
+                disabled={viewingPdf || downloadingPdf}
+                onClick={() => void viewAgreementPdf()}
+                className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-[#07885f] bg-white px-3 text-[13px] font-semibold text-[#07885f] transition hover:bg-[#f0faf5] disabled:opacity-55"
+              >
+                <FileText className="size-4 shrink-0" />
+                {viewingPdf ? "Opening…" : "View Agreement"}
+              </button>
+            </div>
+            {downloadError ? (
+              <p className="mt-2 text-xs text-rose-600">{downloadError}</p>
+            ) : null}
+          </div>
+        ) : null}
       </aside>
 
       {preview ? (
@@ -604,12 +656,7 @@ function ApplicationDetailBody({
   loan,
   collectionDetail,
   activities,
-  downloadingPdf,
-  viewingPdf,
-  downloadError,
   onPreview,
-  onViewAgreement,
-  onDownloadAgreement,
 }: {
   detail: ApplicationDetail;
   tab: DetailTab;
@@ -617,12 +664,7 @@ function ApplicationDetailBody({
   loan?: LoanContext | null;
   collectionDetail: LoanCollectionDetail | null;
   activities: ActivityItem[];
-  downloadingPdf: boolean;
-  viewingPdf: boolean;
-  downloadError: string | null;
   onPreview: (preview: { src: string; alt: string }) => void;
-  onViewAgreement: () => void;
-  onDownloadAgreement: () => void;
 }) {
   const uploads = detail.media.filter(
     (item) => !isSignatureMediaType(item.type),
@@ -647,20 +689,177 @@ function ApplicationDetailBody({
   ]
     .filter(Boolean)
     .join(", ");
-  const currency = loan?.currency || "UGX";
 
   if (tab === "summary") {
+    const currency = loan?.currency || "UGX";
+    const outstanding =
+      collectionDetail?.outstanding ?? loan?.balance ?? null;
+    const paidAmount =
+      collectionDetail?.paidAmount ?? loan?.paidAmount ?? null;
+    const totalRepayable =
+      collectionDetail?.loanAmount ??
+      loan?.totalRepayable ??
+      (typeof loan?.openingBalance === "number"
+        ? loan.openingBalance
+        : null) ??
+      detail.pricing?.totalRepayable ??
+      null;
+    const repaidPct =
+      totalRepayable != null && totalRepayable > 0 && paidAmount != null
+        ? Math.min(100, Math.round((paidAmount / totalRepayable) * 100))
+        : 0;
+    const overdueDays = Math.max(0, loan?.overdueDays ?? 0);
+    const isClosed =
+      loan?.status === "CLOSED" ||
+      loan?.status === "WRITTEN_OFF" ||
+      (typeof outstanding === "number" && outstanding <= 0);
+    const repaymentOnSchedule = isClosed || overdueDays < 1;
+    const nextDue =
+      loan?.nextDueDate ||
+      loan?.dueDate ||
+      null;
+    const installment =
+      loan?.installmentAmount ??
+      (detail.durationDays && totalRepayable
+        ? Math.round(totalRepayable / detail.durationDays)
+        : null);
+    const durationDays = loan?.durationDays ?? detail.durationDays;
+    const daysRemaining = resolveDaysRemaining({
+      dueDate: loan?.dueDate ?? null,
+      durationDays,
+      disbursedAt: loan?.disbursedAt ?? collectionDetail?.loanStartDate ?? null,
+      isClosed,
+    });
+    const lastPayment = collectionDetail?.paymentHistory?.[0] ?? null;
+    const processingFee =
+      loan?.processingFee ??
+      detail.processingFee ??
+      detail.pricing?.processingFee ??
+      null;
+    const interestAmount =
+      loan?.expectedInterest ?? detail.pricing?.interestAmount ?? null;
+    const principal = loan?.principal ?? detail.principalAmount;
+
     return (
-      <div className="space-y-4">
-        <PartyCard title="Loan terms">
+      <div className="space-y-5">
+        <section className="rounded-2xl border border-[#e6ebf0] bg-white p-4">
+          <h3 className="text-[12px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+            Repayment position
+          </h3>
+          <div className="mt-3">
+            <p className="text-[26px] font-bold tracking-[-0.03em] text-[#0b1220]">
+              {outstanding != null ? (
+                <>
+                  {currency} {formatMoneyAmount(outstanding)}
+                  <span className="ml-2 text-[15px] font-semibold text-slate-500">
+                    Outstanding
+                  </span>
+                </>
+              ) : (
+                "—"
+              )}
+            </p>
+            <p className="mt-1 text-[13px] font-medium text-slate-500">
+              {paidAmount != null && totalRepayable != null
+                ? `${currency} ${formatMoneyAmount(paidAmount)} of ${currency} ${formatMoneyAmount(totalRepayable)} repaid.`
+                : "Repayment progress unavailable."}
+            </p>
+            <div className="mt-3 flex items-center gap-3">
+              <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-[#e8eef3]">
+                <div
+                  className="h-full rounded-full bg-[#07885f] transition-[width]"
+                  style={{ width: `${repaidPct}%` }}
+                />
+              </div>
+              <span className="text-[12px] font-semibold tabular-nums text-slate-600">
+                {repaidPct}%
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <SummaryMetric
+              icon={<CalendarDays className="size-3.5" />}
+              label="Next due"
+              value={nextDue ? formatShortDate(nextDue) : "—"}
+            />
+            <SummaryMetric
+              icon={<Calculator className="size-3.5" />}
+              label="Instalment"
+              value={
+                installment != null
+                  ? `${currency} ${formatMoneyAmount(installment)}`
+                  : "—"
+              }
+            />
+            <SummaryMetric
+              icon={
+                repaymentOnSchedule ? (
+                  <CheckCircle2 className="size-3.5" />
+                ) : (
+                  <AlertCircle className="size-3.5" />
+                )
+              }
+              label="Repayment status"
+              value={
+                repaymentOnSchedule
+                  ? "On schedule"
+                  : `Overdue by ${overdueDays} day${overdueDays === 1 ? "" : "s"}`
+              }
+              valueClassName={
+                repaymentOnSchedule ? "text-[#07885f]" : "text-red-600"
+              }
+              iconClassName={
+                repaymentOnSchedule
+                  ? "bg-emerald-50 text-[#07885f]"
+                  : "bg-red-50 text-red-600"
+              }
+            />
+            <SummaryMetric
+              icon={<Hourglass className="size-3.5" />}
+              label="Loan period"
+              value={
+                isClosed
+                  ? "Closed"
+                  : daysRemaining == null
+                    ? durationDays != null
+                      ? `${durationDays} days`
+                      : "—"
+                    : daysRemaining <= 0
+                      ? "Ended"
+                      : `${daysRemaining} day${daysRemaining === 1 ? "" : "s"} remaining`
+              }
+            />
+            <SummaryMetric
+              icon={<Banknote className="size-3.5" />}
+              label="Last payment"
+              value={
+                lastPayment
+                  ? `${currency} ${formatMoneyAmount(lastPayment.amount)} - ${formatShortDate(lastPayment.paidAt)}`
+                  : paidAmount != null && paidAmount > 0
+                    ? `${currency} ${formatMoneyAmount(paidAmount)}`
+                    : "No payments yet"
+              }
+            />
+          </div>
+        </section>
+
+        <PartyCard title="Loan Terms">
           <div className="grid gap-3 sm:grid-cols-2">
             <InfoLine
               label="Principal"
               value={
-                <Money
-                  value={loan?.principal ?? detail.principalAmount}
-                  currency={currency}
-                />
+                <Money value={principal} currency={currency} />
+              }
+            />
+            <InfoLine
+              label="Daily instalment"
+              value={
+                installment != null ? (
+                  <Money value={installment} currency={currency} />
+                ) : (
+                  "—"
+                )
               }
             />
             <InfoLine
@@ -672,109 +871,65 @@ function ApplicationDetailBody({
               }
             />
             <InfoLine
-              label="Period"
-              value={
-                detail.durationDays != null
-                  ? `${detail.durationDays} days`
-                  : "—"
-              }
-            />
-            <InfoLine
               label="Processing fee"
-              value={<Money value={detail.processingFee} currency={currency} />}
+              value={
+                processingFee != null ? (
+                  <Money value={processingFee} currency={currency} />
+                ) : (
+                  "—"
+                )
+              }
             />
             <InfoLine
               label="Interest amount"
               value={
-                detail.pricing?.interestAmount != null ? (
-                  <Money
-                    value={detail.pricing.interestAmount}
-                    currency={currency}
-                  />
+                interestAmount != null ? (
+                  <Money value={interestAmount} currency={currency} />
                 ) : (
                   "—"
                 )
+              }
+            />
+            <InfoLine
+              label="Disbursement date"
+              value={
+                loan?.disbursedAt || collectionDetail?.loanStartDate
+                  ? formatShortDate(
+                      loan?.disbursedAt ||
+                        collectionDetail!.loanStartDate,
+                    )
+                  : "—"
               }
             />
             <InfoLine
               label="Total repayable"
               value={
-                collectionDetail?.loanAmount != null ? (
-                  <Money
-                    value={collectionDetail.loanAmount}
-                    currency={currency}
-                  />
-                ) : detail.pricing?.totalRepayable != null ? (
-                  <Money
-                    value={detail.pricing.totalRepayable}
-                    currency={currency}
-                  />
+                totalRepayable != null ? (
+                  <Money value={totalRepayable} currency={currency} />
                 ) : (
                   "—"
                 )
               }
             />
             <InfoLine
-              label="Repaid"
+              label="Loan type"
               value={
-                collectionDetail ? (
-                  <Money
-                    value={collectionDetail.paidAmount}
-                    currency={currency}
-                  />
-                ) : (
-                  "—"
-                )
+                loan?.loanTypeName || detail.templateName
+                  ? titleCase(loan?.loanTypeName || detail.templateName || "")
+                  : "—"
               }
             />
             <InfoLine
-              label="Outstanding"
+              label="Duration"
               value={
-                collectionDetail ? (
-                  <Money
-                    value={collectionDetail.outstanding}
-                    currency={currency}
-                  />
-                ) : (
-                  "—"
-                )
+                durationDays != null ? `${durationDays} days` : "—"
               }
             />
-            <InfoLine label="Collateral" value={detail.collateralType || "—"} />
             <InfoLine
-              label="Application status"
-              value={titleCaseStatus(detail.status)}
+              label="Collateral"
+              value={detail.collateralType || "—"}
             />
           </div>
-        </PartyCard>
-
-        <PartyCard title="Loan agreement">
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={onViewAgreement}
-              disabled={viewingPdf || downloadingPdf}
-              className="inline-flex h-9 items-center rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#111a2e] disabled:opacity-60"
-            >
-              {viewingPdf ? "Opening…" : "View loan agreement"}
-            </button>
-            <button
-              type="button"
-              onClick={onDownloadAgreement}
-              disabled={downloadingPdf || viewingPdf}
-              className="inline-flex h-9 items-center rounded-xl bg-[#07885f] px-3.5 text-xs font-semibold text-white disabled:opacity-60"
-            >
-              {downloadingPdf ? "Downloading…" : "Download loan agreement"}
-            </button>
-          </div>
-          <p className="mt-2 text-xs text-slate-500">
-            {detail.signedAgreementDownloadUrl
-              ? "Stored when this loan was given. Everyone with access can view or download the same PDF."
-              : "Generated and stored when the loan is given. Opening it once will save it for everyone."}
-          </p>
-          {downloadError ? (
-            <p className="mt-2 text-xs text-rose-600">{downloadError}</p>
-          ) : null}
         </PartyCard>
       </div>
     );
@@ -1210,6 +1365,76 @@ function InfoLine({ label, value }: { label: string; value: ReactNode }) {
       <p className="mt-1 text-[13px] font-semibold text-[#0b1220]">{value}</p>
     </div>
   );
+}
+
+function SummaryMetric({
+  icon,
+  label,
+  value,
+  valueClassName = "text-[#0b1220]",
+  iconClassName = "bg-[#f4f7f6] text-slate-500",
+}: {
+  icon: ReactNode;
+  label: string;
+  value: ReactNode;
+  valueClassName?: string;
+  iconClassName?: string;
+}) {
+  return (
+    <div className="flex min-w-0 items-start gap-2.5">
+      <span
+        className={`mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg ${iconClassName}`}
+      >
+        {icon}
+      </span>
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold text-slate-500">{label}</p>
+        <p
+          className={`mt-0.5 truncate text-[13px] font-semibold ${valueClassName}`}
+        >
+          {value}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function resolveDaysRemaining({
+  dueDate,
+  durationDays,
+  disbursedAt,
+  isClosed,
+}: {
+  dueDate: string | null;
+  durationDays: number | null | undefined;
+  disbursedAt: string | null;
+  isClosed: boolean;
+}) {
+  if (isClosed) return null;
+  if (dueDate) {
+    const due = new Date(dueDate);
+    if (!Number.isNaN(due.getTime())) {
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      due.setHours(0, 0, 0, 0);
+      return Math.round(
+        (due.getTime() - startOfToday.getTime()) / (24 * 60 * 60 * 1000),
+      );
+    }
+  }
+  if (durationDays == null || !disbursedAt) return null;
+  const start = new Date(disbursedAt);
+  if (Number.isNaN(start.getTime())) return null;
+  start.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const elapsed = Math.max(
+    0,
+    Math.round(
+      (today.getTime() - start.getTime()) / (24 * 60 * 60 * 1000),
+    ),
+  );
+  return durationDays - elapsed;
 }
 
 function StatusPill({ label }: { label: string }) {

@@ -146,6 +146,7 @@ export class CustomersService {
     customer: Customer | CustomerListRecord | CustomerDetailRecord,
   ): CustomerApiContract {
     const latestApplication = this.latestApplication(customer);
+    const registeredBy = this.registeredBy(customer);
     return {
       id: customer.id,
       branchId: customer.branchId ?? '',
@@ -158,6 +159,10 @@ export class CustomersService {
       collateralType: this.collateralType(latestApplication),
       city: this.city(latestApplication),
       loanCount: this.loanCount(customer),
+      activeLoanCount: this.activeLoanCount(customer),
+      hasOverdueLoan: this.hasOverdueLoan(customer),
+      registeredByName: registeredBy.name,
+      registeredByPublicId: registeredBy.publicId,
       verifiedAt: customer.verifiedAt?.toISOString() ?? null,
       createdAt: customer.createdAt.toISOString(),
     };
@@ -345,10 +350,27 @@ export class CustomersService {
   private latestApplication(
     customer: Customer | CustomerListRecord | CustomerDetailRecord,
   ) {
-    if ('loanApplications' in customer) {
-      return customer.loanApplications[0] ?? null;
+    if (!('loanApplications' in customer) || !customer.loanApplications.length) {
+      return null;
     }
-    return null;
+    return [...customer.loanApplications].sort(
+      (a, b) => b.updatedAt.getTime() - a.updatedAt.getTime(),
+    )[0];
+  }
+
+  private registeredBy(
+    customer: Customer | CustomerListRecord | CustomerDetailRecord,
+  ): { name: string | null; publicId: string | null } {
+    if (!('loanApplications' in customer)) {
+      return { name: null, publicId: null };
+    }
+    const withOfficer = [...customer.loanApplications]
+      .filter((app) => app.officer?.displayName)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())[0];
+    return {
+      name: withOfficer?.officer?.displayName ?? null,
+      publicId: withOfficer?.officer?.publicId ?? null,
+    };
   }
 
   private businessName(
@@ -414,4 +436,37 @@ export class CustomersService {
     if ('loans' in customer) return customer.loans.length;
     return 0;
   }
+
+  private activeLoanCount(
+    customer: Customer | CustomerListRecord | CustomerDetailRecord,
+  ) {
+    if (!('loans' in customer) || !Array.isArray(customer.loans)) {
+      return 0;
+    }
+    return customer.loans.filter((loan) =>
+      ACTIVE_LOAN_STATUSES.has(String(loan.status)),
+    ).length;
+  }
+
+  private hasOverdueLoan(
+    customer: Customer | CustomerListRecord | CustomerDetailRecord,
+  ) {
+    if (!('loans' in customer) || !Array.isArray(customer.loans)) {
+      return false;
+    }
+    return customer.loans.some(
+      (loan) =>
+        String(loan.status) === 'IN_ARREARS' ||
+        ('isFined' in loan && Boolean(loan.isFined)),
+    );
+  }
 }
+
+const ACTIVE_LOAN_STATUSES = new Set([
+  'SUBMITTED',
+  'APPROVED',
+  'DISBURSED',
+  'CURRENT',
+  'IN_ARREARS',
+  'RESTRUCTURED',
+]);

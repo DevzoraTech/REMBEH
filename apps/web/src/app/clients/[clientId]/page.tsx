@@ -311,7 +311,7 @@ export default function ClientDetailPage() {
                 ) : (
                   <div className="overflow-hidden">
                     <table className="w-full table-fixed text-left text-[10px] xl:text-[11px]">
-                      <thead className="border-b border-[var(--line)] bg-[#f7faf8] text-[9px] capitalize tracking-[0.06em] text-slate-500">
+                      <thead className="border-b border-[var(--line)] bg-[#e8edf2] text-[9px] capitalize tracking-[0.06em] text-slate-600">
                         <tr>
                           <th className="w-[12%] px-2 py-2.5 font-semibold">
                             loan id
@@ -471,7 +471,7 @@ export default function ClientDetailPage() {
               ) : (
                 <div className="overflow-hidden">
                   <table className="w-full table-fixed text-left text-[11px]">
-                    <thead className="border-b border-[var(--line)] bg-[#f7faf8] text-[9px] capitalize tracking-[0.06em] text-slate-500">
+                    <thead className="border-b border-[var(--line)] bg-[#e8edf2] text-[9px] capitalize tracking-[0.06em] text-slate-600">
                       <tr>
                         <th className="w-[16%] px-3 py-2.5 font-semibold">
                           date

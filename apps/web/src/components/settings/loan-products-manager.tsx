@@ -614,8 +614,8 @@ export function LoanProductsManager({
               <tr
                 className={
                   owner
-                    ? "border-b border-[#edf1f5] bg-[#f8faf9] text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500"
-                    : "border-b border-[var(--line)] text-[10px] capitalize tracking-[0.08em] text-slate-500"
+                    ? "border-b border-[#dfe5eb] bg-[#e8edf2] text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-600"
+                    : "border-b border-[var(--line)] bg-[#e8edf2] text-[10px] capitalize tracking-[0.08em] text-slate-600"
                 }
               >
                 <th className="w-[30%] px-3 py-2.5 font-semibold">Name</th>

@@ -509,7 +509,7 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
           </div>
 
           <div className="border-b border-[#edf1f5]">
-            <div className="hidden grid-cols-[1.3fr_1.1fr_0.9fr_1fr_1fr_1.1fr_0.95fr] gap-3 bg-[#f8faf9] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500 lg:grid">
+            <div className="hidden grid-cols-[1.3fr_1.1fr_0.9fr_1fr_1fr_1.1fr_0.95fr] gap-3 border-b border-[#dfe5eb] bg-[#e8edf2] px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-600 lg:grid">
               <span>Branch</span>
               <span>Report</span>
               <span>Date</span>
@@ -986,7 +986,7 @@ function ReportSummaryView({
         <div className="overflow-x-auto">
           <table className="w-full min-w-[620px] text-left text-xs">
             <thead>
-              <tr className="border-b border-[#edf1f5] bg-[#f8faf9] text-[10px] font-semibold text-slate-500">
+              <tr className="border-b border-[#dfe5eb] bg-[#e8edf2] text-[10px] font-semibold text-slate-600">
                 <th className="px-2 py-2 font-semibold">Agent</th>
                 <th className="px-2 py-2 text-right font-semibold">Float</th>
                 <th className="px-2 py-2 text-right font-semibold">Loans</th>

@@ -14,6 +14,7 @@ import {
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
+import { BranchSubscriptionMenu } from "../../components/app/branch-subscription-menu";
 import { formatNumber } from "./owner-common";
 import {
   useOwnerNotifications,
@@ -103,7 +104,7 @@ export function OwnerHeader({
       </div>
       <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
         {showSearch ? (
-          <label className="flex h-9 min-w-[220px] max-w-[315px] flex-1 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
+          <label className="flex h-9 min-w-[180px] max-w-[280px] flex-1 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)] sm:min-w-[220px] sm:max-w-[315px]">
             <Search className="size-3.5 shrink-0 text-slate-400" />
             <input
               ref={searchInputRef}
@@ -119,6 +120,10 @@ export function OwnerHeader({
               ⌘K
             </span>
           </label>
+        ) : null}
+
+        {notificationScope === "manager" ? (
+          <BranchSubscriptionMenu manageHref="/subscription" />
         ) : null}
 
         <TooltipToggle

@@ -32,6 +32,13 @@ export class BillingController {
     return this.billingService.getMyBranchStatus(user);
   }
 
+  /** Payment / subscription history for the caller's scope. */
+  @Get('payments')
+  @UseGuards(JwtAuthGuard)
+  listPayments(@CurrentUser() user: AuthenticatedUser) {
+    return this.billingService.listPayments(user);
+  }
+
   /** Owner may pay any branch; manager may pay their own branch. */
   @Post('branches/:branchId/checkout')
   @UseGuards(JwtAuthGuard)

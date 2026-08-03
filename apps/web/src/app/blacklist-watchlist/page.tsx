@@ -444,7 +444,7 @@ export default function BlacklistWatchlistPage() {
         ) : (
           <div className="panel overflow-hidden shadow-[0_10px_28px_rgba(20,33,61,0.06)]">
             <table className="w-full table-fixed text-left text-[11px]">
-              <thead className="border-b border-[var(--line)] bg-[#e5ece8] text-[9px] capitalize tracking-[0.06em] text-slate-500">
+              <thead className="border-b border-[var(--line)] bg-[#e8edf2] text-[9px] capitalize tracking-[0.06em] text-slate-600">
                 <tr>
                   <th className="w-[21%] px-2 py-2.5 font-semibold">
                     borrower

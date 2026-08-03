@@ -441,7 +441,7 @@ export function AgentDetailDrawer({
         onClick={onClose}
       />
       <aside className="relative z-10 flex h-full w-full max-w-[780px] flex-col border-l border-[#e6ebf0] bg-white shadow-[-18px_0_44px_rgba(15,23,42,0.18)]">
-        <header className="border-b border-[#edf1f5] px-6 pt-5">
+        <header className="px-6 pt-5">
           <div className="flex items-start justify-between gap-3">
             <div className="flex min-w-0 items-start gap-3.5">
               <AgentPhoto
@@ -548,13 +548,13 @@ export function AgentDetailDrawer({
             </div>
           </div>
 
-          <div className="mt-5 mb-4 inline-flex rounded-xl bg-[#f1f4f6] p-1">
-            <TabButton
+          <div className="mt-5 -mx-6 flex gap-6 border-b border-[#edf1f5] px-6">
+            <DrawerTab
               active={tab === "account"}
               onClick={() => setTab("account")}
               label="Account"
             />
-            <TabButton
+            <DrawerTab
               active={tab === "activity"}
               onClick={() => setTab("activity")}
               label="Activity"
@@ -689,7 +689,7 @@ export function AgentDetailDrawer({
                     ) : (
                       <div className="overflow-x-auto">
                         <table className="w-full min-w-[640px] text-left text-[13px]">
-                          <thead className="border-b border-[#edf1f5] text-[12px] font-medium text-slate-500">
+                          <thead className="border-b border-[#dfe5eb] bg-[#e8edf2] text-[12px] font-semibold text-slate-600">
                             <tr>
                               <th className="px-4 py-2.5 font-medium">Device</th>
                               <th className="px-4 py-2.5 font-medium">Type</th>
@@ -957,7 +957,7 @@ function EmptyRow({ message }: { message: string }) {
   return <p className="px-3 py-6 text-center text-sm text-slate-500">{message}</p>;
 }
 
-function TabButton({
+function DrawerTab({
   active,
   onClick,
   label,
@@ -970,10 +970,10 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`min-w-[104px] rounded-lg px-4 py-2 text-[13px] font-semibold transition ${
+      className={`-mb-px border-b-2 pb-2.5 text-[13px] font-semibold transition ${
         active
-          ? "bg-white text-[#07885f] shadow-[0_1px_3px_rgba(15,23,42,0.08)]"
-          : "bg-transparent text-slate-500 hover:text-[#0b1220]"
+          ? "border-[#07885f] text-[#07885f]"
+          : "border-transparent text-slate-500 hover:text-[#0b1220]"
       }`}
     >
       {label}

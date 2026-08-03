@@ -1,7 +1,14 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { Check, Loader2, Lock, RefreshCw } from "lucide-react";
+import {
+  Check,
+  Download,
+  FileText,
+  Headset,
+  Loader2,
+  RefreshCw,
+} from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "./app-shell";
 import { AppBootSkeleton } from "./skeleton";
@@ -17,6 +24,7 @@ import {
 import { resolveOperatorRole } from "../../lib/roles";
 import { formatDate, formatMoney } from "../../app/owner/owner-common";
 import { OwnerHeader } from "../../app/owner/owner-header";
+import { PaymentMethodBadge } from "./payment-method-badge";
 
 type BillingSummary = {
   plan: {
@@ -54,23 +62,36 @@ type CheckoutResponse = {
   redirectUrl: string;
 };
 
-const TRIAL_FEATURES = [
-  "Full access for your first month",
-  "Covers every branch you open",
-  "No payment required yet",
+type PaymentRow = {
+  id: string;
+  date: string;
+  branchId: string;
+  branchName: string;
+  transaction: string;
+  periodLabel: string | null;
+  amount: number;
+  currency: string;
+  paymentMethod: string;
+  status: string;
+  receipt: string | null;
+  canRetry: boolean;
+};
+
+const PRO_BENEFITS = [
+  "Unlimited borrower records",
+  "Loan and repayment management",
+  "Agent and branch operations",
+  "Reports and exports",
+  "Full business analytics",
+  "SMS notifications alerts and reminders",
+  "Cloud backup and synchronisation",
+  "Ongoing product updates",
+  "24hr support",
 ];
 
-const PRO_FEATURES = [
-  "Everything in your free trial",
-  "One branch, fully unlocked",
-  "Pay by mobile money or card",
-];
-
-const BRANCH_FEATURES = [
-  "Subscribe only where you operate",
-  "Other branches stay open if one lapses",
-  "Renew anytime from this page",
-];
+const TRIAL_TOTAL_DAYS = 30;
+const PERIOD_TOTAL_DAYS = 30;
+const GRACE_TOTAL_DAYS = 2;
 
 function authHeaders(session: RembehSession) {
   return {
@@ -109,60 +130,47 @@ function friendlyError(raw: unknown): string {
   return text;
 }
 
-function statusCopy(
+function currentStatusTitle(
   row: BillingSummary["branches"][number],
   trialActive: boolean,
 ) {
-  if (trialActive && row.status === "TRIAL") {
-    return {
-      label: "Free trial",
-      tone: "good" as const,
-      detail: "Paid time starts after the trial",
-    };
-  }
+  if (trialActive && row.status === "TRIAL") return "Free Trial";
   switch (row.status) {
+    case "TRIAL":
+      return "Free Trial";
     case "ACTIVE":
-      return {
-        label: "Active",
-        tone: "good" as const,
-        detail: row.currentPeriodEnd
-          ? `Renews ${formatDate(row.currentPeriodEnd)}`
-          : null,
-      };
+      return "Pro";
     case "GRACE":
     case "PAST_DUE":
-      return {
-        label: "Renew soon",
-        tone: "warn" as const,
-        detail:
-          row.daysUntilGraceEnd != null
-            ? `${Math.max(0, row.daysUntilGraceEnd)}d left`
-            : "Renew to keep open",
-      };
+      return "Grace period";
     case "LOCKED":
-      return {
-        label: "Paused",
-        tone: "bad" as const,
-        detail: "Renew to reopen",
-      };
-    case "TRIAL":
-      return { label: "Free trial", tone: "good" as const, detail: null };
+      return "Paused";
     default:
-      return { label: "—", tone: "muted" as const, detail: null };
+      return "Pro";
   }
 }
 
-function actionLabel(
-  row: BillingSummary["branches"][number],
-  trialActive: boolean,
-) {
-  if (!row.canCheckout) return null;
-  if (row.status === "LOCKED" || row.status === "GRACE" || row.status === "PAST_DUE") {
-    return "Renew";
+function daysRemainingFor(row: BillingSummary["branches"][number], trial: BillingSummary["trial"]) {
+  if (row.status === "TRIAL" || (trial.active && row.status === "TRIAL")) {
+    return Math.max(0, trial.daysRemaining);
   }
-  if (row.status === "ACTIVE") return "Extend";
-  if (row.status === "TRIAL") return trialActive ? "Subscribe" : "Subscribe";
-  return "Subscribe";
+  if (row.status === "GRACE" || row.status === "PAST_DUE") {
+    return Math.max(0, row.daysUntilGraceEnd ?? 0);
+  }
+  if (row.status === "LOCKED") {
+    return 0;
+  }
+  return Math.max(0, row.daysUntilPeriodEnd ?? 0);
+}
+
+function ringTotals(row: BillingSummary["branches"][number], trialActive: boolean) {
+  if (row.status === "TRIAL" || (trialActive && row.status === "TRIAL")) {
+    return TRIAL_TOTAL_DAYS;
+  }
+  if (row.status === "GRACE" || row.status === "PAST_DUE") {
+    return GRACE_TOTAL_DAYS;
+  }
+  return PERIOD_TOTAL_DAYS;
 }
 
 export function SubscriptionWorkspace({
@@ -188,11 +196,16 @@ function SubscriptionWorkspaceContent({
   const [workspace, setWorkspace] = useState<RembehWorkspace | null>(null);
   const [user, setUser] = useState<RembehUser | null>(null);
   const [ready, setReady] = useState(false);
-  const [search, setSearch] = useState("");
   const [summary, setSummary] = useState<BillingSummary | null>(null);
+  const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [payingBranchId, setPayingBranchId] = useState<string | null>(null);
+  const [focusedBranchId, setFocusedBranchId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const paid = searchParams.get("paid") === "1";
   const nextPath = mode === "owner" ? "/owner/subscription" : "/subscription";
 
@@ -228,7 +241,7 @@ function SubscriptionWorkspaceContent({
     return () => window.clearTimeout(boot);
   }, [mode, nextPath, router, searchParams]);
 
-  const load = useCallback(async () => {
+  const loadSummary = useCallback(async () => {
     if (!session) return;
     setLoading(true);
     setError(null);
@@ -250,6 +263,32 @@ function SubscriptionWorkspaceContent({
     }
   }, [session]);
 
+  const loadPayments = useCallback(async () => {
+    if (!session) return;
+    setPaymentsLoading(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/billing/payments`, {
+        headers: authHeaders(session),
+      });
+      const payload = await readApiJson<{
+        payments?: PaymentRow[];
+        message?: string | string[];
+      }>(response);
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      setPayments(payload.payments ?? []);
+    } catch (err) {
+      setError(friendlyError(err));
+    } finally {
+      setPaymentsLoading(false);
+    }
+  }, [session]);
+
+  const load = useCallback(async () => {
+    await Promise.all([loadSummary(), loadPayments()]);
+  }, [loadSummary, loadPayments]);
+
   useEffect(() => {
     if (!ready || !session) return;
     void load();
@@ -263,14 +302,46 @@ function SubscriptionWorkspaceContent({
     return () => window.clearTimeout(timer);
   }, [paid, session, load]);
 
-  const visibleBranches = useMemo(() => {
-    if (!summary) return [];
-    const q = search.trim().toLowerCase();
-    if (!q) return summary.branches;
-    return summary.branches.filter((row) =>
-      row.branchName.toLowerCase().includes(q),
+  useEffect(() => {
+    if (!summary?.branches.length) return;
+    setFocusedBranchId((current) => {
+      if (current && summary.branches.some((b) => b.branchId === current)) {
+        return current;
+      }
+      const checkoutable = summary.branches.find((b) => b.canCheckout);
+      return checkoutable?.branchId ?? summary.branches[0]?.branchId ?? null;
+    });
+  }, [summary]);
+
+  const focusedBranch = useMemo(() => {
+    if (!summary || !focusedBranchId) return null;
+    return (
+      summary.branches.find((b) => b.branchId === focusedBranchId) ??
+      summary.branches[0] ??
+      null
     );
-  }, [summary, search]);
+  }, [summary, focusedBranchId]);
+
+  const filteredPayments = useMemo(() => {
+    return payments.filter((row) => {
+      if (statusFilter !== "all") {
+        if (row.status.toLowerCase() !== statusFilter.toLowerCase()) {
+          return false;
+        }
+      }
+      if (dateFrom) {
+        const from = new Date(dateFrom);
+        from.setHours(0, 0, 0, 0);
+        if (new Date(row.date) < from) return false;
+      }
+      if (dateTo) {
+        const to = new Date(dateTo);
+        to.setHours(23, 59, 59, 999);
+        if (new Date(row.date) > to) return false;
+      }
+      return true;
+    });
+  }, [payments, statusFilter, dateFrom, dateTo]);
 
   async function startCheckout(branchId: string) {
     if (!session) return;
@@ -303,10 +374,18 @@ function SubscriptionWorkspaceContent({
     }
   }
 
-  function scrollToBranches() {
-    document
-      .getElementById("your-branches")
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  function handleSubscribe() {
+    if (!summary) return;
+    if (mode === "manager") {
+      const branch = summary.branches[0];
+      if (branch?.canCheckout) void startCheckout(branch.branchId);
+      return;
+    }
+    const selected =
+      focusedBranch ??
+      summary.branches.find((b) => b.canCheckout) ??
+      summary.branches[0];
+    if (selected?.canCheckout) void startCheckout(selected.branchId);
   }
 
   if (!ready || !session || !workspace || !user) {
@@ -315,29 +394,90 @@ function SubscriptionWorkspaceContent({
 
   const amount = summary?.plan.amount ?? 30_000;
   const currency = summary?.plan.currency ?? "UGX";
-  const isBranchScope = summary?.scope === "branch" || mode === "manager";
   const priceLabel = formatMoney(amount, currency);
+  const branchName =
+    focusedBranch?.branchName ??
+    summary?.branches[0]?.branchName ??
+    "your branch";
+  const trialActive = Boolean(summary?.trial.active);
+  const daysLeft = focusedBranch
+    ? daysRemainingFor(focusedBranch, summary!.trial)
+    : 0;
+  const ringTotal = focusedBranch
+    ? ringTotals(focusedBranch, trialActive)
+    : TRIAL_TOTAL_DAYS;
+  const statusTitle = focusedBranch
+    ? currentStatusTitle(focusedBranch, trialActive)
+    : "Pro";
+  const isTrial =
+    focusedBranch?.status === "TRIAL" ||
+    (trialActive && focusedBranch?.status === "TRIAL");
+  const isGrace =
+    focusedBranch?.status === "GRACE" || focusedBranch?.status === "PAST_DUE";
+  const isPaused = focusedBranch?.status === "LOCKED";
+  const isActive = focusedBranch?.status === "ACTIVE";
+  const canSubscribe = Boolean(
+    mode === "manager"
+      ? summary?.branches[0]?.canCheckout
+      : focusedBranch?.canCheckout ??
+          summary?.branches.some((b) => b.canCheckout),
+  );
+  const subscribePaying =
+    payingBranchId != null &&
+    (payingBranchId === focusedBranch?.branchId ||
+      (mode === "manager" && payingBranchId === summary?.branches[0]?.branchId));
+
+  let daysCopy = `${daysLeft} day${daysLeft === 1 ? "" : "s"} remaining`;
+  if (isPaused) daysCopy = "Subscription paused";
+  else if (isGrace) daysCopy = `${daysLeft} day${daysLeft === 1 ? "" : "s"} left to renew`;
+
+  let bodyCopy = `Your trial ends in ${daysLeft} day${daysLeft === 1 ? "" : "s"}. Subscribe to keep full access.`;
+  if (isActive) {
+    bodyCopy = focusedBranch?.currentPeriodEnd
+      ? `Your Pro plan renews on ${formatDate(focusedBranch.currentPeriodEnd)}.`
+      : "Your Pro plan is active for this branch.";
+  } else if (isGrace) {
+    bodyCopy = `Your subscription has expired. Renew within ${daysLeft} day${daysLeft === 1 ? "" : "s"} to avoid a lock.`;
+  } else if (isPaused) {
+    bodyCopy = "This branch is paused. Renew to reopen lending and collections.";
+  } else if (!isTrial) {
+    bodyCopy = "Subscribe to unlock Pro for this branch.";
+  }
+
+  const showOwnerBranchSelect =
+    mode === "owner" && (summary?.branches.length ?? 0) > 1;
 
   return (
     <AppShell session={session} workspace={workspace} user={user}>
-      <div className="mx-auto max-w-6xl space-y-3 px-1 pb-6 sm:px-2">
+      <div className="mx-auto max-w-6xl space-y-4 px-1 pb-6 sm:px-2">
         <OwnerHeader
           title="Subscription"
-          subtitle={
-            isBranchScope
-              ? "Your branch plan."
-              : "Plans for every branch."
-          }
-          search={search}
-          onSearchChange={setSearch}
-          showSearch={
-            !isBranchScope && Boolean(summary && summary.branches.length > 5)
-          }
+          subtitle={`Manage the plan and billing for ${branchName}.`}
+          search=""
+          onSearchChange={() => undefined}
+          showSearch={false}
           showReportsButton={mode === "owner"}
-          searchPlaceholder="Find a branch…"
           settingsHref={mode === "owner" ? "/owner/settings" : "/settings"}
           reportsHref={mode === "owner" ? "/owner/reports" : "/reports"}
           notificationScope={mode === "owner" ? "owner" : "manager"}
+          actions={
+            showOwnerBranchSelect ? (
+              <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
+                <span className="hidden sm:inline">Branch</span>
+                <select
+                  value={focusedBranchId ?? ""}
+                  onChange={(event) => setFocusedBranchId(event.target.value)}
+                  className="h-9 rounded-xl border border-[var(--line)] bg-white px-3 text-xs font-semibold text-[#070b18] outline-none focus:border-[var(--forest-emerald)]"
+                >
+                  {summary!.branches.map((branch) => (
+                    <option key={branch.branchId} value={branch.branchId}>
+                      {branch.branchName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : undefined
+          }
         />
 
         {paid ? (
@@ -352,159 +492,254 @@ function SubscriptionWorkspaceContent({
           </p>
         ) : null}
 
-        <section className="relative overflow-hidden rounded-2xl bg-[#04140f] px-4 py-5 text-white shadow-[0_18px_48px_rgba(0,30,24,0.22)] sm:px-6 sm:py-6">
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0 opacity-35"
-            style={{
-              backgroundImage:
-                "radial-gradient(ellipse 70% 50% at 90% 0%, rgba(57,255,136,0.16), transparent 55%)",
-            }}
-          />
-
-          <div className="relative flex flex-wrap items-end justify-between gap-2">
-            <div>
-              <h2 className="font-[family-name:var(--font-display)] text-[clamp(1.35rem,2.5vw,1.75rem)] leading-tight tracking-[-0.02em]">
-                Choose your plan.
-              </h2>
-              <p className="mt-1 text-xs text-white/65 sm:text-sm">
-                Free trial first, then Pro per branch each month.
-              </p>
-            </div>
-            {summary?.trial.active ? (
-              <p className="rounded-full border border-[#39ff88]/30 bg-[#39ff88]/10 px-3 py-1 text-[11px] font-semibold text-[#7dffb5]">
-                Trial · {summary.trial.daysRemaining}d left
-              </p>
-            ) : null}
+        {loading && !summary ? (
+          <div className="flex items-center justify-center gap-2 rounded-2xl border border-[var(--line)] bg-white py-16 text-sm text-slate-500">
+            <Loader2 className="size-4 animate-spin" />
+            Loading…
           </div>
+        ) : (
+          <section className="grid gap-3 lg:grid-cols-3">
+            {/* A) Current subscription */}
+            <article className="flex flex-col rounded-2xl border border-[var(--line)] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+              <span className="inline-flex w-fit rounded-full bg-[#e8f1fb] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#2b6cb0]">
+                Current subscription
+              </span>
+              <div className="mt-4 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="font-[family-name:var(--font-display)] text-2xl tracking-[-0.03em] text-[#070b18]">
+                    {statusTitle}
+                  </h2>
+                  <p className="mt-1 text-sm font-medium text-slate-600">
+                    {daysCopy}
+                  </p>
+                  <p className="mt-3 text-xs leading-relaxed text-slate-500">
+                    {bodyCopy}
+                  </p>
+                </div>
+                <DaysRing daysLeft={daysLeft} total={ringTotal} />
+              </div>
+              <div className="mt-auto border-t border-[var(--line)] pt-4">
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span className="text-slate-500">Current cost</span>
+                  <span className="font-semibold text-[#070b18]">
+                    {isTrial || isPaused
+                      ? formatMoney(0, currency)
+                      : priceLabel}
+                  </span>
+                </div>
+                <div className="mt-1.5 flex items-center justify-between gap-2 text-xs">
+                  <span className="text-slate-500">
+                    {isTrial ? "After trial" : "Renews"}
+                  </span>
+                  <span className="font-semibold text-[#070b18]">
+                    {priceLabel} / month
+                  </span>
+                </div>
+              </div>
+            </article>
 
-          {loading && !summary ? (
-            <div className="relative mt-6 flex justify-center text-sm text-white/60">
-              <Loader2 className="mr-2 size-4 animate-spin" />
-              Loading…
-            </div>
-          ) : (
-            <div className="relative mt-4 grid gap-3 sm:grid-cols-3">
-              <PlanCard
-                name="Trial"
-                priceLabel="Free"
-                features={TRIAL_FEATURES}
-                accent={summary?.trial.active ? "active" : "default"}
-              />
-              <PlanCard
-                name="Pro"
-                priceLabel={priceLabel}
-                priceHint="/ branch / month"
-                features={PRO_FEATURES}
-                featured
-                ctaLabel="Branches"
-                onCta={scrollToBranches}
-              />
-              <PlanCard
-                name="Branches"
-                priceLabel="Flexible"
-                features={BRANCH_FEATURES}
-              />
-            </div>
-          )}
-        </section>
-
-        <section
-          id="your-branches"
-          className="scroll-mt-4 overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-[0_10px_28px_rgba(15,23,42,0.04)]"
-        >
-          <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-4 py-3 sm:px-5">
-            <div>
-              <h3 className="text-sm font-semibold text-[#070b18]">
-                {isBranchScope ? "Your branch" : "Branches"}
-              </h3>
-              <p className="text-xs text-slate-500">
-                {isBranchScope
-                  ? "Current plan — renew here."
-                  : "Current plan for each location."}
+            {/* B) Plan */}
+            <article className="flex flex-col rounded-2xl border border-[var(--line)] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+              <span className="inline-flex w-fit rounded-full bg-[#e9f8ef] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#07885f]">
+                Plan
+              </span>
+              <h2 className="mt-4 font-[family-name:var(--font-display)] text-2xl tracking-[-0.03em] text-[#070b18]">
+                Pro
+              </h2>
+              <p className="mt-1 text-lg font-semibold text-[#07885f]">
+                {priceLabel} / month
               </p>
+              <ul className="mt-4 flex-1 space-y-2">
+                {PRO_BENEFITS.map((item) => (
+                  <li
+                    key={item}
+                    className="flex gap-2 text-[12px] leading-snug text-slate-700"
+                  >
+                    <Check
+                      className="mt-0.5 size-3.5 shrink-0 text-[#07885f]"
+                      strokeWidth={2.75}
+                    />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+              <button
+                type="button"
+                disabled={!canSubscribe || subscribePaying}
+                onClick={handleSubscribe}
+                className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#07885f] text-sm font-semibold text-white shadow-[0_12px_24px_rgba(7,136,95,0.22)] transition hover:bg-[#067352] disabled:cursor-not-allowed disabled:opacity-55"
+              >
+                {subscribePaying ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : null}
+                Subscribe
+              </button>
+            </article>
+
+            {/* C) Support */}
+            <article className="flex flex-col rounded-2xl border border-[var(--line)] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+              <div className="grid size-11 place-items-center rounded-2xl bg-[#e9f8ef] text-[#07885f]">
+                <Headset className="size-5" strokeWidth={2} />
+              </div>
+              <h2 className="mt-4 font-[family-name:var(--font-display)] text-xl tracking-[-0.02em] text-[#070b18]">
+                Need help? We&apos;re here for you.
+              </h2>
+              <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                Questions about billing, renewals, or unlocking a paused branch?
+                Our team can walk you through it.
+              </p>
+              <div className="mt-5 rounded-xl border border-[var(--line)] bg-[#f6f8fb] px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                  Email
+                </p>
+                <a
+                  href="mailto:support@rembeh.com"
+                  className="mt-1 block text-sm font-semibold text-[#07885f] hover:underline"
+                >
+                  support@rembeh.com
+                </a>
+              </div>
+              <p className="mt-auto pt-4 text-xs text-slate-500">
+                Response within 24 hours on business days.
+              </p>
+            </article>
+          </section>
+        )}
+
+        {/* Subscription history */}
+        <section className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] px-4 py-3 sm:px-5">
+            <div className="flex items-center gap-2">
+              <FileText className="size-4 text-[#07885f]" />
+              <h3 className="text-sm font-semibold text-[#070b18]">
+                Subscription history
+              </h3>
             </div>
-            <button
-              type="button"
-              onClick={() => void load()}
-              className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--line)] px-2.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
-            >
-              <RefreshCw className="size-3" />
-              Refresh
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value)}
+                className="h-8 rounded-lg border border-[var(--line)] bg-white px-2.5 text-[11px] font-semibold text-slate-700 outline-none focus:border-[var(--forest-emerald)]"
+              >
+                <option value="all">All statuses</option>
+                <option value="Paid">Paid</option>
+                <option value="Failed">Failed</option>
+                <option value="Pending">Pending</option>
+              </select>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(event) => setDateFrom(event.target.value)}
+                className="h-8 rounded-lg border border-[var(--line)] bg-white px-2 text-[11px] font-medium text-slate-700 outline-none focus:border-[var(--forest-emerald)]"
+                aria-label="From date"
+              />
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(event) => setDateTo(event.target.value)}
+                className="h-8 rounded-lg border border-[var(--line)] bg-white px-2 text-[11px] font-medium text-slate-700 outline-none focus:border-[var(--forest-emerald)]"
+                aria-label="To date"
+              />
+              <button
+                type="button"
+                onClick={() => void load()}
+                className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--line)] px-2.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                <RefreshCw className="size-3" />
+                Refresh
+              </button>
+            </div>
           </div>
 
           <div className="px-3 py-3 sm:px-4">
-            {loading && !summary ? (
-              <div className="flex items-center gap-2 py-4 text-sm text-slate-500">
+            {paymentsLoading && payments.length === 0 ? (
+              <div className="flex items-center gap-2 py-6 text-sm text-slate-500">
                 <Loader2 className="size-4 animate-spin" />
-                Loading…
+                Loading history…
               </div>
-            ) : null}
-
-            {summary && visibleBranches.length === 0 ? (
-              <p className="rounded-xl bg-slate-50 px-3 py-6 text-center text-sm text-slate-500">
-                {summary.branches.length === 0
-                  ? isBranchScope
-                    ? "No branch assigned yet."
-                    : "Add a branch to manage plans."
-                  : "No branches match that search."}
+            ) : filteredPayments.length === 0 ? (
+              <p className="rounded-xl bg-slate-50 px-3 py-8 text-center text-sm text-slate-500">
+                {payments.length === 0
+                  ? "No payments yet."
+                  : "No payments match these filters."}
               </p>
-            ) : null}
-
-            {summary && visibleBranches.length > 0 ? (
-              <div className="overflow-hidden rounded-xl border border-[var(--line)]">
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-[var(--line)]">
                 <table className="min-w-full text-left text-sm">
-                  <thead className="bg-[#f0f4f6] text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                  <thead className="border-b border-[#dfe5eb] bg-[#e8edf2] text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-600">
                     <tr>
+                      <th className="px-3 py-2 font-semibold">Date</th>
                       <th className="px-3 py-2 font-semibold">Branch</th>
-                      <th className="px-3 py-2 font-semibold">Status</th>
-                      <th className="hidden px-3 py-2 font-semibold sm:table-cell">
-                        Renews
+                      <th className="px-3 py-2 font-semibold">Transaction</th>
+                      <th className="hidden px-3 py-2 font-semibold md:table-cell">
+                        Period
                       </th>
+                      <th className="px-3 py-2 font-semibold">Amount</th>
+                      <th className="hidden px-3 py-2 font-semibold lg:table-cell">
+                        Payment method
+                      </th>
+                      <th className="px-3 py-2 font-semibold">Status</th>
+                      <th className="px-3 py-2 font-semibold">Receipt</th>
                       <th className="px-3 py-2 text-right font-semibold">
                         Action
                       </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--line)] bg-white">
-                    {visibleBranches.map((row) => {
-                      const copy = statusCopy(row, summary.trial.active);
-                      const label = actionLabel(row, summary.trial.active);
-                      const paying = payingBranchId === row.branchId;
+                    {filteredPayments.map((row) => {
+                      const retrying = payingBranchId === row.branchId;
+                      const failed = row.status === "Failed" || row.canRetry;
+                      const isPaid = row.status === "Paid";
                       return (
-                        <tr key={row.branchId} className="align-middle">
-                          <td className="px-3 py-2.5">
-                            <p className="text-[13px] font-semibold text-[#070b18]">
-                              {row.branchName}
-                            </p>
-                            <p className="text-[11px] text-slate-500 sm:hidden">
-                              {copy.detail ?? priceLabel}
-                            </p>
+                        <tr key={row.id} className="align-middle">
+                          <td className="whitespace-nowrap px-3 py-2.5 text-[13px] text-slate-700">
+                            {formatDate(row.date)}
+                          </td>
+                          <td className="px-3 py-2.5 text-[13px] font-medium text-[#070b18]">
+                            {row.branchName}
+                          </td>
+                          <td className="px-3 py-2.5 text-[13px] text-slate-700">
+                            {row.transaction}
+                          </td>
+                          <td className="hidden px-3 py-2.5 text-xs text-slate-600 md:table-cell">
+                            {row.periodLabel ?? "—"}
+                          </td>
+                          <td className="whitespace-nowrap px-3 py-2.5 text-[13px] font-semibold text-[#070b18]">
+                            {formatMoney(row.amount, row.currency)}
+                          </td>
+                          <td className="hidden px-3 py-2.5 lg:table-cell">
+                            <PaymentMethodBadge
+                              method={row.paymentMethod || ""}
+                            />
                           </td>
                           <td className="px-3 py-2.5">
-                            <StatusPill tone={copy.tone} label={copy.label} />
+                            <PaymentStatusPill status={row.status} />
                           </td>
-                          <td className="hidden px-3 py-2.5 text-xs text-slate-600 sm:table-cell">
-                            {copy.detail ?? "—"}
+                          <td className="px-3 py-2.5 text-xs text-slate-600">
+                            {isPaid && row.receipt ? (
+                              <span className="inline-flex items-center gap-1 font-medium text-slate-700">
+                                <Download className="size-3 text-[#07885f]" />
+                                {row.receipt}
+                              </span>
+                            ) : (
+                              "—"
+                            )}
                           </td>
                           <td className="px-3 py-2.5 text-right">
-                            {label ? (
+                            {failed ? (
                               <button
                                 type="button"
-                                disabled={paying}
+                                disabled={retrying}
                                 onClick={() => void startCheckout(row.branchId)}
-                                className="inline-flex h-8 min-w-[5.75rem] items-center justify-center gap-1 rounded-full bg-[#003f35] px-3 text-[11px] font-semibold text-white hover:bg-[#025144] disabled:opacity-70"
+                                className="inline-flex h-8 min-w-[4.5rem] items-center justify-center gap-1 rounded-full bg-rose-600 px-3 text-[11px] font-semibold text-white hover:bg-rose-700 disabled:opacity-70"
                               >
-                                {paying ? (
+                                {retrying ? (
                                   <Loader2 className="size-3 animate-spin" />
                                 ) : null}
-                                {paying ? "…" : label}
+                                Retry
                               </button>
                             ) : (
-                              <span className="text-[11px] font-medium text-emerald-700">
-                                Included
-                              </span>
+                              <span className="text-[11px] text-slate-400">—</span>
                             )}
                           </td>
                         </tr>
@@ -513,7 +748,7 @@ function SubscriptionWorkspaceContent({
                   </tbody>
                 </table>
               </div>
-            ) : null}
+            )}
           </div>
         </section>
       </div>
@@ -521,102 +756,67 @@ function SubscriptionWorkspaceContent({
   );
 }
 
-function PlanCard({
-  name,
-  priceLabel,
-  priceHint,
-  features,
-  featured,
-  accent,
-  ctaLabel,
-  onCta,
-}: {
-  name: string;
-  priceLabel: string;
-  priceHint?: string;
-  features: string[];
-  featured?: boolean;
-  accent?: "default" | "active";
-  ctaLabel?: string;
-  onCta?: () => void;
-}) {
+function DaysRing({ daysLeft, total }: { daysLeft: number; total: number }) {
+  const size = 72;
+  const stroke = 7;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const ratio = total > 0 ? Math.min(1, Math.max(0, daysLeft / total)) : 0;
+  const offset = circumference * (1 - ratio);
+
   return (
-    <article
-      className={`relative flex flex-col rounded-xl border px-4 py-4 ${
-        featured
-          ? "border-[#39ff88]/65 bg-[#061a14] sm:-translate-y-1"
-          : accent === "active"
-            ? "border-[#39ff88]/40 bg-black/25"
-            : "border-[#39ff88]/22 bg-black/20"
-      }`}
+    <div
+      className="relative shrink-0"
+      style={{ width: size, height: size }}
+      aria-label={`${daysLeft} of ${total} days remaining`}
     >
-      {featured ? (
-        <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full bg-[#39ff88] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-[#04140f]">
-          Recommended
-        </span>
-      ) : null}
-
-      <h3 className="font-[family-name:var(--font-display)] text-xl leading-none tracking-[-0.02em]">
-        {name}
-        <span className="text-[#39ff88]">.</span>
-      </h3>
-      <div className="mt-2 h-px w-full bg-[#39ff88]/20" />
-      <p className="mt-3 font-[family-name:var(--font-display)] text-[1.35rem] leading-none tracking-[-0.03em]">
-        {priceLabel}
-      </p>
-      {priceHint ? (
-        <p className="mt-1 text-[10px] font-medium text-white/50">{priceHint}</p>
-      ) : (
-        <p className="mt-1 text-[10px] text-transparent">.</p>
-      )}
-
-      <ul className="mt-3 space-y-1.5">
-        {features.map((item) => (
-          <li
-            key={item}
-            className="flex gap-1.5 text-[11px] leading-snug text-white/75"
-          >
-            <Check
-              className="mt-0.5 size-3.5 shrink-0 text-[#39ff88]"
-              strokeWidth={2.75}
-            />
-            <span>{item}</span>
-          </li>
-        ))}
-      </ul>
-
-      {ctaLabel && onCta ? (
-        <button
-          type="button"
-          onClick={onCta}
-          className="mt-4 inline-flex h-9 w-full items-center justify-center rounded-full border border-[#39ff88] text-xs font-semibold text-white transition hover:bg-[#39ff88]/12"
-        >
-          {ctaLabel}
-        </button>
-      ) : null}
-    </article>
+      <svg width={size} height={size} className="-rotate-90">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="#e8edf2"
+          strokeWidth={stroke}
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="#07885f"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+        />
+      </svg>
+      <div className="absolute inset-0 grid place-items-center text-center">
+        <div>
+          <p className="text-sm font-bold leading-none text-[#070b18]">
+            {daysLeft}
+          </p>
+          <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+            days
+          </p>
+        </div>
+      </div>
+    </div>
   );
 }
 
-function StatusPill({
-  tone,
-  label,
-}: {
-  tone: "good" | "warn" | "bad" | "muted";
-  label: string;
-}) {
-  const styles = {
-    good: "bg-emerald-50 text-emerald-800 ring-emerald-200",
-    warn: "bg-amber-50 text-amber-900 ring-amber-200",
-    bad: "bg-rose-50 text-rose-800 ring-rose-200",
-    muted: "bg-slate-50 text-slate-600 ring-slate-200",
-  }[tone];
+function PaymentStatusPill({ status }: { status: string }) {
+  const tone =
+    status === "Paid"
+      ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+      : status === "Failed"
+        ? "bg-rose-50 text-rose-800 ring-rose-200"
+        : "bg-amber-50 text-amber-900 ring-amber-200";
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${styles}`}
+      className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ring-inset ${tone}`}
     >
-      {tone === "bad" ? <Lock className="size-2.5" /> : null}
-      {label}
+      {status}
     </span>
   );
 }

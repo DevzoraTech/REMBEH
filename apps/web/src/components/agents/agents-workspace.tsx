@@ -407,7 +407,7 @@ export function AgentsWorkspace() {
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[760px] table-fixed text-left text-xs">
-                <thead className="bg-[#f8faf9] text-[10px] font-semibold text-slate-500">
+                <thead className="border-b border-[#dfe5eb] bg-[#e8edf2] text-[10px] font-semibold text-slate-600">
                   <tr>
                     <th className="w-[28%] px-3 py-2.5">Agent</th>
                     <th className="w-[12%] px-3 py-2.5">Status</th>

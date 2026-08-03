@@ -743,7 +743,7 @@ function SettingsPageContent() {
                   <div className="overflow-hidden">
                     <table className="w-full table-fixed border-collapse text-left text-[11px]">
                       <thead>
-                        <tr className="border-b border-[var(--line)] text-[10px] capitalize tracking-[0.08em] text-slate-500">
+                        <tr className="border-b border-[var(--line)] bg-[#e8edf2] text-[10px] capitalize tracking-[0.08em] text-slate-600">
                           <th className="w-[30%] py-2 pr-2 font-semibold">
                             name
                           </th>

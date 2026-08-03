@@ -2811,7 +2811,7 @@ function ReportAgentTable({ operation }: { operation: DailyOperation }) {
         </p>
       ) : (
         <table className="w-full table-fixed text-left text-[11px]">
-          <thead className="text-[10px] font-bold text-slate-500">
+          <thead className="bg-[#e8edf2] text-[10px] font-bold text-slate-600">
             <tr>
               <th className="w-[25%] py-1 pr-2">Agent</th>
               <th className="w-[15%] px-2 py-1 text-right">Float</th>
@@ -3149,7 +3149,7 @@ function CashMovementCard({ operation }: { operation: DailyOperation }) {
         </div>
       </div>
 
-      <div className="mt-2.5 grid grid-cols-[1fr_88px] gap-2 border-b border-[#edf1f5] pb-1.5 text-[10px] font-medium text-slate-500">
+      <div className="mt-2.5 -mx-1 grid grid-cols-[1fr_88px] gap-2 border-b border-[#dfe5eb] bg-[#e8edf2] px-2 py-1.5 text-[10px] font-semibold text-slate-600">
         <span>Line item</span>
         <span className="text-right">Amount</span>
       </div>
@@ -3256,7 +3256,7 @@ function AgentFloatBoard({
         </div>
       ) : (
         <>
-          <div className="mt-2.5 hidden grid-cols-[minmax(0,1.25fr)_repeat(4,minmax(0,0.7fr))_68px] gap-2 border-b border-[#edf1f5] bg-[#f8faf9] px-2 py-1.5 text-[10px] font-semibold text-slate-500 sm:grid">
+          <div className="mt-2.5 hidden grid-cols-[minmax(0,1.25fr)_repeat(4,minmax(0,0.7fr))_68px] gap-2 border-b border-[#dfe5eb] bg-[#e8edf2] px-2 py-1.5 text-[10px] font-semibold text-slate-600 sm:grid">
             <span>Agent</span>
             <span className="text-right">Float</span>
             <span className="text-right">Loans</span>
@@ -3398,7 +3398,7 @@ function DayExpensesStrip({
         </div>
       ) : (
         <>
-          <div className="mt-3 grid grid-cols-[1fr_96px_64px_72px] gap-2 border-b border-[#edf1f5] pb-2 text-[10px] font-medium text-slate-500">
+          <div className="mt-3 -mx-1 grid grid-cols-[1fr_96px_64px_72px] gap-2 border-b border-[#dfe5eb] bg-[#e8edf2] px-2 py-2 text-[10px] font-semibold text-slate-600">
             <span>Category</span>
             <span className="text-right">Amount</span>
             <span className="text-right">Time</span>

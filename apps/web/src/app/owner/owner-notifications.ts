@@ -110,23 +110,34 @@ export async function loadOwnerNotifications(
 
   inflight = (async () => {
     const links = linksFor(scope);
-    const [branchesPayload, reportsPayload, loansPayload, riskPayload] =
-      await Promise.all([
-        fetchJson<{ branches?: OwnerBranch[] }>(session, "/branches"),
-        fetchJson<{ reports?: OwnerReport[] }>(
-          session,
-          "/operations/reports",
-        ).catch(() => ({ reports: [] as OwnerReport[] })),
-        fetchJson<{ loans?: OwnerLoan[] }>(session, "/loans"),
-        fetchJson<{ entries?: RiskEntry[] }>(session, "/borrower-lists").catch(
-          () => ({ entries: [] as RiskEntry[] }),
-        ),
-      ]);
+    const [
+      branchesPayload,
+      reportsPayload,
+      loansPayload,
+      riskPayload,
+      billingPayload,
+    ] = await Promise.all([
+      fetchJson<{ branches?: OwnerBranch[] }>(session, "/branches"),
+      fetchJson<{ reports?: OwnerReport[] }>(
+        session,
+        "/operations/reports",
+      ).catch(() => ({ reports: [] as OwnerReport[] })),
+      fetchJson<{ loans?: OwnerLoan[] }>(session, "/loans"),
+      fetchJson<{ entries?: RiskEntry[] }>(session, "/borrower-lists").catch(
+        () => ({ entries: [] as RiskEntry[] }),
+      ),
+      scope === "owner"
+        ? fetchJson<{ reminders?: string[] }>(session, "/billing/summary").catch(
+            () => ({ reminders: [] as string[] }),
+          )
+        : Promise.resolve({ reminders: [] as string[] }),
+    ]);
 
     const branches = branchesPayload.branches ?? [];
     const reports = reportsPayload.reports ?? [];
     const loans = loansPayload.loans ?? [];
     const riskEntries = riskPayload.entries ?? [];
+    const billingReminders = billingPayload.reminders ?? [];
 
     const waiting = reports.filter((report) => report.status === "SENT_TO_OWNER");
     const returned = reports.filter(
@@ -154,6 +165,21 @@ export async function loadOwnerNotifications(
     const items: OwnerNotificationItem[] = [];
 
     if (scope === "owner") {
+      billingReminders.forEach((reminder, index) => {
+        const urgent = /lock|paused|expired|grace|needs renewing|stay open/i.test(
+          reminder,
+        );
+        items.push({
+          id: `billing-${index}`,
+          title: "Branch subscription",
+          detail: reminder,
+          href: "/owner/subscription",
+          tone: urgent ? "red" : "gold",
+          icon: "alert",
+          time: "Today",
+        });
+      });
+
       waiting.slice(0, 4).forEach((report) => {
         items.push({
           id: `report-${report.id}`,

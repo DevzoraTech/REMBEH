@@ -395,7 +395,7 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
             </select>
           </div>
 
-          <div className="hidden grid-cols-[1.45fr_1.05fr_1fr_0.95fr_0.9fr_0.85fr_1.05fr_42px] gap-3 border-b border-[#edf1f5] bg-[#f8faf9] px-4 py-3 text-[10px] font-semibold text-slate-500 xl:grid">
+          <div className="hidden grid-cols-[1.45fr_1.05fr_1fr_0.95fr_0.9fr_0.85fr_1.05fr_42px] gap-3 border-b border-[#dfe5eb] bg-[#e8edf2] px-4 py-3 text-[10px] font-semibold text-slate-600 xl:grid">
             <span>Borrower</span>
             <span>Phone</span>
             <span>Loan ID</span>

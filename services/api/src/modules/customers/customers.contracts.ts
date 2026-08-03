@@ -10,6 +10,12 @@ export type CustomerApiContract = {
   collateralType: string | null;
   city: string | null;
   loanCount: number;
+  /** Open / in-progress loans (not closed / written off / rejected / draft). */
+  activeLoanCount: number;
+  /** True when any loan is in arrears or has overdue fines. */
+  hasOverdueLoan: boolean;
+  registeredByName: string | null;
+  registeredByPublicId: string | null;
   verifiedAt: string | null;
   createdAt: string;
 };

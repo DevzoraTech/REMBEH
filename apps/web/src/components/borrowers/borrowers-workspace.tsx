@@ -1,20 +1,26 @@
 "use client";
 
 import {
+  ArrowDown,
+  ArrowUp,
   Building2,
   CalendarDays,
   Check,
-  ChevronDown,
   Download,
-  Filter,
-  MapPin,
+  MoreVertical,
   RefreshCw,
   ShieldCheck,
-  UserCheck,
   Users,
   X,
 } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  type MouseEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "../app/app-shell";
 import {
@@ -22,12 +28,7 @@ import {
   PaginationControls,
   paginateItems,
 } from "../app/pagination";
-import { RowActions } from "../app/row-actions";
-import { AppBootSkeleton, SkeletonBlock } from "../app/skeleton";
-import {
-  WorkspaceStatCard,
-  WorkspaceStatSkeleton,
-} from "../app/workspace-stat-card";
+import { AppBootSkeleton, TableSkeleton } from "../app/skeleton";
 import {
   OwnerBorrower,
   formatDate,
@@ -46,6 +47,15 @@ import {
   readAuthState,
 } from "../../lib/auth-session";
 import { resolveOperatorRole } from "../../lib/roles";
+import {
+  BorrowersFiltersControl,
+  EMPTY_BORROWERS_FILTERS,
+  activeBorrowerFilterChips,
+  borrowerMatchesDateRegistered,
+  borrowerMatchesOfficer,
+  type BorrowersAdvancedFilters,
+  type OfficerOption,
+} from "./borrowers-filters";
 
 export type BorrowersMode = "owner" | "manager";
 
@@ -55,6 +65,12 @@ type BorrowersSession = {
   user: RembehUser | null;
   branch: RembehBranch | null;
   ready: boolean;
+};
+
+type ActionMenuState = {
+  borrowerId: string;
+  top: number;
+  left: number;
 };
 
 function useBorrowersSession(mode: BorrowersMode): BorrowersSession {
@@ -106,12 +122,14 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
   const [borrowers, setBorrowers] = useState<OwnerBorrower[]>([]);
   const [search, setSearch] = useState("");
   const [branchFilter, setBranchFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [collateralFilter, setCollateralFilter] = useState("all");
+  const [advancedFilters, setAdvancedFilters] = useState<BorrowersAdvancedFilters>(
+    EMPTY_BORROWERS_FILTERS,
+  );
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [page, setPage] = useState(1);
   const [selectedBorrower, setSelectedBorrower] =
     useState<OwnerBorrower | null>(null);
+  const [actionMenu, setActionMenu] = useState<ActionMenuState | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -145,9 +163,12 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
         void loadBorrowers();
       }
     }, 0);
-
     return () => window.clearTimeout(boot);
   }, [loadBorrowers, state.ready, state.session]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [advancedFilters, branchFilter, search]);
 
   const branchOptions = useMemo(
     () =>
@@ -160,30 +181,52 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
       ).sort((a, b) => a.localeCompare(b)),
     [borrowers],
   );
-  const collateralOptions = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          borrowers
-            .map((borrower) => borrower.collateralType?.trim())
-            .filter((value): value is string => Boolean(value)),
-        ),
-      ).sort((a, b) => a.localeCompare(b)),
-    [borrowers],
-  );
+
+  const officerOptions = useMemo<OfficerOption[]>(() => {
+    const map = new Map<string, string>();
+    for (const borrower of borrowers) {
+      const label = borrower.registeredByName?.trim();
+      if (!label) continue;
+      const key = borrower.registeredByPublicId?.trim() || label.toLowerCase();
+      if (!map.has(key)) map.set(key, label);
+    }
+    return Array.from(map.entries())
+      .map(([key, label]) => ({ key, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [borrowers]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const now = new Date();
     return borrowers.filter((borrower) => {
-      const status = borrower.verifiedAt ? "verified" : "pending";
       const matchesBranch =
         isManager ||
         branchFilter === "all" ||
         borrower.branchName === branchFilter;
-      const matchesStatus = statusFilter === "all" || status === statusFilter;
-      const matchesCollateral =
-        collateralFilter === "all" ||
-        borrower.collateralType === collateralFilter;
+
+      const verified = Boolean(borrower.verifiedAt);
+      const matchesVerification =
+        advancedFilters.verification === "all" ||
+        (advancedFilters.verification === "verified" && verified) ||
+        (advancedFilters.verification === "pending" && !verified);
+
+      const activeCount = borrower.activeLoanCount ?? 0;
+      const hasOverdue = Boolean(borrower.hasOverdueLoan);
+      const matchesLoanStatus =
+        advancedFilters.loanStatus === "all" ||
+        (advancedFilters.loanStatus === "active" && activeCount > 0) ||
+        (advancedFilters.loanStatus === "overdue" && hasOverdue) ||
+        (advancedFilters.loanStatus === "closed_only" &&
+          borrower.loanCount > 0 &&
+          activeCount === 0);
+
+      const matchesOfficer = borrowerMatchesOfficer(borrower, advancedFilters);
+      const matchesDate = borrowerMatchesDateRegistered(
+        borrower.createdAt,
+        advancedFilters,
+        now,
+      );
+
       const digits = q.replace(/\D/g, "");
       const haystack = [
         borrower.fullName,
@@ -192,8 +235,9 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
         borrower.collateralType ?? "",
         borrower.city ?? "",
         borrower.branchName ?? "",
+        borrower.registeredByName ?? "",
         String(borrower.loanCount),
-        borrower.verifiedAt ? "verified confirmed" : "pending awaiting check",
+        verified ? "verified confirmed" : "pending awaiting check",
       ]
         .join(" ")
         .toLowerCase();
@@ -206,46 +250,51 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
           ));
 
       return (
-        matchesBranch && matchesStatus && matchesCollateral && matchesSearch
+        matchesBranch &&
+        matchesVerification &&
+        matchesLoanStatus &&
+        matchesOfficer &&
+        matchesDate &&
+        matchesSearch
       );
     });
-  }, [
-    borrowers,
-    branchFilter,
-    collateralFilter,
-    isManager,
-    search,
-    statusFilter,
-  ]);
+  }, [advancedFilters, borrowers, branchFilter, isManager, search]);
 
-  const activeFilterCount = [
-    !isManager && branchFilter !== "all",
-    statusFilter !== "all",
-    collateralFilter !== "all",
-  ].filter(Boolean).length;
-  const verifiedCount = borrowers.filter((borrower) => borrower.verifiedAt).length;
-  const withLoansCount = borrowers.filter(
-    (borrower) => borrower.loanCount > 0,
-  ).length;
-  const newThisMonthCount = borrowers.filter(isThisMonth).length;
-  const pendingVerificationCount = borrowers.length - verifiedCount;
+  const summary = useMemo(() => buildBorrowersSummary(borrowers), [borrowers]);
   const paged = useMemo(
     () => paginateItems(filtered, page, pageSize),
     [filtered, page, pageSize],
   );
-  const pageRows = paged.items;
+
+  const actionMenuBorrower = actionMenu
+    ? (borrowers.find((row) => row.id === actionMenu.borrowerId) ?? null)
+    : null;
 
   function updateSearch(value: string) {
     setSearch(value);
-    setPage(1);
   }
 
-  function resetFilters() {
-    setSearch("");
-    setBranchFilter("all");
-    setStatusFilter("all");
-    setCollateralFilter("all");
-    setPage(1);
+  function toggleActionMenu(
+    borrowerId: string,
+    event: MouseEvent<HTMLButtonElement>,
+  ) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const menuWidth = 168;
+    setActionMenu((current) =>
+      current?.borrowerId === borrowerId
+        ? null
+        : {
+            borrowerId,
+            top: rect.bottom + 6,
+            left: Math.max(
+              8,
+              Math.min(
+                window.innerWidth - menuWidth - 8,
+                rect.right - menuWidth,
+              ),
+            ),
+          },
+    );
   }
 
   if (!state.ready || !state.session) return <AppBootSkeleton />;
@@ -263,7 +312,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
           search={search}
           onSearchChange={updateSearch}
           searchPlaceholder="Search Borrowers..."
-          searchTooltip="Search by name, phone, national ID, security, city or branch."
+          searchTooltip="Search by name, phone, national ID, city or branch."
           showReportsButton={false}
           settingsHref={isManager ? "/settings" : "/owner/settings"}
           notificationScope={mode}
@@ -306,181 +355,228 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
           </div>
         ) : null}
 
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {loading ? (
-            Array.from({ length: 4 }).map((_, index) => (
-              <WorkspaceStatSkeleton key={index} />
-            ))
-          ) : (
-            <>
-              <WorkspaceStatCard
-                icon={<Users className="size-4" />}
-                label="Total Borrowers"
-                value={formatNumber(borrowers.length)}
-                hint={isManager ? "This Branch" : "All Branches"}
-                tone="green"
-              />
-              <WorkspaceStatCard
-                icon={<ShieldCheck className="size-4" />}
-                label="Confirmed"
-                value={formatNumber(verifiedCount)}
-                hint={`${formatNumber(pendingVerificationCount)} Awaiting Check`}
-                tone="green"
-              />
-              <WorkspaceStatCard
-                icon={<UserCheck className="size-4" />}
-                label="Have Loans"
-                value={formatNumber(withLoansCount)}
-                tone="blue"
-              />
-              <WorkspaceStatCard
-                icon={<CalendarDays className="size-4" />}
-                label="New This Month"
-                value={formatNumber(newThisMonthCount)}
-                tone="gold"
-              />
-            </>
-          )}
-        </section>
-
-        <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-4">
-            <h2 className="text-[15px] font-semibold text-[#0b1220]">
-              {isManager ? "Branch Borrowers" : "All Borrowers"}
-            </h2>
-            <button
-              type="button"
-              disabled={exporting || filtered.length === 0}
-              onClick={() =>
-                void exportBorrowers(
-                  filtered,
-                  {
-                    branch: isManager
-                      ? state.branch?.name ?? "Your branch"
-                      : branchFilter,
-                    status: statusFilter,
-                    collateral: collateralFilter,
-                    search,
-                  },
-                  setExporting,
-                )
-              }
-              className="ml-auto flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8faf9] disabled:opacity-60"
-            >
-              <Download className="size-3.5" />
-              {exporting ? "Exporting" : "Export"}
-            </button>
-          </div>
-
-          <div
-            className={`grid gap-2.5 border-b border-[#edf1f5] px-4 py-3 ${
-              isManager
-                ? "lg:grid-cols-[140px_170px_auto]"
-                : "lg:grid-cols-[160px_140px_170px_auto]"
-            }`}
-          >
-            {!isManager ? (
-              <FilterSelect
-                icon={<Building2 className="size-3.5" />}
-                value={branchFilter}
-                onChange={(value) => {
-                  setBranchFilter(value);
-                  setPage(1);
-                }}
-                label="All Branches"
-              >
-                <option value="all">All Branches</option>
-                {branchOptions.map((branch) => (
-                  <option key={branch} value={branch}>
-                    {branch}
-                  </option>
-                ))}
-              </FilterSelect>
-            ) : null}
-            <FilterSelect
-              icon={<ShieldCheck className="size-3.5" />}
-              value={statusFilter}
-              onChange={(value) => {
-                setStatusFilter(value);
-                setPage(1);
-              }}
-              label="All Statuses"
-            >
-              <option value="all">All Statuses</option>
-              <option value="verified">Confirmed</option>
-              <option value="pending">Awaiting Check</option>
-            </FilterSelect>
-            <FilterSelect
-              icon={<MapPin className="size-3.5" />}
-              value={collateralFilter}
-              onChange={(value) => {
-                setCollateralFilter(value);
-                setPage(1);
-              }}
-              label="All Security"
-            >
-              <option value="all">All Security</option>
-              {collateralOptions.map((collateral) => (
-                <option key={collateral} value={collateral}>
-                  {titleCase(collateral)}
-                </option>
-              ))}
-            </FilterSelect>
-            <button
-              type="button"
-              disabled={!search.trim() && activeFilterCount === 0}
-              onClick={resetFilters}
-              className="flex h-9 items-center justify-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition hover:bg-[#f8faf9] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Filter className="size-3.5" />
-              Clear
-              {activeFilterCount > 0 ? (
-                <span className="grid size-5 place-items-center rounded-full bg-[var(--forest-emerald)] text-[10px] font-semibold text-white">
-                  {activeFilterCount}
-                </span>
-              ) : null}
-            </button>
-          </div>
-
-          {loading ? (
-            <BorrowerTableSkeleton />
-          ) : filtered.length === 0 ? (
-            <EmptyBorrowersState
-              hasFilters={Boolean(search.trim()) || activeFilterCount > 0}
-              onClear={resetFilters}
-            />
-          ) : (
-            <BorrowerTable
-              rows={pageRows}
-              showBranch={!isManager}
-              onView={setSelectedBorrower}
-              onExport={(borrower) =>
-                void exportBorrowers(
-                  [borrower],
-                  {
-                    branch: borrower.branchName ?? "all",
-                    status: borrower.verifiedAt ? "verified" : "pending",
-                    collateral: borrower.collateralType ?? "all",
-                    search: borrower.fullName,
-                  },
-                  setExporting,
-                )
-              }
-            />
-          )}
-
-          <PaginationControls
-            page={paged.currentPage}
-            pageSize={paged.pageSize}
-            total={paged.total}
-            itemLabel="borrowers"
-            onPageChange={setPage}
-            onPageSizeChange={(next) => {
-              setPageSize(next);
-              setPage(1);
-            }}
+        <section className="grid gap-3 md:grid-cols-3">
+          <BorrowerSummaryCard
+            icon={<Users className="size-4" />}
+            title="Total Borrowers"
+            value={formatNumber(summary.total)}
+            context={
+              isManager ? "Registered at this branch" : "Registered across branches"
+            }
+            rows={[
+              {
+                label: "Active loan",
+                value: formatNumber(summary.activeLoan),
+                tone: "good",
+              },
+              {
+                label: "No active loan",
+                value: formatNumber(summary.noActiveLoan),
+                tone: "neutral",
+              },
+            ]}
+          />
+          <BorrowerSummaryCard
+            icon={<ShieldCheck className="size-4" />}
+            title="Verified Borrowers"
+            value={formatNumber(summary.verified)}
+            context="Identity details confirmed"
+            pendingHint={
+              summary.pending > 0
+                ? `${formatNumber(summary.pending)} pending verification`
+                : null
+            }
+          />
+          <BorrowerSummaryCard
+            icon={<CalendarDays className="size-4" />}
+            title="New Borrowers"
+            value={formatNumber(summary.newThisMonth)}
+            context="This month"
+            monthDelta={summary.newThisMonth - summary.newLastMonth}
           />
         </section>
+
+        {loading && borrowers.length === 0 ? (
+          <TableSkeleton rows={6} columns={6} />
+        ) : (
+          <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+            <div className="relative z-20 flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-3.5">
+              <div className="flex min-w-0 flex-wrap items-center gap-3">
+                <h2 className="text-[15px] font-semibold text-[#0b1220]">
+                  Borrower Records
+                </h2>
+                {!isManager ? (
+                  <label className="relative flex h-9 min-w-0 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-[#0b1224] shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+                    <Building2 className="size-3.5 shrink-0 text-slate-500" />
+                    <select
+                      value={branchFilter}
+                      aria-label="Branch"
+                      onChange={(event) => setBranchFilter(event.target.value)}
+                      className="min-w-[140px] appearance-none bg-transparent pr-2 text-xs font-semibold outline-none"
+                    >
+                      <option value="all">All Branches</option>
+                      {branchOptions.map((branch) => (
+                        <option key={branch} value={branch}>
+                          {branch}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                <BorrowersFiltersControl
+                  officers={officerOptions}
+                  applied={advancedFilters}
+                  onApply={setAdvancedFilters}
+                />
+              </div>
+              <button
+                type="button"
+                disabled={exporting || filtered.length === 0}
+                onClick={() =>
+                  void exportBorrowers(
+                    filtered,
+                    {
+                      branch: isManager
+                        ? state.branch?.name ?? "Your branch"
+                        : branchFilter,
+                      verification: advancedFilters.verification,
+                      loanStatus: advancedFilters.loanStatus,
+                      search,
+                    },
+                    setExporting,
+                  )
+                }
+                className="ml-auto flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8faf9] disabled:opacity-60"
+              >
+                <Download className="size-3.5" />
+                {exporting ? "Exporting" : "Export"}
+              </button>
+            </div>
+
+            {filtered.length === 0 ? (
+              <EmptyBorrowersState
+                hasFilters={
+                  Boolean(search.trim()) ||
+                  activeBorrowerFilterChips(advancedFilters).length > 0 ||
+                  (!isManager && branchFilter !== "all")
+                }
+                onClear={() => {
+                  setSearch("");
+                  setBranchFilter("all");
+                  setAdvancedFilters(EMPTY_BORROWERS_FILTERS);
+                }}
+              />
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[760px] table-fixed text-left text-xs">
+                  <thead className="border-b border-[#dfe5eb] bg-[#e8edf2] text-[10px] font-semibold text-slate-600">
+                    <tr>
+                      <th className="w-[26%] px-3 py-2.5">Borrower</th>
+                      <th className="w-[14%] px-3 py-2.5">Phone</th>
+                      <th className="w-[14%] px-3 py-2.5">National ID</th>
+                      {!isManager ? (
+                        <th className="w-[12%] px-3 py-2.5">Branch</th>
+                      ) : null}
+                      <th className="w-[10%] px-3 py-2.5">Loans</th>
+                      <th className="w-[12%] px-3 py-2.5">Status</th>
+                      <th className="w-[12%] px-3 py-2.5">Joined</th>
+                      <th className="w-[8%] px-3 py-2.5 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#edf1f5]">
+                    {paged.items.map((borrower, index) => (
+                      <tr
+                        key={borrower.id}
+                        className="cursor-pointer transition-colors hover:bg-[#eef7f2]"
+                        onClick={() => {
+                          setActionMenu(null);
+                          setSelectedBorrower(borrower);
+                        }}
+                      >
+                        <td className="px-3 py-3">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <span
+                              className={`grid size-10 shrink-0 place-items-center rounded-full text-xs font-semibold ${avatarTone(index)}`}
+                            >
+                              {initials(borrower.fullName)}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="truncate font-semibold text-[#0b1220]">
+                                {borrower.fullName}
+                              </p>
+                              <p className="mt-0.5 truncate text-[11px] font-medium text-slate-500">
+                                {borrower.collateralType
+                                  ? titleCase(borrower.collateralType)
+                                  : "No security on file"}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 text-[11px] font-medium text-[#0b1220]">
+                          {borrower.phone || "—"}
+                        </td>
+                        <td className="px-3 py-3 text-[11px] font-medium tabular-nums text-[#0b1220]">
+                          {borrower.nationalId ?? "—"}
+                        </td>
+                        {!isManager ? (
+                          <td className="px-3 py-3 text-[11px] font-medium text-[#0b1220]">
+                            <span className="truncate">
+                              {borrower.branchName ?? "—"}
+                            </span>
+                          </td>
+                        ) : null}
+                        <td className="px-3 py-3 text-[11px] font-medium tabular-nums text-[#0b1220]">
+                          {formatNumber(borrower.loanCount)}
+                        </td>
+                        <td className="px-3 py-3">
+                          <BorrowerStatus
+                            verified={Boolean(borrower.verifiedAt)}
+                          />
+                        </td>
+                        <td className="px-3 py-3 text-[11px] font-medium text-[#0b1220]">
+                          {formatDate(borrower.createdAt)}
+                        </td>
+                        <td
+                          className="px-3 py-3"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <div className="flex justify-end">
+                            <button
+                              type="button"
+                              className="grid size-8 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#0b1220] transition hover:bg-[#f8faf9]"
+                              aria-label={`Open actions for ${borrower.fullName}`}
+                              aria-haspopup="menu"
+                              aria-expanded={
+                                actionMenu?.borrowerId === borrower.id
+                              }
+                              onClick={(event) =>
+                                toggleActionMenu(borrower.id, event)
+                              }
+                            >
+                              <MoreVertical className="size-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <PaginationControls
+              page={paged.currentPage}
+              pageSize={paged.pageSize}
+              total={paged.total}
+              itemLabel="borrowers"
+              onPageChange={setPage}
+              onPageSizeChange={(next) => {
+                setPageSize(next);
+                setPage(1);
+              }}
+            />
+          </section>
+        )}
       </div>
 
       {selectedBorrower ? (
@@ -489,192 +585,210 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
           onClose={() => setSelectedBorrower(null)}
         />
       ) : null}
+
+      {actionMenu && actionMenuBorrower ? (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-40 cursor-default"
+            aria-label="Close Actions"
+            onClick={() => setActionMenu(null)}
+          />
+          <div
+            role="menu"
+            className="fixed z-50 w-[168px] rounded-xl border border-[#e6ebf0] bg-white p-1 text-left shadow-[0_14px_34px_rgba(15,23,42,0.16)]"
+            style={{ top: actionMenu.top, left: actionMenu.left }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#0b1220] hover:bg-[#f4f7f6]"
+              onClick={() => {
+                setActionMenu(null);
+                setSelectedBorrower(actionMenuBorrower);
+              }}
+            >
+              View Borrower
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#0b1220] hover:bg-[#f4f7f6]"
+              onClick={() => {
+                setActionMenu(null);
+                void exportBorrowers(
+                  [actionMenuBorrower],
+                  {
+                    branch: actionMenuBorrower.branchName ?? "all",
+                    verification: actionMenuBorrower.verifiedAt
+                      ? "verified"
+                      : "pending",
+                    loanStatus: "all",
+                    search: actionMenuBorrower.fullName,
+                  },
+                  setExporting,
+                );
+              }}
+            >
+              Export Borrower
+            </button>
+          </div>
+        </>
+      ) : null}
     </AppShell>
   );
 }
 
-function FilterSelect({
+function BorrowerSummaryCard({
   icon,
+  title,
   value,
-  onChange,
-  label,
-  children,
+  context,
+  rows,
+  pendingHint,
+  monthDelta,
 }: {
   icon: ReactNode;
+  title: string;
   value: string;
-  onChange: (value: string) => void;
-  label: string;
-  children: ReactNode;
+  context: string;
+  rows?: Array<{
+    label: string;
+    value: string;
+    tone: "good" | "neutral" | "warn";
+  }>;
+  pendingHint?: string | null;
+  monthDelta?: number;
 }) {
-  return (
-    <label className="relative flex h-9 min-w-0 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-[#0b1224] shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
-      <span className="shrink-0 text-slate-500">{icon}</span>
-      <select
-        value={value}
-        aria-label={label}
-        onChange={(event) => onChange(event.target.value)}
-        className="min-w-0 flex-1 appearance-none bg-transparent pr-7 text-xs font-semibold outline-none"
-      >
-        {children}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-3 size-3.5 text-slate-400" />
-    </label>
-  );
-}
-
-function BorrowerTable({
-  rows,
-  showBranch,
-  onView,
-  onExport,
-}: {
-  rows: OwnerBorrower[];
-  showBranch: boolean;
-  onView: (borrower: OwnerBorrower) => void;
-  onExport: (borrower: OwnerBorrower) => void;
-}) {
-  const headers = [
-    "Borrower",
-    "Phone",
-    "National ID",
-    "Security",
-    ...(showBranch ? ["Branch"] : []),
-    "Loans",
-    "Status",
-    "Actions",
-  ];
-  const gridClass = showBranch
-    ? "lg:grid-cols-[1.45fr_0.9fr_0.95fr_1fr_1fr_0.45fr_0.72fr_0.5fr]"
-    : "lg:grid-cols-[1.55fr_1fr_1fr_1.1fr_0.5fr_0.8fr_0.5fr]";
+  const toneClass = {
+    good: { shell: "bg-[#eef9f2]", dot: "bg-[#17a36a]" },
+    neutral: { shell: "bg-[#f3f5f7]", dot: "bg-[#94a3b8]" },
+    warn: { shell: "bg-[#fff3e8]", dot: "bg-[#f0a04b]" },
+  } as const;
 
   return (
-    <div>
-      <div
-        className={`hidden items-center gap-3 border-b border-[#edf1f4] bg-[#fbfcfd] px-4 py-2.5 text-[10px] font-medium text-slate-500 lg:grid ${gridClass}`}
-      >
-        {headers.map((label) => (
-          <div
-            key={label}
-            className={label === "Actions" ? "text-right" : undefined}
-          >
-            {label}
-          </div>
-        ))}
+    <article className="overflow-hidden rounded-[14px] border border-[#e8edf2] bg-white p-3 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+      <div className="flex items-center gap-2">
+        <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[#e9f8ef] text-[#07885f] [&_svg]:size-3.5">
+          {icon}
+        </span>
+        <h3 className="truncate text-[13px] font-bold tracking-[-0.02em] text-[#0b1220]">
+          {title}
+        </h3>
       </div>
-      <div className="divide-y divide-[#edf1f4]">
-        {rows.map((borrower, index) => (
-          <BorrowerListRow
-            key={borrower.id}
-            borrower={borrower}
-            index={index}
-            showBranch={showBranch}
-            gridClass={gridClass}
-            onView={onView}
-            onExport={onExport}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
 
-function BorrowerListRow({
-  borrower,
-  index,
-  showBranch,
-  gridClass,
-  onView,
-  onExport,
-}: {
-  borrower: OwnerBorrower;
-  index: number;
-  showBranch: boolean;
-  gridClass: string;
-  onView: (borrower: OwnerBorrower) => void;
-  onExport: (borrower: OwnerBorrower) => void;
-}) {
-  const actionItems = [
-    { label: "View Borrower", onSelect: () => onView(borrower) },
-    { label: "Export Borrower", onSelect: () => onExport(borrower) },
-  ];
-
-  return (
-    <article
-      className={`grid cursor-pointer gap-3 px-4 py-3.5 text-[13px] transition-colors hover:bg-[#eef7f2] lg:items-center lg:gap-3 ${gridClass}`}
-      onClick={() => onView(borrower)}
-    >
-      <div className="flex min-w-0 items-start justify-between gap-3 lg:contents">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <span
-            className={`grid size-10 shrink-0 place-items-center rounded-full text-xs font-semibold ${avatarTone(index)}`}
-          >
-            {initials(borrower.fullName)}
-          </span>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-[#0b1224]">
-              {borrower.fullName}
+      <div className={`mt-2.5 flex items-stretch gap-2 ${rows ? "" : ""}`}>
+        <div className="flex min-w-0 flex-[1.15] flex-col justify-center overflow-hidden pr-0.5">
+          <p className="text-[clamp(0.95rem,1.35vw,1.35rem)] font-bold leading-none tracking-[-0.03em] tabular-nums text-[#0b1220]">
+            {value}
+          </p>
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
+            <p className="text-[11px] font-medium leading-tight text-slate-500">
+              {context}
             </p>
-            <p className="mt-0.5 truncate text-[11px] font-medium text-slate-500">
-              Joined {formatDate(borrower.createdAt)}
-            </p>
+            {typeof monthDelta === "number" ? (
+              <MonthDeltaBadge delta={monthDelta} />
+            ) : null}
           </div>
+          {pendingHint ? (
+            <p className="mt-1.5 text-[11px] font-semibold text-red-600">
+              {pendingHint}
+            </p>
+          ) : null}
         </div>
-        <div className="flex shrink-0 items-center gap-2 lg:hidden">
-          <BorrowerStatus verified={Boolean(borrower.verifiedAt)} />
-          <RowActions
-            label={`Actions For ${borrower.fullName}`}
-            items={actionItems}
-          />
-        </div>
-      </div>
-      <TableValue label="Phone">{borrower.phone || "—"}</TableValue>
-      <TableValue label="National ID">{borrower.nationalId ?? "—"}</TableValue>
-      <TableValue label="Security">
-        {borrower.collateralType ? titleCase(borrower.collateralType) : "—"}
-      </TableValue>
-      {showBranch ? (
-        <TableValue label="Branch">
-          <span className="inline-flex min-w-0 items-center gap-1.5">
-            <MapPin className="size-3 shrink-0 text-[var(--forest-emerald)]" />
-            <span className="truncate">{borrower.branchName ?? "—"}</span>
-          </span>
-        </TableValue>
-      ) : null}
-      <TableValue label="Loans">{formatNumber(borrower.loanCount)}</TableValue>
-      <div className="hidden lg:block">
-        <BorrowerStatus verified={Boolean(borrower.verifiedAt)} />
-      </div>
-      <div
-        className="hidden items-center justify-end lg:flex"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <RowActions
-          label={`Actions For ${borrower.fullName}`}
-          items={actionItems}
-        />
+
+        {rows && rows.length > 0 ? (
+          <>
+            <div className="w-px shrink-0 bg-[#edf1f5]" aria-hidden />
+            <div className="flex min-w-0 flex-1 flex-col justify-center gap-1.5">
+              {rows.map((row) => {
+                const tone = toneClass[row.tone];
+                return (
+                  <div
+                    key={row.label}
+                    className={`flex min-w-0 items-start gap-1.5 rounded-lg px-1.5 py-1.5 ${tone.shell}`}
+                  >
+                    <span
+                      className={`mt-1 size-2 shrink-0 rounded-full ${tone.dot}`}
+                    />
+                    <div className="min-w-0 flex-1 overflow-hidden">
+                      <p className="truncate text-[clamp(0.68rem,0.95vw,0.78rem)] font-bold leading-none tracking-[-0.02em] tabular-nums text-[#0b1220]">
+                        {row.value}
+                      </p>
+                      <p className="mt-0.5 truncate text-[10px] font-medium capitalize leading-tight text-slate-500">
+                        {row.label}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        ) : null}
       </div>
     </article>
   );
 }
 
-function BorrowerTableSkeleton() {
+function MonthDeltaBadge({ delta }: { delta: number }) {
+  const up = delta > 0;
+  const down = delta < 0;
+  const absolute = Math.abs(delta);
+  const tone = down
+    ? "bg-[#fdecec] text-[#c23b3b]"
+    : "bg-[#e9f8ef] text-[#07885f]";
+
   return (
-    <div className="divide-y divide-[#edf1f4]">
-      {Array.from({ length: 5 }).map((_, row) => (
-        <div
-          key={row}
-          className="grid gap-3 px-4 py-3 lg:grid-cols-[1.45fr_0.9fr_0.95fr_1fr_1fr_0.45fr_0.72fr_0.62fr]"
-        >
-          {Array.from({ length: 8 }).map((__, column) => (
-            <SkeletonBlock
-              key={column}
-              className={`h-3.5 ${column === 0 ? "w-3/4" : "w-full"}`}
-            />
-          ))}
-        </div>
-      ))}
-    </div>
+    <>
+      <span
+        className={`inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[10px] font-bold tabular-nums ${tone}`}
+      >
+        {down ? (
+          <ArrowDown className="size-2.5 stroke-[2.5]" />
+        ) : (
+          <ArrowUp className="size-2.5 stroke-[2.5]" />
+        )}
+        {formatNumber(absolute)}
+      </span>
+      <span className="text-[10px] font-medium text-slate-400">
+        vs last month
+      </span>
+    </>
   );
+}
+
+function buildBorrowersSummary(borrowers: OwnerBorrower[]) {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  let verified = 0;
+  let activeLoan = 0;
+  let newThisMonth = 0;
+  let newLastMonth = 0;
+
+  for (const borrower of borrowers) {
+    if (borrower.verifiedAt) verified += 1;
+    if ((borrower.activeLoanCount ?? 0) > 0) activeLoan += 1;
+    const created = new Date(borrower.createdAt);
+    if (
+      created.getFullYear() === now.getFullYear() &&
+      created.getMonth() === now.getMonth()
+    ) {
+      newThisMonth += 1;
+    } else if (created >= lastMonthStart && created < monthStart) {
+      newLastMonth += 1;
+    }
+  }
+
+  return {
+    total: borrowers.length,
+    activeLoan,
+    noActiveLoan: borrowers.length - activeLoan,
+    verified,
+    pending: borrowers.length - verified,
+    newThisMonth,
+    newLastMonth,
+  };
 }
 
 function EmptyBorrowersState({
@@ -689,8 +803,8 @@ function EmptyBorrowersState({
       <div className="mx-auto grid size-12 place-items-center rounded-2xl bg-[#eef8f4] text-[#0b936b]">
         <Users className="size-5" />
       </div>
-      <h3 className="mt-3 text-sm font-medium text-[#0b1224]">
-        No Borrowers Found
+      <h3 className="mt-3 text-sm font-semibold text-[#0b1220]">
+        No borrowers found
       </h3>
       <p className="mx-auto mt-1 max-w-sm text-xs font-medium text-slate-500">
         {hasFilters
@@ -701,9 +815,9 @@ function EmptyBorrowersState({
         <button
           type="button"
           onClick={onClear}
-          className="mt-3 rounded-xl bg-[#0b936b] px-3 py-2 text-xs font-medium text-white"
+          className="mt-3 rounded-xl bg-[#0b936b] px-3 py-2 text-xs font-semibold text-white"
         >
-          Clear Filters
+          Clear filters
         </button>
       ) : null}
     </div>
@@ -731,14 +845,14 @@ function BorrowerDetailDrawer({
             <p className="text-[11px] font-medium text-[#0b936b]">
               Borrower Details
             </p>
-            <h2 className="mt-1.5 text-xl font-bold tracking-[-0.03em] text-[#0b1224]">
+            <h2 className="mt-1.5 text-xl font-bold tracking-[-0.03em] text-[#0b1220]">
               {borrower.fullName}
             </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="grid size-9 place-items-center rounded-xl border border-[#e4e9ef] text-[#0b1224]"
+            className="grid size-9 place-items-center rounded-xl border border-[#e4e9ef] text-[#0b1220]"
             aria-label="Close"
           >
             <X className="size-4" />
@@ -746,33 +860,37 @@ function BorrowerDetailDrawer({
         </div>
         <div className="mt-4 rounded-2xl border border-[#e5ebf0] bg-[#fbfcfd] p-3">
           <div className="flex items-center gap-3">
-            <span className="grid size-10 place-items-center rounded-full bg-[#e2f6ec] text-xs font-medium text-[#087f5d]">
+            <span className="grid size-10 place-items-center rounded-full bg-[#e2f6ec] text-xs font-semibold text-[#087f5d]">
               {initials(borrower.fullName)}
             </span>
             <div className="min-w-0">
               <BorrowerStatus verified={Boolean(borrower.verifiedAt)} />
               <p className="mt-1.5 text-xs font-medium text-slate-500">
                 {formatNumber(borrower.loanCount)}{" "}
-                {borrower.loanCount === 1 ? "Loan" : "Loans"}
+                {borrower.loanCount === 1 ? "loan" : "loans"}
               </p>
             </div>
           </div>
         </div>
         <div className="mt-4 space-y-1.5">
-          <InfoLine label="Phone" value={borrower.phone || "-"} />
-          <InfoLine label="National ID" value={borrower.nationalId ?? "-"} />
+          <InfoLine label="Phone" value={borrower.phone || "—"} />
+          <InfoLine label="National ID" value={borrower.nationalId ?? "—"} />
           <InfoLine
             label="Security"
             value={
-              borrower.collateralType ? titleCase(borrower.collateralType) : "-"
+              borrower.collateralType ? titleCase(borrower.collateralType) : "—"
             }
           />
-          <InfoLine label="Branch" value={borrower.branchName ?? "-"} />
-          <InfoLine label="City" value={borrower.city ?? "-"} />
+          <InfoLine label="Branch" value={borrower.branchName ?? "—"} />
+          <InfoLine
+            label="Registered by"
+            value={borrower.registeredByName ?? "—"}
+          />
+          <InfoLine label="City" value={borrower.city ?? "—"} />
           <InfoLine label="Joined" value={formatDate(borrower.createdAt)} />
           <InfoLine
-            label="Confirmed"
-            value={borrower.verifiedAt ? formatDate(borrower.verifiedAt) : "-"}
+            label="Verified"
+            value={borrower.verifiedAt ? formatDate(borrower.verifiedAt) : "—"}
           />
         </div>
       </aside>
@@ -780,34 +898,17 @@ function BorrowerDetailDrawer({
   );
 }
 
-function TableValue({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="min-w-0 font-medium text-[#25314b]">
-      <p className="mb-1 text-[10px] font-medium uppercase tracking-[0.08em] text-slate-400 lg:hidden">
-        {label}
-      </p>
-      <div className="min-w-0 truncate">{children}</div>
-    </div>
-  );
-}
-
 function BorrowerStatus({ verified }: { verified: boolean }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ${
+      className={`inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-semibold ${
         verified
-          ? "bg-[#daf5e8] text-[#087f5d]"
-          : "bg-[#fff4df] text-[#b56b00]"
+          ? "bg-emerald-50 text-[var(--forest-emerald)]"
+          : "bg-amber-50 text-amber-800"
       }`}
     >
       {verified ? <Check className="size-3" /> : null}
-      {verified ? "Confirmed" : "Awaiting Check"}
+      {verified ? "Verified" : "Pending"}
     </span>
   );
 }
@@ -816,7 +917,7 @@ function InfoLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-xl border border-[#edf1f4] bg-white px-3 py-2.5 text-xs">
       <span className="font-medium text-slate-500">{label}</span>
-      <span className="min-w-0 truncate text-right font-medium text-[#0b1224]">
+      <span className="min-w-0 truncate text-right font-semibold text-[#0b1220]">
         {value}
       </span>
     </div>
@@ -843,21 +944,12 @@ function initials(name: string) {
     .join("");
 }
 
-function isThisMonth(borrower: OwnerBorrower) {
-  const createdAt = new Date(borrower.createdAt);
-  const now = new Date();
-  return (
-    createdAt.getFullYear() === now.getFullYear() &&
-    createdAt.getMonth() === now.getMonth()
-  );
-}
-
 async function exportBorrowers(
   rows: OwnerBorrower[],
   filters: {
     branch: string;
-    status: string;
-    collateral: string;
+    verification: string;
+    loanStatus: string;
     search: string;
   },
   setExporting: (exporting: boolean) => void,
@@ -876,18 +968,16 @@ async function exportBorrowers(
     worksheet.mergeCells(2, 1, 2, 8);
     worksheet.addRow([
       "Filters",
-      filters.search.trim() || "All Searches",
-      filters.branch === "all" ? "All Branches" : filters.branch,
-      filters.status === "all"
-        ? "All Statuses"
-        : filters.status === "verified"
-          ? "Confirmed"
-          : filters.status === "pending"
-            ? "Awaiting Check"
-            : titleCase(filters.status),
-      filters.collateral === "all"
-        ? "All Security"
-        : titleCase(filters.collateral),
+      filters.search.trim() || "All searches",
+      filters.branch === "all" ? "All branches" : filters.branch,
+      filters.verification === "all"
+        ? "All verification"
+        : filters.verification === "verified"
+          ? "Verified"
+          : "Pending verification",
+      filters.loanStatus === "all"
+        ? "All loan statuses"
+        : titleCase(filters.loanStatus.replaceAll("_", " ")),
     ]);
     worksheet.mergeCells(3, 5, 3, 8);
     worksheet.addRow([]);
@@ -910,7 +1000,7 @@ async function exportBorrowers(
         borrower.collateralType ? titleCase(borrower.collateralType) : "",
         borrower.branchName ?? "",
         borrower.loanCount,
-        borrower.verifiedAt ? "Confirmed" : "Awaiting Check",
+        borrower.verifiedAt ? "Verified" : "Pending",
         formatDate(borrower.createdAt),
       ]);
     });
