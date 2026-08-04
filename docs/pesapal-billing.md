@@ -5,9 +5,12 @@ REMBEH bills **per branch** after an organisation-wide free trial.
 ## Product rules
 
 - New organisations get a **30-day free trial** covering all current and future branches.
-- After the trial, each branch needs **Pro** monthly. Current charged amount is **UGX 30,000** (Pesapal merchant default limit). Product target is **UGX 150,000** once Pesapal raises the limit.
+- After the trial, each branch needs **Pro**. Billing periods:
+  - Monthly **UGX 255,000**
+  - 3 months **UGX 725,000** (default / most popular)
+  - 6 months **UGX 1,385,000** (best value)
 - Unpaid branches enter a **2-day grace** period with reminders, then lock **that branch only**.
-- Owners pay from **Subscription** (`/owner/subscription`) via Pesapal hosted checkout (mobile money + cards).
+- Owners and managers pay from **Subscription** via Pesapal hosted checkout (mobile money + cards).
 
 ## Environment
 

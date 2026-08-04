@@ -2,13 +2,15 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import {
+  ArrowRight,
   Check,
   Download,
   FileText,
-  Headset,
+  Lock,
   Loader2,
   MessageSquare,
   RefreshCw,
+  Shield,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "./app-shell";
@@ -27,14 +29,24 @@ import { formatDate, formatMoney } from "../../app/owner/owner-common";
 import { OwnerHeader } from "../../app/owner/owner-header";
 import { PaymentMethodBadge } from "./payment-method-badge";
 
+type BillingPlanOption = {
+  code: string;
+  name: string;
+  amount: number;
+  currency: string;
+  interval: string;
+  durationMonths: number;
+  label: string;
+  tagline: string;
+  compareAtAmount: number | null;
+  savingsAmount: number | null;
+  badge: "MOST_POPULAR" | "BEST_VALUE" | null;
+  defaultSelected: boolean;
+};
+
 type BillingSummary = {
-  plan: {
-    code: string;
-    name: string;
-    amount: number;
-    currency: string;
-    interval: string;
-  };
+  plan: BillingPlanOption;
+  plans?: BillingPlanOption[];
   trial: {
     active: boolean;
     startsAt: string;
@@ -106,11 +118,56 @@ const PRO_BENEFITS = [
   "Agent and branch operations",
   "Reports and exports",
   "Full business analytics",
-  "Free SMS Notifications Credit — 140 SMS on first purchase",
+  "140 introductory SMS credits on first paid subscription",
   "Borrower and operations workflows",
   "Cloud backup and synchronisation",
   "Ongoing product updates",
-  "24hr support",
+  "Support within 24 hours",
+];
+
+const FALLBACK_PLANS: BillingPlanOption[] = [
+  {
+    code: "PRO",
+    name: "Pro",
+    amount: 255_000,
+    currency: "UGX",
+    interval: "MONTHLY",
+    durationMonths: 1,
+    label: "Monthly",
+    tagline: "Maximum flexibility",
+    compareAtAmount: null,
+    savingsAmount: null,
+    badge: null,
+    defaultSelected: false,
+  },
+  {
+    code: "PRO_3M",
+    name: "Pro",
+    amount: 725_000,
+    currency: "UGX",
+    interval: "THREE_MONTHS",
+    durationMonths: 3,
+    label: "3 months",
+    tagline: "Most popular",
+    compareAtAmount: 765_000,
+    savingsAmount: 40_000,
+    badge: "MOST_POPULAR",
+    defaultSelected: true,
+  },
+  {
+    code: "PRO_6M",
+    name: "Pro",
+    amount: 1_385_000,
+    currency: "UGX",
+    interval: "SIX_MONTHS",
+    durationMonths: 6,
+    label: "6 months",
+    tagline: "Best value",
+    compareAtAmount: 1_530_000,
+    savingsAmount: 145_000,
+    badge: "BEST_VALUE",
+    defaultSelected: false,
+  },
 ];
 
 const TRIAL_TOTAL_DAYS = 30;
@@ -237,6 +294,7 @@ function SubscriptionWorkspaceContent({
   const [purchasingBundleId, setPurchasingBundleId] = useState<string | null>(
     null,
   );
+  const [selectedPlanCode, setSelectedPlanCode] = useState("PRO_3M");
   const paid = searchParams.get("paid") === "1";
   const smsPaid = searchParams.get("smsPaid") === "1";
   const tabParam = searchParams.get("tab");
@@ -405,6 +463,21 @@ function SubscriptionWorkspaceContent({
   }, [summary, searchParams]);
 
   useEffect(() => {
+    if (!summary) return;
+    const options =
+      summary.plans && summary.plans.length > 0 ? summary.plans : FALLBACK_PLANS;
+    const preferred =
+      options.find((plan) => plan.defaultSelected)?.code ??
+      options.find((plan) => plan.code === "PRO_3M")?.code ??
+      options[0]?.code;
+    if (preferred) {
+      setSelectedPlanCode((current) =>
+        options.some((plan) => plan.code === current) ? current : preferred,
+      );
+    }
+  }, [summary]);
+
+  useEffect(() => {
     if (!session || !focusedBranchId) return;
     void loadSmsWallet(focusedBranchId);
   }, [session, focusedBranchId, loadSmsWallet]);
@@ -466,7 +539,7 @@ function SubscriptionWorkspaceContent({
     window.history.replaceState({}, "", url.toString());
   }
 
-  async function startCheckout(branchId: string) {
+  async function startCheckout(branchId: string, planCode: string) {
     if (!session) return;
     setPayingBranchId(branchId);
     setError(null);
@@ -479,6 +552,7 @@ function SubscriptionWorkspaceContent({
             ...authHeaders(session),
             "Content-Type": "application/json",
           },
+          body: JSON.stringify({ planCode }),
         },
       );
       const payload = await readApiJson<
@@ -531,25 +605,45 @@ function SubscriptionWorkspaceContent({
 
   function handleSubscribe() {
     if (!summary) return;
+    const planCode = selectedPlanCode || "PRO_3M";
     if (mode === "manager") {
       const branch = summary.branches[0];
-      if (branch?.canCheckout) void startCheckout(branch.branchId);
+      if (branch?.canCheckout) void startCheckout(branch.branchId, planCode);
       return;
     }
     const selected =
       focusedBranch ??
       summary.branches.find((b) => b.canCheckout) ??
       summary.branches[0];
-    if (selected?.canCheckout) void startCheckout(selected.branchId);
+    if (selected?.canCheckout) void startCheckout(selected.branchId, planCode);
   }
 
   if (!ready || !session || !workspace || !user) {
     return <AppBootSkeleton />;
   }
 
-  const amount = summary?.plan.amount ?? 30_000;
-  const currency = summary?.plan.currency ?? "UGX";
-  const priceLabel = formatMoney(amount, currency);
+  const planOptions =
+    summary?.plans && summary.plans.length > 0
+      ? summary.plans
+      : FALLBACK_PLANS;
+  const selectedPlan =
+    planOptions.find((plan) => plan.code === selectedPlanCode) ??
+    planOptions.find((plan) => plan.defaultSelected) ??
+    planOptions[1] ??
+    planOptions[0]!;
+  const monthlyPlan =
+    planOptions.find((plan) => plan.durationMonths === 1) ?? planOptions[0]!;
+  const currency = selectedPlan.currency ?? "UGX";
+  const monthlyPriceLabel = formatMoney(monthlyPlan.amount, currency);
+  const selectedPriceLabel = formatMoney(selectedPlan.amount, currency);
+  const periodSuffix =
+    selectedPlan.durationMonths === 1
+      ? "month"
+      : `${selectedPlan.durationMonths} months`;
+  const subscribeLabel =
+    selectedPlan.durationMonths === 1
+      ? "Subscribe monthly"
+      : `Subscribe for ${selectedPlan.durationMonths} months`;
   const branchName =
     focusedBranch?.branchName ??
     summary?.branches[0]?.branchName ??
@@ -584,17 +678,19 @@ function SubscriptionWorkspaceContent({
 
   let daysCopy = `${daysLeft} day${daysLeft === 1 ? "" : "s"} remaining`;
   if (isPaused) daysCopy = "Subscription paused";
-  else if (isGrace) daysCopy = `${daysLeft} day${daysLeft === 1 ? "" : "s"} left to renew`;
+  else if (isGrace)
+    daysCopy = `${daysLeft} day${daysLeft === 1 ? "" : "s"} left to renew`;
 
-  let bodyCopy = `Your trial ends in ${daysLeft} day${daysLeft === 1 ? "" : "s"}. Subscribe to keep full access.`;
+  let bodyCopy = `Your trial ends in ${daysLeft} day${daysLeft === 1 ? "" : "s"}. Subscribe to keep full access to all Pro features and continue growing your business.`;
   if (isActive) {
     bodyCopy = focusedBranch?.currentPeriodEnd
-      ? `Your Pro plan renews on ${formatDate(focusedBranch.currentPeriodEnd)}.`
+      ? `Your Pro plan is active until ${formatDate(focusedBranch.currentPeriodEnd)}.`
       : "Your Pro plan is active for this branch.";
   } else if (isGrace) {
-    bodyCopy = `Your subscription has expired. Renew within ${daysLeft} day${daysLeft === 1 ? "" : "s"} to avoid a lock.`;
+    bodyCopy = `Your subscription has ended. Renew within ${daysLeft} day${daysLeft === 1 ? "" : "s"} to keep this branch open.`;
   } else if (isPaused) {
-    bodyCopy = "This branch is paused. Renew to reopen lending and collections.";
+    bodyCopy =
+      "This branch is paused. Renew to reopen lending and collections.";
   } else if (!isTrial) {
     bodyCopy = "Subscribe to unlock Pro for this branch.";
   }
@@ -714,108 +810,199 @@ function SubscriptionWorkspaceContent({
               Loading…
             </div>
           ) : (
-            <section className="grid gap-3 lg:grid-cols-3">
-              <article className="flex flex-col rounded-2xl border border-sky-100 bg-[#f3f8fd] p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
-                <span className="inline-flex w-fit rounded-full bg-[#e8f1fb] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#2b6cb0]">
-                  Current subscription
-                </span>
-                <div className="mt-4 flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <h2 className="font-[family-name:var(--font-display)] text-2xl tracking-[-0.03em] text-[#070b18]">
-                      {statusTitle}
+            <section className="space-y-4">
+              <article className="overflow-hidden rounded-2xl border border-sky-100 bg-gradient-to-br from-[#f3f8fd] via-white to-[#f7fbf9] p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)] sm:p-6">
+                <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-start gap-4">
+                    <DaysRing daysLeft={daysLeft} total={ringTotal} />
+                    <div className="min-w-0">
+                      <span className="inline-flex w-fit rounded-full bg-[#e8f1fb] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#2b6cb0]">
+                        Current subscription
+                      </span>
+                      <h2 className="mt-2 font-[family-name:var(--font-display)] text-2xl tracking-[-0.03em] text-[#070b18] sm:text-[1.75rem]">
+                        {statusTitle}
+                      </h2>
+                      <p className="mt-1 text-sm font-semibold text-[#07885f]">
+                        {daysCopy}
+                      </p>
+                      <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-600">
+                        {bodyCopy}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="shrink-0 rounded-2xl border border-[#d7e3f0] bg-white/90 px-4 py-3 sm:min-w-[11.5rem]">
+                    <div className="flex items-center justify-between gap-3 text-xs">
+                      <span className="text-slate-500">Current cost</span>
+                      <span className="font-semibold text-[#070b18]">
+                        {isTrial || isPaused
+                          ? formatMoney(0, currency)
+                          : selectedPriceLabel}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-3 text-xs">
+                      <span className="text-slate-500">
+                        {isTrial ? "After trial" : "Renews from"}
+                      </span>
+                      <span className="font-semibold text-[#070b18]">
+                        {monthlyPriceLabel} / month
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </article>
+
+              <article className="rounded-2xl border border-emerald-100 bg-[#f3faf6] p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)] sm:p-6">
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <span className="inline-flex w-fit rounded-full bg-[#e9f8ef] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#07885f]">
+                      Plan
+                    </span>
+                    <h2 className="mt-2 font-[family-name:var(--font-display)] text-2xl tracking-[-0.03em] text-[#070b18]">
+                      Pro
                     </h2>
-                    <p className="mt-1 text-sm font-medium text-slate-600">
-                      {daysCopy}
-                    </p>
-                    <p className="mt-3 text-xs leading-relaxed text-slate-500">
-                      {bodyCopy}
+                    <p className="mt-1 text-sm text-slate-600">
+                      Choose billing period
                     </p>
                   </div>
-                  <DaysRing daysLeft={daysLeft} total={ringTotal} />
-                </div>
-                <div className="mt-auto border-t border-[var(--line)] pt-4">
-                  <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="text-slate-500">Current cost</span>
-                    <span className="font-semibold text-[#070b18]">
-                      {isTrial || isPaused
-                        ? formatMoney(0, currency)
-                        : priceLabel}
+                  <p className="text-sm text-slate-600">
+                    Your price{" "}
+                    <span className="text-lg font-bold text-[#07885f]">
+                      {selectedPriceLabel}
+                    </span>{" "}
+                    <span className="font-medium text-slate-500">
+                      / {periodSuffix}
                     </span>
-                  </div>
-                  <div className="mt-1.5 flex items-center justify-between gap-2 text-xs">
-                    <span className="text-slate-500">
-                      {isTrial ? "After trial" : "Renews"}
-                    </span>
-                    <span className="font-semibold text-[#070b18]">
-                      {priceLabel} / month
-                    </span>
-                  </div>
-                </div>
-              </article>
-
-              <article className="flex flex-col rounded-2xl border border-emerald-100 bg-[#f3faf6] p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
-                <span className="inline-flex w-fit rounded-full bg-[#e9f8ef] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#07885f]">
-                  Plan
-                </span>
-                <h2 className="mt-4 font-[family-name:var(--font-display)] text-2xl tracking-[-0.03em] text-[#070b18]">
-                  Pro
-                </h2>
-                <p className="mt-1 text-lg font-semibold text-[#07885f]">
-                  {priceLabel} / month
-                </p>
-                <ul className="mt-4 flex-1 space-y-2">
-                  {PRO_BENEFITS.map((item) => (
-                    <li
-                      key={item}
-                      className="flex gap-2 text-[12px] leading-snug text-slate-700"
-                    >
-                      <Check
-                        className="mt-0.5 size-3.5 shrink-0 text-[#07885f]"
-                        strokeWidth={2.75}
-                      />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  type="button"
-                  disabled={!canSubscribe || subscribePaying}
-                  onClick={handleSubscribe}
-                  className="mt-5 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#07885f] text-sm font-semibold text-white shadow-[0_12px_24px_rgba(7,136,95,0.22)] transition hover:bg-[#067352] disabled:cursor-not-allowed disabled:opacity-55"
-                >
-                  {subscribePaying ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : null}
-                  Subscribe
-                </button>
-              </article>
-
-              <article className="flex flex-col rounded-2xl border border-sky-100 bg-[#f3f8fd] p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
-                <div className="grid size-11 place-items-center rounded-2xl bg-[#e8f1fb] text-[#2b6cb0]">
-                  <Headset className="size-5" strokeWidth={2} />
-                </div>
-                <h2 className="mt-4 font-[family-name:var(--font-display)] text-xl tracking-[-0.02em] text-[#070b18]">
-                  Need help? We&apos;re here for you.
-                </h2>
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">
-                  Questions about billing, renewals, or unlocking a paused
-                  branch? Our team can walk you through it.
-                </p>
-                <div className="mt-5 rounded-xl border border-[var(--line)] bg-[#f6f8fb] px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
-                    Email
                   </p>
-                  <a
-                    href="mailto:support@rembeh.com"
-                    className="mt-1 block text-sm font-semibold text-[#07885f] hover:underline"
-                  >
-                    support@rembeh.com
-                  </a>
                 </div>
-                <p className="mt-auto pt-4 text-xs text-slate-500">
-                  Response within 24 hours on business days.
-                </p>
+
+                <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.95fr)]">
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {planOptions.map((plan) => {
+                      const selected = plan.code === selectedPlan.code;
+                      const badgeLabel =
+                        plan.badge === "MOST_POPULAR"
+                          ? "Most popular"
+                          : plan.badge === "BEST_VALUE"
+                            ? "Best value"
+                            : null;
+                      return (
+                        <button
+                          key={plan.code}
+                          type="button"
+                          onClick={() => setSelectedPlanCode(plan.code)}
+                          className={`relative flex h-full flex-col rounded-2xl border bg-white p-4 text-left transition ${
+                            selected
+                              ? "border-[#07885f] shadow-[0_12px_28px_rgba(7,136,95,0.16)] ring-2 ring-[#07885f]/20"
+                              : "border-[#d7e3f0] hover:border-[#07885f]/50"
+                          }`}
+                        >
+                          {badgeLabel ? (
+                            <span
+                              className={`absolute -top-2.5 left-3 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-white ${
+                                plan.badge === "MOST_POPULAR"
+                                  ? "bg-[#2b6cb0]"
+                                  : "bg-[#07885f]"
+                              }`}
+                            >
+                              {badgeLabel}
+                            </span>
+                          ) : null}
+                          <span
+                            className={`mb-3 flex size-4 items-center justify-center rounded-full border ${
+                              selected
+                                ? "border-[#07885f] bg-[#07885f]"
+                                : "border-slate-300 bg-white"
+                            }`}
+                            aria-hidden
+                          >
+                            {selected ? (
+                              <Check
+                                className="size-2.5 text-white"
+                                strokeWidth={3}
+                              />
+                            ) : null}
+                          </span>
+                          <p className="text-sm font-bold text-[#070b18]">
+                            {plan.label}
+                          </p>
+                          {plan.compareAtAmount ? (
+                            <p className="mt-2 text-xs text-slate-400 line-through">
+                              {formatMoney(plan.compareAtAmount, plan.currency)}
+                            </p>
+                          ) : (
+                            <p className="mt-2 text-xs text-transparent">.</p>
+                          )}
+                          <p className="mt-0.5 text-lg font-bold tabular-nums text-[#070b18]">
+                            {formatMoney(plan.amount, plan.currency)}
+                          </p>
+                          {plan.savingsAmount ? (
+                            <p className="mt-1 text-xs font-semibold text-[#07885f]">
+                              Save {formatMoney(plan.savingsAmount, plan.currency)}
+                            </p>
+                          ) : (
+                            <p className="mt-1 text-xs font-medium text-slate-500">
+                              {plan.tagline}
+                            </p>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex flex-col rounded-2xl border border-[#d7e3f0] bg-white p-4 sm:p-5">
+                    <ul className="flex-1 space-y-2.5">
+                      {PRO_BENEFITS.map((item) => (
+                        <li
+                          key={item}
+                          className="flex gap-2 text-[12px] leading-snug text-slate-700"
+                        >
+                          <Check
+                            className="mt-0.5 size-3.5 shrink-0 text-[#07885f]"
+                            strokeWidth={2.75}
+                          />
+                          <span>{item}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    <button
+                      type="button"
+                      disabled={!canSubscribe || subscribePaying}
+                      onClick={handleSubscribe}
+                      className="mt-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#07885f] text-sm font-semibold text-white shadow-[0_12px_24px_rgba(7,136,95,0.22)] transition hover:bg-[#067352] disabled:cursor-not-allowed disabled:opacity-55"
+                    >
+                      {subscribePaying ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <>
+                          {subscribeLabel}
+                          <ArrowRight className="size-4" />
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
               </article>
+
+              <div className="rounded-2xl border border-sky-100 bg-[#f3f8fd] px-5 py-4">
+                <p className="text-sm font-medium text-slate-700">
+                  Secure. Reliable. Built for your business. Your data is
+                  encrypted and backed up daily. Cancel anytime.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-4 text-xs font-semibold text-slate-600">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Lock className="size-3.5 text-[#2b6cb0]" />
+                    Secure payments
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <RefreshCw className="size-3.5 text-[#2b6cb0]" />
+                    Cancel anytime
+                  </span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <Shield className="size-3.5 text-[#2b6cb0]" />
+                    Data protected
+                  </span>
+                </div>
+              </div>
             </section>
           )
         ) : (
@@ -877,8 +1064,7 @@ function SubscriptionWorkspaceContent({
                   Confirm purchase
                 </h3>
                 <p className="mt-1 text-xs text-slate-500">
-                  Review the details from the catalogue, then continue to
-                  payment.
+                  Check the details, then continue to payment.
                 </p>
                 <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
                   <div className="rounded-xl bg-[#f6f8fb] px-3 py-2">
@@ -1018,7 +1204,7 @@ function SubscriptionWorkspaceContent({
             <div className="flex items-center gap-2">
               <FileText className="size-4 text-[#07885f]" />
               <h3 className="text-sm font-semibold text-[#070b18]">
-                {activeTab === "sms" ? "SMS payment history" : "Plan payment history"}
+                {activeTab === "sms" ? "SMS payment history" : "Billing history"}
               </h3>
             </div>
             <div className="flex flex-wrap items-center gap-2">
@@ -1164,7 +1350,10 @@ function SubscriptionWorkspaceContent({
                                     setFocusedBranchId(row.branchId);
                                     return;
                                   }
-                                  void startCheckout(row.branchId);
+                                  void startCheckout(
+                                    row.branchId,
+                                    selectedPlanCode || "PRO_3M",
+                                  );
                                 }}
                                 className="inline-flex h-8 min-w-[4.5rem] items-center justify-center gap-1 rounded-full bg-rose-600 px-3 text-[11px] font-semibold text-white hover:bg-rose-700 disabled:opacity-70"
                               >
@@ -1231,7 +1420,7 @@ function DaysRing({ daysLeft, total }: { daysLeft: number; total: number }) {
           <p className="text-sm font-bold leading-none text-[#070b18]">
             {daysLeft}
           </p>
-          <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+          <p className="mt-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-slate-500">
             days
           </p>
         </div>

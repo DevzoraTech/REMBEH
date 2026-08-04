@@ -186,6 +186,8 @@ enum BorrowerListType {
 
 enum SubscriptionInterval {
   MONTHLY
+  THREE_MONTHS
+  SIX_MONTHS
 }
 
 enum BranchSubscriptionStatus {

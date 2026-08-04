@@ -23,6 +23,7 @@ import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { PrismaService } from '../../database/prisma.service';
 import {
   BillingCheckoutResponseContract,
+  BillingPlanContract,
   BillingSummaryContract,
   BranchBillingStatusContract,
   SubscriptionPaymentRowContract,
@@ -30,9 +31,13 @@ import {
 import {
   BILLING_PERMISSIONS,
   GRACE_DAYS,
-  PRO_PLAN_AMOUNT_UGX,
+  PRO_MONTHLY_AMOUNT_UGX,
+  PRO_PLAN_CATALOGUE,
   PRO_PLAN_CODE,
   TRIAL_DAYS,
+  defaultProPlanCode,
+  monthsForInterval,
+  proPlanByCode,
 } from './billing.permissions';
 import { PesapalClient } from './pesapal.client';
 import { ConfigService } from '@nestjs/config';
@@ -56,7 +61,7 @@ export class BillingService implements OnModuleInit {
 
   async onModuleInit() {
     try {
-      await this.ensureProPlan();
+      await this.ensureProPlans();
       await this.backfillOwnerBillingPermission();
     } catch (error) {
       this.logger.warn(
@@ -110,9 +115,9 @@ export class BillingService implements OnModuleInit {
   async getMyBranchStatus(
     user: AuthenticatedUser,
   ): Promise<BranchBillingStatusContract> {
-    const plan = await this.ensureProPlan();
-    const planAmount = Number(plan.amount);
-    const planCurrency = plan.currency || 'UGX';
+    await this.ensureProPlans();
+    const planAmount = PRO_MONTHLY_AMOUNT_UGX;
+    const planCurrency = 'UGX';
 
     if (!user.branchId) {
       return {
@@ -215,7 +220,7 @@ export class BillingService implements OnModuleInit {
           take: 100,
           include: {
             branch: { select: { name: true } },
-            plan: { select: { name: true } },
+            plan: { select: { interval: true, code: true } },
           },
         }),
         this.prisma.smsPurchase.findMany({
@@ -241,9 +246,9 @@ export class BillingService implements OnModuleInit {
         const paid = row.status === SubscriptionPaymentStatus.COMPLETED;
         const failed = row.status === SubscriptionPaymentStatus.FAILED;
         const periodStart = row.paidAt ?? row.createdAt;
-        const periodEnd = new Date(
-          periodStart.getTime() + 30 * 24 * 60 * 60 * 1000,
-        );
+        const months = monthsForInterval(row.plan.interval);
+        const periodEnd = new Date(periodStart);
+        periodEnd.setMonth(periodEnd.getMonth() + months);
         const priorPaid = subscriptionRows.some(
           (other) =>
             other.branchId === row.branchId &&
@@ -372,37 +377,100 @@ export class BillingService implements OnModuleInit {
     });
   }
 
-  async ensureProPlan() {
-    const existing = await this.prisma.subscriptionPlan.findUnique({
-      where: { code: PRO_PLAN_CODE },
-    });
-    if (existing) {
-      const amount = Number(existing.amount);
-      if (amount !== PRO_PLAN_AMOUNT_UGX || !existing.isActive) {
-        return this.prisma.subscriptionPlan.update({
-          where: { id: existing.id },
-          data: {
-            amount: new Prisma.Decimal(PRO_PLAN_AMOUNT_UGX),
-            currency: 'UGX',
-            interval: 'MONTHLY',
-            isActive: true,
-            name: 'Pro',
-          },
-        });
+  async ensureProPlans() {
+    const plans = [];
+    for (const definition of PRO_PLAN_CATALOGUE) {
+      const existing = await this.prisma.subscriptionPlan.findUnique({
+        where: { code: definition.code },
+      });
+      if (existing) {
+        const amount = Number(existing.amount);
+        if (
+          amount !== definition.amountUgx ||
+          existing.interval !== definition.interval ||
+          !existing.isActive ||
+          existing.name !== definition.name
+        ) {
+          plans.push(
+            await this.prisma.subscriptionPlan.update({
+              where: { id: existing.id },
+              data: {
+                amount: new Prisma.Decimal(definition.amountUgx),
+                currency: 'UGX',
+                interval: definition.interval,
+                isActive: true,
+                name: definition.name,
+              },
+            }),
+          );
+          continue;
+        }
+        plans.push(existing);
+        continue;
       }
-      return existing;
-    }
 
-    return this.prisma.subscriptionPlan.create({
-      data: {
-        code: PRO_PLAN_CODE,
-        name: 'Pro',
-        amount: new Prisma.Decimal(PRO_PLAN_AMOUNT_UGX),
-        currency: 'UGX',
-        interval: 'MONTHLY',
-        isActive: true,
-      },
+      plans.push(
+        await this.prisma.subscriptionPlan.create({
+          data: {
+            code: definition.code,
+            name: definition.name,
+            amount: new Prisma.Decimal(definition.amountUgx),
+            currency: 'UGX',
+            interval: definition.interval,
+            isActive: true,
+          },
+        }),
+      );
+    }
+    return plans;
+  }
+
+  /** @deprecated Prefer ensureProPlans / resolvePlanByCode. */
+  async ensureProPlan() {
+    const plans = await this.ensureProPlans();
+    return (
+      plans.find((plan) => plan.code === PRO_PLAN_CODE) ??
+      plans[0]!
+    );
+  }
+
+  async resolvePlanByCode(planCode?: string | null) {
+    await this.ensureProPlans();
+    const code = (planCode?.trim() || defaultProPlanCode()).toUpperCase();
+    const definition = proPlanByCode(code);
+    if (!definition) {
+      throw new BadRequestException('Choose a valid billing period.');
+    }
+    const plan = await this.prisma.subscriptionPlan.findUnique({
+      where: { code: definition.code },
     });
+    if (!plan || !plan.isActive) {
+      throw new BadRequestException('Choose a valid billing period.');
+    }
+    return { plan, definition };
+  }
+
+  private toPlanContract(
+    definition: (typeof PRO_PLAN_CATALOGUE)[number],
+  ): BillingPlanContract {
+    const savings =
+      definition.compareAtUgx != null
+        ? Math.max(0, definition.compareAtUgx - definition.amountUgx)
+        : null;
+    return {
+      code: definition.code,
+      name: definition.name,
+      amount: definition.amountUgx,
+      currency: 'UGX',
+      interval: definition.interval,
+      durationMonths: definition.durationMonths,
+      label: definition.label,
+      tagline: definition.tagline,
+      compareAtAmount: definition.compareAtUgx,
+      savingsAmount: savings && savings > 0 ? savings : null,
+      badge: definition.badge,
+      defaultSelected: definition.defaultSelected,
+    };
   }
 
   async provisionBranchSubscription(input: {
@@ -457,7 +525,12 @@ export class BillingService implements OnModuleInit {
     }
 
     const billing = await this.ensureTenantBilling(user.tenantId);
-    const plan = await this.ensureProPlan();
+    await this.ensureProPlans();
+    const plans = PRO_PLAN_CATALOGUE.map((definition) =>
+      this.toPlanContract(definition),
+    );
+    const plan =
+      plans.find((row) => row.code === PRO_PLAN_CODE) ?? plans[0]!;
     await this.syncTenantSubscriptions(user.tenantId);
 
     const branchWhere = canManageAll
@@ -533,13 +606,8 @@ export class BillingService implements OnModuleInit {
     }
 
     return {
-      plan: {
-        code: plan.code,
-        name: plan.name,
-        amount: Number(plan.amount),
-        currency: plan.currency,
-        interval: plan.interval,
-      },
+      plan,
+      plans,
       trial: {
         active: trialActive,
         startsAt: billing.trialStartsAt.toISOString(),
@@ -556,6 +624,7 @@ export class BillingService implements OnModuleInit {
   async startCheckout(
     user: AuthenticatedUser,
     branchId: string,
+    planCode?: string,
   ): Promise<BillingCheckoutResponseContract> {
     const canManageAll = user.permissions.includes(BILLING_PERMISSIONS.manage);
     if (!canManageAll && user.branchId !== branchId) {
@@ -572,7 +641,7 @@ export class BillingService implements OnModuleInit {
     }
 
     await this.ensureTenantBilling(user.tenantId);
-    const plan = await this.ensureProPlan();
+    const { plan, definition } = await this.resolvePlanByCode(planCode);
     await this.syncTenantSubscriptions(user.tenantId);
 
     const branch = await this.prisma.branch.findFirst({
@@ -632,7 +701,10 @@ export class BillingService implements OnModuleInit {
         id: merchantReference,
         currency: plan.currency,
         amount: Number(plan.amount),
-        description: `REMBEH Pro — ${branch.name}`.slice(0, 100),
+        description: `REMBEH Pro ${definition.label} — ${branch.name}`.slice(
+          0,
+          100,
+        ),
         callbackUrl: apiCallback,
         cancellationUrl: `${webAppUrl}/subscription`,
         branchName: branch.name,
@@ -959,11 +1031,16 @@ export class BillingService implements OnModuleInit {
     const sub = await this.prisma.branchSubscription.findUnique({
       where: { branchId: payment.branchId },
     });
+    const paidPlan = await this.prisma.subscriptionPlan.findUnique({
+      where: { id: payment.planId },
+    });
+    const months = monthsForInterval(paidPlan?.interval ?? 'MONTHLY');
     const base =
       sub?.currentPeriodEnd && sub.currentPeriodEnd.getTime() > now.getTime()
-        ? sub.currentPeriodEnd
+        ? new Date(sub.currentPeriodEnd)
         : now;
-    const periodEnd = new Date(base.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const periodEnd = new Date(base);
+    periodEnd.setMonth(periodEnd.getMonth() + months);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.subscriptionPayment.update({

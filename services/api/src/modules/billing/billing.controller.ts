@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
@@ -13,6 +14,7 @@ import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { BillingService } from './billing.service';
+import { StartCheckoutDto } from './dto/start-checkout.dto';
 
 @Controller('billing')
 export class BillingController {
@@ -45,8 +47,9 @@ export class BillingController {
   startCheckout(
     @CurrentUser() user: AuthenticatedUser,
     @Param('branchId', ParseUUIDPipe) branchId: string,
+    @Body() body: StartCheckoutDto,
   ) {
-    return this.billingService.startCheckout(user, branchId);
+    return this.billingService.startCheckout(user, branchId, body?.planCode);
   }
 
   @Get('pesapal/ipn')

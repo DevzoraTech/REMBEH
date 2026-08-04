@@ -4,6 +4,13 @@ export type BillingPlanContract = {
   amount: number;
   currency: string;
   interval: string;
+  durationMonths: number;
+  label: string;
+  tagline: string;
+  compareAtAmount: number | null;
+  savingsAmount: number | null;
+  badge: 'MOST_POPULAR' | 'BEST_VALUE' | null;
+  defaultSelected: boolean;
 };
 
 export type BranchBillingRowContract = {
@@ -21,7 +28,10 @@ export type BranchBillingRowContract = {
 };
 
 export type BillingSummaryContract = {
+  /** Monthly reference plan (after-trial price). */
   plan: BillingPlanContract;
+  /** All active Pro billing periods. */
+  plans: BillingPlanContract[];
   trial: {
     active: boolean;
     startsAt: string;
