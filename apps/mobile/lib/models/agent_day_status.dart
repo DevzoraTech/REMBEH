@@ -2,6 +2,7 @@ class AgentDayStatus {
   const AgentDayStatus({
     required this.date,
     required this.canUseApp,
+    required this.canBrowseClients,
     required this.float,
     this.branch,
     this.branchStatus,
@@ -14,6 +15,7 @@ class AgentDayStatus {
   final AgentDayBranch? branch;
   final String? branchStatus;
   final bool canUseApp;
+  final bool canBrowseClients;
   final String? lockReason;
   final String? lockTitle;
   final String? lockMessage;
@@ -21,11 +23,13 @@ class AgentDayStatus {
 
   factory AgentDayStatus.fromApi(Map<String, dynamic> json) {
     final branch = json['branch'] as Map<String, dynamic>?;
+    final canUseApp = json['canUseApp'] as bool? ?? false;
     return AgentDayStatus(
       date: json['date'] as String? ?? '',
       branch: branch == null ? null : AgentDayBranch.fromApi(branch),
       branchStatus: json['branchStatus'] as String?,
-      canUseApp: json['canUseApp'] as bool? ?? false,
+      canUseApp: canUseApp,
+      canBrowseClients: json['canBrowseClients'] as bool? ?? canUseApp,
       lockReason: json['lockReason'] as String?,
       lockTitle: json['lockTitle'] as String?,
       lockMessage: json['lockMessage'] as String?,

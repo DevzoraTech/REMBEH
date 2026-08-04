@@ -212,6 +212,7 @@ type OperationResponse = {
   openingBalanceSource: "PREVIOUS_CLOSING" | "MANUAL";
   previousClosedOperation: OperationCarryover | null;
   pendingClosureOperation: OperationCarryover | null;
+  awaitingReportOperation: OperationCarryover | null;
   operation: DailyOperation | null;
   report: DailyOperationReport | null;
   message?: string | string[];
@@ -230,13 +231,6 @@ type OperationAgentRow = {
 type AgentsResponse = {
   agents: OperationAgentRow[];
   message?: string | string[];
-};
-
-type OpeningForm = {
-  openingBalance: string;
-  cashAddedToday: string;
-  floatSetAside: string;
-  notes: string;
 };
 
 type TopUpForm = {
@@ -283,13 +277,6 @@ type AttentionItem = {
   tone: "red" | "gold" | "blue";
   action?: Exclude<OperationActionPanel, null>;
   actionLabel?: string;
-};
-
-const emptyOpeningForm: OpeningForm = {
-  openingBalance: "",
-  cashAddedToday: "",
-  floatSetAside: "",
-  notes: "",
 };
 
 const emptyExpenseForm: ExpenseForm = {
@@ -348,6 +335,20 @@ function todayInputValue() {
   return `${year}-${month}-${day}`;
 }
 
+function nextDayInputValue(from = todayInputValue()) {
+  const [year, month, day] = from.split("-").map(Number);
+  const next = new Date(Date.UTC(year, month - 1, day + 1));
+  const y = next.getUTCFullYear();
+  const m = String(next.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(next.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function isActiveOperationDate(value: string) {
+  const today = todayInputValue();
+  return value === today || value === nextDayInputValue(today);
+}
+
 function validDateInputValue(value: string | null) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value ?? "");
 }
@@ -369,7 +370,6 @@ export default function OperationsPage() {
   const [reportBranches, setReportBranches] = useState<OperationBranch[]>([]);
   const [selectedBranchId, setSelectedBranchId] = useState("");
   const [agents, setAgents] = useState<OperationAgentRow[]>([]);
-  const [form, setForm] = useState<OpeningForm>(emptyOpeningForm);
   const [topUpForm, setTopUpForm] = useState<TopUpForm>(emptyTopUpForm);
   const [expenseForm, setExpenseForm] = useState<ExpenseForm>(emptyExpenseForm);
   const [floatForm, setFloatForm] = useState<FloatForm>(emptyFloatForm);
@@ -384,7 +384,6 @@ export default function OperationsPage() {
   const [activePanel, setActivePanel] = useState<OperationActionPanel>(null);
   const [loading, setLoading] = useState(true);
   const [loadingAgents, setLoadingAgents] = useState(false);
-  const [opening, setOpening] = useState(false);
   const [recordingTopUp, setRecordingTopUp] = useState(false);
   const [savingFloat, setSavingFloat] = useState(false);
   const [savingFloatTopUp, setSavingFloatTopUp] = useState(false);
@@ -402,9 +401,6 @@ export default function OperationsPage() {
     [session, user],
   );
   const canOperateBranch = operatorRole === "manager";
-  const canOpen = Boolean(
-    canOperateBranch && session?.permissions.includes("operation.open"),
-  );
   const canRecordReturn = Boolean(
     canOperateBranch && session?.permissions.includes("operation.float.return"),
   );
@@ -437,11 +433,10 @@ export default function OperationsPage() {
   const selectedReportBranch =
     reportBranches.find((item) => item.id === selectedBranchId) ?? activeBranch;
   const pendingClosureOperation = data?.pendingClosureOperation ?? null;
-  const previousClosedOperation = data?.previousClosedOperation ?? null;
-  const suggestedOpeningBalance = data?.openingBalance ?? null;
-  const isToday = date === todayInputValue();
+  const awaitingReportOperation = data?.awaitingReportOperation ?? null;
+  const isActiveDay = isActiveOperationDate(date);
   const canFinishOpenOperation = Boolean(
-    canOperateBranch && operation && operation.status === "OPEN",
+    canOperateBranch && operation && operation.status === "OPEN" && isActiveDay,
   );
 
   useEffect(() => {
@@ -453,9 +448,13 @@ export default function OperationsPage() {
         setDate((current) => (queryDate === current ? current : queryDate!));
       }
       if (prompt === "close") {
-        setNotice("Close the previous branch day before opening a new day.");
+        setNotice(
+          "Close the previous branch day and submit its report. The next day opens automatically.",
+        );
       } else if (prompt === "open") {
-        setNotice("Open today's branch before continuing.");
+        setNotice(
+          "Branch days open automatically after the previous close report is submitted.",
+        );
       }
     }, 0);
 
@@ -547,16 +546,12 @@ export default function OperationsPage() {
         }
         setData(payload);
         if (payload.pendingClosureOperation) {
-          setNotice("Close the previous branch day before opening a new day.");
-        }
-        if (!payload.operation && payload.openingBalance != null) {
-          setForm((current) =>
-            current.openingBalance
-              ? current
-              : {
-                  ...current,
-                  openingBalance: String(payload.openingBalance),
-                },
+          setNotice(
+            "Close the previous branch day, then submit its report. The next day opens automatically.",
+          );
+        } else if (payload.awaitingReportOperation) {
+          setNotice(
+            `Submit the close report for ${payload.awaitingReportOperation.operationDate} so the next day can open.`,
           );
         }
       } catch (caught) {
@@ -643,11 +638,6 @@ export default function OperationsPage() {
     loadBranchesForReports,
   ]);
 
-  const openingTotal = useMemo(
-    () => Number(form.openingBalance || 0) + Number(form.cashAddedToday || 0),
-    [form.cashAddedToday, form.openingBalance],
-  );
-
   const pendingAgentReturns = useMemo(
     () =>
       (operation?.agentReturns ?? []).filter(
@@ -726,47 +716,6 @@ export default function OperationsPage() {
     setActivePanel(panel);
   }
 
-  async function openBranch() {
-    if (!session || !activeBranch || opening) return;
-    if (!isToday) {
-      setError("Only today's records can be changed.");
-      return;
-    }
-    setOpening(true);
-    setError(null);
-    setNotice(null);
-    try {
-      const response = await fetch(`${apiBaseUrl}/operations/open`, {
-        method: "POST",
-        headers: {
-          Authorization: `${session.tokenType} ${session.accessToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          branchId: activeBranch.id,
-          date,
-          openingBalance: Number(form.openingBalance),
-          cashAddedToday: Number(form.cashAddedToday),
-          floatSetAside: Number(form.floatSetAside),
-          notes: form.notes.trim() || undefined,
-        }),
-      });
-      const payload = await readApiJson<OperationResponse>(response);
-      if (!response.ok) {
-        throw new Error(formatApiError(payload.message));
-      }
-      setData(payload);
-      setForm(emptyOpeningForm);
-      setNotice("Branch opened.");
-    } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : "Could not open branch.",
-      );
-    } finally {
-      setOpening(false);
-    }
-  }
-
   async function recordTopUp() {
     if (!session || !activeBranch || recordingTopUp) return;
     if (!canFinishOpenOperation) {
@@ -830,7 +779,7 @@ export default function OperationsPage() {
     }
     if (operation && amount > operation.floatRemaining) {
       setError(
-        `Float exceeds assignable float left. Available: ${formatMoney(
+        `Float exceeds available branch cash. Available: ${formatMoney(
           operation.floatRemaining,
         )}.`,
       );
@@ -1034,8 +983,18 @@ export default function OperationsPage() {
         throw new Error(formatApiError(payload.message));
       }
       setData(payload);
+      if (payload.date) {
+        setDate(payload.date);
+        router.replace(
+          `/operations?date=${encodeURIComponent(payload.date)}`,
+        );
+      }
       setManagerReportNotes("");
-      setNotice("Report sent to owner.");
+      setNotice(
+        payload.operation?.status === "OPEN"
+          ? "Report sent. Next day is open."
+          : "Report sent to owner.",
+      );
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -1299,9 +1258,10 @@ export default function OperationsPage() {
 
   function goToPendingClosure() {
     if (!pendingClosureOperation) return;
-    setNotice("Close this branch day before opening a new day.");
+    setNotice(
+      "Close this branch day and submit its report. The next day opens automatically.",
+    );
     setError(null);
-    setForm(emptyOpeningForm);
     setExpenseForm(emptyExpenseForm);
     setAgentReturnForm(emptyAgentReturnForm);
     setClosingForm(emptyClosingForm);
@@ -1310,6 +1270,20 @@ export default function OperationsPage() {
       `/operations?date=${encodeURIComponent(
         pendingClosureOperation.operationDate,
       )}&prompt=close`,
+    );
+  }
+
+  function goToAwaitingReport() {
+    if (!awaitingReportOperation) return;
+    setNotice(
+      "Submit this close report so the next day can open automatically.",
+    );
+    setError(null);
+    setDate(awaitingReportOperation.operationDate);
+    router.replace(
+      `/operations?date=${encodeURIComponent(
+        awaitingReportOperation.operationDate,
+      )}`,
     );
   }
 
@@ -1325,7 +1299,9 @@ export default function OperationsPage() {
         : "Closing"
     : pendingClosureOperation
       ? "Previous day open"
-      : "Not opened";
+      : awaitingReportOperation
+        ? "Report needed"
+        : "Opening day…";
 
   return (
     <AppShell
@@ -1389,7 +1365,6 @@ export default function OperationsPage() {
                     onChange={(event) => {
                       setNotice(null);
                       setError(null);
-                      setForm(emptyOpeningForm);
                       setTopUpForm(emptyTopUpForm);
                       setExpenseForm(emptyExpenseForm);
                       setFloatForm(emptyFloatForm);
@@ -1493,19 +1468,13 @@ export default function OperationsPage() {
             pendingOperation={pendingClosureOperation}
             onReview={goToPendingClosure}
           />
-        ) : (
-          <OpeningView
-            branch={activeBranch}
-            canOpen={canOpen}
-            editableDate={isToday}
-            form={form}
-            opening={opening}
-            openingTotal={openingTotal}
-            previousClosedOperation={previousClosedOperation}
-            suggestedOpeningBalance={suggestedOpeningBalance}
-            setForm={setForm}
-            onOpen={() => void openBranch()}
+        ) : awaitingReportOperation ? (
+          <AwaitingReportView
+            awaitingOperation={awaitingReportOperation}
+            onReview={goToAwaitingReport}
           />
+        ) : (
+          <AutoOpenPendingView branch={activeBranch} date={date} />
         )}
         <OperationActionDrawer
           panel={activePanel}
@@ -1567,11 +1536,11 @@ function PendingClosureView({
             Action required
           </p>
           <h2 className="mt-2 text-[clamp(1.2rem,1.5vw,1.55rem)] font-bold tracking-[-0.02em] text-[#0b1220]">
-            Close {formatDateOnly(pendingOperation.operationDate)} before opening today
+            Close {formatDateOnly(pendingOperation.operationDate)} first
           </h2>
           <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-slate-600">
-            Your branch still has an open day. Finish returns, close cash, and
-            send that report so the next day opens with the right balance.
+            Finish returns, close cash, and submit that report. The next day
+            opens automatically afterward — no separate open step.
           </p>
         </div>
         <div className="rounded-[14px] border border-amber-200 bg-white p-4 shadow-[0_10px_24px_rgba(245,158,11,0.12)]">
@@ -1588,6 +1557,69 @@ function PendingClosureView({
           </button>
         </div>
       </div>
+    </section>
+  );
+}
+
+function AwaitingReportView({
+  awaitingOperation,
+  onReview,
+}: {
+  awaitingOperation: OperationCarryover;
+  onReview: () => void;
+}) {
+  return (
+    <section className="overflow-hidden rounded-[16px] border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+      <div className="grid gap-5 lg:grid-cols-[1.2fr_280px] lg:items-center">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-amber-700">
+            Report required
+          </p>
+          <h2 className="mt-2 text-[clamp(1.2rem,1.5vw,1.55rem)] font-bold tracking-[-0.02em] text-[#0b1220]">
+            Submit the {formatDateOnly(awaitingOperation.operationDate)} report
+          </h2>
+          <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-slate-600">
+            That day is closed. Send the report to open the next day
+            automatically with the closing balance carried forward.
+          </p>
+        </div>
+        <div className="rounded-[14px] border border-amber-200 bg-white p-4 shadow-[0_10px_24px_rgba(245,158,11,0.12)]">
+          <p className="text-[11px] font-semibold text-amber-700">Closed day</p>
+          <p className="mt-1 text-xl font-bold text-[#0b1220]">
+            {formatDateOnly(awaitingOperation.operationDate)}
+          </p>
+          <button
+            type="button"
+            onClick={onReview}
+            className="mt-4 flex h-10 w-full items-center justify-center rounded-xl bg-[#003f35] text-xs font-semibold text-white shadow-[0_10px_20px_rgba(0,63,53,0.2)]"
+          >
+            Open report
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AutoOpenPendingView({
+  branch,
+  date,
+}: {
+  branch: OperationBranch;
+  date: string;
+}) {
+  return (
+    <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+      <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--forest-emerald)]">
+        Daily operations
+      </p>
+      <h2 className="mt-2 text-lg font-bold tracking-[-0.02em] text-[#0b1220]">
+        Preparing {formatDateOnly(date)} for {branch.name}
+      </h2>
+      <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-slate-600">
+        Branch days open automatically after the previous day is closed and its
+        report is submitted. Refresh if this stays empty.
+      </p>
     </section>
   );
 }
@@ -1630,154 +1662,6 @@ function OwnerOperationEmptyView({
         </div>
       </div>
     </section>
-  );
-}
-
-function OpeningView({
-  branch,
-  canOpen,
-  editableDate,
-  form,
-  opening,
-  openingTotal,
-  previousClosedOperation,
-  suggestedOpeningBalance,
-  setForm,
-  onOpen,
-}: {
-  branch: OperationBranch;
-  canOpen: boolean;
-  editableDate: boolean;
-  form: OpeningForm;
-  opening: boolean;
-  openingTotal: number;
-  previousClosedOperation: OperationCarryover | null;
-  suggestedOpeningBalance: number | null;
-  setForm: (next: OpeningForm) => void;
-  onOpen: () => void;
-}) {
-  const valid =
-    editableDate &&
-    Number(form.openingBalance) >= 0 &&
-    Number(form.cashAddedToday) >= 0 &&
-    Number(form.floatSetAside) >= 0 &&
-    Number(form.floatSetAside) <= openingTotal &&
-    form.openingBalance !== "" &&
-    form.cashAddedToday !== "" &&
-    form.floatSetAside !== "";
-
-  return (
-    <div className="grid gap-3.5 xl:grid-cols-[1.35fr_0.85fr]">
-      <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-        <header className="border-b border-[#edf1f5] bg-[#003f35] px-5 py-4 text-white">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-white/70">
-            Start the day
-          </p>
-          <h2 className="mt-1 text-lg font-bold tracking-[-0.02em]">
-            Open {branch.name}
-          </h2>
-          <p className="mt-1 text-xs font-medium text-white/70">
-            {branch.address || "Set opening cash and float before agents go out."}
-          </p>
-        </header>
-        <div className="grid gap-3 p-5 sm:grid-cols-2">
-          <MoneyField
-            label="Opening balance"
-            value={form.openingBalance}
-            locked={!editableDate || suggestedOpeningBalance != null}
-            onChange={(value) => setForm({ ...form, openingBalance: value })}
-          />
-          {suggestedOpeningBalance != null ? (
-            <p className="self-end rounded-xl border border-emerald-100 bg-emerald-50/70 px-3 py-2 text-xs font-semibold leading-5 text-[#0c6b4f]">
-              From closing cash
-              {previousClosedOperation
-                ? ` on ${formatDateOnly(previousClosedOperation.operationDate)}`
-                : ""}
-              . Locked automatically.
-            </p>
-          ) : null}
-          <MoneyField
-            label="Cash added today"
-            value={form.cashAddedToday}
-            locked={!editableDate}
-            onChange={(value) => setForm({ ...form, cashAddedToday: value })}
-          />
-          <MoneyField
-            label="Assignable float limit"
-            value={form.floatSetAside}
-            locked={!editableDate}
-            onChange={(value) => setForm({ ...form, floatSetAside: value })}
-          />
-          <label className="sm:col-span-2">
-            <span className="text-xs font-semibold text-slate-600">Notes</span>
-            <textarea
-              value={form.notes}
-              disabled={!editableDate}
-              onChange={(event) =>
-                setForm({ ...form, notes: event.target.value })
-              }
-              rows={3}
-              className="mt-1.5 w-full rounded-xl border border-[#e6ebf0] bg-[#fbfcfd] px-3 py-2.5 text-sm font-medium text-[#0b1220] outline-none transition focus:border-[var(--forest-emerald)] disabled:bg-[#f5f7f8] disabled:text-slate-500"
-              placeholder="Optional opening notes"
-            />
-          </label>
-        </div>
-        <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-[#edf1f5] bg-[#f8faf9] px-5 py-4">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.05em] text-slate-500">
-              Available cash
-            </p>
-            <p className="mt-0.5 text-lg font-bold tabular-nums text-[#0b1220]">
-              <Money value={openingTotal} currency="UGX" />
-            </p>
-            {form.floatSetAside !== "" &&
-            Number(form.floatSetAside) > openingTotal ? (
-              <p className="mt-1 text-xs font-semibold text-red-600">
-                Assignable float cannot exceed available cash.
-              </p>
-            ) : null}
-          </div>
-          <button
-            type="button"
-            className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#003f35] px-5 text-xs font-semibold text-white shadow-[0_12px_24px_rgba(0,63,53,0.22)] disabled:opacity-55"
-            onClick={onOpen}
-            disabled={!canOpen || !editableDate || !valid || opening}
-          >
-            {opening ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <CheckCircle2 className="size-3.5" />
-            )}
-            Open branch day
-          </button>
-        </footer>
-      </section>
-
-      <aside className="space-y-3">
-        <div className="rounded-[16px] border border-[#e6ebf0] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-          <p className="text-[11px] font-bold uppercase tracking-[0.07em] text-amber-700">
-            Before you open
-          </p>
-          <ul className="mt-3 space-y-2.5 text-xs font-medium leading-5 text-slate-600">
-            <li>Confirm cash on hand matches the opening balance.</li>
-            <li>Set float you are ready to issue to agents today.</li>
-            <li>Keep notes short — they appear on the close-day report.</li>
-          </ul>
-        </div>
-        <StatusPanel
-          icon={<LockKeyhole className="size-4" />}
-          title={editableDate ? "Branch not open" : "Past day"}
-          value={editableDate ? "Float locked" : "View only"}
-          tone="warn"
-        />
-        <StatusPanel
-          icon={<ShieldCheck className="size-4" />}
-          title="Opening formula"
-          value="Balance + cash added"
-          tone="good"
-        />
-      </aside>
-    </div>
   );
 }
 
@@ -1914,8 +1798,8 @@ function OpenOperationView({
     operation.floatRemaining > 0 && editable
       ? {
           id: "float-left",
-          title: `${formatMoney(operation.floatRemaining)} float still unassigned`,
-          detail: "Assignable float is still available for agents.",
+          title: `${formatMoney(operation.floatRemaining)} cash available for float`,
+          detail: "Issue float to agents from branch cash on hand.",
           tone: "gold" as const,
           action: "issue-float" as const,
           actionLabel: "Issue float",
@@ -1948,7 +1832,7 @@ function OpenOperationView({
             />
             <StatusChip
               tone={operation.floatRemaining > 0 ? "amber" : "slate"}
-              label={`${formatMoney(operation.floatRemaining)} float left`}
+              label={`${formatMoney(operation.floatRemaining)} cash for float`}
             />
             {pendingReturnsCount > 0 ? (
               <StatusChip
@@ -2051,11 +1935,11 @@ function OpenOperationView({
           value={<Money value={operation.floatIssued} currency="UGX" />}
           hint={
             <>
-              <Money value={operation.floatRemaining} currency="UGX" /> still
-              assignable
+              <Money value={operation.floatRemaining} currency="UGX" /> cash
+              available
             </>
           }
-          tooltip="Total float issued to agents today, with how much remains to assign."
+          tooltip="Total float issued to agents today, with branch cash still available to issue."
           tone="gold"
         />
         <DayTopStat
@@ -4276,7 +4160,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
       icon: <UserRoundPlus className="size-5" />,
       stats: (operation: DailyOperation) => [
         {
-          label: "Assignable",
+          label: "Cash for float",
           value: <Money value={operation.floatRemaining} currency="UGX" />,
         },
         {
@@ -4292,7 +4176,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
       icon: <CircleDollarSign className="size-5" />,
       stats: (operation: DailyOperation) => [
         {
-          label: "Assignable",
+          label: "Cash for float",
           value: <Money value={operation.floatRemaining} currency="UGX" />,
         },
         {
@@ -4596,7 +4480,7 @@ function FloatPanelForm({
     <div className="space-y-3.5">
       <DrawerSection title="Assign float" />
       <PanelHint
-        label="Assignable float left"
+        label="Cash available for float"
         value={<Money value={amountLeft} currency="UGX" />}
         accent
       />

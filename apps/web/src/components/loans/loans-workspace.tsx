@@ -8,6 +8,7 @@ import {
   Download,
   FileText,
   Loader2,
+  MessageSquare,
   Percent,
   Plus,
   RefreshCw,
@@ -73,6 +74,25 @@ type PortfolioFilter = "all" | "active" | "closed" | "overdue";
 type LoanRow = OwnerLoan & {
   applicationId?: string | null;
   officerPublicId?: string | null;
+};
+
+type ReminderFilter =
+  | "overdue"
+  | "due_today"
+  | "repayment:2-3"
+  | "repayment:4-7"
+  | "repayment:8+"
+  | "active";
+
+type ReminderBatch = {
+  id: string;
+  filter: string;
+  status: string;
+  totalCount: number;
+  sentCount: number;
+  failedCount: number;
+  skippedCount: number;
+  completedAt: string | null;
 };
 
 type BorrowerRow = {
@@ -176,11 +196,22 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
   >(null);
   const [repaymentLoan, setRepaymentLoan] = useState<LoanRow | null>(null);
   const [agreementBusyId, setAgreementBusyId] = useState<string | null>(null);
+  const [reminderBusyId, setReminderBusyId] = useState<string | null>(null);
+  const [bulkSmsOpen, setBulkSmsOpen] = useState(false);
+  const [bulkFilter, setBulkFilter] = useState<ReminderFilter>("overdue");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkBatch, setBulkBatch] = useState<ReminderBatch | null>(null);
   const currency = state.workspace?.currency ?? "UGX";
   const canCreate =
     isManager && Boolean(state.session?.permissions.includes("loan.create"));
   const canRecordRepayment = Boolean(
     state.session?.permissions.includes("collection.create"),
+  );
+  const canSendReminder =
+    isManager && Boolean(state.session?.permissions.includes("loan.update"));
+  const reminderBatchActive = Boolean(
+    bulkBatch &&
+      (bulkBatch.status === "QUEUED" || bulkBatch.status === "PROCESSING"),
   );
 
   useEffect(() => {
@@ -267,6 +298,188 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
       setBorrowersLoading(false);
     }
   }, [state.session]);
+
+  const applyReminderToLoan = useCallback(
+    (loanId: string, reminder: NonNullable<LoanRow["reminder"]>) => {
+      setLoans((current) =>
+        current.map((loan) =>
+          loan.id === loanId ? { ...loan, reminder } : loan,
+        ),
+      );
+      setDetailLoan((current) =>
+        current?.id === loanId ? { ...current, reminder } : current,
+      );
+    },
+    [],
+  );
+
+  const sendLoanReminder = useCallback(
+    async (loan: LoanRow, resend = false) => {
+      if (!state.session || !canSendReminder) return;
+      if (reminderBusyId || reminderBatchActive) return;
+      setReminderBusyId(loan.id);
+      setError(null);
+      setNotice(null);
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/loans/${loan.id}/reminders`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `${state.session.tokenType} ${state.session.accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ resend }),
+          },
+        );
+        const payload = await readApiJson<{
+          reminder?: LoanRow["reminder"];
+          batch?: ReminderBatch;
+          message?: string | string[];
+        }>(response);
+        if (!response.ok) {
+          throw new Error(formatApiError(payload.message));
+        }
+        if (payload.reminder) {
+          applyReminderToLoan(loan.id, payload.reminder);
+        }
+        if (payload.reminder?.status === "sent") {
+          setNotice(
+            resend
+              ? `Reminder resent to ${loan.borrowerName}.`
+              : `Reminder sent to ${loan.borrowerName}.`,
+          );
+        } else if (payload.reminder?.status === "failed") {
+          setError(
+            payload.reminder.lastFailureReason === "no_credits"
+              ? "SMS not sent — branch has no SMS credit."
+              : `Reminder failed: ${payload.reminder.lastFailureReason ?? "unknown"}.`,
+          );
+        } else {
+          setNotice(`Reminder queued for ${loan.borrowerName}.`);
+        }
+        void loadLoans();
+      } catch (caught) {
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : "Could not send reminder SMS.",
+        );
+      } finally {
+        setReminderBusyId(null);
+      }
+    },
+    [
+      applyReminderToLoan,
+      canSendReminder,
+      loadLoans,
+      reminderBatchActive,
+      reminderBusyId,
+      state.session,
+    ],
+  );
+
+  const pollReminderBatch = useCallback(
+    async (batchId: string) => {
+      if (!state.session) return;
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        const response = await fetch(
+          `${apiBaseUrl}/loans/reminders/batches/${batchId}`,
+          {
+            headers: {
+              Authorization: `${state.session.tokenType} ${state.session.accessToken}`,
+            },
+          },
+        );
+        const payload = await readApiJson<ReminderBatch & { message?: string | string[] }>(
+          response,
+        );
+        if (!response.ok) {
+          throw new Error(formatApiError(payload.message));
+        }
+        setBulkBatch(payload);
+        if (
+          payload.status !== "QUEUED" &&
+          payload.status !== "PROCESSING"
+        ) {
+          setNotice(
+            `Bulk SMS finished: ${payload.sentCount} sent, ${payload.skippedCount} skipped, ${payload.failedCount} failed.`,
+          );
+          void loadLoans();
+          return;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 1500));
+      }
+    },
+    [loadLoans, state.session],
+  );
+
+  const startBulkReminders = useCallback(async () => {
+    if (!state.session || !canSendReminder || bulkBusy || reminderBatchActive) {
+      return;
+    }
+    setBulkBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`${apiBaseUrl}/loans/reminders/bulk`, {
+        method: "POST",
+        headers: {
+          Authorization: `${state.session.tokenType} ${state.session.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ filter: bulkFilter }),
+      });
+      const payload = await readApiJson<
+        ReminderBatch & { message?: string | string[] }
+      >(response);
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      setBulkBatch(payload);
+      setBulkSmsOpen(false);
+      setNotice(
+        `Sending reminders to ${payload.totalCount} loan${payload.totalCount === 1 ? "" : "s"}…`,
+      );
+      await pollReminderBatch(payload.id);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not start bulk reminder SMS.",
+      );
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [
+    bulkBusy,
+    bulkFilter,
+    canSendReminder,
+    pollReminderBatch,
+    reminderBatchActive,
+    state.session,
+  ]);
+
+  const bulkPreviewCount = useMemo(() => {
+    const now = new Date();
+    return loans.filter((loan) => {
+      if (loan.balance <= 0 || loan.status === "CLOSED") return false;
+      const overdueDays = resolveOverdueDays(loan, now);
+      if (bulkFilter === "active") return ACTIVE_STATUSES.has(loan.status);
+      if (bulkFilter === "overdue") return overdueDays >= 1;
+      if (bulkFilter === "due_today") {
+        return overdueDays === 0 && Boolean(loan.nextDueIsToday);
+      }
+      if (bulkFilter === "repayment:2-3") {
+        return overdueDays >= 2 && overdueDays <= 3;
+      }
+      if (bulkFilter === "repayment:4-7") {
+        return overdueDays >= 4 && overdueDays <= 7;
+      }
+      if (bulkFilter === "repayment:8+") return overdueDays >= 8;
+      return false;
+    }).length;
+  }, [bulkFilter, loans]);
 
   useEffect(() => {
     const boot = window.setTimeout(() => {
@@ -680,6 +893,20 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
               />
             </div>
             <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+              {canSendReminder ? (
+                <button
+                  type="button"
+                  disabled={bulkBusy || reminderBatchActive}
+                  onClick={() => {
+                    setBulkSmsOpen(true);
+                    setError(null);
+                  }}
+                  className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8faf9] disabled:opacity-60"
+                >
+                  <MessageSquare className="size-3.5" />
+                  {reminderBatchActive ? "Sending SMS…" : "Bulk SMS"}
+                </button>
+              ) : null}
               {canCreate ? (
                 <button
                   type="button"
@@ -748,10 +975,11 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                           </p>
                         </div>
                         <div
-                          className="shrink-0"
+                          className="flex shrink-0 flex-col items-end gap-1"
                           onClick={(event) => event.stopPropagation()}
                         >
                           <LoanStatusBadge dueState={dueState} />
+                          <ReminderBadge reminder={loan.reminder} />
                         </div>
                       </div>
                       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -814,13 +1042,19 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                         <div onClick={(event) => event.stopPropagation()}>
                           <RowActions
                             label={`Actions for ${loan.borrowerName}`}
-                            busy={agreementBusyId === loan.id}
+                            busy={
+                              agreementBusyId === loan.id ||
+                              reminderBusyId === loan.id
+                            }
                             items={loanRowActions(
                               loan,
                               canRecordRepayment,
+                              canSendReminder,
+                              reminderBusyId === loan.id || reminderBatchActive,
                               setDetailLoan,
                               setRepaymentLoan,
                               downloadLoanAgreement,
+                              (resend) => void sendLoanReminder(loan, resend),
                             )}
                           />
                         </div>
@@ -849,7 +1083,8 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                     </th>
                     <th className="w-[11%] px-2 py-2.5">Next Due</th>
                     <th className="w-[8%] px-2 py-2.5">Status</th>
-                    <th className="w-[8%] px-2 py-2.5">Issued By</th>
+                    <th className="w-[8%] px-2 py-2.5">Reminder</th>
+                    <th className="w-[7%] px-2 py-2.5">Issued By</th>
                     <th className="w-[3%] px-1 py-2.5 text-right">
                       <span className="sr-only">Actions</span>
                     </th>
@@ -859,7 +1094,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                   {loading ? (
                     <tr>
                       <td
-                        colSpan={11}
+                        colSpan={12}
                         className="px-3 py-8 text-center text-slate-500"
                       >
                         Loading loans...
@@ -868,7 +1103,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                   ) : filtered.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={11}
+                        colSpan={12}
                         className="px-3 py-8 text-center text-slate-500"
                       >
                         No loans match this view.
@@ -947,6 +1182,9 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                             <LoanStatusBadge dueState={dueState} />
                           </td>
                           <td className="px-2 py-2.5 align-top">
+                            <ReminderBadge reminder={loan.reminder} />
+                          </td>
+                          <td className="px-2 py-2.5 align-top">
                             <p className="break-words leading-snug text-slate-700">
                               {loan.officerName?.trim() || "-"}
                             </p>
@@ -957,13 +1195,20 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                           >
                             <RowActions
                               label={`Actions for ${loan.borrowerName}`}
-                              busy={agreementBusyId === loan.id}
+                              busy={
+                                agreementBusyId === loan.id ||
+                                reminderBusyId === loan.id
+                              }
                               items={loanRowActions(
                                 loan,
                                 canRecordRepayment,
+                                canSendReminder,
+                                reminderBusyId === loan.id ||
+                                  reminderBatchActive,
                                 setDetailLoan,
                                 setRepaymentLoan,
                                 downloadLoanAgreement,
+                                (resend) => void sendLoanReminder(loan, resend),
                               )}
                             />
                           </td>
@@ -988,6 +1233,102 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
           </div>
         </section>
       </div>
+
+      {bulkSmsOpen && canSendReminder ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(8,15,31,0.36)] p-4 backdrop-blur-[2px]">
+          <button
+            type="button"
+            className="absolute inset-0"
+            aria-label="Close bulk SMS"
+            onClick={() => !bulkBusy && setBulkSmsOpen(false)}
+          />
+          <div className="relative z-10 w-full max-w-md rounded-2xl border border-[#e6ebf0] bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.2)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--forest-emerald)]">
+                  Bulk SMS
+                </p>
+                <h2 className="mt-1 text-lg font-bold text-[#0b1220]">
+                  Send loan reminders
+                </h2>
+                <p className="mt-1 text-xs font-medium text-slate-500">
+                  Messages are queued and sent one by one. Sending stops if SMS
+                  credit runs out.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="grid size-8 place-items-center rounded-xl border border-[#e6ebf0]"
+                onClick={() => !bulkBusy && setBulkSmsOpen(false)}
+                aria-label="Close"
+                disabled={bulkBusy}
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+            <label className="mt-4 block">
+              <span className="text-xs font-semibold text-slate-600">
+                Reminder audience
+              </span>
+              <select
+                value={bulkFilter}
+                onChange={(event) =>
+                  setBulkFilter(event.target.value as ReminderFilter)
+                }
+                disabled={bulkBusy}
+                className="mt-1.5 h-10 w-full rounded-xl border border-[#e6ebf0] bg-white px-3 text-sm font-semibold outline-none"
+              >
+                <option value="overdue">All overdue</option>
+                <option value="due_today">Due today</option>
+                <option value="repayment:2-3">Overdue 2–3 days</option>
+                <option value="repayment:4-7">Overdue 4–7 days</option>
+                <option value="repayment:8+">Overdue 8+ days</option>
+                <option value="active">All active loans</option>
+              </select>
+            </label>
+            <p className="mt-3 rounded-xl border border-[#e6ebf0] bg-[#f8faf9] px-3 py-2 text-xs font-semibold text-slate-600">
+              {bulkPreviewCount} loan{bulkPreviewCount === 1 ? "" : "s"} match
+              this filter
+              {reminderBatchActive
+                ? " · a batch is already running"
+                : ""}
+            </p>
+            {bulkBatch && reminderBatchActive ? (
+              <p className="mt-2 text-xs font-medium text-slate-500">
+                Progress: {bulkBatch.sentCount} sent · {bulkBatch.skippedCount}{" "}
+                skipped · {bulkBatch.failedCount} failed of {bulkBatch.totalCount}
+              </p>
+            ) : null}
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                className="h-10 flex-1 rounded-xl border border-[#e6ebf0] text-xs font-semibold"
+                disabled={bulkBusy}
+                onClick={() => setBulkSmsOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-[#003f35] text-xs font-semibold text-white disabled:opacity-55"
+                disabled={
+                  bulkBusy ||
+                  reminderBatchActive ||
+                  bulkPreviewCount === 0
+                }
+                onClick={() => void startBulkReminders()}
+              >
+                {bulkBusy ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <MessageSquare className="size-3.5" />
+                )}
+                Send reminders
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {addOpen && canCreate ? (
         <div className="fixed inset-0 z-50 flex justify-end bg-[rgba(8,15,31,0.36)] backdrop-blur-[2px]">
@@ -1518,10 +1859,26 @@ function LoanCardMetric({
 function loanRowActions(
   loan: LoanRow,
   canRecordRepayment: boolean,
+  canSendReminder: boolean,
+  reminderLocked: boolean,
   setDetailLoan: (loan: LoanRow) => void,
   setRepaymentLoan: (loan: LoanRow) => void,
   downloadLoanAgreement: (applicationId: string, loanId: string) => void,
+  onSendReminder: (resend: boolean) => void,
 ) {
+  const reminder = loan.reminder;
+  const canRemindLoan =
+    canSendReminder &&
+    loan.balance > 0 &&
+    loan.status !== "CLOSED" &&
+    Boolean(loan.phone?.trim());
+  const alreadySent =
+    reminder?.status === "sent" || Boolean(reminder?.canResend);
+  const inFlight =
+    reminderLocked ||
+    reminder?.status === "queued" ||
+    reminder?.status === "sending";
+
   return [
     {
       label: "View details",
@@ -1539,6 +1896,11 @@ function loanRowActions(
       onSelect: () => setRepaymentLoan(loan),
     },
     {
+      label: alreadySent ? "Resend reminder" : "Send reminder",
+      disabled: !canRemindLoan || inFlight,
+      onSelect: () => onSendReminder(Boolean(alreadySent)),
+    },
+    {
       label: "View borrower",
       href: `/clients/${loan.customerId}`,
     },
@@ -1552,6 +1914,73 @@ function loanRowActions(
       },
     },
   ];
+}
+
+function ReminderBadge({
+  reminder,
+}: {
+  reminder?: LoanRow["reminder"];
+}) {
+  if (!reminder) {
+    return (
+      <span
+        className="inline-flex rounded-full bg-[#fff3e8] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-[#d97706]"
+        title="Reminder not sent"
+      >
+        Not sent
+      </span>
+    );
+  }
+
+  if (reminder.status === "queued" || reminder.status === "sending") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-[#e8f0fe] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-[#2563eb]">
+        <Loader2 className="size-2.5 animate-spin" />
+        Sending
+      </span>
+    );
+  }
+
+  if (reminder.status === "sent") {
+    return (
+      <span
+        className="inline-flex rounded-full bg-[#e9f8ef] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-[#07885f]"
+        title={
+          reminder.lastSentAt
+            ? `Sent ${formatDate(reminder.lastSentAt)}`
+            : "Reminder sent"
+        }
+      >
+        Sent
+      </span>
+    );
+  }
+
+  if (reminder.status === "failed") {
+    const reason =
+      reminder.lastFailureReason === "no_credits"
+        ? "No SMS credit"
+        : reminder.lastFailureReason === "no_phone"
+          ? "No phone"
+          : reminder.lastFailureReason ?? "Failed";
+    return (
+      <span
+        className="inline-flex rounded-full bg-[#fdecec] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-[#c23b3b]"
+        title={reason}
+      >
+        Not sent
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="inline-flex rounded-full bg-[#fff3e8] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-[#d97706]"
+      title="Reminder not sent"
+    >
+      Not sent
+    </span>
+  );
 }
 
 function NextDueCell({

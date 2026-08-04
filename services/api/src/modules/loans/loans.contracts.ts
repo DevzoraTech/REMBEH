@@ -40,6 +40,13 @@ export type LoanListItemContract = {
   createdAt: string;
   disbursedAt: string | null;
   updatedAt: string;
+  reminder: {
+    status: 'sent' | 'not_sent' | 'queued' | 'sending' | 'failed';
+    lastSentAt: string | null;
+    lastFailureReason: string | null;
+    canResend: boolean;
+    activeBatchId: string | null;
+  };
 };
 
 export type LoanListResponseContract = {

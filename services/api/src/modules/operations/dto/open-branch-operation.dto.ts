@@ -28,17 +28,13 @@ export class OpenBranchOperationDto {
   @Type(() => Number)
   openingBalance?: number;
 
+  /** Optional cash brought in at open. Defaults to 0. */
+  @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0)
   @Max(10_000_000_000)
   @Type(() => Number)
-  cashAddedToday!: number;
-
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  @Max(10_000_000_000)
-  @Type(() => Number)
-  floatSetAside!: number;
+  cashAddedToday?: number;
 
   @IsOptional()
   @IsString()

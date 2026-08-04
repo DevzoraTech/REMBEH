@@ -67,10 +67,19 @@ class _AgentShellState extends State<AgentShell> {
       return;
     }
     final status = _dayStore.status;
-    if (status != null && !status.canUseApp) {
+    if (status != null && !status.canUseApp && !status.canBrowseClients) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         Navigator.of(context).popUntil((route) => route.isFirst);
+      });
+    }
+    if (status != null && !status.canUseApp && status.canBrowseClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        Navigator.of(context).popUntil((route) => route.isFirst);
+        if (_index == 0) {
+          setState(() => _index = 1);
+        }
       });
     }
   }
@@ -173,6 +182,92 @@ class _AgentShellState extends State<AgentShell> {
     }
 
     if (!dayStatus.canUseApp) {
+      if (dayStatus.canBrowseClients) {
+        final browseIndex = _index == 0 ? 0 : _index - 1;
+        return SessionActivityListener(
+          controller: _activity,
+          child: Scaffold(
+            backgroundColor: softIvory,
+            body: Column(
+              children: [
+                _BrowseOnlyBanner(
+                  status: dayStatus,
+                  loading: _dayStore.loading,
+                  onRefresh: _refreshDayStatus,
+                ),
+                Expanded(
+                  child: IndexedStack(
+                    index: browseIndex.clamp(0, 1),
+                    children: [
+                      RecordsTab(
+                        session: widget.session,
+                        section: _recordsSection,
+                        filter: _recordsFilter,
+                        onSectionChanged: (section) {
+                          unawaitedTouch();
+                          setState(() => _recordsSection = section);
+                        },
+                        onFilterChanged: (filter) {
+                          unawaitedTouch();
+                          setState(() => _recordsFilter = filter);
+                        },
+                      ),
+                      SearchTab(
+                        autofocus: _searchAutofocus,
+                        focusToken: _searchFocusToken,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            bottomNavigationBar: Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(top: BorderSide(color: line)),
+              ),
+              child: SafeArea(
+                top: false,
+                child: NavigationBar(
+                  height: 64,
+                  backgroundColor: Colors.white,
+                  indicatorColor: forestEmerald.withValues(alpha: 0.12),
+                  selectedIndex: browseIndex.clamp(0, 1),
+                  labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                  onDestinationSelected: (value) {
+                    unawaitedTouch();
+                    if (value == 1) {
+                      setState(() {
+                        _index = 2;
+                        _searchAutofocus = true;
+                        _searchFocusToken += 1;
+                      });
+                      return;
+                    }
+                    setState(() {
+                      _index = 1;
+                      _searchAutofocus = false;
+                    });
+                  },
+                  destinations: const [
+                    NavigationDestination(
+                      icon: Icon(Icons.description_outlined),
+                      selectedIcon: Icon(Icons.description, color: forestEmerald),
+                      label: 'Records',
+                    ),
+                    NavigationDestination(
+                      icon: Icon(Icons.search),
+                      selectedIcon: Icon(Icons.search, color: forestEmerald),
+                      label: 'Search',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+
       return SessionActivityListener(
         controller: _activity,
         child: _AgentDayLockedScreen(
@@ -261,6 +356,83 @@ class _AgentShellState extends State<AgentShell> {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BrowseOnlyBanner extends StatelessWidget {
+  const _BrowseOnlyBanner({
+    required this.status,
+    required this.loading,
+    required this.onRefresh,
+  });
+
+  final AgentDayStatus status;
+  final bool loading;
+  final Future<void> Function() onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = status.lockTitle ?? 'Field work paused';
+    final message = status.lockMessage ??
+        'You can browse client records. Full field work unlocks at 6:00 AM.';
+
+    return Material(
+      color: warmGold.withValues(alpha: 0.12),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(top: 2),
+                child: Icon(Icons.lock_clock_outlined, color: warmGold, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: midnightNavy,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      message,
+                      style: const TextStyle(
+                        color: slateText,
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                tooltip: 'Check again',
+                onPressed: loading ? null : onRefresh,
+                icon: loading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: forestEmerald,
+                        ),
+                      )
+                    : const Icon(Icons.refresh, color: forestEmerald, size: 20),
+              ),
+            ],
           ),
         ),
       ),
@@ -375,15 +547,9 @@ class _AgentDayLockedScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final branchName = status.branch?.name ?? 'Your branch';
-    final isBranchNotOpen = status.lockReason == 'BRANCH_NOT_OPEN';
-    final title = isBranchNotOpen
-        ? 'Branch Not Open!'
-        : status.lockTitle ?? 'Agent app closed';
+    final title = status.lockTitle ?? 'Agent app closed';
     final message =
-        error ??
-        (isBranchNotOpen
-            ? 'Your branch manager has not opened today’s operations yet.'
-            : status.lockMessage ?? 'You cannot use the app now.');
+        error ?? status.lockMessage ?? 'You cannot use the app now.';
 
     return Scaffold(
       backgroundColor: softIvory,
@@ -427,18 +593,16 @@ class _AgentDayLockedScreen extends StatelessWidget {
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  if (!isBranchNotOpen) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      branchName,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: forestEmerald,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                      ),
+                  const SizedBox(height: 4),
+                  Text(
+                    branchName,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: forestEmerald,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
                     ),
-                  ],
+                  ),
                   const SizedBox(height: 10),
                   Text(
                     message,

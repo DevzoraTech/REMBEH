@@ -851,22 +851,22 @@ function SubscriptionWorkspaceContent({
                 </div>
               </article>
 
-              <article className="rounded-2xl border border-emerald-100 bg-[#f3faf6] p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)] sm:p-6">
-                <div className="flex flex-wrap items-end justify-between gap-3">
+              <article className="rounded-2xl border border-emerald-100 bg-[#f3faf6] p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)] sm:p-5">
+                <div className="flex flex-wrap items-end justify-between gap-2">
                   <div>
                     <span className="inline-flex w-fit rounded-full bg-[#e9f8ef] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#07885f]">
                       Plan
                     </span>
-                    <h2 className="mt-2 font-[family-name:var(--font-display)] text-2xl tracking-[-0.03em] text-[#070b18]">
+                    <h2 className="mt-1.5 font-[family-name:var(--font-display)] text-xl tracking-[-0.03em] text-[#070b18]">
                       Pro
                     </h2>
-                    <p className="mt-1 text-sm text-slate-600">
+                    <p className="mt-0.5 text-xs text-slate-600">
                       Choose billing period
                     </p>
                   </div>
                   <p className="text-sm text-slate-600">
                     Your price{" "}
-                    <span className="text-lg font-bold text-[#07885f]">
+                    <span className="text-base font-bold text-[#07885f]">
                       {selectedPriceLabel}
                     </span>{" "}
                     <span className="font-medium text-slate-500">
@@ -875,8 +875,8 @@ function SubscriptionWorkspaceContent({
                   </p>
                 </div>
 
-                <div className="mt-5 grid gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.95fr)]">
-                  <div className="grid gap-3 sm:grid-cols-3">
+                <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+                  <div className="grid gap-2 sm:grid-cols-3">
                     {planOptions.map((plan) => {
                       const selected = plan.code === selectedPlan.code;
                       const badgeLabel =
@@ -890,15 +890,15 @@ function SubscriptionWorkspaceContent({
                           key={plan.code}
                           type="button"
                           onClick={() => setSelectedPlanCode(plan.code)}
-                          className={`relative flex h-full flex-col rounded-2xl border bg-white p-4 text-left transition ${
+                          className={`relative flex flex-col rounded-xl border bg-white px-3 py-3 text-left transition ${
                             selected
-                              ? "border-[#07885f] shadow-[0_12px_28px_rgba(7,136,95,0.16)] ring-2 ring-[#07885f]/20"
+                              ? "border-[#07885f] shadow-[0_8px_18px_rgba(7,136,95,0.14)] ring-2 ring-[#07885f]/20"
                               : "border-[#d7e3f0] hover:border-[#07885f]/50"
                           }`}
                         >
                           {badgeLabel ? (
                             <span
-                              className={`absolute -top-2.5 left-3 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-white ${
+                              className={`absolute -top-2 left-2.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.05em] text-white ${
                                 plan.badge === "MOST_POPULAR"
                                   ? "bg-[#2b6cb0]"
                                   : "bg-[#07885f]"
@@ -907,40 +907,44 @@ function SubscriptionWorkspaceContent({
                               {badgeLabel}
                             </span>
                           ) : null}
-                          <span
-                            className={`mb-3 flex size-4 items-center justify-center rounded-full border ${
-                              selected
-                                ? "border-[#07885f] bg-[#07885f]"
-                                : "border-slate-300 bg-white"
-                            }`}
-                            aria-hidden
-                          >
-                            {selected ? (
-                              <Check
-                                className="size-2.5 text-white"
-                                strokeWidth={3}
-                              />
-                            ) : null}
+                          <span className="flex items-center justify-between gap-2">
+                            <span className="text-[13px] font-bold text-[#070b18]">
+                              {plan.label}
+                            </span>
+                            <span
+                              className={`flex size-3.5 shrink-0 items-center justify-center rounded-full border ${
+                                selected
+                                  ? "border-[#07885f] bg-[#07885f]"
+                                  : "border-slate-300 bg-white"
+                              }`}
+                              aria-hidden
+                            >
+                              {selected ? (
+                                <Check
+                                  className="size-2 text-white"
+                                  strokeWidth={3}
+                                />
+                              ) : null}
+                            </span>
                           </span>
-                          <p className="text-sm font-bold text-[#070b18]">
-                            {plan.label}
-                          </p>
                           {plan.compareAtAmount ? (
-                            <p className="mt-2 text-xs text-slate-400 line-through">
+                            <p className="mt-1.5 text-[11px] text-slate-400 line-through">
                               {formatMoney(plan.compareAtAmount, plan.currency)}
                             </p>
-                          ) : (
-                            <p className="mt-2 text-xs text-transparent">.</p>
-                          )}
-                          <p className="mt-0.5 text-lg font-bold tabular-nums text-[#070b18]">
+                          ) : null}
+                          <p
+                            className={`text-[15px] font-bold tabular-nums text-[#070b18] ${
+                              plan.compareAtAmount ? "mt-0" : "mt-1.5"
+                            }`}
+                          >
                             {formatMoney(plan.amount, plan.currency)}
                           </p>
                           {plan.savingsAmount ? (
-                            <p className="mt-1 text-xs font-semibold text-[#07885f]">
+                            <p className="mt-0.5 text-[11px] font-semibold text-[#07885f]">
                               Save {formatMoney(plan.savingsAmount, plan.currency)}
                             </p>
                           ) : (
-                            <p className="mt-1 text-xs font-medium text-slate-500">
+                            <p className="mt-0.5 text-[11px] font-medium text-slate-500">
                               {plan.tagline}
                             </p>
                           )}
@@ -949,15 +953,15 @@ function SubscriptionWorkspaceContent({
                     })}
                   </div>
 
-                  <div className="flex flex-col rounded-2xl border border-[#d7e3f0] bg-white p-4 sm:p-5">
-                    <ul className="flex-1 space-y-2.5">
+                  <div className="flex flex-col rounded-xl border border-[#d7e3f0] bg-white p-3.5">
+                    <ul className="flex-1 space-y-1.5">
                       {PRO_BENEFITS.map((item) => (
                         <li
                           key={item}
-                          className="flex gap-2 text-[12px] leading-snug text-slate-700"
+                          className="flex gap-2 text-[11px] leading-snug text-slate-700"
                         >
                           <Check
-                            className="mt-0.5 size-3.5 shrink-0 text-[#07885f]"
+                            className="mt-0.5 size-3 shrink-0 text-[#07885f]"
                             strokeWidth={2.75}
                           />
                           <span>{item}</span>
@@ -968,7 +972,7 @@ function SubscriptionWorkspaceContent({
                       type="button"
                       disabled={!canSubscribe || subscribePaying}
                       onClick={handleSubscribe}
-                      className="mt-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#07885f] text-sm font-semibold text-white shadow-[0_12px_24px_rgba(7,136,95,0.22)] transition hover:bg-[#067352] disabled:cursor-not-allowed disabled:opacity-55"
+                      className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#07885f] text-sm font-semibold text-white shadow-[0_12px_24px_rgba(7,136,95,0.22)] transition hover:bg-[#067352] disabled:cursor-not-allowed disabled:opacity-55"
                     >
                       {subscribePaying ? (
                         <Loader2 className="size-4 animate-spin" />
@@ -983,12 +987,12 @@ function SubscriptionWorkspaceContent({
                 </div>
               </article>
 
-              <div className="rounded-2xl border border-sky-100 bg-[#f3f8fd] px-5 py-4">
-                <p className="text-sm font-medium text-slate-700">
+              <div className="rounded-xl border border-sky-100 bg-[#f3f8fd] px-4 py-3">
+                <p className="text-xs font-medium text-slate-700 sm:text-sm">
                   Secure. Reliable. Built for your business. Your data is
                   encrypted and backed up daily. Cancel anytime.
                 </p>
-                <div className="mt-3 flex flex-wrap gap-4 text-xs font-semibold text-slate-600">
+                <div className="mt-2 flex flex-wrap gap-3 text-[11px] font-semibold text-slate-600">
                   <span className="inline-flex items-center gap-1.5">
                     <Lock className="size-3.5 text-[#2b6cb0]" />
                     Secure payments

@@ -152,6 +152,8 @@ export type DailyOperationResponseContract = {
   openingBalanceSource: 'PREVIOUS_CLOSING' | 'MANUAL';
   previousClosedOperation: DailyOperationCarryoverContract | null;
   pendingClosureOperation: DailyOperationCarryoverContract | null;
+  /** Previous day is closed but its report is not submitted yet — blocks auto-open. */
+  awaitingReportOperation: DailyOperationCarryoverContract | null;
   operation: DailyOperationContract | null;
   report: DailyOperationReportContract | null;
 };
@@ -215,7 +217,12 @@ export type OwnerBranchDailyStatusResponseContract = {
 };
 
 export type AgentDailyAccessReasonContract =
-  'NO_BRANCH' | 'BRANCH_NOT_OPEN' | 'BRANCH_CLOSED' | 'AGENT_DAY_CLOSED' | null;
+  | 'NO_BRANCH'
+  | 'BRANCH_NOT_OPEN'
+  | 'BRANCH_CLOSED'
+  | 'AGENT_DAY_CLOSED'
+  | 'BEFORE_OPEN_HOUR'
+  | null;
 
 export type AgentDailyFloatSummaryContract = {
   amountReceived: number;
@@ -233,6 +240,8 @@ export type AgentDailyOperationResponseContract = {
   branch: DailyOperationBranchContract | null;
   branchStatus: BranchOperationStatusContract | null;
   canUseApp: boolean;
+  /** Client records / search allowed while money work is locked. */
+  canBrowseClients: boolean;
   lockReason: AgentDailyAccessReasonContract;
   lockTitle: string | null;
   lockMessage: string | null;

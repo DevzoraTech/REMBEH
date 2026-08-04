@@ -9,6 +9,7 @@ import {
   computeLoanPricing,
   resolveBaseRepayable,
 } from '../loan-products/loan-pricing';
+import { LoanRemindersService } from './loan-reminders.service';
 import {
   LoanListItemContract,
   LoanListResponseContract,
@@ -20,6 +21,7 @@ export class LoansService {
   constructor(
     private readonly loansRepository: LoansRepository,
     private readonly loanApplicationsService: LoanApplicationsService,
+    private readonly loanRemindersService: LoanRemindersService,
   ) {}
 
   async listLoans(user: AuthenticatedUser): Promise<LoanListResponseContract> {
@@ -40,7 +42,26 @@ export class LoansService {
       branchId: canSeeAllBranches ? null : user.branchId,
     });
 
-    return { loans: loans.map((loan) => this.toContract(loan)) };
+    const reminders = await this.loanRemindersService.summarizeLoans(
+      user.tenantId,
+      loans.map((loan) => loan.id),
+    );
+
+    return {
+      loans: loans.map((loan) => {
+        const contract = this.toContract(loan);
+        return {
+          ...contract,
+          reminder: reminders.get(loan.id) ?? {
+            status: 'not_sent',
+            lastSentAt: null,
+            lastFailureReason: null,
+            canResend: false,
+            activeBatchId: null,
+          },
+        };
+      }),
+    };
   }
 
   createApplication(user: AuthenticatedUser) {
@@ -54,7 +75,9 @@ export class LoansService {
     return this.loanApplicationsService.createDraftFromCustomer(user, dto);
   }
 
-  private toContract(loan: LoanListRecord): LoanListItemContract {
+  private toContract(
+    loan: LoanListRecord,
+  ): Omit<LoanListItemContract, 'reminder'> {
     const paymentStartDate =
       loan.paymentStartDate ?? loan.application?.paymentStartDate ?? null;
     const durationDays = loan.application?.durationDays ?? null;

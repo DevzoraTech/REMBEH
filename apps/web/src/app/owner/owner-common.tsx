@@ -91,6 +91,13 @@ export type OwnerLoan = {
   createdAt: string;
   disbursedAt: string | null;
   updatedAt: string;
+  reminder?: {
+    status: "sent" | "not_sent" | "queued" | "sending" | "failed";
+    lastSentAt: string | null;
+    lastFailureReason: string | null;
+    canResend: boolean;
+    activeBatchId: string | null;
+  };
 };
 
 /** Full obligation: prefer API totalRepayable, else opening + fines, else balance + paid. */

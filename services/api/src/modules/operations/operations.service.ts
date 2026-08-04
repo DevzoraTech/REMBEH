@@ -3,10 +3,13 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Cron } from '@nestjs/schedule';
 import { BranchOperationReportStatus, Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
+import { PrismaService } from '../../database/prisma.service';
 import {
   getPrismaUniqueConstraintTargets,
   isPrismaUniqueConstraintError,
@@ -57,12 +60,16 @@ type OperationReportRecord = {
 
 @Injectable()
 export class OperationsService {
+  private readonly logger = new Logger(OperationsService.name);
   private readonly businessUtcOffsetMinutes = 180;
+  /** Agents may use full app from 06:00 Africa/Kampala after the day is open. */
+  private readonly agentOpenHourLocal = 6;
 
   constructor(
     private readonly repository: OperationsRepository,
     private readonly realtime: RealtimeGateway,
     private readonly billingService: BillingService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async getToday(
@@ -81,17 +88,36 @@ export class OperationsService {
         openingBalanceSource: 'MANUAL',
         previousClosedOperation: null,
         pendingClosureOperation: null,
+        awaitingReportOperation: null,
         operation: null,
         report: null,
       };
     }
 
-    const [operation, previousClosed, pendingClosure] = await Promise.all([
-      this.repository.findOperationForDay({
+    let operation = await this.repository.findOperationForDay({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateOnly,
+    });
+
+    // Days open themselves — no manual open step.
+    if (!operation && this.isAutoOpenableDate(bounds.dateLabel)) {
+      await this.autoOpenBranchIfEligible({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        branchName: branch.name,
+        bounds,
+        openedByUserId: user.userId,
+        allowFirstDay: true,
+      });
+      operation = await this.repository.findOperationForDay({
         tenantId: user.tenantId,
         branchId: branch.id,
         operationDate: bounds.dateOnly,
-      }),
+      });
+    }
+
+    const [previousClosed, pendingClosure] = await Promise.all([
       this.repository.findLatestClosedBefore({
         tenantId: user.tenantId,
         branchId: branch.id,
@@ -105,7 +131,20 @@ export class OperationsService {
     ]);
     const openingBalance = previousClosed
       ? this.decimalToNumber(previousClosed.closingBalance)
-      : null;
+      : operation
+        ? this.decimalToNumber(operation.previousClosingBalance)
+        : 0;
+
+    let awaitingReportOperation: DailyOperationCarryoverContract | null = null;
+    if (!operation && !pendingClosure && previousClosed) {
+      const priorReport = await this.repository.findReportForOperation({
+        tenantId: user.tenantId,
+        operationId: previousClosed.id,
+      });
+      if (!priorReport || !this.isReportSubmitted(priorReport.status)) {
+        awaitingReportOperation = this.toCarryoverContract(previousClosed);
+      }
+    }
 
     const operationContract = operation
       ? await this.toContract(operation, bounds.dayStart, bounds.dayEnd)
@@ -134,6 +173,7 @@ export class OperationsService {
       pendingClosureOperation: pendingClosure
         ? this.toCarryoverContract(pendingClosure)
         : null,
+      awaitingReportOperation,
       operation: operationContract,
       report: report ? this.toReportContract(report) : null,
     };
@@ -145,6 +185,7 @@ export class OperationsService {
     this.assertTenant(user);
     const bounds = this.parseDayBounds();
     const emptyFloat = this.emptyAgentFloatSummary();
+    const localHour = this.currentBusinessHour();
 
     if (!user.branchId) {
       return {
@@ -152,6 +193,7 @@ export class OperationsService {
         branch: null,
         branchStatus: null,
         canUseApp: false,
+        canBrowseClients: false,
         lockReason: 'NO_BRANCH',
         lockTitle: 'No branch assigned',
         lockMessage:
@@ -170,6 +212,7 @@ export class OperationsService {
         branch: null,
         branchStatus: null,
         canUseApp: false,
+        canBrowseClients: false,
         lockReason: 'NO_BRANCH',
         lockTitle: 'Branch not found',
         lockMessage:
@@ -195,10 +238,13 @@ export class OperationsService {
         branch: branchContract,
         branchStatus: null,
         canUseApp: false,
+        canBrowseClients: true,
         lockReason: 'BRANCH_NOT_OPEN',
-        lockTitle: 'Branch Not Open!',
+        lockTitle: 'Branch not open yet',
         lockMessage:
-          'Your branch manager has not opened today’s operations yet.',
+          localHour < this.agentOpenHourLocal
+            ? 'Field work opens at 6:00 AM. You can still browse client records.'
+            : 'Your branch is not open for today yet. You can still browse client records.',
         float: emptyFloat,
       };
     }
@@ -257,6 +303,7 @@ export class OperationsService {
         branch: branchContract,
         branchStatus: operation.status,
         canUseApp: false,
+        canBrowseClients: true,
         lockReason: 'BRANCH_CLOSED',
         lockTitle:
           operation.status === 'CLOSING'
@@ -264,8 +311,8 @@ export class OperationsService {
             : 'Branch closed',
         lockMessage:
           operation.status === 'CLOSING'
-            ? 'Your branch is closing for today. You cannot continue field work.'
-            : 'Your branch has closed for today. You cannot use the agent app again today.',
+            ? 'Field work is paused while the branch closes. You can still browse client records.'
+            : 'Field work is closed for today. You can browse client records. Full access opens at 6:00 AM after the next day is open.',
         float: floatSummary,
       };
     }
@@ -276,10 +323,26 @@ export class OperationsService {
         branch: branchContract,
         branchStatus: operation.status,
         canUseApp: false,
+        canBrowseClients: true,
         lockReason: 'AGENT_DAY_CLOSED',
         lockTitle: 'Your day is closed',
         lockMessage:
-          'Your cash handover has been recorded for today. You cannot use the agent app again today.',
+          'Your cash handover has been recorded. You can still browse client records.',
+        float: floatSummary,
+      };
+    }
+
+    if (localHour < this.agentOpenHourLocal) {
+      return {
+        date: bounds.dateLabel,
+        branch: branchContract,
+        branchStatus: operation.status,
+        canUseApp: false,
+        canBrowseClients: true,
+        lockReason: 'BEFORE_OPEN_HOUR',
+        lockTitle: 'Opens at 6:00 AM',
+        lockMessage:
+          'Today’s branch day is ready. Field work opens at 6:00 AM. You can browse client records meanwhile.',
         float: floatSummary,
       };
     }
@@ -289,6 +352,7 @@ export class OperationsService {
       branch: branchContract,
       branchStatus: operation.status,
       canUseApp: true,
+      canBrowseClients: true,
       lockReason: null,
       lockTitle: null,
       lockMessage: null,
@@ -514,6 +578,10 @@ export class OperationsService {
       );
     }
 
+    if (previousClosed) {
+      await this.assertPreviousDayReportSubmitted(previousClosed);
+    }
+
     const openingBalance = previousClosed
       ? this.decimalToNumber(previousClosed.closingBalance)
       : dto.openingBalance;
@@ -524,16 +592,12 @@ export class OperationsService {
       );
     }
 
+    const cashAddedToday = this.roundMoney(dto.cashAddedToday ?? 0);
     const cashAvailableAtOpening = this.roundMoney(
-      openingBalance + dto.cashAddedToday,
+      openingBalance + cashAddedToday,
     );
-    const floatSetAside = this.roundMoney(dto.floatSetAside);
-
-    if (floatSetAside > cashAvailableAtOpening) {
-      throw new BadRequestException(
-        'Assignable float limit cannot be more than available cash.',
-      );
-    }
+    // No separate float ceiling at open — cash on hand is the practical limit.
+    const floatSetAside = cashAvailableAtOpening;
 
     const operation = await this.repository
       .openBranch({
@@ -543,7 +607,7 @@ export class OperationsService {
         openedAt: new Date(),
         openedByUserId: user.userId,
         openingBalance: new Prisma.Decimal(openingBalance),
-        cashAddedToday: new Prisma.Decimal(dto.cashAddedToday),
+        cashAddedToday: new Prisma.Decimal(cashAddedToday),
         cashAvailableAtOpening: new Prisma.Decimal(cashAvailableAtOpening),
         floatSetAside: new Prisma.Decimal(floatSetAside),
         notes: dto.notes?.trim() || null,
@@ -816,6 +880,25 @@ export class OperationsService {
       status: closedOperation.status,
     });
 
+    // Create the close report immediately so managers can submit it before next open.
+    const closedForReport = await this.repository.findOperationForDay({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: operation.operationDate,
+    });
+    if (closedForReport) {
+      const closedContract = await this.toContract(
+        closedForReport,
+        bounds.dayStart,
+        bounds.dayEnd,
+      );
+      await this.ensureReportForClosedOperation(
+        user,
+        closedForReport,
+        closedContract,
+      );
+    }
+
     return this.getToday(user, { branchId: branch.id, date: bounds.dateLabel });
   }
 
@@ -858,9 +941,28 @@ export class OperationsService {
       status: updated.status,
     });
 
+    // Open the next day immediately after the close report is submitted.
+    const nextBounds = this.parseDayBounds(
+      this.nextDateLabel(report.operationDate),
+    );
+    const branch = await this.repository.findBranch({
+      tenantId: user.tenantId,
+      branchId: report.branchId,
+    });
+    if (branch) {
+      await this.autoOpenBranchIfEligible({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        branchName: branch.name,
+        bounds: nextBounds,
+        openedByUserId: user.userId,
+        allowFirstDay: false,
+      });
+    }
+
     return this.getToday(user, {
       branchId: report.branchId,
-      date: this.formatDateLabel(report.operationDate),
+      date: nextBounds.dateLabel,
     });
   }
 
@@ -1013,32 +1115,22 @@ export class OperationsService {
     }
 
     const cashAvailableAtOpening = this.cashAvailableAtOpening(operation);
-    const floatSetAside = this.floatSetAsideAmount(operation);
     const totalAlreadyIssued = this.decimalToNumber(floatAgg._sum.amountGiven);
     const expensesTotal = this.decimalToNumber(expensesAgg._sum.amount);
     const cashReturnedByAgents = this.decimalToNumber(
       returnedAgg._sum.amountReturned,
     );
-    const branchCashAvailableForThisAgent = this.roundMoney(
-      cashAvailableAtOpening -
-        expensesTotal -
-        totalAlreadyIssued +
-        cashReturnedByAgents,
-    );
-    const setAsideAvailableForThisAgent = this.roundMoney(
-      floatSetAside - totalAlreadyIssued,
-    );
     const availableForThisAgent = Math.max(
       0,
-      Math.min(branchCashAvailableForThisAgent, setAsideAvailableForThisAgent),
+      this.roundMoney(
+        cashAvailableAtOpening -
+          expensesTotal -
+          totalAlreadyIssued +
+          cashReturnedByAgents,
+      ),
     );
 
     if (input.amountGiven > availableForThisAgent) {
-      if (setAsideAvailableForThisAgent <= branchCashAvailableForThisAgent) {
-        throw new BadRequestException(
-          `Float exceeds assignable float limit. Available: ${availableForThisAgent}.`,
-        );
-      }
       throw new BadRequestException(
         `Float exceeds available branch cash. Available: ${availableForThisAgent}.`,
       );
@@ -1170,9 +1262,6 @@ export class OperationsService {
     const cashAvailableAtOpening = this.cashAvailableAtOpening(operation);
     const floatSetAside = this.floatSetAsideAmount(operation);
     const floatIssued = this.decimalToNumber(floatAgg._sum.amountGiven);
-    const floatRemaining = this.roundMoney(
-      Math.max(floatSetAside - floatIssued, 0),
-    );
     const expensesTotal = this.decimalToNumber(expensesAgg._sum.amount);
     const loansIssuedPrincipal = this.decimalToNumber(
       loansAgg._sum.principalAmount,
@@ -1209,6 +1298,8 @@ export class OperationsService {
         expensesTotal +
         cashReturnedByAgents,
     );
+    // Assignable float = branch cash on hand (no separate open-time ceiling).
+    const floatRemaining = Math.max(branchCashRemaining, 0);
     const expectedClosingBalance = this.roundMoney(
       cashAvailableAtOpening -
         loansIssuedPrincipal +
@@ -1833,9 +1924,20 @@ export class OperationsService {
   }
 
   private assertCanChangeDay(dateOnly: Date) {
-    if (this.formatDateLabel(dateOnly) !== this.currentBusinessDateLabel()) {
-      throw new BadRequestException("Only today's records can be changed.");
+    const label = this.formatDateLabel(dateOnly);
+    const today = this.currentBusinessDateLabel();
+    if (label === today) return;
+    // After close + report, the next day may open immediately and remain editable.
+    if (label === this.nextDateLabel(this.parseDayBounds(today).dateOnly)) {
+      return;
     }
+    throw new BadRequestException("Only today's records can be changed.");
+  }
+
+  private isAutoOpenableDate(dateLabel: string) {
+    const today = this.currentBusinessDateLabel();
+    if (dateLabel === today) return true;
+    return dateLabel === this.nextDateLabel(this.parseDayBounds(today).dateOnly);
   }
 
   private assertTenant(user: AuthenticatedUser) {
@@ -1853,6 +1955,167 @@ export class OperationsService {
     if (typeof tenantId !== 'string' || typeof branchId !== 'string') return;
     this.realtime.emitToBranch(tenantId, branchId, event, payload);
     this.realtime.emitToTenant(tenantId, event, payload);
+  }
+
+  private currentBusinessHour() {
+    const shifted = new Date(
+      Date.now() + this.businessUtcOffsetMinutes * 60 * 1000,
+    );
+    return shifted.getUTCHours();
+  }
+
+  private isReportSubmitted(status: BranchOperationReportStatus | null | undefined) {
+    return (
+      status === BranchOperationReportStatus.SENT_TO_OWNER ||
+      status === BranchOperationReportStatus.OWNER_APPROVED
+    );
+  }
+
+  private async assertPreviousDayReportSubmitted(previousClosed: {
+    id: string;
+    tenantId: string;
+    operationDate: Date;
+  }) {
+    const report = await this.repository.findReportForOperation({
+      tenantId: previousClosed.tenantId,
+      operationId: previousClosed.id,
+    });
+    if (!report) {
+      throw new BadRequestException(
+        `Submit the close report for ${this.formatDateLabel(previousClosed.operationDate)} before opening a new day.`,
+      );
+    }
+    if (!this.isReportSubmitted(report.status)) {
+      throw new BadRequestException(
+        `Submit the close report for ${this.formatDateLabel(previousClosed.operationDate)} before opening a new day.`,
+      );
+    }
+  }
+
+  /**
+   * Auto-open each branch at 00:05 Africa/Kampala when yesterday is closed
+   * and its report has been submitted. Agents still unlock at 06:00.
+   */
+  @Cron('5 0 * * *', { timeZone: 'Africa/Kampala' })
+  async autoOpenBusinessDaysCron() {
+    const dateLabel = this.currentBusinessDateLabel();
+    const bounds = this.parseDayBounds(dateLabel);
+    const branches = await this.prisma.branch.findMany({
+      select: { id: true, tenantId: true, name: true },
+    });
+
+    for (const branch of branches) {
+      try {
+        await this.autoOpenBranchIfEligible({
+          tenantId: branch.tenantId,
+          branchId: branch.id,
+          branchName: branch.name,
+          bounds,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Auto-open skipped for branch ${branch.id}: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      }
+    }
+  }
+
+  private async autoOpenBranchIfEligible(input: {
+    tenantId: string;
+    branchId: string;
+    branchName: string;
+    bounds: ReturnType<OperationsService['parseDayBounds']>;
+    openedByUserId?: string;
+    allowFirstDay?: boolean;
+  }) {
+    const existing = await this.repository.findOperationForDay({
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      operationDate: input.bounds.dateOnly,
+    });
+    if (existing) return existing;
+
+    const [previousClosed, pendingClosure] = await Promise.all([
+      this.repository.findLatestClosedBefore({
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        beforeDate: input.bounds.dateOnly,
+      }),
+      this.repository.findOldestUnclosedBefore({
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        beforeDate: input.bounds.dateOnly,
+      }),
+    ]);
+
+    if (pendingClosure) return null;
+
+    let openingBalance = 0;
+    let openedByUserId = input.openedByUserId ?? null;
+
+    if (previousClosed) {
+      const report = await this.repository.findReportForOperation({
+        tenantId: input.tenantId,
+        operationId: previousClosed.id,
+      });
+      if (!report || !this.isReportSubmitted(report.status)) return null;
+
+      openingBalance = this.decimalToNumber(previousClosed.closingBalance);
+      openedByUserId =
+        openedByUserId ??
+        previousClosed.closedByUserId ??
+        previousClosed.openedByUserId;
+    } else if (!input.allowFirstDay) {
+      return null;
+    }
+
+    if (!openedByUserId) return null;
+
+    try {
+      await this.billingService.assertBranchSubscriptionActive(
+        input.tenantId,
+        input.branchId,
+      );
+    } catch {
+      return null;
+    }
+
+    const operation = await this.repository.openBranch({
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      operationDate: input.bounds.dateOnly,
+      openedAt: new Date(),
+      openedByUserId,
+      openingBalance: new Prisma.Decimal(openingBalance),
+      cashAddedToday: new Prisma.Decimal(0),
+      cashAvailableAtOpening: new Prisma.Decimal(openingBalance),
+      floatSetAside: new Prisma.Decimal(openingBalance),
+      notes: previousClosed
+        ? 'Opened automatically for the new business day.'
+        : 'Opened automatically for the first business day.',
+    });
+
+    this.broadcastOperationEvent(OPERATIONS_EVENTS.branchOpened, {
+      operationId: operation.id,
+      tenantId: operation.tenantId,
+      branchId: operation.branchId,
+      operationDate: input.bounds.dateLabel,
+      status: operation.status,
+      autoOpened: true,
+    });
+    this.logger.log(
+      `Auto-opened ${input.branchName} (${input.branchId}) for ${input.bounds.dateLabel}`,
+    );
+    return operation;
+  }
+
+  private nextDateLabel(value: Date) {
+    const label = this.formatDateLabel(value);
+    const [year, month, day] = label.split('-').map(Number);
+    const next = new Date(Date.UTC(year, month - 1, day + 1));
+    return this.formatDateLabel(next);
   }
 
   private parseDayBounds(date?: string) {
