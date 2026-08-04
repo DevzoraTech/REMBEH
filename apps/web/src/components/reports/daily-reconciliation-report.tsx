@@ -282,7 +282,7 @@ export function DailyReconciliationReport({
           [
             ["summary", "Summary"],
             ["ledger", "Ledger"],
-            ["agent-handover", "Agent Handover"],
+            ["agent-handover", "Officer handover"],
             ["expenses", "Expenses"],
             ["review-history", "Review History"],
           ] as const
@@ -520,7 +520,8 @@ function SummaryDocument({
                   </span>
                 ) : (
                   <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600">
-                    Short <Info className="size-3" />
+                    Shortage — assign & track until cleared{" "}
+                    <Info className="size-3" />
                   </span>
                 )
               }
@@ -541,13 +542,13 @@ function SummaryDocument({
               [
                 `Balance carried forward${prevDate ? ` from ${formatDate(prevDate)}` : ""}`,
                 "N/A",
-                "Cash In",
+                "Inflow",
                 signed(document.openingBalance, "in"),
               ],
               [
                 "Capital top-ups added during the day",
                 topUpEntries > 0 ? String(topUpEntries) : "N/A",
-                "Cash In",
+                "Inflow",
                 signed(topUpsTotal, "in"),
               ],
               [
@@ -555,13 +556,13 @@ function SummaryDocument({
                 document.collectionsCount > 0
                   ? String(document.collectionsCount)
                   : "N/A",
-                "Cash In",
+                "Inflow",
                 signed(document.collectionsReceived, "in"),
               ],
               [
                 "Processing fees received",
                 feesEntryCount > 0 ? String(feesEntryCount) : "N/A",
-                "Cash In",
+                "Inflow",
                 signed(document.processingFeesTotal, "in"),
               ],
               [
@@ -592,7 +593,7 @@ function SummaryDocument({
           />
           <p className="mt-1.5 text-[11px] italic text-slate-500">
             Expected closing cash = opening + top-ups + repayments + fees −
-            loans − expenses. Float and agent returns net out when handovers
+            loans − expenses. Float and field officer returns net out when handovers
             balance.
           </p>
         </Section>
@@ -610,7 +611,7 @@ function SummaryDocument({
               rows={[
                 [
                   document.previousReportReference?.reportNumber ??
-                    "Opening balance",
+                    "Opening capital",
                   "Daily reconciliation report",
                   formatDate(
                     document.previousReportReference?.operationDate ??
@@ -624,7 +625,7 @@ function SummaryDocument({
         ) : null}
 
         {showTopUpsDetail ? (
-          <Section title="Capital Top-ups">
+          <Section title="Capital top-ups">
             <ReportTable
               columns={[
                 "#",
@@ -648,7 +649,7 @@ function SummaryDocument({
               ])}
               footer={[
                 "",
-                "Total Capital Top-ups",
+                "Total capital top-ups",
                 "",
                 "",
                 <span
@@ -724,13 +725,13 @@ function SummaryDocument({
           </Section>
         ) : null}
 
-        <Section title="Agent Handover and Reconciliation">
+        <Section title="Officer handover and Reconciliation">
           <ReportTable
             columns={[
               "Description",
-              "Total Agents",
-              "Agents Balanced",
-              "Agents with Variance",
+              "Total Field Officers",
+              "Field Officers Balanced",
+              "Field Officers with Variance",
               `Total Variance (${currency})`,
             ]}
             align={[false, true, true, true, true]}
@@ -814,13 +815,13 @@ function SummaryDocument({
         ) : null}
 
         {showFloatDetail ? (
-          <Section title="Float Distributed to Agents">
+          <Section title="Float Distributed to Field Officers">
             <ReportTable
               columns={["Description", "Agents", `Total Float (${currency})`]}
               align={[false, true, true]}
               rows={[
                 [
-                  "Float distributed to agents",
+                  "Float distributed to field officers",
                   String(document.agentsWithFloatCount),
                   amt(document.floatIssued),
                 ],
@@ -968,7 +969,7 @@ function ReviewSidebar({
           />
           <CheckItem
             ok={handoversDone}
-            title="Agent handovers completed"
+            title="Officer handovers completed"
             detail={
               handoversDone
                 ? "All agent handovers are balanced"
@@ -1060,7 +1061,7 @@ function LedgerTab({ document }: { document: DailyReportDocumentModel }) {
                 "Section",
                 "Description",
                 "Count",
-                "Cash In",
+                "Inflow",
                 "Cash Out",
                 "Balance",
                 "Notes",
@@ -1111,7 +1112,7 @@ function AgentHandoverTab({ document }: { document: DailyReportDocumentModel }) 
   return (
     <article className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
       <div className="border-b border-[#edf1f5] px-5 py-4">
-        <h2 className="text-sm font-bold text-[#0b1220]">Agent Handover</h2>
+        <h2 className="text-sm font-bold text-[#0b1220]">Officer handover</h2>
         <p className="mt-1 text-xs text-slate-500">
           Per-agent float, field activity, and cash returned.
         </p>
@@ -1119,7 +1120,7 @@ function AgentHandoverTab({ document }: { document: DailyReportDocumentModel }) 
       <div className="overflow-x-auto p-4">
         <ReportTable
           columns={[
-            "Agent",
+            "Field Officer",
             "Float",
             "Loans",
             "Repayments",
@@ -1533,12 +1534,12 @@ function buildLedgerRows(document: DailyReportDocumentModel) {
     },
     {
       section: "Opening",
-      description: "Top-ups added today",
+      description: "Capital top-ups today",
       count: String(document.topUps.length),
       cashIn: document.topUps.reduce((sum, row) => sum + row.amount, 0),
       cashOut: null,
       balance: null,
-      note: "Cash added during day",
+      note: "Capital added during the day",
     },
     {
       section: "Float",
@@ -1578,7 +1579,7 @@ function buildLedgerRows(document: DailyReportDocumentModel) {
     },
     {
       section: "Returns",
-      description: "Agent cash returned",
+      description: "Field officer cash returned",
       count: String(document.agentsReturnedCount),
       cashIn: document.cashReturnedByAgents,
       cashOut: null,
@@ -1743,7 +1744,7 @@ export function buildDailyReportDocumentFromOperation(
       : null,
     topUps: operation.topUps.map((topUp) => ({
       id: topUp.id,
-      source: topUp.description?.trim() || "Cash top-up",
+      source: topUp.description?.trim() || "Capital top-up",
       reference: null,
       date: topUp.addedAt,
       amount: topUp.amount,
@@ -1845,7 +1846,7 @@ export function buildDailyReportDocumentFromSnapshot(
     const item = objectValue(row);
     return {
       floatId: stringValue(item.floatId) || `agent-${index}`,
-      agentName: stringValue(item.agentName) || "Agent",
+      agentName: stringValue(item.agentName) || "Field Officer",
       amountGiven: numberValue(item.amountGiven),
       amountDisbursed: numberValue(item.amountDisbursed),
       amountCollected: numberValue(item.amountCollected),
@@ -1865,7 +1866,7 @@ export function buildDailyReportDocumentFromSnapshot(
     const item = objectValue(row);
     return {
       id: stringValue(item.id) || `topup-${index}`,
-      source: stringValue(item.description) || "Cash top-up",
+      source: stringValue(item.description) || "Capital top-up",
       reference: null as string | null,
       date: stringValue(item.addedAt) || report.operationDate,
       amount: numberValue(item.amount),

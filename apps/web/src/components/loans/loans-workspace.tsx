@@ -202,8 +202,8 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkBatch, setBulkBatch] = useState<ReminderBatch | null>(null);
   const currency = state.workspace?.currency ?? "UGX";
-  const canCreate =
-    isManager && Boolean(state.session?.permissions.includes("loan.create"));
+  // Prefer mobile for new loans — web create flow is disabled.
+  const canCreate = false;
   const canRecordRepayment = Boolean(
     state.session?.permissions.includes("collection.create"),
   );
@@ -356,7 +356,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
               : `Reminder failed: ${payload.reminder.lastFailureReason ?? "unknown"}.`,
           );
         } else {
-          setNotice(`Reminder queued for ${loan.borrowerName}.`);
+          setNotice(`Sending reminder to ${loan.borrowerName}…`);
         }
         void loadLoans();
       } catch (caught) {
@@ -1252,8 +1252,8 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                   Send loan reminders
                 </h2>
                 <p className="mt-1 text-xs font-medium text-slate-500">
-                  Messages are queued and sent one by one. Sending stops if SMS
-                  credit runs out.
+                  Reminders are sent one by one. Sending stops if SMS credit
+                  runs out.
                 </p>
               </div>
               <button

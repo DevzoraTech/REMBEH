@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { CashShortageSource } from '@prisma/client';
 import { BranchOperationReportStatus, Prisma } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { PrismaService } from '../../database/prisma.service';
@@ -16,6 +17,7 @@ import {
 } from '../../common/database/prisma-errors';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import { BillingService } from '../billing/billing.service';
+import { CashShortagesService } from '../cash-shortages/cash-shortages.service';
 import { CloseBranchOperationDto } from './dto/close-branch-operation.dto';
 import { OpenBranchOperationDto } from './dto/open-branch-operation.dto';
 import { RecordAgentReturnDto } from './dto/record-agent-return.dto';
@@ -70,6 +72,7 @@ export class OperationsService {
     private readonly realtime: RealtimeGateway,
     private readonly billingService: BillingService,
     private readonly prisma: PrismaService,
+    private readonly cashShortagesService: CashShortagesService,
   ) {}
 
   async getToday(
@@ -812,6 +815,35 @@ export class OperationsService {
       amountReturned: this.decimalToNumber(returnedFloat.amountReturned),
     });
 
+    // Attach float SHORT to the field officer for tracking / salary recovery.
+    const dayContract = await this.toContract(
+      operation,
+      bounds.dayStart,
+      bounds.dayEnd,
+    );
+    const agentReturn = dayContract.agentReturns.find(
+      (row) => row.agentId === dto.agentId,
+    );
+    if (
+      agentReturn &&
+      agentReturn.variance != null &&
+      agentReturn.variance < 0
+    ) {
+      await this.cashShortagesService.createShortage({
+        tenantId: user.tenantId!,
+        branchId: branch.id,
+        responsibleUserId: dto.agentId,
+        createdByUserId: user.userId,
+        sourceType: CashShortageSource.AGENT_FLOAT_RETURN,
+        sourceId: returnedFloat.id,
+        operationDate: operation.operationDate,
+        amount: Math.abs(agentReturn.variance),
+        notes:
+          dto.notes?.trim() ||
+          `Float return shortage for ${agentReturn.agentName}`,
+      });
+    }
+
     return this.getToday(user, { branchId: branch.id, date: bounds.dateLabel });
   }
 
@@ -859,6 +891,11 @@ export class OperationsService {
         'Add a note when counted cash is different from expected cash.',
       );
     }
+    if (variance < 0 && !dto.shortageResponsibleUserId?.trim()) {
+      throw new BadRequestException(
+        'Assign the shortage to a field officer or cashier before closing.',
+      );
+    }
 
     const closedOperation = await this.repository.closeBranch({
       tenantId: user.tenantId,
@@ -879,6 +916,20 @@ export class OperationsService {
       operationDate: bounds.dateLabel,
       status: closedOperation.status,
     });
+
+    if (variance < 0 && dto.shortageResponsibleUserId) {
+      await this.cashShortagesService.createShortage({
+        tenantId: user.tenantId!,
+        branchId: branch.id,
+        responsibleUserId: dto.shortageResponsibleUserId,
+        createdByUserId: user.userId,
+        sourceType: CashShortageSource.BRANCH_CLOSE,
+        sourceId: closedOperation.id,
+        operationDate: operation.operationDate,
+        amount: Math.abs(variance),
+        notes: dto.notes?.trim() || 'Branch close cash shortage',
+      });
+    }
 
     // Create the close report immediately so managers can submit it before next open.
     const closedForReport = await this.repository.findOperationForDay({

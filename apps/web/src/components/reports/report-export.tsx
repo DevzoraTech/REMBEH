@@ -134,7 +134,7 @@ export async function exportOwnedReport(
     "Section",
     "Description",
     "Count",
-    "Cash In",
+    "Inflow",
     "Cash Out",
     "Balance",
     "Notes",
@@ -142,7 +142,7 @@ export async function exportOwnedReport(
   const opening = numberValue(snapshot.openingCash.previousClosingBalance);
   const topUps = numberValue(snapshot.summary.topUpsAdded);
   worksheet.addRow(["Opening", "Previous closing balance", "-", "", "", opening, ""]);
-  worksheet.addRow(["Opening", "Top-ups added today", "-", topUps, "", "", ""]);
+  worksheet.addRow(["Opening", "Capital top-ups today", "-", topUps, "", "", ""]);
   worksheet.addRow([
     "Field",
     "Loans issued",
@@ -216,7 +216,7 @@ export async function exportOwnedReport(
     worksheet.getColumn(column).numFmt = `"${currency}" #,##0`;
   });
 
-  const agentSheet = workbook.addWorksheet("Agent Handover");
+  const agentSheet = workbook.addWorksheet("Officer handover");
   agentSheet.addRow([
     "Agent",
     "Float",

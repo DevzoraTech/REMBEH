@@ -359,13 +359,13 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
               `Balance carried forward${prevDate ? ` from ${formatDate(prevDate)}` : ""}`,
             ),
             "N/A",
-            "Cash In",
+            "Inflow",
             moneyIn(document.openingBalance),
           ],
           [
             "Capital top-ups added during the day",
             topUpEntries > 0 ? String(topUpEntries) : "N/A",
-            "Cash In",
+            "Inflow",
             moneyIn(topUpsTotal),
           ],
           [
@@ -373,13 +373,13 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
             document.collectionsCount > 0
               ? String(document.collectionsCount)
               : "N/A",
-            "Cash In",
+            "Inflow",
             moneyIn(document.collectionsReceived),
           ],
           [
             "Processing fees received",
             feesEntryCount > 0 ? String(feesEntryCount) : "N/A",
-            "Cash In",
+            "Inflow",
             moneyIn(document.processingFeesTotal),
           ],
           [
@@ -408,7 +408,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
             `<strong>${moneyPlain(expectedShown)}</strong>`,
           ],
         },
-      )}<p class="note">Expected closing cash = opening + top-ups + repayments + fees − loans − expenses. Float and agent returns net out when handovers balance.</p>`,
+      )}<p class="note">Expected closing cash = opening + top-ups + repayments + fees − loans − expenses. Float and field officer returns net out when handovers balance.</p>`,
     ),
   );
 
@@ -422,7 +422,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
             [
               escapeHtml(
                 document.previousReportReference?.reportNumber ??
-                  "Opening balance",
+                  "Opening capital",
               ),
               "Daily reconciliation report",
               escapeHtml(
@@ -443,7 +443,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
   if (showTopUpsDetail) {
     parts.push(
       section(
-        "Capital Top-ups",
+        "Capital top-ups",
         table(
           ["#", "Source", "Receipt / Reference", "Date", `Amount (${currency})`],
           document.topUps.map((row, index) => [
@@ -457,7 +457,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
             alignRight: [0, 4],
             footer: [
               "",
-              "Total Capital Top-ups",
+              "Total capital top-ups",
               "",
               "",
               `<strong class="in">${moneyPlain(topUpsTotal)}</strong>`,
@@ -522,13 +522,13 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
 
   parts.push(
     section(
-      "Agent Handover and Reconciliation",
+      "Officer handover and Reconciliation",
       `${table(
         [
           "Description",
-          "Total Agents",
-          "Agents Balanced",
-          "Agents with Variance",
+          "Total Field Officers",
+          "Field Officers Balanced",
+          "Field Officers with Variance",
           `Total Variance (${currency})`,
         ],
         [
@@ -596,12 +596,12 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
   if (showFloatDetail) {
     parts.push(
       section(
-        "Float Distributed to Agents",
+        "Float Distributed to Field Officers",
         table(
-          ["Description", "Agents", `Total Float (${currency})`],
+          ["Description", "Field Officers", `Total Float (${currency})`],
           [
             [
-              "Float distributed to agents",
+              "Float distributed to field officers",
               String(document.agentsWithFloatCount),
               moneyPlain(document.floatIssued),
             ],

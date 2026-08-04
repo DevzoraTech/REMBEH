@@ -46,9 +46,37 @@ class RembehSession {
   final String? profilePhotoUrl;
   final String? profilePhotoStorageKey;
 
+  /// Field / ops staff who use the mobile app for loans and collections.
+  bool get isFieldStaff {
+    final role = (roleName ?? '').toLowerCase();
+    return role.contains('agent') ||
+        role.contains('field officer') ||
+        role.contains('loan officer') ||
+        role.contains('cashier') ||
+        role.contains('supervisor') ||
+        role.contains('manager') ||
+        role.contains('recovery') ||
+        permissions.contains('customer.create') ||
+        permissions.contains('loan.create') ||
+        permissions.contains('collection.create');
+  }
+
+  /// Legacy alias — field officers invited as Agent or Field Officer.
   bool get isAgent =>
+      isFieldStaff ||
       (roleName ?? '').toLowerCase().contains('agent') ||
       permissions.contains('customer.create');
+
+  /// Profile selfie required for dedicated field officers (not managers/cashiers).
+  bool get requiresProfilePhoto {
+    final role = (roleName ?? '').toLowerCase();
+    if (role.contains('manager') || role.contains('cashier')) return false;
+    return role.contains('agent') ||
+        role.contains('field officer') ||
+        role.contains('loan officer') ||
+        role.contains('recovery') ||
+        permissions.contains('customer.create');
+  }
 
   /// Access token expired (30s buffer).
   bool get isAccessExpired {

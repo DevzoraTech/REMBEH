@@ -1045,7 +1045,7 @@ function ApplicationDetailBody({
       </PartyCard>
 
       <PartyCard
-        title="Issued by (Agent)"
+        title="Issued by (Field Officer)"
         action={
           detail.officerPublicId ? (
             <Link
@@ -1070,7 +1070,7 @@ function ApplicationDetailBody({
                 {detail.officerName || "Branch officer"}
               </p>
               <MetaLine
-                label="Agent ID"
+                label="Officer ID"
                 value={detail.officerPublicId || "—"}
               />
               <MetaLine label="Role" value="Field agent" />

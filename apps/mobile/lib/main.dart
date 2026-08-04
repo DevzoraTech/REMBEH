@@ -155,7 +155,7 @@ class _BootScreenState extends State<_BootScreen> {
   }
 
   void _goShell(RembehSession session) {
-    final next = session.isAgent && !session.hasProfilePhoto
+    final next = session.requiresProfilePhoto && !session.hasProfilePhoto
         ? AgentSelfieCaptureScreen(session: session)
         : AgentShell(session: session);
     Navigator.of(context).pushReplacement(

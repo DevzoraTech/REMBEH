@@ -33,6 +33,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "../../components/app/app-shell";
 import { Money } from "../../components/app/money";
 import { AppBootSkeleton, SkeletonBlock } from "../../components/app/skeleton";
+import { CashShortagesPanel } from "../../components/operations/cash-shortages-panel";
 import {
   buildDailyReportDocumentFromOperation,
   DailyReconciliationReport,
@@ -259,6 +260,7 @@ type AgentReturnForm = {
 type ClosingForm = {
   countedCash: string;
   notes: string;
+  shortageResponsibleUserId: string;
 };
 
 type OperationActionPanel =
@@ -305,6 +307,7 @@ const emptyFloatForm: FloatForm = {
 const emptyClosingForm: ClosingForm = {
   countedCash: "",
   notes: "",
+  shortageResponsibleUserId: "",
 };
 
 const expenseCategoryOptions: ExpenseCategory[] = [
@@ -724,7 +727,7 @@ export default function OperationsPage() {
     }
     const amount = Number(topUpForm.amount);
     if (!Number.isFinite(amount) || amount <= 0) {
-      setError("Enter a valid top-up amount.");
+      setError("Enter a valid capital top-up amount.");
       return;
     }
     setRecordingTopUp(true);
@@ -751,7 +754,7 @@ export default function OperationsPage() {
       setData(payload);
       setTopUpForm(emptyTopUpForm);
       setActivePanel(null);
-      setNotice("Top-up added.");
+      setNotice("Capital top-up recorded.");
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Could not add cash.",
@@ -769,7 +772,7 @@ export default function OperationsPage() {
     }
     const targetForm = mode === "issue" ? floatForm : floatTopUpForm;
     if (!targetForm.agentId) {
-      setError("Choose an agent.");
+      setError("Choose a field officer.");
       return;
     }
     const amount = Number(targetForm.amount);
@@ -907,12 +910,12 @@ export default function OperationsPage() {
       setData(payload);
       setAgentReturnForm(emptyAgentReturnForm);
       setActivePanel(null);
-      setNotice("Agent return recorded.");
+      setNotice("Field officer return recorded.");
     } catch (caught) {
       setError(
         caught instanceof Error
           ? caught.message
-          : "Could not record agent return.",
+          : "Could not record field officer return.",
       );
     } finally {
       setRecordingAgentReturn(false);
@@ -940,6 +943,8 @@ export default function OperationsPage() {
           date,
           countedCash: Number(closingForm.countedCash),
           notes: closingForm.notes.trim() || undefined,
+          shortageResponsibleUserId:
+            closingForm.shortageResponsibleUserId || undefined,
         }),
       });
       const payload = await readApiJson<OperationResponse>(response);
@@ -1068,7 +1073,7 @@ export default function OperationsPage() {
         "Section",
         "Description",
         "Count",
-        "Cash In",
+        "Inflow",
         "Cash Out",
         "Balance",
         "Notes",
@@ -1150,7 +1155,7 @@ export default function OperationsPage() {
         currency,
       );
 
-      const agentSheet = workbook.addWorksheet("Agent Handover");
+      const agentSheet = workbook.addWorksheet("Officer handover");
       const agentHeaders = [
         "Agent",
         "Agent Id",
@@ -1207,8 +1212,8 @@ export default function OperationsPage() {
       ]);
       operation.topUps.forEach((topUp) => {
         recordsSheet.addRow([
-          "Top-up",
-          topUp.description || "Cash top-up",
+          "Capital top-up",
+          topUp.description || "Capital top-up",
           topUp.amount,
           formatDateTime(topUp.addedAt),
           topUp.recordedByName,
@@ -1432,37 +1437,48 @@ export default function OperationsPage() {
             pendingOperation={pendingClosureOperation}
           />
         ) : operation ? (
-          <OpenOperationView
-            operation={operation}
-            currency={workspace?.currency ?? "UGX"}
-            canOperateBranch={canOperateBranch}
-            editable={canFinishOpenOperation}
-            canRecordTopUp={canRecordTopUp}
-            canRecordReturn={canRecordReturn}
-            canRecordExpense={canRecordExpense}
-            canManageFloat={canManageFloat}
-            canClose={canClose}
-            loadingAgents={loadingAgents}
-            pendingReturnsCount={pendingAgentReturns.length}
-            assignableAgentsCount={assignableAgents.length}
-            addFloatAgentsCount={addFloatOptions.length}
-            report={report}
-            reportView={reportView}
-            canReviewReport={canReviewReport}
-            canApproveReport={canApproveReport}
-            managerReportNotes={managerReportNotes}
-            ownerReportNotes={ownerReportNotes}
-            reviewingReport={reviewingReport}
-            approvingReport={approvingReport}
-            exportingReport={exportingReport}
-            setReportView={setReportView}
-            setManagerReportNotes={setManagerReportNotes}
-            setOwnerReportNotes={setOwnerReportNotes}
-            onManagerConfirmReport={() => void managerConfirmReport()}
-            onOwnerApproveReport={() => void ownerApproveReport()}
-            onExportReport={(format) => void exportDailyOperationReport(format)}
-            onAction={openActionPanel}
-          />
+          <>
+            <OpenOperationView
+              operation={operation}
+              currency={workspace?.currency ?? "UGX"}
+              canOperateBranch={canOperateBranch}
+              editable={canFinishOpenOperation}
+              canRecordTopUp={canRecordTopUp}
+              canRecordReturn={canRecordReturn}
+              canRecordExpense={canRecordExpense}
+              canManageFloat={canManageFloat}
+              canClose={canClose}
+              loadingAgents={loadingAgents}
+              pendingReturnsCount={pendingAgentReturns.length}
+              assignableAgentsCount={assignableAgents.length}
+              addFloatAgentsCount={addFloatOptions.length}
+              report={report}
+              reportView={reportView}
+              canReviewReport={canReviewReport}
+              canApproveReport={canApproveReport}
+              managerReportNotes={managerReportNotes}
+              ownerReportNotes={ownerReportNotes}
+              reviewingReport={reviewingReport}
+              approvingReport={approvingReport}
+              exportingReport={exportingReport}
+              setReportView={setReportView}
+              setManagerReportNotes={setManagerReportNotes}
+              setOwnerReportNotes={setOwnerReportNotes}
+              onManagerConfirmReport={() => void managerConfirmReport()}
+              onOwnerApproveReport={() => void ownerApproveReport()}
+              onExportReport={(format) => void exportDailyOperationReport(format)}
+              onAction={openActionPanel}
+            />
+            {session && activeBranch && canOperateBranch ? (
+              <div className="mt-3">
+                <CashShortagesPanel
+                  session={session}
+                  branchId={activeBranch.id}
+                  canRecordPayment={canClose}
+                />
+              </div>
+            ) : null}
+          </>
         ) : pendingClosureOperation ? (
           <PendingClosureView
             pendingOperation={pendingClosureOperation}
@@ -1479,6 +1495,7 @@ export default function OperationsPage() {
         <OperationActionDrawer
           panel={activePanel}
           operation={operation}
+          agents={agents}
           assignableAgents={assignableAgents}
           addFloatOptions={addFloatOptions}
           pendingAgentReturns={pendingAgentReturns}
@@ -1788,8 +1805,8 @@ function OpenOperationView({
     pendingReturnsCount > 0
       ? {
           id: "pending-returns",
-          title: `${pendingReturnsCount} agent return${pendingReturnsCount === 1 ? "" : "s"} outstanding`,
-          detail: "Agents still out with float must hand cash back before close.",
+          title: `${pendingReturnsCount} field officer return${pendingReturnsCount === 1 ? "" : "s"} outstanding`,
+          detail: "Field officers still out with float must hand cash back before close.",
           tone: "red" as const,
           action: "agent-return" as const,
           actionLabel: "Record return",
@@ -1799,7 +1816,7 @@ function OpenOperationView({
       ? {
           id: "float-left",
           title: `${formatMoney(operation.floatRemaining)} cash available for float`,
-          detail: "Issue float to agents from branch cash on hand.",
+          detail: "Issue float to field officers from branch cash on hand.",
           tone: "gold" as const,
           action: "issue-float" as const,
           actionLabel: "Issue float",
@@ -1828,7 +1845,7 @@ function OpenOperationView({
             />
             <StatusChip
               tone="slate"
-              label={`${agentsBack}/${agentsOut || 0} agents back`}
+              label={`${agentsBack}/${agentsOut || 0} officers back`}
             />
             <StatusChip
               tone={operation.floatRemaining > 0 ? "amber" : "slate"}
@@ -1845,7 +1862,7 @@ function OpenOperationView({
             <div className="flex flex-wrap items-center gap-1.5">
               <ActionChip
                 icon={<PlusCircle className="size-3.5" />}
-                label="Top-up"
+                label="Capital"
                 disabled={!editable || !canRecordTopUp}
                 onClick={() => onAction("top-up")}
               />
@@ -1939,7 +1956,7 @@ function OpenOperationView({
               available
             </>
           }
-          tooltip="Total float issued to agents today, with branch cash still available to issue."
+          tooltip="Total float issued to field officers today, with branch cash still available to issue."
           tone="gold"
         />
         <DayTopStat
@@ -1948,8 +1965,8 @@ function OpenOperationView({
           value={
             <Money value={operation.cashReturnedByAgents} currency="UGX" />
           }
-          hint={`${agentsBack} of ${agentsOut || 0} agents back`}
-          tooltip="Cash returned by agents so far today."
+          hint={`${agentsBack} of ${agentsOut || 0} officers back`}
+          tooltip="Cash returned by field officers so far today."
           tone="blue"
         />
         <DayTopStat
@@ -2258,11 +2275,11 @@ function ComputerisedReportView({
             value={<Money value={operation.openingBalance} currency="UGX" />}
           />
           <StatementRow
-            label="Top-ups added today"
+            label="Capital top-ups today"
             value={<Money value={operation.topUpsTotal} currency="UGX" />}
           />
           <StatementRow
-            label="Total opening balance"
+            label="Opening capital"
             value={
               <Money
                 value={operation.cashAvailableAtOpening}
@@ -2327,7 +2344,7 @@ function ComputerisedReportView({
             hint="Included in handover"
           />
           <ReportMiniStat
-            label="Agents returned"
+            label="Officers returned"
             value={`${operation.agentsReturnedCount}/${operation.agentsWithFloatCount}`}
             hint={
               <Money
@@ -2343,11 +2360,11 @@ function ComputerisedReportView({
 
       <div className="grid gap-3 lg:grid-cols-2">
         <ReportRecordList
-          title="Top-ups"
-          empty="No top-ups recorded."
+          title="Capital top-ups"
+          empty="No capital top-ups recorded."
           rows={operation.topUps.map((topUp) => ({
             id: topUp.id,
-            label: topUp.description || "Cash top-up",
+            label: topUp.description || "Capital top-up",
             meta: `${formatClock(topUp.addedAt)} · ${topUp.recordedByName}`,
             value: <Money value={topUp.amount} currency="UGX" />,
           }))}
@@ -2391,7 +2408,7 @@ function ExcelReportView({
     "Section",
     "Description",
     "Count",
-    "Cash In",
+    "Inflow",
     "Cash Out",
     "Balance",
     "Notes",
@@ -2807,7 +2824,7 @@ function ReportMiniStat({
 
 function ReportAgentTable({ operation }: { operation: DailyOperation }) {
   return (
-    <ReportBlock title="Agent Handover">
+    <ReportBlock title="Officer handover">
       {operation.agentReturns.length === 0 ? (
         <p className="py-2 text-sm text-slate-500">
           No agent float was issued for this day.
@@ -3086,7 +3103,7 @@ function CashMovementCard({ operation }: { operation: DailyOperation }) {
       tone: "slate" as const,
     },
     {
-      label: "Top-ups",
+      label: "Capital",
       detail: `${operation.topUpsCount} recorded`,
       amount: operation.topUpsTotal ?? operation.cashAddedToday,
       signed: "plus" as const,
@@ -3214,7 +3231,7 @@ function AgentFloatBoard({
     <section className="rounded-[14px] border border-[#e6ebf0] bg-white p-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-sm font-bold text-[#0b1220]">Agent float</p>
+          <p className="text-sm font-bold text-[#0b1220]">Officer float</p>
           <p className="mt-0.5 inline-flex flex-wrap items-baseline gap-1 text-[10px] font-medium text-slate-500">
             <span>
               {operation.agentReturns.length} agent
@@ -3300,7 +3317,7 @@ function AgentFloatBoard({
                       {agentReturn.agentName}
                     </p>
                     <p className="truncate text-[10px] font-medium text-slate-500">
-                      {agentReturn.agentPublicId ?? "No agent id"}
+                      {agentReturn.agentPublicId ?? "No officer ID"}
                     </p>
                   </div>
                 </div>
@@ -3502,7 +3519,7 @@ function DayAttentionCard({
               {closed
                 ? "Review and send the close-day report when ready."
                 : clear
-                  ? "No blockers — close the day when agents are back."
+                  ? "No blockers — close the day when field officers are back."
                   : `${items.length} issue${items.length === 1 ? "" : "s"} blocking a clean close.`}
             </p>
           </div>
@@ -3608,6 +3625,7 @@ function DayAttentionCard({
 function OperationActionDrawer({
   panel,
   operation,
+  agents,
   assignableAgents,
   addFloatOptions,
   pendingAgentReturns,
@@ -3647,6 +3665,7 @@ function OperationActionDrawer({
 }: {
   panel: OperationActionPanel;
   operation: DailyOperation | null | undefined;
+  agents: OperationAgentRow[];
   assignableAgents: OperationAgentRow[];
   addFloatOptions: DailyOperationAgentReturn[];
   pendingAgentReturns: DailyOperationAgentReturn[];
@@ -3727,12 +3746,15 @@ function OperationActionDrawer({
       : Math.round((countedCash - operation.expectedClosingBalance) * 100) /
         100;
   const needsCloseNote = variance != null && variance !== 0;
+  const needsShortageOwner = variance != null && variance < 0;
   const canSubmitClose =
     editable &&
     canClose &&
     allReturnsRecorded &&
     closingForm.countedCash !== "" &&
-    (!needsCloseNote || closingForm.notes.trim().length > 0);
+    (!needsCloseNote || closingForm.notes.trim().length > 0) &&
+    (!needsShortageOwner ||
+      Boolean(closingForm.shortageResponsibleUserId));
   const submitting =
     recordingTopUp ||
     recordingExpense ||
@@ -3810,9 +3832,9 @@ function OperationActionDrawer({
           <div className="rounded-[16px] border border-[#e6ebf0] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
             {panel === "top-up" ? (
               <div className="space-y-3.5">
-                <DrawerSection title="Top-up details" />
+                <DrawerSection title="Capital top-up details" />
                 <MoneyField
-                  label="Top-up amount"
+                  label="Capital amount"
                   value={topUpForm.amount}
                   locked={!editable || !canRecordTopUp}
                   onChange={(value) =>
@@ -3880,10 +3902,10 @@ function OperationActionDrawer({
                 options={assignableAgents.map((agent) => ({
                   id: agent.id,
                   label: agent.name,
-                  meta: agent.publicId ?? "No agent id",
+                  meta: agent.publicId ?? "No officer ID",
                 }))}
                 amountLeft={operation.floatRemaining}
-                emptyMessage="All agents already have float for this day."
+                emptyMessage="All field officers already have float for this day."
                 locked={!editable || !canManageFloat}
                 onChange={setFloatForm}
               />
@@ -3895,7 +3917,7 @@ function OperationActionDrawer({
                 options={addFloatOptions.map((agentReturn) => ({
                   id: agentReturn.agentId,
                   label: agentReturn.agentName,
-                  meta: agentReturn.agentPublicId ?? "No agent id",
+                  meta: agentReturn.agentPublicId ?? "No officer ID",
                 }))}
                 amountLeft={operation.floatRemaining}
                 emptyMessage="No active float can receive more right now."
@@ -3906,10 +3928,10 @@ function OperationActionDrawer({
 
             {panel === "agent-return" ? (
               <div className="space-y-3.5">
-                <DrawerSection title="Select agent" />
+                <DrawerSection title="Select field officer" />
                 {pendingAgentReturns.length === 0 ? (
                   <DrawerAlert tone="green">
-                    All agents with float have returned.
+                    All field officers with float have returned.
                   </DrawerAlert>
                 ) : (
                   <div className="space-y-2">
@@ -3940,7 +3962,7 @@ function OperationActionDrawer({
                             </p>
                             <p className="inline-flex max-w-full flex-wrap items-baseline gap-1 truncate text-[10px] font-medium text-slate-500">
                               <span>
-                                {agentReturn.agentPublicId ?? "No agent id"} ·
+                                {agentReturn.agentPublicId ?? "No officer ID"} ·
                                 expected
                               </span>
                               <Money
@@ -4024,11 +4046,11 @@ function OperationActionDrawer({
                 <DrawerSection title="Count and confirm" />
                 {!allReturnsRecorded ? (
                   <DrawerAlert tone="amber">
-                    Record all agent returns before closing the day.
+                    Record all field officer returns before closing the day.
                   </DrawerAlert>
                 ) : (
                   <DrawerAlert tone="green">
-                    All agent returns are recorded. Ready to close.
+                    All field officer returns are recorded. Ready to close.
                   </DrawerAlert>
                 )}
                 <PanelHint
@@ -4062,8 +4084,36 @@ function OperationActionDrawer({
                     <>
                       Variance <VarianceLabel value={variance} />
                       {needsCloseNote ? " · notes required" : ""}
+                      {needsShortageOwner
+                        ? " · assign who must account for the shortage"
+                        : ""}
                     </>
                   </DrawerAlert>
+                ) : null}
+                {needsShortageOwner ? (
+                  <label className="block">
+                    <span className="text-xs font-semibold text-slate-600">
+                      Shortage assigned to
+                    </span>
+                    <select
+                      value={closingForm.shortageResponsibleUserId}
+                      disabled={!editable || !canClose}
+                      onChange={(event) =>
+                        setClosingForm({
+                          ...closingForm,
+                          shortageResponsibleUserId: event.target.value,
+                        })
+                      }
+                      className="mt-1.5 h-10 w-full rounded-xl border border-[#e6ebf0] bg-white px-3 text-sm font-semibold outline-none disabled:bg-[#f5f7f8]"
+                    >
+                      <option value="">Select field officer or cashier</option>
+                      {agents.map((agent) => (
+                        <option key={agent.id} value={agent.id}>
+                          {agent.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 ) : null}
                 <TextAreaField
                   label={needsCloseNote ? "Notes required" : "Notes"}
@@ -4113,9 +4163,9 @@ function OperationActionDrawer({
 function panelMeta(panel: Exclude<OperationActionPanel, null>) {
   const configs = {
     "top-up": {
-      title: "Add top-up",
+      title: "Add capital",
       subtitle: "Increase cash on hand for today’s operations.",
-      cta: "Save top-up",
+      cta: "Save capital top-up",
       icon: <PlusCircle className="size-5" />,
       stats: (operation: DailyOperation) => [
         {
@@ -4125,7 +4175,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
           ),
         },
         {
-          label: "Top-ups Today",
+          label: "Capital top-ups today",
           value: (
             <Money
               value={operation.topUpsTotal ?? operation.cashAddedToday}
@@ -4155,7 +4205,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
     },
     "issue-float": {
       title: "Issue float",
-      subtitle: "Assign float to an agent for the field day.",
+      subtitle: "Assign float to a field officer for the field day.",
       cta: "Issue float",
       icon: <UserRoundPlus className="size-5" />,
       stats: (operation: DailyOperation) => [
@@ -4171,7 +4221,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
     },
     "add-float": {
       title: "Add more float",
-      subtitle: "Top up an agent who already has float today.",
+      subtitle: "Add float to a field officer who already has float today.",
       cta: "Add float",
       icon: <CircleDollarSign className="size-5" />,
       stats: (operation: DailyOperation) => [
@@ -4180,14 +4230,14 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
           value: <Money value={operation.floatRemaining} currency="UGX" />,
         },
         {
-          label: "Agents out",
+          label: "Officers out",
           value: String(operation.agentsWithFloatCount),
         },
       ],
     },
     "agent-return": {
       title: "Record return",
-      subtitle: "Capture cash handed back by an agent.",
+      subtitle: "Capture cash handed back by a field officer.",
       cta: "Save return",
       icon: <RotateCcw className="size-5" />,
       stats: (operation: DailyOperation) => [
@@ -4201,7 +4251,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
           ),
         },
         {
-          label: "Agents back",
+          label: "Officers back",
           value: `${operation.agentsReturnedCount}/${operation.agentsWithFloatCount || 0}`,
         },
       ],
@@ -4553,7 +4603,7 @@ function TopUpList({ operation }: { operation: DailyOperation }) {
     <div className="border-t border-[#edf1f5] pt-3.5">
       <div className="flex items-center justify-between gap-2">
         <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">
-          Top-ups today
+          Capital top-ups today
         </p>
         <span className="text-[11px] font-semibold text-slate-500">
           {operation.topUps.length}
@@ -4561,7 +4611,7 @@ function TopUpList({ operation }: { operation: DailyOperation }) {
       </div>
       {operation.topUps.length === 0 ? (
         <p className="mt-2 text-xs font-medium text-slate-500">
-          No top-ups recorded yet.
+          No capital top-ups recorded yet.
         </p>
       ) : (
         <div className="mt-2 divide-y divide-[#edf1f5] rounded-xl border border-[#edf1f5]">
@@ -4572,7 +4622,7 @@ function TopUpList({ operation }: { operation: DailyOperation }) {
             >
               <div className="min-w-0">
                 <p className="truncate text-xs font-semibold text-[#0b1220]">
-                  {topUp.description || "Cash top-up"}
+                  {topUp.description || "Capital top-up"}
                 </p>
                 <p className="text-[10px] font-medium text-slate-500">
                   {formatClock(topUp.addedAt)} · {topUp.recordedByName}
@@ -4621,7 +4671,7 @@ function AgentReturnsPanel({
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[#edf1f5] bg-[#f8faf9]/80 px-4 py-3.5">
         <div>
           <p className="text-sm font-bold text-[var(--midnight-navy)]">
-            Agent returns
+            Officer returns
           </p>
           <p className="mt-0.5 text-xs text-slate-500">
             {operation.agentsReturnedCount} of {operation.agentsWithFloatCount}{" "}
@@ -4658,7 +4708,7 @@ function AgentReturnsPanel({
                 <div className="min-w-0">
                   <p className="truncate font-bold">{agentReturn.agentName}</p>
                   <p className="mt-0.5 text-xs text-slate-500">
-                    {agentReturn.agentPublicId ?? "No agent id"} ·{" "}
+                    {agentReturn.agentPublicId ?? "No officer ID"} ·{" "}
                     {returnStatusLabel(agentReturn.status)}
                   </p>
                 </div>
@@ -4839,7 +4889,7 @@ function CloseDayCard({
       <div className="space-y-3 p-4">
         {!allReturnsRecorded ? (
           <p className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-xs font-semibold text-amber-700">
-            Record all agent returns first.
+            Record all field officer returns first.
           </p>
         ) : null}
         <MoneyField
@@ -5193,30 +5243,30 @@ function buildExcelRows(operation: DailyOperation) {
     },
     {
       section: "Opening",
-      description: "Top-ups added today",
+      description: "Capital top-ups today",
       count: operation.topUpsCount,
       cashIn: operation.topUpsTotal,
       cashOut: null,
       balance: afterTopUps,
-      note: "Cash added at opening or during day",
+      note: "Capital added at opening or during the day",
     },
     {
       section: "Float",
-      description: "Float distributed to agents",
+      description: "Float distributed to field officers",
       count: operation.agentsWithFloatCount,
       cashIn: null,
       cashOut: operation.floatIssued,
       balance: afterFloat,
-      note: "Cash issued to field agents",
+      note: "Cash issued to field officers",
     },
     {
       section: "Field",
-      description: "Cash returned by agents",
+      description: "Cash returned by field officers",
       count: operation.agentsReturnedCount,
       cashIn: operation.cashReturnedByAgents,
       cashOut: null,
       balance: afterReturns,
-      note: "Agent handover received",
+      note: "Officer handover received",
     },
     {
       section: "Expenses",

@@ -4,6 +4,7 @@ import { PrismaService } from '../../database/prisma.service';
 
 const FIELD_AGENT_ROLES = [
   'Agent',
+  'Field Officer',
   'Loan Officer',
   'Supervisor',
   'Recovery Officer',

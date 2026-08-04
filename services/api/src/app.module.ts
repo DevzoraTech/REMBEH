@@ -15,6 +15,7 @@ import { LoanApplicationsModule } from './modules/loan-applications/loan-applica
 import { LoansModule } from './modules/loans/loans.module';
 import { LoanProductsModule } from './modules/loan-products/loan-products.module';
 import { OperationsModule } from './modules/operations/operations.module';
+import { CashShortagesModule } from './modules/cash-shortages/cash-shortages.module';
 import { AppUpdateModule } from './modules/app-update/app-update.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { PaymentsModule } from './modules/payments/payments.module';
@@ -48,6 +49,7 @@ import { StorageModule } from './modules/storage/storage.module';
     LoansModule,
     LoanProductsModule,
     OperationsModule,
+    CashShortagesModule,
     PaymentsModule,
     PlatformModule,
     AppUpdateModule,

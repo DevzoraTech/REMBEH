@@ -522,7 +522,7 @@ export function AgentDetailDrawer({
                             })
                           }
                         >
-                          Suspend Agent
+                          Suspend Field Officer
                         </button>
                       ) : (
                         <button
@@ -538,7 +538,7 @@ export function AgentDetailDrawer({
                             })
                           }
                         >
-                          Activate Agent
+                          Activate Field Officer
                         </button>
                       )}
                     </div>
@@ -627,7 +627,7 @@ export function AgentDetailDrawer({
                         />
                         <InfoRow
                           label="Role"
-                          value={detail?.roleName || "Field Agent"}
+                          value={detail?.roleName || "Field Officer"}
                         />
                       </dl>
                     </div>
@@ -653,7 +653,7 @@ export function AgentDetailDrawer({
                             }
                           >
                             <PauseCircle className="size-4" />
-                            Suspend Agent
+                            Suspend Field Officer
                           </button>
                         ) : (
                           <button
@@ -669,7 +669,7 @@ export function AgentDetailDrawer({
                             }
                           >
                             <ShieldCheck className="size-4" />
-                            Activate Agent
+                            Activate Field Officer
                           </button>
                         )
                       ) : null}

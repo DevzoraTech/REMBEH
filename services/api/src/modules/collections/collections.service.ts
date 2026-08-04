@@ -183,6 +183,94 @@ export class CollectionsService {
     return { clients };
   }
 
+  async offlineSnapshot(user: AuthenticatedUser): Promise<{
+    cachedAt: string;
+    clients: Array<{
+      loanId: string;
+      customerId: string;
+      fullName: string;
+      phone: string;
+      nationalId: string | null;
+      outstanding: number;
+      loanAmount: number;
+      registeredBy: string;
+      expectedToday: number;
+      paidAmount: number;
+      isFined: boolean;
+      finesTotal: number;
+      nextDueLabel: string;
+      nextDueIsToday: boolean;
+      daysLeft: number;
+      loanPeriodDays: number;
+      interestRatePercent: number;
+      loanStartDate: string;
+      maturityDate: string | null;
+    }>;
+  }> {
+    this.assertBranchAccess(user);
+    if (!user.tenantId?.trim()) {
+      throw new ForbiddenException('Tenant scope is required.');
+    }
+    const scope = this.scope(user);
+    const loans = await this.repository.listActiveLoansForOffline(scope);
+    const clients = loans.map((loan) => {
+      const outstanding = this.decimalToNumber(loan.balance) ?? 0;
+      const principal =
+        this.decimalToNumber(loan.application?.principalAmount) ??
+        this.decimalToNumber(loan.principal) ??
+        0;
+      const finesTotal =
+        this.decimalToNumber(loan.finesTotal) ??
+        this.decimalToNumber(loan.wallet?.finesTotal) ??
+        0;
+      const durationDays = loan.application?.durationDays ?? 0;
+      const startDate =
+        loan.paymentStartDate ??
+        loan.application?.paymentStartDate ??
+        loan.disbursedAt ??
+        loan.createdAt;
+      const maturityMs =
+        durationDays > 0
+          ? startDate.getTime() + durationDays * 24 * 60 * 60 * 1000
+          : null;
+      const daysLeft =
+        maturityMs == null
+          ? 0
+          : Math.max(
+              0,
+              Math.ceil((maturityMs - Date.now()) / (1000 * 60 * 60 * 24)),
+            );
+      return {
+        loanId: loan.id,
+        customerId: loan.customerId,
+        fullName: loan.customer.fullName,
+        phone: loan.customer.phone,
+        nationalId: loan.customer.nationalId ?? null,
+        outstanding,
+        loanAmount: principal,
+        registeredBy:
+          loan.application?.officer?.displayName ?? 'Branch officer',
+        expectedToday: outstanding > 0 ? Math.min(outstanding, principal) : 0,
+        paidAmount: 0,
+        isFined: loan.isFined || (loan.wallet?.isFined ?? false),
+        finesTotal,
+        nextDueLabel: daysLeft === 0 ? 'Due' : `${daysLeft}d left`,
+        nextDueIsToday: daysLeft === 0,
+        daysLeft,
+        loanPeriodDays: durationDays,
+        interestRatePercent:
+          this.decimalToNumber(loan.application?.interestRatePercent) ?? 0,
+        loanStartDate: startDate.toISOString(),
+        maturityDate:
+          maturityMs == null ? null : new Date(maturityMs).toISOString(),
+      };
+    });
+    return {
+      cachedAt: new Date().toISOString(),
+      clients,
+    };
+  }
+
   async getLoanDetail(
     user: AuthenticatedUser,
     loanId: string,

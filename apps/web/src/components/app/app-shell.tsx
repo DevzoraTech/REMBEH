@@ -140,7 +140,7 @@ export function AppShell({ children, session, user }: AppShellProps) {
       },
       {
         href: "/agents",
-        label: "Agents",
+        label: "Field Officers",
         icon: Users,
         enabled:
           operatorRole === "manager" &&
@@ -222,7 +222,7 @@ export function AppShell({ children, session, user }: AppShellProps) {
       ? {
           href: "/owner/branches",
           title: "Scale your lending",
-          description: "Invite managers and agents to grow your portfolio.",
+          description: "Invite managers and field officers to grow your portfolio.",
           cta: "Invite Team",
           collapsedLabel: "Invite team",
         }
@@ -230,9 +230,9 @@ export function AppShell({ children, session, user }: AppShellProps) {
           href: "/agents?invite=1",
           title: "Grow your branch",
           description:
-            "Invite agents so repayments and field work stay covered.",
-          cta: "Invite Agents",
-          collapsedLabel: "Invite agents",
+            "Invite field officers so repayments and field work stay covered.",
+          cta: "Invite Field Officers",
+          collapsedLabel: "Invite field officers",
         };
 
   useEffect(() => {

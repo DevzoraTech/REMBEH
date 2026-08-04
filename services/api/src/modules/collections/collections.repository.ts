@@ -78,6 +78,61 @@ export class CollectionsRepository {
     });
   }
 
+  /** Compact active loans for mobile offline cache (no repayment history). */
+  listActiveLoansForOffline(input: {
+    tenantId: string;
+    branchId: string | null;
+    take?: number;
+  }) {
+    return this.prisma.loan.findMany({
+      where: {
+        ...this.branchScope(input),
+        status: { in: activeLoanStatuses },
+        balance: { gt: 0 },
+      },
+      select: {
+        id: true,
+        customerId: true,
+        principal: true,
+        balance: true,
+        disbursedAt: true,
+        paymentStartDate: true,
+        createdAt: true,
+        isFined: true,
+        finesTotal: true,
+        customer: {
+          select: {
+            fullName: true,
+            phone: true,
+            nationalId: true,
+          },
+        },
+        application: {
+          select: {
+            phone: true,
+            nationalId: true,
+            principalAmount: true,
+            interestRatePercent: true,
+            durationDays: true,
+            paymentStartDate: true,
+            officer: {
+              select: { displayName: true, publicId: true },
+            },
+          },
+        },
+        wallet: {
+          select: {
+            openingBalance: true,
+            finesTotal: true,
+            isFined: true,
+          },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: input.take ?? 1500,
+    });
+  }
+
   async searchLoans(input: {
     tenantId: string;
     branchId: string | null;

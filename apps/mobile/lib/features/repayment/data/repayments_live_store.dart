@@ -4,9 +4,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/di/repayment_locator.dart';
 import '../../../core/network/realtime_client.dart';
 import '../../../models/field_records.dart';
+import '../../../services/api_client.dart';
+import '../../../services/network_status_store.dart';
+import '../../../services/offline_cache_store.dart';
 import '../../../services/session_store.dart';
 import '../../../utils/friendly_errors.dart';
 import '../domain/entities/client_loan_detail.dart';
+import 'repayment_repository_impl.dart';
 
 /// Live collections store — replaces mock FieldRecordsStore for repayments.
 class RepaymentsLiveStore extends ChangeNotifier {
@@ -48,13 +52,36 @@ class RepaymentsLiveStore extends ChangeNotifier {
     _tenantId = session.tenantId;
     _recentKey = _recentPrefsKey(session.tenantId);
     await _loadRecentIds();
+    await _hydrateOfflineIndex(session);
     await refresh();
+    if (NetworkStatusStore.instance.isOnline) {
+      try {
+        await refreshOfflineIndex(session);
+      } catch (_) {}
+    }
     if (_listening) return;
     _listening = true;
 
     final client = RealtimeClient.instance;
     await client.connect(session);
     client.on('payment.made', _onPaymentRealtime);
+  }
+
+  Future<void> _hydrateOfflineIndex(RembehSession session) async {
+    final tenantId = session.tenantId;
+    final branchId = session.branchId;
+    if (tenantId == null || branchId == null) return;
+    final payload = await OfflineCacheStore.instance.getPayload(
+      OfflineCacheKeys.customers(tenantId, branchId),
+    );
+    if (payload is! List) return;
+    for (final item in payload) {
+      if (item is! Map) continue;
+      final detail = _compactToDetail(Map<String, dynamic>.from(item));
+      if (detail.loanId.isNotEmpty) {
+        _detailCache[detail.loanId] = detail;
+      }
+    }
   }
 
   Future<void> clearSessionState() async {
@@ -151,15 +178,119 @@ class RepaymentsLiveStore extends ChangeNotifier {
   }
 
   Future<ClientLoanDetail> getLoanDetail(String loanId) async {
-    final detail = await _locator.getLoanDetail(loanId);
-    _detailCache[loanId] = detail;
-    await markClientRecent(loanId);
-    notifyListeners();
-    return detail;
+    try {
+      final detail = await _locator.getLoanDetail(loanId);
+      _detailCache[loanId] = detail;
+      await markClientRecent(loanId);
+      notifyListeners();
+      return detail;
+    } catch (error) {
+      final cached = _detailCache[loanId] ?? _offlineDetail(loanId);
+      if (cached != null && NetworkStatusStore.instance.isOffline) {
+        return cached;
+      }
+      rethrow;
+    }
   }
 
   Future<List<ClientLoanDetail>> searchClients(String query) async {
-    return _locator.searchClients(query);
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return const [];
+    try {
+      final results = await _locator.searchClients(query);
+      for (final detail in results) {
+        _detailCache[detail.loanId] = detail;
+      }
+      return results;
+    } catch (_) {
+      if (!NetworkStatusStore.instance.isOffline) rethrow;
+      return _searchOffline(q);
+    }
+  }
+
+  /// Pulls latest branch clients into local cache. Old cache is replaced only
+  /// after a successful write.
+  Future<void> refreshOfflineIndex(RembehSession session) async {
+    final tenantId = session.tenantId;
+    final branchId = session.branchId;
+    if (tenantId == null || branchId == null) return;
+    if (NetworkStatusStore.instance.isOffline) return;
+    final repo = _locator.repository;
+    if (repo is! RepaymentRepositoryImpl) return;
+    final clients = await repo.offlineSnapshotClients();
+    await OfflineCacheStore.instance.putJson(
+      OfflineCacheKeys.customers(tenantId, branchId),
+      clients,
+    );
+    for (final raw in clients) {
+      final detail = _compactToDetail(raw);
+      if (detail.loanId.isNotEmpty) {
+        _detailCache[detail.loanId] = detail;
+      }
+    }
+  }
+
+  List<ClientLoanDetail> _searchOffline(String q) {
+    final digits = q.replaceAll(RegExp(r'[^0-9+]'), '');
+    final matches = _detailCache.values.where((client) {
+      final name = client.fullName.toLowerCase();
+      final phone = client.phone.toLowerCase();
+      if (name.contains(q) || phone.contains(q)) return true;
+      if (digits.length >= 3) {
+        final phoneDigits = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+        return phoneDigits.contains(digits);
+      }
+      return false;
+    }).toList();
+    matches.sort((a, b) => a.fullName.compareTo(b.fullName));
+    return matches.take(40).toList();
+  }
+
+  ClientLoanDetail? _offlineDetail(String loanId) {
+    return _detailCache[loanId];
+  }
+
+  ClientLoanDetail _compactToDetail(Map<String, dynamic> json) {
+    return ClientLoanDetail(
+      id: json['loanId'] as String? ?? '',
+      loanId: json['loanId'] as String? ?? '',
+      customerId: json['customerId'] as String? ?? '',
+      fullName: json['fullName'] as String? ?? '',
+      phone: json['phone'] as String? ?? '',
+      registeredBy: json['registeredBy'] as String? ?? '',
+      agentPhotoUrl: null,
+      outstanding: _asInt(json['outstanding']),
+      lastPaymentAmount: 0,
+      lastPaymentAt: null,
+      lastPaymentBy: null,
+      expectedToday: _asInt(json['expectedToday']),
+      carriedForward: 0,
+      dailyInstalment: 0,
+      loanPeriodDays: _asInt(json['loanPeriodDays']),
+      daysLeft: _asInt(json['daysLeft']),
+      nextDueLabel: json['nextDueLabel'] as String? ?? '',
+      nextDueIsToday: json['nextDueIsToday'] as bool? ?? false,
+      paidAmount: _asInt(json['paidAmount']),
+      loanAmount: _asInt(json['loanAmount']),
+      interestRatePercent: _asInt(json['interestRatePercent']),
+      loanStartDate:
+          DateTime.tryParse(json['loanStartDate'] as String? ?? '') ??
+          DateTime.now(),
+      maturityDate:
+          DateTime.tryParse(json['maturityDate'] as String? ?? '') ??
+          DateTime.now(),
+      paymentStartDate: null,
+      isFined: json['isFined'] as bool? ?? false,
+      finesTotal: _asInt(json['finesTotal']),
+      paymentHistory: const [],
+      fineHistory: const [],
+    );
+  }
+
+  int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.round();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
   Future<({FieldRepayment repayment, ClientLoanDetail detail})>
@@ -170,16 +301,175 @@ class RepaymentsLiveStore extends ChangeNotifier {
     String method = 'CASH',
     DateTime? paidAt,
   }) async {
-    final result = await _locator.recordRepayment(
-      loanId: loanId,
-      amount: amount,
-      note: note,
-      method: method,
-      paidAt: paidAt,
+    if (NetworkStatusStore.instance.isOffline) {
+      return _queueOfflineRepayment(
+        loanId: loanId,
+        amount: amount,
+        note: note,
+        method: method,
+        paidAt: paidAt ?? DateTime.now(),
+      );
+    }
+    try {
+      final result = await _locator.recordRepayment(
+        loanId: loanId,
+        amount: amount,
+        note: note,
+        method: method,
+        paidAt: paidAt,
+      );
+      _detailCache[loanId] = result.detail;
+      await refresh();
+      return result;
+    } catch (error) {
+      if (NetworkStatusStore.instance.isOffline) {
+        return _queueOfflineRepayment(
+          loanId: loanId,
+          amount: amount,
+          note: note,
+          method: method,
+          paidAt: paidAt ?? DateTime.now(),
+        );
+      }
+      rethrow;
+    }
+  }
+
+  Future<({FieldRepayment repayment, ClientLoanDetail detail})>
+  _queueOfflineRepayment({
+    required String loanId,
+    required int amount,
+    String? note,
+    required String method,
+    required DateTime paidAt,
+  }) async {
+    final tenantId = _tenantId;
+    if (tenantId == null) {
+      throw ApiException('Offline cache is not ready. Open the app online once.');
+    }
+    final cached = _detailCache[loanId];
+    if (cached == null) {
+      throw ApiException(
+        'Client is not in offline cache. Search while online first.',
+      );
+    }
+    final localId = 'offline_${DateTime.now().millisecondsSinceEpoch}';
+    final pending = await _readPendingWrites(tenantId);
+    pending.add({
+      'id': localId,
+      'type': 'repayment',
+      'loanId': loanId,
+      'amount': amount,
+      'note': note,
+      'method': method,
+      'paidAt': paidAt.toUtc().toIso8601String(),
+    });
+    await OfflineCacheStore.instance.putJson(
+      OfflineCacheKeys.pendingWrites(tenantId),
+      pending,
     );
-    _detailCache[loanId] = result.detail;
-    await refresh();
-    return result;
+
+    final nextOutstanding =
+        cached.outstanding - amount < 0 ? 0 : cached.outstanding - amount;
+    final detail = ClientLoanDetail(
+      id: cached.id,
+      loanId: cached.loanId,
+      customerId: cached.customerId,
+      fullName: cached.fullName,
+      phone: cached.phone,
+      registeredBy: cached.registeredBy,
+      agentPhotoUrl: cached.agentPhotoUrl,
+      outstanding: nextOutstanding,
+      lastPaymentAmount: amount,
+      lastPaymentAt: paidAt,
+      lastPaymentBy: 'You (offline)',
+      expectedToday: cached.expectedToday,
+      carriedForward: cached.carriedForward,
+      dailyInstalment: cached.dailyInstalment,
+      loanPeriodDays: cached.loanPeriodDays,
+      daysLeft: cached.daysLeft,
+      nextDueLabel: cached.nextDueLabel,
+      nextDueIsToday: cached.nextDueIsToday,
+      paidAmount: cached.paidAmount + amount,
+      loanAmount: cached.loanAmount,
+      interestRatePercent: cached.interestRatePercent,
+      loanStartDate: cached.loanStartDate,
+      maturityDate: cached.maturityDate,
+      paymentStartDate: cached.paymentStartDate,
+      isFined: cached.isFined,
+      finesTotal: cached.finesTotal,
+      paymentHistory: [
+        PaymentHistoryItem(
+          id: localId,
+          amount: amount,
+          method: method,
+          paidAt: paidAt,
+          recordedByName: 'You (offline)',
+          note: note,
+        ),
+        ...cached.paymentHistory,
+      ],
+      fineHistory: cached.fineHistory,
+    );
+    _detailCache[loanId] = detail;
+    final repayment = FieldRepayment(
+      id: localId,
+      loanId: loanId,
+      clientName: detail.fullName,
+      phone: detail.phone,
+      amount: amount,
+      amountPaid: detail.paidAmount,
+      loanAmount: detail.loanAmount,
+      recordedAt: paidAt,
+      synced: false,
+      dueToday: detail.nextDueIsToday,
+    );
+    _repayments.insert(0, repayment);
+    notifyListeners();
+    return (repayment: repayment, detail: detail);
+  }
+
+  Future<void> flushPendingWrites() async {
+    final tenantId = _tenantId;
+    if (tenantId == null || NetworkStatusStore.instance.isOffline) return;
+    final pending = await _readPendingWrites(tenantId);
+    if (pending.isEmpty) return;
+    final remaining = <Map<String, dynamic>>[];
+    for (final item in pending) {
+      if (item['type'] != 'repayment') {
+        remaining.add(item);
+        continue;
+      }
+      try {
+        await _locator.recordRepayment(
+          loanId: item['loanId'] as String? ?? '',
+          amount: _asInt(item['amount']),
+          note: item['note'] as String?,
+          method: item['method'] as String? ?? 'CASH',
+          paidAt: DateTime.tryParse(item['paidAt'] as String? ?? ''),
+        );
+      } catch (_) {
+        remaining.add(item);
+      }
+    }
+    await OfflineCacheStore.instance.putJson(
+      OfflineCacheKeys.pendingWrites(tenantId),
+      remaining,
+    );
+    if (remaining.length < pending.length) {
+      await refresh();
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _readPendingWrites(String tenantId) async {
+    final payload = await OfflineCacheStore.instance.getPayload(
+      OfflineCacheKeys.pendingWrites(tenantId),
+    );
+    if (payload is! List) return [];
+    return payload
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
   }
 
   Future<void> markClientRecent(String loanId) async {

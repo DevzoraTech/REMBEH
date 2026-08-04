@@ -936,7 +936,7 @@ function ReportSummaryView({
             }
           />
           <LineRow
-            label="Top-ups added today"
+            label="Capital top-ups today"
             value={
               <Money
                 value={numberValue(opening.cashAddedToday)}
@@ -945,7 +945,7 @@ function ReportSummaryView({
             }
           />
           <LineRow
-            label="Total opening balance"
+            label="Opening capital"
             value={
               <Money
                 value={
@@ -969,7 +969,7 @@ function ReportSummaryView({
             }
           />
           <LineRow
-            label="Cash returned by agents"
+            label="Cash returned by field officers"
             value={
               <Money
                 value={numberValue(summary.cashReturnedByAgents)}
@@ -1023,7 +1023,7 @@ function ReportSummaryView({
         />
         <MiniKpi
           icon={<Users className="size-3.5" />}
-          label="Agents Back"
+          label="Field Officers Back"
           value={`${agentsReturned}/${snapshot.agentReturns.length}`}
           hint={
             <Money
@@ -1036,12 +1036,12 @@ function ReportSummaryView({
         />
       </section>
 
-      <Panel title="Agent handover" icon={<Users className="size-3.5" />}>
+      <Panel title="Officer handover" icon={<Users className="size-3.5" />}>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[620px] text-left text-xs">
             <thead>
               <tr className="border-b border-[#dfe5eb] bg-[#e8edf2] text-[10px] font-semibold text-slate-600">
-                <th className="px-2 py-2 font-semibold">Agent</th>
+                <th className="px-2 py-2 font-semibold">Field Officer</th>
                 <th className="px-2 py-2 text-right font-semibold">Float</th>
                 <th className="px-2 py-2 text-right font-semibold">Loans</th>
                 <th className="px-2 py-2 text-right font-semibold">
@@ -1058,7 +1058,7 @@ function ReportSummaryView({
                     colSpan={6}
                     className="px-2 py-6 text-center text-[11px] font-medium text-slate-500"
                   >
-                    No agent float recorded for this day.
+                    No field officer float recorded for this day.
                   </td>
                 </tr>
               ) : (
@@ -1080,11 +1080,11 @@ function ReportSummaryView({
                       <td className="px-2 py-2">
                         <div className="flex min-w-0 items-center gap-2">
                           <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-[#eef6f2] text-[10px] font-bold text-[var(--forest-emerald)]">
-                            {initials(row.agentName ?? "Agent")}
+                            {initials(row.agentName ?? "Field Officer")}
                           </span>
                           <div className="min-w-0">
                             <p className="truncate text-[11px] font-semibold text-[#0b1220]">
-                              {row.agentName ?? "Agent"}
+                              {row.agentName ?? "Field Officer"}
                             </p>
                             <p className="truncate text-[10px] text-slate-500">
                               {row.agentPublicId ?? "—"}
@@ -1130,11 +1130,11 @@ function ReportSummaryView({
 
       <section className="grid gap-2.5 xl:grid-cols-[1.15fr_1.15fr_0.9fr]">
         <RecordList
-          title="Top-ups"
-          empty="No top-ups recorded."
+          title="Capital top-ups"
+          empty="No capital top-ups recorded."
           rows={snapshot.topUps.map((topUp, index) => ({
             id: topUp.id ?? `topup-${index}`,
-            label: topUp.description || "Cash top-up",
+            label: topUp.description || "Capital top-up",
             meta: `${formatClock(topUp.addedAt)} · ${topUp.recordedByName ?? "Manager"}`,
             value: (
               <Money
@@ -1507,7 +1507,7 @@ function LedgerTable({
     "Section",
     "Description",
     "Count",
-    "Cash In",
+    "Inflow",
     "Cash Out",
     "Balance",
     "Notes",
@@ -1520,7 +1520,7 @@ function LedgerTable({
   const formulaLabel =
     sheet === "daily"
       ? `REMBEH Daily Operations Report · ${formatDate(report.operationDate)} · ${statusLabel(report.status)}`
-      : `Agent Handover · ${snapshot.agentReturns.length} agent${snapshot.agentReturns.length === 1 ? "" : "s"} · ${report.branchName}`;
+      : `Officer handover · ${snapshot.agentReturns.length} agent${snapshot.agentReturns.length === 1 ? "" : "s"} · ${report.branchName}`;
 
   return (
     <div className="overflow-hidden rounded-[10px] border border-[#9aa5a0] bg-[#f3f7f5] shadow-[0_16px_40px_rgba(15,23,42,0.1)]">
@@ -1556,7 +1556,7 @@ function LedgerTable({
                 : "border-transparent text-slate-500 hover:bg-white/50"
             }`}
           >
-            Agent Handover
+            Officer handover
           </button>
         </div>
         <div className="flex items-center gap-2 rounded border border-[#c6d2cc] bg-white px-2 py-1">
@@ -1737,7 +1737,7 @@ function LedgerTable({
       <div className="flex items-center justify-between gap-2 border-t border-[#c6d2cc] bg-[#e7eee9] px-3 py-1.5 text-[10px] font-semibold text-slate-500">
         <span>
           Sheet {sheet === "daily" ? "1" : "2"} of 2 ·{" "}
-          {sheet === "daily" ? "Daily Report" : "Agent Handover"}
+          {sheet === "daily" ? "Daily Report" : "Officer handover"}
         </span>
         <span>Use Export → Excel for the real .xlsx file</span>
       </div>
@@ -1755,7 +1755,7 @@ function AgentHandoverExcel({
   currency: string;
 }) {
   const columns = [
-    "Agent",
+    "Field Officer",
     "Float",
     "Loans",
     "Repayments",
@@ -1800,7 +1800,7 @@ function AgentHandoverExcel({
           <ExcelMergedRow
             rowNumber={1}
             cols={8}
-            value="REMBEH Agent Handover"
+            value="REMBEH Officer handover"
             strong
           />
           <ExcelMergedRow
@@ -1826,7 +1826,7 @@ function AgentHandoverExcel({
                 colSpan={8}
                 className="border border-[#d0d9d4] px-2 py-6 text-center font-semibold text-slate-500"
               >
-                No agent float returns on this report
+                No field officer float returns on this report
               </td>
             </tr>
           ) : (
@@ -1839,7 +1839,7 @@ function AgentHandoverExcel({
                 >
                   <ExcelRowNumber value={4 + index} />
                   <td className="border border-[#d0d9d4] px-2 py-1.5 font-bold text-[#1a2b22]">
-                    {row.agentName ?? "Agent"}
+                    {row.agentName ?? "Field Officer"}
                     {row.agentPublicId ? (
                       <span className="mt-0.5 block text-[10px] font-medium text-slate-500">
                         {row.agentPublicId}
@@ -2077,12 +2077,12 @@ function buildExcelRows(report: OwnerReport, snapshot: ReportSnapshot) {
     },
     {
       section: "Opening",
-      description: "Top-ups added today",
+      description: "Capital top-ups today",
       count: "-",
       cashIn: numberValue(snapshot.openingCash.cashAddedToday),
       cashOut: null,
       balance: null,
-      note: "Cash added before and during day",
+      note: "Capital added at opening or during the day",
     },
     {
       section: "Float",
@@ -2091,7 +2091,7 @@ function buildExcelRows(report: OwnerReport, snapshot: ReportSnapshot) {
       cashIn: null,
       cashOut: numberValue(snapshot.summary.floatDistributed),
       balance: null,
-      note: "Issued to agents",
+      note: "Issued to field officers",
     },
     {
       section: "Field",
@@ -2122,7 +2122,7 @@ function buildExcelRows(report: OwnerReport, snapshot: ReportSnapshot) {
     },
     {
       section: "Returns",
-      description: "Cash returned by agents",
+      description: "Cash returned by field officers",
       count: `${snapshot.agentReturns.filter((row) => row.amountReturned != null).length}/${snapshot.agentReturns.length}`,
       cashIn: numberValue(snapshot.summary.cashReturnedByAgents),
       cashOut: null,
@@ -2341,7 +2341,7 @@ async function exportReport(
       "Section",
       "Description",
       "Count",
-      "Cash In",
+      "Inflow",
       "Cash Out",
       "Balance",
       "Notes",
@@ -2391,9 +2391,9 @@ async function exportReport(
         };
       });
     });
-    const agentSheet = workbook.addWorksheet("Agent Handover");
+    const agentSheet = workbook.addWorksheet("Officer handover");
     agentSheet.addRow([
-      "Agent",
+      "Field Officer",
       "Float",
       "Loans",
       "Repayments",
@@ -2404,7 +2404,7 @@ async function exportReport(
     ]);
     snapshot.agentReturns.forEach((row) => {
       agentSheet.addRow([
-        row.agentName ?? "Agent",
+        row.agentName ?? "Field Officer",
         numberValue(row.amountGiven),
         numberValue(row.amountDisbursed),
         numberValue(row.amountCollected),

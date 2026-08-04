@@ -30,4 +30,9 @@ export class CloseBranchOperationDto {
   @IsString()
   @Length(0, 500)
   notes?: string;
+
+  /** Required when counted cash is short — person who must account for the shortage. */
+  @IsOptional()
+  @IsUUID()
+  shortageResponsibleUserId?: string;
 }

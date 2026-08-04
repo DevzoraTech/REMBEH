@@ -439,7 +439,7 @@ export function AgentsWorkspace() {
     >
       <div className="mx-auto max-w-[1400px] space-y-5 animate-rise">
         <OwnerHeader
-          title="Agents"
+          title="Field Officers"
           showReportsButton={false}
           settingsHref="/settings"
           notificationScope="manager"
@@ -452,14 +452,14 @@ export function AgentsWorkspace() {
                   className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[#07885f] px-3.5 text-xs font-semibold text-white shadow-[0_10px_20px_rgba(7,136,95,0.22)] transition hover:bg-[#067352]"
                 >
                   <Plus className="size-3.5" />
-                  Add agent
+                  Add field officer
                 </button>
               ) : null}
               <button
                 type="button"
                 onClick={() => void loadAgents(session, selectedDate)}
                 disabled={loading}
-                aria-label="Refresh Agents"
+                aria-label="Refresh Officers"
                 className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-50 disabled:opacity-60"
               >
                 <RefreshCw
@@ -470,7 +470,7 @@ export function AgentsWorkspace() {
           }
         />
         <p className="-mt-2 text-sm font-medium text-slate-500">
-          Browse branch agents, review access status, and manage who can work in
+          Browse branch field officers, review access status, and manage who can work in
           the field.
         </p>
 
@@ -483,7 +483,7 @@ export function AgentsWorkspace() {
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <AgentStat
             icon={<Users className="size-4" />}
-            label="All Agents"
+            label="All Officers"
             value={String(summaryStats.all)}
             hint="Registered At The Branch"
             tone="green"
@@ -497,14 +497,14 @@ export function AgentsWorkspace() {
           />
           <AgentStat
             icon={<UserCheck className="size-4" />}
-            label="Active Agents"
+            label="Active Officers"
             value={String(summaryStats.active)}
             hint="Can Access The System"
             tone="violet"
           />
           <AgentStat
             icon={<UserX className="size-4" />}
-            label="Suspended Agents"
+            label="Suspended Officers"
             value={String(summaryStats.suspended)}
             hint="System Access Restricted"
             tone="gold"
@@ -535,7 +535,7 @@ export function AgentsWorkspace() {
                 className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-[#07885f] px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(7,136,95,0.22)] transition hover:bg-[#067352]"
               >
                 <Plus className="size-4" />
-                Add agent
+                Add field officer
               </button>
             ) : null}
           </div>
@@ -543,7 +543,7 @@ export function AgentsWorkspace() {
           <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-3.5">
               <h2 className="text-[15px] font-semibold text-[#0b1220]">
-                Branch Agents
+                Branch Officers
               </h2>
               <TableSearchField
                 value={search}
@@ -551,7 +551,7 @@ export function AgentsWorkspace() {
                   setSearch(value);
                   setPage(1);
                 }}
-                placeholder="Search Agents..."
+                placeholder="Search Officers..."
                 title="Search by agent name, ID, phone, email or branch."
                 className="ml-auto"
               />
@@ -560,7 +560,7 @@ export function AgentsWorkspace() {
               <table className="w-full min-w-[760px] table-fixed text-left text-xs">
                 <thead className="border-b border-[#dfe5eb] bg-[#e8edf2] text-[10px] font-semibold text-slate-600">
                   <tr>
-                    <th className="w-[28%] px-3 py-2.5">Agent</th>
+                    <th className="w-[28%] px-3 py-2.5">Officer</th>
                     <th className="w-[12%] px-3 py-2.5">Status</th>
                     <th className="w-[22%] px-3 py-2.5">Contact</th>
                     <th className="w-[14%] px-3 py-2.5">Joined</th>
@@ -600,7 +600,7 @@ export function AgentsWorkspace() {
                               {agent.name}
                             </p>
                             <p className="mt-0.5 truncate text-[11px] font-medium tabular-nums text-slate-500">
-                              {agent.publicId ?? "No Agent ID"}
+                              {agent.publicId ?? "No Officer ID"}
                             </p>
                           </div>
                         </div>
@@ -656,7 +656,7 @@ export function AgentsWorkspace() {
               page={pagedAgents.currentPage}
               pageSize={pageSize}
               total={filteredAgents.length}
-              itemLabel="agents"
+              itemLabel="officers"
               onPageChange={setPage}
               onPageSizeChange={(nextPageSize) => {
                 setPageSize(nextPageSize);
@@ -694,7 +694,7 @@ export function AgentsWorkspace() {
                 setActionMenu(null);
                 setSelectedAgentId(actionMenuAgent.id);
               }}
-              label="View Agent"
+              label="View Officer"
             />
             {canManage && actionMenuAgent.status === "ACTIVE" ? (
               <ActionMenuItem
@@ -707,7 +707,7 @@ export function AgentsWorkspace() {
                     agentName: actionMenuAgent.name,
                   });
                 }}
-                label="Suspend Agent"
+                label="Suspend Officer"
                 danger
               />
             ) : null}
@@ -724,7 +724,7 @@ export function AgentsWorkspace() {
                     agentName: actionMenuAgent.name,
                   });
                 }}
-                label="Activate Agent"
+                label="Activate Officer"
               />
             ) : null}
           </div>
@@ -764,7 +764,7 @@ export function AgentsWorkspace() {
                   id="invite-agent-title"
                   className="text-base font-bold tracking-[-0.02em] text-[#0b1220]"
                 >
-                  Add agent
+                  Add field officer
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
                   Invite field staff to{" "}

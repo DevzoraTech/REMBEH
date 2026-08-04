@@ -155,7 +155,7 @@ export function AgentStatusConfirmModal({
               }`}
             >
               {busy ? <Loader2 className="size-3.5 animate-spin" /> : null}
-              {isSuspend ? "Suspend Agent" : "Activate Agent"}
+              {isSuspend ? "Suspend Field Officer" : "Activate Field Officer"}
             </button>
           </div>
         </div>

@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import '../features/agent_day/data/agent_day_status_store.dart';
 import '../models/agent_day_status.dart';
 import '../models/field_records.dart';
+import '../features/repayment/data/repayments_live_store.dart';
+import '../services/network_status_store.dart';
+import '../services/offline_cache_store.dart';
 import '../services/session_cleanup.dart';
 import '../services/session_activity.dart';
 import '../services/session_store.dart';
@@ -31,6 +34,9 @@ class _AgentShellState extends State<AgentShell> {
   bool _searchAutofocus = false;
   int _searchFocusToken = 0;
   final _dayStore = AgentDayStatusStore.instance;
+  final _network = NetworkStatusStore.instance;
+  final _offline = OfflineCacheStore.instance;
+  DateTime? _cacheSyncedAt;
   late final SessionActivityController _activity;
 
   @override
@@ -42,16 +48,77 @@ class _AgentShellState extends State<AgentShell> {
       onAccountBlocked: _handleAccountBlocked,
     );
     _dayStore.addListener(_onDayChanged);
+    _network.addListener(_onNetworkChanged);
     // ignore: discarded_futures
     _dayStore.start(widget.session);
+    // ignore: discarded_futures
+    _network.start();
     _activity.start();
+    // ignore: discarded_futures
+    _loadCacheSyncedAt();
+  }
+
+  Future<void> _loadCacheSyncedAt() async {
+    final tenantId = widget.session.tenantId;
+    final branchId = widget.session.branchId;
+    if (tenantId == null || branchId == null) return;
+    final syncedAt = await _offline.savedAt(
+      OfflineCacheKeys.customers(tenantId, branchId),
+    );
+    if (!mounted) return;
+    setState(() => _cacheSyncedAt = syncedAt);
   }
 
   @override
   void dispose() {
     _dayStore.removeListener(_onDayChanged);
+    _network.removeListener(_onNetworkChanged);
     _activity.dispose();
     super.dispose();
+  }
+
+  void _onNetworkChanged() {
+    if (!mounted) return;
+    setState(() {});
+    if (_network.isOnline) {
+      // ignore: discarded_futures
+      _refreshCaches();
+    }
+  }
+
+  Future<void> _refreshCaches() async {
+    final session = widget.session;
+    final tenantId = session.tenantId;
+    final branchId = session.branchId;
+    if (tenantId == null || branchId == null) return;
+    try {
+      final status = _dayStore.status;
+      if (status != null) {
+        await _offline.putJson(
+          OfflineCacheKeys.agentDay(tenantId, branchId),
+          {
+            'date': status.date,
+            'canUseApp': status.canUseApp,
+            'canBrowseClients': status.canBrowseClients,
+            'lockReason': status.lockReason,
+            'lockTitle': status.lockTitle,
+            'lockMessage': status.lockMessage,
+            'branchStatus': status.branchStatus,
+          },
+        );
+      }
+      // Warm field client index used for offline search.
+      await RepaymentsLiveStore.instance.refreshOfflineIndex(session);
+      await RepaymentsLiveStore.instance.flushPendingWrites();
+      final syncedAt = await _offline.savedAt(
+        OfflineCacheKeys.customers(tenantId, branchId),
+      );
+      if (mounted) {
+        setState(() => _cacheSyncedAt = syncedAt ?? DateTime.now().toUtc());
+      }
+    } catch (_) {
+      // Keep previous cache if refresh fails — never drop on failure.
+    }
   }
 
   void _onDayChanged() {
@@ -284,33 +351,74 @@ class _AgentShellState extends State<AgentShell> {
       controller: _activity,
       child: Scaffold(
         backgroundColor: softIvory,
-        body: IndexedStack(
-          index: _index,
+        body: Column(
           children: [
-            HomeTab(
-              session: widget.session,
-              dayStatus: dayStatus,
-              onRefreshDayStatus: _refreshDayStatus,
-              onOpenProfile: _openProfile,
-              onOpenSearch: () => _openSearch(autofocus: true),
-              onOpenRecords: _openRecords,
-            ),
-            RecordsTab(
-              session: widget.session,
-              section: _recordsSection,
-              filter: _recordsFilter,
-              onSectionChanged: (section) {
-                unawaitedTouch();
-                setState(() => _recordsSection = section);
-              },
-              onFilterChanged: (filter) {
-                unawaitedTouch();
-                setState(() => _recordsFilter = filter);
-              },
-            ),
-            SearchTab(
-              autofocus: _searchAutofocus,
-              focusToken: _searchFocusToken,
+            if (_network.isOffline)
+              Material(
+                color: const Color(0xFFFEF3C7),
+                child: SafeArea(
+                  bottom: false,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.cloud_off_outlined,
+                          size: 16,
+                          color: Color(0xFF92400E),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _cacheSyncedAt == null
+                                ? 'Offline — open the app online once to cache field data.'
+                                : 'Offline — using cached data from ${_cacheSyncedAt!.toLocal().toString().substring(0, 16)}.',
+                            style: const TextStyle(
+                              color: Color(0xFF92400E),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            Expanded(
+              child: IndexedStack(
+                index: _index,
+                children: [
+                  HomeTab(
+                    session: widget.session,
+                    dayStatus: dayStatus,
+                    onRefreshDayStatus: _refreshDayStatus,
+                    onOpenProfile: _openProfile,
+                    onOpenSearch: () => _openSearch(autofocus: true),
+                    onOpenRecords: _openRecords,
+                  ),
+                  RecordsTab(
+                    session: widget.session,
+                    section: _recordsSection,
+                    filter: _recordsFilter,
+                    onSectionChanged: (section) {
+                      unawaitedTouch();
+                      setState(() => _recordsSection = section);
+                    },
+                    onFilterChanged: (filter) {
+                      unawaitedTouch();
+                      setState(() => _recordsFilter = filter);
+                    },
+                  ),
+                  SearchTab(
+                    autofocus: _searchAutofocus,
+                    focusToken: _searchFocusToken,
+                  ),
+                ],
+              ),
             ),
           ],
         ),

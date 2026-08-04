@@ -12,8 +12,13 @@ export function resolveOperatorRole(
 
   const roleName = user?.roleName?.toLowerCase() ?? "";
 
-  // Field agents and other staff use mobile — never treat them as managers.
-  if (roleName.includes("agent")) {
+  // Field officers and other field staff use mobile — never treat them as managers.
+  if (
+    roleName.includes("agent") ||
+    roleName.includes("field officer") ||
+    roleName.includes("loan officer") ||
+    roleName.includes("recovery")
+  ) {
     return "staff";
   }
 
@@ -32,7 +37,7 @@ export const OWNER_INVITE_ROLES = ["Branch Manager"] as const;
 
 /** Roles a branch manager invites for day-to-day field/ops work. */
 export const MANAGER_INVITE_ROLES = [
-  "Agent",
+  "Field Officer",
   "Loan Officer",
   "Cashier",
   "Supervisor",

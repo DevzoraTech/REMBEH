@@ -80,6 +80,13 @@ export class CollectionsController {
     return this.collectionsService.searchClients(user, query);
   }
 
+  /** Branch active-loan index for mobile offline cache. */
+  @Get('offline-snapshot')
+  @RequirePermissions(COLLECTION_PERMISSIONS.read)
+  offlineSnapshot(@CurrentUser() user: AuthenticatedUser) {
+    return this.collectionsService.offlineSnapshot(user);
+  }
+
   @Get('loans/:loanId')
   @RequirePermissions(COLLECTION_PERMISSIONS.read)
   getLoanDetail(
