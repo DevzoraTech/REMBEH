@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type FormEvent,
   type MouseEvent,
   type ReactNode,
 } from "react";
@@ -13,12 +14,14 @@ import {
   Activity,
   Loader2,
   MoreVertical,
+  Plus,
   RefreshCw,
   UserCheck,
   Users,
   UserX,
+  X,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AgentDetailDrawer } from "../app/agent-detail-drawer";
 import { AppShell } from "../app/app-shell";
 import {
@@ -34,6 +37,12 @@ import {
 import { AppBootSkeleton, TableSkeleton } from "../app/skeleton";
 import { OwnerHeader } from "../../app/owner/owner-header";
 import { TableSearchField } from "../app/table-search-field";
+import {
+  FormError,
+  PrimaryButton,
+  SelectField,
+  TextField,
+} from "../auth/form-controls";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import {
   RembehBranch,
@@ -44,7 +53,7 @@ import {
   isSessionExpired,
   readAuthState,
 } from "../../lib/auth-session";
-import { resolveOperatorRole } from "../../lib/roles";
+import { MANAGER_INVITE_ROLES, resolveOperatorRole } from "../../lib/roles";
 
 type AgentRow = {
   id: string;
@@ -88,6 +97,7 @@ type ActionMenuState = {
 
 export function AgentsWorkspace() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [session, setSession] = useState<RembehSession | null>(null);
   const [workspace, setWorkspace] = useState<RembehWorkspace | null>(null);
   const [user, setUser] = useState<RembehUser | null>(null);
@@ -106,6 +116,20 @@ export function AgentsWorkspace() {
   const [actionMenu, setActionMenu] = useState<ActionMenuState | null>(null);
   const [statusConfirm, setStatusConfirm] =
     useState<AgentStatusConfirm | null>(null);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [isInviting, setIsInviting] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [inviteNotice, setInviteNotice] = useState<string | null>(null);
+  const [inviteForm, setInviteForm] = useState<{
+    roleName: string;
+    displayName: string;
+    email: string;
+  }>({
+    roleName: MANAGER_INVITE_ROLES[0],
+    displayName: "",
+    email: "",
+  });
+  const autoInviteHandled = useRef(false);
 
   const canRead = Boolean(
     session?.permissions.includes("branch.staff.read") ||
@@ -117,6 +141,38 @@ export function AgentsWorkspace() {
     session?.permissions.includes("user.activate") ||
     session?.permissions.includes("branch.create"),
   );
+  const canInvite = Boolean(
+    session?.permissions.includes("branch.staff.invite"),
+  );
+
+  function openInvite() {
+    setInviteError(null);
+    setInviteNotice(null);
+    setInviteForm({
+      roleName: MANAGER_INVITE_ROLES[0],
+      displayName: "",
+      email: "",
+    });
+    setInviteOpen(true);
+  }
+
+  useEffect(() => {
+    if (
+      autoInviteHandled.current ||
+      !canInvite ||
+      !session ||
+      !branch?.id
+    ) {
+      return;
+    }
+    const invite = searchParams.get("invite");
+    if (invite === "1" || invite === "agent" || invite === "agents") {
+      autoInviteHandled.current = true;
+      openInvite();
+      router.replace("/agents", { scroll: false });
+    }
+  }, [branch?.id, canInvite, router, searchParams, session]);
+
   const loadAgents = useCallback(
     async (activeSession: RembehSession, date: string) => {
       const requestId = agentsRequestId.current + 1;
@@ -250,6 +306,50 @@ export function AgentsWorkspace() {
     }
   }
 
+  async function handleInviteAgent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!session || !branch?.id) {
+      setInviteError("No branch assigned.");
+      return;
+    }
+    setInviteError(null);
+    setIsInviting(true);
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/branches/${branch.id}/staff-invitations`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `${session.tokenType} ${session.accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            roleName: inviteForm.roleName,
+            displayName: inviteForm.displayName.trim(),
+            email: inviteForm.email.trim(),
+          }),
+        },
+      );
+      const payload = await readApiJson<{ message?: string | string[] }>(
+        response,
+      );
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      setInviteOpen(false);
+      setInviteNotice(
+        `Invite sent to ${inviteForm.email.trim()}. They must accept before access is active.`,
+      );
+      await loadAgents(session, selectedDate);
+    } catch (caught) {
+      setInviteError(
+        caught instanceof Error ? caught.message : "Could not send invite.",
+      );
+    } finally {
+      setIsInviting(false);
+    }
+  }
+
   function toggleActionMenu(
     agentId: string,
     event: MouseEvent<HTMLButtonElement>,
@@ -344,23 +444,41 @@ export function AgentsWorkspace() {
           settingsHref="/settings"
           notificationScope="manager"
           actions={
-            <button
-              type="button"
-              onClick={() => void loadAgents(session, selectedDate)}
-              disabled={loading}
-              aria-label="Refresh Agents"
-              className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-50 disabled:opacity-60"
-            >
-              <RefreshCw
-                className={`size-4 ${loading ? "animate-spin" : ""}`}
-              />
-            </button>
+            <div className="flex items-center gap-2">
+              {canInvite ? (
+                <button
+                  type="button"
+                  onClick={openInvite}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[#07885f] px-3.5 text-xs font-semibold text-white shadow-[0_10px_20px_rgba(7,136,95,0.22)] transition hover:bg-[#067352]"
+                >
+                  <Plus className="size-3.5" />
+                  Add agent
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => void loadAgents(session, selectedDate)}
+                disabled={loading}
+                aria-label="Refresh Agents"
+                className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-50 disabled:opacity-60"
+              >
+                <RefreshCw
+                  className={`size-4 ${loading ? "animate-spin" : ""}`}
+                />
+              </button>
+            </div>
           }
         />
         <p className="-mt-2 text-sm font-medium text-slate-500">
           Browse branch agents, review access status, and manage who can work in
           the field.
         </p>
+
+        {inviteNotice ? (
+          <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-950">
+            {inviteNotice}
+          </p>
+        ) : null}
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <AgentStat
@@ -406,9 +524,21 @@ export function AgentsWorkspace() {
             You do not have permission to view agents.
           </p>
         ) : agents.length === 0 ? (
-          <p className="rounded-[16px] border border-[#e6ebf0] bg-white px-4 py-6 text-sm text-slate-500">
-            No agents found in your scope.
-          </p>
+          <div className="rounded-[16px] border border-[#e6ebf0] bg-white px-4 py-10 text-center">
+            <p className="text-sm text-slate-500">
+              No agents found in your scope.
+            </p>
+            {canInvite ? (
+              <button
+                type="button"
+                onClick={openInvite}
+                className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-[#07885f] px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(7,136,95,0.22)] transition hover:bg-[#067352]"
+              >
+                <Plus className="size-4" />
+                Add agent
+              </button>
+            ) : null}
+          </div>
         ) : (
           <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-3.5">
@@ -610,6 +740,91 @@ export function AgentsWorkspace() {
           void updateStatus(payload.agentId, payload.status, payload.reason)
         }
       />
+
+      {inviteOpen ? (
+        <div className="fixed inset-0 z-[60] flex items-end justify-center bg-[#0b1220]/45 px-0 sm:items-center sm:px-4">
+          <button
+            type="button"
+            className="absolute inset-0 cursor-default"
+            aria-label="Close invite dialog"
+            disabled={isInviting}
+            onClick={() => {
+              if (!isInviting) setInviteOpen(false);
+            }}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="invite-agent-title"
+            className="relative z-10 w-full max-w-[440px] overflow-hidden rounded-t-[20px] bg-white shadow-[0_28px_80px_rgba(15,23,42,0.28)] sm:rounded-[20px]"
+          >
+            <div className="flex items-start justify-between gap-3 border-b border-[#edf1f5] px-5 py-4">
+              <div className="min-w-0">
+                <h2
+                  id="invite-agent-title"
+                  className="text-base font-bold tracking-[-0.02em] text-[#0b1220]"
+                >
+                  Add agent
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Invite field staff to{" "}
+                  {branch?.name ?? "your branch"}. They accept by email before
+                  access is active.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={isInviting}
+                onClick={() => setInviteOpen(false)}
+                className="grid size-8 shrink-0 place-items-center rounded-lg border border-[#e6ebf0] text-[#0b1220] hover:bg-slate-50 disabled:opacity-50"
+                aria-label="Close"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+            <form className="space-y-3.5 px-5 py-4" onSubmit={handleInviteAgent}>
+              <SelectField
+                label="Role"
+                value={inviteForm.roleName}
+                onChange={(value) =>
+                  setInviteForm((current) => ({ ...current, roleName: value }))
+                }
+                options={MANAGER_INVITE_ROLES.map((role) => ({
+                  value: role,
+                  label: role,
+                }))}
+                required
+              />
+              <TextField
+                label="Full name"
+                value={inviteForm.displayName}
+                onChange={(value) =>
+                  setInviteForm((current) => ({
+                    ...current,
+                    displayName: value,
+                  }))
+                }
+                placeholder="Person to invite"
+                required
+              />
+              <TextField
+                label="Work email"
+                type="email"
+                value={inviteForm.email}
+                onChange={(value) =>
+                  setInviteForm((current) => ({ ...current, email: value }))
+                }
+                placeholder="name@institution.com"
+                required
+              />
+              <FormError error={inviteError} />
+              <PrimaryButton type="submit" loading={isInviting}>
+                Send invite
+              </PrimaryButton>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </AppShell>
   );
 }

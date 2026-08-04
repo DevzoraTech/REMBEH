@@ -227,7 +227,7 @@ export function AppShell({ children, session, user }: AppShellProps) {
           collapsedLabel: "Invite team",
         }
       : {
-          href: "/agents",
+          href: "/agents?invite=1",
           title: "Grow your branch",
           description:
             "Invite agents so repayments and field work stay covered.",
