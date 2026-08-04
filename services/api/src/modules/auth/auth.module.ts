@@ -5,6 +5,7 @@ import { DatabaseModule } from '../../database/database.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { OAuthProvidersService } from './oauth-providers.service';
 
 @Module({
   imports: [
@@ -14,6 +15,6 @@ import { AuthService } from './auth.service';
     SecurityModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService],
+  providers: [AuthService, OAuthProvidersService],
 })
 export class AuthModule {}

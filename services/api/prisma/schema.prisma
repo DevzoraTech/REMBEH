@@ -22,6 +22,16 @@ enum UserStatus {
   INACTIVE
 }
 
+enum OAuthProvider {
+  GOOGLE
+  MICROSOFT
+}
+
+enum OAuthExchangeTicketKind {
+  SESSION
+  ONBOARDING
+}
+
 enum LoanStatus {
   DRAFT
   SUBMITTED
@@ -564,11 +574,44 @@ model User {
   operationReportsReturned  BranchOperationReport[]  @relation("BranchOperationReportReturnedBy")
   devicePushTokens          DevicePushToken[]
   authSessions              AuthSession[]
+  oauthAccounts             UserOAuthAccount[]
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])
   @@index([tenantId, branchId])
   @@map("users")
+}
+
+/// Linked Google / Microsoft identities for password or OAuth-only users.
+model UserOAuthAccount {
+  id              String        @id @default(uuid()) @db.Uuid
+  userId          String        @map("user_id") @db.Uuid
+  provider        OAuthProvider
+  providerSubject String        @map("provider_subject")
+  email           String
+  displayName     String?       @map("display_name")
+  rawProfile      Json?         @map("raw_profile")
+  linkedAt        DateTime      @default(now()) @map("linked_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerSubject])
+  @@index([userId])
+  @@index([email])
+  @@map("user_oauth_accounts")
+}
+
+/// Short-lived one-time tickets after OAuth callback (session or onboarding).
+model OAuthExchangeTicket {
+  id         String                  @id @default(uuid()) @db.Uuid
+  kind       OAuthExchangeTicketKind
+  payload    Json
+  expiresAt  DateTime                @map("expires_at")
+  consumedAt DateTime?               @map("consumed_at")
+  createdAt  DateTime                @default(now()) @map("created_at")
+
+  @@index([expiresAt])
+  @@map("oauth_exchange_tickets")
 }
 
 /// Persisted login sessions so managers can list / revoke agent devices.

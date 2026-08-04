@@ -2,12 +2,15 @@ import {
   BadRequestException,
   ConflictException,
   GoneException,
+  HttpException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import {
   ModuleStatus,
+  OAuthExchangeTicketKind,
+  OAuthProvider,
   OtpChannel,
   OtpChallenge,
   OtpPurpose,
@@ -26,6 +29,7 @@ import {
 } from '../../common/auth/auth-session.util';
 import { JwtTokenService } from '../../common/auth/jwt-token.service';
 import { assertUserCanAuthenticate } from '../../common/auth/user-status-access';
+import { buildWebAppUrl } from '../../common/config/web-app-url';
 import {
   getPrismaUniqueConstraintTargets,
   isPrismaUniqueConstraintError,
@@ -54,11 +58,18 @@ import {
   WorkspaceOtpVerificationResponse,
   WorkspaceRegistrationResponse,
 } from './auth.contracts';
+import { CompleteOAuthWorkspaceDto } from './dto/complete-oauth-workspace.dto';
+import { ExchangeOAuthTicketDto } from './dto/exchange-oauth-ticket.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshSessionDto } from './dto/refresh-session.dto';
 import { RegisterWorkspaceDto } from './dto/register-workspace.dto';
 import { ResendWorkspaceEmailOtpDto } from './dto/resend-workspace-email-otp.dto';
 import { VerifyWorkspaceEmailDto } from './dto/verify-workspace-email.dto';
+import {
+  NormalizedOAuthProfile,
+  OAuthIntent,
+  OAuthProvidersService,
+} from './oauth-providers.service';
 
 const OTP_TTL_MINUTES = 10;
 const OTP_MAX_ATTEMPTS = 5;
@@ -87,10 +98,18 @@ const OWNER_RESTRICTED_OPERATION_PERMISSIONS = [
   'operation.report.review',
 ];
 
+const OAUTH_TICKET_TTL_MS = 5 * 60 * 1000;
+
 type WorkspaceRegistrationEntities = {
   tenant: Tenant;
   owner: User;
   emailChallenge: OtpChallenge;
+};
+
+type AuthLoginUser = User & {
+  tenant: Tenant;
+  branch: { id: string; name: string; address: string | null } | null;
+  roles: Array<{ role: { name: string } }>;
 };
 
 @Injectable()
@@ -103,6 +122,7 @@ export class AuthService {
     private readonly configService: ConfigService,
     private readonly notificationsService: NotificationsService,
     private readonly objectStorage: ObjectStorageService,
+    private readonly oauthProviders: OAuthProvidersService,
   ) {}
 
   async registerWorkspace(
@@ -560,13 +580,6 @@ export class AuthService {
 
     assertUserCanAuthenticate(user);
 
-    const publicId = user.publicId ?? (await this.ensureUserPublicId(user.id));
-    const roleName = user.roles[0]?.role.name ?? null;
-    const profilePhotoStorageKey = user.profilePhotoStorageKey ?? null;
-    const profilePhotoUrl = profilePhotoStorageKey
-      ? await this.presignProfilePhoto(profilePhotoStorageKey)
-      : null;
-
     const deviceMeta = normalizeDeviceMeta({
       deviceId: dto.deviceId ?? requestMeta?.deviceId,
       deviceName: dto.deviceName ?? requestMeta?.deviceName,
@@ -576,37 +589,418 @@ export class AuthService {
       ipAddress: requestMeta?.ipAddress,
     });
 
+    return this.buildLoginResponse(user, deviceMeta);
+  }
+
+  getOAuthProvidersStatus() {
     return {
-      workspace: {
-        id: user.tenant.id,
-        name: user.tenant.name,
-        status: user.tenant.status,
-        currency: user.tenant.currency,
-        country: user.tenant.country,
-      },
-      user: {
-        id: user.id,
-        name: user.displayName,
-        email: user.email,
-        status: user.status,
-        roleName,
-        branchId: user.branchId,
-        publicId,
-        hasProfilePhoto: Boolean(profilePhotoStorageKey),
-        profilePhotoStorageKey,
-        profilePhotoUrl,
-      },
-      branch: user.branch
-        ? {
-            id: user.branch.id,
-            name: user.branch.name,
-            address: user.branch.address,
-          }
-        : null,
-      session: await this.buildSession(user.id, user.tenantId, {
-        device: deviceMeta,
+      google: this.oauthProviders.isProviderConfigured(OAuthProvider.GOOGLE),
+      microsoft: this.oauthProviders.isProviderConfigured(
+        OAuthProvider.MICROSOFT,
+      ),
+    };
+  }
+
+  startOAuth(input: {
+    provider: string;
+    intent?: string | null;
+    next?: string | null;
+  }) {
+    const provider = this.oauthProviders.parseProvider(input.provider);
+    const intent: OAuthIntent =
+      input.intent?.trim().toLowerCase() === 'register' ? 'register' : 'login';
+    return {
+      authorizationUrl: this.oauthProviders.buildAuthorizationUrl({
+        provider,
+        intent,
+        next: input.next,
       }),
     };
+  }
+
+  async handleOAuthCallback(input: {
+    provider: string;
+    code?: string | null;
+    state?: string | null;
+    error?: string | null;
+    errorDescription?: string | null;
+  }): Promise<string> {
+    let intent: OAuthIntent = 'login';
+    let next: string | null = null;
+
+    try {
+      if (input.error) {
+        throw new BadRequestException(
+          input.errorDescription || input.error || 'OAuth authorization failed.',
+        );
+      }
+      if (!input.code?.trim() || !input.state?.trim()) {
+        throw new BadRequestException('Missing OAuth authorization code.');
+      }
+
+      const state = this.oauthProviders.verifyState(input.state.trim());
+      intent = state.intent;
+      next = state.next;
+      const provider = this.oauthProviders.parseProvider(input.provider);
+      if (state.provider !== provider) {
+        throw new BadRequestException('OAuth provider mismatch.');
+      }
+
+      const profile = await this.oauthProviders.exchangeAuthorizationCode({
+        provider,
+        code: input.code.trim(),
+      });
+
+      if (!profile.emailVerified) {
+        throw new BadRequestException(
+          'Your provider email is not verified. Verify it with Google/Microsoft, then try again.',
+        );
+      }
+
+      const linkedUser = await this.resolveOAuthUser(profile);
+      if (linkedUser) {
+        assertUserCanAuthenticate(linkedUser);
+        const ticketId = await this.createOAuthTicket(
+          OAuthExchangeTicketKind.SESSION,
+          {
+            userId: linkedUser.id,
+            tenantId: linkedUser.tenantId,
+          },
+        );
+        return buildWebAppUrl(this.configService, '/auth/oauth/callback', {
+          ticket: ticketId,
+          ...(next ? { next } : {}),
+        });
+      }
+
+      if (intent === 'login') {
+        const ticketId = await this.createOAuthTicket(
+          OAuthExchangeTicketKind.ONBOARDING,
+          {
+            provider: profile.provider,
+            providerSubject: profile.providerSubject,
+            email: profile.email,
+            emailVerified: profile.emailVerified,
+            displayName: profile.displayName,
+            rawProfile: profile.rawProfile,
+          },
+        );
+        return buildWebAppUrl(this.configService, '/register', {
+          oauthTicket: ticketId,
+          reason: 'new_account',
+        });
+      }
+
+      const ticketId = await this.createOAuthTicket(
+        OAuthExchangeTicketKind.ONBOARDING,
+        {
+          provider: profile.provider,
+          providerSubject: profile.providerSubject,
+          email: profile.email,
+          emailVerified: profile.emailVerified,
+          displayName: profile.displayName,
+          rawProfile: profile.rawProfile,
+        },
+      );
+      return buildWebAppUrl(this.configService, '/register', {
+        oauthTicket: ticketId,
+      });
+    } catch (error) {
+      const message = this.resolveOAuthErrorMessage(error);
+      const path = intent === 'register' ? '/register' : '/login';
+      return buildWebAppUrl(this.configService, path, {
+        oauthError: message.slice(0, 280),
+      });
+    }
+  }
+
+  async exchangeOAuthTicket(
+    dto: ExchangeOAuthTicketDto,
+    requestMeta?: DeviceMeta,
+  ) {
+    const ticket = await this.prisma.oAuthExchangeTicket.findUnique({
+      where: { id: dto.ticketId },
+    });
+
+    if (!ticket || ticket.consumedAt) {
+      throw new UnauthorizedException(
+        'OAuth session expired. Sign in with Google or Microsoft again.',
+      );
+    }
+    if (ticket.expiresAt.getTime() <= Date.now()) {
+      throw new UnauthorizedException(
+        'OAuth session expired. Sign in with Google or Microsoft again.',
+      );
+    }
+
+    await this.prisma.oAuthExchangeTicket.update({
+      where: { id: ticket.id },
+      data: { consumedAt: new Date() },
+    });
+
+    if (ticket.kind === OAuthExchangeTicketKind.SESSION) {
+      const payload = ticket.payload as {
+        userId?: string;
+        tenantId?: string;
+      };
+      const userId = payload.userId?.trim() ?? '';
+      const tenantId = payload.tenantId?.trim() ?? '';
+      if (!userId || !tenantId) {
+        throw new UnauthorizedException('Invalid OAuth session ticket.');
+      }
+
+      const deviceMeta = normalizeDeviceMeta({
+        deviceId: dto.deviceId ?? requestMeta?.deviceId,
+        deviceName: dto.deviceName ?? requestMeta?.deviceName,
+        deviceType: dto.deviceType ?? requestMeta?.deviceType,
+        platform: dto.platform ?? requestMeta?.platform,
+        userAgent: requestMeta?.userAgent,
+        ipAddress: requestMeta?.ipAddress,
+      });
+
+      const user = await this.prisma.user.findFirst({
+        where: { id: userId, tenantId },
+        include: {
+          tenant: true,
+          branch: true,
+          roles: { include: { role: true } },
+        },
+      });
+      if (!user) {
+        throw new UnauthorizedException('Invalid OAuth session ticket.');
+      }
+      assertUserCanAuthenticate(user);
+      return {
+        kind: 'session' as const,
+        ...(await this.buildLoginResponse(user, deviceMeta)),
+      };
+    }
+
+    const onboarding = ticket.payload as NormalizedOAuthProfile;
+    if (!onboarding?.provider || !onboarding.providerSubject || !onboarding.email) {
+      throw new UnauthorizedException('Invalid OAuth onboarding ticket.');
+    }
+
+    return {
+      kind: 'onboarding' as const,
+      onboardingToken: this.oauthProviders.issueOnboardingToken(onboarding),
+      profile: {
+        provider: onboarding.provider,
+        email: onboarding.email,
+        displayName: onboarding.displayName,
+        emailVerified: onboarding.emailVerified,
+      },
+    };
+  }
+
+  async completeOAuthWorkspaceRegister(
+    dto: CompleteOAuthWorkspaceDto,
+    requestMeta?: DeviceMeta,
+  ) {
+    const identity = this.oauthProviders.verifyOnboardingToken(
+      dto.onboardingToken,
+    );
+    const normalizedEmail = normalizeEmailAddress(identity.email);
+    const normalizedCurrency = dto.currency.trim().toUpperCase();
+    const normalizedPhone = normalizeInternationalPhoneNumber(dto.phone);
+
+    if (!isInternationalPhoneNumber(normalizedPhone)) {
+      throw new BadRequestException(
+        'phone must be a valid international phone number.',
+      );
+    }
+
+    const existingOAuth = await this.prisma.userOAuthAccount.findUnique({
+      where: {
+        provider_providerSubject: {
+          provider: identity.provider,
+          providerSubject: identity.providerSubject,
+        },
+      },
+    });
+    if (existingOAuth) {
+      throw new ConflictException(
+        'This Google or Microsoft account is already linked. Sign in instead.',
+      );
+    }
+
+    await this.assertWorkspaceOwnerIdentityAvailable({
+      email: normalizedEmail,
+      phone: normalizedPhone,
+    });
+
+    const result = await this.prisma
+      .$transaction(async (tx) => {
+        await this.lockUserIdentity(tx, {
+          email: normalizedEmail,
+          phone: normalizedPhone,
+        });
+        await this.assertWorkspaceOwnerIdentityAvailable(
+          {
+            email: normalizedEmail,
+            phone: normalizedPhone,
+          },
+          tx,
+        );
+
+        const tenant = await tx.tenant.create({
+          data: {
+            name: dto.businessName.trim(),
+            registrationNumber: null,
+            country: dto.country.trim(),
+            currency: normalizedCurrency,
+            status: TenantStatus.ACTIVE,
+            storagePrefix: null,
+          },
+        });
+
+        const storagePrefix = `tenants/${tenant.id}/`;
+        await tx.tenant.update({
+          where: { id: tenant.id },
+          data: { storagePrefix },
+        });
+        tenant.storagePrefix = storagePrefix;
+
+        const owner = await tx.user.create({
+          data: {
+            tenantId: tenant.id,
+            email: normalizedEmail,
+            phone: normalizedPhone,
+            publicId: generateAgentPublicId(),
+            displayName: dto.ownerName.trim(),
+            passwordHash: null,
+            emailVerified: true,
+            status: UserStatus.ACTIVE,
+          },
+        });
+
+        await tx.userOAuthAccount.create({
+          data: {
+            userId: owner.id,
+            provider: identity.provider,
+            providerSubject: identity.providerSubject,
+            email: normalizedEmail,
+            displayName: identity.displayName,
+          },
+        });
+
+        const permissionRows = REMBEH_MODULES.flatMap((moduleDefinition) =>
+          moduleDefinition.permissions.map((permission) => ({
+            tenantId: tenant.id,
+            key: permission,
+            moduleKey: moduleDefinition.key,
+            description: `${moduleDefinition.name}: ${permission}`,
+          })),
+        );
+
+        await tx.permission.createMany({
+          data: permissionRows,
+          skipDuplicates: true,
+        });
+
+        const ownerRole = await tx.role.create({
+          data: {
+            tenantId: tenant.id,
+            name: 'Account Owner',
+            description: 'Full access to the account and enabled modules.',
+            isSystem: true,
+          },
+        });
+
+        const permissions = await tx.permission.findMany({
+          where: {
+            tenantId: tenant.id,
+            key: { notIn: OWNER_RESTRICTED_OPERATION_PERMISSIONS },
+          },
+          select: { id: true },
+        });
+
+        await tx.rolePermission.createMany({
+          data: permissions.map((permission) => ({
+            roleId: ownerRole.id,
+            permissionId: permission.id,
+          })),
+        });
+
+        await tx.userRole.create({
+          data: {
+            userId: owner.id,
+            roleId: ownerRole.id,
+          },
+        });
+
+        await tx.tenantModule.createMany({
+          data: DEFAULT_ENABLED_MODULES.map((moduleKey) => ({
+            tenantId: tenant.id,
+            moduleKey,
+            status: ModuleStatus.ENABLED,
+          })),
+        });
+
+        const trialStartsAt = new Date();
+        const trialEndsAt = new Date(
+          trialStartsAt.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000,
+        );
+        await tx.tenantBilling.create({
+          data: {
+            tenantId: tenant.id,
+            trialStartsAt,
+            trialEndsAt,
+          },
+        });
+
+        await tx.outboxEvent.create({
+          data: {
+            tenantId: tenant.id,
+            topic: AUTH_EVENTS.workspaceRegistrationStarted,
+            aggregateType: 'tenant',
+            aggregateId: tenant.id,
+            payload: {
+              tenantId: tenant.id,
+              ownerUserId: owner.id,
+              email: normalizedEmail,
+              oauthProvider: identity.provider,
+            },
+          },
+        });
+
+        return { tenant, owner };
+      })
+      .catch((error: unknown) => {
+        this.throwRegistrationConflictFromDatabaseError(error);
+        throw error;
+      });
+
+    try {
+      await this.objectStorage.provisionTenantPrefix({
+        tenantId: result.tenant.id,
+        name: result.tenant.name,
+        country: result.tenant.country,
+        currency: result.tenant.currency,
+      });
+    } catch {
+      // Registration must succeed even if object storage is temporarily unavailable.
+    }
+
+    const user = await this.prisma.user.findUniqueOrThrow({
+      where: { id: result.owner.id },
+      include: {
+        tenant: true,
+        branch: true,
+        roles: { include: { role: true } },
+      },
+    });
+
+    const deviceMeta = normalizeDeviceMeta({
+      userAgent: requestMeta?.userAgent,
+      ipAddress: requestMeta?.ipAddress,
+      platform: requestMeta?.platform ?? 'WEB',
+      deviceId: requestMeta?.deviceId,
+      deviceName: requestMeta?.deviceName,
+      deviceType: requestMeta?.deviceType,
+    });
+
+    return this.buildLoginResponse(user, deviceMeta);
   }
 
   async getMe(userId: string, tenantId: string) {
@@ -922,6 +1316,166 @@ export class AuthService {
     }
 
     return value;
+  }
+
+  private resolveOAuthErrorMessage(error: unknown): string {
+    if (error instanceof HttpException) {
+      const response = error.getResponse();
+      if (typeof response === 'string') {
+        return response;
+      }
+      if (
+        response &&
+        typeof response === 'object' &&
+        'message' in response
+      ) {
+        const message = (response as { message?: string | string[] }).message;
+        if (Array.isArray(message)) {
+          return message.join(' ');
+        }
+        if (typeof message === 'string' && message.trim()) {
+          return message;
+        }
+      }
+      return error.message;
+    }
+    if (error instanceof Error && error.message.trim()) {
+      return error.message;
+    }
+    return 'Google / Microsoft sign-in failed.';
+  }
+
+  private async resolveOAuthUser(
+    profile: NormalizedOAuthProfile,
+  ): Promise<AuthLoginUser | null> {
+    const existingLink = await this.prisma.userOAuthAccount.findUnique({
+      where: {
+        provider_providerSubject: {
+          provider: profile.provider,
+          providerSubject: profile.providerSubject,
+        },
+      },
+      include: {
+        user: {
+          include: {
+            tenant: true,
+            branch: true,
+            roles: { include: { role: true } },
+          },
+        },
+      },
+    });
+
+    if (existingLink) {
+      await this.prisma.userOAuthAccount.update({
+        where: { id: existingLink.id },
+        data: {
+          email: profile.email,
+          displayName: profile.displayName,
+          rawProfile: profile.rawProfile as Prisma.InputJsonValue,
+        },
+      });
+      return existingLink.user;
+    }
+
+    const emailUser = await this.prisma.user.findUnique({
+      where: { email: profile.email },
+      include: {
+        tenant: true,
+        branch: true,
+        roles: { include: { role: true } },
+      },
+    });
+
+    if (!emailUser) {
+      return null;
+    }
+
+    if (emailUser.tenant.status === TenantStatus.PENDING_VERIFICATION) {
+      throw new ConflictException(
+        'An account registration is already pending for this email. Verify that registration before signing in with Google or Microsoft.',
+      );
+    }
+
+    // Same verified email as an existing password (or other) account → link provider.
+    await this.prisma.userOAuthAccount.create({
+      data: {
+        userId: emailUser.id,
+        provider: profile.provider,
+        providerSubject: profile.providerSubject,
+        email: profile.email,
+        displayName: profile.displayName,
+        rawProfile: profile.rawProfile as Prisma.InputJsonValue,
+      },
+    });
+
+    if (!emailUser.emailVerified) {
+      await this.prisma.user.update({
+        where: { id: emailUser.id },
+        data: { emailVerified: true },
+      });
+      emailUser.emailVerified = true;
+    }
+
+    return emailUser;
+  }
+
+  private async createOAuthTicket(
+    kind: OAuthExchangeTicketKind,
+    payload: unknown,
+  ) {
+    const ticket = await this.prisma.oAuthExchangeTicket.create({
+      data: {
+        kind,
+        payload: payload as Prisma.InputJsonValue,
+        expiresAt: new Date(Date.now() + OAUTH_TICKET_TTL_MS),
+      },
+    });
+    return ticket.id;
+  }
+
+  private async buildLoginResponse(
+    user: AuthLoginUser,
+    deviceMeta?: DeviceMeta | null,
+  ) {
+    const publicId = user.publicId ?? (await this.ensureUserPublicId(user.id));
+    const roleName = user.roles[0]?.role.name ?? null;
+    const profilePhotoStorageKey = user.profilePhotoStorageKey ?? null;
+    const profilePhotoUrl = profilePhotoStorageKey
+      ? await this.presignProfilePhoto(profilePhotoStorageKey)
+      : null;
+
+    return {
+      workspace: {
+        id: user.tenant.id,
+        name: user.tenant.name,
+        status: user.tenant.status,
+        currency: user.tenant.currency,
+        country: user.tenant.country,
+      },
+      user: {
+        id: user.id,
+        name: user.displayName,
+        email: user.email,
+        status: user.status,
+        roleName,
+        branchId: user.branchId,
+        publicId,
+        hasProfilePhoto: Boolean(profilePhotoStorageKey),
+        profilePhotoStorageKey,
+        profilePhotoUrl,
+      },
+      branch: user.branch
+        ? {
+            id: user.branch.id,
+            name: user.branch.name,
+            address: user.branch.address,
+          }
+        : null,
+      session: await this.buildSession(user.id, user.tenantId, {
+        device: deviceMeta ?? undefined,
+      }),
+    };
   }
 
   private async assertWorkspaceOwnerIdentityAvailable(

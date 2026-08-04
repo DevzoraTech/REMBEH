@@ -2,8 +2,8 @@
 
 import { ArrowRight, Loader2, Mail, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import {
   AuthCardHeader,
   AuthCardSkeleton,
@@ -19,6 +19,7 @@ import {
   SelectField,
   TextField,
 } from "../../../components/auth/form-controls";
+import { SocialOAuthButtons } from "../../../components/auth/social-oauth-buttons";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../../lib/api";
 import {
   RembehSession,
@@ -88,9 +89,35 @@ type VerificationResponse = {
   message?: string | string[];
 };
 
+type OAuthOnboardingExchange = {
+  kind: "onboarding";
+  onboardingToken: string;
+  profile: {
+    provider: "GOOGLE" | "MICROSOFT";
+    email: string;
+    displayName: string | null;
+    emailVerified: boolean;
+  };
+  message?: string | string[];
+};
+
+type OAuthLoginResponse = {
+  workspace: RembehWorkspace;
+  user: RembehUser;
+  session: RembehSession;
+  message?: string | string[];
+};
+
 type RegisterStep = "business" | "owner" | "account" | "verify";
 
-const STEPS = ["Business", "Owner", "Account", "Verify"] as const;
+const EMAIL_STEPS = ["Business", "Owner", "Account", "Verify"] as const;
+const OAUTH_STEPS = ["Business", "Owner"] as const;
+const OAUTH_ONBOARDING_STORAGE_KEY = "rembeh.oauth.onboarding";
+
+type StoredOauthOnboarding = {
+  onboardingToken: string;
+  profile: OAuthOnboardingExchange["profile"];
+};
 
 const COUNTRY_OPTIONS = PHONE_COUNTRIES.map((country) => ({
   value: country.name,
@@ -98,7 +125,16 @@ const COUNTRY_OPTIONS = PHONE_COUNTRIES.map((country) => ({
 }));
 
 export default function RegisterPage() {
+  return (
+    <Suspense fallback={<AuthCardSkeleton />}>
+      <RegisterForm />
+    </Suspense>
+  );
+}
+
+function RegisterForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [step, setStep] = useState<RegisterStep>("business");
   const [formData, setFormData] = useState({
     businessName: "",
@@ -114,11 +150,21 @@ export default function RegisterPage() {
   const [registration, setRegistration] = useState<RegistrationResponse | null>(
     null,
   );
+  const [oauthOnboardingToken, setOauthOnboardingToken] = useState<string | null>(
+    null,
+  );
+  const [oauthProfile, setOauthProfile] = useState<
+    OAuthOnboardingExchange["profile"] | null
+  >(null);
   const [resendSeconds, setResendSeconds] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isResending, setIsResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [loadingOauthTicket, setLoadingOauthTicket] = useState(false);
+
+  const isOauthSignup = Boolean(oauthOnboardingToken && oauthProfile);
+  const stepLabels = isOauthSignup ? OAUTH_STEPS : EMAIL_STEPS;
 
   const expiresAt = useMemo(() => {
     if (!registration?.emailChallenge.expiresAt) {
@@ -140,11 +186,106 @@ export default function RegisterPage() {
         return;
       }
 
+      const oauthError = searchParams.get("oauthError");
+      if (oauthError?.trim()) {
+        setError(oauthError.trim());
+      }
+
+      if (!searchParams.get("oauthTicket")) {
+        try {
+          const raw = window.sessionStorage.getItem(OAUTH_ONBOARDING_STORAGE_KEY);
+          if (raw) {
+            const stored = JSON.parse(raw) as StoredOauthOnboarding;
+            if (stored?.onboardingToken && stored.profile?.email) {
+              setOauthOnboardingToken(stored.onboardingToken);
+              setOauthProfile(stored.profile);
+              setFormData((current) => ({
+                ...current,
+                email: stored.profile.email,
+                ownerName:
+                  stored.profile.displayName?.trim() || current.ownerName,
+              }));
+            }
+          }
+        } catch {
+          // ignore storage errors
+        }
+      }
+
       setCheckingSession(false);
     }, 0);
 
     return () => window.clearTimeout(boot);
-  }, [router]);
+  }, [router, searchParams]);
+
+  useEffect(() => {
+    const ticket = searchParams.get("oauthTicket")?.trim();
+    if (!ticket || checkingSession) {
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingOauthTicket(true);
+    setError(null);
+
+    (async () => {
+      try {
+        const response = await fetch(`${apiBaseUrl}/auth/oauth/exchange`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ticketId: ticket }),
+        });
+        const payload = await readApiJson<OAuthOnboardingExchange>(response);
+        if (!response.ok) {
+          throw new Error(formatApiError(payload.message));
+        }
+        if (payload.kind !== "onboarding" || !payload.onboardingToken) {
+          throw new Error("Unexpected OAuth response. Please try again.");
+        }
+        if (cancelled) return;
+
+        setOauthOnboardingToken(payload.onboardingToken);
+        setOauthProfile(payload.profile);
+        setFormData((current) => ({
+          ...current,
+          email: payload.profile.email,
+          ownerName: payload.profile.displayName?.trim() || current.ownerName,
+        }));
+        try {
+          window.sessionStorage.setItem(
+            OAUTH_ONBOARDING_STORAGE_KEY,
+            JSON.stringify({
+              onboardingToken: payload.onboardingToken,
+              profile: payload.profile,
+            } satisfies StoredOauthOnboarding),
+          );
+        } catch {
+          // ignore
+        }
+        if (searchParams.get("reason") === "new_account") {
+          setError(
+            "No REMBEH account found for that email. Finish organisation setup to create one.",
+          );
+        }
+        router.replace("/register");
+      } catch (caughtError) {
+        if (cancelled) return;
+        setError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Google / Microsoft sign-up failed.",
+        );
+      } finally {
+        if (!cancelled) {
+          setLoadingOauthTicket(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [checkingSession, router, searchParams]);
 
   useEffect(() => {
     if (!registration?.emailChallenge.resendAvailableAt) {
@@ -200,7 +341,66 @@ export default function RegisterPage() {
       setError("Enter a valid phone number.");
       return;
     }
+    if (isOauthSignup) {
+      void completeOauthRegister(phone);
+      return;
+    }
     setStep("account");
+  }
+
+  async function completeOauthRegister(phone: string) {
+    if (!oauthOnboardingToken) {
+      setError("OAuth session expired. Continue with Google or Microsoft again.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/auth/workspace/complete-oauth-register`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            onboardingToken: oauthOnboardingToken,
+            businessName: formData.businessName.trim(),
+            country: formData.country.trim(),
+            currency: formData.currency.trim().toUpperCase(),
+            ownerName: formData.ownerName.trim(),
+            phone,
+          }),
+        },
+      );
+      const payload = await readApiJson<OAuthLoginResponse>(response);
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+
+      persistAuthState({
+        session: payload.session,
+        workspace: payload.workspace,
+        user: {
+          ...payload.user,
+          roleName: payload.user.roleName ?? "Account Owner",
+        },
+      });
+      try {
+        window.sessionStorage.removeItem(OAUTH_ONBOARDING_STORAGE_KEY);
+      } catch {
+        // ignore
+      }
+      router.replace("/branches?setup=1&create=1");
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Account registration failed.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   async function handleRegister(event: FormEvent<HTMLFormElement>) {
@@ -360,14 +560,14 @@ export default function RegisterPage() {
     }
   }
 
-  if (checkingSession) {
+  if (checkingSession || loadingOauthTicket) {
     return <AuthCardSkeleton />;
   }
 
   if (step === "verify" && registration) {
     return (
       <div key="verify">
-        <AuthStepBar steps={[...STEPS]} current={3} />
+        <AuthStepBar steps={[...EMAIL_STEPS]} current={3} />
         <AuthCardHeader
           title="Verify email"
           subtitle={`Code sent to ${registration.emailChallenge.destination}${expiresAt ? ` · ${expiresAt}` : ""}`}
@@ -432,7 +632,7 @@ export default function RegisterPage() {
   if (step === "account") {
     return (
       <div key="account">
-        <AuthStepBar steps={[...STEPS]} current={2} />
+        <AuthStepBar steps={[...EMAIL_STEPS]} current={2} />
         <AuthCardHeader
           title="Create login"
           subtitle="Email and password for your owner account"
@@ -495,16 +695,32 @@ export default function RegisterPage() {
   if (step === "owner") {
     return (
       <div key="owner">
-        <AuthStepBar steps={[...STEPS]} current={1} />
+        <AuthStepBar steps={[...stepLabels]} current={1} />
         <AuthCardHeader
           title="Owner details"
-          subtitle="Who will manage this institution"
+          subtitle={
+            isOauthSignup
+              ? "Confirm who will manage this institution"
+              : "Who will manage this institution"
+          }
         />
 
         <form
           className="mt-3.5 space-y-2.5 text-left"
           onSubmit={goNextFromOwner}
         >
+          {oauthProfile ? (
+            <div className="rounded-xl border border-[#e2e8ee] bg-[#f8fafb] px-2.5 py-2 text-[11px] text-slate-600">
+              Signing up with{" "}
+              <span className="font-semibold text-[var(--midnight-navy)]">
+                {oauthProfile.provider === "GOOGLE" ? "Google" : "Microsoft"}
+              </span>
+              {" · "}
+              <span className="font-medium text-[var(--midnight-navy)]">
+                {oauthProfile.email}
+              </span>
+            </div>
+          ) : null}
           <TextField
             compact
             label="Full name"
@@ -545,13 +761,23 @@ export default function RegisterPage() {
                 setError(null);
                 setStep("business");
               }}
+              disabled={isSubmitting}
             >
               Back
             </AuthGhostButton>
             <div className="flex-[1.6]">
-              <AuthPrimaryButton>
-                Continue
-                <ArrowRight className="size-3.5 transition group-hover:translate-x-0.5" />
+              <AuthPrimaryButton loading={isSubmitting}>
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="size-3.5 animate-spin" />
+                    Creating…
+                  </>
+                ) : (
+                  <>
+                    {isOauthSignup ? "Create account" : "Continue"}
+                    <ArrowRight className="size-3.5 transition group-hover:translate-x-0.5" />
+                  </>
+                )}
               </AuthPrimaryButton>
             </div>
           </div>
@@ -562,16 +788,28 @@ export default function RegisterPage() {
 
   return (
     <div key="business">
-      <AuthStepBar steps={[...STEPS]} current={0} />
+      <AuthStepBar steps={[...stepLabels]} current={0} />
       <AuthCardHeader
         title="Create account"
-        subtitle="Tell us about your lending institution"
+        subtitle={
+          isOauthSignup
+            ? "Tell us about your lending institution"
+            : "Tell us about your lending institution"
+        }
       />
 
       <form
         className="mt-3.5 space-y-2.5 text-left"
         onSubmit={goNextFromBusiness}
       >
+        {oauthProfile ? (
+          <div className="rounded-xl border border-[#e2e8ee] bg-[#f8fafb] px-2.5 py-2 text-[11px] text-slate-600">
+            Continue as{" "}
+            <span className="font-medium text-[var(--midnight-navy)]">
+              {oauthProfile.email}
+            </span>
+          </div>
+        ) : null}
         <TextField
           compact
           label="Business name"
@@ -611,6 +849,20 @@ export default function RegisterPage() {
           <ArrowRight className="size-3.5 transition group-hover:translate-x-0.5" />
         </AuthPrimaryButton>
       </form>
+
+      {!isOauthSignup ? (
+        <>
+          <div className="relative mt-3 py-0.5 text-center">
+            <div className="absolute inset-x-0 top-1/2 h-px bg-[#e8eef2]" />
+            <span className="relative bg-white px-2 text-[10px] text-slate-400">
+              or sign up with
+            </span>
+          </div>
+          <div className="mt-2">
+            <SocialOAuthButtons intent="register" onError={setError} />
+          </div>
+        </>
+      ) : null}
 
       <p className="mt-3 text-center text-[11px] text-slate-500">
         Already registered?{" "}

@@ -148,6 +148,24 @@ Set on the server `.env` (never in Git):
 
 Full SPF/DKIM/DMARC guidance: [`email-deliverability.md`](./email-deliverability.md).
 
+### Google / Microsoft OAuth
+
+Set on the server `.env` (never in Git). Redirect URIs must match the IdP console exactly:
+
+| Variable | Production value |
+|----------|------------------|
+| `API_PUBLIC_URL` | `https://rembeh-api.antikra.com` |
+| `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` | Google Cloud OAuth web client |
+| `MICROSOFT_OAUTH_CLIENT_ID` / `MICROSOFT_OAUTH_CLIENT_SECRET` | Azure app registration |
+| `MICROSOFT_OAUTH_TENANT` | `common` (or a directory GUID) |
+
+Redirect URIs:
+
+- `https://rembeh-api.antikra.com/api/v1/auth/oauth/google/callback`
+- `https://rembeh-api.antikra.com/api/v1/auth/oauth/microsoft/callback`
+
+Same-email accounts that already signed up with password are linked automatically when they use Google/Microsoft with a verified email. New OAuth users complete business + owner details on `/register` (no password / email OTP).
+
 ### How auto-deploy works
 
 1. Push lands on `main` and matches a workflow path filter.
