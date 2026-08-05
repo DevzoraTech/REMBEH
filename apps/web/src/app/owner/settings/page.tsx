@@ -14,6 +14,7 @@ import {
   FileText,
   HandCoins,
   Loader2,
+  MessageSquareText,
   RefreshCw,
   Search,
   ShieldAlert,
@@ -25,6 +26,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "../../../components/app/app-shell";
 import { AppBootSkeleton } from "../../../components/app/skeleton";
 import { LoanProductsManager } from "../../../components/settings/loan-products-manager";
+import { SmsNotificationSettingsPanel } from "../../../components/settings/sms-notification-settings";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../../lib/api";
 import { ensureWebPushRegistration } from "../../../lib/push-notifications";
 import {
@@ -34,7 +36,7 @@ import {
 } from "../owner-common";
 import { OwnerHeader } from "../owner-header";
 
-type SettingsSection = "account" | "loan-products" | "notifications";
+type SettingsSection = "account" | "loan-products" | "sms" | "notifications";
 
 const SECTIONS: Array<{
   id: SettingsSection;
@@ -53,6 +55,12 @@ const SECTIONS: Array<{
     label: "Loan types",
     hint: "Rates, terms, fees, and fines",
     icon: FileText,
+  },
+  {
+    id: "sms",
+    label: "SMS",
+    hint: "Borrower SMS notifications",
+    icon: MessageSquareText,
   },
   {
     id: "notifications",
@@ -408,6 +416,22 @@ function OwnerSettingsContent() {
                   appearance="owner"
                   onCountChange={setProductCount}
                 />
+              </SettingsCard>
+            ) : null}
+
+            {section === "sms" && session ? (
+              <SettingsCard title="SMS" description={activeSection.hint} bare>
+                <div className="px-1 py-1 sm:px-2 sm:py-2">
+                  <SmsNotificationSettingsPanel
+                    session={session}
+                    canEdit={
+                      Boolean(
+                        session.permissions.includes("branch.create") ||
+                          session.permissions.includes("loan.product.manage"),
+                      )
+                    }
+                  />
+                </div>
               </SettingsCard>
             ) : null}
 

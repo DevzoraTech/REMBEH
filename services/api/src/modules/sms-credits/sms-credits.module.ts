@@ -5,6 +5,7 @@ import { BillingModule } from '../billing/billing.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { SmsCreditsController } from './sms-credits.controller';
 import { SmsCreditsService } from './sms-credits.service';
+import { SmsNotificationSettingsService } from './sms-notification-settings.service';
 
 @Module({
   imports: [
@@ -14,7 +15,7 @@ import { SmsCreditsService } from './sms-credits.service';
     forwardRef(() => BillingModule),
   ],
   controllers: [SmsCreditsController],
-  providers: [SmsCreditsService],
-  exports: [SmsCreditsService],
+  providers: [SmsCreditsService, SmsNotificationSettingsService],
+  exports: [SmsCreditsService, SmsNotificationSettingsService],
 })
 export class SmsCreditsModule {}

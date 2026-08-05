@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -11,12 +12,17 @@ import {
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
+import { UpdateSmsNotificationSettingsDto } from './dto/update-sms-notification-settings.dto';
 import { SmsCreditsService } from './sms-credits.service';
+import { SmsNotificationSettingsService } from './sms-notification-settings.service';
 
 @Controller('sms-credits')
 @UseGuards(JwtAuthGuard)
 export class SmsCreditsController {
-  constructor(private readonly smsCreditsService: SmsCreditsService) {}
+  constructor(
+    private readonly smsCreditsService: SmsCreditsService,
+    private readonly smsNotificationSettings: SmsNotificationSettingsService,
+  ) {}
 
   /** Active catalogue — server prices only. */
   @Get('bundles')
@@ -45,6 +51,19 @@ export class SmsCreditsController {
     @Query('branchId') branchId?: string,
   ) {
     return this.smsCreditsService.listLedger(user, branchId);
+  }
+
+  @Get('notification-settings')
+  getNotificationSettings(@CurrentUser() user: AuthenticatedUser) {
+    return this.smsNotificationSettings.getSettings(user);
+  }
+
+  @Patch('notification-settings')
+  updateNotificationSettings(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateSmsNotificationSettingsDto,
+  ) {
+    return this.smsNotificationSettings.updateSettings(user, dto);
   }
 
   /** Body: { bundleId, branchId? } — never price/units from client. */

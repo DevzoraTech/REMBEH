@@ -363,6 +363,7 @@ model Tenant {
   loanReminderItems        LoanReminderItem[]
   cashShortages            CashShortage[]
   cashShortagePayments     CashShortagePayment[]
+  smsNotificationSettings  TenantSmsNotificationSettings?
 
   @@map("tenants")
 }
@@ -412,6 +413,27 @@ model Branch {
   @@unique([tenantId, name])
   @@index([tenantId, name])
   @@map("branches")
+}
+
+/// Tenant-wide toggles for automated borrower SMS notifications.
+model TenantSmsNotificationSettings {
+  id                           String   @id @default(uuid()) @db.Uuid
+  tenantId                     String   @unique @map("tenant_id") @db.Uuid
+  /// Master switch — when false, no borrower notification SMS are sent.
+  enabled                      Boolean  @default(true)
+  loanRecordedEnabled          Boolean  @default(true) @map("loan_recorded_enabled")
+  paymentConfirmationEnabled   Boolean  @default(true) @map("payment_confirmation_enabled")
+  /// Reminder SMS when payment is due / overdue by at most 3 days.
+  paymentReminderEnabled       Boolean  @default(true) @map("payment_reminder_enabled")
+  /// Overdue notice when payment is overdue by 4+ days.
+  overdueNoticeEnabled         Boolean  @default(true) @map("overdue_notice_enabled")
+  updatedByUserId              String?  @map("updated_by_user_id") @db.Uuid
+  createdAt                    DateTime @default(now()) @map("created_at")
+  updatedAt                    DateTime @updatedAt @map("updated_at")
+  tenant                       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  updatedBy                    User?    @relation("SmsNotificationSettingsUpdatedBy", fields: [updatedByUserId], references: [id], onDelete: SetNull)
+
+  @@map("tenant_sms_notification_settings")
 }
 
 /// Manager-configured loan type template (source of truth for agent capture).
@@ -624,6 +646,7 @@ model User {
   cashShortagesResponsible  CashShortage[]           @relation("CashShortageResponsible")
   cashShortagesCreated      CashShortage[]           @relation("CashShortageCreatedBy")
   cashShortagePayments      CashShortagePayment[]    @relation("CashShortagePaymentRecordedBy")
+  smsNotificationSettingsUpdated TenantSmsNotificationSettings[] @relation("SmsNotificationSettingsUpdatedBy")
 
   @@unique([tenantId, email])
   @@unique([tenantId, phone])

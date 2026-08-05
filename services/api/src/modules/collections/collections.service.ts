@@ -16,6 +16,9 @@ import {
 } from '../loan-products/loan-pricing';
 import { REALTIME_EVENTS } from '../realtime/realtime.events';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { SmsCreditsService } from '../sms-credits/sms-credits.service';
+import { SmsNotificationSettingsService } from '../sms-credits/sms-notification-settings.service';
+import { buildPaymentConfirmationSms } from '../sms-credits/sms-notification-templates';
 import { ObjectStorageService } from '../storage/object-storage.service';
 import {
   allocateRepayment,
@@ -49,6 +52,8 @@ export class CollectionsService {
     private readonly prisma: PrismaService,
     private readonly objectStorage: ObjectStorageService,
     private readonly billingService: BillingService,
+    private readonly smsCreditsService: SmsCreditsService,
+    private readonly smsNotificationSettings: SmsNotificationSettingsService,
   ) {}
 
   async getSummary(
@@ -738,8 +743,66 @@ export class CollectionsService {
       agentPhotoUrl: item.agentPhotoUrl,
     });
 
-    // Payment confirmation SMS is manual-only (not auto-sent on record).
+    void this.sendPaymentConfirmationSms({
+      tenantId: user.tenantId!,
+      branchId: loan.branchId,
+      repaymentId: item.id,
+      phone: item.phone,
+      fullName: item.clientName,
+      amount,
+      balance: detail.outstanding,
+    });
+
     return { repayment: item, detail };
+  }
+
+  private async sendPaymentConfirmationSms(input: {
+    tenantId: string;
+    branchId: string;
+    repaymentId: string;
+    phone: string;
+    fullName: string;
+    amount: number;
+    balance: number;
+  }) {
+    try {
+      const phone = input.phone?.trim();
+      if (!phone) return;
+      const allowed = await this.smsNotificationSettings.isKindEnabled(
+        input.tenantId,
+        'payment_confirmation',
+      );
+      if (!allowed) return;
+      const supportPhone =
+        await this.smsNotificationSettings.resolveSupportPhone(input.branchId);
+      const body = buildPaymentConfirmationSms({
+        fullName: input.fullName,
+        amount: input.amount,
+        balance: input.balance,
+        supportPhone,
+      });
+      const result = await this.smsCreditsService.sendBranchSms({
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        destination: phone,
+        body,
+        purpose: 'payment_confirmation',
+        triggerSource: 'repayment_recorded',
+        triggerReferenceId: input.repaymentId,
+        idempotencyKey: `payment_confirmation_${input.repaymentId}`,
+      });
+      if (!result.sent) {
+        this.logger.log(
+          `Payment confirmation SMS skipped for ${input.repaymentId}: ${result.reason ?? 'skipped'}`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Payment confirmation SMS failed for ${input.repaymentId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   private scope(user: AuthenticatedUser) {

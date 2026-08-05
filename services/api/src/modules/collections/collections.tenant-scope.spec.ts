@@ -39,6 +39,8 @@ describe('collections tenant scope', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
+      {} as never,
     );
 
     await expect(
@@ -64,6 +66,8 @@ describe('collections tenant scope', () => {
     };
     const service = new CollectionsService(
       repository as never,
+      {} as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,

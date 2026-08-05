@@ -85,12 +85,23 @@ export class CashShortagesService {
           : {}),
       },
       include: {
+        branch: {
+          select: { id: true, name: true },
+        },
         responsibleUser: {
           select: { id: true, displayName: true, publicId: true },
         },
+        createdBy: {
+          select: { id: true, displayName: true },
+        },
         payments: {
           orderBy: { paidAt: 'desc' },
-          take: 20,
+          take: 100,
+          include: {
+            recordedBy: {
+              select: { id: true, displayName: true },
+            },
+          },
         },
       },
       orderBy: [{ status: 'asc' }, { operationDate: 'desc' }],
@@ -98,28 +109,112 @@ export class CashShortagesService {
     });
 
     return {
-      shortages: rows.map((row) => ({
-        id: row.id,
-        branchId: row.branchId,
-        responsibleUserId: row.responsibleUserId,
-        responsibleName: row.responsibleUser.displayName,
-        responsiblePublicId: row.responsibleUser.publicId,
-        sourceType: row.sourceType,
-        sourceId: row.sourceId,
-        operationDate: row.operationDate.toISOString().slice(0, 10),
-        amountOriginal: Number(row.amountOriginal),
-        amountOutstanding: Number(row.amountOutstanding),
-        status: row.status,
-        notes: row.notes,
-        createdAt: row.createdAt.toISOString(),
-        clearedAt: row.clearedAt?.toISOString() ?? null,
-        payments: row.payments.map((payment) => ({
-          id: payment.id,
-          amount: Number(payment.amount),
-          method: payment.method,
-          notes: payment.notes,
-          paidAt: payment.paidAt.toISOString(),
-        })),
+      shortages: rows.map((row) => this.toContract(row)),
+      summary: {
+        openCount: rows.filter((row) => row.status !== CashShortageStatus.CLEARED)
+          .length,
+        outstandingTotal: rows
+          .filter((row) => row.status !== CashShortageStatus.CLEARED)
+          .reduce((sum, row) => sum + Number(row.amountOutstanding), 0),
+        clearedCount: rows.filter(
+          (row) => row.status === CashShortageStatus.CLEARED,
+        ).length,
+      },
+    };
+  }
+
+  async getOne(user: AuthenticatedUser, shortageId: string) {
+    this.assertCanRead(user);
+    const row = await this.prisma.cashShortage.findFirst({
+      where: {
+        id: shortageId,
+        tenantId: user.tenantId!,
+        ...(!user.permissions.includes(BRANCH_PERMISSIONS.create) &&
+        user.branchId
+          ? { branchId: user.branchId }
+          : {}),
+      },
+      include: {
+        branch: {
+          select: { id: true, name: true },
+        },
+        responsibleUser: {
+          select: { id: true, displayName: true, publicId: true },
+        },
+        createdBy: {
+          select: { id: true, displayName: true },
+        },
+        payments: {
+          orderBy: { paidAt: 'desc' },
+          take: 100,
+          include: {
+            recordedBy: {
+              select: { id: true, displayName: true },
+            },
+          },
+        },
+      },
+    });
+    if (!row) throw new NotFoundException('Shortage was not found.');
+    return { shortage: this.toContract(row) };
+  }
+
+  private toContract(row: {
+    id: string;
+    branchId: string;
+    responsibleUserId: string;
+    sourceType: CashShortageSource;
+    sourceId: string | null;
+    operationDate: Date;
+    amountOriginal: Prisma.Decimal;
+    amountOutstanding: Prisma.Decimal;
+    status: CashShortageStatus;
+    notes: string | null;
+    createdAt: Date;
+    clearedAt: Date | null;
+    branch: { id: string; name: string };
+    responsibleUser: {
+      id: string;
+      displayName: string;
+      publicId: string | null;
+    };
+    createdBy: { id: string; displayName: string };
+    payments: Array<{
+      id: string;
+      amount: Prisma.Decimal;
+      method: CashShortagePaymentMethod;
+      notes: string | null;
+      paidAt: Date;
+      recordedBy: { id: string; displayName: string };
+    }>;
+  }) {
+    return {
+      id: row.id,
+      branchId: row.branchId,
+      branchName: row.branch.name,
+      responsibleUserId: row.responsibleUserId,
+      responsibleName: row.responsibleUser.displayName,
+      responsiblePublicId: row.responsibleUser.publicId,
+      createdByName: row.createdBy.displayName,
+      sourceType: row.sourceType,
+      sourceId: row.sourceId,
+      operationDate: row.operationDate.toISOString().slice(0, 10),
+      amountOriginal: Number(row.amountOriginal),
+      amountOutstanding: Number(row.amountOutstanding),
+      amountPaid: Math.round(
+        (Number(row.amountOriginal) - Number(row.amountOutstanding)) * 100,
+      ) / 100,
+      status: row.status,
+      notes: row.notes,
+      createdAt: row.createdAt.toISOString(),
+      clearedAt: row.clearedAt?.toISOString() ?? null,
+      payments: row.payments.map((payment) => ({
+        id: payment.id,
+        amount: Number(payment.amount),
+        method: payment.method,
+        notes: payment.notes,
+        paidAt: payment.paidAt.toISOString(),
+        recordedByName: payment.recordedBy.displayName,
       })),
     };
   }
@@ -180,7 +275,7 @@ export class CashShortagesService {
       });
     });
 
-    return this.listForScope(user, { userId: shortage.responsibleUserId });
+    return this.getOne(user, shortage.id);
   }
 
   async outstandingForUsers(input: {

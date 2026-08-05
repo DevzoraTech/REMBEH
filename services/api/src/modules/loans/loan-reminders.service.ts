@@ -23,6 +23,11 @@ import {
   resolveBaseRepayable,
 } from '../loan-products/loan-pricing';
 import { SmsCreditsService } from '../sms-credits/sms-credits.service';
+import { SmsNotificationSettingsService } from '../sms-credits/sms-notification-settings.service';
+import {
+  buildOverdueNoticeSms,
+  buildPaymentReminderSms,
+} from '../sms-credits/sms-notification-templates';
 import {
   LoanReminderFilter,
 } from './dto/loan-reminders.dto';
@@ -49,6 +54,7 @@ export class LoanRemindersService {
     private readonly prisma: PrismaService,
     private readonly loansRepository: LoansRepository,
     private readonly smsCreditsService: SmsCreditsService,
+    private readonly smsNotificationSettings: SmsNotificationSettingsService,
   ) {}
 
   async enqueueSingle(
@@ -526,12 +532,32 @@ export class LoanRemindersService {
     }
 
     const metrics = this.loanReminderMetrics(item.loan);
+    const kind =
+      metrics.overdueDays >= 4 ? 'overdue_notice' : 'payment_reminder';
+    const allowed = await this.smsNotificationSettings.isKindEnabled(
+      item.tenantId,
+      kind,
+    );
+    if (!allowed) {
+      await this.prisma.loanReminderItem.update({
+        where: { id: item.id },
+        data: {
+          status: LoanReminderItemStatus.SKIPPED_NO_PHONE,
+          failureReason: 'sms_setting_disabled',
+        },
+      });
+      return;
+    }
+
+    const supportPhone = await this.smsNotificationSettings.resolveSupportPhone(
+      item.branchId,
+    );
     const body = this.buildReminderBody({
       borrowerName: item.loan.customer.fullName,
       balance: metrics.balance,
       overdueDays: metrics.overdueDays,
       nextDueDate: metrics.nextDueDate,
-      branchName: item.loan.branch.name,
+      supportPhone,
     });
 
     const result = await this.smsCreditsService.sendBranchSms({
@@ -876,14 +902,28 @@ export class LoanRemindersService {
     balance: number;
     overdueDays: number;
     nextDueDate: string;
-    branchName: string;
+    supportPhone: string;
   }) {
-    const amount = `UGX ${Math.round(input.balance).toLocaleString('en-UG')}`;
-    const duePart =
-      input.overdueDays >= 1
-        ? `${input.overdueDays} day(s) overdue`
-        : `due ${input.nextDueDate}`;
-    return `REMBEH: Reminder for ${input.borrowerName}. Loan balance ${amount}. ${duePart}. Please repay. - ${input.branchName}`;
+    if (input.overdueDays >= 4) {
+      return buildOverdueNoticeSms({
+        fullName: input.borrowerName,
+        amount: input.balance,
+        days: input.overdueDays,
+        supportPhone: input.supportPhone,
+      });
+    }
+    const days =
+      input.overdueDays > 0
+        ? input.overdueDays
+        : input.nextDueDate.toLowerCase().includes('today')
+          ? 0
+          : 1;
+    return buildPaymentReminderSms({
+      fullName: input.borrowerName,
+      balance: input.balance,
+      days,
+      supportPhone: input.supportPhone,
+    });
   }
 
   private async resolveReminderIdempotencyKey(input: {

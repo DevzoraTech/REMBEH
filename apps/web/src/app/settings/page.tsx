@@ -25,6 +25,7 @@ import {
   TextField,
 } from "../../components/auth/form-controls";
 import { SettingsModal } from "../../components/settings/settings-modal";
+import { SmsNotificationSettingsPanel } from "../../components/settings/sms-notification-settings";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import {
   RembehBranch,
@@ -37,7 +38,7 @@ import {
 } from "../../lib/auth-session";
 import { resolveOperatorRole } from "../../lib/roles";
 
-type SettingsSection = "loan-products" | "workspace";
+type SettingsSection = "loan-products" | "sms" | "workspace";
 
 type LoanTemplate = {
   id: string;
@@ -98,6 +99,11 @@ const SECTIONS: { id: SettingsSection; label: string; hint: string }[] = [
     id: "loan-products",
     label: "Loan types",
     hint: "Set the loan options agents choose from.",
+  },
+  {
+    id: "sms",
+    label: "SMS",
+    hint: "Choose which SMS notifications are sent to borrowers.",
   },
   {
     id: "workspace",
@@ -162,7 +168,7 @@ function parseSection(value: string | null): SettingsSection {
   ) {
     return "loan-products";
   }
-  if (value === "workspace") return value;
+  if (value === "sms" || value === "workspace") return value;
   return "loan-products";
 }
 
@@ -678,7 +684,7 @@ function SettingsPageContent() {
             settings
           </h1>
           <p className="mt-0.5 text-xs text-slate-500">
-            loan types and account settings.
+            Loan types, SMS notifications, and account settings.
           </p>
         </header>
 
@@ -850,6 +856,19 @@ function SettingsPageContent() {
                   </div>
                 )}
               </div>
+            ) : null}
+
+            {!loading && section === "sms" ? (
+              <SmsNotificationSettingsPanel
+                session={session}
+                canEdit={
+                  Boolean(
+                    session.permissions.includes("loan.product.manage") ||
+                      session.permissions.includes("branch.staff.invite") ||
+                      session.permissions.includes("branch.create"),
+                  )
+                }
+              />
             ) : null}
 
             {!loading && section === "workspace" ? (

@@ -65,6 +65,15 @@ export class CashShortagesController {
     });
   }
 
+  @Get(':shortageId')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.read)
+  getOne(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('shortageId', ParseUUIDPipe) shortageId: string,
+  ) {
+    return this.shortagesService.getOne(user, shortageId);
+  }
+
   @Post(':shortageId/payments')
   @RequirePermissions(OPERATIONS_PERMISSIONS.close)
   recordPayment(

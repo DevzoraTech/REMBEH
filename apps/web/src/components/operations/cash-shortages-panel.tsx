@@ -1,33 +1,12 @@
 "use client";
 
 import { Loader2, Wallet } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Money } from "../app/money";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import type { RembehSession } from "../../lib/auth-session";
-
-type ShortagePayment = {
-  id: string;
-  amount: number;
-  method: string;
-  notes: string | null;
-  paidAt: string;
-};
-
-export type CashShortageRow = {
-  id: string;
-  branchId: string;
-  responsibleUserId: string;
-  responsibleName: string;
-  responsiblePublicId: string | null;
-  sourceType: string;
-  operationDate: string;
-  amountOriginal: number;
-  amountOutstanding: number;
-  status: "OPEN" | "PARTIALLY_PAID" | "CLEARED";
-  notes: string | null;
-  payments: ShortagePayment[];
-};
+import type { CashShortageRow } from "../shortages/shortages-workspace";
 
 type Props = {
   session: RembehSession;
@@ -162,17 +141,25 @@ export function CashShortagesPanel({
             Cash shortages
           </h3>
           <p className="mt-1 text-xs font-medium text-slate-500">
-            Track who must account for a shortage until it is cleared (cash or
-            salary deduction).
+            Open shortages for this branch. Full tracking is on the Shortages
+            page.
           </p>
         </div>
-        <div className="rounded-xl border border-[#e6ebf0] bg-[#f8faf9] px-3 py-2 text-right">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
-            Outstanding
-          </p>
-          <p className="mt-0.5 text-sm font-bold tabular-nums text-[#0b1220]">
-            <Money value={outstandingTotal} currency="UGX" />
-          </p>
+        <div className="flex flex-col items-end gap-2">
+          <div className="rounded-xl border border-[#e6ebf0] bg-[#f8faf9] px-3 py-2 text-right">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+              Outstanding
+            </p>
+            <p className="mt-0.5 text-sm font-bold tabular-nums text-[#0b1220]">
+              <Money value={outstandingTotal} currency="UGX" />
+            </p>
+          </div>
+          <Link
+            href="/shortages"
+            className="text-[11px] font-bold text-[#0a6b55] hover:underline"
+          >
+            Open shortages page →
+          </Link>
         </div>
       </div>
 
@@ -198,7 +185,7 @@ export function CashShortagesPanel({
         </p>
       ) : (
         <ul className="mt-3 space-y-2">
-          {shortages.map((row) => {
+          {shortages.slice(0, 5).map((row) => {
             const isPaying = payingId === row.id;
             return (
               <li
@@ -216,14 +203,8 @@ export function CashShortagesPanel({
                       ) : null}
                     </p>
                     <p className="mt-0.5 text-[11px] font-medium text-slate-500">
-                      {row.operationDate} · {sourceLabel(row.sourceType)} ·{" "}
-                      {statusLabel(row.status)}
+                      {row.operationDate} · {row.status.replace("_", " ")}
                     </p>
-                    {row.notes ? (
-                      <p className="mt-1 text-[11px] font-medium text-slate-600">
-                        {row.notes}
-                      </p>
-                    ) : null}
                   </div>
                   <div className="text-right">
                     <p className="text-[10px] font-semibold uppercase text-slate-500">
@@ -231,9 +212,6 @@ export function CashShortagesPanel({
                     </p>
                     <p className="text-sm font-bold tabular-nums text-red-700">
                       <Money value={row.amountOutstanding} currency="UGX" />
-                    </p>
-                    <p className="mt-0.5 text-[10px] font-medium text-slate-500">
-                      of <Money value={row.amountOriginal} currency="UGX" />
                     </p>
                   </div>
                 </div>
@@ -335,26 +313,4 @@ export function CashShortagesPanel({
       )}
     </section>
   );
-}
-
-function sourceLabel(source: string) {
-  switch (source) {
-    case "AGENT_FLOAT_RETURN":
-      return "Field officer float return";
-    case "BRANCH_CLOSE":
-      return "Branch close variance";
-    default:
-      return "Manual";
-  }
-}
-
-function statusLabel(status: CashShortageRow["status"]) {
-  switch (status) {
-    case "PARTIALLY_PAID":
-      return "Partially paid";
-    case "CLEARED":
-      return "Cleared";
-    default:
-      return "Open";
-  }
 }

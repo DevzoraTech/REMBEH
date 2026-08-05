@@ -24,10 +24,13 @@ import { BillingService } from '../billing/billing.service';
 import { BorrowerListsService } from '../borrower-lists/borrower-lists.service';
 import { IdentityVerificationService } from '../identity-verification/identity-verification.service';
 import { SmsCreditsService } from '../sms-credits/sms-credits.service';
+import { SmsNotificationSettingsService } from '../sms-credits/sms-notification-settings.service';
+import { buildLoanRecordedSms } from '../sms-credits/sms-notification-templates';
 import { OPERATIONS_PERMISSIONS } from '../operations/operations.permissions';
 import { REALTIME_EVENTS } from '../realtime/realtime.events';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { ObjectStorageService } from '../storage/object-storage.service';
+import { PrismaService } from '../../database/prisma.service';
 import {
   LoanApplicationContract,
   LoanApplicationListItemContract,
@@ -110,6 +113,8 @@ export class LoanApplicationsService {
     private readonly borrowerLists: BorrowerListsService,
     private readonly billingService: BillingService,
     private readonly smsCreditsService: SmsCreditsService,
+    private readonly smsNotificationSettings: SmsNotificationSettingsService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async createDraft(
@@ -1319,30 +1324,39 @@ export class LoanApplicationsService {
     const phone = application.phone?.trim();
     if (!phone) return;
 
+    const allowed = await this.smsNotificationSettings.isKindEnabled(
+      application.tenantId,
+      'loan_recorded',
+    );
+    if (!allowed) {
+      this.logger.log(
+        `Loan application SMS skipped for ${application.id}: sms_setting_disabled`,
+      );
+      return;
+    }
+
     const amount = Number(application.principalAmount ?? 0);
-    const amountLabel = Number.isFinite(amount)
-      ? `UGX ${amount.toLocaleString('en-UG', {
-          maximumFractionDigits: 0,
-        })}`
-      : 'your loan';
-    const start = application.paymentStartDate
-      ? application.paymentStartDate.toLocaleDateString('en-GB', {
-          day: '2-digit',
-          month: 'short',
-          year: 'numeric',
-        })
-      : null;
-    const body =
-      `REMBEH: Your loan application for ${amountLabel} is now active` +
-      (start ? `. Repayments start on ${start}` : '') +
-      '. Keep this message for your records.';
+    const branch = await this.prisma.branch.findUnique({
+      where: { id: application.branchId },
+      select: { name: true },
+    });
+    const supportPhone =
+      await this.smsNotificationSettings.resolveSupportPhone(
+        application.branchId,
+      );
+    const body = buildLoanRecordedSms({
+      fullName: this.clientName(application),
+      principal: Number.isFinite(amount) ? amount : 0,
+      branchName: branch?.name?.trim() || 'the branch',
+      supportPhone,
+    });
 
     const result = await this.smsCreditsService.sendBranchSms({
       tenantId: application.tenantId,
       branchId: application.branchId,
       destination: phone,
       body,
-      purpose: 'loan_application',
+      purpose: 'loan_recorded',
       triggerSource: 'loan_application_activated',
       triggerReferenceId: application.id,
       idempotencyKey: `loan_application_active_${application.id}`,

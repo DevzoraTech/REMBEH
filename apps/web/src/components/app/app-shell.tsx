@@ -13,6 +13,7 @@ import {
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
+  Scale,
   ShieldAlert,
   Users,
   UserRound,
@@ -128,6 +129,12 @@ export function AppShell({ children, session, user }: AppShellProps) {
         icon: ShieldAlert,
         enabled: operatorRole === "owner",
       },
+      {
+        href: "/owner/shortages",
+        label: "Shortages",
+        icon: Scale,
+        enabled: operatorRole === "owner",
+      },
     ];
 
     const managerPrimary = [
@@ -194,6 +201,14 @@ export function AppShell({ children, session, user }: AppShellProps) {
         href: "/operations",
         label: "Daily Operations",
         icon: CalendarDays,
+        enabled:
+          operatorRole === "manager" &&
+          Boolean(session.permissions.includes("operation.read")),
+      },
+      {
+        href: "/shortages",
+        label: "Shortages",
+        icon: Scale,
         enabled:
           operatorRole === "manager" &&
           Boolean(session.permissions.includes("operation.read")),
