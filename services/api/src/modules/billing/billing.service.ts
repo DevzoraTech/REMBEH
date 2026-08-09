@@ -24,6 +24,7 @@ import {
 import { createHash, randomUUID } from 'node:crypto';
 import { Webhook } from 'svix';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
+import { resolveWebAppBaseUrl } from '../../common/config/web-app-url';
 import { isPrismaUniqueConstraintError } from '../../common/database/prisma-errors';
 import { PrismaService } from '../../database/prisma.service';
 import {
@@ -763,9 +764,7 @@ export class BillingService implements OnModuleInit {
       'REMBEH'
     ).split(/\s+/);
 
-    const webAppUrl =
-      this.configService.get<string>('WEB_APP_URL')?.trim() ||
-      'https://rembeh.antikra.com';
+    const webAppUrl = resolveWebAppBaseUrl(this.configService);
 
     let order;
     try {
@@ -1563,9 +1562,7 @@ export class BillingService implements OnModuleInit {
       }
     }
 
-    const webAppUrl =
-      this.configService.get<string>('WEB_APP_URL')?.trim() ||
-      'https://rembeh.antikra.com';
+    const webAppUrl = resolveWebAppBaseUrl(this.configService);
 
     if (smsBranchId) {
       const params = new URLSearchParams({ smsPaid: '1', branch: smsBranchId });

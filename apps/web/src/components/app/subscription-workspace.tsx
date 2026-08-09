@@ -480,6 +480,250 @@ function ringTotals(
   return PERIOD_TOTAL_DAYS;
 }
 
+function branchStatusTone(row: BillingSummary["branches"][number]) {
+  switch (row.status) {
+    case "ACTIVE":
+      return {
+        label: "Active",
+        className: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+      };
+    case "TRIAL":
+      return {
+        label: "Trial",
+        className: "bg-sky-50 text-sky-700 ring-sky-200",
+      };
+    case "GRACE":
+    case "PAST_DUE":
+      return {
+        label: "Grace",
+        className: "bg-amber-50 text-amber-800 ring-amber-200",
+      };
+    case "LOCKED":
+      return {
+        label: "Paused",
+        className: "bg-rose-50 text-rose-700 ring-rose-200",
+      };
+    default:
+      return {
+        label: "Needs setup",
+        className: "bg-slate-100 text-slate-700 ring-slate-200",
+      };
+  }
+}
+
+function branchTimelineCopy(
+  row: BillingSummary["branches"][number],
+  trial: BillingSummary["trial"],
+) {
+  if (row.status === "LOCKED") return "Renew to restore access.";
+  if (row.status === "GRACE" || row.status === "PAST_DUE") {
+    return row.graceEndsAt
+      ? `Grace ends ${formatDate(row.graceEndsAt)}`
+      : "Grace period active";
+  }
+  if (row.status === "TRIAL") {
+    return `Trial ends ${formatDate(trial.endsAt)}`;
+  }
+  return row.currentPeriodEnd
+    ? `Active until ${formatDate(row.currentPeriodEnd)}`
+    : "Subscription active";
+}
+
+function OwnerSubscriptionOverview({
+  summary,
+  selectedBranchId,
+  onSelectBranch,
+}: {
+  summary: BillingSummary;
+  selectedBranchId: string | null;
+  onSelectBranch: (branchId: string) => void;
+}) {
+  const branches = summary.branches;
+  const totalBranches = branches.length;
+  const activeBranches = branches.filter(
+    (branch) => branch.status === "ACTIVE",
+  ).length;
+  const trialBranches = branches.filter(
+    (branch) => branch.status === "TRIAL",
+  ).length;
+  const attentionBranches = branches.filter((branch) =>
+    ["GRACE", "PAST_DUE", "LOCKED"].includes(branch.status),
+  ).length;
+  const pausedBranches = branches.filter(
+    (branch) => branch.status === "LOCKED",
+  ).length;
+  const sortedBranches = [...branches].sort((a, b) => {
+    const priority = (branch: BillingSummary["branches"][number]) => {
+      if (branch.status === "LOCKED") return 0;
+      if (branch.status === "GRACE" || branch.status === "PAST_DUE") return 1;
+      if (branch.status === "TRIAL") return 2;
+      if (branch.status === "ACTIVE") return 3;
+      return 4;
+    };
+    const priorityDelta = priority(a) - priority(b);
+    if (priorityDelta !== 0) return priorityDelta;
+    return (
+      daysRemainingFor(a, summary.trial) - daysRemainingFor(b, summary.trial)
+    );
+  });
+  const earliestBranch =
+    sortedBranches.find((branch) => branch.status !== "ACTIVE") ??
+    [...branches]
+      .filter((branch) => branch.currentPeriodEnd)
+      .sort(
+        (a, b) =>
+          new Date(a.currentPeriodEnd!).getTime() -
+          new Date(b.currentPeriodEnd!).getTime(),
+      )[0] ??
+    branches[0] ??
+    null;
+
+  const stats = [
+    {
+      label: "Branches",
+      value: totalBranches.toLocaleString("en-UG"),
+      subtext: "Under this account",
+      icon: CalendarDays,
+    },
+    {
+      label: "Active",
+      value: activeBranches.toLocaleString("en-UG"),
+      subtext: "Paid Pro access",
+      icon: CheckCircle2,
+    },
+    {
+      label: "Trial",
+      value: trialBranches.toLocaleString("en-UG"),
+      subtext: "Covered by trial",
+      icon: Clock3,
+    },
+    {
+      label: "Attention",
+      value: attentionBranches.toLocaleString("en-UG"),
+      subtext: pausedBranches ? `${pausedBranches} paused` : "Grace or expired",
+      icon: Lock,
+    },
+  ];
+
+  return (
+    <section className="space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {stats.map((stat) => {
+          const Icon = stat.icon;
+          return (
+            <article
+              key={stat.label}
+              className="rounded-2xl border border-[var(--line)] bg-white px-4 py-3 shadow-[0_10px_28px_rgba(15,23,42,0.04)]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                    {stat.label}
+                  </p>
+                  <p className="mt-1 text-2xl font-bold tabular-nums text-[#070b18]">
+                    {stat.value}
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {stat.subtext}
+                  </p>
+                </div>
+                <span className="grid size-9 place-items-center rounded-xl bg-[#e9f8ef] text-[#07885f]">
+                  <Icon className="size-4" />
+                </span>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+
+      <article className="rounded-2xl border border-sky-100 bg-gradient-to-br from-[#f3f8fd] via-white to-[#f7fbf9] p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)] sm:p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <span className="inline-flex w-fit rounded-full bg-[#e8f1fb] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#2b6cb0]">
+              Organisation billing
+            </span>
+            <h2 className="mt-2 font-[family-name:var(--font-display)] text-xl tracking-[-0.03em] text-[#070b18]">
+              All branch subscriptions
+            </h2>
+            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-slate-600">
+              Owner billing covers every branch in this workspace. Choose a
+              branch below only when you need to renew, subscribe, or buy SMS
+              credits for that branch.
+            </p>
+          </div>
+          {earliestBranch ? (
+            <div className="rounded-xl border border-[#d7e3f0] bg-white/90 px-3 py-2 text-right">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-500">
+                Next attention
+              </p>
+              <p className="mt-0.5 text-sm font-bold text-[#070b18]">
+                {earliestBranch.branchName}
+              </p>
+              <p className="text-xs text-slate-500">
+                {branchTimelineCopy(earliestBranch, summary.trial)}
+              </p>
+            </div>
+          ) : null}
+        </div>
+      </article>
+
+      <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        {sortedBranches.map((branch) => {
+          const tone = branchStatusTone(branch);
+          const selected = branch.branchId === selectedBranchId;
+          const daysRemaining = daysRemainingFor(branch, summary.trial);
+          return (
+            <button
+              key={branch.branchId}
+              type="button"
+              onClick={() => onSelectBranch(branch.branchId)}
+              className={`min-h-[96px] rounded-xl border bg-white px-3 py-3 text-left transition hover:border-[#07885f]/50 ${
+                selected
+                  ? "border-[#07885f] shadow-[0_8px_18px_rgba(7,136,95,0.12)] ring-2 ring-[#07885f]/15"
+                  : "border-[#d7e3f0]"
+              }`}
+            >
+              <span className="flex items-start justify-between gap-2">
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-bold text-[#070b18]">
+                    {branch.branchName}
+                  </span>
+                  <span className="mt-1 block text-xs text-slate-500">
+                    {branchTimelineCopy(branch, summary.trial)}
+                  </span>
+                </span>
+                <span
+                  className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.05em] ring-1 ${tone.className}`}
+                >
+                  {tone.label}
+                </span>
+              </span>
+              <span className="mt-3 flex items-center justify-between gap-2 text-xs">
+                <span className="font-semibold text-[#07885f]">
+                  {daysRemaining === 0
+                    ? "Due today"
+                    : `${daysRemaining.toLocaleString("en-UG")} day${
+                        daysRemaining === 1 ? "" : "s"
+                      }`}
+                </span>
+                <span
+                  className={`rounded-full px-2 py-0.5 font-semibold ${
+                    selected
+                      ? "bg-[#07885f] text-white"
+                      : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {selected ? "Selected" : "Manage"}
+                </span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 export function SubscriptionWorkspace({ mode }: { mode: "owner" | "manager" }) {
   return (
     <Suspense fallback={<AppBootSkeleton />}>
@@ -1517,39 +1761,42 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
 
   const showOwnerBranchSelect =
     mode === "owner" && (summary?.branches.length ?? 0) > 1;
+  const pageSubtitle =
+    mode === "owner"
+      ? activeTab === "sms"
+        ? `Manage SMS credits across ${workspace.name}. Choose a branch only when buying credits.`
+        : `Manage plans and billing across ${workspace.name}.`
+      : activeTab === "sms"
+        ? `Manage prepaid SMS credits for ${branchName}.`
+        : `Manage the plan and billing for ${branchName}.`;
+  const renderOwnerBranchSelect = (label = "Payment target") =>
+    showOwnerBranchSelect ? (
+      <label className="flex flex-wrap items-center gap-2 text-xs font-medium text-slate-600">
+        <span>{label}</span>
+        <select
+          value={focusedBranchId ?? ""}
+          onChange={(event) => setFocusedBranchId(event.target.value)}
+          className="h-9 min-w-[12rem] rounded-xl border border-[var(--line)] bg-white px-3 text-xs font-semibold text-[#070b18] outline-none focus:border-[var(--forest-emerald)]"
+        >
+          {summary!.branches.map((branch) => (
+            <option key={branch.branchId} value={branch.branchId}>
+              {branch.branchName}
+            </option>
+          ))}
+        </select>
+      </label>
+    ) : null;
 
   return (
     <AppShell session={session} workspace={workspace} user={user}>
       <div className="mx-auto max-w-6xl space-y-4 px-1 pb-6 sm:px-2">
         <OwnerHeader
           title="Subscription"
-          subtitle={
-            activeTab === "sms"
-              ? `Manage prepaid SMS credits for ${branchName}.`
-              : `Manage the plan and billing for ${branchName}.`
-          }
+          subtitle={pageSubtitle}
           showReportsButton={mode === "owner"}
           settingsHref={mode === "owner" ? "/owner/settings" : "/settings"}
           reportsHref={mode === "owner" ? "/owner/reports" : "/reports"}
           notificationScope={mode === "owner" ? "owner" : "manager"}
-          actions={
-            showOwnerBranchSelect ? (
-              <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
-                <span className="hidden sm:inline">Branch</span>
-                <select
-                  value={focusedBranchId ?? ""}
-                  onChange={(event) => setFocusedBranchId(event.target.value)}
-                  className="h-9 rounded-xl border border-[var(--line)] bg-white px-3 text-xs font-semibold text-[#070b18] outline-none focus:border-[var(--forest-emerald)]"
-                >
-                  {summary!.branches.map((branch) => (
-                    <option key={branch.branchId} value={branch.branchId}>
-                      {branch.branchName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : undefined
-          }
         />
 
         {smsPaid ? (
@@ -1625,19 +1872,34 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
             </div>
           ) : (
             <section className="space-y-4">
+              {mode === "owner" && summary ? (
+                <OwnerSubscriptionOverview
+                  summary={summary}
+                  selectedBranchId={focusedBranchId}
+                  onSelectBranch={setFocusedBranchId}
+                />
+              ) : null}
+
               <article className="overflow-hidden rounded-2xl border border-sky-100 bg-gradient-to-br from-[#f3f8fd] via-white to-[#f7fbf9] p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)] sm:p-6">
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex min-w-0 items-start gap-4">
                     <DaysRing daysLeft={daysLeft} total={ringTotal} />
                     <div className="min-w-0">
-                      <span className="inline-flex w-fit rounded-full bg-[#e8f1fb] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#2b6cb0]">
-                        Current subscription
-                      </span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex w-fit rounded-full bg-[#e8f1fb] px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-[#2b6cb0]">
+                          {mode === "owner"
+                            ? "Payment target branch"
+                            : "Current subscription"}
+                        </span>
+                        {renderOwnerBranchSelect()}
+                      </div>
                       <h2 className="mt-2 font-[family-name:var(--font-display)] text-2xl tracking-[-0.03em] text-[#070b18] sm:text-[1.75rem]">
-                        {statusTitle}
+                        {mode === "owner" ? branchName : statusTitle}
                       </h2>
                       <p className="mt-1 text-sm font-semibold text-[#07885f]">
-                        {daysCopy}
+                        {mode === "owner"
+                          ? `${statusTitle} • ${daysCopy}`
+                          : daysCopy}
                       </p>
                       <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-600">
                         {bodyCopy}
@@ -1829,6 +2091,20 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
           )
         ) : (
           <section className="space-y-3">
+            {mode === "owner" ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--line)] bg-white px-4 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+                <div>
+                  <p className="text-xs font-semibold text-[#070b18]">
+                    SMS credits are managed per branch
+                  </p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Choose the branch wallet before buying a bundle.
+                  </p>
+                </div>
+                {renderOwnerBranchSelect("SMS branch")}
+              </div>
+            ) : null}
+
             <article className="rounded-2xl border border-sky-100 bg-[#f3f8fd] p-5 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="flex min-w-0 items-start gap-3">

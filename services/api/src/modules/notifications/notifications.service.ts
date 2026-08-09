@@ -817,18 +817,35 @@ export class NotificationsService {
   }
 
   private brandHeaderHtml() {
-    const iconUrl = this.escapeHtml(
-      `${resolveWebAppBaseUrl(this.configService)}/rembeh-icon.png`,
-    );
+    const iconUrl = this.emailAssetUrl('/rembeh-icon.png');
+    const antikraUrl = this.emailAssetUrl('/assets/brand/antikra.png');
     return [
-      '<div style="display:flex;align-items:center;gap:10px;margin:0 0 16px">',
-      `<img src="${iconUrl}" width="38" height="38" alt="REMBEH" style="display:block;border-radius:10px" />`,
-      '<div>',
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:0 0 18px;border-collapse:collapse">',
+      '<tr>',
+      '<td style="vertical-align:middle">',
+      '<table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse">',
+      '<tr>',
+      `<td style="vertical-align:middle;padding:0 10px 0 0"><img src="${iconUrl}" width="38" height="38" alt="REMBEH" style="display:block;border-radius:10px" /></td>`,
+      '<td style="vertical-align:middle">',
       '<p style="margin:0 0 2px;font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0f8a6c">REMBEH</p>',
       '<p style="margin:0;color:#52606d;font-size:12px">Loan Management System</p>',
-      '</div>',
-      '</div>',
+      '</td>',
+      '</tr>',
+      '</table>',
+      '</td>',
+      `<td align="right" style="vertical-align:middle"><img src="${antikraUrl}" width="92" alt="ANTIKRA" style="display:block;max-width:92px;height:auto;border-radius:8px" /></td>`,
+      '</tr>',
+      '</table>',
     ].join('');
+  }
+
+  private emailAssetUrl(pathname: string) {
+    const baseUrl = resolveWebAppBaseUrl(this.configService);
+    const url = new URL(
+      pathname.startsWith('/') ? pathname : `/${pathname}`,
+      `${baseUrl}/`,
+    );
+    return this.escapeHtml(url.toString());
   }
 
   private formatEmailDate(value: Date) {

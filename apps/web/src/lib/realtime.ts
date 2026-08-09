@@ -1,4 +1,5 @@
 import { io, type Socket } from "socket.io-client";
+import { apiBaseUrl } from "./api";
 
 export type LoanApplicationEvent = {
   applicationId: string;
@@ -68,8 +69,7 @@ export type SubscriptionPaymentUpdatedEvent = {
 };
 
 function socketBaseUrl() {
-  const api = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
-  return api.replace(/\/api\/v1\/?$/, "");
+  return apiBaseUrl.replace(/\/api\/v1\/?$/, "");
 }
 
 export function connectRealtime(accessToken: string): Socket {

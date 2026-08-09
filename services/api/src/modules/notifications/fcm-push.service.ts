@@ -10,6 +10,7 @@ import {
   type ServiceAccount,
 } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
+import { resolveWebAppBaseUrl } from '../../common/config/web-app-url';
 import { PrismaService } from '../../database/prisma.service';
 
 type FirebaseProjectKey = 'WEB' | 'MOBILE';
@@ -34,25 +35,13 @@ export class FcmPushService implements OnModuleInit {
   onModuleInit() {
     this.bootstrapApp(
       'WEB',
-      [
-        'FIREBASE_WEB_SERVICE_ACCOUNT_JSON',
-        'FIREBASE_SERVICE_ACCOUNT_JSON',
-      ],
-      [
-        'FIREBASE_WEB_SERVICE_ACCOUNT_PATH',
-        'FIREBASE_SERVICE_ACCOUNT_PATH',
-      ],
+      ['FIREBASE_WEB_SERVICE_ACCOUNT_JSON', 'FIREBASE_SERVICE_ACCOUNT_JSON'],
+      ['FIREBASE_WEB_SERVICE_ACCOUNT_PATH', 'FIREBASE_SERVICE_ACCOUNT_PATH'],
     );
     this.bootstrapApp(
       'MOBILE',
-      [
-        'FIREBASE_MOBILE_SERVICE_ACCOUNT_JSON',
-        'FIREBASE_SERVICE_ACCOUNT_JSON',
-      ],
-      [
-        'FIREBASE_MOBILE_SERVICE_ACCOUNT_PATH',
-        'FIREBASE_SERVICE_ACCOUNT_PATH',
-      ],
+      ['FIREBASE_MOBILE_SERVICE_ACCOUNT_JSON', 'FIREBASE_SERVICE_ACCOUNT_JSON'],
+      ['FIREBASE_MOBILE_SERVICE_ACCOUNT_PATH', 'FIREBASE_SERVICE_ACCOUNT_PATH'],
     );
 
     if (this.apps.size === 0) {
@@ -151,9 +140,7 @@ export class FcmPushService implements OnModuleInit {
       (projectKey) => !this.apps.has(projectKey),
     );
     if (missingProjects.length > 0) {
-      this.logger.warn(
-        `FCM not configured for: ${missingProjects.join(', ')}`,
-      );
+      this.logger.warn(`FCM not configured for: ${missingProjects.join(', ')}`);
       return {
         attempted: tokens.length,
         success: 0,
@@ -211,11 +198,7 @@ export class FcmPushService implements OnModuleInit {
     }
 
     try {
-      const webOrigin = (
-        this.config.get<string>('WEB_PUBLIC_URL') ??
-        this.config.get<string>('PUBLIC_WEB_URL') ??
-        'https://rembeh.antikra.com'
-      ).replace(/\/$/, '');
+      const webOrigin = resolveWebAppBaseUrl(this.config);
       const href = payload.href?.startsWith('http')
         ? payload.href
         : `${webOrigin}${payload.href?.startsWith('/') ? payload.href : `/${payload.href ?? 'owner'}`}`;

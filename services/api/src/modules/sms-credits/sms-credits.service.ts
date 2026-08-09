@@ -21,6 +21,7 @@ import {
 } from '@prisma/client';
 import { createHash, randomUUID } from 'node:crypto';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
+import { resolveWebAppBaseUrl } from '../../common/config/web-app-url';
 import { isPrismaUniqueConstraintError } from '../../common/database/prisma-errors';
 import { PrismaService } from '../../database/prisma.service';
 import { BILLING_PERMISSIONS } from '../billing/billing.permissions';
@@ -288,9 +289,7 @@ export class SmsCreditsService {
       user.displayName ||
       'REMBEH'
     ).split(/\s+/);
-    const webAppUrl =
-      this.configService.get<string>('WEB_APP_URL')?.trim() ||
-      'https://rembeh.antikra.com';
+    const webAppUrl = resolveWebAppBaseUrl(this.configService);
 
     let order;
     try {
