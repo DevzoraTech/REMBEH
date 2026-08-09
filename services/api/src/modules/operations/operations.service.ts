@@ -7,8 +7,13 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { CashShortageSource } from '@prisma/client';
-import { BranchOperationReportStatus, Prisma } from '@prisma/client';
+import {
+  BranchOperationReportStatus,
+  BranchOperationStatus,
+  CashShortageSource,
+  LoanApplicationStatus,
+  Prisma,
+} from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { PrismaService } from '../../database/prisma.service';
 import {
@@ -95,6 +100,14 @@ export class OperationsService {
         operation: null,
         report: null,
       };
+    }
+
+    if (this.isAutoOpenableDate(bounds.dateLabel)) {
+      await this.retireEmptyUnclosedOperationsBefore({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        beforeDate: bounds.dateOnly,
+      });
     }
 
     let operation = await this.repository.findOperationForDay({
@@ -402,9 +415,7 @@ export class OperationsService {
       : null;
     const reports = await this.repository.listOwnerReports({
       tenantId: user.tenantId,
-      branchId: managerScoped
-        ? user.branchId
-        : options?.branchId || null,
+      branchId: managerScoped ? user.branchId : options?.branchId || null,
       status,
       fromDate,
       toDate,
@@ -552,6 +563,11 @@ export class OperationsService {
 
     const bounds = this.parseDayBounds(dto.date);
     this.assertCanChangeDay(bounds.dateOnly);
+    await this.retireEmptyUnclosedOperationsBefore({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      beforeDate: bounds.dateOnly,
+    });
     const existing = await this.repository.findOperationForDay({
       tenantId: user.tenantId,
       branchId: branch.id,
@@ -722,7 +738,6 @@ export class OperationsService {
     }
 
     const bounds = this.parseDayBounds(dto.date);
-    this.assertCanChangeDay(bounds.dateOnly);
     const operation = await this.repository.findOperationForDay({
       tenantId: user.tenantId,
       branchId: branch.id,
@@ -1113,7 +1128,6 @@ export class OperationsService {
     }
 
     const bounds = this.parseDayBounds(input.date);
-    this.assertCanChangeDay(bounds.dateOnly);
     const operation = await this.repository.findOperationForDay({
       tenantId: input.tenantId,
       branchId: input.branchId,
@@ -1364,8 +1378,9 @@ export class OperationsService {
 
     const loansByProduct = this.buildLoansByProduct(loansIssuedToday);
     const feesByProduct = this.buildFeesByProduct(loansIssuedToday);
-    const repaymentsByProduct =
-      this.buildRepaymentsByProduct(collectionsWithProduct);
+    const repaymentsByProduct = this.buildRepaymentsByProduct(
+      collectionsWithProduct,
+    );
 
     return {
       id: operation.id,
@@ -1595,9 +1610,7 @@ export class OperationsService {
   }
 
   private buildLoansByProduct(
-    loans: Awaited<
-      ReturnType<OperationsRepository['listLoansIssuedToday']>
-    >,
+    loans: Awaited<ReturnType<OperationsRepository['listLoansIssuedToday']>>,
   ) {
     const map = new Map<
       string,
@@ -1642,9 +1655,7 @@ export class OperationsService {
   }
 
   private buildFeesByProduct(
-    loans: Awaited<
-      ReturnType<OperationsRepository['listLoansIssuedToday']>
-    >,
+    loans: Awaited<ReturnType<OperationsRepository['listLoansIssuedToday']>>,
   ) {
     const map = new Map<
       string,
@@ -1988,7 +1999,9 @@ export class OperationsService {
   private isAutoOpenableDate(dateLabel: string) {
     const today = this.currentBusinessDateLabel();
     if (dateLabel === today) return true;
-    return dateLabel === this.nextDateLabel(this.parseDayBounds(today).dateOnly);
+    return (
+      dateLabel === this.nextDateLabel(this.parseDayBounds(today).dateOnly)
+    );
   }
 
   private assertTenant(user: AuthenticatedUser) {
@@ -2015,7 +2028,9 @@ export class OperationsService {
     return shifted.getUTCHours();
   }
 
-  private isReportSubmitted(status: BranchOperationReportStatus | null | undefined) {
+  private isReportSubmitted(
+    status: BranchOperationReportStatus | null | undefined,
+  ) {
     return (
       status === BranchOperationReportStatus.SENT_TO_OWNER ||
       status === BranchOperationReportStatus.OWNER_APPROVED
@@ -2041,6 +2056,107 @@ export class OperationsService {
         `Submit the close report for ${this.formatDateLabel(previousClosed.operationDate)} before opening a new day.`,
       );
     }
+  }
+
+  private async retireEmptyUnclosedOperationsBefore(input: {
+    tenantId: string;
+    branchId: string;
+    beforeDate: Date;
+  }) {
+    let retired = 0;
+    for (;;) {
+      const pending = await this.repository.findOldestUnclosedBefore({
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        beforeDate: input.beforeDate,
+      });
+      if (!pending || pending.status !== BranchOperationStatus.OPEN) {
+        break;
+      }
+
+      const empty = await this.isEmptyOpenOperation(pending);
+      if (!empty) break;
+
+      await this.prisma.branchDailyOperation.delete({
+        where: { id: pending.id },
+      });
+      retired += 1;
+      this.logger.log(
+        `Retired empty operation ${pending.id} for ${pending.branch.name} (${this.formatDateLabel(pending.operationDate)})`,
+      );
+    }
+    return retired;
+  }
+
+  private async isEmptyOpenOperation(
+    operation: NonNullable<
+      Awaited<ReturnType<OperationsRepository['findOperationForDay']>>
+    >,
+  ) {
+    if (operation.status !== BranchOperationStatus.OPEN) return false;
+    if (operation.closingBalance != null || operation.closedAt != null) {
+      return false;
+    }
+    if (this.decimalToNumber(operation.cashAddedToday) !== 0) {
+      return false;
+    }
+    const previousClosed = await this.repository.findLatestClosedBefore({
+      tenantId: operation.tenantId,
+      branchId: operation.branchId,
+      beforeDate: operation.operationDate,
+    });
+    if (
+      !previousClosed &&
+      this.decimalToNumber(operation.previousClosingBalance) !== 0
+    ) {
+      return false;
+    }
+
+    const bounds = this.parseDayBounds(
+      this.formatDateLabel(operation.operationDate),
+    );
+    const [topUps, expenses, agentFloats, loans, collections, report] =
+      await Promise.all([
+        this.prisma.branchOperationTopUp.count({
+          where: { tenantId: operation.tenantId, operationId: operation.id },
+        }),
+        this.prisma.branchOperationExpense.count({
+          where: { tenantId: operation.tenantId, operationId: operation.id },
+        }),
+        this.prisma.agentDailyFloat.count({
+          where: {
+            tenantId: operation.tenantId,
+            branchId: operation.branchId,
+            floatDate: operation.operationDate,
+          },
+        }),
+        this.prisma.loanApplication.count({
+          where: {
+            tenantId: operation.tenantId,
+            branchId: operation.branchId,
+            status: LoanApplicationStatus.SUBMITTED,
+            submittedAt: {
+              gte: bounds.dayStart,
+              lte: bounds.dayEnd,
+            },
+          },
+        }),
+        this.prisma.repayment.count({
+          where: {
+            tenantId: operation.tenantId,
+            branchId: operation.branchId,
+            paidAt: {
+              gte: bounds.dayStart,
+              lte: bounds.dayEnd,
+            },
+          },
+        }),
+        this.prisma.branchOperationReport.count({
+          where: { tenantId: operation.tenantId, operationId: operation.id },
+        }),
+      ]);
+
+    return topUps + expenses + agentFloats + loans + collections + report === 0;
   }
 
   /**
@@ -2081,6 +2197,12 @@ export class OperationsService {
     openedByUserId?: string;
     allowFirstDay?: boolean;
   }) {
+    await this.retireEmptyUnclosedOperationsBefore({
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      beforeDate: input.bounds.dateOnly,
+    });
+
     const existing = await this.repository.findOperationForDay({
       tenantId: input.tenantId,
       branchId: input.branchId,

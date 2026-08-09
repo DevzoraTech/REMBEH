@@ -213,7 +213,6 @@ class SessionStore {
   static const _accessTokenKey = 'rembeh_mobile_access_token';
   static const _refreshTokenKey = 'rembeh_mobile_refresh_token';
   static const _lastActivityKey = 'rembeh_mobile_last_activity_at';
-  static const idleTimeout = Duration(minutes: 5);
 
   static const _secure = FlutterSecureStorage();
 
@@ -240,12 +239,6 @@ class SessionStore {
     final raw = prefs.getString(_lastActivityKey);
     if (raw == null || raw.isEmpty) return null;
     return DateTime.tryParse(raw);
-  }
-
-  Future<bool> isIdleTimedOut() async {
-    final last = await readLastActivityAt();
-    if (last == null) return false;
-    return DateTime.now().difference(last) >= idleTimeout;
   }
 
   Future<RembehSession?> read() async {

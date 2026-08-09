@@ -51,6 +51,11 @@ export type BillingCheckoutResponseContract = {
   orderTrackingId: string | null;
 };
 
+export type ManualMerchantPaymentResponseContract = {
+  payment: SubscriptionPaymentRowContract;
+  message: string;
+};
+
 export type BranchBillingStatusContract = {
   branchId: string | null;
   branchName: string | null;
@@ -78,12 +83,20 @@ export type SubscriptionPaymentRowContract = {
   periodLabel: string | null;
   amount: number;
   currency: string;
+  planCode?: string | null;
+  planDurationMonths?: number | null;
+  activeUntil?: string | null;
+  transactionId?: string | null;
+  verifiedAt?: string | null;
+  verifiedByName?: string | null;
+  failureReason?: string | null;
   /** SMS credits purchased (SMS rows only). */
   credits: number | null;
   paymentMethod: string;
   status: string;
   receipt: string | null;
   canRetry: boolean;
+  canCancel?: boolean;
   /** Present for catalogue SMS purchases (retry reuses bundleId). */
   bundleId?: string | null;
 };

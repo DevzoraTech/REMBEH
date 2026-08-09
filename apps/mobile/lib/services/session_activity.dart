@@ -8,32 +8,29 @@ import 'api_client.dart';
 import 'session_cleanup.dart';
 import 'session_store.dart';
 
-/// Idle logout after [idleTimeout] with no taps / scrolls / navigation.
-/// While active, refreshes the access token so the session does not expire mid-use.
+/// Tracks activity and refreshes the access token so the session stays alive.
 class SessionActivityController with WidgetsBindingObserver {
   SessionActivityController({
     required this.sessionStore,
-    required this.onIdleLogout,
+    required this.onSessionCleared,
     this.onAccountBlocked,
-    this.idleTimeout = const Duration(minutes: 5),
     this.tickInterval = const Duration(seconds: 15),
   });
 
   final SessionStore sessionStore;
-  final Future<void> Function() onIdleLogout;
+  final Future<void> Function() onSessionCleared;
   final Future<void> Function(String message)? onAccountBlocked;
-  final Duration idleTimeout;
   final Duration tickInterval;
 
   Timer? _timer;
-  bool _loggingOut = false;
+  bool _clearingSession = false;
   DateTime _lastActivity = DateTime.now();
   DateTime? _lastPersisted;
 
   void start() {
     WidgetsBinding.instance.addObserver(this);
     _timer?.cancel();
-    _timer = Timer.periodic(tickInterval, (_) => _checkIdle());
+    _timer = Timer.periodic(tickInterval, (_) => _checkSession());
     unawaited(touch(refreshIfNeeded: true));
   }
 
@@ -44,9 +41,9 @@ class SessionActivityController with WidgetsBindingObserver {
 
   Future<void> touch({bool refreshIfNeeded = false}) async {
     _lastActivity = DateTime.now();
-    final shouldPersist = _lastPersisted == null ||
-        _lastActivity.difference(_lastPersisted!) >=
-            const Duration(seconds: 5);
+    final shouldPersist =
+        _lastPersisted == null ||
+        _lastActivity.difference(_lastPersisted!) >= const Duration(seconds: 5);
     if (shouldPersist) {
       _lastPersisted = _lastActivity;
       await sessionStore.markActivity(_lastActivity);
@@ -66,24 +63,11 @@ class SessionActivityController with WidgetsBindingObserver {
   Future<void> _onResume() async {
     final last = await sessionStore.readLastActivityAt() ?? _lastActivity;
     _lastActivity = last;
-    if (_isIdle(last)) {
-      await _logout();
-      return;
-    }
     await touch(refreshIfNeeded: true);
   }
 
-  Future<void> _checkIdle() async {
-    final last = await sessionStore.readLastActivityAt() ?? _lastActivity;
-    if (_isIdle(last)) {
-      await _logout();
-      return;
-    }
+  Future<void> _checkSession() async {
     await _refreshAccessIfNeeded();
-  }
-
-  bool _isIdle(DateTime last) {
-    return DateTime.now().difference(last) >= idleTimeout;
   }
 
   Future<void> _refreshAccessIfNeeded() async {
@@ -91,7 +75,8 @@ class SessionActivityController with WidgetsBindingObserver {
     if (session == null || !session.canRefresh) return;
     // Refresh when access is expired or within 10 minutes of expiry.
     final expiry = DateTime.tryParse(session.expiresAt);
-    final needsRefresh = session.isAccessExpired ||
+    final needsRefresh =
+        session.isAccessExpired ||
         (expiry != null &&
             expiry.isBefore(DateTime.now().add(const Duration(minutes: 10))));
     if (!needsRefresh) return;
@@ -106,8 +91,8 @@ class SessionActivityController with WidgetsBindingObserver {
   }
 
   Future<void> _lockAccount(String message) async {
-    if (_loggingOut) return;
-    _loggingOut = true;
+    if (_clearingSession) return;
+    _clearingSession = true;
     _timer?.cancel();
     await clearTenantScopedClientState();
     await sessionStore.clear();
@@ -116,20 +101,11 @@ class SessionActivityController with WidgetsBindingObserver {
       await handler(message);
       return;
     }
-    await onIdleLogout();
-  }
-
-  Future<void> _logout() async {
-    if (_loggingOut) return;
-    _loggingOut = true;
-    _timer?.cancel();
-    await clearTenantScopedClientState();
-    await sessionStore.clear();
-    await onIdleLogout();
+    await onSessionCleared();
   }
 }
 
-/// Records pointer / scroll activity for idle timeout.
+/// Records pointer / scroll activity for token-refresh bookkeeping.
 class SessionActivityListener extends StatelessWidget {
   const SessionActivityListener({
     super.key,

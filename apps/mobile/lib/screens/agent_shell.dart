@@ -44,7 +44,7 @@ class _AgentShellState extends State<AgentShell> {
     super.initState();
     _activity = SessionActivityController(
       sessionStore: SessionStore(),
-      onIdleLogout: _handleIdleLogout,
+      onSessionCleared: _handleSessionCleared,
       onAccountBlocked: _handleAccountBlocked,
     );
     _dayStore.addListener(_onDayChanged);
@@ -151,14 +151,12 @@ class _AgentShellState extends State<AgentShell> {
     }
   }
 
-  Future<void> _handleIdleLogout() async {
+  Future<void> _handleSessionCleared() async {
     if (!mounted) return;
     final navigator = Navigator.of(context);
     navigator.pushAndRemoveUntil(
       MaterialPageRoute(
-        builder: (_) => const LoginScreen(
-          idleSignedOutMessage: 'Signed out after 5 minutes of inactivity.',
-        ),
+        builder: (_) => const LoginScreen(),
       ),
       (_) => false,
     );

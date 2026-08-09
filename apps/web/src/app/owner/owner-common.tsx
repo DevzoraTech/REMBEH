@@ -14,6 +14,7 @@ import {
   clearAuthState,
   isSessionExpired,
   readAuthState,
+  refreshAuthSession,
 } from "../../lib/auth-session";
 import { resolveOperatorRole } from "../../lib/roles";
 
@@ -236,24 +237,30 @@ export function useOwnerSession(nextPath = "/owner"): OwnerSessionState {
 
   useEffect(() => {
     const boot = window.setTimeout(() => {
-      const auth = readAuthState();
-      if (!auth.session || isSessionExpired(auth.session)) {
-        clearAuthState();
-        router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
-        return;
-      }
+      void (async () => {
+        const auth = readAuthState();
+        let activeSession = auth.session;
+        if (activeSession && isSessionExpired(activeSession)) {
+          activeSession = await refreshAuthSession(activeSession, apiBaseUrl);
+        }
+        if (!activeSession) {
+          clearAuthState();
+          router.replace(`/login?next=${encodeURIComponent(nextPath)}`);
+          return;
+        }
 
-      if (resolveOperatorRole(auth.session, auth.user) !== "owner") {
-        router.replace("/dashboard");
-        return;
-      }
+        if (resolveOperatorRole(activeSession, auth.user) !== "owner") {
+          router.replace("/dashboard");
+          return;
+        }
 
-      setState({
-        session: auth.session,
-        workspace: auth.workspace,
-        user: auth.user,
-        ready: true,
-      });
+        setState({
+          session: activeSession,
+          workspace: auth.workspace,
+          user: auth.user,
+          ready: true,
+        });
+      })();
     }, 0);
 
     return () => window.clearTimeout(boot);

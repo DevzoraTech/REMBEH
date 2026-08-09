@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   HttpException,
   HttpStatus,
@@ -18,14 +19,16 @@ import {
   SmsPurchaseStatus,
   SubscriptionPaymentStatus,
 } from '@prisma/client';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
+import { isPrismaUniqueConstraintError } from '../../common/database/prisma-errors';
 import { PrismaService } from '../../database/prisma.service';
 import {
   BillingCheckoutResponseContract,
   BillingPlanContract,
   BillingSummaryContract,
   BranchBillingStatusContract,
+  ManualMerchantPaymentResponseContract,
   SubscriptionPaymentRowContract,
 } from './billing.contracts';
 import {
@@ -44,6 +47,17 @@ import { ConfigService } from '@nestjs/config';
 import { SmsService } from '../notifications/sms.service';
 import { FcmPushService } from '../notifications/fcm-push.service';
 import { SmsCreditsService } from '../sms-credits/sms-credits.service';
+import {
+  ManualMerchantPaymentProvider,
+  SubmitManualMerchantPaymentDto,
+} from './dto/submit-manual-merchant-payment.dto';
+
+type SubscriptionPaymentWithBranchPlan = Prisma.SubscriptionPaymentGetPayload<{
+  include: {
+    branch: { select: { name: true } };
+    plan: { select: { interval: true; code: true } };
+  };
+}>;
 
 @Injectable()
 export class BillingService implements OnModuleInit {
@@ -243,12 +257,6 @@ export class BillingService implements OnModuleInit {
 
     const subscriptionPayments: SubscriptionPaymentRowContract[] =
       subscriptionRows.map((row) => {
-        const paid = row.status === SubscriptionPaymentStatus.COMPLETED;
-        const failed = row.status === SubscriptionPaymentStatus.FAILED;
-        const periodStart = row.paidAt ?? row.createdAt;
-        const months = monthsForInterval(row.plan.interval);
-        const periodEnd = new Date(periodStart);
-        periodEnd.setMonth(periodEnd.getMonth() + months);
         const priorPaid = subscriptionRows.some(
           (other) =>
             other.branchId === row.branchId &&
@@ -256,30 +264,7 @@ export class BillingService implements OnModuleInit {
             other.status === SubscriptionPaymentStatus.COMPLETED &&
             other.createdAt < row.createdAt,
         );
-        return {
-          id: row.id,
-          date: (row.paidAt ?? row.createdAt).toISOString(),
-          branchId: row.branchId,
-          branchName: row.branch.name,
-          kind: 'subscription' as const,
-          transaction: paid
-            ? priorPaid
-              ? 'Pro renewal'
-              : 'Pro subscription'
-            : 'Pro subscription',
-          periodLabel: paid
-            ? `${this.formatShortDate(periodStart)} – ${this.formatShortDate(periodEnd)}`
-            : null,
-          amount: Number(row.amount),
-          currency: row.currency,
-          credits: null,
-          paymentMethod: this.paymentMethodFromPayload(row.rawPayload),
-          status: paid ? 'Paid' : failed ? 'Failed' : 'Pending',
-          receipt: paid
-            ? `#${row.merchantReference.slice(-8).toUpperCase()}`
-            : null,
-          canRetry: failed,
-        };
+        return this.toSubscriptionPaymentRow(row, { priorPaid });
       });
 
     const smsPurchasePayments: SubscriptionPaymentRowContract[] =
@@ -428,10 +413,7 @@ export class BillingService implements OnModuleInit {
   /** @deprecated Prefer ensureProPlans / resolvePlanByCode. */
   async ensureProPlan() {
     const plans = await this.ensureProPlans();
-    return (
-      plans.find((plan) => plan.code === PRO_PLAN_CODE) ??
-      plans[0]!
-    );
+    return plans.find((plan) => plan.code === PRO_PLAN_CODE) ?? plans[0]!;
   }
 
   async resolvePlanByCode(planCode?: string | null) {
@@ -529,8 +511,7 @@ export class BillingService implements OnModuleInit {
     const plans = PRO_PLAN_CATALOGUE.map((definition) =>
       this.toPlanContract(definition),
     );
-    const plan =
-      plans.find((row) => row.code === PRO_PLAN_CODE) ?? plans[0]!;
+    const plan = plans.find((row) => row.code === PRO_PLAN_CODE) ?? plans[0]!;
     await this.syncTenantSubscriptions(user.tenantId);
 
     const branchWhere = canManageAll
@@ -584,9 +565,7 @@ export class BillingService implements OnModuleInit {
             )
           : null,
         daysUntilGraceEnd: sub.graceEndsAt
-          ? Math.ceil(
-              (sub.graceEndsAt.getTime() - now) / (24 * 60 * 60 * 1000),
-            )
+          ? Math.ceil((sub.graceEndsAt.getTime() - now) / (24 * 60 * 60 * 1000))
           : null,
         canCheckout: false,
         reminder,
@@ -687,9 +666,11 @@ export class BillingService implements OnModuleInit {
       },
     });
 
-    const nameParts = (payer?.displayName || user.displayName || 'REMBEH').split(
-      /\s+/,
-    );
+    const nameParts = (
+      payer?.displayName ||
+      user.displayName ||
+      'REMBEH'
+    ).split(/\s+/);
 
     const webAppUrl =
       this.configService.get<string>('WEB_APP_URL')?.trim() ||
@@ -718,7 +699,9 @@ export class BillingService implements OnModuleInit {
       });
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Payment could not be started.';
+        error instanceof Error
+          ? error.message
+          : 'Payment could not be started.';
       this.logger.error(`Checkout provider failed: ${message}`);
       await this.prisma.subscriptionPayment.update({
         where: { id: payment.id },
@@ -749,6 +732,179 @@ export class BillingService implements OnModuleInit {
       redirectUrl: order.redirect_url,
       merchantReference,
       orderTrackingId: order.order_tracking_id ?? null,
+    };
+  }
+
+  async submitManualMerchantPayment(
+    user: AuthenticatedUser,
+    branchId: string,
+    dto: SubmitManualMerchantPaymentDto,
+  ): Promise<ManualMerchantPaymentResponseContract> {
+    const canManageAll = user.permissions.includes(BILLING_PERMISSIONS.manage);
+    if (!canManageAll && user.branchId !== branchId) {
+      throw new ForbiddenException('You can only pay for your own branch.');
+    }
+    if (!canManageAll && !user.branchId) {
+      throw new ForbiddenException('You can only pay for your own branch.');
+    }
+
+    const providerDetails = this.manualMerchantDetails(dto.provider);
+    const transactionId = this.normalizeManualTransactionId(dto.transactionId);
+    if (!transactionId) {
+      throw new BadRequestException('Enter the payment transaction ID.');
+    }
+
+    await this.ensureTenantBilling(user.tenantId);
+    const { plan, definition } = await this.resolvePlanByCode(dto.planCode);
+    await this.syncTenantSubscriptions(user.tenantId);
+
+    const branch = await this.prisma.branch.findFirst({
+      where: { id: branchId, tenantId: user.tenantId },
+      include: { subscription: true },
+    });
+    if (!branch) {
+      throw new NotFoundException('Branch not found.');
+    }
+
+    if (!branch.subscription) {
+      await this.provisionBranchSubscription({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+      });
+    }
+
+    const merchantReference = this.manualMerchantReference(
+      dto.provider,
+      transactionId,
+    );
+    const existing = await this.prisma.subscriptionPayment.findUnique({
+      where: { merchantReference },
+      select: { id: true },
+    });
+    if (existing) {
+      throw new ConflictException(
+        'This transaction ID has already been submitted.',
+      );
+    }
+
+    const pendingRequest = await this.prisma.subscriptionPayment.findFirst({
+      where: {
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        planId: plan.id,
+        status: SubscriptionPaymentStatus.PENDING,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (
+      pendingRequest &&
+      this.isManualMerchantPayload(pendingRequest.rawPayload)
+    ) {
+      throw new ConflictException(
+        'A payment request for this purchase is already pending. Cancel it before submitting another transaction ID.',
+      );
+    }
+
+    const rawPayload = {
+      manualMerchant: true,
+      provider: dto.provider,
+      payment_method: providerDetails.historyLabel,
+      transaction_id: transactionId,
+      merchant_code: providerDetails.merchantCode,
+      account_name: providerDetails.accountName,
+      plan_code: definition.code,
+      submitted_by_user_id: user.userId,
+      submitted_at: new Date().toISOString(),
+    } satisfies Prisma.InputJsonObject;
+
+    try {
+      const payment = await this.prisma.subscriptionPayment.create({
+        data: {
+          tenantId: user.tenantId,
+          branchId: branch.id,
+          planId: plan.id,
+          merchantReference,
+          amount: plan.amount,
+          currency: plan.currency,
+          status: SubscriptionPaymentStatus.PENDING,
+          rawPayload,
+        },
+        include: {
+          branch: { select: { name: true } },
+          plan: { select: { interval: true, code: true } },
+        },
+      });
+
+      return {
+        payment: this.toSubscriptionPaymentRow(payment),
+        message:
+          'Payment submitted for verification. We will activate your subscription after confirmation.',
+      };
+    } catch (error) {
+      if (isPrismaUniqueConstraintError(error)) {
+        throw new ConflictException(
+          'This transaction ID has already been submitted.',
+        );
+      }
+      throw error;
+    }
+  }
+
+  async cancelManualMerchantPayment(
+    user: AuthenticatedUser,
+    paymentId: string,
+  ): Promise<ManualMerchantPaymentResponseContract> {
+    const canManageAll = user.permissions.includes(BILLING_PERMISSIONS.manage);
+    const payment = await this.prisma.subscriptionPayment.findFirst({
+      where: { id: paymentId, tenantId: user.tenantId },
+      include: {
+        branch: { select: { name: true } },
+        plan: { select: { interval: true, code: true } },
+      },
+    });
+
+    if (!payment) {
+      throw new NotFoundException('Payment request not found.');
+    }
+    if (!canManageAll && user.branchId !== payment.branchId) {
+      throw new ForbiddenException(
+        'You can only cancel payments for your own branch.',
+      );
+    }
+    if (payment.status !== SubscriptionPaymentStatus.PENDING) {
+      throw new BadRequestException(
+        'Only pending payment requests can be cancelled.',
+      );
+    }
+    if (!this.isManualMerchantPayload(payment.rawPayload)) {
+      throw new BadRequestException(
+        'Only merchant payment requests can be cancelled.',
+      );
+    }
+
+    const rawPayload = {
+      ...(this.payloadObject(payment.rawPayload) ?? {}),
+      cancelled_by_user_id: user.userId,
+      cancelled_at: new Date().toISOString(),
+    } satisfies Prisma.InputJsonObject;
+
+    const updated = await this.prisma.subscriptionPayment.update({
+      where: { id: payment.id },
+      data: {
+        status: SubscriptionPaymentStatus.CANCELLED,
+        rawPayload,
+      },
+      include: {
+        branch: { select: { name: true } },
+        plan: { select: { interval: true, code: true } },
+      },
+    });
+
+    return {
+      payment: this.toSubscriptionPaymentRow(updated),
+      message:
+        'Payment request cancelled. You can submit a new transaction ID.',
     };
   }
 
@@ -810,8 +966,19 @@ export class BillingService implements OnModuleInit {
         })
       : null;
 
-    const params = new URLSearchParams({ paid: '1' });
-    if (payment?.branchId) params.set('branch', payment.branchId);
+    const params = new URLSearchParams({ tab: 'plan' });
+    if (payment) {
+      if (payment.status === SubscriptionPaymentStatus.COMPLETED) {
+        params.set('paymentResult', 'success');
+      } else if (
+        payment.status === SubscriptionPaymentStatus.FAILED ||
+        payment.status === SubscriptionPaymentStatus.REVERSED
+      ) {
+        params.set('paymentResult', 'failed');
+      }
+      params.set('payment', payment.id);
+      params.set('branch', payment.branchId);
+    }
     return `${webAppUrl}/subscription?${params.toString()}`;
   }
 
@@ -982,17 +1149,14 @@ export class BillingService implements OnModuleInit {
       return;
     }
 
-    const description = (
-      status.payment_status_description || ''
-    ).toLowerCase();
+    const description = (status.payment_status_description || '').toLowerCase();
     // Pesapal status_code: 0 INVALID, 1 COMPLETED, 2 FAILED, 3 REVERSED
     const statusCode = Number(
       (status as { status_code?: number | string }).status_code ??
         status.payment_status_code ??
         NaN,
     );
-    const completed =
-      statusCode === 1 || description.includes('completed');
+    const completed = statusCode === 1 || description.includes('completed');
 
     if (!completed) {
       await this.prisma.subscriptionPayment.update({
@@ -1127,12 +1291,158 @@ export class BillingService implements OnModuleInit {
     return null;
   }
 
+  private toSubscriptionPaymentRow(
+    row: SubscriptionPaymentWithBranchPlan,
+    options?: { priorPaid?: boolean },
+  ): SubscriptionPaymentRowContract {
+    const paid = row.status === SubscriptionPaymentStatus.COMPLETED;
+    const pending = row.status === SubscriptionPaymentStatus.PENDING;
+    const cancelled = row.status === SubscriptionPaymentStatus.CANCELLED;
+    const failed =
+      row.status === SubscriptionPaymentStatus.FAILED ||
+      row.status === SubscriptionPaymentStatus.REVERSED;
+    const periodStart = row.paidAt ?? row.createdAt;
+    const months = monthsForInterval(row.plan.interval);
+    const periodEnd = new Date(periodStart);
+    periodEnd.setMonth(periodEnd.getMonth() + months);
+    const transactionId = this.payloadString(row.rawPayload, [
+      'transaction_id',
+      'transactionId',
+      'TransactionId',
+    ]);
+
+    return {
+      id: row.id,
+      date: (row.paidAt ?? row.createdAt).toISOString(),
+      branchId: row.branchId,
+      branchName: row.branch.name,
+      kind: 'subscription',
+      transaction: paid
+        ? options?.priorPaid
+          ? 'Pro renewal'
+          : 'Pro subscription'
+        : 'Pro subscription',
+      periodLabel: paid
+        ? `${this.formatShortDate(periodStart)} – ${this.formatShortDate(periodEnd)}`
+        : null,
+      amount: Number(row.amount),
+      currency: row.currency,
+      planCode: row.plan.code,
+      planDurationMonths: months,
+      activeUntil: paid ? periodEnd.toISOString() : null,
+      transactionId: transactionId ?? row.orderTrackingId ?? null,
+      verifiedAt: paid ? (row.paidAt ?? row.updatedAt).toISOString() : null,
+      verifiedByName: paid
+        ? this.payloadString(row.rawPayload, [
+            'verified_by_name',
+            'verifiedByName',
+            'verified_by',
+            'verifiedBy',
+          ])
+        : null,
+      failureReason: failed
+        ? (this.payloadString(row.rawPayload, [
+            'failure_reason',
+            'failureReason',
+            'reason',
+          ]) ?? 'Transaction could not be found.')
+        : null,
+      credits: null,
+      paymentMethod: this.paymentMethodFromPayload(row.rawPayload),
+      status: paid
+        ? 'Paid'
+        : failed
+          ? 'Failed'
+          : cancelled
+            ? 'Cancelled'
+            : 'Pending',
+      receipt: paid
+        ? `#${row.merchantReference.slice(-8).toUpperCase()}`
+        : null,
+      canRetry: failed,
+      canCancel: pending && this.isManualMerchantPayload(row.rawPayload),
+    };
+  }
+
+  private normalizeManualTransactionId(value: string) {
+    return value.trim().replace(/\s+/g, ' ').toUpperCase();
+  }
+
+  private manualMerchantReference(
+    provider: ManualMerchantPaymentProvider,
+    transactionId: string,
+  ) {
+    const digest = createHash('sha256')
+      .update(`${provider}:${transactionId}`)
+      .digest('hex')
+      .slice(0, 24);
+    const providerSlug =
+      provider === ManualMerchantPaymentProvider.MTN_MOMO ? 'mtn' : 'airtel';
+    return `manual_${providerSlug}_${digest}`;
+  }
+
+  private manualMerchantDetails(provider: ManualMerchantPaymentProvider) {
+    if (provider === ManualMerchantPaymentProvider.MTN_MOMO) {
+      return {
+        historyLabel: 'MTN MoMo',
+        merchantCode:
+          this.configService.get<string>('MTN_MOMO_MERCHANT_CODE')?.trim() ||
+          '123456',
+        accountName:
+          this.configService.get<string>('MTN_MOMO_ACCOUNT_NAME')?.trim() ||
+          'ANTIKRA HOLDINGS LIMITED',
+      };
+    }
+
+    if (provider === ManualMerchantPaymentProvider.AIRTEL_MONEY) {
+      return {
+        historyLabel: 'Airtel Money',
+        merchantCode:
+          this.configService
+            .get<string>('AIRTEL_MONEY_MERCHANT_CODE')
+            ?.trim() || '123456',
+        accountName:
+          this.configService.get<string>('AIRTEL_MONEY_ACCOUNT_NAME')?.trim() ||
+          'ANTIKRA HOLDINGS LIMITED',
+      };
+    }
+
+    throw new BadRequestException('Choose a payment method.');
+  }
+
+  private payloadString(raw: Prisma.JsonValue | null, keys: string[]) {
+    const record = this.payloadObject(raw);
+    if (!record) return null;
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === 'string' && value.trim()) return value.trim();
+    }
+    return null;
+  }
+
+  private payloadObject(raw: Prisma.JsonValue | null) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    return raw as Record<string, unknown>;
+  }
+
+  private isManualMerchantPayload(raw: Prisma.JsonValue | null) {
+    return this.payloadObject(raw)?.manualMerchant === true;
+  }
+
   private paymentMethodFromPayload(raw: Prisma.JsonValue | null): string {
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    const record = this.payloadObject(raw);
+    if (!record) {
       // No provider payload yet (checkout created, payment not finished).
       return '';
     }
-    const record = raw as Record<string, unknown>;
+    if (record.manualMerchant === true) {
+      if (record.provider === ManualMerchantPaymentProvider.MTN_MOMO) {
+        return 'MTN MoMo';
+      }
+      if (record.provider === ManualMerchantPaymentProvider.AIRTEL_MONEY) {
+        return 'Airtel Money';
+      }
+    }
     const candidates = [
       record.payment_method,
       record.payment_method_type,

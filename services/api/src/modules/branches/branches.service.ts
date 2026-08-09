@@ -10,6 +10,10 @@ import type { Branch, OtpChallenge, Prisma } from '@prisma/client';
 import { OtpChannel, OtpPurpose, UserStatus } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
+import {
+  hashRefreshToken,
+  newAuthSessionId,
+} from '../../common/auth/auth-session.util';
 import { JwtTokenService } from '../../common/auth/jwt-token.service';
 import { buildStaffInvitationAcceptUrl } from '../../common/config/web-app-url';
 import {
@@ -24,6 +28,7 @@ import {
 } from '../../common/security/identity-normalization';
 import { OtpService } from '../../common/security/otp.service';
 import { PasswordService } from '../../common/security/password.service';
+import { PrismaService } from '../../database/prisma.service';
 import { toPublicOtpDelivery } from '../notifications/notifications.contracts';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
@@ -173,6 +178,7 @@ type StaffMemberRecord = StaffUserRecord & {
 export class BranchesService {
   constructor(
     private readonly branchesRepository: BranchesRepository,
+    private readonly prisma: PrismaService,
     private readonly billingService: BillingService,
     private readonly configService: ConfigService,
     private readonly jwtTokenService: JwtTokenService,
@@ -664,13 +670,36 @@ export class BranchesService {
   }
 
   private async buildSession(userId: string, tenantId: string) {
-    const token = this.jwtTokenService.issueAccessToken({ userId, tenantId });
+    const sessionId = newAuthSessionId();
+    const tokens = this.jwtTokenService.issueTokenPair({
+      userId,
+      tenantId,
+      sessionId,
+    });
+    const refreshTokenHash = hashRefreshToken(tokens.refreshToken);
+    const now = new Date();
+
+    await this.prisma.authSession.create({
+      data: {
+        id: sessionId,
+        tenantId,
+        userId,
+        refreshTokenHash,
+        lastSeenAt: now,
+        expiresAt: new Date(tokens.refreshExpiresAt),
+      },
+    });
+
     const permissions =
       await this.branchesRepository.listUserPermissionKeys(userId);
 
     return {
-      ...token,
+      accessToken: tokens.accessToken,
+      expiresAt: tokens.expiresAt,
+      refreshToken: tokens.refreshToken,
+      refreshExpiresAt: tokens.refreshExpiresAt,
       tokenType: 'Bearer' as const,
+      sessionId,
       permissions: [
         ...new Set(
           permissions.flatMap((userRole) =>

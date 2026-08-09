@@ -92,15 +92,6 @@ class _BootScreenState extends State<_BootScreen> {
     if (!mounted) return;
 
     if (session != null) {
-      // Idle timeout survives process death via last-activity timestamp.
-      if (await store.isIdleTimedOut()) {
-        await clearTenantScopedClientState();
-        await store.clear();
-        if (!mounted) return;
-        _goLogin();
-        return;
-      }
-
       if (!session.isAccessExpired) {
         await widget.pushService?.requestPermissionAndSync();
         if (!mounted) return;

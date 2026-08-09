@@ -51,6 +51,7 @@ import {
   clearAuthState,
   isSessionExpired,
   readAuthState,
+  refreshAuthSession,
 } from "../../lib/auth-session";
 import { resolveOperatorRole } from "../../lib/roles";
 
@@ -338,20 +339,6 @@ function todayInputValue() {
   return `${year}-${month}-${day}`;
 }
 
-function nextDayInputValue(from = todayInputValue()) {
-  const [year, month, day] = from.split("-").map(Number);
-  const next = new Date(Date.UTC(year, month - 1, day + 1));
-  const y = next.getUTCFullYear();
-  const m = String(next.getUTCMonth() + 1).padStart(2, "0");
-  const d = String(next.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
-function isActiveOperationDate(value: string) {
-  const today = todayInputValue();
-  return value === today || value === nextDayInputValue(today);
-}
-
 function validDateInputValue(value: string | null) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value ?? "");
 }
@@ -437,9 +424,8 @@ export default function OperationsPage() {
     reportBranches.find((item) => item.id === selectedBranchId) ?? activeBranch;
   const pendingClosureOperation = data?.pendingClosureOperation ?? null;
   const awaitingReportOperation = data?.awaitingReportOperation ?? null;
-  const isActiveDay = isActiveOperationDate(date);
   const canFinishOpenOperation = Boolean(
-    canOperateBranch && operation && operation.status === "OPEN" && isActiveDay,
+    canOperateBranch && operation && operation.status === "OPEN",
   );
 
   useEffect(() => {
@@ -574,24 +560,28 @@ export default function OperationsPage() {
     const boot = window.setTimeout(() => {
       void (async () => {
         const auth = readAuthState();
-        if (!auth.session || isSessionExpired(auth.session)) {
+        let activeSession = auth.session;
+        if (activeSession && isSessionExpired(activeSession)) {
+          activeSession = await refreshAuthSession(activeSession, apiBaseUrl);
+        }
+        if (!activeSession) {
           clearAuthState();
           router.replace("/login");
           return;
         }
 
-        const role = resolveOperatorRole(auth.session, auth.user);
+        const role = resolveOperatorRole(activeSession, auth.user);
         if (role === "staff") {
           router.replace("/dashboard");
           return;
         }
 
-        setSession(auth.session);
+        setSession(activeSession);
         setWorkspace(auth.workspace);
         setUser(auth.user);
         setBranch(auth.branch);
 
-        if (!auth.session.permissions.includes("operation.read")) {
+        if (!activeSession.permissions.includes("operation.read")) {
           setError("You do not have access to daily operations.");
           setLoading(false);
           return;
@@ -599,7 +589,7 @@ export default function OperationsPage() {
 
         if (role === "owner") {
           try {
-            const branches = await loadBranchesForReports(auth.session);
+            const branches = await loadBranchesForReports(activeSession);
             const branchId = selectedBranchId || branches[0]?.id || "";
             if (branchId && branchId !== selectedBranchId) {
               setSelectedBranchId(branchId);
@@ -610,7 +600,7 @@ export default function OperationsPage() {
               setLoading(false);
               return;
             }
-            await loadOperation(auth.session, date, branchId);
+            await loadOperation(activeSession, date, branchId);
           } catch (caught) {
             setError(
               caught instanceof Error
@@ -625,8 +615,8 @@ export default function OperationsPage() {
         setReportBranches([]);
         setSelectedBranchId("");
         void Promise.all([
-          loadOperation(auth.session, date),
-          loadAgentsForDay(auth.session, date),
+          loadOperation(activeSession, date),
+          loadAgentsForDay(activeSession, date),
         ]);
       })();
     }, 0);
@@ -990,9 +980,7 @@ export default function OperationsPage() {
       setData(payload);
       if (payload.date) {
         setDate(payload.date);
-        router.replace(
-          `/operations?date=${encodeURIComponent(payload.date)}`,
-        );
+        router.replace(`/operations?date=${encodeURIComponent(payload.date)}`);
       }
       setManagerReportNotes("");
       setNotice(
@@ -1325,9 +1313,7 @@ export default function OperationsPage() {
           settingsHref={
             operatorRole === "owner" ? "/owner/settings" : "/settings"
           }
-          reportsHref={
-            operatorRole === "owner" ? "/owner/reports" : "/reports"
-          }
+          reportsHref={operatorRole === "owner" ? "/owner/reports" : "/reports"}
           notificationScope={operatorRole === "owner" ? "owner" : "manager"}
           actions={
             <>
@@ -1466,7 +1452,9 @@ export default function OperationsPage() {
               setOwnerReportNotes={setOwnerReportNotes}
               onManagerConfirmReport={() => void managerConfirmReport()}
               onOwnerApproveReport={() => void ownerApproveReport()}
-              onExportReport={(format) => void exportDailyOperationReport(format)}
+              onExportReport={(format) =>
+                void exportDailyOperationReport(format)
+              }
               onAction={openActionPanel}
             />
             {session && activeBranch && canOperateBranch ? (
@@ -1806,7 +1794,8 @@ function OpenOperationView({
       ? {
           id: "pending-returns",
           title: `${pendingReturnsCount} field officer return${pendingReturnsCount === 1 ? "" : "s"} outstanding`,
-          detail: "Field officers still out with float must hand cash back before close.",
+          detail:
+            "Field officers still out with float must hand cash back before close.",
           tone: "red" as const,
           action: "agent-return" as const,
           actionLabel: "Record return",
@@ -1924,10 +1913,7 @@ function OpenOperationView({
           hint={
             <>
               Opening{" "}
-              <Money
-                value={operation.cashAvailableAtOpening}
-                currency="UGX"
-              />
+              <Money value={operation.cashAvailableAtOpening} currency="UGX" />
             </>
           }
           tooltip="Cash currently on hand at the branch for this operations day."
@@ -1937,10 +1923,7 @@ function OpenOperationView({
           icon={<Landmark className="size-5" />}
           label="Expected Close"
           value={
-            <Money
-              value={operation.expectedClosingBalance}
-              currency="UGX"
-            />
+            <Money value={operation.expectedClosingBalance} currency="UGX" />
           }
           hint="Target Cash Left"
           tooltip="Expected cash left after float, returns, and expenses."
@@ -1972,9 +1955,7 @@ function OpenOperationView({
         <DayTopStat
           icon={<Banknote className="size-5" />}
           label="Repayments"
-          value={
-            <Money value={operation.collectionsReceived} currency="UGX" />
-          }
+          value={<Money value={operation.collectionsReceived} currency="UGX" />}
           hint={
             <>
               {operation.loansIssuedCount} loans ·{" "}
@@ -2229,10 +2210,7 @@ function ComputerisedReportView({
         <ReportMetric
           label="Opening Cash"
           value={
-            <Money
-              value={operation.cashAvailableAtOpening}
-              currency="UGX"
-            />
+            <Money value={operation.cashAvailableAtOpening} currency="UGX" />
           }
         />
         <ReportMetric
@@ -2253,18 +2231,13 @@ function ComputerisedReportView({
         <ReportMetric
           label="Expected Close"
           value={
-            <Money
-              value={operation.expectedClosingBalance}
-              currency="UGX"
-            />
+            <Money value={operation.expectedClosingBalance} currency="UGX" />
           }
           highlight
         />
         <ReportMetric
           label="Counted Cash"
-          value={
-            <Money value={operation.closingBalance ?? 0} currency="UGX" />
-          }
+          value={<Money value={operation.closingBalance ?? 0} currency="UGX" />}
         />
       </div>
 
@@ -2281,10 +2254,7 @@ function ComputerisedReportView({
           <StatementRow
             label="Opening capital"
             value={
-              <Money
-                value={operation.cashAvailableAtOpening}
-                currency="UGX"
-              />
+              <Money value={operation.cashAvailableAtOpening} currency="UGX" />
             }
             strong
           />
@@ -2293,10 +2263,7 @@ function ComputerisedReportView({
           <StatementRow
             label="Expected closing balance"
             value={
-              <Money
-                value={operation.expectedClosingBalance}
-                currency="UGX"
-              />
+              <Money value={operation.expectedClosingBalance} currency="UGX" />
             }
             strong
           />
@@ -2320,20 +2287,14 @@ function ComputerisedReportView({
             label="Loans issued"
             value={`${operation.loansIssuedCount}`}
             hint={
-              <Money
-                value={operation.loansIssuedPrincipal}
-                currency="UGX"
-              />
+              <Money value={operation.loansIssuedPrincipal} currency="UGX" />
             }
           />
           <ReportMiniStat
             label="Repayments"
             value={`${operation.collectionsCount}`}
             hint={
-              <Money
-                value={operation.collectionsReceived}
-                currency="UGX"
-              />
+              <Money value={operation.collectionsReceived} currency="UGX" />
             }
           />
           <ReportMiniStat
@@ -3161,10 +3122,7 @@ function CashMovementCard({ operation }: { operation: DailyOperation }) {
             Close
           </p>
           <p className="text-[11px] font-bold tabular-nums text-[var(--forest-emerald)]">
-            <Money
-              value={operation.expectedClosingBalance}
-              currency="UGX"
-            />
+            <Money value={operation.expectedClosingBalance} currency="UGX" />
           </p>
         </div>
       </div>
@@ -3411,7 +3369,9 @@ function DayExpensesStrip({
 
       {latest.length === 0 ? (
         <div className="mt-3 rounded-xl border border-dashed border-[#e6ebf0] bg-[#fbfcfd] px-4 py-6 text-center">
-          <p className="text-xs font-semibold text-[#0b1220]">No expenses yet</p>
+          <p className="text-xs font-semibold text-[#0b1220]">
+            No expenses yet
+          </p>
           <p className="mt-1 text-[11px] font-medium text-slate-500">
             Transport, meals and other day costs will show here.
           </p>
@@ -3745,6 +3705,8 @@ function OperationActionDrawer({
       ? null
       : Math.round((countedCash - operation.expectedClosingBalance) * 100) /
         100;
+  const closingCashToSave =
+    variance == null ? null : Math.round(countedCash * 100) / 100;
   const needsCloseNote = variance != null && variance !== 0;
   const needsShortageOwner = variance != null && variance < 0;
   const canSubmitClose =
@@ -3753,8 +3715,7 @@ function OperationActionDrawer({
     allReturnsRecorded &&
     closingForm.countedCash !== "" &&
     (!needsCloseNote || closingForm.notes.trim().length > 0) &&
-    (!needsShortageOwner ||
-      Boolean(closingForm.shortageResponsibleUserId));
+    (!needsShortageOwner || Boolean(closingForm.shortageResponsibleUserId));
   const submitting =
     recordingTopUp ||
     recordingExpense ||
@@ -3947,7 +3908,9 @@ function OperationActionDrawer({
                             setAgentReturnForm({
                               ...agentReturnForm,
                               agentId: agentReturn.agentId,
-                              amountReturned: String(agentReturn.expectedReturn),
+                              amountReturned: String(
+                                agentReturn.expectedReturn,
+                              ),
                             })
                           }
                           className={`flex w-full items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition disabled:opacity-50 ${
@@ -4072,23 +4035,12 @@ function OperationActionDrawer({
                   }
                 />
                 {variance != null ? (
-                  <DrawerAlert
-                    tone={
-                      variance === 0
-                        ? "green"
-                        : variance < 0
-                          ? "red"
-                          : "amber"
-                    }
-                  >
-                    <>
-                      Variance <VarianceLabel value={variance} />
-                      {needsCloseNote ? " · notes required" : ""}
-                      {needsShortageOwner
-                        ? " · assign who must account for the shortage"
-                        : ""}
-                    </>
-                  </DrawerAlert>
+                  <CloseDayVarianceSummary
+                    variance={variance}
+                    closingCash={closingCashToSave ?? 0}
+                    notesRequired={needsCloseNote}
+                    shortageOwnerRequired={needsShortageOwner}
+                  />
                 ) : null}
                 {needsShortageOwner ? (
                   <label className="block">
@@ -4150,7 +4102,9 @@ function OperationActionDrawer({
                 if (panel === "close-day") onCloseDay();
               }}
             >
-              {submitting ? <Loader2 className="size-3.5 animate-spin" /> : null}
+              {submitting ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : null}
               {meta.cta}
             </button>
           </div>
@@ -4170,9 +4124,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
       stats: (operation: DailyOperation) => [
         {
           label: "Cash Left",
-          value: (
-            <Money value={operation.branchCashRemaining} currency="UGX" />
-          ),
+          value: <Money value={operation.branchCashRemaining} currency="UGX" />,
         },
         {
           label: "Capital top-ups today",
@@ -4193,9 +4145,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
       stats: (operation: DailyOperation) => [
         {
           label: "Cash Left",
-          value: (
-            <Money value={operation.branchCashRemaining} currency="UGX" />
-          ),
+          value: <Money value={operation.branchCashRemaining} currency="UGX" />,
         },
         {
           label: "Expenses",
@@ -4244,10 +4194,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
         {
           label: "Expected back",
           value: (
-            <Money
-              value={operation.expectedAgentReturnTotal}
-              currency="UGX"
-            />
+            <Money value={operation.expectedAgentReturnTotal} currency="UGX" />
           ),
         },
         {
@@ -4265,10 +4212,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
         {
           label: "Expected close",
           value: (
-            <Money
-              value={operation.expectedClosingBalance}
-              currency="UGX"
-            />
+            <Money value={operation.expectedClosingBalance} currency="UGX" />
           ),
         },
         {
@@ -4307,6 +4251,58 @@ function DrawerAlert({
     >
       {children}
     </p>
+  );
+}
+
+function CloseDayVarianceSummary({
+  variance,
+  closingCash,
+  notesRequired,
+  shortageOwnerRequired,
+}: {
+  variance: number;
+  closingCash: number;
+  notesRequired: boolean;
+  shortageOwnerRequired: boolean;
+}) {
+  if (variance === 0) {
+    return <DrawerAlert tone="green">Variance Balanced</DrawerAlert>;
+  }
+
+  const isShortage = variance < 0;
+  const tone = isShortage ? "red" : "amber";
+  const label = isShortage ? "Shortage calculated" : "Surplus calculated";
+  const guidance = isShortage
+    ? "The shortage is separated from closing cash."
+    : "The surplus is separated from closing cash.";
+
+  return (
+    <div className="space-y-2">
+      <DrawerAlert tone={tone}>
+        <span className="inline-flex flex-wrap items-baseline gap-1">
+          <span>{label}</span>
+          <Money value={Math.abs(variance)} currency="UGX" />
+          {notesRequired ? <span>· notes required</span> : null}
+          {shortageOwnerRequired ? (
+            <span>· assign who must account for the shortage</span>
+          ) : null}
+        </span>
+      </DrawerAlert>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <PanelHint
+          label="Closing cash saved"
+          value={<Money value={closingCash} currency="UGX" />}
+        />
+        <PanelHint
+          label={isShortage ? "Shortage amount" : "Surplus amount"}
+          value={<Money value={Math.abs(variance)} currency="UGX" />}
+        />
+      </div>
+      <p className="text-[11px] font-medium leading-5 text-slate-500">
+        {guidance} The close-day record will save only the physical cash counted
+        as closing cash.
+      </p>
+    </div>
   );
 }
 
@@ -4876,10 +4872,7 @@ function CloseDayCard({
         </p>
         <p className="mt-0.5 inline-flex flex-wrap items-baseline gap-1 text-xs text-slate-500">
           <span>Expected:</span>
-          <Money
-            value={operation.expectedClosingBalance}
-            currency="UGX"
-          />
+          <Money value={operation.expectedClosingBalance} currency="UGX" />
         </p>
         <p className="mt-0.5 inline-flex flex-wrap items-baseline gap-1 text-xs text-slate-500">
           <span>Loan processing fees:</span>
@@ -5168,7 +5161,9 @@ function DetailRow({ label, value }: { label: string; value: ReactNode }) {
       <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
         {label}
       </p>
-      <p className="mt-0.5 truncate text-sm font-bold text-[#0b1220]">{value}</p>
+      <p className="mt-0.5 truncate text-sm font-bold text-[#0b1220]">
+        {value}
+      </p>
     </div>
   );
 }
@@ -5192,7 +5187,9 @@ function StatusPanel({
         : "border-amber-100 bg-amber-50 text-amber-700";
   return (
     <div className="flex items-center gap-3 rounded-[14px] border border-[#e6ebf0] bg-white px-4 py-3.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
-      <span className={`grid size-9 place-items-center rounded-xl border ${toneClass}`}>
+      <span
+        className={`grid size-9 place-items-center rounded-xl border ${toneClass}`}
+      >
         {icon}
       </span>
       <span className="min-w-0">

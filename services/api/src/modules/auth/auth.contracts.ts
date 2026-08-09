@@ -51,7 +51,10 @@ export type WorkspaceOtpVerificationResponse = {
   session: {
     accessToken: string;
     expiresAt: string;
+    refreshToken?: string;
+    refreshExpiresAt?: string;
     tokenType: 'Bearer';
+    sessionId?: string;
     permissions: string[];
   } | null;
 };

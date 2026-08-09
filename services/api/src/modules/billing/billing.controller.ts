@@ -15,6 +15,7 @@ import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { BillingService } from './billing.service';
 import { StartCheckoutDto } from './dto/start-checkout.dto';
+import { SubmitManualMerchantPaymentDto } from './dto/submit-manual-merchant-payment.dto';
 
 @Controller('billing')
 export class BillingController {
@@ -50,6 +51,31 @@ export class BillingController {
     @Body() body: StartCheckoutDto,
   ) {
     return this.billingService.startCheckout(user, branchId, body?.planCode);
+  }
+
+  /** Owner may submit any branch payment; manager may submit their own branch. */
+  @Post('branches/:branchId/manual-payment')
+  @UseGuards(JwtAuthGuard)
+  submitManualMerchantPayment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+    @Body() body: SubmitManualMerchantPaymentDto,
+  ) {
+    return this.billingService.submitManualMerchantPayment(
+      user,
+      branchId,
+      body,
+    );
+  }
+
+  /** Explicitly cancel a pending merchant payment request before retrying. */
+  @Post('payments/:paymentId/cancel')
+  @UseGuards(JwtAuthGuard)
+  cancelManualMerchantPayment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+  ) {
+    return this.billingService.cancelManualMerchantPayment(user, paymentId);
   }
 
   @Get('pesapal/ipn')
