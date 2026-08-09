@@ -58,20 +58,38 @@ import {
   SubmitManualMerchantPaymentDto,
 } from './dto/submit-manual-merchant-payment.dto';
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+const BILLING_REMINDER_COOLDOWN_MS = 20 * 60 * 60 * 1000;
+const SUBSCRIPTION_EXPIRY_REMINDER_DAYS = new Set([7, 2]);
+
+const SUBSCRIPTION_PAYMENT_BRANCH_SELECT = {
+  name: true,
+  subscription: {
+    select: {
+      status: true,
+      currentPeriodStart: true,
+      currentPeriodEnd: true,
+    },
+  },
+} satisfies Prisma.BranchSelect;
+
+const SUBSCRIPTION_PAYMENT_ROW_INCLUDE = {
+  branch: { select: SUBSCRIPTION_PAYMENT_BRANCH_SELECT },
+  plan: { select: { interval: true, code: true } },
+} satisfies Prisma.SubscriptionPaymentInclude;
+
+const SUBSCRIPTION_PAYMENT_TENANT_INCLUDE = {
+  ...SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
+  tenant: { select: { name: true } },
+} satisfies Prisma.SubscriptionPaymentInclude;
+
 type SubscriptionPaymentWithBranchPlan = Prisma.SubscriptionPaymentGetPayload<{
-  include: {
-    branch: { select: { name: true } };
-    plan: { select: { interval: true; code: true } };
-  };
+  include: typeof SUBSCRIPTION_PAYMENT_ROW_INCLUDE;
 }>;
 
 type SubscriptionPaymentWithBranchPlanTenant =
   Prisma.SubscriptionPaymentGetPayload<{
-    include: {
-      branch: { select: { name: true } };
-      plan: { select: { interval: true; code: true } };
-      tenant: { select: { name: true } };
-    };
+    include: typeof SUBSCRIPTION_PAYMENT_TENANT_INCLUDE;
   }>;
 
 type SmsPurchaseWithBranch = Prisma.SmsPurchaseGetPayload<{
@@ -125,6 +143,9 @@ type ResendWebhookHeaders = {
   timestamp?: string | string[];
   signature?: string | string[];
 };
+
+type SubscriptionOwnerReminderKind =
+  'trial_ending' | 'expires_soon' | 'grace' | 'locked';
 
 type PaymentReplyCommand =
   | { action: 'confirm'; transactionIds: string[] }
@@ -311,10 +332,7 @@ export class BillingService implements OnModuleInit {
           where,
           orderBy: { createdAt: 'desc' },
           take: 100,
-          include: {
-            branch: { select: { name: true } },
-            plan: { select: { interval: true, code: true } },
-          },
+          include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
         }),
         this.prisma.smsPurchase.findMany({
           where,
@@ -334,6 +352,22 @@ export class BillingService implements OnModuleInit {
         }),
       ]);
 
+    const latestPaidSubscriptionByBranch = new Map<
+      string,
+      { id: string; date: Date }
+    >();
+    for (const row of subscriptionRows) {
+      if (row.status !== SubscriptionPaymentStatus.COMPLETED) continue;
+      const rowDate = row.paidAt ?? row.updatedAt ?? row.createdAt;
+      const existing = latestPaidSubscriptionByBranch.get(row.branchId);
+      if (!existing || rowDate.getTime() > existing.date.getTime()) {
+        latestPaidSubscriptionByBranch.set(row.branchId, {
+          id: row.id,
+          date: rowDate,
+        });
+      }
+    }
+
     const subscriptionPayments: SubscriptionPaymentRowContract[] =
       subscriptionRows.map((row) => {
         const priorPaid = subscriptionRows.some(
@@ -343,7 +377,11 @@ export class BillingService implements OnModuleInit {
             other.status === SubscriptionPaymentStatus.COMPLETED &&
             other.createdAt < row.createdAt,
         );
-        return this.toSubscriptionPaymentRow(row, { priorPaid });
+        return this.toSubscriptionPaymentRow(row, {
+          priorPaid,
+          useBranchSubscriptionPeriod:
+            latestPaidSubscriptionByBranch.get(row.branchId)?.id === row.id,
+        });
       });
 
     const smsPurchasePayments: SubscriptionPaymentRowContract[] =
@@ -901,10 +939,7 @@ export class BillingService implements OnModuleInit {
           status: SubscriptionPaymentStatus.PENDING,
           rawPayload,
         },
-        include: {
-          branch: { select: { name: true } },
-          plan: { select: { interval: true, code: true } },
-        },
+        include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
       });
 
       const alertedPayment = await this.sendManualPaymentVerificationAlert(
@@ -1122,10 +1157,7 @@ export class BillingService implements OnModuleInit {
     const canManageAll = user.permissions.includes(BILLING_PERMISSIONS.manage);
     const payment = await this.prisma.subscriptionPayment.findFirst({
       where: { id: paymentId, tenantId: user.tenantId },
-      include: {
-        branch: { select: { name: true } },
-        plan: { select: { interval: true, code: true } },
-      },
+      include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
     });
 
     if (!payment) {
@@ -1159,10 +1191,7 @@ export class BillingService implements OnModuleInit {
         status: SubscriptionPaymentStatus.CANCELLED,
         rawPayload,
       },
-      include: {
-        branch: { select: { name: true } },
-        plan: { select: { interval: true, code: true } },
-      },
+      include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
     });
 
     this.emitSubscriptionPaymentUpdate(updated);
@@ -1284,10 +1313,7 @@ export class BillingService implements OnModuleInit {
 
       const payment = await this.prisma.subscriptionPayment.findUnique({
         where: { id: paymentId },
-        include: {
-          branch: { select: { name: true } },
-          plan: { select: { interval: true, code: true } },
-        },
+        include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
       });
       if (payment) {
         if (!this.isManualMerchantPayload(payment.rawPayload)) {
@@ -1374,11 +1400,7 @@ export class BillingService implements OnModuleInit {
     const [pendingPayments, pendingSmsPurchases] = await Promise.all([
       this.prisma.subscriptionPayment.findMany({
         where: { status: SubscriptionPaymentStatus.PENDING },
-        include: {
-          branch: { select: { name: true } },
-          plan: { select: { interval: true, code: true } },
-          tenant: { select: { name: true } },
-        },
+        include: SUBSCRIPTION_PAYMENT_TENANT_INCLUDE,
         orderBy: { createdAt: 'asc' },
       }),
       this.prisma.smsPurchase.findMany({
@@ -1633,11 +1655,8 @@ export class BillingService implements OnModuleInit {
       const trialActive = billing.trialEndsAt.getTime() > now.getTime();
 
       if (trialActive) {
-        if (sub.status !== BranchSubscriptionStatus.TRIAL) {
-          // Keep ACTIVE paid periods even during leftover trial window overlaps.
-          if (sub.status === BranchSubscriptionStatus.ACTIVE) continue;
-        } else {
-          await this.prisma.branchSubscription.update({
+        if (sub.status === BranchSubscriptionStatus.TRIAL) {
+          sub = await this.prisma.branchSubscription.update({
             where: { id: sub.id },
             data: {
               status: BranchSubscriptionStatus.TRIAL,
@@ -1648,6 +1667,39 @@ export class BillingService implements OnModuleInit {
               planId: plan.id,
             },
           });
+          const trialDaysRemaining = this.daysUntil(billing.trialEndsAt, now);
+          if (SUBSCRIPTION_EXPIRY_REMINDER_DAYS.has(trialDaysRemaining)) {
+            await this.maybeNotifyBranchSubscriptionReminder({
+              tenantId,
+              branchId: branch.id,
+              branchName: branch.name,
+              subscriptionId: sub.id,
+              lastReminderAt: sub.lastReminderAt,
+              now,
+              kind: 'trial_ending',
+              daysRemaining: trialDaysRemaining,
+              periodEnd: billing.trialEndsAt,
+            });
+          }
+        } else if (
+          sub.status === BranchSubscriptionStatus.ACTIVE &&
+          sub.currentPeriodEnd &&
+          sub.currentPeriodEnd.getTime() > now.getTime()
+        ) {
+          const daysRemaining = this.daysUntil(sub.currentPeriodEnd, now);
+          if (SUBSCRIPTION_EXPIRY_REMINDER_DAYS.has(daysRemaining)) {
+            await this.maybeNotifyBranchSubscriptionReminder({
+              tenantId,
+              branchId: branch.id,
+              branchName: branch.name,
+              subscriptionId: sub.id,
+              lastReminderAt: sub.lastReminderAt,
+              now,
+              kind: 'expires_soon',
+              daysRemaining,
+              periodEnd: sub.currentPeriodEnd,
+            });
+          }
         }
         continue;
       }
@@ -1671,6 +1723,8 @@ export class BillingService implements OnModuleInit {
           branchId: branch.id,
           branchName: branch.name,
           kind: 'grace',
+          daysRemaining: GRACE_DAYS,
+          graceEndsAt,
         });
         continue;
       }
@@ -1696,8 +1750,49 @@ export class BillingService implements OnModuleInit {
           branchId: branch.id,
           branchName: branch.name,
           kind: 'grace',
+          daysRemaining: GRACE_DAYS,
+          graceEndsAt,
         });
         continue;
+      }
+
+      if (
+        sub.status === BranchSubscriptionStatus.ACTIVE &&
+        sub.currentPeriodEnd &&
+        sub.currentPeriodEnd.getTime() >= now.getTime()
+      ) {
+        const daysRemaining = this.daysUntil(sub.currentPeriodEnd, now);
+        if (SUBSCRIPTION_EXPIRY_REMINDER_DAYS.has(daysRemaining)) {
+          await this.maybeNotifyBranchSubscriptionReminder({
+            tenantId,
+            branchId: branch.id,
+            branchName: branch.name,
+            subscriptionId: sub.id,
+            lastReminderAt: sub.lastReminderAt,
+            now,
+            kind: 'expires_soon',
+            daysRemaining,
+            periodEnd: sub.currentPeriodEnd,
+          });
+        }
+      }
+
+      if (
+        sub.status === BranchSubscriptionStatus.GRACE &&
+        sub.graceEndsAt &&
+        sub.graceEndsAt.getTime() >= now.getTime()
+      ) {
+        await this.maybeNotifyBranchSubscriptionReminder({
+          tenantId,
+          branchId: branch.id,
+          branchName: branch.name,
+          subscriptionId: sub.id,
+          lastReminderAt: sub.lastReminderAt,
+          now,
+          kind: 'grace',
+          daysRemaining: this.daysUntil(sub.graceEndsAt, now),
+          graceEndsAt: sub.graceEndsAt,
+        });
       }
 
       if (
@@ -1718,6 +1813,7 @@ export class BillingService implements OnModuleInit {
           branchId: branch.id,
           branchName: branch.name,
           kind: 'locked',
+          daysRemaining: 0,
         });
       }
     }
@@ -1789,12 +1885,18 @@ export class BillingService implements OnModuleInit {
       where: { id: payment.planId },
     });
     const months = monthsForInterval(paidPlan?.interval ?? 'MONTHLY');
-    const base =
-      sub?.currentPeriodEnd && sub.currentPeriodEnd.getTime() > now.getTime()
-        ? new Date(sub.currentPeriodEnd)
-        : now;
-    const periodEnd = new Date(base);
-    periodEnd.setMonth(periodEnd.getMonth() + months);
+    const { periodStart, periodEnd } =
+      await this.resolveSubscriptionActivationPeriod({
+        tenantId: payment.tenantId,
+        sub,
+        months,
+        now,
+      });
+    const rawPayload = {
+      ...(this.payloadObject(status as Prisma.JsonValue) ?? {}),
+      subscription_active_from: periodStart.toISOString(),
+      subscription_active_until: periodEnd.toISOString(),
+    } satisfies Prisma.InputJsonObject;
 
     await this.prisma.$transaction(async (tx) => {
       await tx.subscriptionPayment.update({
@@ -1803,7 +1905,7 @@ export class BillingService implements OnModuleInit {
           status: SubscriptionPaymentStatus.COMPLETED,
           orderTrackingId,
           paidAt: now,
-          rawPayload: status as Prisma.InputJsonValue,
+          rawPayload,
         },
       });
 
@@ -1811,7 +1913,7 @@ export class BillingService implements OnModuleInit {
         where: { branchId: payment.branchId },
         data: {
           status: BranchSubscriptionStatus.ACTIVE,
-          currentPeriodStart: now,
+          currentPeriodStart: periodStart,
           currentPeriodEnd: periodEnd,
           graceEndsAt: null,
           lockedAt: null,
@@ -1844,6 +1946,49 @@ export class BillingService implements OnModuleInit {
     }
   }
 
+  private daysUntil(value: Date, now = new Date()) {
+    return Math.max(0, Math.ceil((value.getTime() - now.getTime()) / DAY_MS));
+  }
+
+  private canSendBillingReminder(lastReminderAt: Date | null, now: Date) {
+    return (
+      !lastReminderAt ||
+      now.getTime() - lastReminderAt.getTime() >= BILLING_REMINDER_COOLDOWN_MS
+    );
+  }
+
+  private async maybeNotifyBranchSubscriptionReminder(input: {
+    tenantId: string;
+    branchId: string;
+    branchName: string;
+    subscriptionId: string;
+    lastReminderAt: Date | null;
+    now: Date;
+    kind: SubscriptionOwnerReminderKind;
+    daysRemaining: number;
+    periodEnd?: Date | null;
+    graceEndsAt?: Date | null;
+  }) {
+    if (!this.canSendBillingReminder(input.lastReminderAt, input.now)) {
+      return;
+    }
+
+    await this.prisma.branchSubscription.update({
+      where: { id: input.subscriptionId },
+      data: { lastReminderAt: input.now },
+    });
+
+    void this.notifyOwnersBranchNeedsSubscription({
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      branchName: input.branchName,
+      kind: input.kind,
+      daysRemaining: input.daysRemaining,
+      periodEnd: input.periodEnd ?? null,
+      graceEndsAt: input.graceEndsAt ?? null,
+    });
+  }
+
   private reminderFor(
     sub: {
       status: BranchSubscriptionStatus;
@@ -1857,9 +2002,7 @@ export class BillingService implements OnModuleInit {
       const days = sub.graceEndsAt
         ? Math.max(
             0,
-            Math.ceil(
-              (sub.graceEndsAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000),
-            ),
+            Math.ceil((sub.graceEndsAt.getTime() - Date.now()) / DAY_MS),
           )
         : GRACE_DAYS;
       return `${branchName} needs renewing within ${days} day${days === 1 ? '' : 's'} to stay open.`;
@@ -1867,15 +2010,29 @@ export class BillingService implements OnModuleInit {
     if (sub.status === BranchSubscriptionStatus.LOCKED) {
       return `${branchName} is paused — renew to continue.`;
     }
+    if (sub.status === BranchSubscriptionStatus.TRIAL && sub.currentPeriodEnd) {
+      const days = Math.ceil(
+        (sub.currentPeriodEnd.getTime() - Date.now()) / DAY_MS,
+      );
+      if (days <= 7 && days >= 0) {
+        return days === 0
+          ? `${branchName} trial ends today.`
+          : `${branchName} trial ends in ${days} day${days === 1 ? '' : 's'}.`;
+      }
+    }
     if (
       sub.status === BranchSubscriptionStatus.ACTIVE &&
       sub.currentPeriodEnd
     ) {
       const days = Math.ceil(
-        (sub.currentPeriodEnd.getTime() - Date.now()) / (24 * 60 * 60 * 1000),
+        (sub.currentPeriodEnd.getTime() - Date.now()) / DAY_MS,
       );
-      if (days <= 3 && days >= 0) {
-        return `${branchName} renews in ${days} day${days === 1 ? '' : 's'}.`;
+      if (days <= 7 && days >= 0) {
+        return days === 0
+          ? `${branchName} subscription expires today.`
+          : `${branchName} subscription expires in ${days} day${
+              days === 1 ? '' : 's'
+            }.`;
       }
     }
     return null;
@@ -1937,10 +2094,7 @@ export class BillingService implements OnModuleInit {
     return this.prisma.subscriptionPayment.update({
       where: { id: payment.id },
       data: { rawPayload },
-      include: {
-        branch: { select: { name: true } },
-        plan: { select: { interval: true, code: true } },
-      },
+      include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
     });
   }
 
@@ -2085,7 +2239,10 @@ export class BillingService implements OnModuleInit {
           tenantId: payment.tenantId,
           branchId: payment.branchId,
           status: payment.status,
-          payment: this.toSubscriptionPaymentRow(payment),
+          payment: this.toSubscriptionPaymentRow(payment, {
+            useBranchSubscriptionPeriod:
+              payment.status === SubscriptionPaymentStatus.COMPLETED,
+          }),
         },
       );
     } catch (error) {
@@ -2146,6 +2303,44 @@ export class BillingService implements OnModuleInit {
     }
   }
 
+  private async resolveSubscriptionActivationPeriod(input: {
+    tenantId: string;
+    sub: {
+      status: BranchSubscriptionStatus;
+      currentPeriodEnd: Date | null;
+    } | null;
+    months: number;
+    now: Date;
+  }) {
+    const billing = await this.ensureTenantBilling(input.tenantId);
+    const futureBases: Date[] = [];
+
+    if (
+      input.sub?.currentPeriodEnd &&
+      input.sub.currentPeriodEnd.getTime() > input.now.getTime()
+    ) {
+      futureBases.push(input.sub.currentPeriodEnd);
+    }
+
+    if (
+      input.sub?.status === BranchSubscriptionStatus.TRIAL &&
+      billing.trialEndsAt.getTime() > input.now.getTime()
+    ) {
+      futureBases.push(billing.trialEndsAt);
+    }
+
+    const periodStart =
+      futureBases.length > 0
+        ? new Date(
+            Math.max(...futureBases.map((candidate) => candidate.getTime())),
+          )
+        : new Date(input.now);
+    const periodEnd = new Date(periodStart);
+    periodEnd.setMonth(periodEnd.getMonth() + input.months);
+
+    return { periodStart, periodEnd };
+  }
+
   private async completeManualMerchantPayment(
     payment: SubscriptionPaymentWithBranchPlan,
     input: {
@@ -2167,12 +2362,13 @@ export class BillingService implements OnModuleInit {
       where: { branchId: payment.branchId },
     });
     const months = monthsForInterval(payment.plan.interval);
-    const base =
-      sub?.currentPeriodEnd && sub.currentPeriodEnd.getTime() > now.getTime()
-        ? new Date(sub.currentPeriodEnd)
-        : now;
-    const periodEnd = new Date(base);
-    periodEnd.setMonth(periodEnd.getMonth() + months);
+    const { periodStart, periodEnd } =
+      await this.resolveSubscriptionActivationPeriod({
+        tenantId: payment.tenantId,
+        sub,
+        months,
+        now,
+      });
     const rawPayload = {
       ...(this.payloadObject(payment.rawPayload) ?? {}),
       merchant_confirmed_transaction_id: input.merchantTransactionId,
@@ -2180,7 +2376,7 @@ export class BillingService implements OnModuleInit {
       verified_by: input.replyFromEmail,
       verified_by_name: input.replyFromEmail,
       verified_at: now.toISOString(),
-      subscription_active_from: now.toISOString(),
+      subscription_active_from: periodStart.toISOString(),
       subscription_active_until: periodEnd.toISOString(),
     } satisfies Prisma.InputJsonObject;
 
@@ -2198,7 +2394,7 @@ export class BillingService implements OnModuleInit {
         where: { branchId: payment.branchId },
         data: {
           status: BranchSubscriptionStatus.ACTIVE,
-          currentPeriodStart: now,
+          currentPeriodStart: periodStart,
           currentPeriodEnd: periodEnd,
           graceEndsAt: null,
           lockedAt: null,
@@ -2227,10 +2423,7 @@ export class BillingService implements OnModuleInit {
 
     const updated = await this.prisma.subscriptionPayment.findUniqueOrThrow({
       where: { id: payment.id },
-      include: {
-        branch: { select: { name: true } },
-        plan: { select: { interval: true, code: true } },
-      },
+      include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
     });
     this.emitSubscriptionPaymentUpdate(updated);
     return updated;
@@ -2260,10 +2453,7 @@ export class BillingService implements OnModuleInit {
         status: SubscriptionPaymentStatus.FAILED,
         rawPayload,
       },
-      include: {
-        branch: { select: { name: true } },
-        plan: { select: { interval: true, code: true } },
-      },
+      include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
     });
     this.emitSubscriptionPaymentUpdate(updated);
     return updated;
@@ -2455,7 +2645,7 @@ export class BillingService implements OnModuleInit {
 
   private toSubscriptionPaymentRow(
     row: SubscriptionPaymentWithBranchPlan,
-    options?: { priorPaid?: boolean },
+    options?: { priorPaid?: boolean; useBranchSubscriptionPeriod?: boolean },
   ): SubscriptionPaymentRowContract {
     const paid = row.status === SubscriptionPaymentStatus.COMPLETED;
     const pending = row.status === SubscriptionPaymentStatus.PENDING;
@@ -2463,7 +2653,21 @@ export class BillingService implements OnModuleInit {
     const failed =
       row.status === SubscriptionPaymentStatus.FAILED ||
       row.status === SubscriptionPaymentStatus.REVERSED;
-    const periodStart = row.paidAt ?? row.createdAt;
+    const rawActiveFrom = this.payloadString(row.rawPayload, [
+      'subscription_active_from',
+      'active_from',
+      'current_period_start',
+      'currentPeriodStart',
+    ]);
+    const rawActiveFromDate = rawActiveFrom ? new Date(rawActiveFrom) : null;
+    const branchPeriodStart = options?.useBranchSubscriptionPeriod
+      ? (row.branch.subscription?.currentPeriodStart ?? null)
+      : null;
+    const periodStart =
+      branchPeriodStart ??
+      (rawActiveFromDate && !Number.isNaN(rawActiveFromDate.getTime())
+        ? rawActiveFromDate
+        : (row.paidAt ?? row.createdAt));
     const months = monthsForInterval(row.plan.interval);
     const periodEnd = new Date(periodStart);
     periodEnd.setMonth(periodEnd.getMonth() + months);
@@ -2478,8 +2682,20 @@ export class BillingService implements OnModuleInit {
       'current_period_end',
       'currentPeriodEnd',
     ]);
+    const rawActiveUntilDate = realActiveUntil
+      ? new Date(realActiveUntil)
+      : null;
+    const rawActiveUntilIso =
+      rawActiveUntilDate && !Number.isNaN(rawActiveUntilDate.getTime())
+        ? rawActiveUntilDate.toISOString()
+        : null;
+    const branchActiveUntilIso =
+      options?.useBranchSubscriptionPeriod &&
+      row.branch.subscription?.currentPeriodEnd
+        ? row.branch.subscription.currentPeriodEnd.toISOString()
+        : null;
     const activeUntil = paid
-      ? realActiveUntil || periodEnd.toISOString()
+      ? branchActiveUntilIso || rawActiveUntilIso || periodEnd.toISOString()
       : null;
     const displayPeriodEnd = activeUntil ? new Date(activeUntil) : periodEnd;
     const periodEndForLabel = Number.isNaN(displayPeriodEnd.getTime())
@@ -2837,43 +3053,91 @@ export class BillingService implements OnModuleInit {
     tenantId: string;
     branchId: string;
     branchName: string;
-    kind: 'grace' | 'locked';
+    kind: SubscriptionOwnerReminderKind;
+    daysRemaining?: number | null;
+    periodEnd?: Date | null;
+    graceEndsAt?: Date | null;
   }) {
     try {
-      const owners = await this.prisma.user.findMany({
-        where: {
-          tenantId: input.tenantId,
-          status: 'ACTIVE',
-          roles: {
-            some: {
-              role: {
-                name: 'Account Owner',
+      const [tenant, owners] = await Promise.all([
+        this.prisma.tenant.findUnique({
+          where: { id: input.tenantId },
+          select: { name: true },
+        }),
+        this.prisma.user.findMany({
+          where: {
+            tenantId: input.tenantId,
+            status: 'ACTIVE',
+            roles: {
+              some: {
+                role: {
+                  name: 'Account Owner',
+                },
               },
             },
           },
-        },
-        select: {
-          id: true,
-          phone: true,
-          displayName: true,
-        },
-      });
+          select: {
+            id: true,
+            email: true,
+            phone: true,
+            displayName: true,
+          },
+        }),
+      ]);
 
+      const days = Math.max(0, input.daysRemaining ?? GRACE_DAYS);
+      const dayLabel =
+        days === 0 ? 'today' : `${days} day${days === 1 ? '' : 's'}`;
+      const graceWindowLabel = days === 0 ? 'today' : `${dayLabel} left`;
+      const periodEndLabel = input.periodEnd
+        ? ` on ${this.formatShortDate(input.periodEnd)}`
+        : '';
+      const graceEndLabel = input.graceEndsAt
+        ? ` by ${this.formatShortDate(input.graceEndsAt)}`
+        : '';
       const title =
         input.kind === 'locked'
           ? `${input.branchName} is paused`
-          : `${input.branchName} needs renewing`;
+          : input.kind === 'grace'
+            ? `${input.branchName} needs renewing`
+            : input.kind === 'trial_ending'
+              ? days === 0
+                ? `${input.branchName} trial ends today`
+                : `${input.branchName} trial ends in ${dayLabel}`
+              : days === 0
+                ? `${input.branchName} subscription expires today`
+                : `${input.branchName} subscription expires in ${dayLabel}`;
       const body =
         input.kind === 'locked'
-          ? `${input.branchName} did not renew in time and is now locked. Open Subscription to restore access.`
-          : `${input.branchName} subscription expired. Renew within ${GRACE_DAYS} days to keep the branch open.`;
+          ? `${input.branchName} did not renew in time and is now paused. Open Subscription to restore access.`
+          : input.kind === 'grace'
+            ? `${input.branchName} subscription has expired. You have ${graceWindowLabel} to renew${graceEndLabel} before access is paused.`
+            : input.kind === 'trial_ending'
+              ? `${input.branchName} trial ends ${
+                  days === 0 ? 'today' : `in ${dayLabel}`
+                }${periodEndLabel}. Subscribe now so access continues after the trial.`
+              : `${input.branchName} subscription expires ${
+                  days === 0 ? 'today' : `in ${dayLabel}`
+                }${periodEndLabel}. Renew now to keep access uninterrupted.`;
 
       for (const owner of owners) {
-        // Subscription reminders stay automated (SMS + in-app push).
+        // Subscription reminders stay automated across SMS, email, and push.
         if (owner.phone) {
           await this.smsService.sendText({
             destination: owner.phone,
             body: `REMBEH: ${body}`,
+          });
+        }
+        if (owner.email) {
+          await this.notificationsService.sendSubscriptionReminderEmail({
+            destination: owner.email,
+            recipientName: owner.displayName || 'there',
+            organizationName: tenant?.name ?? 'Your organization',
+            branchName: input.branchName,
+            kind: input.kind,
+            daysRemaining: days,
+            periodEnd: input.periodEnd ?? null,
+            graceEndsAt: input.graceEndsAt ?? null,
           });
         }
         await this.fcmPushService.sendToUser(input.tenantId, owner.id, {
@@ -2883,6 +3147,8 @@ export class BillingService implements OnModuleInit {
           data: {
             type: 'billing',
             branchId: input.branchId,
+            reminderKind: input.kind,
+            daysRemaining: String(days),
           },
         });
       }

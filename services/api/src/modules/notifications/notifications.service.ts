@@ -4,7 +4,11 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { buildStaffInvitationAcceptUrl } from '../../common/config/web-app-url';
+import {
+  buildStaffInvitationAcceptUrl,
+  buildWebAppUrl,
+  resolveWebAppBaseUrl,
+} from '../../common/config/web-app-url';
 import {
   EmailOtpDeliveryInput,
   EmailOtpDeliveryResult,
@@ -188,7 +192,7 @@ export class NotificationsService {
 
     const html = [
       '<div style="font-family:Arial,Helvetica,sans-serif;color:#14213d;line-height:1.5;max-width:520px">',
-      '<p style="margin:0 0 4px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#0f8a6c">REMBEH</p>',
+      this.brandHeaderHtml(),
       '<h1 style="font-size:20px;margin:0 0 12px">SMS credits receipt</h1>',
       `<p style="margin:0 0 12px">Hello ${input.payerName}, your SMS purchase was credited.</p>`,
       '<ul style="margin:0 0 16px;padding-left:18px;font-size:14px">',
@@ -249,6 +253,29 @@ export class NotificationsService {
       '',
       '— REMBEH ops',
     ].join('\n');
+    const htmlInput = {
+      branchName: this.escapeHtml(input.branchName),
+      bundleName: this.escapeHtml(input.bundleName),
+      amountLabel: this.escapeHtml(amountLabel),
+      unitsLabel: this.escapeHtml(unitsLabel),
+      reference: this.escapeHtml(input.reference),
+      tenantId: this.escapeHtml(input.tenantId),
+    };
+    const html = [
+      '<div style="font-family:Arial,Helvetica,sans-serif;color:#14213d;line-height:1.5;max-width:620px">',
+      this.brandHeaderHtml(),
+      '<h1 style="font-size:22px;margin:0 0 12px">SMS wallet credit confirmed</h1>',
+      '<div style="border:1px solid #dfe7ef;border-radius:12px;padding:14px;background:#f8fbfa;margin:0 0 14px">',
+      `<p style="margin:0 0 8px"><strong>Branch:</strong> ${htmlInput.branchName}</p>`,
+      `<p style="margin:0 0 8px"><strong>Bundle:</strong> ${htmlInput.bundleName}</p>`,
+      `<p style="margin:0 0 8px"><strong>Amount:</strong> ${htmlInput.amountLabel}</p>`,
+      `<p style="margin:0 0 8px"><strong>Units:</strong> ${htmlInput.unitsLabel}</p>`,
+      `<p style="margin:0 0 8px"><strong>Reference:</strong> ${htmlInput.reference}</p>`,
+      `<p style="margin:0"><strong>Tenant:</strong> ${htmlInput.tenantId}</p>`,
+      '</div>',
+      '<p style="margin:0;color:#52606d;font-size:12px">— REMBEH ops</p>',
+      '</div>',
+    ].join('');
 
     const response = await this.sendResendEmail({
       apiKey,
@@ -256,7 +283,7 @@ export class NotificationsService {
       to: input.destination,
       subject: `[REMBEH] SMS credited — ${input.branchName}`,
       text,
-      html: `<pre style="font-family:monospace;white-space:pre-wrap">${text}</pre>`,
+      html,
     });
     if (!response.ok) {
       const detail = await this.readResendError(response);
@@ -358,21 +385,23 @@ export class NotificationsService {
 
     const html = [
       '<div style="font-family:Arial,Helvetica,sans-serif;color:#14213d;line-height:1.5;max-width:680px">',
-      '<p style="margin:0 0 6px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#0f8a6c">REMBEH</p>',
-      '<h1 style="font-size:22px;margin:0 0 14px">A new payment has been submitted for verification in Rembeh.</h1>',
+      this.brandHeaderHtml(),
+      '<h1 style="font-size:22px;margin:0 0 6px">Payment submitted for verification</h1>',
+      '<p style="margin:0 0 14px;color:#52606d">Check the merchant transaction, then reply to this email with the confirmed transaction ID or IDs.</p>',
+      '<h2 style="font-size:16px;margin:0 0 8px">Payment details</h2>',
       '<div style="border:1px solid #dfe7ef;border-radius:12px;padding:16px;background:#f8fbfa">',
-      `<p><strong>Organization:</strong> ${htmlInput.organizationName}</p>`,
-      `<p><strong>Branch:</strong> ${htmlInput.branchName}</p>`,
-      `<p><strong>Manager:</strong> ${htmlInput.submittedByName}</p>`,
-      `<p><strong>Manager email:</strong> ${htmlInput.submittedByEmail ?? '-'}</p>`,
-      `<p><strong>Purchase:</strong> ${htmlInput.planLabel}</p>`,
-      `<p><strong>Amount:</strong> ${htmlInput.amountLabel}</p>`,
-      `<p><strong>Payment method:</strong> ${htmlInput.paymentMethod}</p>`,
-      `<p><strong>Merchant code:</strong> ${htmlInput.merchantCode}</p>`,
-      `<p><strong>Transaction ID:</strong> <span style="font-family:monospace">${htmlInput.transactionId}</span></p>`,
-      `<p><strong>Submitted:</strong> ${htmlInput.submittedAt}</p>`,
+      `<p style="margin:0 0 8px"><strong>Organization:</strong> ${htmlInput.organizationName}</p>`,
+      `<p style="margin:0 0 8px"><strong>Branch:</strong> ${htmlInput.branchName}</p>`,
+      `<p style="margin:0 0 8px"><strong>Manager:</strong> ${htmlInput.submittedByName}</p>`,
+      `<p style="margin:0 0 8px"><strong>Manager email:</strong> ${htmlInput.submittedByEmail ?? '-'}</p>`,
+      `<p style="margin:0 0 8px"><strong>Purchase:</strong> ${htmlInput.planLabel}</p>`,
+      `<p style="margin:0 0 8px"><strong>Amount:</strong> ${htmlInput.amountLabel}</p>`,
+      `<p style="margin:0 0 8px"><strong>Payment method:</strong> ${htmlInput.paymentMethod}</p>`,
+      `<p style="margin:0 0 8px"><strong>Merchant code:</strong> ${htmlInput.merchantCode}</p>`,
+      `<p style="margin:0 0 8px"><strong>Transaction ID:</strong> <span style="font-family:monospace;font-weight:700">${htmlInput.transactionId}</span></p>`,
+      `<p style="margin:0"><strong>Submitted:</strong> ${htmlInput.submittedAt}</p>`,
       htmlInput.teamReminder
-        ? `<p style="padding:10px;border-radius:8px;background:#fff8e1"><strong>Team reminder:</strong> ${htmlInput.teamReminder}</p>`
+        ? `<p style="margin:12px 0 0;padding:10px;border-radius:8px;background:#fff8e1"><strong>Team reminder:</strong> ${htmlInput.teamReminder}</p>`
         : '',
       '</div>',
       `<p style="margin:14px 0 0;color:#52606d;font-size:12px">Payment request: REMBEH-PAY:${htmlInput.paymentId}</p>`,
@@ -492,7 +521,7 @@ export class NotificationsService {
         : '<p>None</p>';
     const html = [
       '<div style="font-family:Arial,Helvetica,sans-serif;color:#14213d;line-height:1.5;max-width:720px">',
-      '<p style="margin:0 0 6px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#0f8a6c">REMBEH</p>',
+      this.brandHeaderHtml(),
       '<h1 style="font-size:22px;margin:0 0 14px">Payment verification summary</h1>',
       `<p><strong>Reply processed from:</strong> ${this.escapeHtml(input.replyFromEmail)}</p>`,
       `<p><strong>IDs received in reply:</strong> ${repliedCount}<br><strong>Confirmed IDs:</strong> ${input.confirmed.length}<br><strong>Still pending:</strong> ${input.remaining.length}</p>`,
@@ -527,6 +556,141 @@ export class NotificationsService {
     if (!response.ok) {
       const detail = await this.readResendError(response);
       this.logger.warn(`Payment verification summary email failed: ${detail}`);
+      return { delivered: false, error: detail };
+    }
+    return { delivered: true };
+  }
+
+  async sendSubscriptionReminderEmail(input: {
+    destination: string;
+    recipientName: string;
+    organizationName: string;
+    branchName: string;
+    kind: 'trial_ending' | 'expires_soon' | 'grace' | 'locked';
+    daysRemaining: number;
+    periodEnd?: Date | null;
+    graceEndsAt?: Date | null;
+  }): Promise<{ delivered: boolean; error?: string }> {
+    const from = this.getEmailFromHeader();
+    const apiKey = this.getResendApiKey();
+    if (!apiKey) {
+      const message =
+        'Subscription reminder email skipped — Resend not configured.';
+      this.logger.warn(message);
+      return { delivered: false, error: message };
+    }
+
+    const actionUrl = buildWebAppUrl(this.configService, '/owner/subscription');
+    const days = Math.max(0, input.daysRemaining);
+    const dayLabel =
+      days === 0 ? 'today' : `${days} day${days === 1 ? '' : 's'}`;
+    const graceWindowLabel = days === 0 ? 'today' : `${dayLabel} left`;
+    const periodEndLabel = input.periodEnd
+      ? this.formatEmailDate(input.periodEnd)
+      : null;
+    const graceEndLabel = input.graceEndsAt
+      ? this.formatEmailDate(input.graceEndsAt)
+      : null;
+
+    const title =
+      input.kind === 'locked'
+        ? `${input.branchName} is paused`
+        : input.kind === 'grace'
+          ? `${input.branchName} needs renewal`
+          : input.kind === 'trial_ending'
+            ? days === 0
+              ? `${input.branchName} trial ends today`
+              : `${input.branchName} trial ends in ${dayLabel}`
+            : days === 0
+              ? `${input.branchName} subscription expires today`
+              : `${input.branchName} subscription expires in ${dayLabel}`;
+    const body =
+      input.kind === 'locked'
+        ? `The subscription for ${input.branchName} was not renewed in time, so branch access is now paused. Renew the subscription to restore access.`
+        : input.kind === 'grace'
+          ? `The subscription for ${input.branchName} has expired. You have ${graceWindowLabel} to renew${
+              graceEndLabel ? ` by ${graceEndLabel}` : ''
+            } before branch access is paused.`
+          : input.kind === 'trial_ending'
+            ? `The trial for ${input.branchName} ends ${
+                days === 0 ? 'today' : `in ${dayLabel}`
+              }${
+                periodEndLabel ? ` on ${periodEndLabel}` : ''
+              }. Subscribe now so the branch continues smoothly after the trial.`
+            : `The subscription for ${input.branchName} expires ${
+                days === 0 ? 'today' : `in ${dayLabel}`
+              }${
+                periodEndLabel ? ` on ${periodEndLabel}` : ''
+              }. Renew now to keep access uninterrupted.`;
+    const subject =
+      input.kind === 'locked'
+        ? `[REMBEH] ${input.branchName} is paused`
+        : input.kind === 'grace'
+          ? days === 0
+            ? `[REMBEH] ${input.branchName} must renew today`
+            : `[REMBEH] ${input.branchName} has ${dayLabel} left to renew`
+          : `[REMBEH] ${title}`;
+
+    const text = [
+      `Hello ${input.recipientName},`,
+      '',
+      title,
+      '',
+      body,
+      '',
+      `Organization: ${input.organizationName}`,
+      `Branch: ${input.branchName}`,
+      ...(periodEndLabel ? [`Period ends: ${periodEndLabel}`] : []),
+      ...(graceEndLabel ? [`Grace ends: ${graceEndLabel}`] : []),
+      '',
+      `Open Subscription: ${actionUrl}`,
+      '',
+      '— REMBEH by Antikra',
+    ].join('\n');
+
+    const htmlInput = {
+      recipientName: this.escapeHtml(input.recipientName),
+      organizationName: this.escapeHtml(input.organizationName),
+      branchName: this.escapeHtml(input.branchName),
+      title: this.escapeHtml(title),
+      body: this.escapeHtml(body),
+      periodEndLabel: periodEndLabel ? this.escapeHtml(periodEndLabel) : null,
+      graceEndLabel: graceEndLabel ? this.escapeHtml(graceEndLabel) : null,
+      actionUrl: this.escapeHtml(actionUrl),
+    };
+
+    const html = [
+      '<div style="font-family:Arial,Helvetica,sans-serif;color:#14213d;line-height:1.5;max-width:620px">',
+      this.brandHeaderHtml(),
+      `<h1 style="font-size:22px;margin:0 0 12px">${htmlInput.title}</h1>`,
+      `<p style="margin:0 0 16px">Hello ${htmlInput.recipientName}, ${htmlInput.body}</p>`,
+      '<div style="border:1px solid #dfe7ef;border-radius:12px;padding:14px;background:#f8fbfa;margin:0 0 16px">',
+      `<p style="margin:0 0 8px"><strong>Organization:</strong> ${htmlInput.organizationName}</p>`,
+      `<p style="margin:0 0 8px"><strong>Branch:</strong> ${htmlInput.branchName}</p>`,
+      htmlInput.periodEndLabel
+        ? `<p style="margin:0 0 8px"><strong>Period ends:</strong> ${htmlInput.periodEndLabel}</p>`
+        : '',
+      htmlInput.graceEndLabel
+        ? `<p style="margin:0"><strong>Grace ends:</strong> ${htmlInput.graceEndLabel}</p>`
+        : '',
+      '</div>',
+      `<p style="margin:0 0 16px"><a href="${htmlInput.actionUrl}" style="display:inline-block;background:#0f8a6c;color:#ffffff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:700">Open Subscription</a></p>`,
+      '<p style="margin:0;color:#52606d;font-size:12px">— REMBEH by Antikra</p>',
+      '</div>',
+    ].join('');
+
+    const response = await this.sendResendEmail({
+      apiKey,
+      from,
+      to: input.destination,
+      subject,
+      text,
+      html,
+    });
+
+    if (!response.ok) {
+      const detail = await this.readResendError(response);
+      this.logger.warn(`Subscription reminder email failed: ${detail}`);
       return { delivered: false, error: detail };
     }
     return { delivered: true };
@@ -652,6 +816,29 @@ export class NotificationsService {
       .replace(/'/g, '&#039;');
   }
 
+  private brandHeaderHtml() {
+    const iconUrl = this.escapeHtml(
+      `${resolveWebAppBaseUrl(this.configService)}/rembeh-icon.png`,
+    );
+    return [
+      '<div style="display:flex;align-items:center;gap:10px;margin:0 0 16px">',
+      `<img src="${iconUrl}" width="38" height="38" alt="REMBEH" style="display:block;border-radius:10px" />`,
+      '<div>',
+      '<p style="margin:0 0 2px;font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#0f8a6c">REMBEH</p>',
+      '<p style="margin:0;color:#52606d;font-size:12px">Loan Management System</p>',
+      '</div>',
+      '</div>',
+    ].join('');
+  }
+
+  private formatEmailDate(value: Date) {
+    return new Intl.DateTimeFormat('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    }).format(value);
+  }
+
   /** Resend-style "Name <email@domain>" when EMAIL_FROM_NAME is set. */
   private getEmailFromHeader(): string {
     const email =
@@ -698,7 +885,7 @@ export class NotificationsService {
   private buildOtpHtml(input: EmailOtpDeliveryInput): string {
     return [
       '<div style="font-family:Arial,Helvetica,sans-serif;color:#14213d;line-height:1.5;max-width:520px">',
-      '<p style="margin:0 0 4px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#0f8a6c">REMBEH</p>',
+      this.brandHeaderHtml(),
       '<h1 style="font-size:20px;margin:0 0 12px">Verification code</h1>',
       '<p style="margin:0 0 12px">Use this code to finish email verification for your workspace.</p>',
       `<p style="font-size:28px;font-weight:700;letter-spacing:4px;margin:0 0 12px">${input.code}</p>`,
@@ -733,7 +920,7 @@ export class NotificationsService {
 
     return [
       '<div style="font-family:Arial,Helvetica,sans-serif;color:#14213d;line-height:1.5;max-width:520px">',
-      '<p style="margin:0 0 4px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#0f8a6c">REMBEH</p>',
+      this.brandHeaderHtml(),
       `<h1 style="font-size:20px;margin:0 0 12px">Join ${input.workspaceName}</h1>`,
       `<p style="margin:0 0 12px">${input.invitedByName} invited you as <strong>${input.roleName}</strong> for <strong>${input.branchName}</strong>.</p>`,
       `<p style="margin:0 0 16px"><a href="${invitationUrl}" style="display:inline-block;background:#0f8a6c;color:#ffffff;padding:12px 18px;text-decoration:none;font-weight:700">Accept invitation</a></p>`,

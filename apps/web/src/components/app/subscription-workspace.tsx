@@ -251,7 +251,7 @@ const MANUAL_PAYMENT_METHODS: ManualPaymentMethodOption[] = [
     logoAlt: "Airtel",
     merchantCode: "7170321",
     accountName: PAYMENT_ACCOUNT_NAME,
-    qrSrc: "/assets/payments/airtel-qr.jpg",
+    qrSrc: "/assets/payments/airtel-qr.png",
   },
 ];
 
