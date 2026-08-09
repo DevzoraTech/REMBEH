@@ -12,6 +12,12 @@ export class SubmitManualMerchantPaymentDto {
   @Length(2, 32)
   planCode?: string;
 
+  /** SMS bundle id when the manual payment is for SMS credits. */
+  @IsOptional()
+  @IsString()
+  @Length(2, 80)
+  bundleId?: string;
+
   @IsEnum(ManualMerchantPaymentProvider)
   provider!: ManualMerchantPaymentProvider;
 

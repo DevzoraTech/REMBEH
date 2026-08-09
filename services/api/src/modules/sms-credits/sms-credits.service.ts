@@ -230,9 +230,7 @@ export class SmsCreditsService {
 
     if (existingPending?.pesapalOrderTrackingId) {
       const raw = existingPending.rawPayload as
-        | { redirect_url?: string }
-        | null
-        | undefined;
+        { redirect_url?: string } | null | undefined;
       if (raw?.redirect_url) {
         return {
           redirectUrl: raw.redirect_url,
@@ -285,9 +283,11 @@ export class SmsCreditsService {
       },
     });
 
-    const nameParts = (payer?.displayName || user.displayName || 'REMBEH').split(
-      /\s+/,
-    );
+    const nameParts = (
+      payer?.displayName ||
+      user.displayName ||
+      'REMBEH'
+    ).split(/\s+/);
     const webAppUrl =
       this.configService.get<string>('WEB_APP_URL')?.trim() ||
       'https://rembeh.antikra.com';
@@ -315,7 +315,9 @@ export class SmsCreditsService {
       });
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : 'Payment could not be started.';
+        error instanceof Error
+          ? error.message
+          : 'Payment could not be started.';
       this.logger.error(`SMS purchase checkout failed: ${message}`);
       await this.prisma.smsPurchase.update({
         where: { id: purchase.id },
@@ -422,16 +424,13 @@ export class SmsCreditsService {
       return true;
     }
 
-    const description = (
-      status.payment_status_description || ''
-    ).toLowerCase();
+    const description = (status.payment_status_description || '').toLowerCase();
     const statusCode = Number(
       (status as { status_code?: number | string }).status_code ??
         status.payment_status_code ??
         NaN,
     );
-    const completed =
-      statusCode === 1 || description.includes('completed');
+    const completed = statusCode === 1 || description.includes('completed');
 
     const paidAmount = Number(status.amount);
     const paidCurrency = String(status.currency || '').toUpperCase();
@@ -521,6 +520,28 @@ export class SmsCreditsService {
     return legacy?.branchId ?? null;
   }
 
+  async creditManualMerchantPurchase(input: {
+    purchaseId: string;
+    merchantTransactionId: string;
+    rawPayload: Prisma.InputJsonValue;
+  }) {
+    const result = await this.creditPurchaseOnce({
+      purchaseId: input.purchaseId,
+      orderTrackingId: `manual_${input.purchaseId}`,
+      externalTransactionId: input.merchantTransactionId,
+      rawPayload: input.rawPayload,
+    });
+
+    if (result.credited) {
+      void this.notifySmsPurchaseCredited(result.purchaseId);
+    }
+
+    return this.prisma.smsPurchase.findUniqueOrThrow({
+      where: { id: input.purchaseId },
+      include: { branch: { select: { name: true } } },
+    });
+  }
+
   /**
    * One-time Pro welcome pack as a ledger grant (not a Pesapal payment).
    * Idempotent per branch via unique ledger reference.
@@ -597,9 +618,7 @@ export class SmsCreditsService {
       throw error;
     }
 
-    this.logger.log(
-      `Pro welcome SMS +${credits} for branch ${input.branchId}`,
-    );
+    this.logger.log(`Pro welcome SMS +${credits} for branch ${input.branchId}`);
     return { granted: true, credits };
   }
 
@@ -636,7 +655,7 @@ export class SmsCreditsService {
           sent: accepted,
           reason: accepted
             ? undefined
-            : existing.failureReason ?? existing.status.toLowerCase(),
+            : (existing.failureReason ?? existing.status.toLowerCase()),
           messageId: existing.id,
           segmentsRequired: existing.segmentsRequired ?? undefined,
         };
@@ -687,9 +706,7 @@ export class SmsCreditsService {
             sent: accepted,
             messageId: raced.id,
             segmentsRequired: raced.segmentsRequired ?? undefined,
-            reason: accepted
-              ? undefined
-              : raced.failureReason ?? undefined,
+            reason: accepted ? undefined : (raced.failureReason ?? undefined),
           };
         }
       }
@@ -786,9 +803,7 @@ export class SmsCreditsService {
     });
 
     const providerMessageId =
-      result.providerReference ??
-      result.providerLog?.providerMessageId ??
-      null;
+      result.providerReference ?? result.providerLog?.providerMessageId ?? null;
 
     // Step 7A / 8 — definite acceptance: settle debit (available already reduced).
     if (result.outcome === 'accepted' && result.delivered) {
@@ -1100,16 +1115,13 @@ export class SmsCreditsService {
     }
     if (!payment) return false;
 
-    const description = (
-      status.payment_status_description || ''
-    ).toLowerCase();
+    const description = (status.payment_status_description || '').toLowerCase();
     const statusCode = Number(
       (status as { status_code?: number | string }).status_code ??
         status.payment_status_code ??
         NaN,
     );
-    const completed =
-      statusCode === 1 || description.includes('completed');
+    const completed = statusCode === 1 || description.includes('completed');
 
     if (!completed) {
       await this.prisma.smsCreditPayment.update({
@@ -1410,7 +1422,9 @@ export class SmsCreditsService {
    * Failures/unknowns do not block mock/dev providers.
    * Never expose float emptiness to end users (generic reason only).
    */
-  private async assertProviderCapacity(segmentsRequired: number): Promise<boolean> {
+  private async assertProviderCapacity(
+    segmentsRequired: number,
+  ): Promise<boolean> {
     const probe =
       this.configService.get<string>('SMS_PROVIDER')?.trim().toLowerCase() ||
       'mock';

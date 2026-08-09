@@ -17,6 +17,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   BranchSubscriptionStatus,
   Prisma,
+  SmsBundleStatus,
   SmsPurchaseStatus,
   SubscriptionPaymentStatus,
 } from '@prisma/client';
@@ -72,6 +73,41 @@ type SubscriptionPaymentWithBranchPlanTenant =
       tenant: { select: { name: true } };
     };
   }>;
+
+type SmsPurchaseWithBranch = Prisma.SmsPurchaseGetPayload<{
+  include: {
+    branch: { select: { name: true } };
+  };
+}>;
+
+type SmsPurchaseWithBranchTenant = Prisma.SmsPurchaseGetPayload<{
+  include: {
+    branch: { select: { name: true } };
+    tenant: { select: { name: true } };
+  };
+}>;
+
+type ManualPaymentSummaryItem = {
+  organizationName: string;
+  branchName: string;
+  planLabel: string;
+  amountLabel: string;
+  paymentMethod: string;
+  merchantCode: string;
+  transactionId: string;
+};
+
+type ManualPendingPayment =
+  | {
+      kind: 'subscription';
+      id: string;
+      payment: SubscriptionPaymentWithBranchPlanTenant;
+    }
+  | {
+      kind: 'sms';
+      id: string;
+      purchase: SmsPurchaseWithBranchTenant;
+    };
 
 type ResendWebhookEvent = {
   type?: string;
@@ -311,33 +347,7 @@ export class BillingService implements OnModuleInit {
       });
 
     const smsPurchasePayments: SubscriptionPaymentRowContract[] =
-      smsPurchaseRows.map((row) => {
-        const paid = row.status === SmsPurchaseStatus.CREDITED;
-        const failed =
-          row.status === SmsPurchaseStatus.PAYMENT_FAILED ||
-          row.status === SmsPurchaseStatus.PAYMENT_MISMATCH ||
-          row.status === SmsPurchaseStatus.EXPIRED ||
-          row.status === SmsPurchaseStatus.CANCELLED_BY_USER;
-        return {
-          id: row.id,
-          date: (row.creditedAt ?? row.createdAt).toISOString(),
-          branchId: row.branchId,
-          branchName: row.branch.name,
-          kind: 'sms' as const,
-          transaction: row.bundleNameSnapshot,
-          periodLabel: `${row.smsUnitsExpected.toLocaleString('en-UG')} SMS`,
-          amount: row.amountExpected,
-          currency: row.currency,
-          credits: row.smsUnitsExpected,
-          paymentMethod: this.paymentMethodFromPayload(row.rawPayload),
-          status: paid ? 'Paid' : failed ? 'Failed' : 'Pending',
-          receipt: paid
-            ? `#${row.merchantReference.slice(-8).toUpperCase()}`
-            : null,
-          canRetry: failed,
-          bundleId: row.bundleId,
-        };
-      });
+      smsPurchaseRows.map((row) => this.toSmsPurchasePaymentRow(row));
 
     const smsLegacyPayments: SubscriptionPaymentRowContract[] =
       smsLegacyRows.map((row) => {
@@ -925,6 +935,186 @@ export class BillingService implements OnModuleInit {
     }
   }
 
+  async submitManualSmsMerchantPayment(
+    user: AuthenticatedUser,
+    branchId: string,
+    dto: SubmitManualMerchantPaymentDto,
+  ): Promise<ManualMerchantPaymentResponseContract> {
+    const canManageAll = user.permissions.includes(BILLING_PERMISSIONS.manage);
+    if (!canManageAll && user.branchId !== branchId) {
+      throw new ForbiddenException('You can only pay for your own branch.');
+    }
+    if (!canManageAll && !user.branchId) {
+      throw new ForbiddenException('You can only pay for your own branch.');
+    }
+
+    const bundleId = dto.bundleId?.trim();
+    if (!bundleId) {
+      throw new BadRequestException('Choose an SMS bundle to continue.');
+    }
+
+    const providerDetails = this.manualMerchantDetails(dto.provider);
+    const transactionId = this.normalizeManualTransactionId(
+      dto.transactionId ?? '',
+    );
+    if (!transactionId) {
+      throw new BadRequestException('Enter the payment transaction ID.');
+    }
+    const confirmationId = this.normalizeManualTransactionId(
+      dto.confirmTransactionId ?? '',
+    );
+    if (!confirmationId) {
+      throw new BadRequestException(
+        'Confirm the transaction ID by entering it again.',
+      );
+    }
+    if (
+      this.compactTransactionId(transactionId) !==
+      this.compactTransactionId(confirmationId)
+    ) {
+      throw new BadRequestException(
+        'The transaction IDs do not match. Check both entries and try again.',
+      );
+    }
+
+    const branch = await this.prisma.branch.findFirst({
+      where: { id: branchId, tenantId: user.tenantId },
+      select: { id: true, name: true },
+    });
+    if (!branch) {
+      throw new NotFoundException('Branch not found.');
+    }
+
+    const now = new Date();
+    const bundle = await this.prisma.smsBundle.findFirst({
+      where: {
+        id: bundleId,
+        status: SmsBundleStatus.ACTIVE,
+        activeFrom: { lte: now },
+        OR: [{ activeTo: null }, { activeTo: { gt: now } }],
+      },
+    });
+    if (!bundle) {
+      throw new NotFoundException('That SMS bundle is not available.');
+    }
+
+    const wallet = await this.prisma.branchSmsWallet.upsert({
+      where: { branchId: branch.id },
+      update: {},
+      create: {
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        availableUnits: 0,
+        reservedUnits: 0,
+      },
+    });
+
+    const merchantReference = this.manualSmsMerchantReference(
+      dto.provider,
+      transactionId,
+    );
+    const existing = await this.prisma.smsPurchase.findUnique({
+      where: { merchantReference },
+      select: { id: true },
+    });
+    if (existing) {
+      throw new ConflictException(
+        'This transaction ID has already been submitted.',
+      );
+    }
+
+    const existingPending = await this.prisma.smsPurchase.findFirst({
+      where: {
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        bundleId: bundle.id,
+        initiatedByUserId: user.userId,
+        status: {
+          in: [
+            SmsPurchaseStatus.PAYMENT_PENDING,
+            SmsPurchaseStatus.AWAITING_PAYMENT,
+            SmsPurchaseStatus.MANUAL_REVIEW,
+          ],
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (
+      existingPending &&
+      this.isManualMerchantPayload(existingPending.rawPayload)
+    ) {
+      throw new ConflictException(
+        'A payment request for this purchase is already pending. Cancel it before submitting another transaction ID.',
+      );
+    }
+
+    const rawPayload = {
+      manualMerchant: true,
+      purchase_kind: 'sms',
+      provider: dto.provider,
+      payment_method: providerDetails.historyLabel,
+      transaction_id: transactionId,
+      merchant_code: providerDetails.merchantCode,
+      account_name: providerDetails.accountName,
+      bundle_id: bundle.id,
+      bundle_name: bundle.name,
+      sms_units: bundle.smsUnits,
+      pahappa_credit_reminder: true,
+      submitted_by_user_id: user.userId,
+      submitted_at: new Date().toISOString(),
+    } satisfies Prisma.InputJsonObject;
+
+    try {
+      const purchase = await this.prisma.smsPurchase.create({
+        data: {
+          tenantId: user.tenantId,
+          branchId: branch.id,
+          walletId: wallet.id,
+          bundleId: bundle.id,
+          bundleVersion: bundle.version,
+          bundleNameSnapshot: bundle.name,
+          initiatedByUserId: user.userId,
+          amountExpected: bundle.priceUgx,
+          currency: 'UGX',
+          smsUnitsExpected: bundle.smsUnits,
+          merchantReference,
+          status: SmsPurchaseStatus.AWAITING_PAYMENT,
+          rawPayload,
+          expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000),
+        },
+        include: {
+          branch: { select: { name: true } },
+        },
+      });
+
+      const alertedPurchase = await this.sendManualSmsPaymentVerificationAlert(
+        purchase,
+        {
+          transactionId,
+          paymentMethod: providerDetails.historyLabel,
+          merchantCode: providerDetails.merchantCode,
+          submittedByName: user.displayName || user.email || 'REMBEH user',
+          submittedByEmail: user.email ?? null,
+        },
+      );
+      const responsePurchase = alertedPurchase ?? purchase;
+      this.emitSmsPurchasePaymentUpdate(responsePurchase);
+
+      return {
+        payment: this.toSmsPurchasePaymentRow(responsePurchase),
+        message:
+          'Payment submitted for verification. We will credit your SMS wallet after confirmation.',
+      };
+    } catch (error) {
+      if (isPrismaUniqueConstraintError(error)) {
+        throw new ConflictException(
+          'This transaction ID has already been submitted.',
+        );
+      }
+      throw error;
+    }
+  }
+
   async cancelManualMerchantPayment(
     user: AuthenticatedUser,
     paymentId: string,
@@ -939,7 +1129,7 @@ export class BillingService implements OnModuleInit {
     });
 
     if (!payment) {
-      throw new NotFoundException('Payment request not found.');
+      return this.cancelManualSmsMerchantPayment(user, paymentId);
     }
     if (!canManageAll && user.branchId !== payment.branchId) {
       throw new ForbiddenException(
@@ -979,6 +1169,59 @@ export class BillingService implements OnModuleInit {
 
     return {
       payment: this.toSubscriptionPaymentRow(updated),
+      message:
+        'Payment request cancelled. You can submit a new transaction ID.',
+    };
+  }
+
+  private async cancelManualSmsMerchantPayment(
+    user: AuthenticatedUser,
+    paymentId: string,
+  ): Promise<ManualMerchantPaymentResponseContract> {
+    const canManageAll = user.permissions.includes(BILLING_PERMISSIONS.manage);
+    const purchase = await this.prisma.smsPurchase.findFirst({
+      where: { id: paymentId, tenantId: user.tenantId },
+      include: { branch: { select: { name: true } } },
+    });
+
+    if (!purchase) {
+      throw new NotFoundException('Payment request not found.');
+    }
+    if (!canManageAll && user.branchId !== purchase.branchId) {
+      throw new ForbiddenException(
+        'You can only cancel payments for your own branch.',
+      );
+    }
+    if (!this.isPendingManualSmsPurchase(purchase.status)) {
+      throw new BadRequestException(
+        'Only pending payment requests can be cancelled.',
+      );
+    }
+    if (!this.isManualMerchantPayload(purchase.rawPayload)) {
+      throw new BadRequestException(
+        'Only merchant payment requests can be cancelled.',
+      );
+    }
+
+    const rawPayload = {
+      ...(this.payloadObject(purchase.rawPayload) ?? {}),
+      cancelled_by_user_id: user.userId,
+      cancelled_at: new Date().toISOString(),
+    } satisfies Prisma.InputJsonObject;
+
+    const updated = await this.prisma.smsPurchase.update({
+      where: { id: purchase.id },
+      data: {
+        status: SmsPurchaseStatus.CANCELLED_BY_USER,
+        rawPayload,
+      },
+      include: { branch: { select: { name: true } } },
+    });
+
+    this.emitSmsPurchasePaymentUpdate(updated);
+
+    return {
+      payment: this.toSmsPurchasePaymentRow(updated),
       message:
         'Payment request cancelled. You can submit a new transaction ID.',
     };
@@ -1046,24 +1289,56 @@ export class BillingService implements OnModuleInit {
           plan: { select: { interval: true, code: true } },
         },
       });
-      if (!payment || !this.isManualMerchantPayload(payment.rawPayload)) {
+      if (payment) {
+        if (!this.isManualMerchantPayload(payment.rawPayload)) {
+          return { ok: true, ignored: true, reason: 'payment_not_found' };
+        }
+        if (payment.status === SubscriptionPaymentStatus.COMPLETED) {
+          return { ok: true, ignored: true, reason: 'already_completed' };
+        }
+        if (payment.status !== SubscriptionPaymentStatus.PENDING) {
+          return { ok: true, ignored: true, reason: 'payment_not_pending' };
+        }
+
+        const updated = await this.failManualMerchantPayment(payment, {
+          reason: command.reason || 'Payment could not be verified.',
+          replyEmailId: emailId,
+          replyFromEmail: fromEmail,
+          merchantTransactionId: null,
+        });
+        this.logger.log(
+          `Manual merchant payment ${updated.id} failed from Resend reply email=${emailId} by=${fromEmail}`,
+        );
+        return {
+          ok: true,
+          paymentId,
+          status: updated.status,
+          matched: false,
+        };
+      }
+
+      const purchase = await this.prisma.smsPurchase.findUnique({
+        where: { id: paymentId },
+        include: { branch: { select: { name: true } } },
+      });
+      if (!purchase || !this.isManualMerchantPayload(purchase.rawPayload)) {
         return { ok: true, ignored: true, reason: 'payment_not_found' };
       }
-      if (payment.status === SubscriptionPaymentStatus.COMPLETED) {
+      if (purchase.status === SmsPurchaseStatus.CREDITED) {
         return { ok: true, ignored: true, reason: 'already_completed' };
       }
-      if (payment.status !== SubscriptionPaymentStatus.PENDING) {
+      if (!this.isPendingManualSmsPurchase(purchase.status)) {
         return { ok: true, ignored: true, reason: 'payment_not_pending' };
       }
 
-      const updated = await this.failManualMerchantPayment(payment, {
+      const updated = await this.failManualSmsMerchantPayment(purchase, {
         reason: command.reason || 'Payment could not be verified.',
         replyEmailId: emailId,
         replyFromEmail: fromEmail,
         merchantTransactionId: null,
       });
       this.logger.log(
-        `Manual merchant payment ${updated.id} failed from Resend reply email=${emailId} by=${fromEmail}`,
+        `Manual SMS merchant payment ${updated.id} failed from Resend reply email=${emailId} by=${fromEmail}`,
       );
       return {
         ok: true,
@@ -1096,35 +1371,67 @@ export class BillingService implements OnModuleInit {
       return { ok: true, ignored: true, reason: 'transaction_ids_not_found' };
     }
 
-    const pendingPayments = await this.prisma.subscriptionPayment.findMany({
-      where: { status: SubscriptionPaymentStatus.PENDING },
-      include: {
-        branch: { select: { name: true } },
-        plan: { select: { interval: true, code: true } },
-        tenant: { select: { name: true } },
-      },
-      orderBy: { createdAt: 'asc' },
-    });
-    const manualPending = pendingPayments.filter((payment) =>
-      this.isManualMerchantPayload(payment.rawPayload),
-    );
+    const [pendingPayments, pendingSmsPurchases] = await Promise.all([
+      this.prisma.subscriptionPayment.findMany({
+        where: { status: SubscriptionPaymentStatus.PENDING },
+        include: {
+          branch: { select: { name: true } },
+          plan: { select: { interval: true, code: true } },
+          tenant: { select: { name: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.smsPurchase.findMany({
+        where: {
+          status: {
+            in: [
+              SmsPurchaseStatus.PAYMENT_PENDING,
+              SmsPurchaseStatus.AWAITING_PAYMENT,
+              SmsPurchaseStatus.MANUAL_REVIEW,
+            ],
+          },
+        },
+        include: {
+          branch: { select: { name: true } },
+          tenant: { select: { name: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ]);
+    const manualPending: ManualPendingPayment[] = [
+      ...pendingPayments
+        .filter((payment) => this.isManualMerchantPayload(payment.rawPayload))
+        .map((payment) => ({
+          kind: 'subscription' as const,
+          id: payment.id,
+          payment,
+        })),
+      ...pendingSmsPurchases
+        .filter((purchase) => this.isManualMerchantPayload(purchase.rawPayload))
+        .map((purchase) => ({
+          kind: 'sms' as const,
+          id: purchase.id,
+          purchase,
+        })),
+    ];
 
-    const pendingByTransactionId = new Map<
-      string,
-      SubscriptionPaymentWithBranchPlanTenant[]
-    >();
-    for (const payment of manualPending) {
-      const submittedId = this.submittedManualTransactionId(payment.rawPayload);
+    const pendingByTransactionId = new Map<string, ManualPendingPayment[]>();
+    for (const item of manualPending) {
+      const submittedId = this.submittedManualTransactionId(
+        item.kind === 'subscription'
+          ? item.payment.rawPayload
+          : item.purchase.rawPayload,
+      );
       const submittedCompact = this.compactTransactionId(submittedId ?? '');
       if (!submittedCompact) continue;
 
       const matches = pendingByTransactionId.get(submittedCompact) ?? [];
-      matches.push(payment);
+      matches.push(item);
       pendingByTransactionId.set(submittedCompact, matches);
     }
 
     const matched: Array<{
-      payment: SubscriptionPaymentWithBranchPlanTenant;
+      item: ManualPendingPayment;
       transactionId: string;
     }> = [];
     const matchedPaymentIds = new Set<string>();
@@ -1143,27 +1450,37 @@ export class BillingService implements OnModuleInit {
         continue;
       }
 
-      const payment = matches[0];
-      if (!matchedPaymentIds.has(payment.id)) {
-        matched.push({ payment, transactionId });
-        matchedPaymentIds.add(payment.id);
+      const item = matches[0];
+      if (!matchedPaymentIds.has(item.id)) {
+        matched.push({ item, transactionId });
+        matchedPaymentIds.add(item.id);
       }
     }
 
     for (const item of matched) {
-      await this.completeManualMerchantPayment(item.payment, {
-        replyEmailId: input.replyEmailId,
-        replyFromEmail: input.replyFromEmail,
-        merchantTransactionId: item.transactionId,
-      });
+      if (item.item.kind === 'subscription') {
+        await this.completeManualMerchantPayment(item.item.payment, {
+          replyEmailId: input.replyEmailId,
+          replyFromEmail: input.replyFromEmail,
+          merchantTransactionId: item.transactionId,
+        });
+      } else {
+        await this.completeManualSmsMerchantPayment(item.item.purchase, {
+          replyEmailId: input.replyEmailId,
+          replyFromEmail: input.replyFromEmail,
+          merchantTransactionId: item.transactionId,
+        });
+      }
     }
 
     const remaining = manualPending.filter(
-      (payment) => !matchedPaymentIds.has(payment.id),
+      (item) => !matchedPaymentIds.has(item.id),
     );
     await this.sendManualPaymentVerificationSummary({
-      confirmed: matched.map((item) => item.payment),
-      remaining,
+      confirmed: matched.map((item) =>
+        this.toManualPaymentSummaryItem(item.item),
+      ),
+      remaining: remaining.map((item) => this.toManualPaymentSummaryItem(item)),
       unmatchedIds,
       ambiguousIds,
       replyFromEmail: input.replyFromEmail,
@@ -1177,7 +1494,7 @@ export class BillingService implements OnModuleInit {
       remainingCount: remaining.length,
       unmatchedIds,
       ambiguousIds,
-      matchedPaymentIds: matched.map((item) => item.payment.id),
+      matchedPaymentIds: matched.map((item) => item.item.id),
     };
   }
 
@@ -1627,9 +1944,69 @@ export class BillingService implements OnModuleInit {
     });
   }
 
+  private async sendManualSmsPaymentVerificationAlert(
+    purchase: SmsPurchaseWithBranch,
+    input: {
+      transactionId: string;
+      paymentMethod: string;
+      merchantCode: string;
+      submittedByName: string;
+      submittedByEmail: string | null;
+    },
+  ): Promise<SmsPurchaseWithBranch | null> {
+    const recipients = this.paymentVerificationEmails();
+    const replyTo =
+      this.configService.get<string>('PAYMENT_VERIFICATION_REPLY_TO')?.trim() ||
+      null;
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: purchase.tenantId },
+      select: { name: true },
+    });
+    const alert = await this.notificationsService
+      .sendSubscriptionPaymentVerificationAlertEmail({
+        recipients,
+        replyTo,
+        paymentId: purchase.id,
+        organizationName: tenant?.name ?? 'Unknown organization',
+        branchName: purchase.branch.name,
+        planLabel: `${purchase.bundleNameSnapshot} SMS Bundle`,
+        amountLabel: `UGX ${Number(purchase.amountExpected).toLocaleString(
+          'en-UG',
+        )}`,
+        paymentMethod: input.paymentMethod,
+        merchantCode: input.merchantCode,
+        transactionId: input.transactionId,
+        submittedByName: input.submittedByName,
+        submittedByEmail: input.submittedByEmail,
+        submittedAt: this.formatPaymentEmailDate(purchase.createdAt),
+        teamReminder:
+          'Before confirming SMS credits, make sure the Pahappa credit is enough to run this customer SMS subscription.',
+      })
+      .catch((error) => {
+        const detail = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`SMS payment verification alert failed: ${detail}`);
+        return { delivered: false, error: detail };
+      });
+
+    const rawPayload = {
+      ...(this.payloadObject(purchase.rawPayload) ?? {}),
+      admin_alert_recipients: recipients,
+      admin_alert_reply_to: replyTo,
+      admin_alert_sent_at: new Date().toISOString(),
+      admin_alert_delivered: alert.delivered,
+      ...(alert.error ? { admin_alert_error: alert.error } : {}),
+    } satisfies Prisma.InputJsonObject;
+
+    return this.prisma.smsPurchase.update({
+      where: { id: purchase.id },
+      data: { rawPayload },
+      include: { branch: { select: { name: true } } },
+    });
+  }
+
   private async sendManualPaymentVerificationSummary(input: {
-    confirmed: SubscriptionPaymentWithBranchPlanTenant[];
-    remaining: SubscriptionPaymentWithBranchPlanTenant[];
+    confirmed: ManualPaymentSummaryItem[];
+    remaining: ManualPaymentSummaryItem[];
     unmatchedIds: string[];
     ambiguousIds: string[];
     replyFromEmail: string;
@@ -1643,12 +2020,8 @@ export class BillingService implements OnModuleInit {
       .sendSubscriptionPaymentVerificationSummaryEmail({
         recipients,
         replyTo,
-        confirmed: input.confirmed.map((payment) =>
-          this.toPaymentVerificationSummaryItem(payment),
-        ),
-        remaining: input.remaining.map((payment) =>
-          this.toPaymentVerificationSummaryItem(payment),
-        ),
+        confirmed: input.confirmed,
+        remaining: input.remaining,
         unmatchedIds: input.unmatchedIds,
         ambiguousIds: input.ambiguousIds,
         replyFromEmail: input.replyFromEmail,
@@ -1661,9 +2034,28 @@ export class BillingService implements OnModuleInit {
       });
   }
 
-  private toPaymentVerificationSummaryItem(
-    payment: SubscriptionPaymentWithBranchPlanTenant,
-  ) {
+  private toManualPaymentSummaryItem(
+    item: ManualPendingPayment,
+  ): ManualPaymentSummaryItem {
+    if (item.kind === 'sms') {
+      const purchase = item.purchase;
+      return {
+        organizationName: purchase.tenant.name,
+        branchName: purchase.branch.name,
+        planLabel: `${purchase.bundleNameSnapshot} SMS Bundle`,
+        amountLabel: `UGX ${Number(purchase.amountExpected).toLocaleString('en-UG')}`,
+        paymentMethod:
+          this.payloadString(purchase.rawPayload, ['payment_method']) ||
+          this.paymentMethodFromPayload(purchase.rawPayload) ||
+          'Merchant payment',
+        merchantCode:
+          this.payloadString(purchase.rawPayload, ['merchant_code']) || '-',
+        transactionId:
+          this.submittedManualTransactionId(purchase.rawPayload) || '-',
+      };
+    }
+
+    const payment = item.payment;
     const months = monthsForInterval(payment.plan.interval);
     return {
       organizationName: payment.tenant.name,
@@ -1699,6 +2091,27 @@ export class BillingService implements OnModuleInit {
     } catch (error) {
       this.logger.warn(
         `Subscription payment realtime emit failed for ${payment.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  private emitSmsPurchasePaymentUpdate(purchase: SmsPurchaseWithBranch) {
+    try {
+      this.realtime.broadcastSubscriptionPayment(
+        REALTIME_EVENTS.subscriptionPaymentUpdated,
+        {
+          paymentId: purchase.id,
+          tenantId: purchase.tenantId,
+          branchId: purchase.branchId,
+          status: purchase.status,
+          payment: this.toSmsPurchasePaymentRow(purchase),
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `SMS payment realtime emit failed for ${purchase.id}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -1767,6 +2180,8 @@ export class BillingService implements OnModuleInit {
       verified_by: input.replyFromEmail,
       verified_by_name: input.replyFromEmail,
       verified_at: now.toISOString(),
+      subscription_active_from: now.toISOString(),
+      subscription_active_until: periodEnd.toISOString(),
     } satisfies Prisma.InputJsonObject;
 
     await this.prisma.$transaction(async (tx) => {
@@ -1851,6 +2266,66 @@ export class BillingService implements OnModuleInit {
       },
     });
     this.emitSubscriptionPaymentUpdate(updated);
+    return updated;
+  }
+
+  private async completeManualSmsMerchantPayment(
+    purchase: SmsPurchaseWithBranch,
+    input: {
+      replyEmailId: string;
+      replyFromEmail: string;
+      merchantTransactionId: string;
+    },
+  ) {
+    const now = new Date();
+    const rawPayload = {
+      ...(this.payloadObject(purchase.rawPayload) ?? {}),
+      merchant_confirmed_transaction_id: input.merchantTransactionId,
+      verification_reply_email_id: input.replyEmailId,
+      verified_by: input.replyFromEmail,
+      verified_by_name: input.replyFromEmail,
+      verified_at: now.toISOString(),
+    } satisfies Prisma.InputJsonObject;
+
+    const updated = await this.smsCreditsService.creditManualMerchantPurchase({
+      purchaseId: purchase.id,
+      merchantTransactionId: input.merchantTransactionId,
+      rawPayload,
+    });
+    this.emitSmsPurchasePaymentUpdate(updated);
+    this.logger.log(
+      `Manual SMS merchant payment ${purchase.id} credited ${purchase.smsUnitsExpected} SMS for branch ${purchase.branchId}`,
+    );
+    return updated;
+  }
+
+  private async failManualSmsMerchantPayment(
+    purchase: SmsPurchaseWithBranch,
+    input: {
+      reason: string;
+      replyEmailId: string;
+      replyFromEmail: string;
+      merchantTransactionId: string | null;
+    },
+  ) {
+    const rawPayload = {
+      ...(this.payloadObject(purchase.rawPayload) ?? {}),
+      failure_reason: input.reason,
+      merchant_confirmed_transaction_id: input.merchantTransactionId,
+      verification_reply_email_id: input.replyEmailId,
+      failed_by: input.replyFromEmail,
+      failed_at: new Date().toISOString(),
+    } satisfies Prisma.InputJsonObject;
+
+    const updated = await this.prisma.smsPurchase.update({
+      where: { id: purchase.id },
+      data: {
+        status: SmsPurchaseStatus.PAYMENT_FAILED,
+        rawPayload,
+      },
+      include: { branch: { select: { name: true } } },
+    });
+    this.emitSmsPurchasePaymentUpdate(updated);
     return updated;
   }
 
@@ -1997,6 +2472,19 @@ export class BillingService implements OnModuleInit {
       'transactionId',
       'TransactionId',
     ]);
+    const realActiveUntil = this.payloadString(row.rawPayload, [
+      'subscription_active_until',
+      'active_until',
+      'current_period_end',
+      'currentPeriodEnd',
+    ]);
+    const activeUntil = paid
+      ? realActiveUntil || periodEnd.toISOString()
+      : null;
+    const displayPeriodEnd = activeUntil ? new Date(activeUntil) : periodEnd;
+    const periodEndForLabel = Number.isNaN(displayPeriodEnd.getTime())
+      ? periodEnd
+      : displayPeriodEnd;
 
     return {
       id: row.id,
@@ -2010,13 +2498,13 @@ export class BillingService implements OnModuleInit {
           : 'Pro subscription'
         : 'Pro subscription',
       periodLabel: paid
-        ? `${this.formatShortDate(periodStart)} – ${this.formatShortDate(periodEnd)}`
+        ? `${this.formatShortDate(periodStart)} – ${this.formatShortDate(periodEndForLabel)}`
         : null,
       amount: Number(row.amount),
       currency: row.currency,
       planCode: row.plan.code,
       planDurationMonths: months,
-      activeUntil: paid ? periodEnd.toISOString() : null,
+      activeUntil,
       transactionId: transactionId ?? row.orderTrackingId ?? null,
       verifiedAt: paid ? (row.paidAt ?? row.updatedAt).toISOString() : null,
       verifiedByName: paid
@@ -2048,6 +2536,65 @@ export class BillingService implements OnModuleInit {
         : null,
       canRetry: failed,
       canCancel: pending && this.isManualMerchantPayload(row.rawPayload),
+    };
+  }
+
+  private toSmsPurchasePaymentRow(
+    row: SmsPurchaseWithBranch,
+  ): SubscriptionPaymentRowContract {
+    const paid = row.status === SmsPurchaseStatus.CREDITED;
+    const pending = this.isPendingManualSmsPurchase(row.status);
+    const cancelled = row.status === SmsPurchaseStatus.CANCELLED_BY_USER;
+    const failed =
+      row.status === SmsPurchaseStatus.PAYMENT_FAILED ||
+      row.status === SmsPurchaseStatus.PAYMENT_MISMATCH ||
+      row.status === SmsPurchaseStatus.EXPIRED ||
+      row.status === SmsPurchaseStatus.REVERSED ||
+      cancelled;
+    const transactionId =
+      this.submittedManualTransactionId(row.rawPayload) ??
+      row.externalTransactionId ??
+      row.pesapalOrderTrackingId ??
+      null;
+
+    return {
+      id: row.id,
+      date: (row.creditedAt ?? row.createdAt).toISOString(),
+      branchId: row.branchId,
+      branchName: row.branch.name,
+      kind: 'sms',
+      transaction: `${row.bundleNameSnapshot} SMS Bundle`,
+      periodLabel: `${row.smsUnitsExpected.toLocaleString('en-UG')} SMS`,
+      amount: Number(row.amountExpected),
+      currency: row.currency,
+      planCode: null,
+      planDurationMonths: null,
+      activeUntil: null,
+      transactionId,
+      verifiedAt: paid ? (row.creditedAt ?? row.updatedAt).toISOString() : null,
+      verifiedByName: null,
+      failureReason: failed
+        ? (this.payloadString(row.rawPayload, [
+            'failure_reason',
+            'failureReason',
+            'reason',
+          ]) ?? 'Transaction could not be found.')
+        : null,
+      credits: row.smsUnitsExpected,
+      paymentMethod: this.paymentMethodFromPayload(row.rawPayload),
+      status: paid
+        ? 'Paid'
+        : failed
+          ? cancelled
+            ? 'Cancelled'
+            : 'Failed'
+          : 'Pending',
+      receipt: paid
+        ? `#${row.merchantReference.slice(-8).toUpperCase()}`
+        : null,
+      canRetry: failed && !cancelled,
+      canCancel: pending && this.isManualMerchantPayload(row.rawPayload),
+      bundleId: row.bundleId,
     };
   }
 
@@ -2089,6 +2636,29 @@ export class BillingService implements OnModuleInit {
     return `manual_${providerSlug}_${digest}`;
   }
 
+  private manualSmsMerchantReference(
+    provider: ManualMerchantPaymentProvider,
+    transactionId: string,
+  ) {
+    const digest = createHash('sha256')
+      .update(`sms:${provider}:${transactionId}`)
+      .digest('hex')
+      .slice(0, 24);
+    const providerSlug =
+      provider === ManualMerchantPaymentProvider.MTN_MOMO ? 'mtn' : 'airtel';
+    return `manual_sms_${providerSlug}_${digest}`;
+  }
+
+  private isPendingManualSmsPurchase(status: SmsPurchaseStatus) {
+    return new Set<SmsPurchaseStatus>([
+      SmsPurchaseStatus.PAYMENT_PENDING,
+      SmsPurchaseStatus.AWAITING_PAYMENT,
+      SmsPurchaseStatus.PAYMENT_CONFIRMED,
+      SmsPurchaseStatus.CREDIT_PROCESSING,
+      SmsPurchaseStatus.MANUAL_REVIEW,
+    ]).has(status);
+  }
+
   private manualMerchantDetails(provider: ManualMerchantPaymentProvider) {
     if (provider === ManualMerchantPaymentProvider.MTN_MOMO) {
       return {
@@ -2098,7 +2668,7 @@ export class BillingService implements OnModuleInit {
           '123456',
         accountName:
           this.configService.get<string>('MTN_MOMO_ACCOUNT_NAME')?.trim() ||
-          'ANTIKRA HOLDINGS LIMITED',
+          'ANTIKRA HOLDINGS LTD',
       };
     }
 
@@ -2108,10 +2678,10 @@ export class BillingService implements OnModuleInit {
         merchantCode:
           this.configService
             .get<string>('AIRTEL_MONEY_MERCHANT_CODE')
-            ?.trim() || '123456',
+            ?.trim() || '7170321',
         accountName:
           this.configService.get<string>('AIRTEL_MONEY_ACCOUNT_NAME')?.trim() ||
-          'ANTIKRA HOLDINGS LIMITED',
+          'ANTIKRA HOLDINGS LTD',
       };
     }
 

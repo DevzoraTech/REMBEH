@@ -280,6 +280,7 @@ export class NotificationsService {
     submittedByName: string;
     submittedByEmail: string | null;
     submittedAt: string;
+    teamReminder?: string | null;
   }): Promise<{ delivered: boolean; error?: string }> {
     const from = this.getEmailFromHeader();
     const apiKey = this.getResendApiKey();
@@ -318,6 +319,9 @@ export class NotificationsService {
         : null,
       submittedAt: this.escapeHtml(input.submittedAt),
       replyLine: this.escapeHtml(replyLine),
+      teamReminder: input.teamReminder
+        ? this.escapeHtml(input.teamReminder)
+        : null,
     };
     const text = [
       'A new payment has been submitted for verification in Rembeh.',
@@ -334,6 +338,9 @@ export class NotificationsService {
       `Transaction ID: ${input.transactionId}`,
       '',
       `Submitted: ${input.submittedAt}`,
+      ...(input.teamReminder
+        ? ['', `Team reminder: ${input.teamReminder}`]
+        : []),
       '',
       `Payment request: REMBEH-PAY:${input.paymentId}`,
       replyLine,
@@ -364,6 +371,9 @@ export class NotificationsService {
       `<p><strong>Merchant code:</strong> ${htmlInput.merchantCode}</p>`,
       `<p><strong>Transaction ID:</strong> <span style="font-family:monospace">${htmlInput.transactionId}</span></p>`,
       `<p><strong>Submitted:</strong> ${htmlInput.submittedAt}</p>`,
+      htmlInput.teamReminder
+        ? `<p style="padding:10px;border-radius:8px;background:#fff8e1"><strong>Team reminder:</strong> ${htmlInput.teamReminder}</p>`
+        : '',
       '</div>',
       `<p style="margin:14px 0 0;color:#52606d;font-size:12px">Payment request: REMBEH-PAY:${htmlInput.paymentId}</p>`,
       '<h2 style="font-size:16px;margin:18px 0 8px">Reply instructions</h2>',

@@ -71,6 +71,21 @@ export class BillingController {
     );
   }
 
+  /** Owner may submit any branch SMS payment; manager may submit their own branch. */
+  @Post('branches/:branchId/manual-sms-payment')
+  @UseGuards(JwtAuthGuard)
+  submitManualSmsMerchantPayment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('branchId', ParseUUIDPipe) branchId: string,
+    @Body() body: SubmitManualMerchantPaymentDto,
+  ) {
+    return this.billingService.submitManualSmsMerchantPayment(
+      user,
+      branchId,
+      body,
+    );
+  }
+
   /** Explicitly cancel a pending merchant payment request before retrying. */
   @Post('payments/:paymentId/cancel')
   @UseGuards(JwtAuthGuard)

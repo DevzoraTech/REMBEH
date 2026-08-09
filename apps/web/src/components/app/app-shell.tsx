@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ArrowRight,
   Building2,
   CalendarDays,
   ClipboardCheck,
@@ -36,6 +35,21 @@ import {
 import { resolveOperatorRole } from "../../lib/roles";
 import { PushNotificationsBootstrap } from "./push-notifications-bootstrap";
 import { playNotificationSound } from "../../lib/notification-sound";
+import {
+  connectRealtime,
+  type SubscriptionPaymentUpdatedEvent,
+} from "../../lib/realtime";
+import {
+  FALLBACK_SUBSCRIPTION_PLANS,
+  SubscriptionPaymentResultOverlay,
+  type SubscriptionBillingPlanOption,
+  type SubscriptionPaymentResultOverlayState,
+  type SubscriptionPaymentRow,
+  hasSeenSubscriptionPaymentResult,
+  isManualSubscriptionPayment,
+  markSubscriptionPaymentResultSeen,
+  planForSubscriptionPaymentRow,
+} from "./subscription-payment-result-overlay";
 
 type AppShellProps = {
   children: ReactNode;
@@ -43,15 +57,6 @@ type AppShellProps = {
   workspace: RembehWorkspace | null;
   user: RembehUser | null;
   branch?: RembehBranch | null;
-};
-
-type OperationOpenCheck = {
-  branch: { id: string; name: string } | null;
-  operation: { id: string; status: string } | null;
-  pendingClosureOperation: {
-    operationDate: string;
-    status: string;
-  } | null;
 };
 
 export function AppShell({ children, session, user }: AppShellProps) {
@@ -71,6 +76,11 @@ export function AppShell({ children, session, user }: AppShellProps) {
     branchName: string | null;
   } | null>(null);
   const [graceModalOpen, setGraceModalOpen] = useState(false);
+  const [subscriptionPlans, setSubscriptionPlans] = useState<
+    SubscriptionBillingPlanOption[]
+  >(FALLBACK_SUBSCRIPTION_PLANS);
+  const [subscriptionPaymentResult, setSubscriptionPaymentResult] =
+    useState<SubscriptionPaymentResultOverlayState | null>(null);
   const railSidebarExpanded = railSidebarPinned || railSidebarHover;
   const operatorRole = resolveOperatorRole(session, user);
   const homeHref = operatorRole === "owner" ? "/owner" : "/dashboard";
@@ -153,8 +163,8 @@ export function AppShell({ children, session, user }: AppShellProps) {
           operatorRole === "manager" &&
           Boolean(
             session.permissions.includes("branch.staff.read") ||
-              session.permissions.includes("user.read") ||
-              session.permissions.includes("collection.read"),
+            session.permissions.includes("user.read") ||
+            session.permissions.includes("collection.read"),
           ),
       },
       {
@@ -231,25 +241,6 @@ export function AppShell({ children, session, user }: AppShellProps) {
     return items;
   }, [branchLocked, operatorRole, session.permissions]);
 
-  const sidebarPromo = branchLocked
-    ? null
-    : operatorRole === "owner"
-      ? {
-          href: "/owner/branches",
-          title: "Scale your lending",
-          description: "Invite managers and field officers to grow your portfolio.",
-          cta: "Invite Team",
-          collapsedLabel: "Invite team",
-        }
-      : {
-          href: "/agents?invite=1",
-          title: "Grow your branch",
-          description:
-            "Invite field officers so repayments and field work stay covered.",
-          cta: "Invite Field Officers",
-          collapsedLabel: "Invite field officers",
-        };
-
   useEffect(() => {
     if (operatorRole !== "manager") return;
     let cancelled = false;
@@ -315,6 +306,66 @@ export function AppShell({ children, session, user }: AppShellProps) {
     }
     setGraceModalOpen(false);
   }
+
+  function buildSubscriptionPaymentResult(row: SubscriptionPaymentRow) {
+    const fallback =
+      subscriptionPlans.find((plan) => plan.defaultSelected) ??
+      subscriptionPlans[0] ??
+      FALLBACK_SUBSCRIPTION_PLANS[1];
+    return {
+      kind: row.status === "Failed" ? "failed" : "success",
+      payment: row,
+      plan: planForSubscriptionPaymentRow(row, subscriptionPlans, fallback),
+    } satisfies SubscriptionPaymentResultOverlayState;
+  }
+
+  function showSubscriptionPaymentResult(row: SubscriptionPaymentRow) {
+    if (
+      !isManualSubscriptionPayment(row) ||
+      (row.status !== "Paid" && row.status !== "Failed") ||
+      hasSeenSubscriptionPaymentResult(row.id)
+    ) {
+      return;
+    }
+    if (row.status === "Paid") {
+      setBranchBilling((current) =>
+        current
+          ? {
+              ...current,
+              locked: false,
+              status: "ACTIVE",
+              message: null,
+              branchName: row.branchName,
+              daysUntilGraceEnd: null,
+            }
+          : current,
+      );
+    }
+    setSubscriptionPaymentResult(buildSubscriptionPaymentResult(row));
+  }
+
+  function closeSubscriptionPaymentResult() {
+    if (subscriptionPaymentResult?.payment.id) {
+      markSubscriptionPaymentResultSeen(subscriptionPaymentResult.payment.id);
+    }
+    setSubscriptionPaymentResult(null);
+  }
+
+  function retrySubscriptionPayment() {
+    const row = subscriptionPaymentResult?.payment;
+    if (row?.id) {
+      markSubscriptionPaymentResultSeen(row.id);
+    }
+    setSubscriptionPaymentResult(null);
+    const subscriptionPath =
+      operatorRole === "owner" ? "/owner/subscription" : "/subscription";
+    router.push(
+      row?.id
+        ? `${subscriptionPath}?retryPayment=${encodeURIComponent(row.id)}`
+        : subscriptionPath,
+    );
+  }
+
   useEffect(() => {
     if (operatorRole !== "owner") return;
     const redirects: Array<[string, string]> = [
@@ -342,36 +393,72 @@ export function AppShell({ children, session, user }: AppShellProps) {
 
   useEffect(() => {
     if (
-      operatorRole !== "manager" ||
-      branchLocked ||
-      pathname === "/operations" ||
-      pathname.startsWith("/operations/") ||
-      !session.permissions.includes("operation.read")
+      operatorRole === "staff" ||
+      isSubscriptionPage ||
+      subscriptionPaymentResult
     ) {
       return;
     }
 
     let cancelled = false;
     void (async () => {
+      const headers = {
+        Authorization: `${session.tokenType} ${session.accessToken}`,
+      };
+      let plans = FALLBACK_SUBSCRIPTION_PLANS;
       try {
-        const response = await fetch(`${apiBaseUrl}/operations/today`, {
-          headers: {
-            Authorization: `${session.tokenType} ${session.accessToken}`,
-          },
+        const summaryResponse = await fetch(`${apiBaseUrl}/billing/summary`, {
+          headers,
         });
-        const payload = await readApiJson<OperationOpenCheck>(response);
-        if (cancelled || !response.ok) return;
-        if (payload.pendingClosureOperation) {
-          router.replace(
-            `/operations?date=${encodeURIComponent(
-              payload.pendingClosureOperation.operationDate,
-            )}&prompt=close`,
-          );
-        } else if (payload.branch && !payload.operation) {
-          router.replace("/operations?prompt=open");
+        const summaryPayload = await readApiJson<{
+          plans?: SubscriptionBillingPlanOption[];
+        }>(summaryResponse);
+        if (
+          !cancelled &&
+          summaryResponse.ok &&
+          Array.isArray(summaryPayload.plans) &&
+          summaryPayload.plans.length > 0
+        ) {
+          plans = summaryPayload.plans;
+          setSubscriptionPlans(summaryPayload.plans);
         }
       } catch {
-        // Navigation should not fail just because the prompt check could not run.
+        plans = FALLBACK_SUBSCRIPTION_PLANS;
+      }
+
+      try {
+        const paymentsResponse = await fetch(`${apiBaseUrl}/billing/payments`, {
+          headers,
+        });
+        const paymentsPayload = await readApiJson<{
+          payments?: SubscriptionPaymentRow[];
+        }>(paymentsResponse);
+        if (cancelled || !paymentsResponse.ok) return;
+        const result = (paymentsPayload.payments ?? [])
+          .filter(
+            (row) =>
+              isManualSubscriptionPayment(row) &&
+              (row.status === "Paid" || row.status === "Failed") &&
+              !hasSeenSubscriptionPaymentResult(row.id),
+          )
+          .sort((a, b) => {
+            const bTime = Date.parse(b.verifiedAt ?? b.date);
+            const aTime = Date.parse(a.verifiedAt ?? a.date);
+            return bTime - aTime;
+          })[0];
+        if (!result) return;
+
+        const fallback =
+          plans.find((plan) => plan.defaultSelected) ??
+          plans[0] ??
+          FALLBACK_SUBSCRIPTION_PLANS[1];
+        setSubscriptionPaymentResult({
+          kind: result.status === "Failed" ? "failed" : "success",
+          payment: result,
+          plan: planForSubscriptionPaymentRow(result, plans, fallback),
+        });
+      } catch {
+        // Payment result modals are helpful but should never block navigation.
       }
     })();
 
@@ -379,13 +466,32 @@ export function AppShell({ children, session, user }: AppShellProps) {
       cancelled = true;
     };
   }, [
-    branchLocked,
+    isSubscriptionPage,
     operatorRole,
-    pathname,
-    router,
     session.accessToken,
-    session.permissions,
     session.tokenType,
+    subscriptionPaymentResult,
+  ]);
+
+  useEffect(() => {
+    if (operatorRole === "staff" || isSubscriptionPage) return;
+    const socket = connectRealtime(session.accessToken);
+    const onPaymentUpdate = (event: SubscriptionPaymentUpdatedEvent) => {
+      const row = event.payment;
+      if (!row || (row.kind ?? "subscription") === "sms") return;
+      showSubscriptionPaymentResult(row);
+    };
+
+    socket.on("subscription_payment.updated", onPaymentUpdate);
+    return () => {
+      socket.off("subscription_payment.updated", onPaymentUpdate);
+      socket.disconnect();
+    };
+  }, [
+    isSubscriptionPage,
+    operatorRole,
+    session.accessToken,
+    subscriptionPlans,
   ]);
 
   function handleLogout() {
@@ -437,7 +543,6 @@ export function AppShell({ children, session, user }: AppShellProps) {
         primaryNav={primaryNav}
         user={user}
         roleLabel={operatorRole === "owner" ? "Owner" : "Manager"}
-        promo={sidebarPromo}
         expanded={railSidebarExpanded}
         pinned={railSidebarPinned}
         onCloseMobile={() => setMobileOpen(false)}
@@ -538,6 +643,13 @@ export function AppShell({ children, session, user }: AppShellProps) {
           </div>
         </div>
       ) : null}
+      {subscriptionPaymentResult ? (
+        <SubscriptionPaymentResultOverlay
+          result={subscriptionPaymentResult}
+          onClose={closeSubscriptionPaymentResult}
+          onTryAgain={retrySubscriptionPayment}
+        />
+      ) : null}
     </div>
   );
 }
@@ -549,7 +661,6 @@ function RailSidebar({
   primaryNav,
   user,
   roleLabel,
-  promo,
   expanded,
   pinned,
   onCloseMobile,
@@ -568,13 +679,6 @@ function RailSidebar({
   }>;
   user: RembehUser | null;
   roleLabel: string;
-  promo: {
-    href: string;
-    title: string;
-    description: string;
-    cta: string;
-    collapsedLabel: string;
-  } | null;
   expanded: boolean;
   pinned: boolean;
   onCloseMobile: () => void;
@@ -730,80 +834,8 @@ function RailSidebar({
           })}
         </nav>
 
-        {promo ? (
-          <div
-            className={`mt-2 shrink-0 overflow-hidden rounded-2xl border border-white/12 bg-white/[0.045] shadow-[0_14px_30px_rgba(0,21,17,0.14)] transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] [@media(max-height:720px)]:p-2 ${
-              collapsed ? "p-3 lg:p-2" : "p-3"
-            }`}
-          >
-            <div className={collapsed ? "hidden lg:block" : "hidden"}>
-              <RailSidebarTooltip label={promo.collapsedLabel} show>
-                <Link
-                  href={promo.href}
-                  onClick={onCloseMobile}
-                  className="grid h-10 w-full place-items-center rounded-xl bg-[#19a876] text-white shadow-[0_10px_20px_rgba(25,168,118,0.2)] transition hover:bg-[#15986b]"
-                  aria-label={promo.collapsedLabel}
-                >
-                  <Users className="size-4" />
-                </Link>
-              </RailSidebarTooltip>
-            </div>
-            <div
-              className={`transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                collapsed
-                  ? "max-h-0 opacity-0 lg:pointer-events-none lg:max-h-0"
-                  : "max-h-40 opacity-100"
-              } ${collapsed ? "lg:hidden" : ""}`}
-            >
-              <div className="flex items-start gap-2.5">
-                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#d9f7e7] text-[#006b4f]">
-                  <Users className="size-[18px]" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-white">{promo.title}</p>
-                  <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-white/64 [@media(max-height:720px)]:line-clamp-1">
-                    {promo.description}
-                  </p>
-                </div>
-              </div>
-              <Link
-                href={promo.href}
-                onClick={onCloseMobile}
-                className="mt-3 flex h-8 items-center justify-between rounded-xl bg-[#19a876] px-3 text-[11px] font-medium text-white shadow-[0_10px_20px_rgba(25,168,118,0.2)] transition hover:bg-[#15986b] [@media(max-height:720px)]:mt-2 [@media(max-height:720px)]:h-7"
-              >
-                {promo.cta}
-                <ArrowRight className="size-3.5" />
-              </Link>
-            </div>
-            <div className={`lg:hidden ${collapsed ? "" : "hidden"}`}>
-              <div className="flex items-start gap-2.5">
-                <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#d9f7e7] text-[#006b4f]">
-                  <Users className="size-[18px]" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-white">{promo.title}</p>
-                  <p className="mt-1 line-clamp-2 text-[11px] font-medium leading-4 text-white/64">
-                    {promo.description}
-                  </p>
-                </div>
-              </div>
-              <Link
-                href={promo.href}
-                onClick={onCloseMobile}
-                className="mt-3 flex h-8 items-center justify-between rounded-xl bg-[#19a876] px-3 text-[11px] font-medium text-white"
-              >
-                {promo.cta}
-                <ArrowRight className="size-3.5" />
-              </Link>
-            </div>
-          </div>
-        ) : null}
-
         <div className="mt-3 shrink-0 border-t border-white/14 pt-3 [@media(max-height:720px)]:mt-2 [@media(max-height:720px)]:pt-2">
-          <RailSidebarTooltip
-            label={user?.name ?? roleLabel}
-            show={collapsed}
-          >
+          <RailSidebarTooltip label={user?.name ?? roleLabel} show={collapsed}>
             <div
               className={`flex items-center overflow-hidden transition-all duration-300 ${
                 collapsed ? "lg:justify-center" : "gap-3"

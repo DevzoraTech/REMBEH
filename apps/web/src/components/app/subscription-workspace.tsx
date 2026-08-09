@@ -6,19 +6,18 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import Image from "next/image";
 import {
   ArrowRight,
-  AlertCircle,
   CalendarDays,
   Check,
   CheckCircle2,
   Clock3,
   CreditCard,
   Download,
-  FileX2,
   FileText,
   Headphones,
   Info,
@@ -30,9 +29,7 @@ import {
   ReceiptText,
   RefreshCw,
   Shield,
-  UserRound,
   X,
-  XCircle,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "./app-shell";
@@ -55,6 +52,13 @@ import {
   connectRealtime,
   type SubscriptionPaymentUpdatedEvent,
 } from "../../lib/realtime";
+import {
+  SubscriptionPaymentResultOverlay,
+  type SubscriptionPaymentResultOverlayState,
+  hasSeenSubscriptionPaymentResult as hasSeenPaymentResult,
+  isManualSubscriptionPayment,
+  markSubscriptionPaymentResultSeen as markPaymentResultSeen,
+} from "./subscription-payment-result-overlay";
 
 type BillingPlanOption = {
   code: string;
@@ -96,10 +100,6 @@ type BillingSummary = {
     reminder: string | null;
   }>;
   reminders: string[];
-};
-
-type CheckoutResponse = {
-  redirectUrl: string;
 };
 
 type SmsWallet = {
@@ -157,6 +157,7 @@ type ManualPaymentMethodOption = {
   logoAlt: string;
   merchantCode: string;
   accountName: string;
+  qrSrc?: string;
 };
 
 type ManualPaymentSubmission = {
@@ -165,12 +166,6 @@ type ManualPaymentSubmission = {
   paymentMethod: ManualPaymentMethodOption;
   transactionId: string;
   submittedAt: string;
-};
-
-type PaymentResultOverlayState = {
-  kind: "success" | "failed";
-  payment: PaymentRow;
-  plan: BillingPlanOption;
 };
 
 const PRO_BENEFITS = [
@@ -236,7 +231,7 @@ const PERIOD_TOTAL_DAYS = 30;
 const GRACE_TOTAL_DAYS = 2;
 const PAYMENT_SUPPORT_PHONE = "0777823011, 0752039673";
 const PAYMENT_SUPPORT_EMAIL = "subscriptions@antikra.com";
-const PAYMENT_ACCOUNT_NAME = "ANTIKRA HOLDINGS LIMITED";
+const PAYMENT_ACCOUNT_NAME = "ANTIKRA HOLDINGS LTD";
 
 const MANUAL_PAYMENT_METHODS: ManualPaymentMethodOption[] = [
   {
@@ -254,8 +249,9 @@ const MANUAL_PAYMENT_METHODS: ManualPaymentMethodOption[] = [
     subtitle: "Pay using Airtel Money",
     logoSrc: "/assets/payments/airtel.png",
     logoAlt: "Airtel",
-    merchantCode: "123456",
+    merchantCode: "7170321",
     accountName: PAYMENT_ACCOUNT_NAME,
+    qrSrc: "/assets/payments/airtel-qr.jpg",
   },
 ];
 
@@ -271,14 +267,84 @@ function compactManualTransactionId(value: string) {
   return normalizeManualTransactionId(value).replace(/[^A-Z0-9]/g, "");
 }
 
+function manualPaymentMethodForRow(row: PaymentRow) {
+  const method = row.paymentMethod.toLowerCase();
+  if (method.includes("airtel")) {
+    return manualPaymentMethodById("AIRTEL_MONEY") ?? MANUAL_PAYMENT_METHODS[1];
+  }
+  return manualPaymentMethodById("MTN_MOMO") ?? MANUAL_PAYMENT_METHODS[0];
+}
+
+function submissionFromPendingPayment(
+  row: PaymentRow,
+  plans: BillingPlanOption[],
+  fallback: BillingPlanOption,
+): ManualPaymentSubmission {
+  return {
+    plan:
+      (row.kind ?? "subscription") === "sms"
+        ? planForSmsPaymentRow(row)
+        : planForPaymentRow(row, plans, fallback),
+    branchName: row.branchName,
+    paymentMethod: manualPaymentMethodForRow(row),
+    transactionId: row.transactionId || row.receipt || "Submitted",
+    submittedAt: row.date,
+  };
+}
+
+function isSmsBundlePlan(plan: BillingPlanOption) {
+  return plan.interval === "SMS_BUNDLE";
+}
+
 function paymentPeriodLabel(plan: BillingPlanOption) {
+  if (isSmsBundlePlan(plan)) return `${plan.label} SMS Bundle`;
   if (plan.durationMonths === 1) return "Monthly Subscription";
   return `${plan.durationMonths}-Month Subscription`;
 }
 
 function paymentPlanAccessCopy(plan: BillingPlanOption) {
+  if (isSmsBundlePlan(plan)) return plan.tagline;
   const unit = plan.durationMonths === 1 ? "month" : "months";
   return `Access all Rembeh features for ${plan.durationMonths} ${unit}`;
+}
+
+function planForSmsBundle(bundle: SmsBundle): BillingPlanOption {
+  return {
+    code: `SMS_${bundle.id}`,
+    name: "SMS",
+    amount: bundle.priceUgx,
+    currency: bundle.currency,
+    interval: "SMS_BUNDLE",
+    durationMonths: 0,
+    label: bundle.name,
+    tagline: `${bundle.smsUnits.toLocaleString(
+      "en-UG",
+    )} SMS credits for borrower notifications`,
+    compareAtAmount: null,
+    savingsAmount: null,
+    badge: null,
+    defaultSelected: false,
+  };
+}
+
+function planForSmsPaymentRow(row: PaymentRow): BillingPlanOption {
+  const label = row.transaction.replace(/\s+SMS Bundle$/i, "") || "SMS";
+  return {
+    code: row.bundleId ? `SMS_${row.bundleId}` : `SMS_${row.id}`,
+    name: "SMS",
+    amount: row.amount,
+    currency: row.currency,
+    interval: "SMS_BUNDLE",
+    durationMonths: 0,
+    label,
+    tagline: `${(row.credits ?? 0).toLocaleString(
+      "en-UG",
+    )} SMS credits for borrower notifications`,
+    compareAtAmount: null,
+    savingsAmount: null,
+    badge: null,
+    defaultSelected: false,
+  };
 }
 
 function planForPaymentRow(
@@ -311,13 +377,6 @@ function paymentRowMatchesPlan(row: PaymentRow, plan: BillingPlanOption) {
     (row.planDurationMonths == null ||
       row.planDurationMonths === plan.durationMonths)
   );
-}
-
-function daysRemainingUntil(value: string | null | undefined) {
-  if (!value) return null;
-  const end = Date.parse(value);
-  if (!Number.isFinite(end)) return null;
-  return Math.max(0, Math.ceil((end - Date.now()) / (24 * 60 * 60 * 1000)));
 }
 
 function formatPaymentSubmittedAt(value: string) {
@@ -450,11 +509,15 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
   const [smsBundles, setSmsBundles] = useState<SmsBundle[]>([]);
   const [smsLoading, setSmsLoading] = useState(false);
   const [confirmBundle, setConfirmBundle] = useState<SmsBundle | null>(null);
-  const [purchasingBundleId, setPurchasingBundleId] = useState<string | null>(
-    null,
-  );
+  const purchasingBundleId = useMemo<string | null>(() => null, []);
   const [selectedPlanCode, setSelectedPlanCode] = useState("PRO_3M");
   const [paymentPanelOpen, setPaymentPanelOpen] = useState(false);
+  const [manualPaymentKind, setManualPaymentKind] = useState<
+    "subscription" | "sms"
+  >("subscription");
+  const [manualSmsBundle, setManualSmsBundle] = useState<SmsBundle | null>(
+    null,
+  );
   const [selectedPaymentMethod, setSelectedPaymentMethod] =
     useState<ManualPaymentMethod | null>(null);
   const [transactionId, setTransactionId] = useState("");
@@ -463,14 +526,16 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
   const [submittedManualPayment, setSubmittedManualPayment] =
     useState<ManualPaymentSubmission | null>(null);
   const [paymentResultOverlay, setPaymentResultOverlay] =
-    useState<PaymentResultOverlayState | null>(null);
+    useState<SubscriptionPaymentResultOverlayState | null>(null);
   const [cancellingPaymentId, setCancellingPaymentId] = useState<string | null>(
     null,
   );
+  const autoShownPendingPaymentIdRef = useRef<string | null>(null);
   const paid = searchParams.get("paid") === "1";
   const failedPayment = searchParams.get("failed") === "1";
   const resultParam = searchParams.get("paymentResult");
   const resultPaymentId = searchParams.get("payment");
+  const retryPaymentId = searchParams.get("retryPayment");
   const smsPaid = searchParams.get("smsPaid") === "1";
   const tabParam = searchParams.get("tab");
   const [activeTab, setActiveTab] = useState<"plan" | "sms">(
@@ -485,12 +550,13 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
       tabParam === "plan" ||
       paid ||
       failedPayment ||
+      retryPaymentId ||
       resultParam === "success" ||
       resultParam === "failed"
     ) {
       setActiveTab("plan");
     }
-  }, [failedPayment, paid, resultParam, smsPaid, tabParam]);
+  }, [failedPayment, paid, resultParam, retryPaymentId, smsPaid, tabParam]);
 
   useEffect(() => {
     const boot = window.setTimeout(() => {
@@ -732,6 +798,94 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
   }, [activeTab, planPayments, smsPayments, statusFilter, dateFrom, dateTo]);
 
   useEffect(() => {
+    if (!ready || paymentResultOverlay || paymentPanelOpen) return;
+    const result = [...planPayments]
+      .filter(
+        (row) =>
+          isManualSubscriptionPayment(row) &&
+          (row.status === "Paid" || row.status === "Failed") &&
+          !hasSeenPaymentResult(row.id),
+      )
+      .sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+      )[0];
+    if (!result) return;
+
+    setActiveTab("plan");
+    setFocusedBranchId(result.branchId);
+    setSubmittedManualPayment(null);
+    setPaymentResultOverlay({
+      kind: result.status === "Paid" ? "success" : "failed",
+      payment: result,
+      plan: planForPaymentRow(result, planOptions, selectedPlan),
+    });
+  }, [
+    paymentPanelOpen,
+    paymentResultOverlay,
+    planOptions,
+    planPayments,
+    ready,
+    selectedPlan,
+  ]);
+
+  useEffect(() => {
+    if (
+      !ready ||
+      paymentPanelOpen ||
+      paymentResultOverlay ||
+      submittedManualPayment
+    ) {
+      return;
+    }
+
+    const pending = [...planPayments, ...smsPayments]
+      .filter(
+        (row) =>
+          ((row.kind ?? "subscription") === "sms" ||
+            isManualSubscriptionPayment(row)) &&
+          row.status === "Pending" &&
+          row.canCancel === true,
+      )
+      .sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+      )[0];
+    if (!pending || autoShownPendingPaymentIdRef.current === pending.id) return;
+
+    autoShownPendingPaymentIdRef.current = pending.id;
+    if ((pending.kind ?? "subscription") === "sms") {
+      setManualPaymentKind("sms");
+      setManualSmsBundle(
+        smsBundles.find((bundle) => bundle.id === pending.bundleId) ?? null,
+      );
+      setActiveTab("sms");
+    } else {
+      setManualPaymentKind("subscription");
+      setManualSmsBundle(null);
+      setSelectedPlanCode(pending.planCode ?? selectedPlanCode ?? "PRO_3M");
+      setActiveTab("plan");
+    }
+    setFocusedBranchId(pending.branchId);
+    setSelectedPaymentMethod(manualPaymentMethodForRow(pending).id);
+    setTransactionId("");
+    setConfirmTransactionId("");
+    setSubmittedManualPayment(
+      submissionFromPendingPayment(pending, planOptions, selectedPlan),
+    );
+    setPaymentPanelOpen(true);
+  }, [
+    paymentPanelOpen,
+    paymentResultOverlay,
+    planOptions,
+    planPayments,
+    ready,
+    selectedPlan,
+    selectedPlanCode,
+    smsBundles,
+    smsPayments,
+    submittedManualPayment,
+  ]);
+
+  useEffect(() => {
     if (!submittedManualPayment || !session) return;
     const timer = window.setInterval(() => {
       void loadPayments();
@@ -748,7 +902,8 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
 
     const onPaymentUpdate = (event: SubscriptionPaymentUpdatedEvent) => {
       const row = event.payment;
-      if (!row || (row.kind ?? "subscription") === "sms") return;
+      if (!row) return;
+      const isSms = (row.kind ?? "subscription") === "sms";
       const branchInScope =
         mode === "owner" ||
         summary?.branches.some((branch) => branch.branchId === row.branchId) ||
@@ -768,6 +923,31 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
         );
       });
 
+      if (isSms) {
+        if (row.branchId === focusedBranchId) {
+          void loadSmsWallet(row.branchId);
+        }
+        const submittedMatches =
+          submittedManualPayment &&
+          row.transactionId?.toUpperCase() ===
+            submittedManualPayment.transactionId.toUpperCase() &&
+          row.branchName === submittedManualPayment.branchName;
+        if (
+          submittedMatches &&
+          (row.status === "Paid" || row.status === "Failed")
+        ) {
+          setSubmittedManualPayment(null);
+          setPaymentPanelOpen(false);
+          if (row.status === "Failed") {
+            setError(
+              row.failureReason ||
+                "SMS payment could not be verified. Check the transaction ID and try again.",
+            );
+          }
+        }
+        return;
+      }
+
       void loadSummary();
 
       if (row.status !== "Paid" && row.status !== "Failed") return;
@@ -776,7 +956,10 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
         row.transactionId?.toUpperCase() ===
           submittedManualPayment.transactionId.toUpperCase() &&
         row.branchName === submittedManualPayment.branchName;
-      if (!submittedMatches) return;
+      const shouldShowResult =
+        submittedMatches ||
+        (isManualSubscriptionPayment(row) && !hasSeenPaymentResult(row.id));
+      if (!shouldShowResult) return;
 
       setSubmittedManualPayment(null);
       setPaymentPanelOpen(false);
@@ -795,6 +978,7 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
   }, [
     focusedBranchId,
     loadSummary,
+    loadSmsWallet,
     mode,
     planOptions,
     selectedPlan,
@@ -805,13 +989,30 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
 
   useEffect(() => {
     if (!submittedManualPayment) return;
-    const match = planPayments.find(
+    const source = isSmsBundlePlan(submittedManualPayment.plan)
+      ? smsPayments
+      : planPayments;
+    const match = source.find(
       (row) =>
         row.transactionId?.toUpperCase() ===
           submittedManualPayment.transactionId.toUpperCase() &&
         row.branchName === submittedManualPayment.branchName,
     );
     if (!match || (match.status !== "Paid" && match.status !== "Failed")) {
+      return;
+    }
+    if ((match.kind ?? "subscription") === "sms") {
+      setSubmittedManualPayment(null);
+      setPaymentPanelOpen(false);
+      if (match.branchId === focusedBranchId) {
+        void loadSmsWallet(match.branchId);
+      }
+      if (match.status === "Failed") {
+        setError(
+          match.failureReason ||
+            "SMS payment could not be verified. Check the transaction ID and try again.",
+        );
+      }
       return;
     }
     setSubmittedManualPayment(null);
@@ -821,7 +1022,15 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
       payment: match,
       plan: planForPaymentRow(match, planOptions, selectedPlan),
     });
-  }, [planOptions, planPayments, selectedPlan, submittedManualPayment]);
+  }, [
+    focusedBranchId,
+    loadSmsWallet,
+    planOptions,
+    planPayments,
+    selectedPlan,
+    smsPayments,
+    submittedManualPayment,
+  ]);
 
   useEffect(() => {
     const requested =
@@ -853,6 +1062,47 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     selectedPlan,
   ]);
 
+  useEffect(() => {
+    if (
+      !retryPaymentId ||
+      !ready ||
+      paymentPanelOpen ||
+      paymentResultOverlay ||
+      !summary
+    ) {
+      return;
+    }
+    const row = planPayments.find((payment) => payment.id === retryPaymentId);
+    if (!row || row.status !== "Failed") return;
+    const branch = summary.branches.find(
+      (item) => item.branchId === row.branchId,
+    );
+    if (!branch) return;
+
+    setSelectedPlanCode(row.planCode ?? selectedPlanCode ?? "PRO_3M");
+    setFocusedBranchId(row.branchId);
+    setActiveTab("plan");
+    setPaymentPanelOpen(true);
+    setSelectedPaymentMethod(manualPaymentMethodForRow(row).id);
+    setSubmittedManualPayment(null);
+    setTransactionId("");
+    setConfirmTransactionId("");
+    setError(null);
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete("retryPayment");
+    url.searchParams.set("tab", "plan");
+    window.history.replaceState({}, "", url.toString());
+  }, [
+    paymentPanelOpen,
+    paymentResultOverlay,
+    planPayments,
+    ready,
+    retryPaymentId,
+    selectedPlanCode,
+    summary,
+  ]);
+
   function switchTab(tab: "plan" | "sms") {
     setActiveTab(tab);
     setStatusFilter("all");
@@ -863,36 +1113,41 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     window.history.replaceState({}, "", url.toString());
   }
 
-  async function startSmsPurchase(bundleId: string, branchId?: string) {
-    const targetBranchId = branchId ?? focusedBranchId;
-    if (!session || !targetBranchId || !bundleId) return;
-    setPurchasingBundleId(bundleId);
-    setPayingBranchId(targetBranchId);
-    setError(null);
-    try {
-      const response = await fetch(`${apiBaseUrl}/sms-credits/purchases`, {
-        method: "POST",
-        headers: {
-          ...authHeaders(session),
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ bundleId, branchId: targetBranchId }),
-      });
-      const payload = await readApiJson<
-        CheckoutResponse & { message?: string | string[] }
-      >(response);
-      if (!response.ok) {
-        throw new Error(formatApiError(payload.message));
-      }
-      if (!payload.redirectUrl) {
-        throw new Error("unavailable");
-      }
-      window.location.assign(payload.redirectUrl);
-    } catch (err) {
-      setError(friendlyError(err));
-      setPurchasingBundleId(null);
-      setPayingBranchId(null);
+  function startSmsPurchase(bundleId: string, branchId?: string) {
+    const bundle = smsBundles.find((item) => item.id === bundleId);
+    const targetBranch = resolveSubscriptionBranch(branchId);
+    if (!bundle) {
+      setError("Choose an SMS bundle before starting payment.");
+      return;
     }
+    if (!targetBranch) {
+      setError("Choose a branch before starting payment.");
+      return;
+    }
+
+    setError(null);
+    const pending = pendingManualSmsPaymentFor(
+      bundle.id,
+      targetBranch.branchId,
+    );
+    if (pending) {
+      setManualPaymentKind("sms");
+      setManualSmsBundle(bundle);
+      setFocusedBranchId(targetBranch.branchId);
+      setActiveTab("sms");
+      setConfirmBundle(null);
+      setSelectedPaymentMethod(manualPaymentMethodForRow(pending).id);
+      setTransactionId("");
+      setConfirmTransactionId("");
+      setSubmittedManualPayment(
+        submissionFromPendingPayment(pending, planOptions, selectedPlan),
+      );
+      setPaymentResultOverlay(null);
+      setPaymentPanelOpen(true);
+      return;
+    }
+
+    openManualSmsPayment(bundle, targetBranch.branchId);
   }
 
   function resolveSubscriptionBranch(branchId?: string) {
@@ -928,6 +1183,27 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     );
   }
 
+  function pendingManualSmsPaymentFor(bundleId?: string, branchId?: string) {
+    const targetBranchId =
+      branchId ?? resolveSubscriptionBranch()?.branchId ?? focusedBranchId;
+    if (!targetBranchId) return null;
+    const targetBundle =
+      smsBundles.find((bundle) => bundle.id === bundleId) ?? manualSmsBundle;
+    return (
+      smsPayments.find(
+        (row) =>
+          row.branchId === targetBranchId &&
+          row.status === "Pending" &&
+          row.canCancel === true &&
+          ((bundleId && row.bundleId === bundleId) ||
+            (!row.bundleId &&
+              targetBundle != null &&
+              row.amount === targetBundle.priceUgx &&
+              (row.credits ?? 0) === targetBundle.smsUnits)),
+      ) ?? null
+    );
+  }
+
   function openManualPayment(planCode?: string, branchId?: string) {
     const targetBranch = resolveSubscriptionBranch(branchId);
     if (!targetBranch) {
@@ -940,8 +1216,31 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     }
 
     setSelectedPlanCode(planCode || selectedPlanCode || "PRO_3M");
+    setManualPaymentKind("subscription");
+    setManualSmsBundle(null);
     setFocusedBranchId(targetBranch.branchId);
     setActiveTab("plan");
+    setPaymentPanelOpen(true);
+    setSelectedPaymentMethod(null);
+    setTransactionId("");
+    setConfirmTransactionId("");
+    setSubmittedManualPayment(null);
+    setPaymentResultOverlay(null);
+    setError(null);
+  }
+
+  function openManualSmsPayment(bundle: SmsBundle, branchId?: string) {
+    const targetBranch = resolveSubscriptionBranch(branchId);
+    if (!targetBranch) {
+      setError("Choose a branch before starting payment.");
+      return;
+    }
+
+    setManualPaymentKind("sms");
+    setManualSmsBundle(bundle);
+    setFocusedBranchId(targetBranch.branchId);
+    setActiveTab("sms");
+    setConfirmBundle(null);
     setPaymentPanelOpen(true);
     setSelectedPaymentMethod(null);
     setTransactionId("");
@@ -974,7 +1273,11 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
       setTransactionId("");
       setConfirmTransactionId("");
       setSubmittedManualPayment(null);
-      await Promise.all([loadSummary(), loadPayments()]);
+      await Promise.all([
+        loadSummary(),
+        loadPayments(),
+        focusedBranchId ? loadSmsWallet(focusedBranchId) : Promise.resolve(),
+      ]);
     } catch (err) {
       setError(friendlyError(err));
     } finally {
@@ -984,6 +1287,8 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
 
   function closePaymentOverlay() {
     setPaymentPanelOpen(false);
+    setManualPaymentKind("subscription");
+    setManualSmsBundle(null);
     setSelectedPaymentMethod(null);
     setTransactionId("");
     setConfirmTransactionId("");
@@ -991,6 +1296,9 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
   }
 
   function closePaymentResultOverlay() {
+    if (paymentResultOverlay?.payment.id) {
+      markPaymentResultSeen(paymentResultOverlay.payment.id);
+    }
     setPaymentResultOverlay(null);
     const url = new URL(window.location.href);
     for (const key of ["paid", "failed", "paymentResult", "payment"]) {
@@ -1018,10 +1326,14 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     const reference = transactionId.trim();
     const confirmation = confirmTransactionId.trim();
     if (!session || !targetBranch) return;
-    const pendingPayment = pendingManualPaymentFor(
-      selectedPlanCode,
-      targetBranch.branchId,
-    );
+    if (manualPaymentKind === "sms" && !manualSmsBundle) {
+      setError("Choose an SMS bundle before verifying payment.");
+      return;
+    }
+    const pendingPayment =
+      manualPaymentKind === "sms"
+        ? pendingManualSmsPaymentFor(manualSmsBundle?.id, targetBranch.branchId)
+        : pendingManualPaymentFor(selectedPlanCode, targetBranch.branchId);
     if (pendingPayment) {
       setError(
         "Cancel the pending payment request before submitting another transaction ID for this purchase.",
@@ -1058,22 +1370,32 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     setSubmittedManualPayment(null);
     setError(null);
     try {
-      const response = await fetch(
-        `${apiBaseUrl}/billing/branches/${targetBranch.branchId}/manual-payment`,
-        {
-          method: "POST",
-          headers: {
-            ...authHeaders(session),
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            planCode: selectedPlanCode || "PRO_3M",
-            provider: method,
-            transactionId: reference,
-            confirmTransactionId: confirmation,
-          }),
+      const endpoint =
+        manualPaymentKind === "sms"
+          ? `${apiBaseUrl}/billing/branches/${targetBranch.branchId}/manual-sms-payment`
+          : `${apiBaseUrl}/billing/branches/${targetBranch.branchId}/manual-payment`;
+      const body =
+        manualPaymentKind === "sms"
+          ? {
+              bundleId: manualSmsBundle!.id,
+              provider: method,
+              transactionId: reference,
+              confirmTransactionId: confirmation,
+            }
+          : {
+              planCode: selectedPlanCode || "PRO_3M",
+              provider: method,
+              transactionId: reference,
+              confirmTransactionId: confirmation,
+            };
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          ...authHeaders(session),
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify(body),
+      });
       const payload = await readApiJson<{
         payment?: PaymentRow;
         message?: string | string[];
@@ -1082,7 +1404,10 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
         throw new Error(formatApiError(payload.message));
       }
       setSubmittedManualPayment({
-        plan: selectedPlan,
+        plan:
+          manualPaymentKind === "sms" && manualSmsBundle
+            ? planForSmsBundle(manualSmsBundle)
+            : selectedPlan,
         branchName: targetBranch.branchName,
         paymentMethod: paymentMethodOption,
         transactionId: reference.toUpperCase(),
@@ -1090,7 +1415,13 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
       });
       setTransactionId("");
       setConfirmTransactionId("");
-      await Promise.all([loadSummary(), loadPayments()]);
+      await Promise.all([
+        loadSummary(),
+        loadPayments(),
+        manualPaymentKind === "sms"
+          ? loadSmsWallet(targetBranch.branchId)
+          : Promise.resolve(),
+      ]);
     } catch (err) {
       setError(friendlyError(err));
     } finally {
@@ -1151,9 +1482,18 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     (payingBranchId === focusedBranch?.branchId ||
       (mode === "manager" &&
         payingBranchId === summary?.branches[0]?.branchId));
+  const manualPaymentPlan =
+    manualPaymentKind === "sms" && manualSmsBundle
+      ? planForSmsBundle(manualSmsBundle)
+      : selectedPlan;
   const activePendingManualPayment =
     paymentPanelOpen && !submittedManualPayment
-      ? pendingManualPaymentFor(selectedPlan.code, focusedBranch?.branchId)
+      ? manualPaymentKind === "sms"
+        ? pendingManualSmsPaymentFor(
+            manualSmsBundle?.id,
+            focusedBranch?.branchId,
+          )
+        : pendingManualPaymentFor(selectedPlan.code, focusedBranch?.branchId)
       : null;
 
   let daysCopy = `${daysLeft} day${daysLeft === 1 ? "" : "s"} remaining`;
@@ -1827,9 +2167,7 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
                               >
                                 View
                               </button>
-                            ) : !isSms &&
-                              row.status === "Pending" &&
-                              row.canCancel ? (
+                            ) : row.status === "Pending" && row.canCancel ? (
                               <button
                                 type="button"
                                 disabled={cancelling}
@@ -1896,7 +2234,7 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
             />
           ) : (
             <ManualMerchantPaymentPanel
-              plan={selectedPlan}
+              plan={manualPaymentPlan}
               branchName={branchName}
               selectedMethod={selectedPaymentMethod}
               transactionId={transactionId}
@@ -1925,32 +2263,15 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
         </PaymentOverlay>
       ) : null}
       {paymentResultOverlay ? (
-        <PaymentOverlay onClose={closePaymentResultOverlay}>
-          {paymentResultOverlay.kind === "success" ? (
-            <SubscriptionActivatedPanel
-              result={paymentResultOverlay}
-              confirmationEmail={user.email ?? null}
-              onClose={closePaymentResultOverlay}
-              onContinue={() => {
-                closePaymentResultOverlay();
-                router.push(mode === "owner" ? "/owner" : "/dashboard");
-              }}
-            />
-          ) : (
-            <PaymentFailedPanel
-              result={paymentResultOverlay}
-              onClose={closePaymentResultOverlay}
-              onTryAgain={() => {
-                const row = paymentResultOverlay.payment;
-                closePaymentResultOverlay();
-                openManualPayment(
-                  row.planCode ?? selectedPlanCode,
-                  row.branchId,
-                );
-              }}
-            />
-          )}
-        </PaymentOverlay>
+        <SubscriptionPaymentResultOverlay
+          result={paymentResultOverlay}
+          onClose={closePaymentResultOverlay}
+          onTryAgain={() => {
+            const row = paymentResultOverlay.payment;
+            closePaymentResultOverlay();
+            openManualPayment(row.planCode ?? selectedPlanCode, row.branchId);
+          }}
+        />
       ) : null}
     </AppShell>
   );
@@ -2015,6 +2336,7 @@ function ManualMerchantPaymentPanel({
 }) {
   const method = manualPaymentMethodById(selectedMethod);
   const amountLabel = formatMoney(plan.amount, plan.currency);
+  const isSmsPayment = isSmsBundlePlan(plan);
   const hasTransactionId = transactionId.trim().length > 0;
   const hasConfirmTransactionId = confirmTransactionId.trim().length > 0;
   const idsMismatch =
@@ -2044,7 +2366,10 @@ function ManualMerchantPaymentPanel({
         </h2>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
           Pay using MTN MoMo or Airtel Money, then enter your transaction ID to
-          verify your payment and activate your subscription.
+          verify your payment and{" "}
+          {isSmsPayment
+            ? "credit your SMS wallet."
+            : "activate your subscription."}
         </p>
       </div>
 
@@ -2208,6 +2533,17 @@ function ManualMerchantPaymentPanel({
                       </dd>
                     </div>
                   </dl>
+                  {method.qrSrc ? (
+                    <div className="rounded-lg border border-[#e6ebf0] bg-white p-3 text-center md:w-[150px]">
+                      <Image
+                        src={method.qrSrc}
+                        alt={`${method.title} merchant QR code`}
+                        width={132}
+                        height={258}
+                        className="mx-auto max-h-[190px] w-auto object-contain"
+                      />
+                    </div>
+                  ) : null}
                   <div className="rounded-lg border border-[#e6ebf0] bg-white px-8 py-5 text-center md:min-w-[230px]">
                     <p className="text-xs font-medium text-slate-500">
                       Pay this amount
@@ -2307,8 +2643,9 @@ function ManualMerchantPaymentPanel({
                           Having trouble with your payment?
                         </h4>
                         <p className="mt-3 text-sm leading-6 text-slate-600">
-                          If you have any issue with your subscription, contact
-                          support
+                          If you have any issue with your{" "}
+                          {isSmsPayment ? "SMS purchase" : "subscription"},
+                          contact support
                         </p>
                         <div className="mt-6 space-y-4 text-base text-[#070b18]">
                           <p className="flex items-center gap-3">
@@ -2327,8 +2664,11 @@ function ManualMerchantPaymentPanel({
 
                 <p className="mt-8 flex items-center justify-center gap-2 text-xs font-medium text-slate-500">
                   <Lock className="size-4" />
-                  Your payment is secure. We will verify and activate your
-                  subscription after confirmation.
+                  Your payment is secure. We will verify and{" "}
+                  {isSmsPayment
+                    ? "credit your SMS wallet"
+                    : "activate your subscription"}{" "}
+                  after confirmation.
                 </p>
               </div>
             ) : null}
@@ -2350,6 +2690,7 @@ function ManualPaymentSubmittedPanel({
     submission.plan.amount,
     submission.plan.currency,
   );
+  const isSmsPayment = isSmsBundlePlan(submission.plan);
 
   return (
     <section
@@ -2370,8 +2711,11 @@ function ManualPaymentSubmittedPanel({
         </p>
         <p className="mx-auto mt-5 max-w-[40rem] text-base leading-7 text-slate-600">
           Your payment has been submitted for verification. We'll confirm your
-          payment and activate your subscription once the verification is
-          complete.
+          payment and{" "}
+          {isSmsPayment
+            ? "credit your SMS wallet"
+            : "activate your subscription"}{" "}
+          once the verification is complete.
         </p>
       </div>
 
@@ -2430,8 +2774,8 @@ function ManualPaymentSubmittedPanel({
       <div className="mx-auto mt-6 max-w-[52rem] rounded-lg bg-[#f8fbfa] px-5 py-4 text-center text-sm font-medium text-slate-600">
         <span className="inline-flex items-center justify-center gap-3">
           <Info className="size-5 text-[#07885f]" />
-          You will be notified via email and in-app once your subscription is
-          active.
+          You will be notified in-app once your{" "}
+          {isSmsPayment ? "SMS credits are ready" : "subscription is active"}.
         </span>
       </div>
 
@@ -2475,219 +2819,6 @@ function SubmittedPaymentRow({
       </div>
     </div>
   );
-}
-
-function SubscriptionActivatedPanel({
-  result,
-  confirmationEmail,
-  onClose,
-  onContinue,
-}: {
-  result: PaymentResultOverlayState;
-  confirmationEmail: string | null;
-  onClose: () => void;
-  onContinue: () => void;
-}) {
-  const { payment, plan } = result;
-  const verifiedAt = payment.verifiedAt ?? payment.date;
-  const activeUntil =
-    payment.activeUntil ?? addMonthsIso(verifiedAt, plan.durationMonths);
-  const remaining = daysRemainingUntil(activeUntil);
-
-  return (
-    <section className="relative rounded-2xl bg-white px-8 py-9 shadow-[0_26px_90px_rgba(15,23,42,0.32)]">
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className="absolute right-5 top-5 grid size-9 place-items-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-[#070b18]"
-      >
-        <X className="size-6" />
-      </button>
-
-      <div className="text-center">
-        <div className="relative mx-auto grid size-[92px] place-items-center rounded-full bg-[#e9f8ef] text-[#07885f]">
-          <CheckCircle2 className="size-14" strokeWidth={2.25} />
-          <span className="absolute left-0 top-8 size-1.5 rounded-full bg-[#b7ead1]" />
-          <span className="absolute right-3 top-2 size-1.5 rounded-full bg-[#b7ead1]" />
-          <span className="absolute bottom-5 right-0 size-2 rounded-full bg-[#f1c84b]" />
-        </div>
-        <h2 className="mt-6 text-[1.85rem] font-bold tracking-normal text-[#070b18]">
-          Subscription activated!
-        </h2>
-        <p className="mx-auto mt-4 max-w-[24rem] text-base leading-7 text-slate-600">
-          Your payment has been verified and your subscription is now active.
-        </p>
-      </div>
-
-      <div className="mt-7 rounded-lg border border-[#dfece5] bg-[#f4fbf7] p-5">
-        <div className="flex gap-4">
-          <span className="grid size-14 shrink-0 place-items-center rounded-full bg-[#dff5e8] text-[#07885f]">
-            <CalendarDays className="size-7" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-lg font-bold text-[#070b18]">
-                {paymentPeriodLabel(plan)}
-              </h3>
-              <span className="rounded-md bg-[#e6f8ed] px-2 py-1 text-sm font-bold text-[#07885f]">
-                Active
-              </span>
-            </div>
-            <p className="mt-1 text-sm text-slate-600">
-              {paymentPlanAccessCopy(plan)}
-            </p>
-            <div className="mt-4 border-t border-[#dfebe5] pt-4">
-              <p className="text-sm text-slate-600">Active until</p>
-              <p className="mt-1 text-lg font-bold text-[#07885f]">
-                {formatDate(activeUntil)}
-              </p>
-              <p className="mt-1 text-sm font-medium text-[#070b18]">
-                ({remaining ?? plan.durationMonths * 30} days remaining)
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-5 rounded-lg border border-[#e6ebf0] bg-white px-5">
-        <SubmittedPaymentRow
-          icon={<CreditCard className="size-5" />}
-          label="Payment method"
-          value={payment.paymentMethod || "MTN MoMo"}
-        />
-        <SubmittedPaymentRow
-          icon={<ReceiptText className="size-5" />}
-          label="Transaction ID"
-          value={payment.transactionId || payment.receipt || "—"}
-        />
-        <SubmittedPaymentRow
-          icon={<Clock3 className="size-5" />}
-          label="Verified on"
-          value={formatPaymentSubmittedAt(verifiedAt)}
-        />
-        <SubmittedPaymentRow
-          icon={<UserRound className="size-5" />}
-          label="Verified by"
-          value={payment.verifiedByName || "Antikra Admin"}
-          last
-        />
-      </div>
-
-      <div className="mt-5 rounded-lg bg-[#f4fbf7] px-4 py-3 text-sm font-medium text-slate-700">
-        <span className="inline-flex items-center gap-3">
-          <CheckCircle2 className="size-5 text-[#07885f]" />A confirmation email
-          has been sent to {confirmationEmail || "your email"}.
-        </span>
-      </div>
-
-      <button
-        type="button"
-        onClick={onContinue}
-        className="mt-6 inline-flex h-12 w-full items-center justify-center gap-3 rounded-lg bg-[#07885f] text-lg font-bold text-white shadow-[0_14px_26px_rgba(7,136,95,0.22)] transition hover:bg-[#067352]"
-      >
-        <CheckCircle2 className="size-6" />
-        Continue to Rembeh
-      </button>
-    </section>
-  );
-}
-
-function PaymentFailedPanel({
-  result,
-  onClose,
-  onTryAgain,
-}: {
-  result: PaymentResultOverlayState;
-  onClose: () => void;
-  onTryAgain: () => void;
-}) {
-  const { payment, plan } = result;
-  const transactionId = payment.transactionId || payment.receipt || "—";
-
-  return (
-    <section className="relative rounded-2xl bg-white px-8 py-9 shadow-[0_26px_90px_rgba(15,23,42,0.32)]">
-      <button
-        type="button"
-        aria-label="Close"
-        onClick={onClose}
-        className="absolute right-5 top-5 grid size-9 place-items-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-[#070b18]"
-      >
-        <X className="size-6" />
-      </button>
-
-      <div className="text-center">
-        <div className="relative mx-auto grid size-[92px] place-items-center rounded-full bg-[#fde8ee] text-[#d72d3d]">
-          <XCircle className="size-14" strokeWidth={2.25} />
-          <span className="absolute left-1 top-8 size-1.5 rounded-full bg-[#fac6d1]" />
-          <span className="absolute right-4 top-3 size-1.5 rounded-full bg-[#fac6d1]" />
-          <span className="absolute bottom-5 right-1 size-1.5 rounded-full bg-[#fac6d1]" />
-        </div>
-        <h2 className="mt-6 text-[1.85rem] font-bold tracking-normal text-[#070b18]">
-          Payment could not be verified
-        </h2>
-        <p className="mx-auto mt-4 max-w-[25rem] text-base leading-7 text-slate-600">
-          We were unable to verify the payment submitted for your{" "}
-          {paymentPeriodLabel(plan)}.
-        </p>
-      </div>
-
-      <div className="mt-8 rounded-lg border border-[#f4d8de] bg-[#fff3f5] p-5">
-        <div className="flex gap-4">
-          <span className="grid size-14 shrink-0 place-items-center rounded-full bg-[#fde0e8] text-[#d72d3d]">
-            <FileX2 className="size-7" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-slate-600">Transaction ID</p>
-            <p className="mt-2 text-xl font-bold text-[#070b18]">
-              {transactionId}
-            </p>
-            <div className="mt-6 border-t border-[#f1d9de] pt-5">
-              <p className="text-sm font-medium text-slate-600">Reason</p>
-              <p className="mt-2 text-base font-bold text-[#d72d3d]">
-                {payment.failureReason || "Transaction could not be found."}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-6 rounded-lg border border-[#e6ebf0] bg-white p-5">
-        <div className="flex gap-4">
-          <span className="grid size-10 shrink-0 place-items-center rounded-full bg-[#fff3f5] text-[#d72d3d]">
-            <AlertCircle className="size-5" />
-          </span>
-          <p className="text-base leading-7 text-[#070b18]">
-            Check the transaction details and submit the correct transaction ID.
-            If you believe this payment was made successfully, contact support.
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-8 grid gap-4 sm:grid-cols-2">
-        <button
-          type="button"
-          onClick={onTryAgain}
-          className="inline-flex h-12 items-center justify-center rounded-lg border border-[#07885f] bg-white text-lg font-bold text-[#07885f] transition hover:bg-[#f3faf6]"
-        >
-          Try again
-        </button>
-        <a
-          href="tel:0777823011"
-          className="inline-flex h-12 items-center justify-center rounded-lg bg-[#07885f] text-lg font-bold text-white shadow-[0_14px_26px_rgba(7,136,95,0.22)] transition hover:bg-[#067352]"
-        >
-          Contact support
-        </a>
-      </div>
-    </section>
-  );
-}
-
-function addMonthsIso(value: string, months: number) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return new Date().toISOString();
-  date.setMonth(date.getMonth() + months);
-  return date.toISOString();
 }
 
 function DaysRing({ daysLeft, total }: { daysLeft: number; total: number }) {
