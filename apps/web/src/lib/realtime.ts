@@ -35,6 +35,38 @@ export type PaymentMadeEvent = {
   agentPhotoUrl?: string | null;
 };
 
+export type SubscriptionPaymentUpdatedEvent = {
+  paymentId: string;
+  tenantId: string;
+  branchId: string;
+  status: string;
+  payment: {
+    id: string;
+    date: string;
+    branchId: string;
+    branchName: string;
+    kind?: "subscription" | "sms";
+    transaction: string;
+    periodLabel: string | null;
+    amount: number;
+    currency: string;
+    planCode?: string | null;
+    planDurationMonths?: number | null;
+    activeUntil?: string | null;
+    transactionId?: string | null;
+    verifiedAt?: string | null;
+    verifiedByName?: string | null;
+    failureReason?: string | null;
+    credits?: number | null;
+    paymentMethod: string;
+    status: string;
+    receipt: string | null;
+    canRetry: boolean;
+    canCancel?: boolean;
+    bundleId?: string | null;
+  };
+};
+
 function socketBaseUrl() {
   const api = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
   return api.replace(/\/api\/v1\/?$/, "");

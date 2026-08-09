@@ -50,6 +50,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { SmsService } from '../notifications/sms.service';
 import { FcmPushService } from '../notifications/fcm-push.service';
 import { SmsCreditsService } from '../sms-credits/sms-credits.service';
+import { REALTIME_EVENTS } from '../realtime/realtime.events';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import {
   ManualMerchantPaymentProvider,
   SubmitManualMerchantPaymentDto,
@@ -95,7 +97,7 @@ type PaymentReplyCommand =
 const DEFAULT_PAYMENT_VERIFICATION_EMAILS = [
   'antikra.ug@gmail.com',
   'bonnefilleul@gmail.com',
-  'services@antkra.com',
+  'services@antikra.com',
 ];
 
 @Injectable()
@@ -109,6 +111,7 @@ export class BillingService implements OnModuleInit {
     private readonly notificationsService: NotificationsService,
     private readonly smsService: SmsService,
     private readonly fcmPushService: FcmPushService,
+    private readonly realtime: RealtimeGateway,
     @Inject(forwardRef(() => SmsCreditsService))
     private readonly smsCreditsService: SmsCreditsService,
   ) {}
@@ -904,9 +907,11 @@ export class BillingService implements OnModuleInit {
           submittedByEmail: user.email ?? null,
         },
       );
+      const responsePayment = alertedPayment ?? payment;
+      this.emitSubscriptionPaymentUpdate(responsePayment);
 
       return {
-        payment: this.toSubscriptionPaymentRow(alertedPayment ?? payment),
+        payment: this.toSubscriptionPaymentRow(responsePayment),
         message:
           'Payment submitted for verification. We will activate your subscription after confirmation.',
       };
@@ -970,6 +975,8 @@ export class BillingService implements OnModuleInit {
       },
     });
 
+    this.emitSubscriptionPaymentUpdate(updated);
+
     return {
       payment: this.toSubscriptionPaymentRow(updated),
       message:
@@ -988,12 +995,17 @@ export class BillingService implements OnModuleInit {
 
     const emailId = event.data?.email_id?.trim();
     if (!emailId) {
+      this.logger.warn('Resend payment webhook ignored: missing email_id.');
       return { ok: true, ignored: true, reason: 'missing_email_id' };
     }
+    this.logger.log(`Resend payment webhook received email=${emailId}`);
 
     const received =
       await this.notificationsService.retrieveReceivedEmail(emailId);
     if (!received) {
+      this.logger.warn(
+        `Resend payment webhook ignored: received email ${emailId} could not be fetched.`,
+      );
       return { ok: true, ignored: true, reason: 'email_not_available' };
     }
 
@@ -1009,6 +1021,9 @@ export class BillingService implements OnModuleInit {
       received.text ?? this.htmlToText(received.html ?? ''),
     );
     if (!command) {
+      this.logger.warn(
+        `Resend payment webhook ignored: no verification command found in email=${emailId} from=${fromEmail}.`,
+      );
       return { ok: true, ignored: true, reason: 'command_not_found' };
     }
 
@@ -1047,6 +1062,9 @@ export class BillingService implements OnModuleInit {
         replyFromEmail: fromEmail,
         merchantTransactionId: null,
       });
+      this.logger.log(
+        `Manual merchant payment ${updated.id} failed from Resend reply email=${emailId} by=${fromEmail}`,
+      );
       return {
         ok: true,
         paymentId,
@@ -1055,11 +1073,15 @@ export class BillingService implements OnModuleInit {
       };
     }
 
-    return this.confirmManualMerchantPaymentsFromReply({
+    const result = await this.confirmManualMerchantPaymentsFromReply({
       transactionIds: command.transactionIds,
       replyEmailId: emailId,
       replyFromEmail: fromEmail,
     });
+    this.logger.log(
+      `Resend payment reply email=${emailId} by=${fromEmail} replied=${result.repliedCount ?? 0} matched=${result.matchedCount ?? 0} remaining=${result.remainingCount ?? 0}`,
+    );
+    return result;
   }
 
   private async confirmManualMerchantPaymentsFromReply(input: {
@@ -1660,6 +1682,29 @@ export class BillingService implements OnModuleInit {
     };
   }
 
+  private emitSubscriptionPaymentUpdate(
+    payment: SubscriptionPaymentWithBranchPlan,
+  ) {
+    try {
+      this.realtime.broadcastSubscriptionPayment(
+        REALTIME_EVENTS.subscriptionPaymentUpdated,
+        {
+          paymentId: payment.id,
+          tenantId: payment.tenantId,
+          branchId: payment.branchId,
+          status: payment.status,
+          payment: this.toSubscriptionPaymentRow(payment),
+        },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Subscription payment realtime emit failed for ${payment.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
   private verifyResendWebhook(
     payload: string,
     headers: ResendWebhookHeaders,
@@ -1765,13 +1810,15 @@ export class BillingService implements OnModuleInit {
       }
     }
 
-    return this.prisma.subscriptionPayment.findUniqueOrThrow({
+    const updated = await this.prisma.subscriptionPayment.findUniqueOrThrow({
       where: { id: payment.id },
       include: {
         branch: { select: { name: true } },
         plan: { select: { interval: true, code: true } },
       },
     });
+    this.emitSubscriptionPaymentUpdate(updated);
+    return updated;
   }
 
   private async failManualMerchantPayment(
@@ -1792,7 +1839,7 @@ export class BillingService implements OnModuleInit {
       failed_at: new Date().toISOString(),
     } satisfies Prisma.InputJsonObject;
 
-    return this.prisma.subscriptionPayment.update({
+    const updated = await this.prisma.subscriptionPayment.update({
       where: { id: payment.id },
       data: {
         status: SubscriptionPaymentStatus.FAILED,
@@ -1803,6 +1850,8 @@ export class BillingService implements OnModuleInit {
         plan: { select: { interval: true, code: true } },
       },
     });
+    this.emitSubscriptionPaymentUpdate(updated);
+    return updated;
   }
 
   private parsePaymentVerificationReply(
@@ -1857,9 +1906,15 @@ export class BillingService implements OnModuleInit {
 
     const ids: string[] = [];
     for (const candidate of candidates) {
-      const compact = this.compactTransactionId(candidate);
+      const prefixed = candidate.match(
+        /^(confirm|confirmed|paid|received|match|matched|ids?|id|transaction\s+ids?|transaction\s+id)\b[:#\-\s]*(.+)$/i,
+      );
+      if (candidate.includes(':') && !prefixed) continue;
+
+      const value = prefixed?.[2]?.trim() ?? candidate;
+      const compact = this.compactTransactionId(value);
       if (compact.length < 4 || !/\d/.test(compact)) continue;
-      ids.push(this.normalizeManualTransactionId(candidate));
+      ids.push(this.normalizeManualTransactionId(value));
     }
     return this.uniqueManualTransactionIds(ids);
   }
@@ -1875,13 +1930,14 @@ export class BillingService implements OnModuleInit {
       if (/^from:\s+/i.test(trimmed) && kept.length > 0) break;
       if (/^sent:\s+/i.test(trimmed) && kept.length > 0) break;
       if (
-        /^a new payment has been submitted for verification in rembeh\./i.test(
+        /a new payment has been submitted for verification in rembeh\./i.test(
           trimmed,
         )
       ) {
         break;
       }
-      if (/^rembeh payment verification needed/i.test(trimmed)) break;
+      if (/rembeh payment verification needed/i.test(trimmed)) break;
+      if (/^payment request:\s*rembeh-pay:/i.test(trimmed)) break;
       kept.push(line);
     }
     return kept.join('\n').trim();

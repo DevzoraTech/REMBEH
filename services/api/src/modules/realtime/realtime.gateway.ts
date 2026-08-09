@@ -16,6 +16,7 @@ import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import type {
   LoanApplicationRealtimePayload,
   PaymentRealtimePayload,
+  SubscriptionPaymentRealtimePayload,
 } from './realtime.events';
 
 type SocketUser = {
@@ -165,6 +166,14 @@ export class RealtimeGateway
   }
 
   broadcastPayment(event: string, payload: PaymentRealtimePayload) {
+    this.emitToTenant(payload.tenantId, event, payload);
+    this.emitToBranch(payload.tenantId, payload.branchId, event, payload);
+  }
+
+  broadcastSubscriptionPayment(
+    event: string,
+    payload: SubscriptionPaymentRealtimePayload,
+  ) {
     this.emitToTenant(payload.tenantId, event, payload);
     this.emitToBranch(payload.tenantId, payload.branchId, event, payload);
   }

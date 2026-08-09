@@ -51,6 +51,10 @@ import { resolveOperatorRole } from "../../lib/roles";
 import { formatDate, formatMoney } from "../../app/owner/owner-common";
 import { OwnerHeader } from "../../app/owner/owner-header";
 import { PaymentMethodBadge } from "./payment-method-badge";
+import {
+  connectRealtime,
+  type SubscriptionPaymentUpdatedEvent,
+} from "../../lib/realtime";
 
 type BillingPlanOption = {
   code: string;
@@ -734,6 +738,70 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     }, 15_000);
     return () => window.clearInterval(timer);
   }, [submittedManualPayment, session, loadPayments]);
+
+  useEffect(() => {
+    if (!session) return;
+    const socket = connectRealtime(session.accessToken);
+    if (focusedBranchId) {
+      socket.emit("subscribe", { branchId: focusedBranchId });
+    }
+
+    const onPaymentUpdate = (event: SubscriptionPaymentUpdatedEvent) => {
+      const row = event.payment;
+      if (!row || (row.kind ?? "subscription") === "sms") return;
+      const branchInScope =
+        mode === "owner" ||
+        summary?.branches.some((branch) => branch.branchId === row.branchId) ||
+        row.branchId === focusedBranchId;
+      if (!branchInScope) return;
+
+      setPayments((current) => {
+        const next = [...current];
+        const index = next.findIndex((item) => item.id === row.id);
+        if (index >= 0) {
+          next[index] = { ...next[index], ...row };
+        } else {
+          next.unshift(row);
+        }
+        return next.sort(
+          (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
+        );
+      });
+
+      void loadSummary();
+
+      if (row.status !== "Paid" && row.status !== "Failed") return;
+      const submittedMatches =
+        submittedManualPayment &&
+        row.transactionId?.toUpperCase() ===
+          submittedManualPayment.transactionId.toUpperCase() &&
+        row.branchName === submittedManualPayment.branchName;
+      if (!submittedMatches) return;
+
+      setSubmittedManualPayment(null);
+      setPaymentPanelOpen(false);
+      setPaymentResultOverlay({
+        kind: row.status === "Paid" ? "success" : "failed",
+        payment: row,
+        plan: planForPaymentRow(row, planOptions, selectedPlan),
+      });
+    };
+
+    socket.on("subscription_payment.updated", onPaymentUpdate);
+    return () => {
+      socket.off("subscription_payment.updated", onPaymentUpdate);
+      socket.disconnect();
+    };
+  }, [
+    focusedBranchId,
+    loadSummary,
+    mode,
+    planOptions,
+    selectedPlan,
+    session,
+    submittedManualPayment,
+    summary?.branches,
+  ]);
 
   useEffect(() => {
     if (!submittedManualPayment) return;
