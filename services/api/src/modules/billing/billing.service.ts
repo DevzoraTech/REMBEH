@@ -62,6 +62,15 @@ type SubscriptionPaymentWithBranchPlan = Prisma.SubscriptionPaymentGetPayload<{
   };
 }>;
 
+type SubscriptionPaymentWithBranchPlanTenant =
+  Prisma.SubscriptionPaymentGetPayload<{
+    include: {
+      branch: { select: { name: true } };
+      plan: { select: { interval: true; code: true } };
+      tenant: { select: { name: true } };
+    };
+  }>;
+
 type ResendWebhookEvent = {
   type?: string;
   data?: {
@@ -80,7 +89,7 @@ type ResendWebhookHeaders = {
 };
 
 type PaymentReplyCommand =
-  | { action: 'confirm'; transactionId: string }
+  | { action: 'confirm'; transactionIds: string[] }
   | { action: 'fail'; reason: string };
 
 const DEFAULT_PAYMENT_VERIFICATION_EMAILS = [
@@ -872,6 +881,7 @@ export class BillingService implements OnModuleInit {
         {
           transactionId,
           paymentMethod: providerDetails.historyLabel,
+          merchantCode: providerDetails.merchantCode,
           submittedByName: user.displayName || user.email || 'REMBEH user',
           submittedByEmail: user.email ?? null,
         },
@@ -977,34 +987,6 @@ export class BillingService implements OnModuleInit {
       return { ok: true, ignored: true, reason: 'sender_not_allowed' };
     }
 
-    const paymentId = this.extractPaymentIdFromEmail({
-      subject: received.subject,
-      text: received.text,
-      html: received.html,
-      to: received.to,
-      receivedFor: received.received_for,
-    });
-    if (!paymentId) {
-      return { ok: true, ignored: true, reason: 'payment_id_not_found' };
-    }
-
-    const payment = await this.prisma.subscriptionPayment.findUnique({
-      where: { id: paymentId },
-      include: {
-        branch: { select: { name: true } },
-        plan: { select: { interval: true, code: true } },
-      },
-    });
-    if (!payment || !this.isManualMerchantPayload(payment.rawPayload)) {
-      return { ok: true, ignored: true, reason: 'payment_not_found' };
-    }
-    if (payment.status === SubscriptionPaymentStatus.COMPLETED) {
-      return { ok: true, ignored: true, reason: 'already_completed' };
-    }
-    if (payment.status !== SubscriptionPaymentStatus.PENDING) {
-      return { ok: true, ignored: true, reason: 'payment_not_pending' };
-    }
-
     const command = this.parsePaymentVerificationReply(
       received.text ?? this.htmlToText(received.html ?? ''),
     );
@@ -1013,6 +995,34 @@ export class BillingService implements OnModuleInit {
     }
 
     if (command.action === 'fail') {
+      const paymentId = this.extractPaymentIdFromEmail({
+        subject: received.subject,
+        text: received.text,
+        html: received.html,
+        to: received.to,
+        receivedFor: received.received_for,
+      });
+      if (!paymentId) {
+        return { ok: true, ignored: true, reason: 'payment_id_not_found' };
+      }
+
+      const payment = await this.prisma.subscriptionPayment.findUnique({
+        where: { id: paymentId },
+        include: {
+          branch: { select: { name: true } },
+          plan: { select: { interval: true, code: true } },
+        },
+      });
+      if (!payment || !this.isManualMerchantPayload(payment.rawPayload)) {
+        return { ok: true, ignored: true, reason: 'payment_not_found' };
+      }
+      if (payment.status === SubscriptionPaymentStatus.COMPLETED) {
+        return { ok: true, ignored: true, reason: 'already_completed' };
+      }
+      if (payment.status !== SubscriptionPaymentStatus.PENDING) {
+        return { ok: true, ignored: true, reason: 'payment_not_pending' };
+      }
+
       const updated = await this.failManualMerchantPayment(payment, {
         reason: command.reason || 'Payment could not be verified.',
         replyEmailId: emailId,
@@ -1027,38 +1037,107 @@ export class BillingService implements OnModuleInit {
       };
     }
 
-    const submittedId = this.payloadString(payment.rawPayload, [
-      'transaction_id',
-      'transactionId',
-      'TransactionId',
-    ]);
-    const submittedCompact = this.compactTransactionId(submittedId ?? '');
-    const merchantCompact = this.compactTransactionId(command.transactionId);
-    if (!submittedCompact || submittedCompact !== merchantCompact) {
-      const updated = await this.failManualMerchantPayment(payment, {
-        reason: `Merchant transaction ID ${command.transactionId} did not match the submitted transaction ID.`,
-        replyEmailId: emailId,
-        replyFromEmail: fromEmail,
-        merchantTransactionId: command.transactionId,
-      });
-      return {
-        ok: true,
-        paymentId,
-        status: updated.status,
-        matched: false,
-      };
-    }
-
-    const updated = await this.completeManualMerchantPayment(payment, {
+    return this.confirmManualMerchantPaymentsFromReply({
+      transactionIds: command.transactionIds,
       replyEmailId: emailId,
       replyFromEmail: fromEmail,
-      merchantTransactionId: command.transactionId,
     });
+  }
+
+  private async confirmManualMerchantPaymentsFromReply(input: {
+    transactionIds: string[];
+    replyEmailId: string;
+    replyFromEmail: string;
+  }) {
+    const transactionIds = this.uniqueManualTransactionIds(
+      input.transactionIds,
+    );
+    if (transactionIds.length === 0) {
+      return { ok: true, ignored: true, reason: 'transaction_ids_not_found' };
+    }
+
+    const pendingPayments = await this.prisma.subscriptionPayment.findMany({
+      where: { status: SubscriptionPaymentStatus.PENDING },
+      include: {
+        branch: { select: { name: true } },
+        plan: { select: { interval: true, code: true } },
+        tenant: { select: { name: true } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    const manualPending = pendingPayments.filter((payment) =>
+      this.isManualMerchantPayload(payment.rawPayload),
+    );
+
+    const pendingByTransactionId = new Map<
+      string,
+      SubscriptionPaymentWithBranchPlanTenant[]
+    >();
+    for (const payment of manualPending) {
+      const submittedId = this.submittedManualTransactionId(payment.rawPayload);
+      const submittedCompact = this.compactTransactionId(submittedId ?? '');
+      if (!submittedCompact) continue;
+
+      const matches = pendingByTransactionId.get(submittedCompact) ?? [];
+      matches.push(payment);
+      pendingByTransactionId.set(submittedCompact, matches);
+    }
+
+    const matched: Array<{
+      payment: SubscriptionPaymentWithBranchPlanTenant;
+      transactionId: string;
+    }> = [];
+    const matchedPaymentIds = new Set<string>();
+    const unmatchedIds: string[] = [];
+    const ambiguousIds: string[] = [];
+
+    for (const transactionId of transactionIds) {
+      const compact = this.compactTransactionId(transactionId);
+      const matches = pendingByTransactionId.get(compact) ?? [];
+      if (matches.length === 0) {
+        unmatchedIds.push(transactionId);
+        continue;
+      }
+      if (matches.length > 1) {
+        ambiguousIds.push(transactionId);
+        continue;
+      }
+
+      const payment = matches[0];
+      if (!matchedPaymentIds.has(payment.id)) {
+        matched.push({ payment, transactionId });
+        matchedPaymentIds.add(payment.id);
+      }
+    }
+
+    for (const item of matched) {
+      await this.completeManualMerchantPayment(item.payment, {
+        replyEmailId: input.replyEmailId,
+        replyFromEmail: input.replyFromEmail,
+        merchantTransactionId: item.transactionId,
+      });
+    }
+
+    const remaining = manualPending.filter(
+      (payment) => !matchedPaymentIds.has(payment.id),
+    );
+    await this.sendManualPaymentVerificationSummary({
+      confirmed: matched.map((item) => item.payment),
+      remaining,
+      unmatchedIds,
+      ambiguousIds,
+      replyFromEmail: input.replyFromEmail,
+    });
+
     return {
       ok: true,
-      paymentId,
-      status: updated.status,
-      matched: true,
+      matched: matched.length > 0,
+      matchedCount: matched.length,
+      repliedCount: transactionIds.length,
+      remainingCount: remaining.length,
+      unmatchedIds,
+      ambiguousIds,
+      matchedPaymentIds: matched.map((item) => item.payment.id),
     };
   }
 
@@ -1450,6 +1529,7 @@ export class BillingService implements OnModuleInit {
     input: {
       transactionId: string;
       paymentMethod: string;
+      merchantCode: string;
       submittedByName: string;
       submittedByEmail: string | null;
     },
@@ -1459,11 +1539,16 @@ export class BillingService implements OnModuleInit {
       this.configService.get<string>('PAYMENT_VERIFICATION_REPLY_TO')?.trim() ||
       null;
     const months = monthsForInterval(payment.plan.interval);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: payment.tenantId },
+      select: { name: true },
+    });
     const alert = await this.notificationsService
       .sendSubscriptionPaymentVerificationAlertEmail({
         recipients,
         replyTo,
         paymentId: payment.id,
+        organizationName: tenant?.name ?? 'Unknown organization',
         branchName: payment.branch.name,
         planLabel:
           months === 1
@@ -1471,10 +1556,11 @@ export class BillingService implements OnModuleInit {
             : `${months}-Month Subscription`,
         amountLabel: `UGX ${Number(payment.amount).toLocaleString('en-UG')}`,
         paymentMethod: input.paymentMethod,
+        merchantCode: input.merchantCode,
         transactionId: input.transactionId,
         submittedByName: input.submittedByName,
         submittedByEmail: input.submittedByEmail,
-        submittedAt: payment.createdAt.toISOString(),
+        submittedAt: this.formatPaymentEmailDate(payment.createdAt),
       })
       .catch((error) => {
         const detail = error instanceof Error ? error.message : String(error);
@@ -1499,6 +1585,61 @@ export class BillingService implements OnModuleInit {
         plan: { select: { interval: true, code: true } },
       },
     });
+  }
+
+  private async sendManualPaymentVerificationSummary(input: {
+    confirmed: SubscriptionPaymentWithBranchPlanTenant[];
+    remaining: SubscriptionPaymentWithBranchPlanTenant[];
+    unmatchedIds: string[];
+    ambiguousIds: string[];
+    replyFromEmail: string;
+  }) {
+    const recipients = this.paymentVerificationEmails();
+    const replyTo =
+      this.configService.get<string>('PAYMENT_VERIFICATION_REPLY_TO')?.trim() ||
+      null;
+
+    await this.notificationsService
+      .sendSubscriptionPaymentVerificationSummaryEmail({
+        recipients,
+        replyTo,
+        confirmed: input.confirmed.map((payment) =>
+          this.toPaymentVerificationSummaryItem(payment),
+        ),
+        remaining: input.remaining.map((payment) =>
+          this.toPaymentVerificationSummaryItem(payment),
+        ),
+        unmatchedIds: input.unmatchedIds,
+        ambiguousIds: input.ambiguousIds,
+        replyFromEmail: input.replyFromEmail,
+      })
+      .catch((error) => {
+        const detail = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `Payment verification summary email failed: ${detail}`,
+        );
+      });
+  }
+
+  private toPaymentVerificationSummaryItem(
+    payment: SubscriptionPaymentWithBranchPlanTenant,
+  ) {
+    const months = monthsForInterval(payment.plan.interval);
+    return {
+      organizationName: payment.tenant.name,
+      branchName: payment.branch.name,
+      planLabel:
+        months === 1 ? 'Monthly Subscription' : `${months}-Month Subscription`,
+      amountLabel: `UGX ${Number(payment.amount).toLocaleString('en-UG')}`,
+      paymentMethod:
+        this.payloadString(payment.rawPayload, ['payment_method']) ||
+        this.paymentMethodFromPayload(payment.rawPayload) ||
+        'Merchant payment',
+      merchantCode:
+        this.payloadString(payment.rawPayload, ['merchant_code']) || '-',
+      transactionId:
+        this.submittedManualTransactionId(payment.rawPayload) || '-',
+    };
   }
 
   private verifyResendWebhook(
@@ -1666,26 +1807,43 @@ export class BillingService implements OnModuleInit {
           reason: fail[2]?.trim() || 'Transaction could not be found.',
         };
       }
+    }
 
-      const confirm = line.match(
-        /^(confirm|confirmed|paid|received|match)\b[:\-\s]*([A-Za-z0-9][A-Za-z0-9\s-]{2,80})$/i,
-      );
-      if (confirm?.[2]) {
-        return {
-          action: 'confirm',
-          transactionId: this.normalizeManualTransactionId(confirm[2]),
-        };
-      }
-
-      if (/^[A-Za-z0-9][A-Za-z0-9\s-]{2,80}$/.test(line)) {
-        return {
-          action: 'confirm',
-          transactionId: this.normalizeManualTransactionId(line),
-        };
-      }
+    const transactionIds = this.extractMerchantTransactionIds(lines.join('\n'));
+    if (transactionIds.length > 0) {
+      return { action: 'confirm', transactionIds };
     }
 
     return null;
+  }
+
+  private extractMerchantTransactionIds(text: string) {
+    const reply = text
+      .replace(/\b(and|&)\b/gi, ',')
+      .replace(
+        /^(confirm|confirmed|paid|received|match|matched|ids?|transaction\s+ids?)\b[:\-\s]*/gim,
+        '',
+      );
+    const candidates = reply
+      .split(/[,;\n]+/)
+      .map((part) =>
+        part
+          .replace(
+            /^(confirm|confirmed|paid|received|match|matched|ids?|transaction\s+ids?|transaction\s+id)\b[:#\-\s]*/i,
+            '',
+          )
+          .replace(/[.]+$/g, '')
+          .trim(),
+      )
+      .filter(Boolean);
+
+    const ids: string[] = [];
+    for (const candidate of candidates) {
+      const compact = this.compactTransactionId(candidate);
+      if (compact.length < 4 || !/\d/.test(compact)) continue;
+      ids.push(this.normalizeManualTransactionId(candidate));
+    }
+    return this.uniqueManualTransactionIds(ids);
   }
 
   private extractTopReplyText(text: string) {
@@ -1698,6 +1856,14 @@ export class BillingService implements OnModuleInit {
       if (/^-{2,}\s*original message\s*-{2,}$/i.test(trimmed)) break;
       if (/^from:\s+/i.test(trimmed) && kept.length > 0) break;
       if (/^sent:\s+/i.test(trimmed) && kept.length > 0) break;
+      if (
+        /^a new payment has been submitted for verification in rembeh\./i.test(
+          trimmed,
+        )
+      ) {
+        break;
+      }
+      if (/^rembeh payment verification needed/i.test(trimmed)) break;
       kept.push(line);
     }
     return kept.join('\n').trim();
@@ -1815,6 +1981,27 @@ export class BillingService implements OnModuleInit {
     return value.trim().replace(/\s+/g, ' ').toUpperCase();
   }
 
+  private uniqueManualTransactionIds(values: string[]) {
+    const seen = new Set<string>();
+    const ids: string[] = [];
+    for (const value of values) {
+      const normalized = this.normalizeManualTransactionId(value);
+      const compact = this.compactTransactionId(normalized);
+      if (!compact || seen.has(compact)) continue;
+      seen.add(compact);
+      ids.push(normalized);
+    }
+    return ids;
+  }
+
+  private submittedManualTransactionId(raw: Prisma.JsonValue | null) {
+    return this.payloadString(raw, [
+      'transaction_id',
+      'transactionId',
+      'TransactionId',
+    ]);
+  }
+
   private manualMerchantReference(
     provider: ManualMerchantPaymentProvider,
     transactionId: string,
@@ -1912,6 +2099,25 @@ export class BillingService implements OnModuleInit {
 
   private compactTransactionId(value: string) {
     return value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  }
+
+  private formatPaymentEmailDate(value: Date) {
+    const timeZone =
+      this.configService
+        .get<string>('PAYMENT_VERIFICATION_TIME_ZONE')
+        ?.trim() || 'Africa/Kampala';
+    const formatted = new Intl.DateTimeFormat('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+      timeZone,
+    }).format(value);
+    return formatted
+      .replace(',', ' at')
+      .replace(/\s(am|pm)$/i, (match) => match.toUpperCase());
   }
 
   private headerValue(value: string | string[] | undefined) {
