@@ -10,6 +10,7 @@ import {
   NotFoundException,
   OnModuleInit,
   ServiceUnavailableException,
+  UnauthorizedException,
   forwardRef,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
@@ -20,6 +21,7 @@ import {
   SubscriptionPaymentStatus,
 } from '@prisma/client';
 import { createHash, randomUUID } from 'node:crypto';
+import { Webhook } from 'svix';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { isPrismaUniqueConstraintError } from '../../common/database/prisma-errors';
 import { PrismaService } from '../../database/prisma.service';
@@ -44,6 +46,7 @@ import {
 } from './billing.permissions';
 import { PesapalClient } from './pesapal.client';
 import { ConfigService } from '@nestjs/config';
+import { NotificationsService } from '../notifications/notifications.service';
 import { SmsService } from '../notifications/sms.service';
 import { FcmPushService } from '../notifications/fcm-push.service';
 import { SmsCreditsService } from '../sms-credits/sms-credits.service';
@@ -59,6 +62,33 @@ type SubscriptionPaymentWithBranchPlan = Prisma.SubscriptionPaymentGetPayload<{
   };
 }>;
 
+type ResendWebhookEvent = {
+  type?: string;
+  data?: {
+    email_id?: string;
+    from?: string;
+    to?: string[];
+    received_for?: string[];
+    subject?: string;
+  };
+};
+
+type ResendWebhookHeaders = {
+  id?: string | string[];
+  timestamp?: string | string[];
+  signature?: string | string[];
+};
+
+type PaymentReplyCommand =
+  | { action: 'confirm'; transactionId: string }
+  | { action: 'fail'; reason: string };
+
+const DEFAULT_PAYMENT_VERIFICATION_EMAILS = [
+  'antikra.ug@gmail.com',
+  'bonnefilleul@gmail.com',
+  'services@antkra.com',
+];
+
 @Injectable()
 export class BillingService implements OnModuleInit {
   private readonly logger = new Logger(BillingService.name);
@@ -67,6 +97,7 @@ export class BillingService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly pesapal: PesapalClient,
     private readonly configService: ConfigService,
+    private readonly notificationsService: NotificationsService,
     private readonly smsService: SmsService,
     private readonly fcmPushService: FcmPushService,
     @Inject(forwardRef(() => SmsCreditsService))
@@ -836,8 +867,18 @@ export class BillingService implements OnModuleInit {
         },
       });
 
+      const alertedPayment = await this.sendManualPaymentVerificationAlert(
+        payment,
+        {
+          transactionId,
+          paymentMethod: providerDetails.historyLabel,
+          submittedByName: user.displayName || user.email || 'REMBEH user',
+          submittedByEmail: user.email ?? null,
+        },
+      );
+
       return {
-        payment: this.toSubscriptionPaymentRow(payment),
+        payment: this.toSubscriptionPaymentRow(alertedPayment ?? payment),
         message:
           'Payment submitted for verification. We will activate your subscription after confirmation.',
       };
@@ -905,6 +946,119 @@ export class BillingService implements OnModuleInit {
       payment: this.toSubscriptionPaymentRow(updated),
       message:
         'Payment request cancelled. You can submit a new transaction ID.',
+    };
+  }
+
+  async handleResendPaymentWebhook(
+    payload: string,
+    headers: ResendWebhookHeaders,
+  ) {
+    const event = this.verifyResendWebhook(payload, headers);
+    if (event.type !== 'email.received') {
+      return { ok: true, ignored: true, reason: 'unsupported_event' };
+    }
+
+    const emailId = event.data?.email_id?.trim();
+    if (!emailId) {
+      return { ok: true, ignored: true, reason: 'missing_email_id' };
+    }
+
+    const received =
+      await this.notificationsService.retrieveReceivedEmail(emailId);
+    if (!received) {
+      return { ok: true, ignored: true, reason: 'email_not_available' };
+    }
+
+    const fromEmail = this.extractEmailAddress(received.from);
+    if (!fromEmail || !this.paymentReplyAllowedEmails().has(fromEmail)) {
+      this.logger.warn(
+        `Ignored payment verification reply from untrusted sender: ${received.from}`,
+      );
+      return { ok: true, ignored: true, reason: 'sender_not_allowed' };
+    }
+
+    const paymentId = this.extractPaymentIdFromEmail({
+      subject: received.subject,
+      text: received.text,
+      html: received.html,
+      to: received.to,
+      receivedFor: received.received_for,
+    });
+    if (!paymentId) {
+      return { ok: true, ignored: true, reason: 'payment_id_not_found' };
+    }
+
+    const payment = await this.prisma.subscriptionPayment.findUnique({
+      where: { id: paymentId },
+      include: {
+        branch: { select: { name: true } },
+        plan: { select: { interval: true, code: true } },
+      },
+    });
+    if (!payment || !this.isManualMerchantPayload(payment.rawPayload)) {
+      return { ok: true, ignored: true, reason: 'payment_not_found' };
+    }
+    if (payment.status === SubscriptionPaymentStatus.COMPLETED) {
+      return { ok: true, ignored: true, reason: 'already_completed' };
+    }
+    if (payment.status !== SubscriptionPaymentStatus.PENDING) {
+      return { ok: true, ignored: true, reason: 'payment_not_pending' };
+    }
+
+    const command = this.parsePaymentVerificationReply(
+      received.text ?? this.htmlToText(received.html ?? ''),
+    );
+    if (!command) {
+      return { ok: true, ignored: true, reason: 'command_not_found' };
+    }
+
+    if (command.action === 'fail') {
+      const updated = await this.failManualMerchantPayment(payment, {
+        reason: command.reason || 'Payment could not be verified.',
+        replyEmailId: emailId,
+        replyFromEmail: fromEmail,
+        merchantTransactionId: null,
+      });
+      return {
+        ok: true,
+        paymentId,
+        status: updated.status,
+        matched: false,
+      };
+    }
+
+    const submittedId = this.payloadString(payment.rawPayload, [
+      'transaction_id',
+      'transactionId',
+      'TransactionId',
+    ]);
+    const submittedCompact = this.compactTransactionId(submittedId ?? '');
+    const merchantCompact = this.compactTransactionId(command.transactionId);
+    if (!submittedCompact || submittedCompact !== merchantCompact) {
+      const updated = await this.failManualMerchantPayment(payment, {
+        reason: `Merchant transaction ID ${command.transactionId} did not match the submitted transaction ID.`,
+        replyEmailId: emailId,
+        replyFromEmail: fromEmail,
+        merchantTransactionId: command.transactionId,
+      });
+      return {
+        ok: true,
+        paymentId,
+        status: updated.status,
+        matched: false,
+      };
+    }
+
+    const updated = await this.completeManualMerchantPayment(payment, {
+      replyEmailId: emailId,
+      replyFromEmail: fromEmail,
+      merchantTransactionId: command.transactionId,
+    });
+    return {
+      ok: true,
+      paymentId,
+      status: updated.status,
+      matched: true,
     };
   }
 
@@ -1291,6 +1445,299 @@ export class BillingService implements OnModuleInit {
     return null;
   }
 
+  private async sendManualPaymentVerificationAlert(
+    payment: SubscriptionPaymentWithBranchPlan,
+    input: {
+      transactionId: string;
+      paymentMethod: string;
+      submittedByName: string;
+      submittedByEmail: string | null;
+    },
+  ): Promise<SubscriptionPaymentWithBranchPlan | null> {
+    const recipients = this.paymentVerificationEmails();
+    const replyTo =
+      this.configService.get<string>('PAYMENT_VERIFICATION_REPLY_TO')?.trim() ||
+      null;
+    const months = monthsForInterval(payment.plan.interval);
+    const alert = await this.notificationsService
+      .sendSubscriptionPaymentVerificationAlertEmail({
+        recipients,
+        replyTo,
+        paymentId: payment.id,
+        branchName: payment.branch.name,
+        planLabel:
+          months === 1
+            ? 'Monthly Subscription'
+            : `${months}-Month Subscription`,
+        amountLabel: `UGX ${Number(payment.amount).toLocaleString('en-UG')}`,
+        paymentMethod: input.paymentMethod,
+        transactionId: input.transactionId,
+        submittedByName: input.submittedByName,
+        submittedByEmail: input.submittedByEmail,
+        submittedAt: payment.createdAt.toISOString(),
+      })
+      .catch((error) => {
+        const detail = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`Payment verification alert failed: ${detail}`);
+        return { delivered: false, error: detail };
+      });
+
+    const rawPayload = {
+      ...(this.payloadObject(payment.rawPayload) ?? {}),
+      admin_alert_recipients: recipients,
+      admin_alert_reply_to: replyTo,
+      admin_alert_sent_at: new Date().toISOString(),
+      admin_alert_delivered: alert.delivered,
+      ...(alert.error ? { admin_alert_error: alert.error } : {}),
+    } satisfies Prisma.InputJsonObject;
+
+    return this.prisma.subscriptionPayment.update({
+      where: { id: payment.id },
+      data: { rawPayload },
+      include: {
+        branch: { select: { name: true } },
+        plan: { select: { interval: true, code: true } },
+      },
+    });
+  }
+
+  private verifyResendWebhook(
+    payload: string,
+    headers: ResendWebhookHeaders,
+  ): ResendWebhookEvent {
+    const secret = this.configService
+      .get<string>('RESEND_WEBHOOK_SECRET')
+      ?.trim();
+    if (!secret) {
+      if (this.isProduction()) {
+        throw new ServiceUnavailableException(
+          'Resend webhook secret is not configured.',
+        );
+      }
+      return JSON.parse(payload) as ResendWebhookEvent;
+    }
+
+    try {
+      const webhook = new Webhook(secret);
+      return webhook.verify(payload, {
+        'svix-id': this.headerValue(headers.id),
+        'svix-timestamp': this.headerValue(headers.timestamp),
+        'svix-signature': this.headerValue(headers.signature),
+      }) as ResendWebhookEvent;
+    } catch {
+      throw new UnauthorizedException('Invalid Resend webhook signature.');
+    }
+  }
+
+  private async completeManualMerchantPayment(
+    payment: SubscriptionPaymentWithBranchPlan,
+    input: {
+      replyEmailId: string;
+      replyFromEmail: string;
+      merchantTransactionId: string;
+    },
+  ) {
+    const priorCompleted = await this.prisma.subscriptionPayment.count({
+      where: {
+        branchId: payment.branchId,
+        status: SubscriptionPaymentStatus.COMPLETED,
+        id: { not: payment.id },
+      },
+    });
+    const isFirstPlanPurchase = priorCompleted === 0;
+    const now = new Date();
+    const sub = await this.prisma.branchSubscription.findUnique({
+      where: { branchId: payment.branchId },
+    });
+    const months = monthsForInterval(payment.plan.interval);
+    const base =
+      sub?.currentPeriodEnd && sub.currentPeriodEnd.getTime() > now.getTime()
+        ? new Date(sub.currentPeriodEnd)
+        : now;
+    const periodEnd = new Date(base);
+    periodEnd.setMonth(periodEnd.getMonth() + months);
+    const rawPayload = {
+      ...(this.payloadObject(payment.rawPayload) ?? {}),
+      merchant_confirmed_transaction_id: input.merchantTransactionId,
+      verification_reply_email_id: input.replyEmailId,
+      verified_by: input.replyFromEmail,
+      verified_by_name: input.replyFromEmail,
+      verified_at: now.toISOString(),
+    } satisfies Prisma.InputJsonObject;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.subscriptionPayment.update({
+        where: { id: payment.id },
+        data: {
+          status: SubscriptionPaymentStatus.COMPLETED,
+          paidAt: now,
+          rawPayload,
+        },
+      });
+
+      await tx.branchSubscription.update({
+        where: { branchId: payment.branchId },
+        data: {
+          status: BranchSubscriptionStatus.ACTIVE,
+          currentPeriodStart: now,
+          currentPeriodEnd: periodEnd,
+          graceEndsAt: null,
+          lockedAt: null,
+          planId: payment.planId,
+        },
+      });
+    });
+
+    this.logger.log(
+      `Manual merchant payment ${payment.id} activated branch ${payment.branchId} until ${periodEnd.toISOString()}`,
+    );
+
+    if (isFirstPlanPurchase) {
+      try {
+        await this.smsCreditsService.grantProWelcomeSmsCredits({
+          tenantId: payment.tenantId,
+          branchId: payment.branchId,
+        });
+      } catch (error) {
+        this.logger.error(
+          `Failed to grant Pro welcome SMS credits for branch ${payment.branchId}`,
+          error instanceof Error ? error.stack : error,
+        );
+      }
+    }
+
+    return this.prisma.subscriptionPayment.findUniqueOrThrow({
+      where: { id: payment.id },
+      include: {
+        branch: { select: { name: true } },
+        plan: { select: { interval: true, code: true } },
+      },
+    });
+  }
+
+  private async failManualMerchantPayment(
+    payment: SubscriptionPaymentWithBranchPlan,
+    input: {
+      reason: string;
+      replyEmailId: string;
+      replyFromEmail: string;
+      merchantTransactionId: string | null;
+    },
+  ) {
+    const rawPayload = {
+      ...(this.payloadObject(payment.rawPayload) ?? {}),
+      failure_reason: input.reason,
+      merchant_confirmed_transaction_id: input.merchantTransactionId,
+      verification_reply_email_id: input.replyEmailId,
+      failed_by: input.replyFromEmail,
+      failed_at: new Date().toISOString(),
+    } satisfies Prisma.InputJsonObject;
+
+    return this.prisma.subscriptionPayment.update({
+      where: { id: payment.id },
+      data: {
+        status: SubscriptionPaymentStatus.FAILED,
+        rawPayload,
+      },
+      include: {
+        branch: { select: { name: true } },
+        plan: { select: { interval: true, code: true } },
+      },
+    });
+  }
+
+  private parsePaymentVerificationReply(
+    text: string,
+  ): PaymentReplyCommand | null {
+    const reply = this.extractTopReplyText(text);
+    const lines = reply
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .slice(0, 8);
+
+    for (const line of lines) {
+      const fail = line.match(
+        /^(fail|failed|reject|rejected|not\s+found|no\s+match)\b[:\-\s]*(.*)$/i,
+      );
+      if (fail) {
+        return {
+          action: 'fail',
+          reason: fail[2]?.trim() || 'Transaction could not be found.',
+        };
+      }
+
+      const confirm = line.match(
+        /^(confirm|confirmed|paid|received|match)\b[:\-\s]*([A-Za-z0-9][A-Za-z0-9\s-]{2,80})$/i,
+      );
+      if (confirm?.[2]) {
+        return {
+          action: 'confirm',
+          transactionId: this.normalizeManualTransactionId(confirm[2]),
+        };
+      }
+
+      if (/^[A-Za-z0-9][A-Za-z0-9\s-]{2,80}$/.test(line)) {
+        return {
+          action: 'confirm',
+          transactionId: this.normalizeManualTransactionId(line),
+        };
+      }
+    }
+
+    return null;
+  }
+
+  private extractTopReplyText(text: string) {
+    const lines = text.split(/\r?\n/);
+    const kept: string[] = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (/^>/.test(trimmed)) continue;
+      if (/^on .+ wrote:$/i.test(trimmed)) break;
+      if (/^-{2,}\s*original message\s*-{2,}$/i.test(trimmed)) break;
+      if (/^from:\s+/i.test(trimmed) && kept.length > 0) break;
+      if (/^sent:\s+/i.test(trimmed) && kept.length > 0) break;
+      kept.push(line);
+    }
+    return kept.join('\n').trim();
+  }
+
+  private extractPaymentIdFromEmail(input: {
+    subject: string | null;
+    text: string | null;
+    html: string | null;
+    to: string[];
+    receivedFor?: string[];
+  }) {
+    const haystack = [
+      input.subject,
+      input.text,
+      input.html ? this.htmlToText(input.html) : null,
+      ...(input.to ?? []),
+      ...(input.receivedFor ?? []),
+    ]
+      .filter(Boolean)
+      .join('\n');
+    const match = haystack.match(
+      /REMBEH-PAY:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i,
+    );
+    return match?.[1] ?? null;
+  }
+
+  private htmlToText(html: string) {
+    return html
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/p>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&amp;/gi, '&')
+      .replace(/\s+\n/g, '\n')
+      .replace(/[ \t]{2,}/g, ' ');
+  }
+
   private toSubscriptionPaymentRow(
     row: SubscriptionPaymentWithBranchPlan,
     options?: { priorPaid?: boolean },
@@ -1427,6 +1874,53 @@ export class BillingService implements OnModuleInit {
 
   private isManualMerchantPayload(raw: Prisma.JsonValue | null) {
     return this.payloadObject(raw)?.manualMerchant === true;
+  }
+
+  private paymentVerificationEmails() {
+    const configured = this.configService
+      .get<string>('PAYMENT_VERIFICATION_EMAILS')
+      ?.split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean);
+    return configured && configured.length > 0
+      ? configured
+      : DEFAULT_PAYMENT_VERIFICATION_EMAILS;
+  }
+
+  private paymentReplyAllowedEmails() {
+    const configured = this.configService
+      .get<string>('PAYMENT_VERIFICATION_ALLOWED_REPLY_EMAILS')
+      ?.split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean);
+    const values =
+      configured && configured.length > 0
+        ? configured
+        : this.paymentVerificationEmails();
+    return new Set(values);
+  }
+
+  private extractEmailAddress(value: string | null | undefined) {
+    if (!value) return null;
+    const angleMatch = value.match(/<([^>]+)>/);
+    const candidate = (angleMatch?.[1] ?? value).trim().toLowerCase();
+    const emailMatch = candidate.match(
+      /[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+/i,
+    );
+    return emailMatch?.[0].toLowerCase() ?? null;
+  }
+
+  private compactTransactionId(value: string) {
+    return value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  }
+
+  private headerValue(value: string | string[] | undefined) {
+    if (Array.isArray(value)) return value[0] ?? '';
+    return value ?? '';
+  }
+
+  private isProduction() {
+    return this.configService.get<string>('NODE_ENV') === 'production';
   }
 
   private paymentMethodFromPayload(raw: Prisma.JsonValue | null): string {

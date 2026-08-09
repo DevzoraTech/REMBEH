@@ -2,14 +2,17 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   ParseUUIDPipe,
   Post,
   Query,
+  Req,
   Res,
+  type RawBodyRequest,
   UseGuards,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
@@ -76,6 +79,23 @@ export class BillingController {
     @Param('paymentId', ParseUUIDPipe) paymentId: string,
   ) {
     return this.billingService.cancelManualMerchantPayment(user, paymentId);
+  }
+
+  @Post('webhooks/resend')
+  handleResendWebhook(
+    @Req() request: RawBodyRequest<Request>,
+    @Body() body: unknown,
+    @Headers('svix-id') svixId?: string | string[],
+    @Headers('svix-timestamp') svixTimestamp?: string | string[],
+    @Headers('svix-signature') svixSignature?: string | string[],
+  ) {
+    const payload =
+      request.rawBody?.toString('utf8') ?? JSON.stringify(body ?? {});
+    return this.billingService.handleResendPaymentWebhook(payload, {
+      id: svixId,
+      timestamp: svixTimestamp,
+      signature: svixSignature,
+    });
   }
 
   @Get('pesapal/ipn')

@@ -16,6 +16,8 @@ import {
 import { SmsService } from './sms.service';
 
 const RESEND_EMAIL_ENDPOINT = 'https://api.resend.com/emails';
+const RESEND_RECEIVED_EMAIL_ENDPOINT =
+  'https://api.resend.com/emails/receiving';
 
 @Injectable()
 export class NotificationsService {
@@ -264,6 +266,167 @@ export class NotificationsService {
     return { delivered: true };
   }
 
+  async sendSubscriptionPaymentVerificationAlertEmail(input: {
+    recipients: string[];
+    replyTo?: string | null;
+    paymentId: string;
+    branchName: string;
+    planLabel: string;
+    amountLabel: string;
+    paymentMethod: string;
+    transactionId: string;
+    submittedByName: string;
+    submittedByEmail: string | null;
+    submittedAt: string;
+  }): Promise<{ delivered: boolean; error?: string }> {
+    const from = this.getEmailFromHeader();
+    const apiKey = this.getResendApiKey();
+    if (!apiKey) {
+      const message =
+        'Payment verification email skipped — Resend not configured.';
+      this.logger.warn(message);
+      if (this.isProduction()) {
+        throw new ServiceUnavailableException(
+          'Payment alert email could not be sent. Check RESEND_API_KEY and EMAIL_FROM.',
+        );
+      }
+      return { delivered: false, error: message };
+    }
+
+    const recipients = input.recipients.filter(Boolean);
+    if (recipients.length === 0) {
+      return { delivered: false, error: 'No payment verification recipients.' };
+    }
+
+    const replyLine = input.replyTo
+      ? `Reply to this email. Replies go to ${input.replyTo}.`
+      : 'Reply to this email after checking the merchant transaction.';
+    const htmlInput = {
+      paymentId: this.escapeHtml(input.paymentId),
+      branchName: this.escapeHtml(input.branchName),
+      planLabel: this.escapeHtml(input.planLabel),
+      amountLabel: this.escapeHtml(input.amountLabel),
+      paymentMethod: this.escapeHtml(input.paymentMethod),
+      transactionId: this.escapeHtml(input.transactionId),
+      submittedByName: this.escapeHtml(input.submittedByName),
+      submittedByEmail: input.submittedByEmail
+        ? this.escapeHtml(input.submittedByEmail)
+        : null,
+      submittedAt: this.escapeHtml(input.submittedAt),
+      replyLine: this.escapeHtml(replyLine),
+    };
+    const text = [
+      'REMBEH payment verification needed',
+      '',
+      `Payment request: REMBEH-PAY:${input.paymentId}`,
+      `Branch: ${input.branchName}`,
+      `Plan: ${input.planLabel}`,
+      `Amount: ${input.amountLabel}`,
+      `Payment method: ${input.paymentMethod}`,
+      `Client submitted transaction ID: ${input.transactionId}`,
+      `Submitted by: ${input.submittedByName}${input.submittedByEmail ? ` <${input.submittedByEmail}>` : ''}`,
+      `Submitted at: ${input.submittedAt}`,
+      '',
+      'How to verify:',
+      replyLine,
+      '',
+      'If the merchant transaction ID matches, reply on the first line:',
+      `CONFIRM ${input.transactionId}`,
+      '',
+      'If it does not match or cannot be found, reply on the first line:',
+      'FAIL Transaction could not be found.',
+      '',
+      'Only replies from allowed Antikra team emails are accepted by the server.',
+      '',
+      '— REMBEH payment verification',
+    ].join('\n');
+
+    const html = [
+      '<div style="font-family:Arial,Helvetica,sans-serif;color:#14213d;line-height:1.5;max-width:680px">',
+      '<p style="margin:0 0 6px;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#0f8a6c">REMBEH</p>',
+      '<h1 style="font-size:22px;margin:0 0 14px">Payment verification needed</h1>',
+      '<div style="border:1px solid #dfe7ef;border-radius:12px;padding:16px;background:#f8fbfa">',
+      `<p><strong>Payment request:</strong> REMBEH-PAY:${htmlInput.paymentId}</p>`,
+      `<p><strong>Branch:</strong> ${htmlInput.branchName}</p>`,
+      `<p><strong>Plan:</strong> ${htmlInput.planLabel}</p>`,
+      `<p><strong>Amount:</strong> ${htmlInput.amountLabel}</p>`,
+      `<p><strong>Payment method:</strong> ${htmlInput.paymentMethod}</p>`,
+      `<p><strong>Client submitted transaction ID:</strong> <span style="font-family:monospace">${htmlInput.transactionId}</span></p>`,
+      `<p><strong>Submitted by:</strong> ${htmlInput.submittedByName}${htmlInput.submittedByEmail ? ` &lt;${htmlInput.submittedByEmail}&gt;` : ''}</p>`,
+      `<p><strong>Submitted at:</strong> ${htmlInput.submittedAt}</p>`,
+      '</div>',
+      '<h2 style="font-size:16px;margin:18px 0 8px">Reply commands</h2>',
+      `<p style="margin:0 0 10px">${htmlInput.replyLine}</p>`,
+      '<p style="margin:0 0 6px">If the merchant transaction ID matches, reply on the first line:</p>',
+      `<pre style="background:#eef8f2;border-radius:8px;padding:10px;font-family:monospace">CONFIRM ${htmlInput.transactionId}</pre>`,
+      '<p style="margin:12px 0 6px">If it does not match or cannot be found, reply on the first line:</p>',
+      '<pre style="background:#fff1f2;border-radius:8px;padding:10px;font-family:monospace">FAIL Transaction could not be found.</pre>',
+      '<p style="margin:12px 0 0;color:#52606d;font-size:12px">Only replies from allowed Antikra team emails are accepted by the server.</p>',
+      '</div>',
+    ].join('');
+
+    const response = await this.sendResendEmail({
+      apiKey,
+      from,
+      to: recipients,
+      replyTo: input.replyTo ?? undefined,
+      subject: `[REMBEH-PAY:${input.paymentId}] Payment verification — ${input.branchName}`,
+      text,
+      html,
+      headers: {
+        'X-Rembeh-Payment-Id': input.paymentId,
+      },
+    });
+
+    if (!response.ok) {
+      const detail = await this.readResendError(response);
+      this.logger.warn(`Payment verification alert email failed: ${detail}`);
+      return { delivered: false, error: detail };
+    }
+    return { delivered: true };
+  }
+
+  async retrieveReceivedEmail(emailId: string): Promise<{
+    id: string;
+    from: string;
+    to: string[];
+    received_for?: string[];
+    subject: string | null;
+    text: string | null;
+    html: string | null;
+    message_id?: string | null;
+  } | null> {
+    const apiKey = this.getResendApiKey();
+    if (!apiKey) {
+      this.logger.warn('Received email fetch skipped — Resend not configured.');
+      return null;
+    }
+
+    const response = await fetch(
+      `${RESEND_RECEIVED_EMAIL_ENDPOINT}/${encodeURIComponent(emailId)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+      },
+    );
+    if (!response.ok) {
+      const detail = await this.readResendError(response);
+      this.logger.warn(`Received email fetch failed: ${detail}`);
+      return null;
+    }
+    return (await response.json()) as {
+      id: string;
+      from: string;
+      to: string[];
+      received_for?: string[];
+      subject: string | null;
+      text: string | null;
+      html: string | null;
+      message_id?: string | null;
+    };
+  }
+
   private missingEmailConfigResult(
     from: string,
     destination: string,
@@ -294,10 +457,12 @@ export class NotificationsService {
   private sendResendEmail(input: {
     apiKey: string;
     from: string;
-    to: string;
+    to: string | string[];
+    replyTo?: string;
     subject: string;
     text: string;
     html: string;
+    headers?: Record<string, string>;
   }) {
     return fetch(RESEND_EMAIL_ENDPOINT, {
       method: 'POST',
@@ -308,9 +473,11 @@ export class NotificationsService {
       body: JSON.stringify({
         from: input.from,
         to: input.to,
+        ...(input.replyTo ? { reply_to: input.replyTo } : {}),
         subject: input.subject,
         text: input.text,
         html: input.html,
+        ...(input.headers ? { headers: input.headers } : {}),
       }),
     });
   }
@@ -328,6 +495,15 @@ export class NotificationsService {
     return (
       this.configService.get<string>('RESEND_API_KEY')?.trim() || undefined
     );
+  }
+
+  private escapeHtml(value: string) {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   /** Resend-style "Name <email@domain>" when EMAIL_FROM_NAME is set. */
