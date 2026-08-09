@@ -259,6 +259,14 @@ function manualPaymentMethodById(method: ManualPaymentMethod | null) {
   return MANUAL_PAYMENT_METHODS.find((item) => item.id === method) ?? null;
 }
 
+function normalizeManualTransactionId(value: string) {
+  return value.trim().replace(/\s+/g, " ").toUpperCase();
+}
+
+function compactManualTransactionId(value: string) {
+  return normalizeManualTransactionId(value).replace(/[^A-Z0-9]/g, "");
+}
+
 function paymentPeriodLabel(plan: BillingPlanOption) {
   if (plan.durationMonths === 1) return "Monthly Subscription";
   return `${plan.durationMonths}-Month Subscription`;
@@ -446,6 +454,7 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
   const [selectedPaymentMethod, setSelectedPaymentMethod] =
     useState<ManualPaymentMethod | null>(null);
   const [transactionId, setTransactionId] = useState("");
+  const [confirmTransactionId, setConfirmTransactionId] = useState("");
   const [submittingManualPayment, setSubmittingManualPayment] = useState(false);
   const [submittedManualPayment, setSubmittedManualPayment] =
     useState<ManualPaymentSubmission | null>(null);
@@ -868,6 +877,7 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     setPaymentPanelOpen(true);
     setSelectedPaymentMethod(null);
     setTransactionId("");
+    setConfirmTransactionId("");
     setSubmittedManualPayment(null);
     setPaymentResultOverlay(null);
     setError(null);
@@ -894,6 +904,7 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
       }
       setSelectedPaymentMethod(null);
       setTransactionId("");
+      setConfirmTransactionId("");
       setSubmittedManualPayment(null);
       await Promise.all([loadSummary(), loadPayments()]);
     } catch (err) {
@@ -907,6 +918,7 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     setPaymentPanelOpen(false);
     setSelectedPaymentMethod(null);
     setTransactionId("");
+    setConfirmTransactionId("");
     setSubmittedManualPayment(null);
   }
 
@@ -924,6 +936,7 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     const resultKind = kind ?? (row.status === "Failed" ? "failed" : "success");
     setPaymentPanelOpen(false);
     setSubmittedManualPayment(null);
+    setConfirmTransactionId("");
     setPaymentResultOverlay({
       kind: resultKind,
       payment: row,
@@ -935,6 +948,7 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     const targetBranch = resolveSubscriptionBranch();
     const method = selectedPaymentMethod;
     const reference = transactionId.trim();
+    const confirmation = confirmTransactionId.trim();
     if (!session || !targetBranch) return;
     const pendingPayment = pendingManualPaymentFor(
       selectedPlanCode,
@@ -959,6 +973,17 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
       setError("Enter the transaction ID from your payment message.");
       return;
     }
+    if (!confirmation) {
+      setError("Re-enter the transaction ID to confirm it.");
+      return;
+    }
+    if (
+      compactManualTransactionId(reference) !==
+      compactManualTransactionId(confirmation)
+    ) {
+      setError("The transaction IDs do not match. Check both entries.");
+      return;
+    }
 
     setSubmittingManualPayment(true);
     setPayingBranchId(targetBranch.branchId);
@@ -977,6 +1002,7 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
             planCode: selectedPlanCode || "PRO_3M",
             provider: method,
             transactionId: reference,
+            confirmTransactionId: confirmation,
           }),
         },
       );
@@ -995,6 +1021,7 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
         submittedAt: payload.payment?.date ?? new Date().toISOString(),
       });
       setTransactionId("");
+      setConfirmTransactionId("");
       await Promise.all([loadSummary(), loadPayments()]);
     } catch (err) {
       setError(friendlyError(err));
@@ -1805,6 +1832,7 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
               branchName={branchName}
               selectedMethod={selectedPaymentMethod}
               transactionId={transactionId}
+              confirmTransactionId={confirmTransactionId}
               submitting={submittingManualPayment}
               pendingPayment={activePendingManualPayment}
               cancellingPending={
@@ -1822,6 +1850,7 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
                 setError(null);
               }}
               onTransactionIdChange={setTransactionId}
+              onConfirmTransactionIdChange={setConfirmTransactionId}
               onSubmit={() => void submitManualPayment()}
             />
           )}
@@ -1890,6 +1919,7 @@ function ManualMerchantPaymentPanel({
   branchName,
   selectedMethod,
   transactionId,
+  confirmTransactionId,
   submitting,
   pendingPayment,
   cancellingPending,
@@ -1897,12 +1927,14 @@ function ManualMerchantPaymentPanel({
   onCancelPending,
   onSelectMethod,
   onTransactionIdChange,
+  onConfirmTransactionIdChange,
   onSubmit,
 }: {
   plan: BillingPlanOption;
   branchName: string;
   selectedMethod: ManualPaymentMethod | null;
   transactionId: string;
+  confirmTransactionId: string;
   submitting: boolean;
   pendingPayment: PaymentRow | null;
   cancellingPending: boolean;
@@ -1910,10 +1942,20 @@ function ManualMerchantPaymentPanel({
   onCancelPending: (paymentId: string) => void;
   onSelectMethod: (method: ManualPaymentMethod) => void;
   onTransactionIdChange: (value: string) => void;
+  onConfirmTransactionIdChange: (value: string) => void;
   onSubmit: () => void;
 }) {
   const method = manualPaymentMethodById(selectedMethod);
   const amountLabel = formatMoney(plan.amount, plan.currency);
+  const hasTransactionId = transactionId.trim().length > 0;
+  const hasConfirmTransactionId = confirmTransactionId.trim().length > 0;
+  const idsMismatch =
+    hasTransactionId &&
+    hasConfirmTransactionId &&
+    compactManualTransactionId(transactionId) !==
+      compactManualTransactionId(confirmTransactionId);
+  const canSubmit =
+    hasTransactionId && hasConfirmTransactionId && !idsMismatch && !submitting;
 
   return (
     <section
@@ -2146,9 +2188,36 @@ function ManualMerchantPaymentPanel({
                         <Info className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
                       </span>
                     </label>
+                    <label className="mt-4 block text-sm font-semibold text-[#070b18]">
+                      Confirm transaction ID
+                      <span className="relative mt-2 block">
+                        <input
+                          value={confirmTransactionId}
+                          onChange={(event) =>
+                            onConfirmTransactionIdChange(event.target.value)
+                          }
+                          placeholder="Re-enter transaction ID"
+                          className={`h-11 w-full rounded-md border bg-white px-3 pr-10 text-sm text-[#070b18] outline-none transition placeholder:text-slate-400 focus:ring-2 ${
+                            idsMismatch
+                              ? "border-rose-300 focus:border-rose-500 focus:ring-rose-500/15"
+                              : "border-[#dfe5eb] focus:border-[#07885f] focus:ring-[#07885f]/15"
+                          }`}
+                        />
+                        {hasConfirmTransactionId && !idsMismatch ? (
+                          <Check className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#07885f]" />
+                        ) : (
+                          <Info className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                        )}
+                      </span>
+                    </label>
+                    {idsMismatch ? (
+                      <p className="mt-2 text-sm font-semibold text-rose-600">
+                        Transaction IDs do not match.
+                      </p>
+                    ) : null}
                     <button
                       type="submit"
-                      disabled={submitting || !transactionId.trim()}
+                      disabled={!canSubmit}
                       className="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#07885f] text-base font-bold text-white shadow-[0_12px_24px_rgba(7,136,95,0.18)] transition hover:bg-[#067352] disabled:cursor-not-allowed disabled:opacity-55"
                     >
                       {submitting ? (

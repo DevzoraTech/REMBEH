@@ -18,4 +18,8 @@ export class SubmitManualMerchantPaymentDto {
   @IsString()
   @Length(3, 80)
   transactionId!: string;
+
+  @IsString()
+  @Length(3, 80)
+  confirmTransactionId!: string;
 }

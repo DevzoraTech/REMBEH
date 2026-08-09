@@ -789,9 +789,27 @@ export class BillingService implements OnModuleInit {
     }
 
     const providerDetails = this.manualMerchantDetails(dto.provider);
-    const transactionId = this.normalizeManualTransactionId(dto.transactionId);
+    const transactionId = this.normalizeManualTransactionId(
+      dto.transactionId ?? '',
+    );
     if (!transactionId) {
       throw new BadRequestException('Enter the payment transaction ID.');
+    }
+    const confirmationId = this.normalizeManualTransactionId(
+      dto.confirmTransactionId ?? '',
+    );
+    if (!confirmationId) {
+      throw new BadRequestException(
+        'Confirm the transaction ID by entering it again.',
+      );
+    }
+    if (
+      this.compactTransactionId(transactionId) !==
+      this.compactTransactionId(confirmationId)
+    ) {
+      throw new BadRequestException(
+        'The transaction IDs do not match. Check both entries and try again.',
+      );
     }
 
     await this.ensureTenantBilling(user.tenantId);
