@@ -10,6 +10,7 @@ import '../utils/account_access.dart';
 import '../utils/friendly_errors.dart';
 import 'account_locked_screen.dart';
 import 'agent_shell.dart';
+import 'branch_workspace_screen.dart';
 import 'profile/agent_selfie_capture_screen.dart';
 
 const _rememberEmailKey = 'rembeh.login.remember_email';
@@ -17,11 +18,7 @@ const _rememberMeKey = 'rembeh.login.remember_me';
 const _loginMaxCardWidth = 360.0;
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({
-    super.key,
-    this.idleSignedOutMessage,
-    this.pushService,
-  });
+  const LoginScreen({super.key, this.idleSignedOutMessage, this.pushService});
 
   final String? idleSignedOutMessage;
   final PushNotificationService? pushService;
@@ -129,6 +126,8 @@ class _LoginScreenState extends State<LoginScreen>
       if (!mounted) return;
       final next = session.requiresProfilePhoto && !session.hasProfilePhoto
           ? AgentSelfieCaptureScreen(session: session)
+          : session.canUseBranchWorkspace
+          ? BranchWorkspaceScreen(session: session)
           : AgentShell(session: session);
       Navigator.of(
         context,

@@ -23,17 +23,10 @@ import {
 import { dailyReportCode } from "./reports-filters";
 
 export type DailyReportViewTab =
-  | "summary"
-  | "ledger"
-  | "agent-handover"
-  | "expenses"
-  | "review-history";
+  "summary" | "ledger" | "agent-handover" | "expenses" | "review-history";
 
 export type DailyReportStatus =
-  | "MANAGER_REVIEW"
-  | "SENT_TO_OWNER"
-  | "OWNER_APPROVED"
-  | "RETURNED_TO_MANAGER";
+  "MANAGER_REVIEW" | "SENT_TO_OWNER" | "OWNER_APPROVED" | "RETURNED_TO_MANAGER";
 
 export type DailyReportDocumentModel = {
   reportNumber: string;
@@ -77,6 +70,59 @@ export type DailyReportDocumentModel = {
     amount: number;
     recoveredToday: number;
     outstandingBalance: number;
+  }>;
+  loansIssued: Array<{
+    id: string;
+    loanId: string | null;
+    borrowerName: string;
+    borrowerPhone: string | null;
+    product: string;
+    principalAmount: number;
+    processingFee: number;
+    recoveredToday: number;
+    outstandingBalance: number;
+    issuedAt: string;
+    officerName: string;
+    officerPublicId: string | null;
+    durationDays: number | null;
+    purpose: string | null;
+  }>;
+  repayments: Array<{
+    id: string;
+    loanId: string;
+    borrowerName: string;
+    borrowerPhone: string | null;
+    product: string;
+    amount: number;
+    paidAt: string;
+    method: string;
+    receiptNumber: string | null;
+    recordedByName: string;
+    recordedByPublicId: string | null;
+    note: string | null;
+  }>;
+  processingFees: Array<{
+    id: string;
+    loanId: string | null;
+    borrowerName: string;
+    product: string;
+    amount: number;
+    receivedAt: string;
+    officerName: string;
+  }>;
+  variances: Array<{
+    id: string;
+    source: string;
+    personName: string;
+    personPublicId: string | null;
+    expectedAmount: number | null;
+    actualAmount: number | null;
+    variance: number;
+    shortageAmount: number | null;
+    outstandingAmount: number | null;
+    status: string;
+    notes: string | null;
+    occurredAt: string;
   }>;
   floatIssued: number;
   agentsWithFloatCount: number;
@@ -368,12 +414,10 @@ function SummaryDocument({
     (row) => row.amountReturned == null,
   ).length;
   const agentsBalanced = document.agentReturns.filter(
-    (row) =>
-      row.amountReturned != null && Math.round(row.variance ?? 0) === 0,
+    (row) => row.amountReturned != null && Math.round(row.variance ?? 0) === 0,
   ).length;
   const agentsWithVariance = document.agentReturns.filter(
-    (row) =>
-      row.amountReturned != null && Math.round(row.variance ?? 0) !== 0,
+    (row) => row.amountReturned != null && Math.round(row.variance ?? 0) !== 0,
   ).length;
   const agentTotal =
     agentsPending + agentsBalanced + agentsWithVariance ||
@@ -449,14 +493,20 @@ function SummaryDocument({
   const showTopUpsDetail = topUpsTotal !== 0 || document.topUps.length > 0;
   const showRepaymentsDetail =
     Math.round(document.collectionsReceived) !== 0 ||
-    document.collectionsCount > 0;
-  const showFeesDetail = Math.round(document.processingFeesTotal) !== 0;
+    document.collectionsCount > 0 ||
+    document.repayments.length > 0;
+  const showFeesDetail =
+    Math.round(document.processingFeesTotal) !== 0 ||
+    document.processingFees.length > 0;
   const showLoansDetail =
     Math.round(document.loansIssuedPrincipal) !== 0 ||
-    document.loansIssuedCount > 0;
+    document.loansIssuedCount > 0 ||
+    document.loansIssued.length > 0;
   const showExpensesDetail =
     Math.round(document.expensesTotal) !== 0 || document.expensesCount > 0;
   const showFloatDetail = Math.round(document.floatIssued) !== 0;
+  const showVarianceDetail =
+    document.variances.length > 0 || Math.round(varianceShown ?? 0) !== 0;
 
   return (
     <article className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
@@ -593,8 +643,8 @@ function SummaryDocument({
           />
           <p className="mt-1.5 text-[11px] italic text-slate-500">
             Expected closing cash = opening + top-ups + repayments + fees −
-            loans − expenses. Float and field officer returns net out when handovers
-            balance.
+            loans − expenses. Float and field officer returns net out when
+            handovers balance.
           </p>
         </Section>
 
@@ -694,6 +744,37 @@ function SummaryDocument({
           </Section>
         ) : null}
 
+        {document.repayments.length > 0 ? (
+          <Section title="Repayment Records">
+            <ReportTable
+              columns={[
+                "#",
+                "Borrower",
+                "Product",
+                `Amount (${currency})`,
+                "Time",
+                "Recorded By",
+                "Receipt",
+              ]}
+              align={[true, false, false, true, false, false, false]}
+              rows={document.repayments.map((row, index) => [
+                String(index + 1),
+                row.borrowerName,
+                row.product,
+                <span
+                  key={row.id}
+                  className="font-semibold text-[var(--forest-emerald)]"
+                >
+                  {amt(row.amount)}
+                </span>,
+                formatDateTime(row.paidAt),
+                row.recordedByName,
+                row.receiptNumber || "—",
+              ])}
+            />
+          </Section>
+        ) : null}
+
         {showFeesDetail ? (
           <Section title="Processing Fees Received">
             <ReportTable
@@ -721,6 +802,35 @@ function SummaryDocument({
                   {amt(document.processingFeesTotal)}
                 </span>,
               ]}
+            />
+          </Section>
+        ) : null}
+
+        {document.processingFees.length > 0 ? (
+          <Section title="Processing Fee Records">
+            <ReportTable
+              columns={[
+                "#",
+                "Borrower",
+                "Product",
+                `Amount (${currency})`,
+                "Time",
+                "Officer",
+              ]}
+              align={[true, false, false, true, false, false]}
+              rows={document.processingFees.map((row, index) => [
+                String(index + 1),
+                row.borrowerName,
+                row.product,
+                <span
+                  key={row.id}
+                  className="font-semibold text-[var(--forest-emerald)]"
+                >
+                  {amt(row.amount)}
+                </span>,
+                formatDateTime(row.receivedAt),
+                row.officerName,
+              ])}
             />
           </Section>
         ) : null}
@@ -764,6 +874,74 @@ function SummaryDocument({
           ) : null}
         </Section>
 
+        {showVarianceDetail ? (
+          <Section title="Variance Details">
+            <ReportTable
+              columns={[
+                "#",
+                "Source",
+                "Person",
+                `Expected (${currency})`,
+                `Actual (${currency})`,
+                `Variance (${currency})`,
+                "Status",
+                "Notes",
+              ]}
+              align={[true, false, false, true, true, true, false, false]}
+              rows={document.variances.map((row, index) => [
+                String(index + 1),
+                row.source,
+                row.personName,
+                row.expectedAmount == null ? "—" : amt(row.expectedAmount),
+                row.actualAmount == null ? "—" : amt(row.actualAmount),
+                <span
+                  key={row.id}
+                  className={
+                    row.variance < 0
+                      ? "font-bold text-red-600"
+                      : "font-bold text-[var(--forest-emerald)]"
+                  }
+                >
+                  {row.variance < 0
+                    ? `(${amt(Math.abs(row.variance))})`
+                    : amt(row.variance)}
+                </span>,
+                titleCase(row.status.replaceAll("_", " ")),
+                row.notes || "—",
+              ])}
+              footer={[
+                "",
+                "Variance total",
+                "",
+                "",
+                "",
+                <strong
+                  key="variance-total"
+                  className={
+                    document.variances.reduce(
+                      (sum, row) => sum + row.variance,
+                      0,
+                    ) < 0
+                      ? "text-red-600"
+                      : "text-[var(--forest-emerald)]"
+                  }
+                >
+                  {(() => {
+                    const total = document.variances.reduce(
+                      (sum, row) => sum + row.variance,
+                      0,
+                    );
+                    return total < 0 ? `(${amt(Math.abs(total))})` : amt(total);
+                  })()}
+                </strong>,
+                "",
+                "",
+              ]}
+              empty="No variances recorded."
+            />
+          </Section>
+        ) : null}
+
         {showLoansDetail ? (
           <Section title="Loans Issued">
             <ReportTable
@@ -795,10 +973,7 @@ function SummaryDocument({
                 <strong key="a">{amt(document.loansIssuedPrincipal)}</strong>,
                 <strong key="r">
                   {amt(
-                    loansRows.reduce(
-                      (sum, row) => sum + row.recoveredToday,
-                      0,
-                    ),
+                    loansRows.reduce((sum, row) => sum + row.recoveredToday, 0),
                   )}
                 </strong>,
                 <strong key="o" className="text-[var(--forest-emerald)]">
@@ -810,6 +985,44 @@ function SummaryDocument({
                   )}
                 </strong>,
               ]}
+            />
+          </Section>
+        ) : null}
+
+        {document.loansIssued.length > 0 ? (
+          <Section title="Loan Records">
+            <ReportTable
+              columns={[
+                "#",
+                "Borrower",
+                "Product",
+                `Principal (${currency})`,
+                `Recovered (${currency})`,
+                `Balance (${currency})`,
+                "Officer",
+                "Time",
+              ]}
+              align={[true, false, false, true, true, true, false, false]}
+              rows={document.loansIssued.map((row, index) => [
+                String(index + 1),
+                row.borrowerName,
+                row.product,
+                <span
+                  key={`${row.id}-p`}
+                  className="font-semibold text-red-600"
+                >
+                  {amt(row.principalAmount)}
+                </span>,
+                amt(row.recoveredToday),
+                <span
+                  key={`${row.id}-b`}
+                  className="font-semibold text-[var(--forest-emerald)]"
+                >
+                  {amt(row.outstandingBalance)}
+                </span>,
+                row.officerName,
+                formatDateTime(row.issuedAt),
+              ])}
             />
           </Section>
         ) : null}
@@ -852,9 +1065,7 @@ function SummaryDocument({
               footer={[
                 "Total",
                 <strong key="c">
-                  {formatNumber(
-                    expenseCategoryCount || document.expensesCount,
-                  )}
+                  {formatNumber(expenseCategoryCount || document.expensesCount)}
                 </strong>,
                 <strong key="a">{amt(document.expensesTotal)}</strong>,
               ]}
@@ -864,7 +1075,13 @@ function SummaryDocument({
 
         <Section title="Report Review History">
           <ReportTable
-            columns={["Reviewed By", "Role", "Action", "Review Date", "Comment"]}
+            columns={[
+              "Reviewed By",
+              "Role",
+              "Action",
+              "Review Date",
+              "Comment",
+            ]}
             align={[false, false, false, false, false]}
             rows={buildReviewHistory(document)}
             empty="No review history yet."
@@ -873,7 +1090,13 @@ function SummaryDocument({
 
         <Section title="Owner Review">
           <ReportTable
-            columns={["Reviewed By", "Role", "Review Date", "Status", "Comment"]}
+            columns={[
+              "Reviewed By",
+              "Role",
+              "Review Date",
+              "Status",
+              "Comment",
+            ]}
             align={[false, false, false, false, false]}
             rows={[
               document.ownerApprovedAt
@@ -901,7 +1124,6 @@ function SummaryDocument({
             ]}
           />
         </Section>
-
       </div>
     </article>
   );
@@ -936,7 +1158,8 @@ function ReviewSidebar({
   const noteAdded = Boolean(
     document.closingNotes?.trim() || document.managerNotes?.trim(),
   );
-  const allPassed = cashCounted && handoversDone && expensesReviewed && noteAdded;
+  const allPassed =
+    cashCounted && handoversDone && expensesReviewed && noteAdded;
   const statusLabel = documentReportStatusLabel(document.status);
   const showComment = canManagerSend || canOwnerApprove;
 
@@ -1108,7 +1331,11 @@ function LedgerTab({ document }: { document: DailyReportDocumentModel }) {
   );
 }
 
-function AgentHandoverTab({ document }: { document: DailyReportDocumentModel }) {
+function AgentHandoverTab({
+  document,
+}: {
+  document: DailyReportDocumentModel;
+}) {
   return (
     <article className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
       <div className="border-b border-[#edf1f5] px-5 py-4">
@@ -1160,13 +1387,7 @@ function ExpensesTab({ document }: { document: DailyReportDocumentModel }) {
       </div>
       <div className="overflow-x-auto p-4">
         <ReportTable
-          columns={[
-            "Category",
-            "Description",
-            "Amount",
-            "Time",
-            "Recorded By",
-          ]}
+          columns={["Category", "Description", "Amount", "Time", "Recorded By"]}
           align={[false, false, true, false, false]}
           rows={document.expenses.map((row) => [
             titleCase(row.category.replaceAll("_", " ")),
@@ -1182,7 +1403,11 @@ function ExpensesTab({ document }: { document: DailyReportDocumentModel }) {
   );
 }
 
-function ReviewHistoryTab({ document }: { document: DailyReportDocumentModel }) {
+function ReviewHistoryTab({
+  document,
+}: {
+  document: DailyReportDocumentModel;
+}) {
   return (
     <article className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
       <div className="border-b border-[#edf1f5] px-5 py-4">
@@ -1203,16 +1428,12 @@ function ReviewHistoryTab({ document }: { document: DailyReportDocumentModel }) 
   );
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-1.5">
-      <h3 className="text-sm font-bold text-[var(--forest-emerald)]">{title}</h3>
+      <h3 className="text-sm font-bold text-[var(--forest-emerald)]">
+        {title}
+      </h3>
       {children}
     </section>
   );
@@ -1398,10 +1619,11 @@ function formatDateTime(value: string) {
   });
 }
 
-function groupExpenses(
-  expenses: DailyReportDocumentModel["expenses"],
-) {
-  const map = new Map<string, { category: string; count: number; amount: number }>();
+function groupExpenses(expenses: DailyReportDocumentModel["expenses"]) {
+  const map = new Map<
+    string,
+    { category: string; count: number; amount: number }
+  >();
   for (const expense of expenses) {
     const category = titleCase(expense.category.replaceAll("_", " "));
     const current = map.get(category) ?? { category, count: 0, amount: 0 };
@@ -1430,9 +1652,7 @@ function reconcileProductRows(
       },
     ];
   }
-  const sumAmount = Math.round(
-    rows.reduce((sum, row) => sum + row.amount, 0),
-  );
+  const sumAmount = Math.round(rows.reduce((sum, row) => sum + row.amount, 0));
   const sumTransactions = rows.reduce((sum, row) => sum + row.transactions, 0);
   const amountDiff = Math.round(totalAmount - sumAmount);
   const countDiff = totalTransactions - sumTransactions;
@@ -1674,18 +1894,22 @@ type OperationLike = {
     recoveredToday?: number;
     outstandingBalance?: number;
   }>;
+  loansIssued?: DailyReportDocumentModel["loansIssued"];
   repaymentsByProduct?: Array<{
     product: string;
     count?: number;
     transactions?: number;
     amount: number;
   }>;
+  repayments?: DailyReportDocumentModel["repayments"];
   feesByProduct?: Array<{
     product: string;
     count?: number;
     transactions?: number;
     amount: number;
   }>;
+  processingFees?: DailyReportDocumentModel["processingFees"];
+  variances?: DailyReportDocumentModel["variances"];
   previousReportReference?: {
     reportNumber: string;
     operationDate: string;
@@ -1719,8 +1943,7 @@ export function buildDailyReportDocumentFromOperation(
     operation.topUpsTotal ?? operation.cashAddedToday ?? topUpsSum;
   const expected = operation.expectedClosingBalance;
   const counted = operation.closingBalance;
-  const variance =
-    counted == null ? null : Math.round(counted - expected);
+  const variance = counted == null ? null : Math.round(counted - expected);
 
   return {
     reportNumber: report.reportNumber,
@@ -1766,6 +1989,10 @@ export function buildDailyReportDocumentFromOperation(
       recoveredToday: row.recoveredToday ?? 0,
       outstandingBalance: row.outstandingBalance ?? row.amount,
     })),
+    loansIssued: operation.loansIssued ?? [],
+    repayments: operation.repayments ?? [],
+    processingFees: operation.processingFees ?? [],
+    variances: operation.variances ?? [],
     floatIssued: operation.floatIssued,
     agentsWithFloatCount: operation.agentsWithFloatCount,
     cashReturnedByAgents: operation.cashReturnedByAgents,
@@ -1840,6 +2067,10 @@ export function buildDailyReportDocumentFromSnapshot(
   const loansByProduct = arrayValue(root.loansByProduct);
   const repaymentsByProduct = arrayValue(root.repaymentsByProduct);
   const feesByProduct = arrayValue(root.feesByProduct);
+  const loansIssued = arrayValue(root.loansIssued);
+  const repayments = arrayValue(root.repayments);
+  const processingFees = arrayValue(root.processingFees);
+  const variances = arrayValue(root.variances);
   const previous = objectValue(root.previousReportReference);
 
   const mappedAgents = agentReturns.map((row, index) => {
@@ -1884,6 +2115,47 @@ export function buildDailyReportDocumentFromSnapshot(
     (sum, row) => sum + (row.variance ?? 0),
     0,
   );
+  const mappedVariances = variances.map((row, index) => {
+    const item = objectValue(row);
+    return {
+      id: stringValue(item.id) || `variance-${index}`,
+      source: stringValue(item.source) || "Variance",
+      personName: stringValue(item.personName) || "—",
+      personPublicId:
+        typeof item.personPublicId === "string" ? item.personPublicId : null,
+      expectedAmount:
+        item.expectedAmount == null ? null : numberValue(item.expectedAmount),
+      actualAmount:
+        item.actualAmount == null ? null : numberValue(item.actualAmount),
+      variance: numberValue(item.variance),
+      shortageAmount:
+        item.shortageAmount == null ? null : numberValue(item.shortageAmount),
+      outstandingAmount:
+        item.outstandingAmount == null
+          ? null
+          : numberValue(item.outstandingAmount),
+      status: stringValue(item.status) || "Recorded",
+      notes: typeof item.notes === "string" ? item.notes : null,
+      occurredAt: stringValue(item.occurredAt) || report.generatedAt,
+    };
+  });
+  if (mappedVariances.length === 0 && counted != null && variance !== 0) {
+    const snapshotVariance = variance ?? 0;
+    mappedVariances.push({
+      id: `branch-close-${report.reportNumber}`,
+      source: "Branch close",
+      personName: stringValue(operation.closedByName) || "Branch cash",
+      personPublicId: null,
+      expectedAmount: expected,
+      actualAmount: counted,
+      variance: snapshotVariance,
+      shortageAmount: snapshotVariance < 0 ? Math.abs(snapshotVariance) : null,
+      outstandingAmount: null,
+      status: snapshotVariance < 0 ? "Short" : "Excess",
+      notes: typeof root.closingNotes === "string" ? root.closingNotes : null,
+      occurredAt: report.generatedAt,
+    });
+  }
 
   return {
     reportNumber: report.reportNumber,
@@ -1937,11 +2209,68 @@ export function buildDailyReportDocumentFromSnapshot(
         count: numberValue(item.count),
         amount: numberValue(item.amount),
         recoveredToday: numberValue(item.recoveredToday),
-        outstandingBalance: numberValue(
-          item.outstandingBalance ?? item.amount,
-        ),
+        outstandingBalance: numberValue(item.outstandingBalance ?? item.amount),
       };
     }),
+    loansIssued: loansIssued.map((row, index) => {
+      const item = objectValue(row);
+      return {
+        id: stringValue(item.id) || `loan-${index}`,
+        loanId: typeof item.loanId === "string" ? item.loanId : null,
+        borrowerName: stringValue(item.borrowerName) || "Borrower",
+        borrowerPhone:
+          typeof item.borrowerPhone === "string" ? item.borrowerPhone : null,
+        product: stringValue(item.product) || "Loan",
+        principalAmount: numberValue(item.principalAmount ?? item.amount),
+        processingFee: numberValue(item.processingFee),
+        recoveredToday: numberValue(item.recoveredToday),
+        outstandingBalance: numberValue(item.outstandingBalance),
+        issuedAt: stringValue(item.issuedAt) || report.generatedAt,
+        officerName: stringValue(item.officerName) || "—",
+        officerPublicId:
+          typeof item.officerPublicId === "string"
+            ? item.officerPublicId
+            : null,
+        durationDays:
+          item.durationDays == null ? null : numberValue(item.durationDays),
+        purpose: typeof item.purpose === "string" ? item.purpose : null,
+      };
+    }),
+    repayments: repayments.map((row, index) => {
+      const item = objectValue(row);
+      return {
+        id: stringValue(item.id) || `repayment-${index}`,
+        loanId: stringValue(item.loanId) || "",
+        borrowerName: stringValue(item.borrowerName) || "Borrower",
+        borrowerPhone:
+          typeof item.borrowerPhone === "string" ? item.borrowerPhone : null,
+        product: stringValue(item.product) || "Loan repayment",
+        amount: numberValue(item.amount),
+        paidAt: stringValue(item.paidAt) || report.generatedAt,
+        method: stringValue(item.method) || "Cash",
+        receiptNumber:
+          typeof item.receiptNumber === "string" ? item.receiptNumber : null,
+        recordedByName: stringValue(item.recordedByName) || "—",
+        recordedByPublicId:
+          typeof item.recordedByPublicId === "string"
+            ? item.recordedByPublicId
+            : null,
+        note: typeof item.note === "string" ? item.note : null,
+      };
+    }),
+    processingFees: processingFees.map((row, index) => {
+      const item = objectValue(row);
+      return {
+        id: stringValue(item.id) || `fee-${index}`,
+        loanId: typeof item.loanId === "string" ? item.loanId : null,
+        borrowerName: stringValue(item.borrowerName) || "Borrower",
+        product: stringValue(item.product) || "Loan",
+        amount: numberValue(item.amount),
+        receivedAt: stringValue(item.receivedAt) || report.generatedAt,
+        officerName: stringValue(item.officerName) || "—",
+      };
+    }),
+    variances: mappedVariances,
     floatIssued: numberValue(summary.floatDistributed),
     agentsWithFloatCount: mappedAgents.length,
     cashReturnedByAgents: report.cashReturnedByAgents,

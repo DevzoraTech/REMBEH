@@ -183,6 +183,168 @@ class ApiClient {
     return AgentDayStatus.fromApi(body);
   }
 
+  Future<Map<String, dynamic>> getBranchOperation({
+    required RembehSession session,
+    String? branchId,
+    String? date,
+  }) async {
+    final query = <String, String>{
+      if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
+      if (date != null && date.isNotEmpty) 'date': date,
+    };
+    final uri = Uri.parse(
+      '$rembehApiBaseUrl/operations/today',
+    ).replace(queryParameters: query.isEmpty ? null : query);
+    final response = await http.get(uri, headers: _authHeaders(session));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+    return body;
+  }
+
+  Future<List<Map<String, dynamic>>> listBranchAgents({
+    required RembehSession session,
+    String? date,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/agents').replace(
+      queryParameters: date == null || date.isEmpty ? null : {'date': date},
+    );
+    final response = await http.get(uri, headers: _authHeaders(session));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+    final agents = body['agents'] as List<dynamic>? ?? const [];
+    return agents.cast<Map<String, dynamic>>();
+  }
+
+  Future<Map<String, dynamic>> openBranchOperation({
+    required RembehSession session,
+    String? branchId,
+    required String date,
+    num? openingBalance,
+    num? cashAddedToday,
+    String? notes,
+  }) {
+    final body = <String, dynamic>{
+      if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
+      'date': date,
+    };
+    if (openingBalance != null) body['openingBalance'] = openingBalance;
+    if (cashAddedToday != null) body['cashAddedToday'] = cashAddedToday;
+    if (notes != null && notes.trim().isNotEmpty) {
+      body['notes'] = notes.trim();
+    }
+    return _postJson(session: session, path: '/operations/open', body: body);
+  }
+
+  Future<Map<String, dynamic>> recordBranchTopUp({
+    required RembehSession session,
+    String? branchId,
+    required String date,
+    required num amount,
+    String? description,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/operations/top-ups',
+      body: {
+        if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
+        'date': date,
+        'amount': amount,
+        if (description != null && description.trim().isNotEmpty)
+          'description': description.trim(),
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> recordBranchExpense({
+    required RembehSession session,
+    String? branchId,
+    required String date,
+    required String category,
+    required num amount,
+    String? description,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/operations/expenses',
+      body: {
+        if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
+        'date': date,
+        'category': category,
+        'amount': amount,
+        if (description != null && description.trim().isNotEmpty)
+          'description': description.trim(),
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> recordAgentFloat({
+    required RembehSession session,
+    required String agentId,
+    required String date,
+    required num amount,
+    String? notes,
+    bool addMore = false,
+  }) {
+    final action = addMore ? 'floats/top-ups' : 'floats';
+    return _postJson(
+      session: session,
+      path: '/agents/$agentId/$action',
+      body: {
+        'date': date,
+        'amountGiven': amount,
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> recordAgentReturn({
+    required RembehSession session,
+    String? branchId,
+    required String date,
+    required String agentId,
+    required num amountReturned,
+    String? notes,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/operations/agent-returns',
+      body: {
+        if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
+        'date': date,
+        'agentId': agentId,
+        'amountReturned': amountReturned,
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> closeBranchOperation({
+    required RembehSession session,
+    String? branchId,
+    required String date,
+    required num countedCash,
+    String? notes,
+    String? shortageResponsibleUserId,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/operations/close',
+      body: {
+        if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
+        'date': date,
+        'countedCash': countedCash,
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+        if (shortageResponsibleUserId != null &&
+            shortageResponsibleUserId.isNotEmpty)
+          'shortageResponsibleUserId': shortageResponsibleUserId,
+      },
+    );
+  }
+
   Future<Map<String, dynamic>> createCustomer({
     required RembehSession session,
     required String fullName,
@@ -244,6 +406,24 @@ class ApiClient {
   Map<String, String> _authHeaders(RembehSession session) => {
     'Authorization': '${session.tokenType} ${session.accessToken}',
   };
+
+  Future<Map<String, dynamic>> _postJson({
+    required RembehSession session,
+    required String path,
+    required Map<String, dynamic> body,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl$path');
+    final response = await http.post(
+      uri,
+      headers: {..._authHeaders(session), 'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+    final payload = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(payload, response.statusCode, uri));
+    }
+    return payload;
+  }
 
   Map<String, dynamic> _decode(http.Response response) {
     if (response.body.isEmpty) return <String, dynamic>{};

@@ -69,7 +69,7 @@ export class CashShortagesService {
     const canSeeAll = user.permissions.includes(BRANCH_PERMISSIONS.create);
     const branchId = canSeeAll
       ? options?.branchId
-      : user.branchId ?? undefined;
+      : (user.branchId ?? undefined);
     if (!canSeeAll && !branchId) return { shortages: [] };
 
     const rows = await this.prisma.cashShortage.findMany({
@@ -111,8 +111,9 @@ export class CashShortagesService {
     return {
       shortages: rows.map((row) => this.toContract(row)),
       summary: {
-        openCount: rows.filter((row) => row.status !== CashShortageStatus.CLEARED)
-          .length,
+        openCount: rows.filter(
+          (row) => row.status !== CashShortageStatus.CLEARED,
+        ).length,
         outstandingTotal: rows
           .filter((row) => row.status !== CashShortageStatus.CLEARED)
           .reduce((sum, row) => sum + Number(row.amountOutstanding), 0),
@@ -125,14 +126,16 @@ export class CashShortagesService {
 
   async getOne(user: AuthenticatedUser, shortageId: string) {
     this.assertCanRead(user);
+    const canSeeAll = user.permissions.includes(BRANCH_PERMISSIONS.create);
+    if (!canSeeAll && !user.branchId) {
+      throw new ForbiddenException('Branch access is required.');
+    }
+    const branchScope = !canSeeAll ? { branchId: user.branchId! } : {};
     const row = await this.prisma.cashShortage.findFirst({
       where: {
         id: shortageId,
         tenantId: user.tenantId!,
-        ...(!user.permissions.includes(BRANCH_PERMISSIONS.create) &&
-        user.branchId
-          ? { branchId: user.branchId }
-          : {}),
+        ...branchScope,
       },
       include: {
         branch: {
@@ -201,9 +204,10 @@ export class CashShortagesService {
       operationDate: row.operationDate.toISOString().slice(0, 10),
       amountOriginal: Number(row.amountOriginal),
       amountOutstanding: Number(row.amountOutstanding),
-      amountPaid: Math.round(
-        (Number(row.amountOriginal) - Number(row.amountOutstanding)) * 100,
-      ) / 100,
+      amountPaid:
+        Math.round(
+          (Number(row.amountOriginal) - Number(row.amountOutstanding)) * 100,
+        ) / 100,
       status: row.status,
       notes: row.notes,
       createdAt: row.createdAt.toISOString(),
@@ -229,8 +233,17 @@ export class CashShortagesService {
     },
   ) {
     this.assertCanWrite(user);
+    const canSeeAll = user.permissions.includes(BRANCH_PERMISSIONS.create);
+    if (!canSeeAll && !user.branchId) {
+      throw new ForbiddenException('Branch access is required.');
+    }
+    const branchScope = !canSeeAll ? { branchId: user.branchId! } : {};
     const shortage = await this.prisma.cashShortage.findFirst({
-      where: { id: shortageId, tenantId: user.tenantId! },
+      where: {
+        id: shortageId,
+        tenantId: user.tenantId!,
+        ...branchScope,
+      },
     });
     if (!shortage) throw new NotFoundException('Shortage was not found.');
     if (shortage.status === CashShortageStatus.CLEARED) {
@@ -278,10 +291,7 @@ export class CashShortagesService {
     return this.getOne(user, shortage.id);
   }
 
-  async outstandingForUsers(input: {
-    tenantId: string;
-    userIds: string[];
-  }) {
+  async outstandingForUsers(input: { tenantId: string; userIds: string[] }) {
     if (input.userIds.length === 0) return new Map<string, number>();
     const rows = await this.prisma.cashShortage.groupBy({
       by: ['responsibleUserId'],

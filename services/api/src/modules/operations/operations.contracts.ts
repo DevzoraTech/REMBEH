@@ -68,6 +68,63 @@ export type DailyOperationProductBreakdownContract = {
   outstandingBalance?: number;
 };
 
+export type DailyOperationLoanIssuedContract = {
+  id: string;
+  loanId: string | null;
+  borrowerName: string;
+  borrowerPhone: string | null;
+  product: string;
+  principalAmount: number;
+  processingFee: number;
+  recoveredToday: number;
+  outstandingBalance: number;
+  issuedAt: string;
+  officerName: string;
+  officerPublicId: string | null;
+  durationDays: number | null;
+  purpose: string | null;
+};
+
+export type DailyOperationRepaymentContract = {
+  id: string;
+  loanId: string;
+  borrowerName: string;
+  borrowerPhone: string | null;
+  product: string;
+  amount: number;
+  paidAt: string;
+  method: string;
+  receiptNumber: string | null;
+  recordedByName: string;
+  recordedByPublicId: string | null;
+  note: string | null;
+};
+
+export type DailyOperationProcessingFeeContract = {
+  id: string;
+  loanId: string | null;
+  borrowerName: string;
+  product: string;
+  amount: number;
+  receivedAt: string;
+  officerName: string;
+};
+
+export type DailyOperationVarianceContract = {
+  id: string;
+  source: string;
+  personName: string;
+  personPublicId: string | null;
+  expectedAmount: number | null;
+  actualAmount: number | null;
+  variance: number;
+  shortageAmount: number | null;
+  outstandingAmount: number | null;
+  status: string;
+  notes: string | null;
+  occurredAt: string;
+};
+
 export type DailyOperationContract = {
   id: string;
   branchId: string;
@@ -110,6 +167,10 @@ export type DailyOperationContract = {
   loansByProduct: DailyOperationProductBreakdownContract[];
   repaymentsByProduct: DailyOperationProductBreakdownContract[];
   feesByProduct: DailyOperationProductBreakdownContract[];
+  loansIssued: DailyOperationLoanIssuedContract[];
+  repayments: DailyOperationRepaymentContract[];
+  processingFees: DailyOperationProcessingFeeContract[];
+  variances: DailyOperationVarianceContract[];
   previousReportReference: {
     reportNumber: string;
     operationDate: string;

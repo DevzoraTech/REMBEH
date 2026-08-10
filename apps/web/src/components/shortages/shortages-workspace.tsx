@@ -6,7 +6,6 @@ import {
   Loader2,
   RefreshCw,
   Scale,
-  Search,
   Wallet,
   X,
 } from "lucide-react";
@@ -18,6 +17,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { OwnerHeader } from "../../app/owner/owner-header";
+import { formatMoneyAmount, formatNumber } from "../../app/owner/owner-common";
 import { AppShell } from "../app/app-shell";
 import { Money } from "../app/money";
 import {
@@ -26,6 +27,7 @@ import {
   paginateItems,
 } from "../app/pagination";
 import { AppBootSkeleton, TableSkeleton } from "../app/skeleton";
+import { TableSearchField } from "../app/table-search-field";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import {
   RembehBranch,
@@ -113,7 +115,7 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
 
   const canRecordPayment = Boolean(
     session?.permissions.includes("operation.close") ||
-      session?.permissions.includes("operation.float.return"),
+    session?.permissions.includes("operation.float.return"),
   );
   const isOwner = mode === "owner";
 
@@ -147,24 +149,26 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
     return () => window.clearTimeout(boot);
   }, [isOwner, router]);
 
-  const loadBranches = useCallback(async (active: RembehSession) => {
-    if (!isOwner) return;
-    const response = await fetch(`${apiBaseUrl}/branches`, {
-      headers: {
-        Authorization: `${active.tokenType} ${active.accessToken}`,
-      },
-    });
-    const payload = await readApiJson<{
-      branches?: Array<{ id: string; name: string }>;
-      message?: string | string[];
-    }>(response);
-    if (!response.ok) {
-      throw new Error(formatApiError(payload.message));
-    }
-    const next = payload.branches ?? [];
-    setBranches(next);
-    setBranchId((current) => current || next[0]?.id || "");
-  }, [isOwner]);
+  const loadBranches = useCallback(
+    async (active: RembehSession) => {
+      if (!isOwner) return;
+      const response = await fetch(`${apiBaseUrl}/branches`, {
+        headers: {
+          Authorization: `${active.tokenType} ${active.accessToken}`,
+        },
+      });
+      const payload = await readApiJson<{
+        branches?: Array<{ id: string; name: string }>;
+        message?: string | string[];
+      }>(response);
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      const next = payload.branches ?? [];
+      setBranches(next);
+    },
+    [isOwner],
+  );
 
   const load = useCallback(
     async (active: RembehSession, selectedBranchId: string) => {
@@ -219,7 +223,7 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
     void (async () => {
       try {
         if (isOwner) await loadBranches(session);
-        await load(session, isOwner ? branchId : branch?.id ?? branchId);
+        await load(session, isOwner ? branchId : (branch?.id ?? branchId));
       } catch (caught) {
         setError(
           caught instanceof Error
@@ -343,10 +347,7 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
         setMethod("CASH");
       }
       setNotice("Shortage payment recorded.");
-      await load(
-        session,
-        isOwner ? branchId : branch?.id ?? branchId,
-      );
+      await load(session, isOwner ? branchId : (branch?.id ?? branchId));
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -367,194 +368,197 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
       user={user}
       branch={branch}
     >
-      <div className="mx-auto max-w-6xl space-y-4">
-        <header className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#0a6b55]">
-              Accountability
-            </p>
-            <h1 className="mt-1 font-[family-name:var(--font-display)] text-2xl tracking-[-0.03em] text-[#0b1220]">
-              Cash shortages
-            </h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Track who must account for a shortage and record payments until
-              cleared.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-[#0b1220] hover:bg-[#f8faf9]"
-            onClick={() =>
-              session &&
-              void load(
-                session,
-                isOwner ? branchId : branch?.id ?? branchId,
-              )
-            }
-          >
-            <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
-            Refresh
-          </button>
-        </header>
+      <div className="mx-auto max-w-[1400px] space-y-5 animate-rise">
+        <OwnerHeader
+          eyebrow={isOwner ? "All Branches" : undefined}
+          title="Shortages"
+          showReportsButton={false}
+          settingsHref={isOwner ? "/owner/settings" : "/settings"}
+          notificationScope={isOwner ? "owner" : "manager"}
+          actions={
+            <button
+              type="button"
+              onClick={() =>
+                void load(
+                  session,
+                  isOwner ? branchId : (branch?.id ?? branchId),
+                )
+              }
+              disabled={loading}
+              aria-label="Refresh shortages"
+              className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-50 disabled:opacity-60"
+            >
+              <RefreshCw
+                className={`size-4 ${loading ? "animate-spin" : ""}`}
+              />
+            </button>
+          }
+        />
+        <p className="-mt-2 text-sm font-medium text-slate-500">
+          Track who must account for a shortage and record payments until
+          cleared.
+        </p>
 
         {error ? (
-          <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+          <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
             {error}
           </p>
         ) : null}
         {notice ? (
-          <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+          <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-[var(--forest-emerald)]">
             {notice}
           </p>
         ) : null}
 
-        <div className="grid gap-3 sm:grid-cols-3">
-          <SummaryCard
-            label="Open shortages"
-            value={String(summary.openCount)}
-            hint="Still to be accounted for"
+        <section className="grid gap-2.5 sm:grid-cols-3">
+          <ShortageSummaryCard
+            title="Open shortages"
+            icon={<AlertTriangle className="size-4" />}
+            value={formatNumber(summary.openCount)}
+            context="still to be accounted for"
+            tone="warn"
           />
-          <SummaryCard
-            label="Outstanding"
-            value={<Money value={summary.outstandingTotal} currency="UGX" />}
-            hint="Total not yet paid"
-            tone="red"
+          <ShortageSummaryCard
+            title="Outstanding"
+            icon={<Scale className="size-4" />}
+            value={formatMoneyAmount(summary.outstandingTotal)}
+            context="total not yet paid"
+            prefix="UGX"
+            tone="warn"
           />
-          <SummaryCard
-            label="Cleared"
-            value={String(summary.clearedCount)}
-            hint="Fully repaid"
-            tone="green"
+          <ShortageSummaryCard
+            title="Cleared"
+            icon={<CheckCircle2 className="size-4" />}
+            value={formatNumber(summary.clearedCount)}
+            context="fully repaid"
+            tone="good"
           />
-        </div>
+        </section>
 
-        <section className="rounded-[16px] border border-[#e6ebf0] bg-white p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex rounded-xl border border-[#e6ebf0] bg-[#f8faf9] p-1">
-              {(
-                [
-                  { id: "open", label: "Open" },
-                  { id: "cleared", label: "Cleared" },
-                  { id: "all", label: "All" },
-                ] as const
-              ).map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => {
-                    setStatusFilter(item.id);
+        <section className="rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+          <div className="relative z-20 flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-3.5">
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              <h2 className="text-[15px] font-semibold text-[#0b1220]">
+                Shortage Records
+              </h2>
+              <TableSearchField
+                value={search}
+                onChange={(value) => {
+                  setSearch(value);
+                  setPage(1);
+                }}
+                placeholder="Search Shortages..."
+                title="Search by officer, ID, branch, notes, or source."
+              />
+              <select
+                value={statusFilter}
+                onChange={(event) => {
+                  setStatusFilter(event.target.value as StatusFilter);
+                  setPage(1);
+                }}
+                className="h-9 w-full rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold outline-none sm:w-[170px]"
+              >
+                <option value="open">Open</option>
+                <option value="cleared">Cleared</option>
+                <option value="all">All</option>
+              </select>
+              {isOwner ? (
+                <select
+                  value={branchId}
+                  onChange={(event) => {
+                    setBranchId(event.target.value);
                     setPage(1);
                   }}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                    statusFilter === item.id
-                      ? "bg-white text-[#0b1220] shadow-sm"
-                      : "text-slate-500 hover:text-[#0b1220]"
-                  }`}
+                  className="h-9 w-full rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold outline-none sm:w-[180px]"
                 >
-                  {item.label}
-                </button>
-              ))}
+                  <option value="">All branches</option>
+                  {branches.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
             </div>
-            {isOwner ? (
-              <select
-                value={branchId}
-                onChange={(event) => {
-                  setBranchId(event.target.value);
-                  setPage(1);
-                }}
-                className="h-9 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold outline-none"
-              >
-                <option value="">All branches</option>
-                {branches.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            ) : null}
-            <label className="ml-auto flex h-9 min-w-[200px] flex-1 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 sm:max-w-xs">
-              <Search className="size-3.5 text-slate-400" />
-              <input
-                value={search}
-                onChange={(event) => {
-                  setSearch(event.target.value);
-                  setPage(1);
-                }}
-                placeholder="Search officer, notes…"
-                className="min-w-0 flex-1 bg-transparent text-xs font-medium outline-none"
-              />
-            </label>
           </div>
 
           {loading ? (
-            <div className="mt-4">
+            <div className="p-4">
               <TableSkeleton rows={6} columns={5} />
             </div>
           ) : filtered.length === 0 ? (
-            <div className="mt-6 rounded-xl border border-dashed border-[#e6ebf0] bg-[#f8faf9] px-4 py-10 text-center">
-              <Scale className="mx-auto size-8 text-slate-300" />
-              <p className="mt-3 text-sm font-semibold text-slate-600">
-                No shortages in this view
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                Shortages appear when a float return or day close has a short
-                cash variance.
-              </p>
-            </div>
+            <p className="px-3 py-8 text-center text-[11px] text-slate-500">
+              No shortages match this view.
+            </p>
           ) : (
-            <div className="mt-3 overflow-x-auto">
-              <table className="w-full min-w-[720px] border-collapse text-left text-[12px]">
-                <thead>
-                  <tr className="border-b border-[#e6ebf0] text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
-                    <th className="py-2 pr-3">Officer</th>
-                    {isOwner ? <th className="py-2 pr-3">Branch</th> : null}
-                    <th className="py-2 pr-3">Date</th>
-                    <th className="py-2 pr-3">Source</th>
-                    <th className="py-2 pr-3 text-right">Original</th>
-                    <th className="py-2 pr-3 text-right">Outstanding</th>
-                    <th className="py-2 pr-3">Status</th>
-                    <th className="py-2 text-right"> </th>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] table-fixed text-left text-[11px]">
+                <thead className="border-b border-[#dfe5eb] bg-[#e8edf2] text-[10px] font-semibold text-slate-600">
+                  <tr>
+                    <th className="px-3 py-2.5">Officer</th>
+                    {isOwner ? <th className="px-2 py-2.5">Branch</th> : null}
+                    <th className="px-2 py-2.5">Date</th>
+                    <th className="px-2 py-2.5">Source</th>
+                    <th className="px-2 py-2.5 text-right">Original</th>
+                    <th className="px-2 py-2.5 text-right">Outstanding</th>
+                    <th className="px-2 py-2.5">Status</th>
+                    <th className="px-1 py-2.5 text-right">
+                      <span className="sr-only">Actions</span>
+                    </th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-[#edf1f5]">
                   {paged.items.map((row) => (
                     <tr
                       key={row.id}
-                      className="border-b border-[#eef2f4] last:border-0"
+                      className={`cursor-pointer transition-colors hover:bg-[#eef7f2] ${
+                        selectedId === row.id
+                          ? "bg-[#eef7f2] shadow-[inset_3px_0_0_0_#07885f]"
+                          : ""
+                      }`}
+                      onClick={() => {
+                        setNotice(null);
+                        setSelectedId(row.id);
+                      }}
                     >
-                      <td className="py-3 pr-3">
-                        <p className="font-bold text-[#0b1220]">
+                      <td className="px-3 py-2.5 align-top">
+                        <p className="break-words font-semibold leading-snug text-[#0b1220]">
                           {row.responsibleName}
                         </p>
-                        <p className="text-[11px] font-medium text-slate-500">
+                        <p className="mt-0.5 break-all font-mono text-[10px] text-slate-500">
                           {row.responsiblePublicId ?? "—"}
                         </p>
                       </td>
                       {isOwner ? (
-                        <td className="py-3 pr-3 font-medium text-slate-600">
+                        <td className="px-2 py-2.5 align-top text-slate-600">
                           {row.branchName ?? "—"}
                         </td>
                       ) : null}
-                      <td className="py-3 pr-3 tabular-nums text-slate-600">
+                      <td className="px-2 py-2.5 align-top tabular-nums text-slate-600">
                         {row.operationDate}
                       </td>
-                      <td className="py-3 pr-3 text-slate-600">
+                      <td className="px-2 py-2.5 align-top text-slate-600">
                         {sourceLabel(row.sourceType)}
                       </td>
-                      <td className="py-3 pr-3 text-right font-semibold tabular-nums">
-                        <Money value={row.amountOriginal} currency="UGX" />
+                      <td className="px-2 py-2.5 align-top text-right">
+                        <p className="break-all font-bold tabular-nums text-[#0b1220]">
+                          <Money value={row.amountOriginal} currency="UGX" />
+                        </p>
                       </td>
-                      <td className="py-3 pr-3 text-right font-bold tabular-nums text-red-700">
-                        <Money value={row.amountOutstanding} currency="UGX" />
+                      <td className="px-2 py-2.5 align-top text-right">
+                        <p className="break-all font-bold tabular-nums text-[#c23b3b]">
+                          <Money value={row.amountOutstanding} currency="UGX" />
+                        </p>
                       </td>
-                      <td className="py-3 pr-3">
+                      <td className="px-2 py-2.5 align-top">
                         <StatusBadge status={row.status} />
                       </td>
-                      <td className="py-3 text-right">
+                      <td className="px-2 py-2.5 align-top text-right">
                         <button
                           type="button"
-                          className="rounded-lg border border-[#e6ebf0] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#003f35] hover:bg-[#f4f7f6]"
-                          onClick={() => {
+                          className="rounded-lg border border-[#e6ebf0] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8faf9]"
+                          onClick={(event) => {
+                            event.stopPropagation();
                             setNotice(null);
                             setSelectedId(row.id);
                           }}
@@ -566,99 +570,95 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
                   ))}
                 </tbody>
               </table>
-              <PaginationControls
-                page={paged.currentPage}
-                pageSize={pageSize}
-                total={filtered.length}
-                itemLabel="shortages"
-                onPageChange={setPage}
-                onPageSizeChange={(next) => {
-                  setPageSize(next);
-                  setPage(1);
-                }}
-              />
+              <div className="border-t border-[#edf1f5] px-3 py-2">
+                <PaginationControls
+                  page={paged.currentPage}
+                  pageSize={pageSize}
+                  total={filtered.length}
+                  itemLabel="shortages"
+                  onPageChange={setPage}
+                  onPageSizeChange={(next) => {
+                    setPageSize(next);
+                    setPage(1);
+                  }}
+                />
+              </div>
             </div>
           )}
         </section>
       </div>
 
       {selectedId ? (
-        <div className="fixed inset-0 z-50 flex justify-end bg-[rgba(8,16,28,0.48)] backdrop-blur-[2px]">
+        <div className="fixed inset-0 z-50 flex justify-end bg-[rgba(8,15,31,0.36)] backdrop-blur-[2px]">
           <button
             type="button"
-            className="hidden flex-1 cursor-default sm:block"
-            aria-label="Close"
+            className="absolute inset-0"
+            aria-label="Close shortage panel"
             onClick={() => setSelectedId(null)}
           />
-          <aside className="flex h-full w-full max-w-[440px] flex-col bg-[#f4f7f6] shadow-[-28px_0_70px_rgba(15,23,42,0.22)]">
-            <header className="bg-[linear-gradient(135deg,#003f35_0%,#0a6b55_58%,#12805f_100%)] px-5 pb-5 pt-4 text-white">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-white/65">
-                    Shortage detail
-                  </p>
-                  <h2 className="mt-1 text-lg font-bold">
-                    {selected?.responsibleName ?? "Loading…"}
-                  </h2>
-                  <p className="mt-1 text-xs text-white/75">
-                    {selected
-                      ? `${selected.operationDate} · ${sourceLabel(selected.sourceType)}`
-                      : " "}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  className="grid size-9 place-items-center rounded-full border border-white/20 bg-white/10"
-                  onClick={() => setSelectedId(null)}
-                  aria-label="Close"
-                >
-                  <X className="size-4" />
-                </button>
+          <aside className="relative z-10 flex h-full w-full max-w-lg flex-col border-l border-[#e6ebf0] bg-white shadow-[-18px_0_44px_rgba(15,23,42,0.18)]">
+            <header className="flex items-start justify-between gap-3 border-b border-[#edf1f5] px-4 py-3">
+              <div className="min-w-0">
+                <h2 className="text-lg font-bold text-[#0b1220]">
+                  {selected?.responsibleName ?? "Shortage detail"}
+                </h2>
+                <p className="text-xs text-slate-500">
+                  {selected
+                    ? `${selected.operationDate} · ${sourceLabel(selected.sourceType)}`
+                    : "Loading shortage details…"}
+                </p>
               </div>
-              {selected ? (
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  <div className="rounded-xl border border-white/15 bg-white/10 px-3 py-2.5">
-                    <p className="text-[10px] font-semibold uppercase text-white/65">
-                      Outstanding
-                    </p>
-                    <p className="mt-1 text-sm font-bold tabular-nums">
-                      <Money
-                        value={selected.amountOutstanding}
-                        currency="UGX"
-                      />
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-white/15 bg-white/10 px-3 py-2.5">
-                    <p className="text-[10px] font-semibold uppercase text-white/65">
-                      Paid so far
-                    </p>
-                    <p className="mt-1 text-sm font-bold tabular-nums">
-                      <Money
-                        value={
-                          selected.amountPaid ??
-                          selected.amountOriginal - selected.amountOutstanding
-                        }
-                        currency="UGX"
-                      />
-                    </p>
-                  </div>
-                </div>
-              ) : null}
+              <button
+                type="button"
+                className="grid size-8 place-items-center rounded-xl border border-[#e6ebf0]"
+                onClick={() => setSelectedId(null)}
+                aria-label="Close"
+              >
+                <X className="size-4" />
+              </button>
             </header>
 
-            <div className="flex-1 overflow-y-auto px-4 py-4">
+            <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
               {detailLoading || !selected ? (
-                <div className="flex items-center gap-2 text-sm text-slate-500">
+                <div className="flex items-center gap-2 text-sm font-medium text-slate-500">
                   <Loader2 className="size-4 animate-spin" />
                   Loading…
                 </div>
               ) : (
-                <div className="space-y-3">
-                  <div className="rounded-2xl border border-[#e6ebf0] bg-white p-4">
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-xl border border-[#e6ebf0] bg-[#f8faf9] px-3 py-2.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+                        Outstanding
+                      </p>
+                      <p className="mt-1 text-[15px] font-bold tabular-nums text-[#c23b3b]">
+                        <Money
+                          value={selected.amountOutstanding}
+                          currency="UGX"
+                        />
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-[#e6ebf0] bg-[#f8faf9] px-3 py-2.5">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+                        Paid so far
+                      </p>
+                      <p className="mt-1 text-[15px] font-bold tabular-nums text-[#0b1220]">
+                        <Money
+                          value={
+                            selected.amountPaid ??
+                            selected.amountOriginal - selected.amountOutstanding
+                          }
+                          currency="UGX"
+                        />
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-[#e6ebf0] p-4">
                     <div className="flex items-center justify-between gap-2">
                       <StatusBadge status={selected.status} />
                       {selected.branchName ? (
-                        <span className="text-[11px] font-semibold text-slate-500">
+                        <span className="text-[11px] font-medium text-slate-500">
                           {selected.branchName}
                         </span>
                       ) : null}
@@ -694,8 +694,8 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
                   </div>
 
                   {canRecordPayment && selected.status !== "CLEARED" ? (
-                    <div className="rounded-2xl border border-[#e6ebf0] bg-white p-4">
-                      <p className="text-sm font-bold text-[#0b1220]">
+                    <div className="rounded-xl border border-[#e6ebf0] p-4">
+                      <p className="text-[15px] font-semibold text-[#0b1220]">
                         Record payment
                       </p>
                       <p className="mt-1 text-xs text-slate-500">
@@ -703,7 +703,7 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
                       </p>
                       <div className="mt-3 grid gap-2 sm:grid-cols-2">
                         <label className="block">
-                          <span className="text-[10px] font-semibold uppercase text-slate-500">
+                          <span className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
                             Amount
                           </span>
                           <input
@@ -712,11 +712,11 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
                             step="0.01"
                             value={amount}
                             onChange={(event) => setAmount(event.target.value)}
-                            className="mt-1 h-10 w-full rounded-xl border border-[#e6ebf0] px-3 text-sm font-semibold outline-none"
+                            className="mt-1 h-10 w-full rounded-xl border border-[#e6ebf0] px-3 text-sm font-semibold text-[#0b1220] outline-none"
                           />
                         </label>
                         <label className="block">
-                          <span className="text-[10px] font-semibold uppercase text-slate-500">
+                          <span className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
                             Method
                           </span>
                           <select
@@ -738,13 +738,13 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
                         </label>
                       </div>
                       <label className="mt-2 block">
-                        <span className="text-[10px] font-semibold uppercase text-slate-500">
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
                           Notes
                         </span>
                         <input
                           value={notes}
                           onChange={(event) => setNotes(event.target.value)}
-                          className="mt-1 h-10 w-full rounded-xl border border-[#e6ebf0] px-3 text-sm outline-none"
+                          className="mt-1 h-10 w-full rounded-xl border border-[#e6ebf0] px-3 text-sm font-medium outline-none"
                           placeholder="Optional"
                         />
                       </label>
@@ -752,7 +752,7 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
                         type="button"
                         disabled={saving}
                         onClick={() => void recordPayment()}
-                        className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[#003f35] text-xs font-semibold text-white disabled:opacity-50"
+                        className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--forest-emerald)] text-xs font-semibold text-white disabled:opacity-55"
                       >
                         {saving ? (
                           <Loader2 className="size-3.5 animate-spin" />
@@ -764,12 +764,12 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
                     </div>
                   ) : null}
 
-                  <div className="rounded-2xl border border-[#e6ebf0] bg-white p-4">
-                    <p className="text-sm font-bold text-[#0b1220]">
+                  <div className="rounded-xl border border-[#e6ebf0] p-4">
+                    <p className="text-[15px] font-semibold text-[#0b1220]">
                       Payment history
                     </p>
                     {selected.payments.length === 0 ? (
-                      <p className="mt-3 text-xs font-medium text-slate-500">
+                      <p className="mt-3 text-sm text-slate-500">
                         No payments recorded yet.
                       </p>
                     ) : (
@@ -777,11 +777,11 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
                         {selected.payments.map((payment) => (
                           <li
                             key={payment.id}
-                            className="rounded-xl border border-[#eef2f4] bg-[#fbfcfc] px-3 py-2.5"
+                            className="rounded-xl border border-[#edf1f5] bg-[#f8faf9] px-3 py-2.5"
                           >
                             <div className="flex items-start justify-between gap-2">
                               <div>
-                                <p className="text-sm font-bold tabular-nums text-[#0b1220]">
+                                <p className="text-[13px] font-bold tabular-nums text-[#0b1220]">
                                   <Money
                                     value={payment.amount}
                                     currency="UGX"
@@ -789,7 +789,9 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
                                 </p>
                                 <p className="mt-0.5 text-[11px] font-medium text-slate-500">
                                   {methodLabel(payment.method)} ·{" "}
-                                  {payment.paidAt.slice(0, 16).replace("T", " ")}
+                                  {payment.paidAt
+                                    .slice(0, 16)
+                                    .replace("T", " ")}
                                 </p>
                                 {payment.recordedByName ? (
                                   <p className="text-[11px] text-slate-500">
@@ -802,7 +804,7 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
                                   </p>
                                 ) : null}
                               </div>
-                              <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />
+                              <CheckCircle2 className="size-4 shrink-0 text-[var(--forest-emerald)]" />
                             </div>
                           </li>
                         ))}
@@ -819,48 +821,56 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
   );
 }
 
-function SummaryCard({
-  label,
+function ShortageSummaryCard({
+  title,
+  icon,
   value,
-  hint,
+  context,
+  prefix,
   tone,
 }: {
-  label: string;
-  value: ReactNode;
-  hint: string;
-  tone?: "red" | "green";
+  title: string;
+  icon: ReactNode;
+  value: string;
+  context: string;
+  prefix?: string;
+  tone: "good" | "warn";
 }) {
   return (
-    <div className="rounded-[16px] border border-[#e6ebf0] bg-white px-4 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
-      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-slate-500">
-        {label}
-      </p>
-      <p
-        className={`mt-1 text-lg font-bold tabular-nums ${
-          tone === "red"
-            ? "text-red-700"
-            : tone === "green"
-              ? "text-emerald-700"
-              : "text-[#0b1220]"
-        }`}
-      >
-        {value}
-      </p>
-      <p className="mt-0.5 text-[11px] font-medium text-slate-500">{hint}</p>
-    </div>
+    <article className="overflow-hidden rounded-[14px] border border-[#e8edf2] bg-white p-3 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+      <div className="flex items-center gap-2">
+        <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[#e9f8ef] text-[#07885f] [&_svg]:size-3.5">
+          {icon}
+        </span>
+        <h3 className="truncate text-[13px] font-bold tracking-[-0.02em] text-[#0b1220]">
+          {title}
+        </h3>
+      </div>
+      <div className="mt-2.5">
+        <p
+          className={`text-[clamp(0.95rem,1.35vw,1.35rem)] font-bold leading-none tracking-[-0.03em] ${
+            tone === "warn" ? "text-[#c23b3b]" : "text-[#0b1220]"
+          }`}
+        >
+          {prefix ? (
+            <span className="mr-1 text-[0.85em] font-medium text-slate-500">
+              {prefix}
+            </span>
+          ) : null}
+          {value}
+        </p>
+        <p className="mt-1 text-[11px] font-medium leading-tight text-slate-500">
+          {context}
+        </p>
+      </div>
+    </article>
   );
 }
 
-function DetailRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: ReactNode;
-}) {
+function DetailRow({ label, value }: { label: string; value: ReactNode }) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-[#eef2f4] pb-2 last:border-0 last:pb-0">
-      <dt className="text-slate-500">{label}</dt>
+    <div className="flex items-start justify-between gap-3 border-b border-[#edf1f5] pb-2 last:border-0 last:pb-0">
+      <dt className="font-medium text-slate-500">{label}</dt>
       <dd className="text-right font-semibold text-[#0b1220]">{value}</dd>
     </div>
   );
@@ -869,7 +879,7 @@ function DetailRow({
 function StatusBadge({ status }: { status: CashShortageRow["status"] }) {
   if (status === "CLEARED") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-emerald-700">
+      <span className="inline-flex items-center gap-1 rounded-full bg-[#e9f8ef] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-[#07885f]">
         <CheckCircle2 className="size-3" />
         Cleared
       </span>
@@ -877,14 +887,14 @@ function StatusBadge({ status }: { status: CashShortageRow["status"] }) {
   }
   if (status === "PARTIALLY_PAID") {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-amber-700">
+      <span className="inline-flex items-center gap-1 rounded-full bg-[#fff3e8] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-[#d97706]">
         <AlertTriangle className="size-3" />
         Partial
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-red-700">
+    <span className="inline-flex items-center gap-1 rounded-full bg-[#fdecec] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-[#c23b3b]">
       <AlertTriangle className="size-3" />
       Open
     </span>

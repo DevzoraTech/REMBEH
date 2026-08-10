@@ -55,14 +55,15 @@ export class OperationsRepository {
     });
   }
 
-  listBranchDailyStatuses(input: {
-    tenantId: string;
-    operationDate: Date;
-  }) {
+  listBranchDailyStatuses(input: { tenantId: string; operationDate: Date }) {
     return this.prisma.branch.findMany({
       where: {
         tenantId: input.tenantId,
-        createdAt: { lte: new Date(input.operationDate.getTime() + 24 * 60 * 60 * 1000 - 1) },
+        createdAt: {
+          lte: new Date(
+            input.operationDate.getTime() + 24 * 60 * 60 * 1000 - 1,
+          ),
+        },
       },
       orderBy: { name: 'asc' },
       include: {
@@ -927,9 +928,21 @@ export class OperationsRepository {
       select: {
         id: true,
         templateName: true,
+        surname: true,
+        givenNames: true,
+        phone: true,
+        loanPurpose: true,
+        durationDays: true,
         principalAmount: true,
         processingFee: true,
+        submittedAt: true,
         loanId: true,
+        officer: {
+          select: { id: true, displayName: true, publicId: true },
+        },
+        customer: {
+          select: { id: true, fullName: true, phone: true },
+        },
         loan: {
           select: {
             id: true,
@@ -967,14 +980,49 @@ export class OperationsRepository {
       select: {
         id: true,
         amount: true,
+        method: true,
+        paidAt: true,
+        receiptNumber: true,
+        note: true,
+        recordedBy: {
+          select: { id: true, displayName: true, publicId: true },
+        },
         loan: {
           select: {
+            id: true,
+            customer: {
+              select: { id: true, fullName: true, phone: true },
+            },
             application: {
               select: { templateName: true },
             },
           },
         },
       },
+    });
+  }
+
+  listCashShortagesForOperationDay(input: {
+    tenantId: string;
+    branchId: string;
+    operationDate: Date;
+  }) {
+    return this.prisma.cashShortage.findMany({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        operationDate: input.operationDate,
+      },
+      include: {
+        responsibleUser: {
+          select: { id: true, displayName: true, publicId: true },
+        },
+        createdBy: { select: { id: true, displayName: true } },
+        payments: {
+          select: { amount: true },
+        },
+      },
+      orderBy: [{ createdAt: 'asc' }],
     });
   }
 

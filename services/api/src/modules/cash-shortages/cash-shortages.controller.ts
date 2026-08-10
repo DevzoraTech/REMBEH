@@ -23,9 +23,7 @@ import {
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
-import { RequirePermissions } from '../../common/auth/permissions.decorator';
 import { PermissionsGuard } from '../../common/auth/permissions.guard';
-import { OPERATIONS_PERMISSIONS } from '../operations/operations.permissions';
 import { CashShortagesService } from './cash-shortages.service';
 
 class RecordShortagePaymentDto {
@@ -51,7 +49,6 @@ export class CashShortagesController {
   constructor(private readonly shortagesService: CashShortagesService) {}
 
   @Get()
-  @RequirePermissions(OPERATIONS_PERMISSIONS.read)
   list(
     @CurrentUser() user: AuthenticatedUser,
     @Query('branchId') branchId?: string,
@@ -66,7 +63,6 @@ export class CashShortagesController {
   }
 
   @Get(':shortageId')
-  @RequirePermissions(OPERATIONS_PERMISSIONS.read)
   getOne(
     @CurrentUser() user: AuthenticatedUser,
     @Param('shortageId', ParseUUIDPipe) shortageId: string,
@@ -75,7 +71,6 @@ export class CashShortagesController {
   }
 
   @Post(':shortageId/payments')
-  @RequirePermissions(OPERATIONS_PERMISSIONS.close)
   recordPayment(
     @CurrentUser() user: AuthenticatedUser,
     @Param('shortageId', ParseUUIDPipe) shortageId: string,

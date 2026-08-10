@@ -22,7 +22,7 @@ class PushNotificationService {
   PushNotificationService(this._sessionStore);
 
   final SessionStore _sessionStore;
-  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+  late final FirebaseMessaging _messaging;
   final FlutterLocalNotificationsPlugin _local =
       FlutterLocalNotificationsPlugin();
 
@@ -37,6 +37,8 @@ class PushNotificationService {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+
+    _messaging = FirebaseMessaging.instance;
 
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosInit = DarwinInitializationSettings(
@@ -76,9 +78,15 @@ class PushNotificationService {
       );
     }
 
-    final token = await _messaging.getToken();
-    if (token != null) {
-      await _registerToken(token);
+    try {
+      final token = await _messaging.getToken();
+      if (token != null) {
+        await _registerToken(token);
+      }
+    } catch (error, stack) {
+      debugPrint('Push token fetch failed: $error');
+      debugPrint('$stack');
+      return;
     }
 
     _messaging.onTokenRefresh.listen(_registerToken);

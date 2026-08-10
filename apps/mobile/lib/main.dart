@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'screens/account_locked_screen.dart';
 import 'screens/agent_shell.dart';
+import 'screens/branch_workspace_screen.dart';
 import 'screens/force_update_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/profile/agent_selfie_capture_screen.dart';
@@ -24,11 +25,7 @@ Future<void> main() async {
 }
 
 class RembehApp extends StatelessWidget {
-  const RembehApp({
-    super.key,
-    required this.sessionStore,
-    this.pushService,
-  });
+  const RembehApp({super.key, required this.sessionStore, this.pushService});
 
   final SessionStore sessionStore;
   final PushNotificationService? pushService;
@@ -39,19 +36,13 @@ class RembehApp extends StatelessWidget {
       title: 'REMBEH',
       debugShowCheckedModeBanner: false,
       theme: buildRembehTheme(),
-      home: _BootScreen(
-        sessionStore: sessionStore,
-        pushService: pushService,
-      ),
+      home: _BootScreen(sessionStore: sessionStore, pushService: pushService),
     );
   }
 }
 
 class _BootScreen extends StatefulWidget {
-  const _BootScreen({
-    required this.sessionStore,
-    this.pushService,
-  });
+  const _BootScreen({required this.sessionStore, this.pushService});
 
   final SessionStore sessionStore;
   final PushNotificationService? pushService;
@@ -76,7 +67,9 @@ class _BootScreenState extends State<_BootScreen> {
         MaterialPageRoute(
           builder: (_) => ForceUpdateScreen(
             updateResult: update,
-            onSkip: update.isBlocking ? null : () => Navigator.of(context).pop(),
+            onSkip: update.isBlocking
+                ? null
+                : () => Navigator.of(context).pop(),
           ),
         ),
       );
@@ -93,7 +86,12 @@ class _BootScreenState extends State<_BootScreen> {
 
     if (session != null) {
       if (!session.isAccessExpired) {
-        await widget.pushService?.requestPermissionAndSync();
+        try {
+          await widget.pushService?.requestPermissionAndSync();
+        } catch (error, stack) {
+          debugPrint('Push permission sync failed during boot: $error');
+          debugPrint('$stack');
+        }
         if (!mounted) return;
         _goShell(session);
         return;
@@ -105,7 +103,12 @@ class _BootScreenState extends State<_BootScreen> {
           final refreshed = await ApiClient(store).refreshSession(session);
           if (!mounted) return;
           if (refreshed != null) {
-            await widget.pushService?.requestPermissionAndSync();
+            try {
+              await widget.pushService?.requestPermissionAndSync();
+            } catch (error, stack) {
+              debugPrint('Push permission sync failed during refresh: $error');
+              debugPrint('$stack');
+            }
             if (!mounted) return;
             _goShell(refreshed);
             return;
@@ -139,27 +142,25 @@ class _BootScreenState extends State<_BootScreen> {
 
   void _goAccountLocked(String message) {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => AccountLockedScreen(message: message),
-      ),
+      MaterialPageRoute(builder: (_) => AccountLockedScreen(message: message)),
     );
   }
 
   void _goShell(RembehSession session) {
     final next = session.requiresProfilePhoto && !session.hasProfilePhoto
         ? AgentSelfieCaptureScreen(session: session)
+        : session.canUseBranchWorkspace
+        ? BranchWorkspaceScreen(session: session)
         : AgentShell(session: session);
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => next),
-    );
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => next));
   }
 
   @override
   Widget build(BuildContext context) {
     return const Scaffold(
-      body: Center(
-        child: CircularProgressIndicator(color: forestEmerald),
-      ),
+      body: Center(child: CircularProgressIndicator(color: forestEmerald)),
     );
   }
 }

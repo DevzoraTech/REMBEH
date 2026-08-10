@@ -1,0 +1,17 @@
+{
+  "name": "coglim-export",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "export": "node export-buremba.mjs",
+    "export:headed": "HEADLESS=0 node export-buremba.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "playwright": "^1.62.1"
+  }
+}

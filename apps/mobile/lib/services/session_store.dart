@@ -33,6 +33,7 @@ class RembehSession {
   final String userEmail;
   final String? roleName;
   final String workspaceName;
+
   /// Organisation / tenant id from auth (workspace.id).
   final String? tenantId;
   final String? refreshToken;
@@ -40,6 +41,7 @@ class RembehSession {
   final String? branchId;
   final String? branchName;
   final String? branchAddress;
+
   /// Human-reportable agent id (e.g. A-48291).
   final String? publicId;
   final bool hasProfilePhoto;
@@ -55,6 +57,37 @@ class RembehSession {
         role.contains('cashier') ||
         role.contains('supervisor') ||
         role.contains('manager') ||
+        role.contains('recovery') ||
+        permissions.contains('customer.create') ||
+        permissions.contains('loan.create') ||
+        permissions.contains('collection.create');
+  }
+
+  bool hasPermission(String permission) => permissions.contains(permission);
+
+  bool get canUseBranchWorkspace {
+    final role = (roleName ?? '').toLowerCase();
+    return role.contains('manager') ||
+        role.contains('cashier') ||
+        role.contains('supervisor') ||
+        permissions.any(
+          (permission) =>
+              permission == 'operation.read' ||
+              permission == 'operation.open' ||
+              permission == 'operation.cash.topup' ||
+              permission == 'operation.float.manage' ||
+              permission == 'operation.float.return' ||
+              permission == 'operation.expense.create' ||
+              permission == 'operation.close' ||
+              permission == 'operation.report.review',
+        );
+  }
+
+  bool get canUseFieldWorkspace {
+    final role = (roleName ?? '').toLowerCase();
+    return role.contains('agent') ||
+        role.contains('field officer') ||
+        role.contains('loan officer') ||
         role.contains('recovery') ||
         permissions.contains('customer.create') ||
         permissions.contains('loan.create') ||
@@ -141,45 +174,45 @@ class RembehSession {
   }
 
   Map<String, dynamic> toJson() => {
-        'accessToken': accessToken,
-        'expiresAt': expiresAt,
-        'tokenType': tokenType,
-        'permissions': permissions,
-        'userName': userName,
-        'userEmail': userEmail,
-        'roleName': roleName,
-        'workspaceName': workspaceName,
-        'tenantId': tenantId,
-        'refreshToken': refreshToken,
-        'refreshExpiresAt': refreshExpiresAt,
-        'branchId': branchId,
-        'branchName': branchName,
-        'branchAddress': branchAddress,
-        'publicId': publicId,
-        'hasProfilePhoto': hasProfilePhoto,
-        'profilePhotoUrl': profilePhotoUrl,
-        'profilePhotoStorageKey': profilePhotoStorageKey,
-      };
+    'accessToken': accessToken,
+    'expiresAt': expiresAt,
+    'tokenType': tokenType,
+    'permissions': permissions,
+    'userName': userName,
+    'userEmail': userEmail,
+    'roleName': roleName,
+    'workspaceName': workspaceName,
+    'tenantId': tenantId,
+    'refreshToken': refreshToken,
+    'refreshExpiresAt': refreshExpiresAt,
+    'branchId': branchId,
+    'branchName': branchName,
+    'branchAddress': branchAddress,
+    'publicId': publicId,
+    'hasProfilePhoto': hasProfilePhoto,
+    'profilePhotoUrl': profilePhotoUrl,
+    'profilePhotoStorageKey': profilePhotoStorageKey,
+  };
 
   /// Non-secret profile fields kept in SharedPreferences.
   Map<String, dynamic> toProfileJson() => {
-        'expiresAt': expiresAt,
-        'tokenType': tokenType,
-        'permissions': permissions,
-        'userName': userName,
-        'userEmail': userEmail,
-        'roleName': roleName,
-        'workspaceName': workspaceName,
-        'tenantId': tenantId,
-        'refreshExpiresAt': refreshExpiresAt,
-        'branchId': branchId,
-        'branchName': branchName,
-        'branchAddress': branchAddress,
-        'publicId': publicId,
-        'hasProfilePhoto': hasProfilePhoto,
-        'profilePhotoUrl': profilePhotoUrl,
-        'profilePhotoStorageKey': profilePhotoStorageKey,
-      };
+    'expiresAt': expiresAt,
+    'tokenType': tokenType,
+    'permissions': permissions,
+    'userName': userName,
+    'userEmail': userEmail,
+    'roleName': roleName,
+    'workspaceName': workspaceName,
+    'tenantId': tenantId,
+    'refreshExpiresAt': refreshExpiresAt,
+    'branchId': branchId,
+    'branchName': branchName,
+    'branchAddress': branchAddress,
+    'publicId': publicId,
+    'hasProfilePhoto': hasProfilePhoto,
+    'profilePhotoUrl': profilePhotoUrl,
+    'profilePhotoStorageKey': profilePhotoStorageKey,
+  };
 
   factory RembehSession.fromJson(Map<String, dynamic> json) {
     return RembehSession(
@@ -248,8 +281,9 @@ class SessionStore {
     final legacy = prefs.getString(_legacyKey);
     if (legacy != null && legacy.isNotEmpty) {
       try {
-        final session =
-            RembehSession.fromJson(jsonDecode(legacy) as Map<String, dynamic>);
+        final session = RembehSession.fromJson(
+          jsonDecode(legacy) as Map<String, dynamic>,
+        );
         if (session.accessToken.isNotEmpty) {
           await save(session);
           return session;

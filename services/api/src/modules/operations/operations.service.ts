@@ -579,7 +579,7 @@ export class OperationsService {
     }
 
     const [previousClosed, pendingClosure] = await Promise.all([
-      this.repository.findLatestClosedBefore({
+      this.findLatestNonEmptyClosedBefore({
         tenantId: user.tenantId,
         branchId: branch.id,
         beforeDate: bounds.dateOnly,
@@ -1236,6 +1236,7 @@ export class OperationsService {
       agentFloats,
       loansIssuedToday,
       collectionsWithProduct,
+      cashShortages,
       previousClosed,
     ] = await Promise.all([
       this.repository.sumFloatIssued({
@@ -1283,6 +1284,11 @@ export class OperationsService {
         branchId: operation.branchId,
         dayStart,
         dayEnd,
+      }),
+      this.repository.listCashShortagesForOperationDay({
+        tenantId: operation.tenantId,
+        branchId: operation.branchId,
+        operationDate: operation.operationDate,
       }),
       this.repository.findLatestClosedBefore({
         tenantId: operation.tenantId,
@@ -1381,6 +1387,27 @@ export class OperationsService {
     const repaymentsByProduct = this.buildRepaymentsByProduct(
       collectionsWithProduct,
     );
+    const loansIssued = this.buildLoanIssuedDetails(
+      loansIssuedToday,
+      operation.operationDate,
+    );
+    const repayments = this.buildRepaymentDetails(collectionsWithProduct);
+    const processingFees = this.buildProcessingFeeDetails(
+      loansIssuedToday,
+      operation.operationDate,
+    );
+    const closingVariance =
+      closingBalance == null
+        ? null
+        : this.roundMoney(closingBalance - expectedClosingBalance);
+    const variances = this.buildVarianceDetails({
+      operation,
+      agentReturns,
+      closingVariance,
+      expectedClosingBalance,
+      closingBalance,
+      cashShortages,
+    });
 
     return {
       id: operation.id,
@@ -1431,10 +1458,7 @@ export class OperationsService {
       branchCashRemaining,
       expectedClosingBalance,
       closingBalance,
-      closingVariance:
-        closingBalance == null
-          ? null
-          : this.roundMoney(closingBalance - expectedClosingBalance),
+      closingVariance,
       closingNotes: operation.closingNotes,
       loansIssuedCount: loansAgg._count._all,
       loansIssuedPrincipal,
@@ -1444,6 +1468,10 @@ export class OperationsService {
       loansByProduct,
       repaymentsByProduct,
       feesByProduct,
+      loansIssued,
+      repayments,
+      processingFees,
+      variances,
       previousReportReference:
         previousClosed == null
           ? null
@@ -1550,7 +1578,7 @@ export class OperationsService {
     operation: DailyOperationContract,
   ): Prisma.InputJsonObject {
     return {
-      version: 2,
+      version: 3,
       reportType: 'daily_operations_close',
       operation: {
         id: operation.id,
@@ -1603,10 +1631,213 @@ export class OperationsService {
       loansByProduct: operation.loansByProduct,
       repaymentsByProduct: operation.repaymentsByProduct,
       feesByProduct: operation.feesByProduct,
+      loansIssued: operation.loansIssued,
+      repayments: operation.repayments,
+      processingFees: operation.processingFees,
+      variances: operation.variances,
       previousReportReference: operation.previousReportReference,
       closingNotes: operation.closingNotes,
       generatedAt: new Date().toISOString(),
     };
+  }
+
+  private buildLoanIssuedDetails(
+    loans: Awaited<ReturnType<OperationsRepository['listLoansIssuedToday']>>,
+    fallbackDate = new Date(),
+  ) {
+    return loans.map((loan) => {
+      const principal = this.decimalToNumber(loan.principalAmount);
+      const recoveredToday = this.roundMoney(
+        (loan.loan?.repayments ?? []).reduce(
+          (total, repayment) => total + this.decimalToNumber(repayment.amount),
+          0,
+        ),
+      );
+      const outstandingBalance = loan.loan
+        ? this.decimalToNumber(loan.loan.balance)
+        : this.roundMoney(Math.max(principal - recoveredToday, 0));
+      const borrowerName =
+        loan.customer?.fullName?.trim() ||
+        [loan.givenNames, loan.surname].filter(Boolean).join(' ').trim() ||
+        'Borrower';
+
+      return {
+        id: loan.id,
+        loanId: loan.loanId,
+        borrowerName,
+        borrowerPhone: loan.customer?.phone ?? loan.phone ?? null,
+        product: loan.templateName?.trim() || 'Loan',
+        principalAmount: principal,
+        processingFee: this.decimalToNumber(loan.processingFee),
+        recoveredToday,
+        outstandingBalance,
+        issuedAt: (loan.submittedAt ?? fallbackDate).toISOString(),
+        officerName: loan.officer.displayName,
+        officerPublicId: loan.officer.publicId,
+        durationDays: loan.durationDays,
+        purpose: loan.loanPurpose,
+      };
+    });
+  }
+
+  private buildRepaymentDetails(
+    repayments: Awaited<
+      ReturnType<OperationsRepository['listCollectionsWithProduct']>
+    >,
+  ) {
+    return repayments.map((repayment) => ({
+      id: repayment.id,
+      loanId: repayment.loan.id,
+      borrowerName: repayment.loan.customer.fullName,
+      borrowerPhone: repayment.loan.customer.phone,
+      product:
+        repayment.loan.application?.templateName?.trim() || 'Loan repayment',
+      amount: this.decimalToNumber(repayment.amount),
+      paidAt: repayment.paidAt.toISOString(),
+      method: repayment.method,
+      receiptNumber: repayment.receiptNumber,
+      recordedByName: repayment.recordedBy.displayName,
+      recordedByPublicId: repayment.recordedBy.publicId,
+      note: repayment.note,
+    }));
+  }
+
+  private buildProcessingFeeDetails(
+    loans: Awaited<ReturnType<OperationsRepository['listLoansIssuedToday']>>,
+    fallbackDate = new Date(),
+  ) {
+    return loans
+      .map((loan) => {
+        const fee = this.decimalToNumber(loan.processingFee);
+        if (fee <= 0) return null;
+        const borrowerName =
+          loan.customer?.fullName?.trim() ||
+          [loan.givenNames, loan.surname].filter(Boolean).join(' ').trim() ||
+          'Borrower';
+        return {
+          id: `${loan.id}-fee`,
+          loanId: loan.loanId,
+          borrowerName,
+          product: loan.templateName?.trim() || 'Loan',
+          amount: fee,
+          receivedAt: (loan.submittedAt ?? fallbackDate).toISOString(),
+          officerName: loan.officer.displayName,
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => row != null);
+  }
+
+  private buildVarianceDetails(input: {
+    operation: NonNullable<
+      Awaited<ReturnType<OperationsRepository['findOperationForDay']>>
+    >;
+    agentReturns: DailyOperationAgentReturnContract[];
+    closingVariance: number | null;
+    expectedClosingBalance: number;
+    closingBalance: number | null;
+    cashShortages: Awaited<
+      ReturnType<OperationsRepository['listCashShortagesForOperationDay']>
+    >;
+  }) {
+    const shortagesBySourceId = new Map(
+      input.cashShortages
+        .filter((shortage) => Boolean(shortage.sourceId))
+        .map((shortage) => [shortage.sourceId!, shortage]),
+    );
+    const usedShortageIds = new Set<string>();
+    const rows: DailyOperationContract['variances'] = [];
+
+    for (const agentReturn of input.agentReturns) {
+      const variance = this.roundMoney(agentReturn.variance ?? 0);
+      if (agentReturn.amountReturned == null || variance === 0) continue;
+      const shortage = shortagesBySourceId.get(agentReturn.floatId);
+      if (shortage) usedShortageIds.add(shortage.id);
+      rows.push({
+        id: `agent-${agentReturn.floatId}`,
+        source: 'Officer handover',
+        personName: agentReturn.agentName,
+        personPublicId: agentReturn.agentPublicId,
+        expectedAmount: agentReturn.expectedReturn,
+        actualAmount: agentReturn.amountReturned,
+        variance,
+        shortageAmount:
+          shortage != null
+            ? this.decimalToNumber(shortage.amountOriginal)
+            : variance < 0
+              ? Math.abs(variance)
+              : null,
+        outstandingAmount:
+          shortage != null
+            ? this.decimalToNumber(shortage.amountOutstanding)
+            : null,
+        status: shortage?.status ?? agentReturn.status,
+        notes: shortage?.notes ?? agentReturn.notes,
+        occurredAt:
+          agentReturn.returnedAt ??
+          input.operation.closedAt?.toISOString() ??
+          input.operation.openedAt.toISOString(),
+      });
+    }
+
+    const branchVariance = this.roundMoney(input.closingVariance ?? 0);
+    if (input.closingBalance != null && branchVariance !== 0) {
+      const shortage = shortagesBySourceId.get(input.operation.id);
+      if (shortage) usedShortageIds.add(shortage.id);
+      rows.push({
+        id: `branch-close-${input.operation.id}`,
+        source: 'Branch close',
+        personName: input.operation.closedBy?.displayName ?? 'Branch cash',
+        personPublicId: null,
+        expectedAmount: input.expectedClosingBalance,
+        actualAmount: input.closingBalance,
+        variance: branchVariance,
+        shortageAmount:
+          shortage != null
+            ? this.decimalToNumber(shortage.amountOriginal)
+            : branchVariance < 0
+              ? Math.abs(branchVariance)
+              : null,
+        outstandingAmount:
+          shortage != null
+            ? this.decimalToNumber(shortage.amountOutstanding)
+            : null,
+        status: shortage?.status ?? (branchVariance < 0 ? 'SHORT' : 'OVER'),
+        notes: shortage?.notes ?? input.operation.closingNotes,
+        occurredAt:
+          input.operation.closedAt?.toISOString() ??
+          input.operation.openedAt.toISOString(),
+      });
+    }
+
+    for (const shortage of input.cashShortages) {
+      if (usedShortageIds.has(shortage.id)) continue;
+      rows.push({
+        id: `shortage-${shortage.id}`,
+        source: this.shortageSourceLabel(shortage.sourceType),
+        personName: shortage.responsibleUser.displayName,
+        personPublicId: shortage.responsibleUser.publicId,
+        expectedAmount: null,
+        actualAmount: null,
+        variance: -this.decimalToNumber(shortage.amountOriginal),
+        shortageAmount: this.decimalToNumber(shortage.amountOriginal),
+        outstandingAmount: this.decimalToNumber(shortage.amountOutstanding),
+        status: shortage.status,
+        notes: shortage.notes,
+        occurredAt: shortage.createdAt.toISOString(),
+      });
+    }
+
+    return rows.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+  }
+
+  private shortageSourceLabel(sourceType: CashShortageSource) {
+    if (sourceType === CashShortageSource.AGENT_FLOAT_RETURN) {
+      return 'Officer handover';
+    }
+    if (sourceType === CashShortageSource.BRANCH_CLOSE) {
+      return 'Branch close';
+    }
+    return 'Manual shortage';
   }
 
   private buildLoansByProduct(
@@ -2058,6 +2289,89 @@ export class OperationsService {
     }
   }
 
+  private async findLatestNonEmptyClosedBefore(input: {
+    tenantId: string;
+    branchId: string;
+    beforeDate: Date;
+  }) {
+    let beforeDate = input.beforeDate;
+    for (;;) {
+      const previousClosed = await this.repository.findLatestClosedBefore({
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        beforeDate,
+      });
+      if (!previousClosed) return null;
+
+      const bounds = this.parseDayBounds(
+        this.formatDateLabel(previousClosed.operationDate),
+      );
+      if (!(await this.isEmptyClosedOperation(previousClosed, bounds))) {
+        return previousClosed;
+      }
+
+      this.logger.log(
+        `Ignoring empty closed operation ${previousClosed.id} for ${previousClosed.branch.name} (${this.formatDateLabel(previousClosed.operationDate)})`,
+      );
+      beforeDate = previousClosed.operationDate;
+    }
+  }
+
+  private async isEmptyClosedOperation(
+    operation: NonNullable<
+      Awaited<ReturnType<OperationsRepository['findOperationForDay']>>
+    >,
+    bounds: ReturnType<OperationsService['parseDayBounds']>,
+  ) {
+    if (operation.status !== BranchOperationStatus.CLOSED) return false;
+    if (operation.closingBalance == null || operation.closedAt == null) {
+      return false;
+    }
+
+    const [topUps, expenses, agentFloats, loans, collections, report] =
+      await Promise.all([
+        this.prisma.branchOperationTopUp.count({
+          where: { tenantId: operation.tenantId, operationId: operation.id },
+        }),
+        this.prisma.branchOperationExpense.count({
+          where: { tenantId: operation.tenantId, operationId: operation.id },
+        }),
+        this.prisma.agentDailyFloat.count({
+          where: {
+            tenantId: operation.tenantId,
+            branchId: operation.branchId,
+            floatDate: operation.operationDate,
+          },
+        }),
+        this.prisma.loanApplication.count({
+          where: {
+            tenantId: operation.tenantId,
+            branchId: operation.branchId,
+            status: LoanApplicationStatus.SUBMITTED,
+            submittedAt: {
+              gte: bounds.dayStart,
+              lte: bounds.dayEnd,
+            },
+          },
+        }),
+        this.prisma.repayment.count({
+          where: {
+            tenantId: operation.tenantId,
+            branchId: operation.branchId,
+            paidAt: {
+              gte: bounds.dayStart,
+              lte: bounds.dayEnd,
+            },
+          },
+        }),
+        this.prisma.branchOperationReport.count({
+          where: { tenantId: operation.tenantId, operationId: operation.id },
+        }),
+      ]);
+
+    return topUps + expenses + agentFloats + loans + collections + report === 0;
+  }
+
   private async retireEmptyUnclosedOperationsBefore(input: {
     tenantId: string;
     branchId: string;
@@ -2070,11 +2384,11 @@ export class OperationsService {
         branchId: input.branchId,
         beforeDate: input.beforeDate,
       });
-      if (!pending || pending.status !== BranchOperationStatus.OPEN) {
+      if (!pending) {
         break;
       }
 
-      const empty = await this.isEmptyOpenOperation(pending);
+      const empty = await this.isEmptyUnclosedOperation(pending);
       if (!empty) break;
 
       await this.prisma.branchDailyOperation.delete({
@@ -2088,27 +2402,18 @@ export class OperationsService {
     return retired;
   }
 
-  private async isEmptyOpenOperation(
+  private async isEmptyUnclosedOperation(
     operation: NonNullable<
       Awaited<ReturnType<OperationsRepository['findOperationForDay']>>
     >,
   ) {
-    if (operation.status !== BranchOperationStatus.OPEN) return false;
+    if (operation.status === BranchOperationStatus.CLOSED) return false;
     if (operation.closingBalance != null || operation.closedAt != null) {
       return false;
     }
-    if (this.decimalToNumber(operation.cashAddedToday) !== 0) {
-      return false;
-    }
-    const previousClosed = await this.repository.findLatestClosedBefore({
-      tenantId: operation.tenantId,
-      branchId: operation.branchId,
-      beforeDate: operation.operationDate,
-    });
-    if (
-      !previousClosed &&
-      this.decimalToNumber(operation.previousClosingBalance) !== 0
-    ) {
+
+    if (operation.status === BranchOperationStatus.OPEN &&
+        this.decimalToNumber(operation.cashAddedToday) !== 0) {
       return false;
     }
 
@@ -2211,7 +2516,7 @@ export class OperationsService {
     if (existing) return existing;
 
     const [previousClosed, pendingClosure] = await Promise.all([
-      this.repository.findLatestClosedBefore({
+      this.findLatestNonEmptyClosedBefore({
         tenantId: input.tenantId,
         branchId: input.branchId,
         beforeDate: input.bounds.dateOnly,
