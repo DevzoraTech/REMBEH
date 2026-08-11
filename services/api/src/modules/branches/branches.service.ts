@@ -136,8 +136,13 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'cashdrawer.reconcile',
     'cashier.read',
     'operation.read',
+    'operation.open',
+    'operation.float.manage',
     'operation.float.return',
+    'operation.cash.topup',
     'operation.expense.create',
+    'operation.close',
+    'operation.report.review',
   ],
   'Recovery Officer': [
     'branch.read',

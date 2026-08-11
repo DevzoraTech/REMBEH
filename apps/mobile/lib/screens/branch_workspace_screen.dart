@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../features/applications_list/data/applications_live_store.dart';
+import '../features/repayment/data/repayments_live_store.dart';
+import '../models/field_records.dart';
 import '../services/api_client.dart';
 import '../services/session_activity.dart';
 import '../services/session_cleanup.dart';
@@ -13,6 +16,10 @@ import '../utils/money.dart';
 import 'account_locked_screen.dart';
 import 'agent_shell.dart';
 import 'login_screen.dart';
+import 'loan_application/new_loan_application_screen.dart';
+import 'records/records_tab.dart';
+import 'register_customer_screen.dart';
+import 'search/search_tab.dart';
 
 const _expenseCategories = [
   'TRANSPORT',
@@ -41,12 +48,22 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   late final SessionActivityController _activity;
 
   Map<String, dynamic>? _data;
+  Map<String, dynamic>? _collectionSummary;
   List<Map<String, dynamic>> _agents = const [];
+  List<Map<String, dynamic>> _customers = const [];
+  List<Map<String, dynamic>> _loans = const [];
+  List<Map<String, dynamic>> _repayments = const [];
+  List<Map<String, dynamic>> _reports = const [];
+  List<Map<String, dynamic>> _shortages = const [];
   bool _loading = true;
   bool _saving = false;
   String? _error;
   String? _notice;
   int _index = 0;
+  RecordsSection _recordsSection = RecordsSection.repayments;
+  RecordsFilter _recordsFilter = RecordsFilter.all;
+  bool _searchAutofocus = false;
+  int _searchFocusToken = 0;
   String _date = _todayLabel();
 
   @override
@@ -58,6 +75,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       onAccountBlocked: _handleAccountBlocked,
     );
     _activity.start();
+    unawaited(_startLiveStores());
     unawaited(_load());
   }
 
@@ -99,6 +117,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         _agents = agents;
         _loading = false;
       });
+      unawaited(_loadManagementData());
     } catch (error) {
       final message = friendlyErrorMessage(error);
       if (isAccountAccessBlockedMessage(message)) {
@@ -111,6 +130,104 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         _loading = false;
       });
     }
+  }
+
+  Future<void> _startLiveStores() async {
+    try {
+      await Future.wait([
+        ApplicationsLiveStore.instance.start(widget.session),
+        RepaymentsLiveStore.instance.start(widget.session),
+      ]);
+    } catch (_) {
+      // The management lists below still load independently.
+    }
+  }
+
+  Future<void> _loadManagementData() async {
+    final session = widget.session;
+    var customers = _customers;
+    var loans = _loans;
+    var repayments = _repayments;
+    var reports = _reports;
+    var shortages = _shortages;
+    var summary = _collectionSummary;
+
+    Future<T?> optional<T>(Future<T> Function() loader) async {
+      try {
+        return await loader();
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final results = await Future.wait<Object?>([
+      if (session.hasPermission('customer.read'))
+        optional(() => _api.listCustomers(session))
+      else
+        Future<Object?>.value(null),
+      if (session.hasPermission('loan.read'))
+        optional(() => _api.listLoans(session))
+      else
+        Future<Object?>.value(null),
+      if (session.hasPermission('collection.read'))
+        optional(() => _api.listRepayments(session))
+      else
+        Future<Object?>.value(null),
+      if (session.hasPermission('collection.read'))
+        optional(() => _api.getCollectionSummary(session))
+      else
+        Future<Object?>.value(null),
+      if (session.hasPermission('operation.read'))
+        optional(
+          () => _api.listOperationReports(
+            session: session,
+            branchId: session.branchId,
+          ),
+        )
+      else
+        Future<Object?>.value(null),
+      optional(
+        () => _api.listCashShortages(
+          session: session,
+          branchId: session.branchId,
+        ),
+      ),
+    ]);
+
+    if (results[0] is List) {
+      customers = (results[0] as List)
+          .whereType<Map<String, dynamic>>()
+          .toList();
+    }
+    if (results[1] is List) {
+      loans = (results[1] as List).whereType<Map<String, dynamic>>().toList();
+    }
+    if (results[2] is List) {
+      repayments = (results[2] as List)
+          .whereType<Map<String, dynamic>>()
+          .toList();
+    }
+    if (results[3] is Map<String, dynamic>) {
+      summary = results[3] as Map<String, dynamic>;
+    }
+    if (results[4] is List) {
+      reports = (results[4] as List).whereType<Map<String, dynamic>>().toList();
+    }
+    if (results[5] is List) {
+      shortages = (results[5] as List)
+          .whereType<Map<String, dynamic>>()
+          .toList();
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _customers = customers;
+      _loans = loans;
+      _repayments = repayments;
+      _collectionSummary = summary;
+      _reports = reports;
+      _shortages = shortages;
+    });
   }
 
   Future<void> _handleSessionCleared() async {
@@ -194,6 +311,48 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => AgentShell(session: widget.session)),
     );
+  }
+
+  void _openTab(int index, {bool searchAutofocus = false}) {
+    unawaited(_activity.touch());
+    setState(() {
+      _index = index;
+      _searchAutofocus = searchAutofocus;
+      if (searchAutofocus) _searchFocusToken += 1;
+    });
+  }
+
+  void _openRecords({
+    RecordsSection section = RecordsSection.repayments,
+    RecordsFilter filter = RecordsFilter.all,
+  }) {
+    setState(() {
+      _recordsSection = section;
+      _recordsFilter = filter;
+    });
+    _openTab(2);
+  }
+
+  Future<void> _openNewCustomer() async {
+    final created = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => RegisterCustomerScreen(session: widget.session),
+      ),
+    );
+    if (created == true) {
+      _setNotice('Borrower saved.');
+      await _loadManagementData();
+    }
+  }
+
+  Future<void> _openNewLoan() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => NewLoanApplicationScreen(session: widget.session),
+      ),
+    );
+    await _startLiveStores();
+    await _loadManagementData();
   }
 
   Future<void> _reviewPendingClosure() async {
@@ -620,6 +779,32 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
                     : IndexedStack(
                         index: _index,
                         children: [
+                          _DashboardTab(
+                            session: widget.session,
+                            operation: _operation,
+                            report: _report,
+                            branchName: _branchName,
+                            customers: _customers,
+                            loans: _loans,
+                            repayments: _repayments,
+                            reports: _reports,
+                            shortages: _shortages,
+                            collectionSummary: _collectionSummary,
+                            onRefresh: _load,
+                            onOpenOperations: () => _openTab(1),
+                            onOpenClients: () =>
+                                _openTab(3, searchAutofocus: true),
+                            onOpenRecords: _openRecords,
+                            onOpenMore: () => _openTab(4),
+                            onNewCustomer:
+                                widget.session.hasPermission('customer.create')
+                                ? () => unawaited(_openNewCustomer())
+                                : null,
+                            onNewLoan:
+                                widget.session.hasPermission('loan.create')
+                                ? () => unawaited(_openNewLoan())
+                                : null,
+                          ),
                           _OverviewTab(
                             session: widget.session,
                             operation: _operation,
@@ -649,8 +834,49 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
                                 ? _openFieldTools
                                 : null,
                           ),
-                          _PeopleTab(agents: _agents),
-                          _RecordsTab(operation: _operation),
+                          RecordsTab(
+                            session: widget.session,
+                            section: _recordsSection,
+                            filter: _recordsFilter,
+                            onSectionChanged: (section) {
+                              unawaited(_activity.touch());
+                              setState(() => _recordsSection = section);
+                            },
+                            onFilterChanged: (filter) {
+                              unawaited(_activity.touch());
+                              setState(() => _recordsFilter = filter);
+                            },
+                          ),
+                          SearchTab(
+                            autofocus: _searchAutofocus,
+                            focusToken: _searchFocusToken,
+                          ),
+                          _MoreTab(
+                            session: widget.session,
+                            agents: _agents,
+                            customers: _customers,
+                            loans: _loans,
+                            repayments: _repayments,
+                            reports: _reports,
+                            shortages: _shortages,
+                            onRefresh: _load,
+                            onOpenOperations: () => _openTab(1),
+                            onOpenClients: () =>
+                                _openTab(3, searchAutofocus: true),
+                            onOpenRecords: _openRecords,
+                            onOpenFieldTools:
+                                widget.session.canUseFieldWorkspace
+                                ? _openFieldTools
+                                : null,
+                            onNewCustomer:
+                                widget.session.hasPermission('customer.create')
+                                ? () => unawaited(_openNewCustomer())
+                                : null,
+                            onNewLoan:
+                                widget.session.hasPermission('loan.create')
+                                ? () => unawaited(_openNewLoan())
+                                : null,
+                          ),
                         ],
                       ),
               ),
@@ -668,28 +894,545 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
               height: 64,
               selectedIndex: _index,
               onDestinationSelected: (index) {
-                unawaited(_activity.touch());
-                setState(() => _index = index);
+                _openTab(index, searchAutofocus: index == 3);
               },
               destinations: const [
                 NavigationDestination(
-                  icon: Icon(Icons.dashboard_outlined),
-                  selectedIcon: Icon(Icons.dashboard, color: forestEmerald),
-                  label: 'Today',
+                  icon: Icon(Icons.home_outlined),
+                  selectedIcon: Icon(Icons.home, color: forestEmerald),
+                  label: 'Home',
                 ),
                 NavigationDestination(
-                  icon: Icon(Icons.groups_outlined),
-                  selectedIcon: Icon(Icons.groups, color: forestEmerald),
-                  label: 'Team',
+                  icon: Icon(Icons.today_outlined),
+                  selectedIcon: Icon(Icons.today, color: forestEmerald),
+                  label: 'Ops',
                 ),
                 NavigationDestination(
                   icon: Icon(Icons.receipt_long_outlined),
                   selectedIcon: Icon(Icons.receipt_long, color: forestEmerald),
                   label: 'Records',
                 ),
+                NavigationDestination(
+                  icon: Icon(Icons.search),
+                  selectedIcon: Icon(Icons.search, color: forestEmerald),
+                  label: 'Clients',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.grid_view_outlined),
+                  selectedIcon: Icon(Icons.grid_view, color: forestEmerald),
+                  label: 'More',
+                ),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DashboardTab extends StatelessWidget {
+  const _DashboardTab({
+    required this.session,
+    required this.operation,
+    required this.report,
+    required this.branchName,
+    required this.customers,
+    required this.loans,
+    required this.repayments,
+    required this.reports,
+    required this.shortages,
+    required this.collectionSummary,
+    required this.onRefresh,
+    required this.onOpenOperations,
+    required this.onOpenClients,
+    required this.onOpenRecords,
+    required this.onOpenMore,
+    this.onNewCustomer,
+    this.onNewLoan,
+  });
+
+  final RembehSession session;
+  final Map<String, dynamic>? operation;
+  final Map<String, dynamic>? report;
+  final String branchName;
+  final List<Map<String, dynamic>> customers;
+  final List<Map<String, dynamic>> loans;
+  final List<Map<String, dynamic>> repayments;
+  final List<Map<String, dynamic>> reports;
+  final List<Map<String, dynamic>> shortages;
+  final Map<String, dynamic>? collectionSummary;
+  final Future<void> Function() onRefresh;
+  final VoidCallback onOpenOperations;
+  final VoidCallback onOpenClients;
+  final void Function({RecordsSection section, RecordsFilter filter})
+  onOpenRecords;
+  final VoidCallback onOpenMore;
+  final VoidCallback? onNewCustomer;
+  final VoidCallback? onNewLoan;
+
+  @override
+  Widget build(BuildContext context) {
+    final activeLoans = loans.where(_loanIsActive).length;
+    final overdueLoans = loans.where(_loanNeedsAttention).length;
+    final loanBalance = _sumMoney(loans, 'balance');
+    final collectedToday = _num(collectionSummary?['amountCollectedToday']);
+    final dueToday = _num(collectionSummary?['dueTodayCount']);
+    final openShortages = shortages.where(_shortageOpen).toList();
+    final reportsToSend = reports.where(_reportNeedsManagerSubmission).length;
+    final status = _statusLabel(_string(operation?['status']) ?? 'NOT_OPEN');
+
+    return RefreshIndicator(
+      color: forestEmerald,
+      onRefresh: onRefresh,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _HeroPanel(
+            title: branchName,
+            subtitle: '${session.roleName ?? 'Team'} - $status',
+            icon: Icons.business_center_outlined,
+          ),
+          const SizedBox(height: 12),
+          GridView.count(
+            crossAxisCount: 2,
+            childAspectRatio: 1.55,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            children: [
+              _MetricCard(
+                label: 'Active loans',
+                amount: activeLoans,
+                currency: false,
+              ),
+              _MetricCard(label: 'Outstanding', amount: loanBalance),
+              _MetricCard(label: 'Collected today', amount: collectedToday),
+              _MetricCard(
+                label: 'Shortages',
+                amount: _sumMoney(openShortages, 'amountOutstanding'),
+                tone: openShortages.isEmpty
+                    ? _MetricTone.good
+                    : _MetricTone.danger,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _ActionGrid(
+            actions: [
+              _BranchAction(
+                label: 'Daily ops',
+                icon: Icons.today_outlined,
+                onTap: onOpenOperations,
+                strong: true,
+              ),
+              _BranchAction(
+                label: 'Clients',
+                icon: Icons.search,
+                onTap: onOpenClients,
+              ),
+              _BranchAction(
+                label: 'Repayments',
+                icon: Icons.payments_outlined,
+                onTap: () => onOpenRecords(
+                  section: RecordsSection.repayments,
+                  filter: RecordsFilter.all,
+                ),
+              ),
+              _BranchAction(
+                label: 'More pages',
+                icon: Icons.grid_view_outlined,
+                onTap: onOpenMore,
+              ),
+              if (onNewCustomer != null)
+                _BranchAction(
+                  label: 'New borrower',
+                  icon: Icons.person_add_alt_1_outlined,
+                  onTap: onNewCustomer!,
+                ),
+              if (onNewLoan != null)
+                _BranchAction(
+                  label: 'New loan',
+                  icon: Icons.note_add_outlined,
+                  onTap: onNewLoan!,
+                ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _AttentionPanel(
+            overdueLoans: overdueLoans,
+            dueToday: dueToday.round(),
+            openShortages: openShortages.length,
+            reportsToSend: reportsToSend,
+            reportWaiting: _reportNeedsManagerSubmission(report),
+          ),
+          const SizedBox(height: 14),
+          _ManagementSection(
+            title: 'Recent repayments',
+            emptyTitle: 'No repayments yet',
+            rows: repayments
+                .take(5)
+                .map(
+                  (row) => _SimpleTile(
+                    icon: Icons.payments_outlined,
+                    title: _string(row['clientName']) ?? 'Borrower',
+                    subtitle: _dateTime(row['recordedAt']),
+                    trailing: _moneyOrDash(row['amount']),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MoreTab extends StatelessWidget {
+  const _MoreTab({
+    required this.session,
+    required this.agents,
+    required this.customers,
+    required this.loans,
+    required this.repayments,
+    required this.reports,
+    required this.shortages,
+    required this.onRefresh,
+    required this.onOpenOperations,
+    required this.onOpenClients,
+    required this.onOpenRecords,
+    this.onOpenFieldTools,
+    this.onNewCustomer,
+    this.onNewLoan,
+  });
+
+  final RembehSession session;
+  final List<Map<String, dynamic>> agents;
+  final List<Map<String, dynamic>> customers;
+  final List<Map<String, dynamic>> loans;
+  final List<Map<String, dynamic>> repayments;
+  final List<Map<String, dynamic>> reports;
+  final List<Map<String, dynamic>> shortages;
+  final Future<void> Function() onRefresh;
+  final VoidCallback onOpenOperations;
+  final VoidCallback onOpenClients;
+  final void Function({RecordsSection section, RecordsFilter filter})
+  onOpenRecords;
+  final VoidCallback? onOpenFieldTools;
+  final VoidCallback? onNewCustomer;
+  final VoidCallback? onNewLoan;
+
+  @override
+  Widget build(BuildContext context) {
+    final openShortages = shortages.where(_shortageOpen).toList();
+    return RefreshIndicator(
+      color: forestEmerald,
+      onRefresh: onRefresh,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const _SectionHeading(title: 'Manager workspace'),
+          _ActionGrid(
+            actions: [
+              _BranchAction(
+                label: 'Operations',
+                icon: Icons.today_outlined,
+                onTap: onOpenOperations,
+              ),
+              _BranchAction(
+                label: 'Borrowers',
+                icon: Icons.people_outline,
+                onTap: onOpenClients,
+              ),
+              _BranchAction(
+                label: 'Repayments',
+                icon: Icons.payments_outlined,
+                onTap: () => onOpenRecords(
+                  section: RecordsSection.repayments,
+                  filter: RecordsFilter.all,
+                ),
+              ),
+              _BranchAction(
+                label: 'Applications',
+                icon: Icons.assignment_outlined,
+                onTap: () => onOpenRecords(
+                  section: RecordsSection.applications,
+                  filter: RecordsFilter.all,
+                ),
+              ),
+              if (onNewCustomer != null)
+                _BranchAction(
+                  label: 'New borrower',
+                  icon: Icons.person_add_alt_1_outlined,
+                  onTap: onNewCustomer!,
+                ),
+              if (onNewLoan != null)
+                _BranchAction(
+                  label: 'New loan',
+                  icon: Icons.note_add_outlined,
+                  onTap: onNewLoan!,
+                ),
+              if (onOpenFieldTools != null)
+                _BranchAction(
+                  label: 'Agent tools',
+                  icon: Icons.phone_android_outlined,
+                  onTap: onOpenFieldTools!,
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _ManagementSection(
+            title: 'Loans',
+            emptyTitle: 'No loans found',
+            rows: loans
+                .take(20)
+                .map(
+                  (loan) => _SimpleTile(
+                    icon: _loanNeedsAttention(loan)
+                        ? Icons.warning_amber_outlined
+                        : Icons.account_balance_wallet_outlined,
+                    title: _string(loan['borrowerName']) ?? 'Borrower',
+                    subtitle:
+                        '${_label(_string(loan['status']) ?? '')} - ${_string(loan['nextDueLabel']) ?? 'No due date'}',
+                    trailing: _moneyOrDash(loan['balance']),
+                  ),
+                )
+                .toList(),
+          ),
+          const SizedBox(height: 14),
+          _ManagementSection(
+            title: 'Borrowers',
+            emptyTitle: 'No borrowers found',
+            rows: customers
+                .take(20)
+                .map(
+                  (customer) => _SimpleTile(
+                    icon: customer['hasOverdueLoan'] == true
+                        ? Icons.warning_amber_outlined
+                        : Icons.person_outline,
+                    title: _string(customer['fullName']) ?? 'Borrower',
+                    subtitle:
+                        '${_string(customer['phone']) ?? ''} - ${_num(customer['activeLoanCount']).round()} active',
+                    trailing: _label(
+                      _string(customer['verificationStatus']) ?? 'NOT_VERIFIED',
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+          const SizedBox(height: 14),
+          _ManagementSection(
+            title: 'Repayments',
+            emptyTitle: 'No repayments found',
+            rows: repayments
+                .take(20)
+                .map(
+                  (row) => _SimpleTile(
+                    icon: Icons.payments_outlined,
+                    title: _string(row['clientName']) ?? 'Borrower',
+                    subtitle:
+                        '${_string(row['recordedByName']) ?? 'Recorded'} - ${_dateTime(row['recordedAt'])}',
+                    trailing: _moneyOrDash(row['amount']),
+                  ),
+                )
+                .toList(),
+          ),
+          const SizedBox(height: 14),
+          _ManagementSection(
+            title: 'Shortages',
+            emptyTitle: 'No open shortages',
+            rows: openShortages
+                .take(20)
+                .map(
+                  (row) => _SimpleTile(
+                    icon: Icons.report_problem_outlined,
+                    title: _string(row['responsibleName']) ?? 'Responsible',
+                    subtitle:
+                        '${_dateLabel(row['operationDate'])} - ${_label(_string(row['status']) ?? '')}',
+                    trailing: _moneyOrDash(row['amountOutstanding']),
+                  ),
+                )
+                .toList(),
+          ),
+          const SizedBox(height: 14),
+          _ManagementSection(
+            title: 'Reports',
+            emptyTitle: 'No reports found',
+            rows: reports
+                .take(20)
+                .map(
+                  (row) => _SimpleTile(
+                    icon: Icons.summarize_outlined,
+                    title: _string(row['reportNumber']) ?? 'Daily report',
+                    subtitle:
+                        '${_dateLabel(row['operationDate'])} - ${_label(_string(row['status']) ?? '')}',
+                    trailing: _moneyOrDash(row['closingBalance']),
+                  ),
+                )
+                .toList(),
+          ),
+          const SizedBox(height: 14),
+          _ManagementSection(
+            title: 'Team',
+            emptyTitle: 'No agents found',
+            rows: agents
+                .take(20)
+                .map(
+                  (agent) => _SimpleTile(
+                    icon: Icons.person_outline,
+                    title: _string(agent['name']) ?? 'Agent',
+                    subtitle:
+                        '${_label(_string(agent['status']) ?? '')} - ${_string(agent['phone']) ?? _string(agent['email']) ?? ''}',
+                    trailing: _moneyOrDash(agent['floatToday']),
+                  ),
+                )
+                .toList(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroPanel extends StatelessWidget {
+  const _HeroPanel({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+  });
+
+  final String title;
+  final String subtitle;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: midnightNavy,
+        borderRadius: rembehBorderRadius(rembehRadiusLg),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: Colors.white, size: 30),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.76),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AttentionPanel extends StatelessWidget {
+  const _AttentionPanel({
+    required this.overdueLoans,
+    required this.dueToday,
+    required this.openShortages,
+    required this.reportsToSend,
+    required this.reportWaiting,
+  });
+
+  final int overdueLoans;
+  final int dueToday;
+  final int openShortages;
+  final int reportsToSend;
+  final bool reportWaiting;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = <String>[
+      if (overdueLoans > 0)
+        '$overdueLoans overdue loan${overdueLoans == 1 ? '' : 's'}',
+      if (dueToday > 0)
+        '$dueToday borrower${dueToday == 1 ? '' : 's'} due today',
+      if (openShortages > 0)
+        '$openShortages open shortage${openShortages == 1 ? '' : 's'}',
+      if (reportsToSend > 0 || reportWaiting) 'Close report needs sending',
+    ];
+    final clear = items.isEmpty;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: clear
+            ? forestEmerald.withValues(alpha: 0.08)
+            : warmGold.withValues(alpha: 0.12),
+        border: Border.all(
+          color: clear
+              ? forestEmerald.withValues(alpha: 0.24)
+              : warmGold.withValues(alpha: 0.34),
+        ),
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            clear ? Icons.verified_outlined : Icons.priority_high_outlined,
+            color: clear ? forestEmerald : warmGold,
+            size: 22,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              clear ? 'No urgent branch items.' : items.join('\n'),
+              style: const TextStyle(
+                color: midnightNavy,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionHeading extends StatelessWidget {
+  const _SectionHeading({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Text(
+        title,
+        style: const TextStyle(
+          color: midnightNavy,
+          fontSize: 18,
+          fontWeight: FontWeight.w900,
         ),
       ),
     );
@@ -883,108 +1626,6 @@ class _OverviewTab extends StatelessWidget {
           ],
         ],
       ),
-    );
-  }
-}
-
-class _PeopleTab extends StatelessWidget {
-  const _PeopleTab({required this.agents});
-
-  final List<Map<String, dynamic>> agents;
-
-  @override
-  Widget build(BuildContext context) {
-    if (agents.isEmpty) {
-      return const _EmptyState(
-        icon: Icons.groups_outlined,
-        title: 'No agents',
-        message: 'No agents are available for this branch.',
-      );
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemBuilder: (context, index) {
-        final agent = agents[index];
-        return _SimpleTile(
-          icon: Icons.person_outline,
-          title: _string(agent['name']) ?? 'Agent',
-          subtitle: _string(agent['phone']) ?? _string(agent['email']) ?? '',
-          trailing: _moneyOrDash(agent['floatToday']),
-        );
-      },
-      separatorBuilder: (context, index) => const SizedBox(height: 10),
-      itemCount: agents.length,
-    );
-  }
-}
-
-class _RecordsTab extends StatelessWidget {
-  const _RecordsTab({required this.operation});
-
-  final Map<String, dynamic>? operation;
-
-  @override
-  Widget build(BuildContext context) {
-    final op = operation;
-    if (op == null) {
-      return const _EmptyState(
-        icon: Icons.receipt_long_outlined,
-        title: 'No records yet',
-        message: 'Open the day to start recording branch activity.',
-      );
-    }
-    final topUps = _list(op['topUps']);
-    final expenses = _list(op['expenses']);
-    final returns = _list(op['agentReturns']);
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _RecordSection(
-          title: 'Cash added',
-          rows: topUps
-              .map(
-                (row) => _SimpleTile(
-                  icon: Icons.add_card_outlined,
-                  title: _string(row['description']) ?? 'Cash added',
-                  subtitle: _dateTime(row['addedAt']),
-                  trailing: _moneyOrDash(row['amount']),
-                ),
-              )
-              .toList(),
-        ),
-        const SizedBox(height: 14),
-        _RecordSection(
-          title: 'Expenses',
-          rows: expenses
-              .map(
-                (row) => _SimpleTile(
-                  icon: Icons.payments_outlined,
-                  title: _label(_string(row['category']) ?? 'OTHER'),
-                  subtitle:
-                      _string(row['description']) ??
-                      _dateTime(row['incurredAt']),
-                  trailing: _moneyOrDash(row['amount']),
-                ),
-              )
-              .toList(),
-        ),
-        const SizedBox(height: 14),
-        _RecordSection(
-          title: 'Returns',
-          rows: returns
-              .map(
-                (row) => _SimpleTile(
-                  icon: Icons.assignment_return_outlined,
-                  title: _string(row['agentName']) ?? 'Agent',
-                  subtitle: _statusLabel(_string(row['status']) ?? ''),
-                  trailing: row['amountReturned'] == null
-                      ? 'Pending'
-                      : _moneyOrDash(row['amountReturned']),
-                ),
-              )
-              .toList(),
-        ),
-      ],
     );
   }
 }
@@ -1233,11 +1874,13 @@ class _MetricCard extends StatelessWidget {
     required this.label,
     required this.amount,
     this.tone = _MetricTone.normal,
+    this.currency = true,
   });
 
   final String label;
   final num amount;
   final _MetricTone tone;
+  final bool currency;
 
   @override
   Widget build(BuildContext context) {
@@ -1272,7 +1915,7 @@ class _MetricCard extends StatelessWidget {
             fit: BoxFit.scaleDown,
             alignment: Alignment.centerLeft,
             child: Text(
-              'UGX ${formatMoney(amount)}',
+              currency ? 'UGX ${formatMoney(amount)}' : formatMoney(amount),
               style: TextStyle(
                 color: color,
                 fontSize: 17,
@@ -1360,10 +2003,15 @@ class _BranchAction extends StatelessWidget {
   }
 }
 
-class _RecordSection extends StatelessWidget {
-  const _RecordSection({required this.title, required this.rows});
+class _ManagementSection extends StatelessWidget {
+  const _ManagementSection({
+    required this.title,
+    required this.emptyTitle,
+    required this.rows,
+  });
 
   final String title;
+  final String emptyTitle;
   final List<Widget> rows;
 
   @override
@@ -1371,24 +2019,41 @@ class _RecordSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          title,
-          style: const TextStyle(
-            color: midnightNavy,
-            fontSize: 14,
-            fontWeight: FontWeight.w900,
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: midnightNavy,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            Text(
+              rows.length.toString(),
+              style: const TextStyle(
+                color: slateText,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 8),
         if (rows.isEmpty)
-          const _SimpleTile(
+          _SimpleTile(
             icon: Icons.info_outline,
-            title: 'No records',
+            title: emptyTitle,
             subtitle: '',
             trailing: '',
           )
         else
-          ...rows,
+          ...rows.expand((row) sync* {
+            yield row;
+            yield const SizedBox(height: 8);
+          }),
       ],
     );
   }
@@ -1458,49 +2123,6 @@ class _SimpleTile extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _EmptyState extends StatelessWidget {
-  const _EmptyState({
-    required this.icon,
-    required this.title,
-    required this.message,
-  });
-
-  final IconData icon;
-  final String title;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, color: forestEmerald, size: 36),
-            const SizedBox(height: 10),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: midnightNavy,
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: slateText, fontSize: 13),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1734,11 +2356,6 @@ String? _string(Object? value) {
   return null;
 }
 
-List<Map<String, dynamic>> _list(Object? value) {
-  if (value is! List) return const [];
-  return value.whereType<Map<String, dynamic>>().toList();
-}
-
 String _label(String value) {
   final words = value.toLowerCase().split('_');
   return words
@@ -1758,6 +2375,31 @@ String _statusLabel(String status) {
 bool _reportNeedsManagerSubmission(Map<String, dynamic>? report) {
   final status = _string(report?['status']);
   return status == 'MANAGER_REVIEW' || status == 'RETURNED_TO_MANAGER';
+}
+
+bool _loanIsActive(Map<String, dynamic> loan) {
+  final status = (_string(loan['status']) ?? '').toUpperCase();
+  return !{
+    'CLOSED',
+    'WRITTEN_OFF',
+    'REJECTED',
+    'DRAFT',
+    'CANCELLED',
+  }.contains(status);
+}
+
+bool _loanNeedsAttention(Map<String, dynamic> loan) {
+  return _num(loan['overdueDays']) > 0 ||
+      _string(loan['nextDueLabel'])?.toLowerCase().contains('overdue') == true;
+}
+
+bool _shortageOpen(Map<String, dynamic> row) {
+  final status = (_string(row['status']) ?? '').toUpperCase();
+  return status != 'CLEARED';
+}
+
+num _sumMoney(Iterable<Map<String, dynamic>> rows, String key) {
+  return rows.fold<num>(0, (sum, row) => sum + _num(row[key]));
 }
 
 String _dateLabel(Object? value) {

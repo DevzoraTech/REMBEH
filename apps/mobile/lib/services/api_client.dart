@@ -173,6 +173,86 @@ class ApiClient {
     return customers.cast<Map<String, dynamic>>();
   }
 
+  Future<List<Map<String, dynamic>>> listLoans(RembehSession session) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/loans');
+    final response = await http.get(uri, headers: _authHeaders(session));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+    final loans = body['loans'] as List<dynamic>? ?? const [];
+    return loans.cast<Map<String, dynamic>>();
+  }
+
+  Future<Map<String, dynamic>> getCollectionSummary(
+    RembehSession session,
+  ) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/collections/summary');
+    final response = await http.get(uri, headers: _authHeaders(session));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+    return body;
+  }
+
+  Future<List<Map<String, dynamic>>> listRepayments(
+    RembehSession session, {
+    String? filter,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/collections/repayments').replace(
+      queryParameters: filter == null || filter.isEmpty
+          ? null
+          : {'filter': filter},
+    );
+    final response = await http.get(uri, headers: _authHeaders(session));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+    final repayments = body['repayments'] as List<dynamic>? ?? const [];
+    return repayments.cast<Map<String, dynamic>>();
+  }
+
+  Future<List<Map<String, dynamic>>> listOperationReports({
+    required RembehSession session,
+    String? branchId,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/operations/reports').replace(
+      queryParameters: branchId == null || branchId.isEmpty
+          ? null
+          : {'branchId': branchId},
+    );
+    final response = await http.get(uri, headers: _authHeaders(session));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+    final reports = body['reports'] as List<dynamic>? ?? const [];
+    return reports.cast<Map<String, dynamic>>();
+  }
+
+  Future<List<Map<String, dynamic>>> listCashShortages({
+    required RembehSession session,
+    String? branchId,
+    String? status,
+  }) async {
+    final query = <String, String>{
+      if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
+      if (status != null && status.isNotEmpty) 'status': status,
+    };
+    final uri = Uri.parse(
+      '$rembehApiBaseUrl/cash-shortages',
+    ).replace(queryParameters: query.isEmpty ? null : query);
+    final response = await http.get(uri, headers: _authHeaders(session));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+    final shortages = body['shortages'] as List<dynamic>? ?? const [];
+    return shortages.cast<Map<String, dynamic>>();
+  }
+
   Future<AgentDayStatus> getAgentDayStatus(RembehSession session) async {
     final uri = Uri.parse('$rembehApiBaseUrl/operations/agent-today');
     final response = await http.get(uri, headers: _authHeaders(session));
