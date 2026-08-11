@@ -124,10 +124,10 @@ class _LoginScreenState extends State<LoginScreen>
       if (!mounted || session == null) return;
       await widget.pushService?.requestPermissionAndSync();
       if (!mounted) return;
-      final next = session.requiresProfilePhoto && !session.hasProfilePhoto
-          ? AgentSelfieCaptureScreen(session: session)
-          : session.canUseBranchWorkspace
+      final next = session.canUseBranchWorkspace
           ? BranchWorkspaceScreen(session: session)
+          : session.requiresProfilePhoto && !session.hasProfilePhoto
+          ? AgentSelfieCaptureScreen(session: session)
           : AgentShell(session: session);
       Navigator.of(
         context,

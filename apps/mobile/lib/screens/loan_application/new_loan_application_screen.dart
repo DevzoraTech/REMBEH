@@ -1617,7 +1617,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       ),
       const SizedBox(height: 10),
       LoanSignaturePad(
-        title: 'Loan Officer Signature',
+        title: 'Agent Signature',
         name: '$officer (You)',
         icon: Icons.badge_outlined,
         signed: _draft.officerSigned,
@@ -1625,7 +1625,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         version: _draft.officerSignatureVersion,
         onSign: () => _captureSignature(
           signerRole: 'OFFICER',
-          title: 'Loan Officer Signature',
+          title: 'Agent Signature',
           signerName: officer,
         ),
       ),

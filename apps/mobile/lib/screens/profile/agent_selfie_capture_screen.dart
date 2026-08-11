@@ -8,6 +8,7 @@ import '../../shared/camera_capture/camera_capture.dart';
 import '../../theme.dart';
 import '../../utils/friendly_errors.dart';
 import '../agent_shell.dart';
+import '../branch_workspace_screen.dart';
 
 /// Mandatory professional selfie on first mobile login (or when missing).
 class AgentSelfieCaptureScreen extends StatefulWidget {
@@ -68,9 +69,12 @@ class _AgentSelfieCaptureScreenState extends State<AgentSelfieCaptureScreen> {
         fileName: _fileName,
       );
       if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => AgentShell(session: updated)),
-      );
+      final next = updated.canUseBranchWorkspace
+          ? BranchWorkspaceScreen(session: updated)
+          : AgentShell(session: updated);
+      Navigator.of(
+        context,
+      ).pushReplacement(MaterialPageRoute(builder: (_) => next));
     } catch (error) {
       if (!mounted) return;
       setState(() => _error = friendlyErrorMessage(error));
@@ -94,7 +98,7 @@ class _AgentSelfieCaptureScreenState extends State<AgentSelfieCaptureScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Text(
-                  'Agent photo required',
+                  'Profile photo required',
                   style: TextStyle(
                     color: midnightNavy,
                     fontWeight: FontWeight.w800,
@@ -104,7 +108,7 @@ class _AgentSelfieCaptureScreenState extends State<AgentSelfieCaptureScreen> {
                 ),
                 const SizedBox(height: 8),
                 const Text(
-                  'Take a professional selfie once. It is attached to loans and repayments you record.',
+                  'Take a professional selfie once. It is attached to the loans and repayments you record.',
                   style: TextStyle(
                     color: slateText,
                     fontSize: 14,
@@ -140,7 +144,7 @@ class _AgentSelfieCaptureScreenState extends State<AgentSelfieCaptureScreen> {
                 const SizedBox(height: 6),
                 const _TipRow(
                   icon: Icons.badge_outlined,
-                  text: 'Use a neutral, professional expression (no filters).',
+                  text: 'Use a clear, professional expression with no filters.',
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),

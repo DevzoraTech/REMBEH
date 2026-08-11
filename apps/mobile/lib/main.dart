@@ -147,10 +147,10 @@ class _BootScreenState extends State<_BootScreen> {
   }
 
   void _goShell(RembehSession session) {
-    final next = session.requiresProfilePhoto && !session.hasProfilePhoto
-        ? AgentSelfieCaptureScreen(session: session)
-        : session.canUseBranchWorkspace
+    final next = session.canUseBranchWorkspace
         ? BranchWorkspaceScreen(session: session)
+        : session.requiresProfilePhoto && !session.hasProfilePhoto
+        ? AgentSelfieCaptureScreen(session: session)
         : AgentShell(session: session);
     Navigator.of(
       context,

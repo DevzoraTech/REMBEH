@@ -243,6 +243,17 @@ export class OperationsService {
       address: branch.address,
     };
 
+    if (this.isAutoOpenableDate(bounds.dateLabel)) {
+      await this.autoOpenBranchIfEligible({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        branchName: branch.name,
+        bounds,
+        openedByUserId: user.userId,
+        allowFirstDay: true,
+      });
+    }
+
     const operation = await this.repository.findOperationForDay({
       tenantId: user.tenantId,
       branchId: branch.id,
@@ -908,7 +919,7 @@ export class OperationsService {
     }
     if (variance < 0 && !dto.shortageResponsibleUserId?.trim()) {
       throw new BadRequestException(
-        'Assign the shortage to a field officer or cashier before closing.',
+        'Assign the shortage to an agent or cashier before closing.',
       );
     }
 
@@ -2412,8 +2423,10 @@ export class OperationsService {
       return false;
     }
 
-    if (operation.status === BranchOperationStatus.OPEN &&
-        this.decimalToNumber(operation.cashAddedToday) !== 0) {
+    if (
+      operation.status === BranchOperationStatus.OPEN &&
+      this.decimalToNumber(operation.cashAddedToday) !== 0
+    ) {
       return false;
     }
 

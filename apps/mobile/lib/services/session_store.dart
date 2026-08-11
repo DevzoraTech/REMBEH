@@ -48,7 +48,7 @@ class RembehSession {
   final String? profilePhotoUrl;
   final String? profilePhotoStorageKey;
 
-  /// Field / ops staff who use the mobile app for loans and collections.
+  /// Field and branch staff who use the mobile app for loans and collections.
   bool get isFieldStaff {
     final role = (roleName ?? '').toLowerCase();
     return role.contains('agent') ||
@@ -94,13 +94,13 @@ class RembehSession {
         permissions.contains('collection.create');
   }
 
-  /// Legacy alias — field officers invited as Agent or Field Officer.
+  /// Legacy alias for field users invited under older role names.
   bool get isAgent =>
       isFieldStaff ||
       (roleName ?? '').toLowerCase().contains('agent') ||
       permissions.contains('customer.create');
 
-  /// Profile selfie required for dedicated field officers (not managers/cashiers).
+  /// Profile selfie required for dedicated field agents, not branch managers/cashiers.
   bool get requiresProfilePhoto {
     final role = (roleName ?? '').toLowerCase();
     if (role.contains('manager') || role.contains('cashier')) return false;

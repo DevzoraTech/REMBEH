@@ -47,7 +47,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   String? _error;
   String? _notice;
   int _index = 0;
-  final String _date = _todayLabel();
+  String _date = _todayLabel();
 
   @override
   void initState() {
@@ -67,7 +67,8 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({String? date}) async {
+    final targetDate = date ?? _date;
     setState(() {
       _loading = true;
       _error = null;
@@ -76,7 +77,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       final data = await _api.getBranchOperation(
         session: widget.session,
         branchId: widget.session.branchId,
-        date: _date,
+        date: targetDate,
       );
       var agents = <Map<String, dynamic>>[];
       if (widget.session.hasPermission('operation.float.manage') ||
@@ -85,7 +86,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         try {
           agents = await _api.listBranchAgents(
             session: widget.session,
-            date: _date,
+            date: targetDate,
           );
         } catch (_) {
           agents = const [];
@@ -93,6 +94,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       }
       if (!mounted) return;
       setState(() {
+        _date = targetDate;
         _data = data;
         _agents = agents;
         _loading = false;
@@ -145,6 +147,15 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   Map<String, dynamic>? get _branch =>
       _data?['branch'] as Map<String, dynamic>?;
 
+  Map<String, dynamic>? get _pendingClosure =>
+      _data?['pendingClosureOperation'] as Map<String, dynamic>?;
+
+  Map<String, dynamic>? get _awaitingReport =>
+      _data?['awaitingReportOperation'] as Map<String, dynamic>?;
+
+  Map<String, dynamic>? get _report =>
+      _data?['report'] as Map<String, dynamic>?;
+
   String get _branchName =>
       _string(_branch?['name']) ?? widget.session.branchName ?? 'Branch';
 
@@ -183,6 +194,59 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => AgentShell(session: widget.session)),
     );
+  }
+
+  Future<void> _reviewPendingClosure() async {
+    final operationDate = _string(_pendingClosure?['operationDate']);
+    if (operationDate == null) return;
+    _setNotice('Close this day and send its report. Today opens after that.');
+    await _load(date: operationDate);
+    if (!mounted ||
+        !widget.session.hasPermission('operation.close') ||
+        !_dayOpen) {
+      return;
+    }
+    await _showCloseDaySheet();
+  }
+
+  Future<void> _sendAwaitingReport() async {
+    final operationDate = _string(_awaitingReport?['operationDate']);
+    if (operationDate == null) return;
+    await _load(date: operationDate);
+    if (!mounted) return;
+    await _submitCloseReport(returnToToday: true);
+  }
+
+  Future<void> _submitCloseReport({bool returnToToday = false}) async {
+    final reportId = _string(_report?['id']);
+    if (reportId == null) {
+      setState(() => _error = 'Close report is not ready yet.');
+      return;
+    }
+    if (_saving) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+      _notice = null;
+    });
+    try {
+      await _api.managerConfirmOperationReport(
+        session: widget.session,
+        reportId: reportId,
+      );
+      _setNotice('Close report sent.');
+      await _load(date: returnToToday ? _todayLabel() : _date);
+    } catch (error) {
+      final message = friendlyErrorMessage(error);
+      if (isAccountAccessBlockedMessage(message)) {
+        await _handleAccountBlocked(message);
+        return;
+      }
+      if (!mounted) return;
+      setState(() => _error = message);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   Future<void> _showOpenDaySheet() async {
@@ -295,7 +359,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
   Future<void> _showFloatSheet({required bool addMore}) async {
     if (_agents.isEmpty) {
-      setState(() => _error = 'No field officers found.');
+      setState(() => _error = 'No agents found.');
       return;
     }
     final amount = TextEditingController();
@@ -317,7 +381,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       ],
       onSubmit: () async {
         final value = _parseAmount(amount.text);
-        if (agentId.isEmpty) throw ApiException('Choose a field officer.');
+        if (agentId.isEmpty) throw ApiException('Choose an agent.');
         if (value == null || value <= 0) throw ApiException('Enter amount.');
         await _api.recordAgentFloat(
           session: widget.session,
@@ -334,14 +398,14 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
   Future<void> _showReturnSheet() async {
     if (_agents.isEmpty) {
-      setState(() => _error = 'No field officers found.');
+      setState(() => _error = 'No agents found.');
       return;
     }
     final amount = TextEditingController();
     final notes = TextEditingController();
     var agentId = _agents.first['id'] as String? ?? '';
     await _showFormSheet(
-      title: 'Officer return',
+      title: 'Agent return',
       actionLabel: 'Save',
       builder: (setModalState) => [
         _AgentPicker(
@@ -356,7 +420,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       ],
       onSubmit: () async {
         final value = _parseAmount(amount.text);
-        if (agentId.isEmpty) throw ApiException('Choose a field officer.');
+        if (agentId.isEmpty) throw ApiException('Choose an agent.');
         if (value == null || value < 0) throw ApiException('Enter amount.');
         await _api.recordAgentReturn(
           session: widget.session,
@@ -374,6 +438,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   Future<void> _showCloseDaySheet() async {
     final operation = _operation;
     if (operation == null) return;
+    final operationDate = _string(operation['operationDate']) ?? _date;
     final expected = _num(operation['expectedClosingBalance']);
     final counted = TextEditingController(text: _moneyText(expected));
     final notes = TextEditingController();
@@ -425,7 +490,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         await _api.closeBranchOperation(
           session: widget.session,
           branchId: widget.session.branchId,
-          date: _date,
+          date: operationDate,
           countedCash: countedValue,
           notes: notes.text,
           shortageResponsibleUserId: closeVariance < 0 ? responsibleId : null,
@@ -558,6 +623,9 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
                           _OverviewTab(
                             session: widget.session,
                             operation: _operation,
+                            report: _report,
+                            pendingClosure: _pendingClosure,
+                            awaitingReport: _awaitingReport,
                             branchName: _branchName,
                             agents: _agents,
                             dayOpen: _dayOpen,
@@ -568,6 +636,12 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
                             onAddFloat: () => _showFloatSheet(addMore: true),
                             onReturn: _showReturnSheet,
                             onCloseDay: _showCloseDaySheet,
+                            onSubmitReport: () =>
+                                unawaited(_submitCloseReport()),
+                            onReviewPendingClosure: () =>
+                                unawaited(_reviewPendingClosure()),
+                            onSendAwaitingReport: () =>
+                                unawaited(_sendAwaitingReport()),
                             onRefresh: _load,
                             onOpenFieldTools:
                                 widget.session.canUseFieldWorkspace
@@ -625,6 +699,9 @@ class _OverviewTab extends StatelessWidget {
   const _OverviewTab({
     required this.session,
     required this.operation,
+    required this.report,
+    required this.pendingClosure,
+    required this.awaitingReport,
     required this.branchName,
     required this.agents,
     required this.dayOpen,
@@ -635,12 +712,18 @@ class _OverviewTab extends StatelessWidget {
     required this.onAddFloat,
     required this.onReturn,
     required this.onCloseDay,
+    required this.onSubmitReport,
+    required this.onReviewPendingClosure,
+    required this.onSendAwaitingReport,
     required this.onRefresh,
     this.onOpenFieldTools,
   });
 
   final RembehSession session;
   final Map<String, dynamic>? operation;
+  final Map<String, dynamic>? report;
+  final Map<String, dynamic>? pendingClosure;
+  final Map<String, dynamic>? awaitingReport;
   final String branchName;
   final List<Map<String, dynamic>> agents;
   final bool dayOpen;
@@ -651,6 +734,9 @@ class _OverviewTab extends StatelessWidget {
   final VoidCallback onAddFloat;
   final VoidCallback onReturn;
   final VoidCallback onCloseDay;
+  final VoidCallback onSubmitReport;
+  final VoidCallback onReviewPendingClosure;
+  final VoidCallback onSendAwaitingReport;
   final Future<void> Function() onRefresh;
   final VoidCallback? onOpenFieldTools;
 
@@ -677,10 +763,32 @@ class _OverviewTab extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           if (op == null)
-            _EmptyDayCard(
-              canOpen: session.hasPermission('operation.open'),
-              onOpenDay: onOpenDay,
-            )
+            pendingClosure != null
+                ? _CarryoverDayCard(
+                    icon: Icons.lock_clock_outlined,
+                    title: 'Previous day needs closing',
+                    message:
+                        '${_dateLabel(pendingClosure?['operationDate'])} has activity that must be closed before today can open.',
+                    actionLabel: 'Close this day',
+                    onAction: session.hasPermission('operation.close')
+                        ? onReviewPendingClosure
+                        : null,
+                  )
+                : awaitingReport != null
+                ? _CarryoverDayCard(
+                    icon: Icons.receipt_long_outlined,
+                    title: 'Report needs sending',
+                    message:
+                        '${_dateLabel(awaitingReport?['operationDate'])} is closed. Send its report to open today.',
+                    actionLabel: 'Send report',
+                    onAction: session.hasPermission('operation.report.review')
+                        ? onSendAwaitingReport
+                        : null,
+                  )
+                : _EmptyDayCard(
+                    canOpen: session.hasPermission('operation.open'),
+                    onOpenDay: onOpenDay,
+                  )
           else ...[
             GridView.count(
               crossAxisCount: 2,
@@ -754,9 +862,18 @@ class _OverviewTab extends StatelessWidget {
                     onTap: onCloseDay,
                     strong: true,
                   ),
+                if (!dayOpen &&
+                    _reportNeedsManagerSubmission(report) &&
+                    session.hasPermission('operation.report.review'))
+                  _BranchAction(
+                    label: 'Send report',
+                    icon: Icons.send_outlined,
+                    onTap: onSubmitReport,
+                    strong: true,
+                  ),
                 if (onOpenFieldTools != null)
                   _BranchAction(
-                    label: 'Field tools',
+                    label: 'Agent tools',
                     icon: Icons.phone_android_outlined,
                     onTap: onOpenFieldTools!,
                   ),
@@ -779,8 +896,8 @@ class _PeopleTab extends StatelessWidget {
     if (agents.isEmpty) {
       return const _EmptyState(
         icon: Icons.groups_outlined,
-        title: 'No field officers',
-        message: 'No field officers are available for this branch.',
+        title: 'No agents',
+        message: 'No agents are available for this branch.',
       );
     }
     return ListView.separated(
@@ -789,7 +906,7 @@ class _PeopleTab extends StatelessWidget {
         final agent = agents[index];
         return _SimpleTile(
           icon: Icons.person_outline,
-          title: _string(agent['name']) ?? 'Field officer',
+          title: _string(agent['name']) ?? 'Agent',
           subtitle: _string(agent['phone']) ?? _string(agent['email']) ?? '',
           trailing: _moneyOrDash(agent['floatToday']),
         );
@@ -857,7 +974,7 @@ class _RecordsTab extends StatelessWidget {
               .map(
                 (row) => _SimpleTile(
                   icon: Icons.assignment_return_outlined,
-                  title: _string(row['agentName']) ?? 'Field officer',
+                  title: _string(row['agentName']) ?? 'Agent',
                   subtitle: _statusLabel(_string(row['status']) ?? ''),
                   trailing: row['amountReturned'] == null
                       ? 'Pending'
@@ -1046,6 +1163,64 @@ class _EmptyDayCard extends StatelessWidget {
             onPressed: canOpen ? onOpenDay : null,
             child: const Text('Open Day'),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CarryoverDayCard extends StatelessWidget {
+  const _CarryoverDayCard({
+    required this.icon,
+    required this.title,
+    required this.message,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: line),
+        borderRadius: rembehBorderRadius(rembehRadiusLg),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Icon(icon, color: warmGold, size: 36),
+          const SizedBox(height: 10),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: midnightNavy,
+              fontSize: 19,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: slateText,
+              fontSize: 13,
+              height: 1.35,
+            ),
+          ),
+          if (actionLabel != null) ...[
+            const SizedBox(height: 14),
+            FilledButton(onPressed: onAction, child: Text(actionLabel!)),
+          ],
         ],
       ),
     );
@@ -1378,7 +1553,7 @@ class _AgentPicker extends StatelessWidget {
     required this.agents,
     required this.value,
     required this.onChanged,
-    this.label = 'Field officer',
+    this.label = 'Agent',
   });
 
   final List<Map<String, dynamic>> agents;
@@ -1394,7 +1569,7 @@ class _AgentPicker extends StatelessWidget {
           .map(
             (agent) => DropdownMenuItem(
               value: agent['id'] as String? ?? '',
-              child: Text(_string(agent['name']) ?? 'Field officer'),
+              child: Text(_string(agent['name']) ?? 'Agent'),
             ),
           )
           .toList(),
@@ -1577,6 +1752,19 @@ String _label(String value) {
 String _statusLabel(String status) {
   if (status == 'NOT_OPEN') return 'Not open';
   return _label(status);
+}
+
+bool _reportNeedsManagerSubmission(Map<String, dynamic>? report) {
+  final status = _string(report?['status']);
+  return status == 'MANAGER_REVIEW' || status == 'RETURNED_TO_MANAGER';
+}
+
+String _dateLabel(Object? value) {
+  final raw = _string(value);
+  if (raw == null) return 'The previous day';
+  final parsed = DateTime.tryParse(raw);
+  if (parsed == null) return raw;
+  return formatActivityTime(parsed, DateTime.now()).split(',').first;
 }
 
 String _moneyOrDash(Object? value) {

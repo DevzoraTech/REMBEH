@@ -26,9 +26,8 @@ Future<void> showClientDetailsSheet(
   showDialog<void>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => const Center(
-      child: CircularProgressIndicator(color: forestEmerald),
-    ),
+    builder: (_) =>
+        const Center(child: CircularProgressIndicator(color: forestEmerald)),
   );
 
   try {
@@ -71,9 +70,9 @@ class ClientDetailsSheet extends StatelessWidget {
   Future<void> _copyPhone(BuildContext context) async {
     await Clipboard.setData(ClipboardData(text: detail.phone));
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Copied ${detail.phone}')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('Copied ${detail.phone}')));
   }
 
   @override
@@ -214,7 +213,7 @@ class ClientDetailsSheet extends StatelessWidget {
                                 ),
                                 const SizedBox(width: 8),
                                 const Text(
-                                  'Agent photo on file',
+                                  'Profile photo on file',
                                   style: TextStyle(
                                     color: slateText,
                                     fontSize: 11,
@@ -433,7 +432,8 @@ class ClientDetailsSheet extends StatelessWidget {
                             child: _DetailItem(
                               icon: Icons.percent,
                               label: 'Interest Rate',
-                              value: detail.interestRatePercent ==
+                              value:
+                                  detail.interestRatePercent ==
                                       detail.interestRatePercent.roundToDouble()
                                   ? '${detail.interestRatePercent.round()}%'
                                   : '${detail.interestRatePercent}%',
@@ -671,9 +671,11 @@ class ClientDetailsSheet extends StatelessWidget {
   }
 
   String _relativeDays(DateTime value, DateTime now) {
-    final days = DateTime(now.year, now.month, now.day)
-        .difference(DateTime(value.year, value.month, value.day))
-        .inDays;
+    final days = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).difference(DateTime(value.year, value.month, value.day)).inDays;
     if (days <= 0) return 'today';
     if (days == 1) return '1 day ago';
     return '$days days ago';

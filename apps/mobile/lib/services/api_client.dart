@@ -345,6 +345,20 @@ class ApiClient {
     );
   }
 
+  Future<Map<String, dynamic>> managerConfirmOperationReport({
+    required RembehSession session,
+    required String reportId,
+    String? notes,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/operations/reports/$reportId/manager-confirm',
+      body: {
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+      },
+    );
+  }
+
   Future<Map<String, dynamic>> createCustomer({
     required RembehSession session,
     required String fullName,
