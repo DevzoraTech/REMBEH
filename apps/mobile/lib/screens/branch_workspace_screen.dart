@@ -636,8 +636,9 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
                             onAddFloat: () => _showFloatSheet(addMore: true),
                             onReturn: _showReturnSheet,
                             onCloseDay: _showCloseDaySheet,
-                            onSubmitReport: () =>
-                                unawaited(_submitCloseReport()),
+                            onSubmitReport: () => unawaited(
+                              _submitCloseReport(returnToToday: true),
+                            ),
                             onReviewPendingClosure: () =>
                                 unawaited(_reviewPendingClosure()),
                             onSendAwaitingReport: () =>
