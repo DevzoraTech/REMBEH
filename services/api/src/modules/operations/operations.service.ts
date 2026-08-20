@@ -1056,7 +1056,7 @@ export class OperationsService {
       branchId: branch.id,
       operationId: operation.id,
       operationDate: bounds.dateLabel,
-      status: BranchOperationStatus.CLOSING,
+      status: operation.status,
     });
 
     return this.getToday(user, {
@@ -1366,7 +1366,7 @@ export class OperationsService {
 
     this.assertCanChangeDay(bounds.dateOnly);
 
-    let operation = await this.repository.findOperationForDay({
+    const operation = await this.repository.findOperationForDay({
       tenantId: user.tenantId,
       branchId: branch.id,
       operationDate: bounds.dateOnly,
@@ -1423,35 +1423,11 @@ export class OperationsService {
       );
     }
 
-    /*
-     * Reconciliation begins the controlled closing phase.
-     *
-     * From this point field money operations are blocked because
-     * getAgentToday() already treats CLOSING as locked.
-     */
-    if (operation.status === BranchOperationStatus.OPEN) {
-      await this.repository.markOperationClosing({
-        tenantId: user.tenantId,
-        operationId: operation.id,
-        actorUserId: user.userId,
-      });
-    }
-
     await this.repository.startReconciliation({
       tenantId: user.tenantId,
       branchId: branch.id,
       operationId: operation.id,
       startedByUserId: user.userId,
-    });
-
-    /*
-     * Reload after changing OPEN -> CLOSING so clients immediately
-     * receive the authoritative persisted status.
-     */
-    operation = await this.repository.findOperationForDay({
-      tenantId: user.tenantId,
-      branchId: branch.id,
-      operationDate: bounds.dateOnly,
     });
 
     if (operation) {
@@ -1500,12 +1476,14 @@ export class OperationsService {
       throw new BadRequestException('This branch day has already been closed.');
     }
 
-    if (operation.status !== BranchOperationStatus.CLOSING) {
+    if (
+      operation.status !== BranchOperationStatus.OPEN &&
+      operation.status !== BranchOperationStatus.CLOSING
+    ) {
       throw new BadRequestException(
-        'Start reconciliation before recording the cash count.',
+        'This branch day cannot accept another cash count.',
       );
     }
-
     const reconciliation = await this.repository.findReconciliationForOperation(
       {
         tenantId: user.tenantId,
@@ -1591,9 +1569,12 @@ export class OperationsService {
       throw new BadRequestException('This branch day has already been closed.');
     }
 
-    if (operation.status !== BranchOperationStatus.CLOSING) {
+    if (
+      operation.status !== BranchOperationStatus.OPEN &&
+      operation.status !== BranchOperationStatus.CLOSING
+    ) {
       throw new BadRequestException(
-        'Start reconciliation before submitting the branch close.',
+        'This branch day cannot be submitted for reconciliation.',
       );
     }
 
@@ -1677,6 +1658,21 @@ export class OperationsService {
         reconciliationId: reconciliation.id,
         updatedByUserId: user.userId,
         notes: finalNotes,
+      });
+    }
+
+    /*
+     * Final submission begins the very short controlled closing phase.
+     *
+     * Draft reconciliation leaves the branch OPEN. We only freeze branch
+     * money operations after every reconciliation validation has succeeded
+     * and immediately before committing the final close.
+     */
+    if (operation.status === BranchOperationStatus.OPEN) {
+      await this.repository.markOperationClosing({
+        tenantId: user.tenantId,
+        operationId: operation.id,
+        actorUserId: user.userId,
       });
     }
 

@@ -1000,23 +1000,12 @@ export class OperationsRepository {
       });
 
       /*
-       * Reconciliation freezes branch money operations.
+       * Starting reconciliation only creates/resumes a draft.
        *
-       * updateMany makes this idempotent:
-       * OPEN -> CLOSING happens once.
+       * It deliberately DOES NOT move the branch from OPEN to CLOSING.
+       * The manager may count cash, save the reconciliation and continue
+       * normal branch operations until the final reconciliation is submitted.
        */
-      await tx.branchDailyOperation.updateMany({
-        where: {
-          id: input.operationId,
-          tenantId: input.tenantId,
-          branchId: input.branchId,
-          status: BranchOperationStatus.OPEN,
-        },
-        data: {
-          status: BranchOperationStatus.CLOSING,
-        },
-      });
-
       if (existing) {
         return existing;
       }
@@ -1042,7 +1031,7 @@ export class OperationsRepository {
           newValue: {
             branchId: input.branchId,
             operationId: input.operationId,
-            operationStatus: BranchOperationStatus.CLOSING,
+            operationStatus: BranchOperationStatus.OPEN,
             notes: input.notes?.trim() || null,
           },
         },
