@@ -13,12 +13,17 @@ import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RequirePermissions } from '../../common/auth/permissions.decorator';
 import { PermissionsGuard } from '../../common/auth/permissions.guard';
-import { CloseBranchOperationDto } from './dto/close-branch-operation.dto';
+
 import { OpenBranchOperationDto } from './dto/open-branch-operation.dto';
 import { RecordAgentReturnDto } from './dto/record-agent-return.dto';
 import { RecordOperationExpenseDto } from './dto/record-operation-expense.dto';
 import { RecordOperationTopUpDto } from './dto/record-operation-top-up.dto';
 import { ReviewOperationReportDto } from './dto/review-operation-report.dto';
+
+import { StartOperationReconciliationDto } from './dto/start-operation-reconciliation.dto';
+import { UpdateOperationCashCountDto } from './dto/update-operation-reconciliation';
+import { SubmitOperationReconciliationDto } from './dto/submit-operation-reconciliation';
+
 import { OperationsService } from './operations.service';
 import { OPERATIONS_PERMISSIONS } from './operations.permissions';
 
@@ -27,10 +32,18 @@ import { OPERATIONS_PERMISSIONS } from './operations.permissions';
 export class OperationsController {
   constructor(private readonly operationsService: OperationsService) {}
 
+  // ---------------------------------------------------------------------------
+  // Agent day
+  // ---------------------------------------------------------------------------
+
   @Get('agent-today')
   getAgentToday(@CurrentUser() user: AuthenticatedUser) {
     return this.operationsService.getAgentToday(user);
   }
+
+  // ---------------------------------------------------------------------------
+  // Branch daily operation
+  // ---------------------------------------------------------------------------
 
   @Get('today')
   @RequirePermissions(OPERATIONS_PERMISSIONS.read)
@@ -39,8 +52,125 @@ export class OperationsController {
     @Query('branchId') branchId?: string,
     @Query('date') date?: string,
   ) {
-    return this.operationsService.getToday(user, { branchId, date });
+    return this.operationsService.getToday(user, {
+      branchId,
+      date,
+    });
   }
+
+  /**
+   * Legacy/manual opening endpoint.
+   *
+   * Normal operating days are auto-opened by OperationsService,
+   * but this remains available for first-day/manual recovery flows.
+   */
+  @Post('open')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.open)
+  openBranch(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: OpenBranchOperationDto,
+  ) {
+    return this.operationsService.openBranch(user, dto);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Expenses
+  // ---------------------------------------------------------------------------
+
+  @Post('expenses')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.expenseCreate)
+  recordExpense(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: RecordOperationExpenseDto,
+  ) {
+    return this.operationsService.recordExpense(user, dto);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Branch cash top-ups
+  // ---------------------------------------------------------------------------
+
+  @Post('top-ups')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.cashTopUp)
+  recordTopUp(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: RecordOperationTopUpDto,
+  ) {
+    return this.operationsService.recordTopUp(user, dto);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Agent balancing / cash handover
+  // ---------------------------------------------------------------------------
+
+  @Post('agent-returns')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.floatReturn)
+  recordAgentReturn(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: RecordAgentReturnDto,
+  ) {
+    return this.operationsService.recordAgentReturn(user, dto);
+  }
+
+  // ---------------------------------------------------------------------------
+  // End-of-day reconciliation
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Starts/resumes reconciliation for the branch day.
+   *
+   * This does NOT close the branch.
+   * It creates the persisted reconciliation draft.
+   */
+  @Post('reconciliation/start')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.close)
+  startReconciliation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body()
+    dto: StartOperationReconciliationDto,
+  ) {
+    return this.operationsService.startReconciliation(user, dto);
+  }
+
+  /**
+   * Records a physical cash count.
+   *
+   * Every submission creates an immutable
+   * BranchOperationCashCount history row.
+   */
+  @Post('reconciliation/cash-count')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.close)
+  updateReconciliationCashCount(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body()
+    dto: UpdateOperationCashCountDto,
+  ) {
+    return this.operationsService.updateReconciliationCashCount(user, dto);
+  }
+
+  /**
+   * Final reconciliation submission.
+   *
+   * The latest persisted countedCash becomes the authoritative
+   * branch closing balance.
+   *
+   * This is the path that should ultimately move:
+   *
+   * OPEN -> CLOSING -> CLOSED
+   */
+  @Post('reconciliation/submit')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.close)
+  submitReconciliation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body()
+    dto: SubmitOperationReconciliationDto,
+  ) {
+    return this.operationsService.submitReconciliation(user, dto);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Reports
+  // ---------------------------------------------------------------------------
 
   @Get('reports')
   @RequirePermissions(OPERATIONS_PERMISSIONS.read)
@@ -68,55 +198,12 @@ export class OperationsController {
     return this.operationsService.listOwnerBranchDailyStatuses(user, date);
   }
 
-  @Post('open')
-  @RequirePermissions(OPERATIONS_PERMISSIONS.open)
-  openBranch(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: OpenBranchOperationDto,
-  ) {
-    return this.operationsService.openBranch(user, dto);
-  }
-
-  @Post('expenses')
-  @RequirePermissions(OPERATIONS_PERMISSIONS.expenseCreate)
-  recordExpense(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: RecordOperationExpenseDto,
-  ) {
-    return this.operationsService.recordExpense(user, dto);
-  }
-
-  @Post('top-ups')
-  recordTopUp(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: RecordOperationTopUpDto,
-  ) {
-    return this.operationsService.recordTopUp(user, dto);
-  }
-
-  @Post('agent-returns')
-  @RequirePermissions(OPERATIONS_PERMISSIONS.floatReturn)
-  recordAgentReturn(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: RecordAgentReturnDto,
-  ) {
-    return this.operationsService.recordAgentReturn(user, dto);
-  }
-
-  @Post('close')
-  @RequirePermissions(OPERATIONS_PERMISSIONS.close)
-  closeBranch(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: CloseBranchOperationDto,
-  ) {
-    return this.operationsService.closeBranch(user, dto);
-  }
-
   @Get('reports/:reportId')
   @RequirePermissions(OPERATIONS_PERMISSIONS.read)
   getOwnerReport(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('reportId', ParseUUIDPipe) reportId: string,
+    @Param('reportId', ParseUUIDPipe)
+    reportId: string,
   ) {
     return this.operationsService.getOwnerReport(user, reportId);
   }
@@ -125,7 +212,8 @@ export class OperationsController {
   @RequirePermissions(OPERATIONS_PERMISSIONS.reportReview)
   managerConfirmReport(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('reportId', ParseUUIDPipe) reportId: string,
+    @Param('reportId', ParseUUIDPipe)
+    reportId: string,
     @Body() dto: ReviewOperationReportDto,
   ) {
     return this.operationsService.managerConfirmReport(user, reportId, dto);
@@ -135,7 +223,8 @@ export class OperationsController {
   @RequirePermissions(OPERATIONS_PERMISSIONS.approve)
   ownerApproveReport(
     @CurrentUser() user: AuthenticatedUser,
-    @Param('reportId', ParseUUIDPipe) reportId: string,
+    @Param('reportId', ParseUUIDPipe)
+    reportId: string,
     @Body() dto: ReviewOperationReportDto,
   ) {
     return this.operationsService.ownerApproveReport(user, reportId, dto);

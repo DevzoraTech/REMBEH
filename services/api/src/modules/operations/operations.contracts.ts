@@ -1,7 +1,10 @@
 export type BranchOperationStatusContract = 'OPEN' | 'CLOSING' | 'CLOSED';
 
 export type DailyOperationReportStatusContract =
-  'MANAGER_REVIEW' | 'SENT_TO_OWNER' | 'OWNER_APPROVED' | 'RETURNED_TO_MANAGER';
+  | 'MANAGER_REVIEW'
+  | 'SENT_TO_OWNER'
+  | 'OWNER_APPROVED'
+  | 'RETURNED_TO_MANAGER';
 
 export type DailyOperationBranchContract = {
   id: string;
@@ -40,7 +43,10 @@ export type DailyOperationTopUpContract = {
 };
 
 export type DailyOperationAgentReturnStatusContract =
-  'PENDING' | 'RETURNED' | 'SHORT' | 'OVER';
+  | 'PENDING'
+  | 'RETURNED'
+  | 'SHORT'
+  | 'OVER';
 
 export type DailyOperationAgentReturnContract = {
   floatId: string;
@@ -125,52 +131,118 @@ export type DailyOperationVarianceContract = {
   occurredAt: string;
 };
 
+/**
+ * Immutable history entry for a physical cash count entered
+ * while reconciling a branch day.
+ */
+export type BranchOperationCashCountContract = {
+  id: string;
+  previousAmount: number | null;
+  countedAmount: number;
+  recordedAt: string;
+  recordedByName: string;
+};
+
+/**
+ * Working reconciliation state for an operation.
+ *
+ * countedCash is deliberately separate from closingBalance.
+ * It may be updated repeatedly until the manager finally closes the day.
+ */
+export type BranchOperationReconciliationContract = {
+  id: string;
+  operationId: string;
+  branchId: string;
+
+  countedCash: number | null;
+  expectedClosingBalance: number;
+  variance: number | null;
+
+  notes: string | null;
+
+  startedAt: string;
+  startedByName: string;
+
+  updatedAt: string;
+  updatedByName: string | null;
+
+  cashCounts: BranchOperationCashCountContract[];
+};
+
 export type DailyOperationContract = {
   id: string;
   branchId: string;
   branchName: string;
   operationDate: string;
   status: BranchOperationStatusContract;
+
   openedAt: string;
   openedByName: string;
   closedAt: string | null;
   closedByName: string | null;
+
   openingBalance: number;
   cashAddedToday: number;
   cashAvailableAtOpening: number;
+
   floatIssued: number;
   floatSetAside: number;
   floatRemaining: number;
+
   processingFeesTotal: number;
   cashReturnedByAgents: number;
+
   agentsWithFloatCount: number;
   agentsReturnedCount: number;
   expectedAgentReturnTotal: number;
   agentReturnVariance: number;
   agentReturns: DailyOperationAgentReturnContract[];
+
   topUpsCount: number;
   topUpsTotal: number;
   topUps: DailyOperationTopUpContract[];
+
   expensesCount: number;
   expensesTotal: number;
   expenses: DailyOperationExpenseContract[];
+
   branchCashRemaining: number;
   expectedClosingBalance: number;
+
+  /**
+   * Lightweight reconciliation fields used by the operations UI.
+   */
+  reconciliationStarted: boolean;
+  reconciliationCountedCash: number | null;
+  reconciliationVariance: number | null;
+
+  /**
+   * Final close values.
+   *
+   * These remain null until the branch is actually closed.
+   */
   closingBalance: number | null;
   closingVariance: number | null;
   closingNotes: string | null;
+
   loansIssuedCount: number;
   loansIssuedPrincipal: number;
+
   collectionsCount: number;
   collectionsReceived: number;
+
   notes: string | null;
+
   loansByProduct: DailyOperationProductBreakdownContract[];
   repaymentsByProduct: DailyOperationProductBreakdownContract[];
   feesByProduct: DailyOperationProductBreakdownContract[];
+
   loansIssued: DailyOperationLoanIssuedContract[];
   repayments: DailyOperationRepaymentContract[];
   processingFees: DailyOperationProcessingFeeContract[];
+
   variances: DailyOperationVarianceContract[];
+
   previousReportReference: {
     reportNumber: string;
     operationDate: string;
@@ -184,16 +256,21 @@ export type DailyOperationReportContract = {
   reportNumber: string;
   operationDate: string;
   status: DailyOperationReportStatusContract;
+
   generatedAt: string;
+
   managerReviewedAt: string | null;
   managerReviewedByName: string | null;
   managerNotes: string | null;
+
   ownerApprovedAt: string | null;
   ownerApprovedByName: string | null;
   ownerNotes: string | null;
+
   returnedAt: string | null;
   returnedByName: string | null;
   returnNotes: string | null;
+
   snapshot: unknown;
 };
 
@@ -208,15 +285,44 @@ export type DailyOperationCarryoverContract = {
 
 export type DailyOperationResponseContract = {
   date: string;
+
   branch: DailyOperationBranchContract | null;
+
   openingBalance: number | null;
   openingBalanceSource: 'PREVIOUS_CLOSING' | 'MANUAL';
+
   previousClosedOperation: DailyOperationCarryoverContract | null;
+
   pendingClosureOperation: DailyOperationCarryoverContract | null;
-  /** Previous day is closed but its report is not submitted yet — blocks auto-open. */
+
+  /**
+   * Previous day is closed but its report has not been submitted yet.
+   * This blocks automatic opening of the following business day.
+   */
   awaitingReportOperation: DailyOperationCarryoverContract | null;
+
   operation: DailyOperationContract | null;
+
+  /**
+   * Full working reconciliation state.
+   *
+   * Null until reconciliation has been started for the current operation.
+   */
+  reconciliation: BranchOperationReconciliationContract | null;
+
   report: DailyOperationReportContract | null;
+};
+
+/**
+ * Useful when the reconciliation workflow returns the completed close result.
+ *
+ * This gives the mobile client the complete operation, reconciliation,
+ * and generated report without needing to reconstruct state locally.
+ */
+export type ReconciliationSubmitResultContract = {
+  operation: DailyOperationContract;
+  reconciliation: BranchOperationReconciliationContract;
+  report: DailyOperationReportContract;
 };
 
 export type OwnerOperationReportListItemContract = {
@@ -227,25 +333,34 @@ export type OwnerOperationReportListItemContract = {
   reportNumber: string;
   operationDate: string;
   status: DailyOperationReportStatusContract;
+
   generatedAt: string;
+
   managerReviewedAt: string | null;
   managerReviewedByName: string | null;
   managerNotes: string | null;
+
   ownerApprovedAt: string | null;
   ownerApprovedByName: string | null;
   ownerNotes: string | null;
+
   returnedAt: string | null;
   returnedByName: string | null;
   returnNotes: string | null;
+
   expectedClosingBalance: number;
   closingBalance: number | null;
   closingVariance: number | null;
+
   loansIssuedCount: number;
   loansIssuedPrincipal: number;
+
   collectionsReceived: number;
   processingFeesTotal: number;
   expensesTotal: number;
+
   cashReturnedByAgents: number;
+
   snapshot: unknown;
 };
 
@@ -261,10 +376,13 @@ export type OwnerBranchDailyStatusContract = {
   branchId: string;
   branchName: string;
   operationDate: string;
+
   operationId: string | null;
   operationStatus: BranchOperationStatusContract | null;
+
   openedAt: string | null;
   closedAt: string | null;
+
   reportId: string | null;
   reportNumber: string | null;
   reportStatus: DailyOperationReportStatusContract | null;
@@ -292,19 +410,29 @@ export type AgentDailyFloatSummaryContract = {
   amountCollected: number;
   unusedFloat: number;
   expectedHandover: number;
+
   amountReturned: number | null;
   returnedAt: string | null;
 };
 
 export type AgentDailyOperationResponseContract = {
   date: string;
+
   branch: DailyOperationBranchContract | null;
+
   branchStatus: BranchOperationStatusContract | null;
+
   canUseApp: boolean;
-  /** Client records / search allowed while money work is locked. */
+
+  /**
+   * Client records/search remain available while financial operations
+   * are temporarily locked.
+   */
   canBrowseClients: boolean;
+
   lockReason: AgentDailyAccessReasonContract;
   lockTitle: string | null;
   lockMessage: string | null;
+
   float: AgentDailyFloatSummaryContract;
 };

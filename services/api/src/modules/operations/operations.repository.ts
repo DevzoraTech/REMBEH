@@ -10,15 +10,107 @@ import { PrismaService } from '../../database/prisma.service';
 import { OPERATIONS_EVENTS } from './operations.events';
 import { OPERATIONS_PERMISSIONS } from './operations.permissions';
 
+const operationReportInclude = {
+  managerReviewedBy: {
+    select: {
+      id: true,
+      displayName: true,
+    },
+  },
+  ownerApprovedBy: {
+    select: {
+      id: true,
+      displayName: true,
+    },
+  },
+  returnedBy: {
+    select: {
+      id: true,
+      displayName: true,
+    },
+  },
+} satisfies Prisma.BranchOperationReportInclude;
+
+const branchOperationInclude = {
+  branch: true,
+  openedBy: {
+    select: {
+      id: true,
+      displayName: true,
+    },
+  },
+  closedBy: {
+    select: {
+      id: true,
+      displayName: true,
+    },
+  },
+  reconciliation: {
+    include: {
+      startedBy: {
+        select: {
+          id: true,
+          displayName: true,
+        },
+      },
+      updatedBy: {
+        select: {
+          id: true,
+          displayName: true,
+        },
+      },
+      cashCounts: {
+        include: {
+          recordedBy: {
+            select: {
+              id: true,
+              displayName: true,
+            },
+          },
+        },
+        orderBy: {
+          recordedAt: 'desc' as const,
+        },
+      },
+    },
+  },
+} satisfies Prisma.BranchDailyOperationInclude;
+
+const reconciliationInclude = {
+  branch: true,
+  operation: {
+    include: branchOperationInclude,
+  },
+  startedBy: {
+    select: {
+      id: true,
+      displayName: true,
+    },
+  },
+  updatedBy: {
+    select: {
+      id: true,
+      displayName: true,
+    },
+  },
+  cashCounts: {
+    include: {
+      recordedBy: {
+        select: {
+          id: true,
+          displayName: true,
+        },
+      },
+    },
+    orderBy: {
+      recordedAt: 'desc' as const,
+    },
+  },
+} satisfies Prisma.BranchOperationReconciliationInclude;
+
 export type BranchOperationRecord = Awaited<
   ReturnType<OperationsRepository['findOperationForDay']>
 >;
-
-const operationReportInclude = {
-  managerReviewedBy: { select: { id: true, displayName: true } },
-  ownerApprovedBy: { select: { id: true, displayName: true } },
-  returnedBy: { select: { id: true, displayName: true } },
-} satisfies Prisma.BranchOperationReportInclude;
 
 @Injectable()
 export class OperationsRepository {
@@ -30,7 +122,9 @@ export class OperationsRepository {
         tenantId: input.tenantId,
         ...(input.branchId ? { id: input.branchId } : {}),
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: {
+        createdAt: 'asc',
+      },
     });
   }
 
@@ -47,11 +141,7 @@ export class OperationsRepository {
           operationDate: input.operationDate,
         },
       },
-      include: {
-        branch: true,
-        openedBy: { select: { id: true, displayName: true } },
-        closedBy: { select: { id: true, displayName: true } },
-      },
+      include: branchOperationInclude,
     });
   }
 
@@ -65,7 +155,9 @@ export class OperationsRepository {
           ),
         },
       },
-      orderBy: { name: 'asc' },
+      orderBy: {
+        name: 'asc',
+      },
       include: {
         dailyOperations: {
           where: {
@@ -89,15 +181,17 @@ export class OperationsRepository {
       where: {
         tenantId: input.tenantId,
         branchId: input.branchId,
-        operationDate: { lt: input.beforeDate },
-        closingBalance: { not: null },
+        operationDate: {
+          lt: input.beforeDate,
+        },
+        closingBalance: {
+          not: null,
+        },
       },
-      orderBy: { operationDate: 'desc' },
-      include: {
-        branch: true,
-        openedBy: { select: { id: true, displayName: true } },
-        closedBy: { select: { id: true, displayName: true } },
+      orderBy: {
+        operationDate: 'desc',
       },
+      include: branchOperationInclude,
     });
   }
 
@@ -110,15 +204,17 @@ export class OperationsRepository {
       where: {
         tenantId: input.tenantId,
         branchId: input.branchId,
-        operationDate: { lt: input.beforeDate },
-        status: { not: BranchOperationStatus.CLOSED },
+        operationDate: {
+          lt: input.beforeDate,
+        },
+        status: {
+          not: BranchOperationStatus.CLOSED,
+        },
       },
-      orderBy: { operationDate: 'asc' },
-      include: {
-        branch: true,
-        openedBy: { select: { id: true, displayName: true } },
-        closedBy: { select: { id: true, displayName: true } },
+      orderBy: {
+        operationDate: 'asc',
       },
+      include: branchOperationInclude,
     });
   }
 
@@ -151,11 +247,7 @@ export class OperationsRepository {
           floatSetAsideAmount: input.floatSetAside,
           notes: input.notes,
         },
-        include: {
-          branch: true,
-          openedBy: { select: { id: true, displayName: true } },
-          closedBy: { select: { id: true, displayName: true } },
-        },
+        include: branchOperationInclude,
       });
 
       if (input.cashAddedToday.gt(0)) {
@@ -236,8 +328,18 @@ export class OperationsRepository {
           recordedByUserId: input.recordedByUserId,
         },
         include: {
-          recordedBy: { select: { id: true, displayName: true } },
-          approvedBy: { select: { id: true, displayName: true } },
+          recordedBy: {
+            select: {
+              id: true,
+              displayName: true,
+            },
+          },
+          approvedBy: {
+            select: {
+              id: true,
+              displayName: true,
+            },
+          },
         },
       });
 
@@ -305,16 +407,29 @@ export class OperationsRepository {
           recordedByUserId: input.recordedByUserId,
         },
         include: {
-          recordedBy: { select: { id: true, displayName: true } },
+          recordedBy: {
+            select: {
+              id: true,
+              displayName: true,
+            },
+          },
         },
       });
 
       await tx.branchDailyOperation.update({
-        where: { id: input.operationId },
+        where: {
+          id: input.operationId,
+        },
         data: {
-          cashInVault: { increment: input.amount },
-          cashAddedToday: { increment: input.amount },
-          openingFloatAvailable: { increment: input.amount },
+          cashInVault: {
+            increment: input.amount,
+          },
+          cashAddedToday: {
+            increment: input.amount,
+          },
+          openingFloatAvailable: {
+            increment: input.amount,
+          },
         },
       });
 
@@ -385,9 +500,25 @@ export class OperationsRepository {
           returnNotes: input.notes,
         },
         include: {
-          agent: { select: { id: true, displayName: true, publicId: true } },
-          recordedBy: { select: { id: true, displayName: true } },
-          returnedBy: { select: { id: true, displayName: true } },
+          agent: {
+            select: {
+              id: true,
+              displayName: true,
+              publicId: true,
+            },
+          },
+          recordedBy: {
+            select: {
+              id: true,
+              displayName: true,
+            },
+          },
+          returnedBy: {
+            select: {
+              id: true,
+              displayName: true,
+            },
+          },
         },
       });
 
@@ -445,7 +576,9 @@ export class OperationsRepository {
   }) {
     return this.prisma.$transaction(async (tx) => {
       const operation = await tx.branchDailyOperation.update({
-        where: { id: input.operationId },
+        where: {
+          id: input.operationId,
+        },
         data: {
           status: BranchOperationStatus.CLOSED,
           closedAt: input.closedAt,
@@ -453,11 +586,7 @@ export class OperationsRepository {
           closingBalance: input.closingBalance,
           closingNotes: input.closingNotes,
         },
-        include: {
-          branch: true,
-          openedBy: { select: { id: true, displayName: true } },
-          closedBy: { select: { id: true, displayName: true } },
-        },
+        include: branchOperationInclude,
       });
 
       await tx.outboxEvent.create({
@@ -520,11 +649,7 @@ export class OperationsRepository {
       include: {
         ...operationReportInclude,
         operation: {
-          include: {
-            branch: true,
-            openedBy: { select: { id: true, displayName: true } },
-            closedBy: { select: { id: true, displayName: true } },
-          },
+          include: branchOperationInclude,
         },
       },
     });
@@ -553,13 +678,27 @@ export class OperationsRepository {
         status:
           input.status && allowedStatuses.includes(input.status)
             ? input.status
-            : { in: allowedStatuses },
-        ...(input.branchId ? { branchId: input.branchId } : {}),
+            : {
+                in: allowedStatuses,
+              },
+        ...(input.branchId
+          ? {
+              branchId: input.branchId,
+            }
+          : {}),
         ...(input.fromDate || input.toDate
           ? {
               operationDate: {
-                ...(input.fromDate ? { gte: input.fromDate } : {}),
-                ...(input.toDate ? { lte: input.toDate } : {}),
+                ...(input.fromDate
+                  ? {
+                      gte: input.fromDate,
+                    }
+                  : {}),
+                ...(input.toDate
+                  ? {
+                      lte: input.toDate,
+                    }
+                  : {}),
               },
             }
           : {}),
@@ -568,14 +707,17 @@ export class OperationsRepository {
         ...operationReportInclude,
         branch: true,
         operation: {
-          include: {
-            branch: true,
-            openedBy: { select: { id: true, displayName: true } },
-            closedBy: { select: { id: true, displayName: true } },
-          },
+          include: branchOperationInclude,
         },
       },
-      orderBy: [{ operationDate: 'desc' }, { generatedAt: 'desc' }],
+      orderBy: [
+        {
+          operationDate: 'desc',
+        },
+        {
+          generatedAt: 'desc',
+        },
+      ],
       take: 250,
     });
   }
@@ -650,7 +792,9 @@ export class OperationsRepository {
   }) {
     return this.prisma.$transaction(async (tx) => {
       const report = await tx.branchOperationReport.update({
-        where: { id: input.reportId },
+        where: {
+          id: input.reportId,
+        },
         data: {
           status: BranchOperationReportStatus.SENT_TO_OWNER,
           managerReviewedAt: new Date(),
@@ -711,7 +855,9 @@ export class OperationsRepository {
   }) {
     return this.prisma.$transaction(async (tx) => {
       const report = await tx.branchOperationReport.update({
-        where: { id: input.reportId },
+        where: {
+          id: input.reportId,
+        },
         data: {
           status: BranchOperationReportStatus.OWNER_APPROVED,
           ownerApprovedAt: new Date(),
@@ -761,6 +907,278 @@ export class OperationsRepository {
     });
   }
 
+  findReconciliationForOperation(input: {
+    tenantId: string;
+    operationId: string;
+  }) {
+    return this.prisma.branchOperationReconciliation.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        operationId: input.operationId,
+      },
+      include: reconciliationInclude,
+    });
+  }
+
+  findReconciliationById(input: {
+    tenantId: string;
+    reconciliationId: string;
+  }) {
+    return this.prisma.branchOperationReconciliation.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        id: input.reconciliationId,
+      },
+      include: reconciliationInclude,
+    });
+  }
+
+  findReconciliationForDay(input: {
+    tenantId: string;
+    branchId: string;
+    operationDate: Date;
+  }) {
+    return this.prisma.branchOperationReconciliation.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        operation: {
+          operationDate: input.operationDate,
+        },
+      },
+      include: reconciliationInclude,
+    });
+  }
+
+  markOperationClosing(input: {
+    tenantId: string;
+    operationId: string;
+    actorUserId: string;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const operation = await tx.branchDailyOperation.update({
+        where: {
+          id: input.operationId,
+        },
+        data: {
+          status: BranchOperationStatus.CLOSING,
+        },
+        include: branchOperationInclude,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          action: 'operation.reconciliation.start_closing',
+          entityType: 'branch_daily_operation',
+          entityId: operation.id,
+          newValue: {
+            status: BranchOperationStatus.CLOSING,
+          },
+        },
+      });
+
+      return operation;
+    });
+  }
+
+  startReconciliation(input: {
+    tenantId: string;
+    branchId: string;
+    operationId: string;
+    startedByUserId: string;
+    notes?: string | null;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.branchOperationReconciliation.findFirst({
+        where: {
+          tenantId: input.tenantId,
+          operationId: input.operationId,
+        },
+        include: reconciliationInclude,
+      });
+
+      /*
+       * Reconciliation freezes branch money operations.
+       *
+       * updateMany makes this idempotent:
+       * OPEN -> CLOSING happens once.
+       */
+      await tx.branchDailyOperation.updateMany({
+        where: {
+          id: input.operationId,
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+          status: BranchOperationStatus.OPEN,
+        },
+        data: {
+          status: BranchOperationStatus.CLOSING,
+        },
+      });
+
+      if (existing) {
+        return existing;
+      }
+
+      const reconciliation = await tx.branchOperationReconciliation.create({
+        data: {
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+          operationId: input.operationId,
+          startedByUserId: input.startedByUserId,
+          notes: input.notes?.trim() || null,
+        },
+        include: reconciliationInclude,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.startedByUserId,
+          action: 'operation.reconciliation.start',
+          entityType: 'branch_operation_reconciliation',
+          entityId: reconciliation.id,
+          newValue: {
+            branchId: input.branchId,
+            operationId: input.operationId,
+            operationStatus: BranchOperationStatus.CLOSING,
+            notes: input.notes?.trim() || null,
+          },
+        },
+      });
+
+      return reconciliation;
+    });
+  }
+  updateReconciliationNotes(input: {
+    tenantId: string;
+    reconciliationId: string;
+    updatedByUserId: string;
+    notes: string | null;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const reconciliation = await tx.branchOperationReconciliation.update({
+        where: {
+          id: input.reconciliationId,
+        },
+        data: {
+          notes: input.notes?.trim() || null,
+          updatedByUserId: input.updatedByUserId,
+        },
+        include: reconciliationInclude,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.updatedByUserId,
+          action: 'operation.reconciliation.notes.update',
+          entityType: 'branch_operation_reconciliation',
+          entityId: reconciliation.id,
+          newValue: {
+            notes: input.notes?.trim() || null,
+          },
+        },
+      });
+
+      return reconciliation;
+    });
+  }
+
+  recordReconciliationCashCount(input: {
+    tenantId: string;
+    reconciliationId: string;
+    countedAmount: Prisma.Decimal;
+    recordedByUserId: string;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const reconciliation = await tx.branchOperationReconciliation.findFirst({
+        where: {
+          tenantId: input.tenantId,
+          id: input.reconciliationId,
+        },
+      });
+
+      if (!reconciliation) {
+        throw new Error('Reconciliation was not found.');
+      }
+
+      const previousAmount = reconciliation.countedCash;
+
+      const cashCount = await tx.branchOperationCashCount.create({
+        data: {
+          tenantId: input.tenantId,
+          reconciliationId: input.reconciliationId,
+          previousAmount,
+          countedAmount: input.countedAmount,
+          recordedByUserId: input.recordedByUserId,
+        },
+        include: {
+          recordedBy: {
+            select: {
+              id: true,
+              displayName: true,
+            },
+          },
+        },
+      });
+
+      await tx.branchOperationReconciliation.update({
+        where: {
+          id: input.reconciliationId,
+        },
+        data: {
+          countedCash: input.countedAmount,
+          updatedByUserId: input.recordedByUserId,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.recordedByUserId,
+          action: 'operation.reconciliation.cash_count',
+          entityType: 'branch_operation_cash_count',
+          entityId: cashCount.id,
+          newValue: {
+            reconciliationId: input.reconciliationId,
+            previousAmount: previousAmount?.toString() ?? null,
+            countedAmount: input.countedAmount.toString(),
+          },
+        },
+      });
+
+      return this.findReconciliationById({
+        tenantId: input.tenantId,
+        reconciliationId: input.reconciliationId,
+      });
+    });
+  }
+
+  listReconciliationCashCounts(input: {
+    tenantId: string;
+    reconciliationId: string;
+  }) {
+    return this.prisma.branchOperationCashCount.findMany({
+      where: {
+        tenantId: input.tenantId,
+        reconciliationId: input.reconciliationId,
+      },
+      include: {
+        recordedBy: {
+          select: {
+            id: true,
+            displayName: true,
+          },
+        },
+      },
+      orderBy: {
+        recordedAt: 'desc',
+      },
+    });
+  }
+
   sumFloatIssued(input: {
     tenantId: string;
     branchId: string;
@@ -772,8 +1190,12 @@ export class OperationsRepository {
         branchId: input.branchId,
         floatDate: input.floatDate,
       },
-      _sum: { amountGiven: true },
-      _count: { _all: true },
+      _sum: {
+        amountGiven: true,
+      },
+      _count: {
+        _all: true,
+      },
     });
   }
 
@@ -788,8 +1210,12 @@ export class OperationsRepository {
         branchId: input.branchId,
         floatDate: input.floatDate,
       },
-      _sum: { amountReturned: true },
-      _count: { amountReturned: true },
+      _sum: {
+        amountReturned: true,
+      },
+      _count: {
+        amountReturned: true,
+      },
     });
   }
 
@@ -821,11 +1247,36 @@ export class OperationsRepository {
         floatDate: input.floatDate,
       },
       include: {
-        agent: { select: { id: true, displayName: true, publicId: true } },
-        recordedBy: { select: { id: true, displayName: true } },
-        returnedBy: { select: { id: true, displayName: true } },
+        agent: {
+          select: {
+            id: true,
+            displayName: true,
+            publicId: true,
+          },
+        },
+        recordedBy: {
+          select: {
+            id: true,
+            displayName: true,
+          },
+        },
+        returnedBy: {
+          select: {
+            id: true,
+            displayName: true,
+          },
+        },
       },
-      orderBy: [{ agent: { displayName: 'asc' } }, { createdAt: 'asc' }],
+      orderBy: [
+        {
+          agent: {
+            displayName: 'asc',
+          },
+        },
+        {
+          createdAt: 'asc',
+        },
+      ],
     });
   }
 
@@ -836,9 +1287,16 @@ export class OperationsRepository {
         operationId: input.operationId,
       },
       include: {
-        recordedBy: { select: { id: true, displayName: true } },
+        recordedBy: {
+          select: {
+            id: true,
+            displayName: true,
+          },
+        },
       },
-      orderBy: { addedAt: 'desc' },
+      orderBy: {
+        addedAt: 'desc',
+      },
     });
   }
 
@@ -858,8 +1316,13 @@ export class OperationsRepository {
           lte: input.dayEnd,
         },
       },
-      _sum: { principalAmount: true, processingFee: true },
-      _count: { _all: true },
+      _sum: {
+        principalAmount: true,
+        processingFee: true,
+      },
+      _count: {
+        _all: true,
+      },
     });
   }
 
@@ -875,15 +1338,22 @@ export class OperationsRepository {
       where: {
         tenantId: input.tenantId,
         branchId: input.branchId,
-        officerUserId: { in: input.agentIds },
+        officerUserId: {
+          in: input.agentIds,
+        },
         status: LoanApplicationStatus.SUBMITTED,
         submittedAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
         },
       },
-      _sum: { principalAmount: true, processingFee: true },
-      _count: { _all: true },
+      _sum: {
+        principalAmount: true,
+        processingFee: true,
+      },
+      _count: {
+        _all: true,
+      },
     });
   }
 
@@ -904,8 +1374,13 @@ export class OperationsRepository {
           lte: input.dayEnd,
         },
       },
-      _sum: { principalAmount: true, processingFee: true },
-      _count: { _all: true },
+      _sum: {
+        principalAmount: true,
+        processingFee: true,
+      },
+      _count: {
+        _all: true,
+      },
     });
   }
 
@@ -938,10 +1413,18 @@ export class OperationsRepository {
         submittedAt: true,
         loanId: true,
         officer: {
-          select: { id: true, displayName: true, publicId: true },
+          select: {
+            id: true,
+            displayName: true,
+            publicId: true,
+          },
         },
         customer: {
-          select: { id: true, fullName: true, phone: true },
+          select: {
+            id: true,
+            fullName: true,
+            phone: true,
+          },
         },
         loan: {
           select: {
@@ -954,7 +1437,9 @@ export class OperationsRepository {
                   lte: input.dayEnd,
                 },
               },
-              select: { amount: true },
+              select: {
+                amount: true,
+              },
             },
           },
         },
@@ -985,16 +1470,26 @@ export class OperationsRepository {
         receiptNumber: true,
         note: true,
         recordedBy: {
-          select: { id: true, displayName: true, publicId: true },
+          select: {
+            id: true,
+            displayName: true,
+            publicId: true,
+          },
         },
         loan: {
           select: {
             id: true,
             customer: {
-              select: { id: true, fullName: true, phone: true },
+              select: {
+                id: true,
+                fullName: true,
+                phone: true,
+              },
             },
             application: {
-              select: { templateName: true },
+              select: {
+                templateName: true,
+              },
             },
           },
         },
@@ -1015,14 +1510,27 @@ export class OperationsRepository {
       },
       include: {
         responsibleUser: {
-          select: { id: true, displayName: true, publicId: true },
+          select: {
+            id: true,
+            displayName: true,
+            publicId: true,
+          },
         },
-        createdBy: { select: { id: true, displayName: true } },
+        createdBy: {
+          select: {
+            id: true,
+            displayName: true,
+          },
+        },
         payments: {
-          select: { amount: true },
+          select: {
+            amount: true,
+          },
         },
       },
-      orderBy: [{ createdAt: 'asc' }],
+      orderBy: {
+        createdAt: 'asc',
+      },
     });
   }
 
@@ -1062,8 +1570,13 @@ export class OperationsRepository {
           lte: input.dayEnd,
         },
       },
-      _sum: { principalAmount: true, processingFee: true },
-      _count: { _all: true },
+      _sum: {
+        principalAmount: true,
+        processingFee: true,
+      },
+      _count: {
+        _all: true,
+      },
     });
   }
 
@@ -1082,8 +1595,12 @@ export class OperationsRepository {
           lte: input.dayEnd,
         },
       },
-      _sum: { amount: true },
-      _count: { _all: true },
+      _sum: {
+        amount: true,
+      },
+      _count: {
+        _all: true,
+      },
     });
   }
 
@@ -1104,8 +1621,12 @@ export class OperationsRepository {
           lte: input.dayEnd,
         },
       },
-      _sum: { amount: true },
-      _count: { _all: true },
+      _sum: {
+        amount: true,
+      },
+      _count: {
+        _all: true,
+      },
     });
   }
 
@@ -1121,14 +1642,20 @@ export class OperationsRepository {
       where: {
         tenantId: input.tenantId,
         branchId: input.branchId,
-        recordedByUserId: { in: input.agentIds },
+        recordedByUserId: {
+          in: input.agentIds,
+        },
         paidAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
         },
       },
-      _sum: { amount: true },
-      _count: { _all: true },
+      _sum: {
+        amount: true,
+      },
+      _count: {
+        _all: true,
+      },
     });
   }
 
@@ -1139,10 +1666,27 @@ export class OperationsRepository {
         operationId: input.operationId,
       },
       include: {
-        recordedBy: { select: { id: true, displayName: true } },
-        approvedBy: { select: { id: true, displayName: true } },
+        recordedBy: {
+          select: {
+            id: true,
+            displayName: true,
+          },
+        },
+        approvedBy: {
+          select: {
+            id: true,
+            displayName: true,
+          },
+        },
       },
-      orderBy: [{ incurredAt: 'desc' }, { createdAt: 'desc' }],
+      orderBy: [
+        {
+          incurredAt: 'desc',
+        },
+        {
+          createdAt: 'desc',
+        },
+      ],
     });
   }
 
@@ -1152,8 +1696,12 @@ export class OperationsRepository {
         tenantId: input.tenantId,
         operationId: input.operationId,
       },
-      _sum: { amount: true },
-      _count: { _all: true },
+      _sum: {
+        amount: true,
+      },
+      _count: {
+        _all: true,
+      },
     });
   }
 
@@ -1161,6 +1709,7 @@ export class OperationsRepository {
     const year = value.getUTCFullYear();
     const month = String(value.getUTCMonth() + 1).padStart(2, '0');
     const day = String(value.getUTCDate()).padStart(2, '0');
+
     return `${year}-${month}-${day}`;
   }
 }

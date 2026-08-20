@@ -1,3 +1,6 @@
+import { StartOperationReconciliationDto } from './dto/start-operation-reconciliation.dto';
+import { UpdateOperationCashCountDto } from './dto/update-operation-reconciliation';
+import { SubmitOperationReconciliationDto } from './dto/submit-operation-reconciliation';
 import {
   BadRequestException,
   ConflictException,
@@ -15,15 +18,15 @@ import {
   Prisma,
 } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
-import { PrismaService } from '../../database/prisma.service';
 import {
   getPrismaUniqueConstraintTargets,
   isPrismaUniqueConstraintError,
 } from '../../common/database/prisma-errors';
+import { PrismaService } from '../../database/prisma.service';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import { BillingService } from '../billing/billing.service';
 import { CashShortagesService } from '../cash-shortages/cash-shortages.service';
-import { CloseBranchOperationDto } from './dto/close-branch-operation.dto';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { OpenBranchOperationDto } from './dto/open-branch-operation.dto';
 import { RecordAgentReturnDto } from './dto/record-agent-return.dto';
 import { RecordOperationExpenseDto } from './dto/record-operation-expense.dto';
@@ -31,6 +34,7 @@ import { RecordOperationTopUpDto } from './dto/record-operation-top-up.dto';
 import { ReviewOperationReportDto } from './dto/review-operation-report.dto';
 import {
   AgentDailyOperationResponseContract,
+  BranchOperationReconciliationContract,
   DailyOperationAgentReturnContract,
   DailyOperationCarryoverContract,
   DailyOperationContract,
@@ -44,7 +48,6 @@ import {
 import { OPERATIONS_EVENTS } from './operations.events';
 import { OPERATIONS_PERMISSIONS } from './operations.permissions';
 import { OperationsRepository } from './operations.repository';
-import { RealtimeGateway } from '../realtime/realtime.gateway';
 
 type OperationReportRecord = {
   id: string;
@@ -68,8 +71,13 @@ type OperationReportRecord = {
 @Injectable()
 export class OperationsService {
   private readonly logger = new Logger(OperationsService.name);
+
   private readonly businessUtcOffsetMinutes = 180;
-  /** Agents may use full app from 06:00 Africa/Kampala after the day is open. */
+
+  /**
+   * Agents may use the full field workspace from 06:00 Africa/Kampala
+   * after the branch day is open.
+   */
   private readonly agentOpenHourLocal = 6;
 
   constructor(
@@ -82,9 +90,13 @@ export class OperationsService {
 
   async getToday(
     user: AuthenticatedUser,
-    options?: { branchId?: string; date?: string },
+    options?: {
+      branchId?: string;
+      date?: string;
+    },
   ): Promise<DailyOperationResponseContract> {
     this.assertCanRead(user);
+
     const branch = await this.resolveBranch(user, options?.branchId);
     const bounds = this.parseDayBounds(options?.date);
 
@@ -98,6 +110,7 @@ export class OperationsService {
         pendingClosureOperation: null,
         awaitingReportOperation: null,
         operation: null,
+        reconciliation: null,
         report: null,
       };
     }
@@ -126,6 +139,7 @@ export class OperationsService {
         openedByUserId: user.userId,
         allowFirstDay: true,
       });
+
       operation = await this.repository.findOperationForDay({
         tenantId: user.tenantId,
         branchId: branch.id,
@@ -145,6 +159,7 @@ export class OperationsService {
         beforeDate: bounds.dateOnly,
       }),
     ]);
+
     const openingBalance = previousClosed
       ? this.decimalToNumber(previousClosed.closingBalance)
       : operation
@@ -152,11 +167,13 @@ export class OperationsService {
         : 0;
 
     let awaitingReportOperation: DailyOperationCarryoverContract | null = null;
+
     if (!operation && !pendingClosure && previousClosed) {
       const priorReport = await this.repository.findReportForOperation({
         tenantId: user.tenantId,
         operationId: previousClosed.id,
       });
+
       if (!priorReport || !this.isReportSubmitted(priorReport.status)) {
         awaitingReportOperation = this.toCarryoverContract(previousClosed);
       }
@@ -165,6 +182,16 @@ export class OperationsService {
     const operationContract = operation
       ? await this.toContract(operation, bounds.dayStart, bounds.dayEnd)
       : null;
+
+    const reconciliation =
+      operation && operationContract
+        ? await this.getReconciliationContract({
+            tenantId: user.tenantId,
+            operationId: operation.id,
+            expectedClosingBalance: operationContract.expectedClosingBalance,
+          })
+        : null;
+
     const report =
       operation && operationContract && operation.status === 'CLOSED'
         ? await this.ensureReportForClosedOperation(
@@ -191,6 +218,7 @@ export class OperationsService {
         : null,
       awaitingReportOperation,
       operation: operationContract,
+      reconciliation,
       report: report ? this.toReportContract(report) : null,
     };
   }
@@ -199,6 +227,7 @@ export class OperationsService {
     user: AuthenticatedUser,
   ): Promise<AgentDailyOperationResponseContract> {
     this.assertTenant(user);
+
     const bounds = this.parseDayBounds();
     const emptyFloat = this.emptyAgentFloatSummary();
     const localHour = this.currentBusinessHour();
@@ -222,6 +251,7 @@ export class OperationsService {
       tenantId: user.tenantId,
       branchId: user.branchId,
     });
+
     if (!branch) {
       return {
         date: bounds.dateLabel,
@@ -259,6 +289,7 @@ export class OperationsService {
       branchId: branch.id,
       operationDate: bounds.dateOnly,
     });
+
     if (!operation) {
       return {
         date: bounds.dateLabel,
@@ -300,14 +331,21 @@ export class OperationsService {
     ]);
 
     const amountReceived = this.decimalToNumber(float?.amountGiven);
+
     const amountDisbursed = this.decimalToNumber(loansAgg._sum.principalAmount);
+
     const processingFees = this.decimalToNumber(loansAgg._sum.processingFee);
+
     const amountCollected = this.decimalToNumber(collectionsAgg._sum.amount);
+
     const unusedFloat = this.roundMoney(amountReceived - amountDisbursed);
+
     const expectedHandover = this.roundMoney(
       unusedFloat + amountCollected + processingFees,
     );
+
     const returnedAt = float?.returnedAt?.toISOString() ?? null;
+
     const amountReturned =
       float?.amountReturned == null
         ? null
@@ -399,6 +437,7 @@ export class OperationsService {
     const canOwnerList =
       user.permissions.includes(OPERATIONS_PERMISSIONS.approve) &&
       user.permissions.includes(BRANCH_PERMISSIONS.create);
+
     const canManagerList =
       user.permissions.includes(OPERATIONS_PERMISSIONS.reportReview) ||
       user.permissions.includes(OPERATIONS_PERMISSIONS.close) ||
@@ -409,21 +448,23 @@ export class OperationsService {
     }
 
     const managerScoped = !canOwnerList;
-    if (managerScoped) {
-      if (!user.branchId) {
-        throw new ForbiddenException('Branch scope is required.');
-      }
+
+    if (managerScoped && !user.branchId) {
+      throw new ForbiddenException('Branch scope is required.');
     }
 
     const status = this.parseOwnerReportStatus(options?.status, {
       includeManagerReview: managerScoped,
     });
+
     const fromDate = options?.from
       ? this.parseDayBounds(options.from).dateOnly
       : null;
+
     const toDate = options?.to
       ? this.parseDayBounds(options.to).dateOnly
       : null;
+
     const reports = await this.repository.listOwnerReports({
       tenantId: user.tenantId,
       branchId: managerScoped ? user.branchId : options?.branchId || null,
@@ -445,6 +486,7 @@ export class OperationsService {
     const canOwnerList =
       user.permissions.includes(OPERATIONS_PERMISSIONS.approve) &&
       user.permissions.includes(BRANCH_PERMISSIONS.create);
+
     const canManagerList =
       user.permissions.includes(OPERATIONS_PERMISSIONS.reportReview) ||
       user.permissions.includes(OPERATIONS_PERMISSIONS.close) ||
@@ -458,6 +500,7 @@ export class OperationsService {
       tenantId: user.tenantId,
       reportId,
     });
+
     if (!report) {
       throw new NotFoundException('Report was not found.');
     }
@@ -468,7 +511,9 @@ export class OperationsService {
       }
     }
 
-    return { report: this.toOwnerReportListItem(report) };
+    return {
+      report: this.toOwnerReportListItem(report),
+    };
   }
 
   private toOwnerReportListItem(report: {
@@ -490,9 +535,14 @@ export class OperationsService {
     ownerApprovedBy?: { displayName: string } | null;
     returnedBy?: { displayName: string } | null;
     branch?: { name: string } | null;
-    operation: { branch: { name: string } };
+    operation: {
+      branch: {
+        name: string;
+      };
+    };
   }): OwnerOperationReportListItemContract {
     const snapshot = this.reportSnapshotSummary(report.snapshot);
+
     return {
       id: report.id,
       operationId: report.operationId,
@@ -529,7 +579,9 @@ export class OperationsService {
     date?: string,
   ): Promise<OwnerBranchDailyStatusResponseContract> {
     this.assertCanOwnerApproveReport(user);
+
     const bounds = this.parseDayBounds(date);
+
     const branches = await this.repository.listBranchDailyStatuses({
       tenantId: user.tenantId,
       operationDate: bounds.dateOnly,
@@ -539,7 +591,9 @@ export class OperationsService {
       date: bounds.dateLabel,
       statuses: branches.map((branch) => {
         const operation = branch.dailyOperations[0] ?? null;
+
         const report = operation?.report ?? null;
+
         return {
           branchId: branch.id,
           branchName: branch.name,
@@ -563,22 +617,28 @@ export class OperationsService {
     dto: OpenBranchOperationDto,
   ): Promise<DailyOperationResponseContract> {
     this.assertCanOpen(user);
+
     const branch = await this.resolveBranch(user, dto.branchId);
+
     if (!branch) {
       throw new NotFoundException('Branch was not found.');
     }
+
     await this.billingService.assertBranchSubscriptionActive(
       user.tenantId,
       branch.id,
     );
 
     const bounds = this.parseDayBounds(dto.date);
+
     this.assertCanChangeDay(bounds.dateOnly);
+
     await this.retireEmptyUnclosedOperationsBefore({
       tenantId: user.tenantId,
       branchId: branch.id,
       beforeDate: bounds.dateOnly,
     });
+
     const existing = await this.repository.findOperationForDay({
       tenantId: user.tenantId,
       branchId: branch.id,
@@ -604,7 +664,9 @@ export class OperationsService {
 
     if (pendingClosure) {
       throw new BadRequestException(
-        `Close ${this.formatDateLabel(pendingClosure.operationDate)} before opening a new day.`,
+        `Close ${this.formatDateLabel(
+          pendingClosure.operationDate,
+        )} before opening a new day.`,
       );
     }
 
@@ -623,10 +685,13 @@ export class OperationsService {
     }
 
     const cashAddedToday = this.roundMoney(dto.cashAddedToday ?? 0);
+
     const cashAvailableAtOpening = this.roundMoney(
       openingBalance + cashAddedToday,
     );
-    // No separate float ceiling at open — cash on hand is the practical limit.
+
+    // No separate float ceiling at open.
+    // Cash on hand is the practical maximum.
     const floatSetAside = cashAvailableAtOpening;
 
     const operation = await this.repository
@@ -653,8 +718,10 @@ export class OperationsService {
             'This branch is already open for this day.',
           );
         }
+
         throw error;
       });
+
     this.broadcastOperationEvent(OPERATIONS_EVENTS.branchOpened, {
       operationId: operation.id,
       tenantId: operation.tenantId,
@@ -663,7 +730,10 @@ export class OperationsService {
       status: operation.status,
     });
 
-    return this.getToday(user, { branchId: branch.id, date: bounds.dateLabel });
+    return this.getToday(user, {
+      branchId: branch.id,
+      date: bounds.dateLabel,
+    });
   }
 
   async recordExpense(
@@ -671,19 +741,22 @@ export class OperationsService {
     dto: RecordOperationExpenseDto,
   ): Promise<DailyOperationResponseContract> {
     this.assertCanCreateExpense(user);
+
     const branch = await this.resolveBranch(user, dto.branchId);
+
     if (!branch) {
       throw new NotFoundException('Branch was not found.');
     }
 
     const bounds = this.parseDayBounds(dto.date);
+
     const operation = await this.repository.findOperationForDay({
       tenantId: user.tenantId,
       branchId: branch.id,
       operationDate: bounds.dateOnly,
     });
 
-    if (!operation || operation.status !== 'OPEN') {
+    if (!operation || operation.status !== BranchOperationStatus.OPEN) {
       throw new BadRequestException(
         'Open the branch before recording expenses.',
       );
@@ -707,11 +780,15 @@ export class OperationsService {
     ]);
 
     const availableCash = this.cashAvailableAtOpening(operation);
+
     const floatIssued = this.decimalToNumber(floatAgg._sum.amountGiven);
+
     const expensesTotal = this.decimalToNumber(expensesAgg._sum.amount);
+
     const cashReturnedByAgents = this.decimalToNumber(
       returnedAgg._sum.amountReturned,
     );
+
     const remainingBeforeExpense = this.roundMoney(
       availableCash - floatIssued - expensesTotal + cashReturnedByAgents,
     );
@@ -735,7 +812,10 @@ export class OperationsService {
       status: operation.status,
     });
 
-    return this.getToday(user, { branchId: branch.id, date: bounds.dateLabel });
+    return this.getToday(user, {
+      branchId: branch.id,
+      date: bounds.dateLabel,
+    });
   }
 
   async recordTopUp(
@@ -743,19 +823,22 @@ export class OperationsService {
     dto: RecordOperationTopUpDto,
   ): Promise<DailyOperationResponseContract> {
     this.assertCanTopUp(user);
+
     const branch = await this.resolveBranch(user, dto.branchId);
+
     if (!branch) {
       throw new NotFoundException('Branch was not found.');
     }
 
     const bounds = this.parseDayBounds(dto.date);
+
     const operation = await this.repository.findOperationForDay({
       tenantId: user.tenantId,
       branchId: branch.id,
       operationDate: bounds.dateOnly,
     });
 
-    if (!operation || operation.status !== 'OPEN') {
+    if (!operation || operation.status !== BranchOperationStatus.OPEN) {
       throw new BadRequestException('Open the branch before adding more cash.');
     }
 
@@ -770,6 +853,7 @@ export class OperationsService {
       operationDate: operation.operationDate,
       status: operation.status,
     });
+
     this.broadcastOperationEvent(OPERATIONS_EVENTS.cashTopUpRecorded, {
       operationId: operation.id,
       tenantId: user.tenantId,
@@ -780,7 +864,10 @@ export class OperationsService {
       amount: this.decimalToNumber(topUp.amount),
     });
 
-    return this.getToday(user, { branchId: branch.id, date: bounds.dateLabel });
+    return this.getToday(user, {
+      branchId: branch.id,
+      date: bounds.dateLabel,
+    });
   }
 
   async recordAgentReturn(
@@ -788,19 +875,22 @@ export class OperationsService {
     dto: RecordAgentReturnDto,
   ): Promise<DailyOperationResponseContract> {
     this.assertCanReturnFloat(user);
+
     const branch = await this.resolveBranch(user, dto.branchId);
+
     if (!branch) {
       throw new NotFoundException('Branch was not found.');
     }
 
     const bounds = this.parseDayBounds(dto.date);
+
     const operation = await this.repository.findOperationForDay({
       tenantId: user.tenantId,
       branchId: branch.id,
       operationDate: bounds.dateOnly,
     });
 
-    if (!operation || operation.status !== 'OPEN') {
+    if (!operation || operation.status !== BranchOperationStatus.OPEN) {
       throw new BadRequestException(
         'Open the branch before recording agent returns.',
       );
@@ -812,6 +902,7 @@ export class OperationsService {
       agentId: dto.agentId,
       floatDate: operation.operationDate,
     });
+
     if (!float) {
       throw new BadRequestException(
         'Assign float to this agent before recording a return.',
@@ -830,6 +921,7 @@ export class OperationsService {
       operationId: operation.id,
       operationDate: operation.operationDate,
     });
+
     this.broadcastOperationEvent(OPERATIONS_EVENTS.agentFloatReturned, {
       operationId: operation.id,
       tenantId: user.tenantId,
@@ -841,22 +933,23 @@ export class OperationsService {
       amountReturned: this.decimalToNumber(returnedFloat.amountReturned),
     });
 
-    // Attach float SHORT to the field officer for tracking / salary recovery.
     const dayContract = await this.toContract(
       operation,
       bounds.dayStart,
       bounds.dayEnd,
     );
+
     const agentReturn = dayContract.agentReturns.find(
       (row) => row.agentId === dto.agentId,
     );
+
     if (
       agentReturn &&
       agentReturn.variance != null &&
       agentReturn.variance < 0
     ) {
       await this.cashShortagesService.createShortage({
-        tenantId: user.tenantId!,
+        tenantId: user.tenantId,
         branchId: branch.id,
         responsibleUserId: dto.agentId,
         createdByUserId: user.userId,
@@ -870,28 +963,68 @@ export class OperationsService {
       });
     }
 
-    return this.getToday(user, { branchId: branch.id, date: bounds.dateLabel });
+    return this.getToday(user, {
+      branchId: branch.id,
+      date: bounds.dateLabel,
+    });
   }
 
-  async closeBranch(
+  /**
+   * Starts end-of-day reconciliation.
+   *
+   * Once reconciliation starts:
+   * - every agent must already have handed over;
+   * - the branch moves from OPEN -> CLOSING;
+   * - field money operations are therefore locked;
+   * - the manager may count physical cash repeatedly before submission.
+   */
+  async startOperationReconciliation(
     user: AuthenticatedUser,
-    dto: CloseBranchOperationDto,
+    dto: StartOperationReconciliationDto,
   ): Promise<DailyOperationResponseContract> {
     this.assertCanClose(user);
+
     const branch = await this.resolveBranch(user, dto.branchId);
+
     if (!branch) {
       throw new NotFoundException('Branch was not found.');
     }
 
     const bounds = this.parseDayBounds(dto.date);
+
+    this.assertCanChangeDay(bounds.dateOnly);
+
     const operation = await this.repository.findOperationForDay({
       tenantId: user.tenantId,
       branchId: branch.id,
       operationDate: bounds.dateOnly,
     });
 
-    if (!operation || operation.status !== 'OPEN') {
-      throw new BadRequestException('Only an open branch can be closed.');
+    if (!operation) {
+      throw new BadRequestException(
+        'There is no branch operation for this day.',
+      );
+    }
+
+    if (operation.status === BranchOperationStatus.CLOSED) {
+      throw new BadRequestException('This branch day is already closed.');
+    }
+
+    /*
+     * Starting reconciliation is idempotent.
+     * If it already exists we simply return today's state.
+     */
+    if (operation.reconciliation) {
+      return this.getToday(user, {
+        branchId: branch.id,
+        date: bounds.dateLabel,
+      });
+    }
+
+    if (operation.status !== BranchOperationStatus.OPEN) {
+      throw new BadRequestException(
+        'Only an open branch can start reconciliation.',
+      );
     }
 
     const contract = await this.toContract(
@@ -899,28 +1032,253 @@ export class OperationsService {
       bounds.dayStart,
       bounds.dayEnd,
     );
+
     const pendingReturns = contract.agentReturns.filter(
       (agentReturn) => agentReturn.amountReturned == null,
     );
+
     if (pendingReturns.length > 0) {
       throw new BadRequestException(
-        'Record all agent returns before closing the branch.',
+        'Record all agent cash handovers before starting reconciliation.',
       );
     }
 
-    const closingBalance = this.roundMoney(dto.countedCash);
-    const variance = this.roundMoney(
-      closingBalance - contract.expectedClosingBalance,
-    );
-    if (variance !== 0 && !dto.notes?.trim()) {
+    await this.repository.startReconciliation({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationId: operation.id,
+      startedByUserId: user.userId,
+      notes: null,
+    });
+
+    this.broadcastOperationEvent('operation.reconciliation.started', {
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationId: operation.id,
+      operationDate: bounds.dateLabel,
+      status: BranchOperationStatus.CLOSING,
+    });
+
+    return this.getToday(user, {
+      branchId: branch.id,
+      date: bounds.dateLabel,
+    });
+  }
+
+  /**
+   * Records another physical-cash count.
+   *
+   * Each count creates an immutable BranchOperationCashCount row.
+   * The reconciliation's countedCash field only represents the
+   * latest/current count.
+   */
+  async updateOperationCashCount(
+    user: AuthenticatedUser,
+    dto: UpdateOperationCashCountDto,
+  ): Promise<DailyOperationResponseContract> {
+    this.assertCanClose(user);
+
+    const branch = await this.resolveBranch(user, dto.branchId);
+
+    if (!branch) {
+      throw new NotFoundException('Branch was not found.');
+    }
+
+    const bounds = this.parseDayBounds(dto.date);
+
+    this.assertCanChangeDay(bounds.dateOnly);
+
+    const operation = await this.repository.findOperationForDay({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateOnly,
+    });
+
+    if (!operation) {
       throw new BadRequestException(
-        'Add a note when counted cash is different from expected cash.',
+        'There is no branch operation for this day.',
       );
     }
-    if (variance < 0 && !dto.shortageResponsibleUserId?.trim()) {
+
+    if (operation.status === BranchOperationStatus.CLOSED) {
+      throw new BadRequestException('This branch day is already closed.');
+    }
+
+    let reconciliation = operation.reconciliation;
+
+    /*
+     * Defensive convenience:
+     * if the frontend posts a cash count before explicitly calling
+     * start, start reconciliation automatically.
+     */
+    if (!reconciliation) {
+      if (operation.status !== BranchOperationStatus.OPEN) {
+        throw new BadRequestException(
+          'Start reconciliation before counting cash.',
+        );
+      }
+
+      const contract = await this.toContract(
+        operation,
+        bounds.dayStart,
+        bounds.dayEnd,
+      );
+
+      const pendingReturns = contract.agentReturns.filter(
+        (agentReturn) => agentReturn.amountReturned == null,
+      );
+
+      if (pendingReturns.length > 0) {
+        throw new BadRequestException(
+          'Record all agent cash handovers before counting branch cash.',
+        );
+      }
+
+      reconciliation = await this.repository.startReconciliation({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        operationId: operation.id,
+        startedByUserId: user.userId,
+        notes: null,
+      });
+    }
+
+    await this.repository.recordReconciliationCashCount({
+      tenantId: user.tenantId,
+      reconciliationId: reconciliation.id,
+      countedAmount: new Prisma.Decimal(dto.countedCash),
+      recordedByUserId: user.userId,
+    });
+
+    if (dto.notes !== undefined) {
+      await this.repository.updateReconciliationNotes({
+        tenantId: user.tenantId,
+        reconciliationId: reconciliation.id,
+        updatedByUserId: user.userId,
+        notes: dto.notes?.trim() || null,
+      });
+    }
+
+    this.broadcastOperationEvent('operation.reconciliation.cash-counted', {
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationId: operation.id,
+      reconciliationId: reconciliation.id,
+      operationDate: bounds.dateLabel,
+      countedCash: dto.countedCash,
+    });
+
+    return this.getToday(user, {
+      branchId: branch.id,
+      date: bounds.dateLabel,
+    });
+  }
+
+  /**
+   * Finalises reconciliation and closes the business day.
+   *
+   * The persisted reconciliation.countedCash is authoritative.
+   * The client does NOT send the closing balance again here.
+   */
+  async submitOperationReconciliation(
+    user: AuthenticatedUser,
+    dto: SubmitOperationReconciliationDto,
+  ): Promise<DailyOperationResponseContract> {
+    this.assertCanClose(user);
+
+    const branch = await this.resolveBranch(user, dto.branchId);
+
+    if (!branch) {
+      throw new NotFoundException('Branch was not found.');
+    }
+
+    const bounds = this.parseDayBounds(dto.date);
+
+    this.assertCanChangeDay(bounds.dateOnly);
+
+    const operation = await this.repository.findOperationForDay({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateOnly,
+    });
+
+    if (!operation) {
+      throw new BadRequestException(
+        'There is no branch operation for this day.',
+      );
+    }
+
+    if (operation.status === BranchOperationStatus.CLOSED) {
+      throw new BadRequestException('This branch day is already closed.');
+    }
+
+    const reconciliation = await this.repository.findReconciliationForOperation(
+      {
+        tenantId: user.tenantId,
+        operationId: operation.id,
+      },
+    );
+
+    if (!reconciliation) {
+      throw new BadRequestException(
+        'Start reconciliation before closing the branch.',
+      );
+    }
+
+    if (reconciliation.countedCash == null) {
+      throw new BadRequestException(
+        'Count the physical branch cash before submitting reconciliation.',
+      );
+    }
+
+    const contract = await this.toContract(
+      operation,
+      bounds.dayStart,
+      bounds.dayEnd,
+    );
+
+    const pendingReturns = contract.agentReturns.filter(
+      (agentReturn) => agentReturn.amountReturned == null,
+    );
+
+    if (pendingReturns.length > 0) {
+      throw new BadRequestException(
+        'Record all agent cash handovers before closing the branch.',
+      );
+    }
+
+    const countedCash = this.decimalToNumber(reconciliation.countedCash);
+
+    const variance = this.roundMoney(
+      countedCash - contract.expectedClosingBalance,
+    );
+
+    const finalNotes =
+      dto.notes?.trim() || reconciliation.notes?.trim() || null;
+
+    if (variance !== 0 && !finalNotes) {
+      throw new BadRequestException(
+        'Add a reconciliation note when counted cash differs from expected cash.',
+      );
+    }
+
+    if (variance < 0 && !dto.shortageResponsibleUserId) {
       throw new BadRequestException(
         'Assign the shortage to an agent or cashier before closing.',
       );
+    }
+
+    /*
+     * Persist final reconciliation note before creating the
+     * immutable branch-close/report state.
+     */
+    if (dto.notes !== undefined) {
+      await this.repository.updateReconciliationNotes({
+        tenantId: user.tenantId,
+        reconciliationId: reconciliation.id,
+        updatedByUserId: user.userId,
+        notes: finalNotes,
+      });
     }
 
     const closedOperation = await this.repository.closeBranch({
@@ -929,23 +1287,28 @@ export class OperationsService {
       operationId: operation.id,
       closedAt: new Date(),
       closedByUserId: user.userId,
-      closingBalance: new Prisma.Decimal(closingBalance),
-      closingNotes: dto.notes?.trim() || null,
+      closingBalance: new Prisma.Decimal(countedCash),
+      closingNotes: finalNotes,
       operationDate: operation.operationDate,
       expectedClosingBalance: contract.expectedClosingBalance,
       variance,
     });
+
     this.broadcastOperationEvent(OPERATIONS_EVENTS.branchClosed, {
       operationId: closedOperation.id,
       tenantId: user.tenantId,
       branchId: branch.id,
       operationDate: bounds.dateLabel,
       status: closedOperation.status,
+      reconciliationId: reconciliation.id,
+      countedCash,
+      expectedClosingBalance: contract.expectedClosingBalance,
+      variance,
     });
 
     if (variance < 0 && dto.shortageResponsibleUserId) {
       await this.cashShortagesService.createShortage({
-        tenantId: user.tenantId!,
+        tenantId: user.tenantId,
         branchId: branch.id,
         responsibleUserId: dto.shortageResponsibleUserId,
         createdByUserId: user.userId,
@@ -953,22 +1316,27 @@ export class OperationsService {
         sourceId: closedOperation.id,
         operationDate: operation.operationDate,
         amount: Math.abs(variance),
-        notes: dto.notes?.trim() || 'Branch close cash shortage',
+        notes: finalNotes || 'Branch close cash shortage',
       });
     }
 
-    // Create the close report immediately so managers can submit it before next open.
+    /*
+     * Reload after close so the report snapshot sees the final
+     * closing balance/status rather than the pre-close object.
+     */
     const closedForReport = await this.repository.findOperationForDay({
       tenantId: user.tenantId,
       branchId: branch.id,
       operationDate: operation.operationDate,
     });
+
     if (closedForReport) {
       const closedContract = await this.toContract(
         closedForReport,
         bounds.dayStart,
         bounds.dayEnd,
       );
+
       await this.ensureReportForClosedOperation(
         user,
         closedForReport,
@@ -976,7 +1344,416 @@ export class OperationsService {
       );
     }
 
-    return this.getToday(user, { branchId: branch.id, date: bounds.dateLabel });
+    return this.getToday(user, {
+      branchId: branch.id,
+      date: bounds.dateLabel,
+    });
+  }
+
+  async startReconciliation(
+    user: AuthenticatedUser,
+    dto: StartOperationReconciliationDto,
+  ): Promise<DailyOperationResponseContract> {
+    this.assertCanClose(user);
+
+    const branch = await this.resolveBranch(user, dto.branchId);
+
+    if (!branch) {
+      throw new NotFoundException('Branch was not found.');
+    }
+
+    const bounds = this.parseDayBounds(dto.date);
+
+    this.assertCanChangeDay(bounds.dateOnly);
+
+    let operation = await this.repository.findOperationForDay({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateOnly,
+    });
+
+    if (!operation) {
+      throw new BadRequestException(
+        'There is no open branch day to reconcile.',
+      );
+    }
+
+    if (operation.status === BranchOperationStatus.CLOSED) {
+      throw new BadRequestException('This branch day has already been closed.');
+    }
+
+    /*
+     * Starting reconciliation is idempotent.
+     *
+     * If reconciliation was already started, simply return the
+     * current persisted state instead of creating another record.
+     */
+    const existingReconciliation =
+      await this.repository.findReconciliationForOperation({
+        tenantId: user.tenantId,
+        operationId: operation.id,
+      });
+
+    if (existingReconciliation) {
+      return this.getToday(user, {
+        branchId: branch.id,
+        date: bounds.dateLabel,
+      });
+    }
+
+    /*
+     * All field officers must first account for their daily cash.
+     *
+     * This prevents the branch manager from counting branch cash
+     * while an agent still has an unresolved handover.
+     */
+    const operationContract = await this.toContract(
+      operation,
+      bounds.dayStart,
+      bounds.dayEnd,
+    );
+
+    const pendingReturns = operationContract.agentReturns.filter(
+      (agentReturn) => agentReturn.amountReturned == null,
+    );
+
+    if (pendingReturns.length > 0) {
+      throw new BadRequestException(
+        'Record all agent cash returns before starting reconciliation.',
+      );
+    }
+
+    /*
+     * Reconciliation begins the controlled closing phase.
+     *
+     * From this point field money operations are blocked because
+     * getAgentToday() already treats CLOSING as locked.
+     */
+    if (operation.status === BranchOperationStatus.OPEN) {
+      await this.repository.markOperationClosing({
+        tenantId: user.tenantId,
+        operationId: operation.id,
+        actorUserId: user.userId,
+      });
+    }
+
+    await this.repository.startReconciliation({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationId: operation.id,
+      startedByUserId: user.userId,
+    });
+
+    /*
+     * Reload after changing OPEN -> CLOSING so clients immediately
+     * receive the authoritative persisted status.
+     */
+    operation = await this.repository.findOperationForDay({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateOnly,
+    });
+
+    if (operation) {
+      this.broadcastOperationEvent('operation.reconciliation.started', {
+        operationId: operation.id,
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        operationDate: bounds.dateLabel,
+        status: operation.status,
+      });
+    }
+
+    return this.getToday(user, {
+      branchId: branch.id,
+      date: bounds.dateLabel,
+    });
+  }
+
+  async updateReconciliationCashCount(
+    user: AuthenticatedUser,
+    dto: UpdateOperationCashCountDto,
+  ): Promise<DailyOperationResponseContract> {
+    this.assertCanClose(user);
+
+    const branch = await this.resolveBranch(user, dto.branchId);
+
+    if (!branch) {
+      throw new NotFoundException('Branch was not found.');
+    }
+
+    const bounds = this.parseDayBounds(dto.date);
+
+    this.assertCanChangeDay(bounds.dateOnly);
+
+    const operation = await this.repository.findOperationForDay({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateOnly,
+    });
+
+    if (!operation) {
+      throw new BadRequestException('There is no branch day to reconcile.');
+    }
+
+    if (operation.status === BranchOperationStatus.CLOSED) {
+      throw new BadRequestException('This branch day has already been closed.');
+    }
+
+    if (operation.status !== BranchOperationStatus.CLOSING) {
+      throw new BadRequestException(
+        'Start reconciliation before recording the cash count.',
+      );
+    }
+
+    const reconciliation = await this.repository.findReconciliationForOperation(
+      {
+        tenantId: user.tenantId,
+        operationId: operation.id,
+      },
+    );
+
+    if (!reconciliation) {
+      throw new BadRequestException(
+        'Start reconciliation before recording the cash count.',
+      );
+    }
+
+    /*
+     * Every physical cash count creates an immutable history row.
+     *
+     * The reconciliation.countedCash field is then updated to point
+     * to the latest authoritative count.
+     */
+    await this.repository.recordReconciliationCashCount({
+      tenantId: user.tenantId,
+      reconciliationId: reconciliation.id,
+      countedAmount: new Prisma.Decimal(this.roundMoney(dto.countedCash)),
+      recordedByUserId: user.userId,
+    });
+
+    /*
+     * A note entered while counting becomes the current
+     * reconciliation explanation.
+     */
+    if (dto.notes !== undefined) {
+      await this.repository.updateReconciliationNotes({
+        tenantId: user.tenantId,
+        reconciliationId: reconciliation.id,
+        updatedByUserId: user.userId,
+        notes: dto.notes?.trim() || null,
+      });
+    }
+
+    this.broadcastOperationEvent('operation.reconciliation.cash-counted', {
+      operationId: operation.id,
+      reconciliationId: reconciliation.id,
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateLabel,
+      status: operation.status,
+      countedCash: this.roundMoney(dto.countedCash),
+    });
+
+    return this.getToday(user, {
+      branchId: branch.id,
+      date: bounds.dateLabel,
+    });
+  }
+
+  async submitReconciliation(
+    user: AuthenticatedUser,
+    dto: SubmitOperationReconciliationDto,
+  ): Promise<DailyOperationResponseContract> {
+    this.assertCanClose(user);
+
+    const branch = await this.resolveBranch(user, dto.branchId);
+
+    if (!branch) {
+      throw new NotFoundException('Branch was not found.');
+    }
+
+    const bounds = this.parseDayBounds(dto.date);
+
+    this.assertCanChangeDay(bounds.dateOnly);
+
+    const operation = await this.repository.findOperationForDay({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateOnly,
+    });
+
+    if (!operation) {
+      throw new BadRequestException('There is no branch day to close.');
+    }
+
+    if (operation.status === BranchOperationStatus.CLOSED) {
+      throw new BadRequestException('This branch day has already been closed.');
+    }
+
+    if (operation.status !== BranchOperationStatus.CLOSING) {
+      throw new BadRequestException(
+        'Start reconciliation before submitting the branch close.',
+      );
+    }
+
+    const reconciliation = await this.repository.findReconciliationForOperation(
+      {
+        tenantId: user.tenantId,
+        operationId: operation.id,
+      },
+    );
+
+    if (!reconciliation) {
+      throw new BadRequestException(
+        'Start reconciliation before submitting the branch close.',
+      );
+    }
+
+    if (reconciliation.countedCash == null) {
+      throw new BadRequestException(
+        'Count the physical branch cash before submitting reconciliation.',
+      );
+    }
+
+    /*
+     * Recalculate the expected balance immediately before closing.
+     *
+     * We deliberately do not trust an expected balance previously
+     * displayed to the client.
+     */
+    const contract = await this.toContract(
+      operation,
+      bounds.dayStart,
+      bounds.dayEnd,
+    );
+
+    const pendingReturns = contract.agentReturns.filter(
+      (agentReturn) => agentReturn.amountReturned == null,
+    );
+
+    if (pendingReturns.length > 0) {
+      throw new BadRequestException(
+        'Record all agent cash returns before submitting reconciliation.',
+      );
+    }
+
+    const countedCash = this.roundMoney(
+      this.decimalToNumber(reconciliation.countedCash),
+    );
+
+    const expectedClosingBalance = this.roundMoney(
+      contract.expectedClosingBalance,
+    );
+
+    const variance = this.roundMoney(countedCash - expectedClosingBalance);
+
+    /*
+     * We can use either the final submit note or a note already
+     * entered while counting cash.
+     */
+    const finalNotes =
+      dto.notes?.trim() || reconciliation.notes?.trim() || null;
+
+    if (variance !== 0 && !finalNotes) {
+      throw new BadRequestException(
+        'Add a note explaining the cash variance before closing the branch.',
+      );
+    }
+
+    if (variance < 0 && !dto.shortageResponsibleUserId?.trim()) {
+      throw new BadRequestException(
+        'Assign the cash shortage to an agent or cashier before closing.',
+      );
+    }
+
+    /*
+     * Persist the final note before close so the reconciliation record
+     * itself remains a complete audit trail.
+     */
+    if (finalNotes !== reconciliation.notes) {
+      await this.repository.updateReconciliationNotes({
+        tenantId: user.tenantId,
+        reconciliationId: reconciliation.id,
+        updatedByUserId: user.userId,
+        notes: finalNotes,
+      });
+    }
+
+    /*
+     * The persisted reconciliation count — not a value supplied
+     * in this submit request — becomes the authoritative closing balance.
+     */
+    const closedOperation = await this.repository.closeBranch({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationId: operation.id,
+      closedAt: new Date(),
+      closedByUserId: user.userId,
+      closingBalance: new Prisma.Decimal(countedCash),
+      closingNotes: finalNotes,
+      operationDate: operation.operationDate,
+      expectedClosingBalance,
+      variance,
+    });
+
+    /*
+     * Negative branch variance becomes an accountable shortage.
+     */
+    if (variance < 0 && dto.shortageResponsibleUserId) {
+      await this.cashShortagesService.createShortage({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        responsibleUserId: dto.shortageResponsibleUserId,
+        createdByUserId: user.userId,
+        sourceType: CashShortageSource.BRANCH_CLOSE,
+        sourceId: closedOperation.id,
+        operationDate: operation.operationDate,
+        amount: Math.abs(variance),
+        notes: finalNotes || 'Branch reconciliation cash shortage',
+      });
+    }
+
+    this.broadcastOperationEvent(OPERATIONS_EVENTS.branchClosed, {
+      operationId: closedOperation.id,
+      reconciliationId: reconciliation.id,
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateLabel,
+      status: closedOperation.status,
+      expectedClosingBalance,
+      countedCash,
+      variance,
+    });
+
+    /*
+     * Reload the operation after closing so the report snapshot is
+     * built from the final persisted CLOSED state.
+     */
+    const closedForReport = await this.repository.findOperationForDay({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: operation.operationDate,
+    });
+
+    if (closedForReport) {
+      const closedContract = await this.toContract(
+        closedForReport,
+        bounds.dayStart,
+        bounds.dayEnd,
+      );
+
+      await this.ensureReportForClosedOperation(
+        user,
+        closedForReport,
+        closedContract,
+      );
+    }
+
+    return this.getToday(user, {
+      branchId: branch.id,
+      date: bounds.dateLabel,
+    });
   }
 
   async managerConfirmReport(
@@ -985,13 +1762,16 @@ export class OperationsService {
     dto: ReviewOperationReportDto,
   ): Promise<DailyOperationResponseContract> {
     this.assertCanReviewReport(user);
+
     const report = await this.repository.findReportById({
       tenantId: user.tenantId,
       reportId,
     });
+
     if (!report) {
       throw new NotFoundException('Report was not found.');
     }
+
     await this.resolveBranch(user, report.branchId);
 
     if (
@@ -1009,6 +1789,7 @@ export class OperationsService {
       reviewedByUserId: user.userId,
       notes: dto.notes?.trim() || null,
     });
+
     this.broadcastOperationEvent(OPERATIONS_EVENTS.reportManagerReviewed, {
       operationId: report.operationId,
       reportId: updated.id,
@@ -1018,14 +1799,15 @@ export class OperationsService {
       status: updated.status,
     });
 
-    // Open the next day immediately after the close report is submitted.
     const nextBounds = this.parseDayBounds(
       this.nextDateLabel(report.operationDate),
     );
+
     const branch = await this.repository.findBranch({
       tenantId: user.tenantId,
       branchId: report.branchId,
     });
+
     if (branch) {
       await this.autoOpenBranchIfEligible({
         tenantId: user.tenantId,
@@ -1049,13 +1831,16 @@ export class OperationsService {
     dto: ReviewOperationReportDto,
   ): Promise<DailyOperationResponseContract> {
     this.assertCanOwnerApproveReport(user);
+
     const report = await this.repository.findReportById({
       tenantId: user.tenantId,
       reportId,
     });
+
     if (!report) {
       throw new NotFoundException('Report was not found.');
     }
+
     await this.resolveBranch(user, report.branchId);
 
     if (report.status !== BranchOperationReportStatus.SENT_TO_OWNER) {
@@ -1068,6 +1853,7 @@ export class OperationsService {
       approvedByUserId: user.userId,
       notes: dto.notes?.trim() || null,
     });
+
     this.broadcastOperationEvent(OPERATIONS_EVENTS.reportOwnerApproved, {
       operationId: report.operationId,
       reportId: updated.id,
@@ -1111,15 +1897,18 @@ export class OperationsService {
     if (!input.branchId) {
       throw new ForbiddenException('Branch scope is required.');
     }
+
     const bounds = this.parseDayBounds(input.date);
+
     this.assertCanChangeDay(bounds.dateOnly);
+
     const operation = await this.repository.findOperationForDay({
       tenantId: input.tenantId,
       branchId: input.branchId,
       operationDate: bounds.dateOnly,
     });
 
-    if (!operation || operation.status !== 'OPEN') {
+    if (!operation || operation.status !== BranchOperationStatus.OPEN) {
       throw new BadRequestException('Open the branch before assigning float.');
     }
 
@@ -1139,13 +1928,14 @@ export class OperationsService {
     }
 
     const bounds = this.parseDayBounds(input.date);
+
     const operation = await this.repository.findOperationForDay({
       tenantId: input.tenantId,
       branchId: input.branchId,
       operationDate: bounds.dateOnly,
     });
 
-    if (!operation || operation.status !== 'OPEN') {
+    if (!operation || operation.status !== BranchOperationStatus.OPEN) {
       throw new BadRequestException('Open the branch before assigning float.');
     }
 
@@ -1174,16 +1964,19 @@ export class OperationsService {
       ]);
 
     const mode = input.mode ?? 'new';
+
     if (mode === 'new' && existingFloat) {
       throw new BadRequestException(
         'This agent already has float for this day.',
       );
     }
+
     if (mode === 'additional' && !existingFloat) {
       throw new BadRequestException(
         'Issue float to this agent before adding more.',
       );
     }
+
     if (mode === 'additional' && existingFloat?.amountReturned != null) {
       throw new BadRequestException(
         'This agent has already returned cash for this day.',
@@ -1191,11 +1984,15 @@ export class OperationsService {
     }
 
     const cashAvailableAtOpening = this.cashAvailableAtOpening(operation);
+
     const totalAlreadyIssued = this.decimalToNumber(floatAgg._sum.amountGiven);
+
     const expensesTotal = this.decimalToNumber(expensesAgg._sum.amount);
+
     const cashReturnedByAgents = this.decimalToNumber(
       returnedAgg._sum.amountReturned,
     );
+
     const availableForThisAgent = Math.max(
       0,
       this.roundMoney(
@@ -1213,6 +2010,66 @@ export class OperationsService {
     }
 
     return operation;
+  }
+
+  /**
+   * Converts persisted draft reconciliation state into
+   * the public operations API contract.
+   */
+  private async getReconciliationContract(input: {
+    tenantId: string;
+    operationId: string;
+    expectedClosingBalance: number;
+  }): Promise<BranchOperationReconciliationContract | null> {
+    const reconciliation = await this.repository.findReconciliationForOperation(
+      {
+        tenantId: input.tenantId,
+        operationId: input.operationId,
+      },
+    );
+
+    if (!reconciliation) {
+      return null;
+    }
+
+    const countedCash =
+      reconciliation.countedCash == null
+        ? null
+        : this.decimalToNumber(reconciliation.countedCash);
+
+    const variance =
+      countedCash == null
+        ? null
+        : this.roundMoney(countedCash - input.expectedClosingBalance);
+
+    return {
+      id: reconciliation.id,
+      operationId: reconciliation.operationId,
+      branchId: reconciliation.branchId,
+
+      countedCash,
+      expectedClosingBalance: input.expectedClosingBalance,
+      variance,
+
+      notes: reconciliation.notes,
+
+      startedAt: reconciliation.startedAt.toISOString(),
+      startedByName: reconciliation.startedBy.displayName,
+
+      updatedAt: reconciliation.updatedAt.toISOString(),
+      updatedByName: reconciliation.updatedBy?.displayName ?? null,
+
+      cashCounts: reconciliation.cashCounts.map((count) => ({
+        id: count.id,
+        previousAmount:
+          count.previousAmount == null
+            ? null
+            : this.decimalToNumber(count.previousAmount),
+        countedAmount: this.decimalToNumber(count.countedAmount),
+        recordedAt: count.recordedAt.toISOString(),
+        recordedByName: count.recordedBy.displayName,
+      })),
+    };
   }
 
   private toCarryoverContract(
@@ -1255,52 +2112,62 @@ export class OperationsService {
         branchId: operation.branchId,
         floatDate: operation.operationDate,
       }),
+
       this.repository.sumLoansIssued({
         tenantId: operation.tenantId,
         branchId: operation.branchId,
         dayStart,
         dayEnd,
       }),
+
       this.repository.sumCollections({
         tenantId: operation.tenantId,
         branchId: operation.branchId,
         dayStart,
         dayEnd,
       }),
+
       this.repository.sumExpensesForOperation({
         tenantId: operation.tenantId,
         operationId: operation.id,
       }),
+
       this.repository.listExpensesForOperation({
         tenantId: operation.tenantId,
         operationId: operation.id,
       }),
+
       this.repository.listTopUpsForOperation({
         tenantId: operation.tenantId,
         operationId: operation.id,
       }),
+
       this.repository.listAgentFloatsForOperation({
         tenantId: operation.tenantId,
         branchId: operation.branchId,
         floatDate: operation.operationDate,
       }),
+
       this.repository.listLoansIssuedToday({
         tenantId: operation.tenantId,
         branchId: operation.branchId,
         dayStart,
         dayEnd,
       }),
+
       this.repository.listCollectionsWithProduct({
         tenantId: operation.tenantId,
         branchId: operation.branchId,
         dayStart,
         dayEnd,
       }),
+
       this.repository.listCashShortagesForOperationDay({
         tenantId: operation.tenantId,
         branchId: operation.branchId,
         operationDate: operation.operationDate,
       }),
+
       this.repository.findLatestClosedBefore({
         tenantId: operation.tenantId,
         branchId: operation.branchId,
@@ -1317,6 +2184,7 @@ export class OperationsService {
           });
 
     const agentIds = agentFloats.map((float) => float.agentId);
+
     const [loansByAgentRows, collectionsByAgentRows] =
       agentIds.length === 0
         ? [[], []]
@@ -1328,6 +2196,7 @@ export class OperationsService {
               dayStart,
               dayEnd,
             }),
+
             this.repository.sumCollectionsByAgent({
               tenantId: operation.tenantId,
               branchId: operation.branchId,
@@ -1340,48 +2209,62 @@ export class OperationsService {
     const openingBalance = this.decimalToNumber(
       operation.previousClosingBalance,
     );
+
     const cashAddedToday = this.decimalToNumber(operation.cashAddedToday);
+
     const cashAvailableAtOpening = this.cashAvailableAtOpening(operation);
+
     const floatSetAside = this.floatSetAsideAmount(operation);
+
     const floatIssued = this.decimalToNumber(floatAgg._sum.amountGiven);
+
     const expensesTotal = this.decimalToNumber(expensesAgg._sum.amount);
+
     const loansIssuedPrincipal = this.decimalToNumber(
       loansAgg._sum.principalAmount,
     );
+
     const processingFeesTotal = this.decimalToNumber(
       loansAgg._sum.processingFee,
     );
+
     const collectionsReceived = this.decimalToNumber(
       collectionsAgg._sum.amount,
     );
+
     const agentReturns = this.toAgentReturnContracts(
       agentFloats,
       loansByAgentRows,
       collectionsByAgentRows,
     );
+
     const cashReturnedByAgents = this.roundMoney(
       agentReturns.reduce(
         (total, agentReturn) => total + (agentReturn.amountReturned ?? 0),
         0,
       ),
     );
+
     const expectedAgentReturnTotal = this.roundMoney(
       agentReturns.reduce(
         (total, agentReturn) => total + agentReturn.expectedReturn,
         0,
       ),
     );
+
     const agentReturnVariance = this.roundMoney(
       cashReturnedByAgents - expectedAgentReturnTotal,
     );
+
     const branchCashRemaining = this.roundMoney(
       cashAvailableAtOpening -
         floatIssued -
         expensesTotal +
         cashReturnedByAgents,
     );
-    // Assignable float = branch cash on hand (no separate open-time ceiling).
+
     const floatRemaining = Math.max(branchCashRemaining, 0);
+
     const expectedClosingBalance = this.roundMoney(
       cashAvailableAtOpening -
         loansIssuedPrincipal +
@@ -1389,28 +2272,56 @@ export class OperationsService {
         collectionsReceived -
         expensesTotal,
     );
-    const closingBalance = operation.closingBalance
-      ? this.decimalToNumber(operation.closingBalance)
-      : null;
+
+    const closingBalance =
+      operation.closingBalance == null
+        ? null
+        : this.decimalToNumber(operation.closingBalance);
+
+    /*
+     * Reconciliation is deliberately separate from the final
+     * BranchDailyOperation.closingBalance.
+     *
+     * During reconciliation the physical cash count may be
+     * edited multiple times.
+     */
+    const reconciliation = operation.reconciliation ?? null;
+
+    const reconciliationCountedCash =
+      reconciliation?.countedCash == null
+        ? null
+        : this.decimalToNumber(reconciliation.countedCash);
+
+    const reconciliationVariance =
+      reconciliationCountedCash == null
+        ? null
+        : this.roundMoney(reconciliationCountedCash - expectedClosingBalance);
 
     const loansByProduct = this.buildLoansByProduct(loansIssuedToday);
+
     const feesByProduct = this.buildFeesByProduct(loansIssuedToday);
+
     const repaymentsByProduct = this.buildRepaymentsByProduct(
       collectionsWithProduct,
     );
+
     const loansIssued = this.buildLoanIssuedDetails(
       loansIssuedToday,
       operation.operationDate,
     );
+
     const repayments = this.buildRepaymentDetails(collectionsWithProduct);
+
     const processingFees = this.buildProcessingFeeDetails(
       loansIssuedToday,
       operation.operationDate,
     );
+
     const closingVariance =
       closingBalance == null
         ? null
         : this.roundMoney(closingBalance - expectedClosingBalance);
+
     const variances = this.buildVarianceDetails({
       operation,
       agentReturns,
@@ -1426,27 +2337,37 @@ export class OperationsService {
       branchName: operation.branch.name,
       operationDate: this.formatDateLabel(operation.operationDate),
       status: operation.status,
+
       openedAt: operation.openedAt.toISOString(),
       openedByName: operation.openedBy.displayName,
+
       closedAt: operation.closedAt?.toISOString() ?? null,
       closedByName: operation.closedBy?.displayName ?? null,
+
       openingBalance,
       cashAddedToday,
       cashAvailableAtOpening,
+
       floatIssued,
       floatSetAside,
       floatRemaining,
+
       processingFeesTotal,
       cashReturnedByAgents,
+
       agentsWithFloatCount: agentReturns.length,
+
       agentsReturnedCount: agentReturns.filter(
         (agentReturn) => agentReturn.amountReturned != null,
       ).length,
+
       expectedAgentReturnTotal,
       agentReturnVariance,
       agentReturns,
+
       topUpsCount: topUps.length,
       topUpsTotal: cashAddedToday,
+
       topUps: topUps.map((topUp) => ({
         id: topUp.id,
         amount: this.decimalToNumber(topUp.amount),
@@ -1454,8 +2375,11 @@ export class OperationsService {
         addedAt: topUp.addedAt.toISOString(),
         recordedByName: topUp.recordedBy.displayName,
       })),
+
       expensesCount: expensesAgg._count._all,
+
       expensesTotal,
+
       expenses: expenses.map((expense) => ({
         id: expense.id,
         category: expense.category,
@@ -1466,23 +2390,41 @@ export class OperationsService {
         approvedAt: expense.approvedAt?.toISOString() ?? null,
         approvedByName: expense.approvedBy?.displayName ?? null,
       })),
+
       branchCashRemaining,
+
       expectedClosingBalance,
+
+      reconciliationStarted: reconciliation != null,
+
+      reconciliationCountedCash,
+
+      reconciliationVariance,
+
       closingBalance,
       closingVariance,
+
       closingNotes: operation.closingNotes,
+
       loansIssuedCount: loansAgg._count._all,
+
       loansIssuedPrincipal,
+
       collectionsCount: collectionsAgg._count._all,
+
       collectionsReceived,
+
       notes: operation.notes,
+
       loansByProduct,
       repaymentsByProduct,
       feesByProduct,
+
       loansIssued,
       repayments,
       processingFees,
       variances,
+
       previousReportReference:
         previousClosed == null
           ? null
@@ -1506,11 +2448,15 @@ export class OperationsService {
     const openingBalance = this.decimalToNumber(
       operation.previousClosingBalance,
     );
+
     const cashAddedToday = this.decimalToNumber(operation.cashAddedToday);
+
     const legacyAvailable = this.decimalToNumber(
       operation.openingFloatAvailable,
     );
+
     const computed = this.roundMoney(openingBalance + cashAddedToday);
+
     return computed > 0 || legacyAvailable === 0 ? computed : legacyAvailable;
   }
 
@@ -1519,6 +2465,7 @@ export class OperationsService {
     openingFloatAvailable: Prisma.Decimal | number | null;
   }) {
     const setAside = this.decimalToNumber(operation.floatSetAsideAmount);
+
     return this.roundMoney(setAside);
   }
 
@@ -1546,10 +2493,15 @@ export class OperationsService {
       tenantId: user.tenantId,
       operationId: operation.id,
     });
-    if (existing) return existing;
+
+    if (existing) {
+      return existing;
+    }
 
     const reportNumber = this.buildReportNumber(operation.branchId, contract);
+
     const snapshot = this.buildReportSnapshot(contract);
+
     try {
       return await this.repository.createOperationReport({
         tenantId: user.tenantId,
@@ -1566,8 +2518,12 @@ export class OperationsService {
           tenantId: user.tenantId,
           operationId: operation.id,
         });
-        if (concurrent) return concurrent;
+
+        if (concurrent) {
+          return concurrent;
+        }
       }
+
       throw error;
     }
   }
@@ -1577,11 +2533,18 @@ export class OperationsService {
     contract: DailyOperationContract,
   ) {
     const [year, month, day] = contract.operationDate.split('-');
+
     const code =
       year && month && day && year.length >= 4
         ? `DR${day}${month}${year.slice(2)}`
         : `DR${contract.operationDate.replaceAll('-', '')}`;
-    // Persist a branch fragment so multi-branch tenants stay unique; UI shows DRDDMMYY.
+
+    /*
+     * Persist the branch fragment so report numbers remain
+     * unique across a multi-branch tenant.
+     *
+     * UI can still display just DRDDMMYY.
+     */
     return `${code}-${branchId.replaceAll('-', '').slice(0, 6).toUpperCase()}`;
   }
 
@@ -1591,6 +2554,7 @@ export class OperationsService {
     return {
       version: 3,
       reportType: 'daily_operations_close',
+
       operation: {
         id: operation.id,
         branchId: operation.branchId,
@@ -1602,6 +2566,7 @@ export class OperationsService {
         closedAt: operation.closedAt,
         closedByName: operation.closedByName,
       },
+
       summary: {
         openingCash: operation.cashAvailableAtOpening,
         previousClosingBalance: operation.openingBalance,
@@ -1619,12 +2584,14 @@ export class OperationsService {
         countedCash: operation.closingBalance,
         variance: operation.closingVariance,
       },
+
       openingCash: {
         previousClosingBalance: operation.openingBalance,
         cashAddedToday: operation.cashAddedToday,
         totalOpeningBalance: operation.cashAvailableAtOpening,
         floatSetAside: operation.floatSetAside,
       },
+
       cashPosition: {
         floatDistributed: operation.floatIssued,
         branchExpenses: operation.expensesTotal,
@@ -1636,18 +2603,31 @@ export class OperationsService {
         countedCash: operation.closingBalance,
         variance: operation.closingVariance,
       },
+
       agentReturns: operation.agentReturns,
+
       topUps: operation.topUps,
+
       expenses: operation.expenses,
+
       loansByProduct: operation.loansByProduct,
+
       repaymentsByProduct: operation.repaymentsByProduct,
+
       feesByProduct: operation.feesByProduct,
+
       loansIssued: operation.loansIssued,
+
       repayments: operation.repayments,
+
       processingFees: operation.processingFees,
+
       variances: operation.variances,
+
       previousReportReference: operation.previousReportReference,
+
       closingNotes: operation.closingNotes,
+
       generatedAt: new Date().toISOString(),
     };
   }
@@ -1658,15 +2638,18 @@ export class OperationsService {
   ) {
     return loans.map((loan) => {
       const principal = this.decimalToNumber(loan.principalAmount);
+
       const recoveredToday = this.roundMoney(
         (loan.loan?.repayments ?? []).reduce(
           (total, repayment) => total + this.decimalToNumber(repayment.amount),
           0,
         ),
       );
+
       const outstandingBalance = loan.loan
         ? this.decimalToNumber(loan.loan.balance)
         : this.roundMoney(Math.max(principal - recoveredToday, 0));
+
       const borrowerName =
         loan.customer?.fullName?.trim() ||
         [loan.givenNames, loan.surname].filter(Boolean).join(' ').trim() ||
@@ -1720,11 +2703,16 @@ export class OperationsService {
     return loans
       .map((loan) => {
         const fee = this.decimalToNumber(loan.processingFee);
-        if (fee <= 0) return null;
+
+        if (fee <= 0) {
+          return null;
+        }
+
         const borrowerName =
           loan.customer?.fullName?.trim() ||
           [loan.givenNames, loan.surname].filter(Boolean).join(' ').trim() ||
           'Borrower';
+
         return {
           id: `${loan.id}-fee`,
           loanId: loan.loanId,
@@ -1755,14 +2743,24 @@ export class OperationsService {
         .filter((shortage) => Boolean(shortage.sourceId))
         .map((shortage) => [shortage.sourceId!, shortage]),
     );
+
     const usedShortageIds = new Set<string>();
+
     const rows: DailyOperationContract['variances'] = [];
 
     for (const agentReturn of input.agentReturns) {
       const variance = this.roundMoney(agentReturn.variance ?? 0);
-      if (agentReturn.amountReturned == null || variance === 0) continue;
+
+      if (agentReturn.amountReturned == null || variance === 0) {
+        continue;
+      }
+
       const shortage = shortagesBySourceId.get(agentReturn.floatId);
-      if (shortage) usedShortageIds.add(shortage.id);
+
+      if (shortage) {
+        usedShortageIds.add(shortage.id);
+      }
+
       rows.push({
         id: `agent-${agentReturn.floatId}`,
         source: 'Officer handover',
@@ -1771,18 +2769,23 @@ export class OperationsService {
         expectedAmount: agentReturn.expectedReturn,
         actualAmount: agentReturn.amountReturned,
         variance,
+
         shortageAmount:
           shortage != null
             ? this.decimalToNumber(shortage.amountOriginal)
             : variance < 0
               ? Math.abs(variance)
               : null,
+
         outstandingAmount:
           shortage != null
             ? this.decimalToNumber(shortage.amountOutstanding)
             : null,
+
         status: shortage?.status ?? agentReturn.status,
+
         notes: shortage?.notes ?? agentReturn.notes,
+
         occurredAt:
           agentReturn.returnedAt ??
           input.operation.closedAt?.toISOString() ??
@@ -1791,9 +2794,14 @@ export class OperationsService {
     }
 
     const branchVariance = this.roundMoney(input.closingVariance ?? 0);
+
     if (input.closingBalance != null && branchVariance !== 0) {
       const shortage = shortagesBySourceId.get(input.operation.id);
-      if (shortage) usedShortageIds.add(shortage.id);
+
+      if (shortage) {
+        usedShortageIds.add(shortage.id);
+      }
+
       rows.push({
         id: `branch-close-${input.operation.id}`,
         source: 'Branch close',
@@ -1802,18 +2810,23 @@ export class OperationsService {
         expectedAmount: input.expectedClosingBalance,
         actualAmount: input.closingBalance,
         variance: branchVariance,
+
         shortageAmount:
           shortage != null
             ? this.decimalToNumber(shortage.amountOriginal)
             : branchVariance < 0
               ? Math.abs(branchVariance)
               : null,
+
         outstandingAmount:
           shortage != null
             ? this.decimalToNumber(shortage.amountOutstanding)
             : null,
+
         status: shortage?.status ?? (branchVariance < 0 ? 'SHORT' : 'OVER'),
+
         notes: shortage?.notes ?? input.operation.closingNotes,
+
         occurredAt:
           input.operation.closedAt?.toISOString() ??
           input.operation.openedAt.toISOString(),
@@ -1821,7 +2834,10 @@ export class OperationsService {
     }
 
     for (const shortage of input.cashShortages) {
-      if (usedShortageIds.has(shortage.id)) continue;
+      if (usedShortageIds.has(shortage.id)) {
+        continue;
+      }
+
       rows.push({
         id: `shortage-${shortage.id}`,
         source: this.shortageSourceLabel(shortage.sourceType),
@@ -1845,9 +2861,11 @@ export class OperationsService {
     if (sourceType === CashShortageSource.AGENT_FLOAT_RETURN) {
       return 'Officer handover';
     }
+
     if (sourceType === CashShortageSource.BRANCH_CLOSE) {
       return 'Branch close';
     }
+
     return 'Manual shortage';
   }
 
@@ -1864,18 +2882,23 @@ export class OperationsService {
         outstandingBalance: number;
       }
     >();
+
     for (const loan of loans) {
       const product = loan.templateName?.trim() || 'Loan';
+
       const principal = this.decimalToNumber(loan.principalAmount);
+
       const recovered = this.roundMoney(
         (loan.loan?.repayments ?? []).reduce(
           (total, repayment) => total + this.decimalToNumber(repayment.amount),
           0,
         ),
       );
+
       const outstanding = loan.loan
         ? this.decimalToNumber(loan.loan.balance)
         : this.roundMoney(Math.max(principal - recovered, 0));
+
       const current = map.get(product) ?? {
         product,
         count: 0,
@@ -1883,16 +2906,22 @@ export class OperationsService {
         recoveredToday: 0,
         outstandingBalance: 0,
       };
+
       current.count += 1;
+
       current.amount = this.roundMoney(current.amount + principal);
+
       current.recoveredToday = this.roundMoney(
         current.recoveredToday + recovered,
       );
+
       current.outstandingBalance = this.roundMoney(
         current.outstandingBalance + outstanding,
       );
+
       map.set(product, current);
     }
+
     return [...map.values()].sort((a, b) => b.amount - a.amount);
   }
 
@@ -1901,21 +2930,35 @@ export class OperationsService {
   ) {
     const map = new Map<
       string,
-      { product: string; count: number; amount: number }
+      {
+        product: string;
+        count: number;
+        amount: number;
+      }
     >();
+
     for (const loan of loans) {
       const fee = this.decimalToNumber(loan.processingFee);
-      if (fee <= 0) continue;
+
+      if (fee <= 0) {
+        continue;
+      }
+
       const product = loan.templateName?.trim() || 'Loan';
+
       const current = map.get(product) ?? {
         product,
         count: 0,
         amount: 0,
       };
+
       current.count += 1;
+
       current.amount = this.roundMoney(current.amount + fee);
+
       map.set(product, current);
     }
+
     return [...map.values()].sort((a, b) => b.amount - a.amount);
   }
 
@@ -1926,30 +2969,42 @@ export class OperationsService {
   ) {
     const map = new Map<
       string,
-      { product: string; count: number; amount: number }
+      {
+        product: string;
+        count: number;
+        amount: number;
+      }
     >();
+
     for (const repayment of repayments) {
       const product =
         repayment.loan.application?.templateName?.trim() || 'Loan repayment';
+
       const current = map.get(product) ?? {
         product,
         count: 0,
         amount: 0,
       };
+
       current.count += 1;
+
       current.amount = this.roundMoney(
         current.amount + this.decimalToNumber(repayment.amount),
       );
+
       map.set(product, current);
     }
+
     return [...map.values()].sort((a, b) => b.amount - a.amount);
   }
 
   private buildDailyReportCode(operationDate: string) {
     const [year, month, day] = operationDate.split('-');
+
     if (!year || !month || !day || year.length < 4) {
       return `DR${operationDate.replaceAll('-', '')}`;
     }
+
     return `DR${day}${month}${year.slice(2)}`;
   }
 
@@ -1962,26 +3017,43 @@ export class OperationsService {
       reportNumber: report.reportNumber,
       operationDate: this.formatDateLabel(report.operationDate),
       status: report.status,
+
       generatedAt: report.generatedAt.toISOString(),
+
       managerReviewedAt: report.managerReviewedAt?.toISOString() ?? null,
+
       managerReviewedByName: report.managerReviewedBy?.displayName ?? null,
+
       managerNotes: report.managerNotes,
+
       ownerApprovedAt: report.ownerApprovedAt?.toISOString() ?? null,
+
       ownerApprovedByName: report.ownerApprovedBy?.displayName ?? null,
+
       ownerNotes: report.ownerNotes,
+
       returnedAt: report.returnedAt?.toISOString() ?? null,
+
       returnedByName: report.returnedBy?.displayName ?? null,
+
       returnNotes: report.returnNotes,
+
       snapshot: report.snapshot,
     };
   }
 
   private parseOwnerReportStatus(
     value?: string,
-    options?: { includeManagerReview?: boolean },
+    options?: {
+      includeManagerReview?: boolean;
+    },
   ) {
-    if (!value?.trim() || value === 'all') return null;
+    if (!value?.trim() || value === 'all') {
+      return null;
+    }
+
     const status = value.trim().toUpperCase();
+
     const allowed: BranchOperationReportStatus[] = [
       BranchOperationReportStatus.SENT_TO_OWNER,
       BranchOperationReportStatus.OWNER_APPROVED,
@@ -1990,9 +3062,11 @@ export class OperationsService {
         ? [BranchOperationReportStatus.MANAGER_REVIEW]
         : []),
     ];
+
     if (!allowed.includes(status as BranchOperationReportStatus)) {
       throw new BadRequestException('Choose a valid report status.');
     }
+
     return status as BranchOperationReportStatus;
   }
 
@@ -2001,6 +3075,7 @@ export class OperationsService {
       snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
         ? (snapshot as Prisma.JsonObject)
         : {};
+
     const summary =
       root.summary && typeof root.summary === 'object'
         ? (root.summary as Prisma.JsonObject)
@@ -2011,16 +3086,24 @@ export class OperationsService {
         summary,
         'expectedClosingBalance',
       ),
+
       countedCash: this.snapshotNumberOrNull(summary, 'countedCash'),
+
       variance: this.snapshotNumberOrNull(summary, 'variance'),
+
       loansIssuedCount: this.snapshotNumber(summary, 'loansIssuedCount'),
+
       loansIssuedPrincipal: this.snapshotNumber(
         summary,
         'loansIssuedPrincipal',
       ),
+
       collectionsReceived: this.snapshotNumber(summary, 'collectionsReceived'),
+
       processingFees: this.snapshotNumber(summary, 'processingFees'),
+
       expenses: this.snapshotNumber(summary, 'expenses'),
+
       cashReturnedByAgents: this.snapshotNumber(
         summary,
         'cashReturnedByAgents',
@@ -2034,11 +3117,17 @@ export class OperationsService {
 
   private snapshotNumberOrNull(source: Prisma.JsonObject, key: string) {
     const value = source[key];
-    if (typeof value === 'number' && Number.isFinite(value)) return value;
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value;
+    }
+
     if (typeof value === 'string') {
       const parsed = Number(value);
+
       return Number.isFinite(parsed) ? parsed : null;
     }
+
     return null;
   }
 
@@ -2059,12 +3148,14 @@ export class OperationsService {
         this.decimalToNumber(row._sum.principalAmount),
       ]),
     );
+
     const feesByAgent = new Map(
       loansByAgentRows.map((row) => [
         row.officerUserId,
         this.decimalToNumber(row._sum.processingFee),
       ]),
     );
+
     const collectionsByAgent = new Map(
       collectionsByAgentRows.map((row) => [
         row.recordedByUserId,
@@ -2074,20 +3165,27 @@ export class OperationsService {
 
     return agentFloats.map((float) => {
       const amountGiven = this.decimalToNumber(float.amountGiven);
+
       const amountDisbursed = loansByAgent.get(float.agentId) ?? 0;
+
       const processingFees = feesByAgent.get(float.agentId) ?? 0;
+
       const amountCollected = collectionsByAgent.get(float.agentId) ?? 0;
+
       const expectedReturn = this.roundMoney(
         amountGiven - amountDisbursed + amountCollected + processingFees,
       );
+
       const amountReturned =
         float.amountReturned == null
           ? null
           : this.decimalToNumber(float.amountReturned);
+
       const variance =
         amountReturned == null
           ? null
           : this.roundMoney(amountReturned - expectedReturn);
+
       const status =
         amountReturned == null
           ? 'PENDING'
@@ -2102,6 +3200,7 @@ export class OperationsService {
         agentId: float.agentId,
         agentName: float.agent.displayName,
         agentPublicId: float.agent.publicId ?? null,
+
         amountGiven,
         amountDisbursed,
         processingFees,
@@ -2109,9 +3208,13 @@ export class OperationsService {
         expectedReturn,
         amountReturned,
         variance,
+
         returnedAt: float.returnedAt?.toISOString() ?? null,
+
         returnedByName: float.returnedBy?.displayName ?? null,
+
         notes: float.returnNotes,
+
         status,
       };
     });
@@ -2126,13 +3229,16 @@ export class OperationsService {
     }
 
     const canAllBranches = user.permissions.includes(BRANCH_PERMISSIONS.create);
+
     if (!canAllBranches) {
       if (!user.branchId) {
         throw new ForbiddenException('Branch scope is required.');
       }
+
       if (requestedBranchId && requestedBranchId !== user.branchId) {
         throw new ForbiddenException('You cannot access this branch.');
       }
+
       return this.repository.findBranch({
         tenantId: user.tenantId,
         branchId: user.branchId,
@@ -2147,6 +3253,7 @@ export class OperationsService {
 
   private assertCanRead(user: AuthenticatedUser) {
     this.assertTenant(user);
+
     if (!user.permissions.includes(OPERATIONS_PERMISSIONS.read)) {
       throw new ForbiddenException('Missing permission to view operations.');
     }
@@ -2155,6 +3262,7 @@ export class OperationsService {
   private assertCanOpen(user: AuthenticatedUser) {
     this.assertTenant(user);
     this.assertCanOperateBranch(user);
+
     if (!user.permissions.includes(OPERATIONS_PERMISSIONS.open)) {
       throw new ForbiddenException('Missing permission to open branch.');
     }
@@ -2163,9 +3271,11 @@ export class OperationsService {
   private assertCanTopUp(user: AuthenticatedUser) {
     this.assertTenant(user);
     this.assertCanOperateBranch(user);
+
     const allowed =
       user.permissions.includes(OPERATIONS_PERMISSIONS.cashTopUp) ||
       user.permissions.includes(OPERATIONS_PERMISSIONS.open);
+
     if (!allowed) {
       throw new ForbiddenException('Missing permission to add cash.');
     }
@@ -2174,6 +3284,7 @@ export class OperationsService {
   private assertCanCreateExpense(user: AuthenticatedUser) {
     this.assertTenant(user);
     this.assertCanOperateBranch(user);
+
     if (!user.permissions.includes(OPERATIONS_PERMISSIONS.expenseCreate)) {
       throw new ForbiddenException('Missing permission to record expenses.');
     }
@@ -2182,6 +3293,7 @@ export class OperationsService {
   private assertCanReturnFloat(user: AuthenticatedUser) {
     this.assertTenant(user);
     this.assertCanOperateBranch(user);
+
     if (!user.permissions.includes(OPERATIONS_PERMISSIONS.floatReturn)) {
       throw new ForbiddenException('Missing permission to record returns.');
     }
@@ -2190,6 +3302,7 @@ export class OperationsService {
   private assertCanClose(user: AuthenticatedUser) {
     this.assertTenant(user);
     this.assertCanOperateBranch(user);
+
     if (!user.permissions.includes(OPERATIONS_PERMISSIONS.close)) {
       throw new ForbiddenException('Missing permission to close branch.');
     }
@@ -2198,9 +3311,11 @@ export class OperationsService {
   private assertCanReviewReport(user: AuthenticatedUser) {
     this.assertTenant(user);
     this.assertCanOperateBranch(user);
+
     const allowed =
       user.permissions.includes(OPERATIONS_PERMISSIONS.reportReview) ||
       user.permissions.includes(OPERATIONS_PERMISSIONS.close);
+
     if (!allowed) {
       throw new ForbiddenException('Missing permission to review reports.');
     }
@@ -2208,9 +3323,11 @@ export class OperationsService {
 
   private assertCanOwnerApproveReport(user: AuthenticatedUser) {
     this.assertTenant(user);
+
     const allowed =
       user.permissions.includes(OPERATIONS_PERMISSIONS.approve) &&
       user.permissions.includes(BRANCH_PERMISSIONS.create);
+
     if (!allowed) {
       throw new ForbiddenException('Missing permission to approve reports.');
     }
@@ -2222,6 +3339,7 @@ export class OperationsService {
         'Branch operations are handled by branch managers.',
       );
     }
+
     if (!user.branchId) {
       throw new ForbiddenException('Branch scope is required.');
     }
@@ -2229,18 +3347,28 @@ export class OperationsService {
 
   private assertCanChangeDay(dateOnly: Date) {
     const label = this.formatDateLabel(dateOnly);
+
     const today = this.currentBusinessDateLabel();
-    if (label === today) return;
-    // After close + report, the next day may open immediately and remain editable.
+
+    if (label === today) {
+      return;
+    }
+
+    // After close + report the next day may open immediately.
     if (label === this.nextDateLabel(this.parseDayBounds(today).dateOnly)) {
       return;
     }
+
     throw new BadRequestException("Only today's records can be changed.");
   }
 
   private isAutoOpenableDate(dateLabel: string) {
     const today = this.currentBusinessDateLabel();
-    if (dateLabel === today) return true;
+
+    if (dateLabel === today) {
+      return true;
+    }
+
     return (
       dateLabel === this.nextDateLabel(this.parseDayBounds(today).dateOnly)
     );
@@ -2257,9 +3385,15 @@ export class OperationsService {
     payload: Record<string, unknown>,
   ) {
     const tenantId = payload.tenantId;
+
     const branchId = payload.branchId;
-    if (typeof tenantId !== 'string' || typeof branchId !== 'string') return;
+
+    if (typeof tenantId !== 'string' || typeof branchId !== 'string') {
+      return;
+    }
+
     this.realtime.emitToBranch(tenantId, branchId, event, payload);
+
     this.realtime.emitToTenant(tenantId, event, payload);
   }
 
@@ -2267,6 +3401,7 @@ export class OperationsService {
     const shifted = new Date(
       Date.now() + this.businessUtcOffsetMinutes * 60 * 1000,
     );
+
     return shifted.getUTCHours();
   }
 
@@ -2288,14 +3423,20 @@ export class OperationsService {
       tenantId: previousClosed.tenantId,
       operationId: previousClosed.id,
     });
+
     if (!report) {
       throw new BadRequestException(
-        `Submit the close report for ${this.formatDateLabel(previousClosed.operationDate)} before opening a new day.`,
+        `Submit the close report for ${this.formatDateLabel(
+          previousClosed.operationDate,
+        )} before opening a new day.`,
       );
     }
+
     if (!this.isReportSubmitted(report.status)) {
       throw new BadRequestException(
-        `Submit the close report for ${this.formatDateLabel(previousClosed.operationDate)} before opening a new day.`,
+        `Submit the close report for ${this.formatDateLabel(
+          previousClosed.operationDate,
+        )} before opening a new day.`,
       );
     }
   }
@@ -2306,24 +3447,32 @@ export class OperationsService {
     beforeDate: Date;
   }) {
     let beforeDate = input.beforeDate;
+
     for (;;) {
       const previousClosed = await this.repository.findLatestClosedBefore({
         tenantId: input.tenantId,
         branchId: input.branchId,
         beforeDate,
       });
-      if (!previousClosed) return null;
+
+      if (!previousClosed) {
+        return null;
+      }
 
       const bounds = this.parseDayBounds(
         this.formatDateLabel(previousClosed.operationDate),
       );
+
       if (!(await this.isEmptyClosedOperation(previousClosed, bounds))) {
         return previousClosed;
       }
 
       this.logger.log(
-        `Ignoring empty closed operation ${previousClosed.id} for ${previousClosed.branch.name} (${this.formatDateLabel(previousClosed.operationDate)})`,
+        `Ignoring empty closed operation ${previousClosed.id} for ${previousClosed.branch.name} (${this.formatDateLabel(
+          previousClosed.operationDate,
+        )})`,
       );
+
       beforeDate = previousClosed.operationDate;
     }
   }
@@ -2334,7 +3483,10 @@ export class OperationsService {
     >,
     bounds: ReturnType<OperationsService['parseDayBounds']>,
   ) {
-    if (operation.status !== BranchOperationStatus.CLOSED) return false;
+    if (operation.status !== BranchOperationStatus.CLOSED) {
+      return false;
+    }
+
     if (operation.closingBalance == null || operation.closedAt == null) {
       return false;
     }
@@ -2342,11 +3494,19 @@ export class OperationsService {
     const [topUps, expenses, agentFloats, loans, collections, report] =
       await Promise.all([
         this.prisma.branchOperationTopUp.count({
-          where: { tenantId: operation.tenantId, operationId: operation.id },
+          where: {
+            tenantId: operation.tenantId,
+            operationId: operation.id,
+          },
         }),
+
         this.prisma.branchOperationExpense.count({
-          where: { tenantId: operation.tenantId, operationId: operation.id },
+          where: {
+            tenantId: operation.tenantId,
+            operationId: operation.id,
+          },
         }),
+
         this.prisma.agentDailyFloat.count({
           where: {
             tenantId: operation.tenantId,
@@ -2354,6 +3514,7 @@ export class OperationsService {
             floatDate: operation.operationDate,
           },
         }),
+
         this.prisma.loanApplication.count({
           where: {
             tenantId: operation.tenantId,
@@ -2365,6 +3526,7 @@ export class OperationsService {
             },
           },
         }),
+
         this.prisma.repayment.count({
           where: {
             tenantId: operation.tenantId,
@@ -2375,8 +3537,12 @@ export class OperationsService {
             },
           },
         }),
+
         this.prisma.branchOperationReport.count({
-          where: { tenantId: operation.tenantId, operationId: operation.id },
+          where: {
+            tenantId: operation.tenantId,
+            operationId: operation.id,
+          },
         }),
       ]);
 
@@ -2389,27 +3555,39 @@ export class OperationsService {
     beforeDate: Date;
   }) {
     let retired = 0;
+
     for (;;) {
       const pending = await this.repository.findOldestUnclosedBefore({
         tenantId: input.tenantId,
         branchId: input.branchId,
         beforeDate: input.beforeDate,
       });
+
       if (!pending) {
         break;
       }
 
       const empty = await this.isEmptyUnclosedOperation(pending);
-      if (!empty) break;
+
+      if (!empty) {
+        break;
+      }
 
       await this.prisma.branchDailyOperation.delete({
-        where: { id: pending.id },
+        where: {
+          id: pending.id,
+        },
       });
+
       retired += 1;
+
       this.logger.log(
-        `Retired empty operation ${pending.id} for ${pending.branch.name} (${this.formatDateLabel(pending.operationDate)})`,
+        `Retired empty operation ${pending.id} for ${pending.branch.name} (${this.formatDateLabel(
+          pending.operationDate,
+        )})`,
       );
     }
+
     return retired;
   }
 
@@ -2418,7 +3596,10 @@ export class OperationsService {
       Awaited<ReturnType<OperationsRepository['findOperationForDay']>>
     >,
   ) {
-    if (operation.status === BranchOperationStatus.CLOSED) return false;
+    if (operation.status === BranchOperationStatus.CLOSED) {
+      return false;
+    }
+
     if (operation.closingBalance != null || operation.closedAt != null) {
       return false;
     }
@@ -2433,14 +3614,23 @@ export class OperationsService {
     const bounds = this.parseDayBounds(
       this.formatDateLabel(operation.operationDate),
     );
+
     const [topUps, expenses, agentFloats, loans, collections, report] =
       await Promise.all([
         this.prisma.branchOperationTopUp.count({
-          where: { tenantId: operation.tenantId, operationId: operation.id },
+          where: {
+            tenantId: operation.tenantId,
+            operationId: operation.id,
+          },
         }),
+
         this.prisma.branchOperationExpense.count({
-          where: { tenantId: operation.tenantId, operationId: operation.id },
+          where: {
+            tenantId: operation.tenantId,
+            operationId: operation.id,
+          },
         }),
+
         this.prisma.agentDailyFloat.count({
           where: {
             tenantId: operation.tenantId,
@@ -2448,6 +3638,7 @@ export class OperationsService {
             floatDate: operation.operationDate,
           },
         }),
+
         this.prisma.loanApplication.count({
           where: {
             tenantId: operation.tenantId,
@@ -2459,6 +3650,7 @@ export class OperationsService {
             },
           },
         }),
+
         this.prisma.repayment.count({
           where: {
             tenantId: operation.tenantId,
@@ -2469,8 +3661,12 @@ export class OperationsService {
             },
           },
         }),
+
         this.prisma.branchOperationReport.count({
-          where: { tenantId: operation.tenantId, operationId: operation.id },
+          where: {
+            tenantId: operation.tenantId,
+            operationId: operation.id,
+          },
         }),
       ]);
 
@@ -2478,15 +3674,25 @@ export class OperationsService {
   }
 
   /**
-   * Auto-open each branch at 00:05 Africa/Kampala when yesterday is closed
-   * and its report has been submitted. Agents still unlock at 06:00.
+   * Auto-open each branch at 00:05 Africa/Kampala when
+   * yesterday is closed and the report has been submitted.
+   *
+   * Agents remain locked from money operations until 06:00.
    */
-  @Cron('5 0 * * *', { timeZone: 'Africa/Kampala' })
+  @Cron('5 0 * * *', {
+    timeZone: 'Africa/Kampala',
+  })
   async autoOpenBusinessDaysCron() {
     const dateLabel = this.currentBusinessDateLabel();
+
     const bounds = this.parseDayBounds(dateLabel);
+
     const branches = await this.prisma.branch.findMany({
-      select: { id: true, tenantId: true, name: true },
+      select: {
+        id: true,
+        tenantId: true,
+        name: true,
+      },
     });
 
     for (const branch of branches) {
@@ -2526,7 +3732,10 @@ export class OperationsService {
       branchId: input.branchId,
       operationDate: input.bounds.dateOnly,
     });
-    if (existing) return existing;
+
+    if (existing) {
+      return existing;
+    }
 
     const [previousClosed, pendingClosure] = await Promise.all([
       this.findLatestNonEmptyClosedBefore({
@@ -2534,6 +3743,7 @@ export class OperationsService {
         branchId: input.branchId,
         beforeDate: input.bounds.dateOnly,
       }),
+
       this.repository.findOldestUnclosedBefore({
         tenantId: input.tenantId,
         branchId: input.branchId,
@@ -2541,9 +3751,12 @@ export class OperationsService {
       }),
     ]);
 
-    if (pendingClosure) return null;
+    if (pendingClosure) {
+      return null;
+    }
 
     let openingBalance = 0;
+
     let openedByUserId = input.openedByUserId ?? null;
 
     if (previousClosed) {
@@ -2551,9 +3764,13 @@ export class OperationsService {
         tenantId: input.tenantId,
         operationId: previousClosed.id,
       });
-      if (!report || !this.isReportSubmitted(report.status)) return null;
+
+      if (!report || !this.isReportSubmitted(report.status)) {
+        return null;
+      }
 
       openingBalance = this.decimalToNumber(previousClosed.closingBalance);
+
       openedByUserId =
         openedByUserId ??
         previousClosed.closedByUserId ??
@@ -2562,7 +3779,9 @@ export class OperationsService {
       return null;
     }
 
-    if (!openedByUserId) return null;
+    if (!openedByUserId) {
+      return null;
+    }
 
     try {
       await this.billingService.assertBranchSubscriptionActive(
@@ -2596,16 +3815,21 @@ export class OperationsService {
       status: operation.status,
       autoOpened: true,
     });
+
     this.logger.log(
       `Auto-opened ${input.branchName} (${input.branchId}) for ${input.bounds.dateLabel}`,
     );
+
     return operation;
   }
 
   private nextDateLabel(value: Date) {
     const label = this.formatDateLabel(value);
+
     const [year, month, day] = label.split('-').map(Number);
+
     const next = new Date(Date.UTC(year, month - 1, day + 1));
+
     return this.formatDateLabel(next);
   }
 
@@ -2613,12 +3837,16 @@ export class OperationsService {
     const base = this.parseDateInput(
       date?.trim() ? date.trim() : this.currentBusinessDateLabel(),
     );
+
     const dateOnly = this.toDateOnly(base);
+
     const dayStart = new Date(
       Date.UTC(base.getFullYear(), base.getMonth(), base.getDate()) -
         this.businessUtcOffsetMinutes * 60 * 1000,
     );
+
     const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
+
     return {
       dayStart,
       dayEnd,
@@ -2631,8 +3859,11 @@ export class OperationsService {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
       throw new BadRequestException('date must be YYYY-MM-DD.');
     }
+
     const [y, m, d] = value.split('-').map(Number);
+
     const parsed = new Date(y, m - 1, d);
+
     if (
       Number.isNaN(parsed.getTime()) ||
       parsed.getFullYear() !== y ||
@@ -2641,6 +3872,7 @@ export class OperationsService {
     ) {
       throw new BadRequestException('date must be a valid calendar day.');
     }
+
     return parsed;
   }
 
@@ -2654,9 +3886,13 @@ export class OperationsService {
     const shifted = new Date(
       Date.now() + this.businessUtcOffsetMinutes * 60 * 1000,
     );
+
     const year = shifted.getUTCFullYear();
+
     const month = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+
     const day = String(shifted.getUTCDate()).padStart(2, '0');
+
     return `${year}-${month}-${day}`;
   }
 
@@ -2668,19 +3904,32 @@ export class OperationsService {
       value.getUTCMilliseconds() === 0
     ) {
       const y = value.getUTCFullYear();
+
       const m = String(value.getUTCMonth() + 1).padStart(2, '0');
+
       const d = String(value.getUTCDate()).padStart(2, '0');
+
       return `${y}-${m}-${d}`;
     }
+
     const year = value.getFullYear();
+
     const month = String(value.getMonth() + 1).padStart(2, '0');
+
     const day = String(value.getDate()).padStart(2, '0');
+
     return `${year}-${month}-${day}`;
   }
 
   private decimalToNumber(value: Prisma.Decimal | number | null | undefined) {
-    if (value == null) return 0;
-    if (typeof value === 'number') return value;
+    if (value == null) {
+      return 0;
+    }
+
+    if (typeof value === 'number') {
+      return value;
+    }
+
     return Number(value.toString());
   }
 
