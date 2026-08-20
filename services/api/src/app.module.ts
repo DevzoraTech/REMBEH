@@ -24,6 +24,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { SmsCreditsModule } from './modules/sms-credits/sms-credits.module';
 import { StorageModule } from './modules/storage/storage.module';
+import { SyncModule } from './modules/sync/sync.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { StorageModule } from './modules/storage/storage.module';
     ScheduleModule.forRoot(),
     DatabaseModule,
     StorageModule,
+    SyncModule,
     RealtimeModule,
     NotificationsModule,
     AuthModule,

@@ -2,8 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../core/constants/expense_categories.dart';
 import '../features/applications_list/data/applications_live_store.dart';
+import '../features/operations/domain/models/agent_float_position.dart';
+import '../features/operations/domain/models/operation_activity.dart';
+import '../features/operations/domain/models/operation_dashboard_data.dart';
+import '../features/operations/domain/utils/operation_formatters.dart';
+import '../features/operations/presentation/screens/operations_tab.dart';
 import '../features/repayment/data/repayments_live_store.dart';
+import '../features/workspace/presentation/widgets/branch_header.dart';
+import '../features/workspace/presentation/widgets/workspace_bottom_navigation.dart';
 import '../models/field_records.dart';
 import '../services/api_client.dart';
 import '../services/session_activity.dart';
@@ -15,66 +23,77 @@ import '../utils/friendly_errors.dart';
 import '../utils/money.dart';
 import 'account_locked_screen.dart';
 import 'agent_shell.dart';
+import 'home/manager_owner_home_tab.dart';
+import 'home/needs_attention_section.dart';
+import 'home/recent_activity_list.dart';
 import 'login_screen.dart';
 import 'loan_application/new_loan_application_screen.dart';
 import 'records/records_tab.dart';
 import 'register_customer_screen.dart';
 import 'search/search_tab.dart';
 
-const _expenseCategories = [
-  'TRANSPORT',
-  'FUEL',
-  'MEALS',
-  'AIRTIME',
-  'MOBILE_MONEY_CHARGES',
-  'STATIONERY',
-  'REPAIRS',
-  'UTILITIES',
-  'OTHER',
-];
-
 class BranchWorkspaceScreen extends StatefulWidget {
-  const BranchWorkspaceScreen({super.key, required this.session});
+  const BranchWorkspaceScreen({
+    super.key,
+    required this.session,
+  });
 
   final RembehSession session;
 
   @override
-  State<BranchWorkspaceScreen> createState() => _BranchWorkspaceScreenState();
+  State<BranchWorkspaceScreen> createState() =>
+      _BranchWorkspaceScreenState();
 }
 
 class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
-  final _store = SessionStore();
-  late final _api = ApiClient(_store);
+  final SessionStore _store = SessionStore();
+
+  late final ApiClient _api = ApiClient(_store);
+
   late final SessionActivityController _activity;
 
   Map<String, dynamic>? _data;
   Map<String, dynamic>? _collectionSummary;
+
   List<Map<String, dynamic>> _agents = const [];
   List<Map<String, dynamic>> _customers = const [];
   List<Map<String, dynamic>> _loans = const [];
   List<Map<String, dynamic>> _repayments = const [];
   List<Map<String, dynamic>> _reports = const [];
   List<Map<String, dynamic>> _shortages = const [];
+
   bool _loading = true;
   bool _saving = false;
+
   String? _error;
   String? _notice;
+
   int _index = 0;
+
   RecordsSection _recordsSection = RecordsSection.repayments;
   RecordsFilter _recordsFilter = RecordsFilter.all;
+
   bool _searchAutofocus = false;
   int _searchFocusToken = 0;
+
   String _date = _todayLabel();
+
+  // ===========================================================================
+  // LIFECYCLE
+  // ===========================================================================
 
   @override
   void initState() {
     super.initState();
+
     _activity = SessionActivityController(
       sessionStore: _store,
       onSessionCleared: _handleSessionCleared,
       onAccountBlocked: _handleAccountBlocked,
     );
+
     _activity.start();
+
     unawaited(_startLiveStores());
     unawaited(_load());
   }
@@ -85,178 +104,9 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     super.dispose();
   }
 
-  Future<void> _load({String? date}) async {
-    final targetDate = date ?? _date;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final data = await _api.getBranchOperation(
-        session: widget.session,
-        branchId: widget.session.branchId,
-        date: targetDate,
-      );
-      var agents = <Map<String, dynamic>>[];
-      if (widget.session.hasPermission('operation.float.manage') ||
-          widget.session.hasPermission('operation.float.return') ||
-          widget.session.hasPermission('operation.close')) {
-        try {
-          agents = await _api.listBranchAgents(
-            session: widget.session,
-            date: targetDate,
-          );
-        } catch (_) {
-          agents = const [];
-        }
-      }
-      if (!mounted) return;
-      setState(() {
-        _date = targetDate;
-        _data = data;
-        _agents = agents;
-        _loading = false;
-      });
-      unawaited(_loadManagementData());
-    } catch (error) {
-      final message = friendlyErrorMessage(error);
-      if (isAccountAccessBlockedMessage(message)) {
-        await _handleAccountBlocked(message);
-        return;
-      }
-      if (!mounted) return;
-      setState(() {
-        _error = message;
-        _loading = false;
-      });
-    }
-  }
-
-  Future<void> _startLiveStores() async {
-    try {
-      await Future.wait([
-        ApplicationsLiveStore.instance.start(widget.session),
-        RepaymentsLiveStore.instance.start(widget.session),
-      ]);
-    } catch (_) {
-      // The management lists below still load independently.
-    }
-  }
-
-  Future<void> _loadManagementData() async {
-    final session = widget.session;
-    var customers = _customers;
-    var loans = _loans;
-    var repayments = _repayments;
-    var reports = _reports;
-    var shortages = _shortages;
-    var summary = _collectionSummary;
-
-    Future<T?> optional<T>(Future<T> Function() loader) async {
-      try {
-        return await loader();
-      } catch (_) {
-        return null;
-      }
-    }
-
-    final results = await Future.wait<Object?>([
-      if (session.hasPermission('customer.read'))
-        optional(() => _api.listCustomers(session))
-      else
-        Future<Object?>.value(null),
-      if (session.hasPermission('loan.read'))
-        optional(() => _api.listLoans(session))
-      else
-        Future<Object?>.value(null),
-      if (session.hasPermission('collection.read'))
-        optional(() => _api.listRepayments(session))
-      else
-        Future<Object?>.value(null),
-      if (session.hasPermission('collection.read'))
-        optional(() => _api.getCollectionSummary(session))
-      else
-        Future<Object?>.value(null),
-      if (session.hasPermission('operation.read'))
-        optional(
-          () => _api.listOperationReports(
-            session: session,
-            branchId: session.branchId,
-          ),
-        )
-      else
-        Future<Object?>.value(null),
-      optional(
-        () => _api.listCashShortages(
-          session: session,
-          branchId: session.branchId,
-        ),
-      ),
-    ]);
-
-    if (results[0] is List) {
-      customers = (results[0] as List)
-          .whereType<Map<String, dynamic>>()
-          .toList();
-    }
-    if (results[1] is List) {
-      loans = (results[1] as List).whereType<Map<String, dynamic>>().toList();
-    }
-    if (results[2] is List) {
-      repayments = (results[2] as List)
-          .whereType<Map<String, dynamic>>()
-          .toList();
-    }
-    if (results[3] is Map<String, dynamic>) {
-      summary = results[3] as Map<String, dynamic>;
-    }
-    if (results[4] is List) {
-      reports = (results[4] as List).whereType<Map<String, dynamic>>().toList();
-    }
-    if (results[5] is List) {
-      shortages = (results[5] as List)
-          .whereType<Map<String, dynamic>>()
-          .toList();
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _customers = customers;
-      _loans = loans;
-      _repayments = repayments;
-      _collectionSummary = summary;
-      _reports = reports;
-      _shortages = shortages;
-    });
-  }
-
-  Future<void> _handleSessionCleared() async {
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (_) => false,
-    );
-  }
-
-  Future<void> _handleAccountBlocked(String message) async {
-    await clearTenantScopedClientState();
-    await _store.clear();
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => AccountLockedScreen(message: message)),
-      (_) => false,
-    );
-  }
-
-  Future<void> _signOut() async {
-    await clearTenantScopedClientState();
-    await _store.clear();
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-      (_) => false,
-    );
-  }
+  // ===========================================================================
+  // DERIVED DATA
+  // ===========================================================================
 
   Map<String, dynamic>? get _operation =>
       _data?['operation'] as Map<String, dynamic>?;
@@ -274,51 +124,268 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       _data?['report'] as Map<String, dynamic>?;
 
   String get _branchName =>
-      _string(_branch?['name']) ?? widget.session.branchName ?? 'Branch';
+      _string(_branch?['name']) ??
+      widget.session.branchName ??
+      'Branch';
 
-  bool get _dayOpen => _string(_operation?['status']) == 'OPEN';
+  bool get _dayOpen =>
+      _string(_operation?['status']) == 'OPEN';
 
-  Future<void> _runSave(Future<void> Function() action) async {
-    if (_saving) return;
+  // ===========================================================================
+  // INITIAL DATA LOADING
+  // ===========================================================================
+
+  Future<void> _load({
+    String? date,
+  }) async {
+    final targetDate = date ?? _date;
+
     setState(() {
-      _saving = true;
+      _loading = true;
       _error = null;
-      _notice = null;
     });
+
     try {
-      await action();
-      await _load();
+      final data = await _api.getBranchOperation(
+        session: widget.session,
+        branchId: widget.session.branchId,
+        date: targetDate,
+      );
+
+      var agents = <Map<String, dynamic>>[];
+
+      if (widget.session.hasPermission('operation.float.manage') ||
+          widget.session.hasPermission('operation.float.return') ||
+          widget.session.hasPermission('operation.close')) {
+        try {
+          agents = await _api.listBranchAgents(
+            session: widget.session,
+            date: targetDate,
+          );
+        } catch (_) {
+          agents = const [];
+        }
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _date = targetDate;
+        _data = data;
+        _agents = agents;
+        _loading = false;
+      });
+
+      unawaited(_loadManagementData());
     } catch (error) {
       final message = friendlyErrorMessage(error);
+
       if (isAccountAccessBlockedMessage(message)) {
         await _handleAccountBlocked(message);
         return;
       }
+
       if (!mounted) return;
-      setState(() => _error = message);
-      throw ApiException(message);
-    } finally {
-      if (mounted) setState(() => _saving = false);
+
+      setState(() {
+        _error = message;
+        _loading = false;
+      });
     }
   }
 
-  void _setNotice(String message) {
-    if (!mounted) return;
-    setState(() => _notice = message);
+  Future<void> _startLiveStores() async {
+    try {
+      await Future.wait([
+        ApplicationsLiveStore.instance.start(
+          widget.session,
+        ),
+        RepaymentsLiveStore.instance.start(
+          widget.session,
+        ),
+      ]);
+    } catch (_) {
+      // Management data continues loading independently.
+    }
   }
 
-  void _openFieldTools() {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => AgentShell(session: widget.session)),
+  Future<void> _loadManagementData() async {
+    final session = widget.session;
+
+    var customers = _customers;
+    var loans = _loans;
+    var repayments = _repayments;
+    var reports = _reports;
+    var shortages = _shortages;
+    var summary = _collectionSummary;
+
+    Future<T?> optional<T>(
+      Future<T> Function() loader,
+    ) async {
+      try {
+        return await loader();
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final results = await Future.wait<Object?>([
+      if (session.hasPermission('customer.read'))
+        optional(
+          () => _api.listCustomers(session),
+        )
+      else
+        Future<Object?>.value(null),
+
+      if (session.hasPermission('loan.read'))
+        optional(
+          () => _api.listLoans(session),
+        )
+      else
+        Future<Object?>.value(null),
+
+      if (session.hasPermission('collection.read'))
+        optional(
+          () => _api.listRepayments(session),
+        )
+      else
+        Future<Object?>.value(null),
+
+      if (session.hasPermission('collection.read'))
+        optional(
+          () => _api.getCollectionSummary(session),
+        )
+      else
+        Future<Object?>.value(null),
+
+      if (session.hasPermission('operation.read'))
+        optional(
+          () => _api.listOperationReports(
+            session: session,
+            branchId: session.branchId,
+          ),
+        )
+      else
+        Future<Object?>.value(null),
+
+      optional(
+        () => _api.listCashShortages(
+          session: session,
+          branchId: session.branchId,
+        ),
+      ),
+    ]);
+
+    if (results[0] is List) {
+      customers = (results[0] as List)
+          .whereType<Map<String, dynamic>>()
+          .toList();
+    }
+
+    if (results[1] is List) {
+      loans = (results[1] as List)
+          .whereType<Map<String, dynamic>>()
+          .toList();
+    }
+
+    if (results[2] is List) {
+      repayments = (results[2] as List)
+          .whereType<Map<String, dynamic>>()
+          .toList();
+    }
+
+    if (results[3] is Map<String, dynamic>) {
+      summary = results[3] as Map<String, dynamic>;
+    }
+
+    if (results[4] is List) {
+      reports = (results[4] as List)
+          .whereType<Map<String, dynamic>>()
+          .toList();
+    }
+
+    if (results[5] is List) {
+      shortages = (results[5] as List)
+          .whereType<Map<String, dynamic>>()
+          .toList();
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _customers = customers;
+      _loans = loans;
+      _repayments = repayments;
+      _collectionSummary = summary;
+      _reports = reports;
+      _shortages = shortages;
+    });
+  }
+
+  // ===========================================================================
+  // SESSION
+  // ===========================================================================
+
+  Future<void> _handleSessionCleared() async {
+    if (!mounted) return;
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const LoginScreen(),
+      ),
+      (_) => false,
     );
   }
 
-  void _openTab(int index, {bool searchAutofocus = false}) {
+  Future<void> _handleAccountBlocked(
+    String message,
+  ) async {
+    await clearTenantScopedClientState();
+    await _store.clear();
+
+    if (!mounted) return;
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => AccountLockedScreen(
+          message: message,
+        ),
+      ),
+      (_) => false,
+    );
+  }
+
+  Future<void> _signOut() async {
+    await clearTenantScopedClientState();
+    await _store.clear();
+
+    if (!mounted) return;
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const LoginScreen(),
+      ),
+      (_) => false,
+    );
+  }
+
+  // ===========================================================================
+  // NAVIGATION
+  // ===========================================================================
+
+  void _openTab(
+    int index, {
+    bool searchAutofocus = false,
+  }) {
     unawaited(_activity.touch());
+
     setState(() {
       _index = index;
       _searchAutofocus = searchAutofocus;
-      if (searchAutofocus) _searchFocusToken += 1;
+
+      if (searchAutofocus) {
+        _searchFocusToken += 1;
+      }
     });
   }
 
@@ -330,15 +397,30 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       _recordsSection = section;
       _recordsFilter = filter;
     });
+
     _openTab(2);
   }
 
-  Future<void> _openNewCustomer() async {
-    final created = await Navigator.of(context).push<bool>(
+  void _openFieldTools() {
+    Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => RegisterCustomerScreen(session: widget.session),
+        builder: (_) => AgentShell(
+          session: widget.session,
+        ),
       ),
     );
+  }
+
+  Future<void> _openNewCustomer() async {
+    final created =
+        await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => RegisterCustomerScreen(
+          session: widget.session,
+        ),
+      ),
+    );
+
     if (created == true) {
       _setNotice('Borrower saved.');
       await _loadManagementData();
@@ -348,88 +430,514 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   Future<void> _openNewLoan() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => NewLoanApplicationScreen(session: widget.session),
+        builder: (_) => NewLoanApplicationScreen(
+          session: widget.session,
+        ),
       ),
     );
+
     await _startLiveStores();
     await _loadManagementData();
   }
 
-  Future<void> _reviewPendingClosure() async {
-    final operationDate = _string(_pendingClosure?['operationDate']);
-    if (operationDate == null) return;
-    _setNotice('Close this day and send its report. Today opens after that.');
-    await _load(date: operationDate);
-    if (!mounted ||
-        !widget.session.hasPermission('operation.close') ||
-        !_dayOpen) {
-      return;
+  // ===========================================================================
+  // HOME MODELS
+  // ===========================================================================
+
+  List<AttentionItem> _buildAttentionItems() {
+    final items = <AttentionItem>[];
+
+    final overdueLoans =
+        _loans.where(_loanNeedsAttention).length;
+
+    if (overdueLoans > 0) {
+      items.add(
+        AttentionItem(
+          icon: Icons.warning_outlined,
+          iconColor: warmGold,
+          title: 'Overdue loans',
+          subtitle:
+              '$overdueLoans loan${overdueLoans == 1 ? '' : 's'} '
+              'need${overdueLoans == 1 ? 's' : ''} attention',
+          count: '$overdueLoans',
+          onTap: () {
+            _openRecords(
+              section: RecordsSection.applications,
+              filter: RecordsFilter.all,
+            );
+          },
+        ),
+      );
     }
-    await _showCloseDaySheet();
+
+    final openShortages =
+        _shortages.where(_shortageOpen).length;
+
+    if (openShortages > 0) {
+      items.add(
+        AttentionItem(
+          icon: Icons.report_problem_outlined,
+          iconColor: const Color(0xFFB42318),
+          title: 'Unreconciled shortages',
+          subtitle:
+              '$openShortages shortage'
+              '${openShortages == 1 ? '' : 's'} pending',
+          count: '$openShortages',
+          onTap: () => _openTab(4),
+        ),
+      );
+    }
+
+    final reportsToSend =
+        _reports.where(_reportNeedsManagerSubmission).length;
+
+    if (reportsToSend > 0 ||
+        _reportNeedsManagerSubmission(_report)) {
+      items.add(
+        AttentionItem(
+          icon: Icons.receipt_long_outlined,
+          iconColor: warmGold,
+          title: 'Close report needs sending',
+          subtitle: 'Review and submit the daily report',
+          onTap: () => _openTab(1),
+        ),
+      );
+    }
+
+    return items;
   }
 
-  Future<void> _sendAwaitingReport() async {
-    final operationDate = _string(_awaitingReport?['operationDate']);
-    if (operationDate == null) return;
-    await _load(date: operationDate);
-    if (!mounted) return;
-    await _submitCloseReport(returnToToday: true);
+  List<ActivityItem> _buildRecentActivities() {
+    return _repayments.take(5).map(
+      (repayment) {
+        final clientName =
+            _string(repayment['clientName']) ??
+            'Borrower';
+
+        final amount =
+            _num(repayment['amount']).round();
+
+        final recordedAt =
+            _string(repayment['recordedAt']);
+
+        final time = recordedAt != null
+            ? formatActivityTime(
+                DateTime.tryParse(recordedAt) ??
+                    DateTime.now(),
+                DateTime.now(),
+              )
+            : 'Recently';
+
+        return ActivityItem(
+          initials: _getInitials(clientName),
+          initialsBackgroundColor: forestEmerald,
+          name: clientName,
+          activityType: 'Repayment',
+          time: time.split(',').last.trim(),
+          amount: amount,
+          isIncome: true,
+        );
+      },
+    ).toList();
   }
 
-  Future<void> _submitCloseReport({bool returnToToday = false}) async {
-    final reportId = _string(_report?['id']);
-    if (reportId == null) {
-      setState(() => _error = 'Close report is not ready yet.');
-      return;
+  String _getInitials(String name) {
+    final parts = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where(
+          (part) => part.isNotEmpty,
+        )
+        .toList();
+
+    if (parts.isEmpty) {
+      return 'A';
     }
+
+    if (parts.length == 1) {
+      final value = parts.first;
+
+      return value
+          .substring(
+            0,
+            value.length.clamp(0, 2),
+          )
+          .toUpperCase();
+    }
+
+    return '${parts.first[0]}${parts.last[0]}'
+        .toUpperCase();
+  }
+
+  // ===========================================================================
+  // OPERATIONS VIEW MODELS
+  // ===========================================================================
+
+  OperationDashboardData? _buildOperationDashboardData() {
+    final operation = _operation;
+
+    if (operation == null) {
+      return null;
+    }
+
+    final positions =
+        _buildAgentFloatPositions();
+
+    final floatWithAgents =
+        positions.fold<num>(
+      0,
+      (sum, position) =>
+          sum + position.remainingFloat,
+    );
+
+    return OperationDashboardData(
+      status:
+          _string(operation['status']) ??
+          'OPEN',
+
+      operationDate:
+          DateTime.tryParse(
+            _string(
+                  operation['operationDate'],
+                ) ??
+                '',
+          ) ??
+          DateTime.now(),
+
+      openingCash: _firstAvailableMoney(
+        operation,
+        const [
+          'openingBalance',
+          'openingCash',
+        ],
+      ),
+
+      capitalReceived: _firstAvailableMoney(
+        operation,
+        const [
+          'cashAddedToday',
+          'topUpsTotal',
+          'capitalReceived',
+          'capitalReceivedTotal',
+        ],
+      ),
+
+      collections: _firstAvailableMoney(
+        operation,
+        const [
+          'collectionsReceived',
+          'collectionsTotal',
+        ],
+      ),
+
+      processingFees: _firstAvailableMoney(
+        operation,
+        const [
+          'processingFeesTotal',
+          'processingFeesReceived',
+          'applicationFeesCollected',
+          'feesCollected',
+        ],
+      ),
+
+      expenses: _firstAvailableMoney(
+        operation,
+        const [
+          'expensesTotal',
+          'expenses',
+        ],
+      ),
+
+      floatWithAgents:
+          floatWithAgents,
+
+      expectedClosingCash: _firstAvailableMoney(
+        operation,
+        const [
+          'expectedClosingBalance',
+          'expectedClosingCash',
+        ],
+      ),
+
+      openedBy:
+          _string(operation['openedByName']) ??
+          _string(operation['openedByUserName']) ??
+          _string(operation['openedBy']) ??
+          widget.session.userName,
+
+      openedAt: DateTime.tryParse(
+        _string(operation['openedAt']) ??
+            _string(operation['createdAt']) ??
+            '',
+      ),
+    );
+  }
+
+  List<AgentFloatPosition> _buildAgentFloatPositions() {
+    return _agents.map(
+      (agent) {
+        return AgentFloatPosition(
+          id: _string(agent['id']) ?? '',
+          name:
+              _string(agent['name']) ??
+              'Agent',
+          remainingFloat: _firstAvailableMoney(
+            agent,
+            const [
+              'floatRemaining',
+              'remainingFloat',
+              'floatToday',
+            ],
+          ),
+        );
+      },
+    ).toList();
+  }
+
+  List<OperationActivity> _buildOperationActivities() {
+    return _repayments.take(5).map(
+      (repayment) {
+        final clientName =
+            _string(repayment['clientName']) ??
+            'Borrower';
+
+        final recordedAt =
+            DateTime.tryParse(
+          _string(repayment['recordedAt']) ??
+              '',
+        );
+
+        return OperationActivity(
+          title: 'Repayment',
+          description: clientName,
+          time: operationTime(recordedAt),
+          amount:
+              _num(repayment['amount']),
+          isIncome: true,
+        );
+      },
+    ).toList();
+  }
+
+  // ===========================================================================
+  // OPERATION COMMANDS
+  // ===========================================================================
+
+  Future<void> _runSave(
+    Future<void> Function() action,
+  ) async {
     if (_saving) return;
+
     setState(() {
       _saving = true;
       _error = null;
       _notice = null;
     });
+
+    try {
+      await action();
+      await _load();
+    } catch (error) {
+      final message =
+          friendlyErrorMessage(error);
+
+      if (isAccountAccessBlockedMessage(message)) {
+        await _handleAccountBlocked(message);
+        return;
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _error = message;
+      });
+
+      throw ApiException(message);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+        });
+      }
+    }
+  }
+
+  void _setNotice(String message) {
+    if (!mounted) return;
+
+    setState(() {
+      _notice = message;
+    });
+  }
+
+  Future<void> _reviewPendingClosure() async {
+    final operationDate =
+        _string(
+      _pendingClosure?['operationDate'],
+    );
+
+    if (operationDate == null) {
+      return;
+    }
+
+    _setNotice(
+      'Close this day and send its report. '
+      'Today opens after that.',
+    );
+
+    await _load(
+      date: operationDate,
+    );
+
+    if (!mounted ||
+        !widget.session.hasPermission(
+          'operation.close',
+        ) ||
+        !_dayOpen) {
+      return;
+    }
+
+    await _showCloseDaySheet();
+  }
+
+  Future<void> _sendAwaitingReport() async {
+    final operationDate =
+        _string(
+      _awaitingReport?['operationDate'],
+    );
+
+    if (operationDate == null) {
+      return;
+    }
+
+    await _load(
+      date: operationDate,
+    );
+
+    if (!mounted) return;
+
+    await _submitCloseReport(
+      returnToToday: true,
+    );
+  }
+
+  Future<void> _submitCloseReport({
+    bool returnToToday = false,
+  }) async {
+    final reportId =
+        _string(_report?['id']);
+
+    if (reportId == null) {
+      setState(() {
+        _error =
+            'Close report is not ready yet.';
+      });
+      return;
+    }
+
+    if (_saving) return;
+
+    setState(() {
+      _saving = true;
+      _error = null;
+      _notice = null;
+    });
+
     try {
       await _api.managerConfirmOperationReport(
         session: widget.session,
         reportId: reportId,
       );
-      _setNotice('Close report sent.');
-      await _load(date: returnToToday ? _todayLabel() : _date);
+
+      _setNotice(
+        'Close report sent.',
+      );
+
+      await _load(
+        date: returnToToday
+            ? _todayLabel()
+            : _date,
+      );
     } catch (error) {
-      final message = friendlyErrorMessage(error);
+      final message =
+          friendlyErrorMessage(error);
+
       if (isAccountAccessBlockedMessage(message)) {
         await _handleAccountBlocked(message);
         return;
       }
+
       if (!mounted) return;
-      setState(() => _error = message);
+
+      setState(() {
+        _error = message;
+      });
     } finally {
-      if (mounted) setState(() => _saving = false);
+      if (mounted) {
+        setState(() {
+          _saving = false;
+        });
+      }
     }
   }
 
+  // ===========================================================================
+  // OPERATION SHEETS
+  //
+  // These remain here temporarily.
+  // Next refactor moves them to:
+  // features/operations/presentation/sheets/
+  // ===========================================================================
+
   Future<void> _showOpenDaySheet() async {
-    final opening = TextEditingController(
-      text: _moneyText(_num(_data?['openingBalance'])),
+    final opening =
+        TextEditingController(
+      text: _moneyText(
+        _num(_data?['openingBalance']),
+      ),
     );
-    final cashAdded = TextEditingController();
-    final notes = TextEditingController();
+
+    final cashAdded =
+        TextEditingController();
+
+    final notes =
+        TextEditingController();
+
     await _showFormSheet(
       title: 'Open day',
       actionLabel: 'Open Day',
-      builder: (setModalState) => [
-        _AmountField(controller: opening, label: 'Opening cash'),
+      builder: (_) => [
+        _AmountField(
+          controller: opening,
+          label: 'Opening cash',
+        ),
         const SizedBox(height: 10),
-        _AmountField(controller: cashAdded, label: 'Cash added'),
+        _AmountField(
+          controller: cashAdded,
+          label: 'Cash added',
+        ),
         const SizedBox(height: 10),
-        _TextField(controller: notes, label: 'Notes', maxLines: 3),
+        _TextField(
+          controller: notes,
+          label: 'Notes',
+          maxLines: 3,
+        ),
       ],
       onSubmit: () async {
-        final openingAmount = _parseAmount(opening.text);
-        final cashAddedAmount = _parseAmount(cashAdded.text) ?? 0;
-        if (openingAmount == null || openingAmount < 0) {
-          throw ApiException('Enter opening cash.');
+        final openingAmount =
+            _parseAmount(opening.text);
+
+        final cashAddedAmount =
+            _parseAmount(cashAdded.text) ??
+            0;
+
+        if (openingAmount == null ||
+            openingAmount < 0) {
+          throw ApiException(
+            'Enter opening cash.',
+          );
         }
+
         await _api.openBranchOperation(
           session: widget.session,
           branchId: widget.session.branchId,
@@ -438,110 +946,212 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           cashAddedToday: cashAddedAmount,
           notes: notes.text,
         );
-        _setNotice('Day opened.');
+
+        _setNotice(
+          'Day opened.',
+        );
       },
     );
   }
 
   Future<void> _showTopUpSheet() async {
-    final amount = TextEditingController();
-    final description = TextEditingController();
+    final amount =
+        TextEditingController();
+
+    final description =
+        TextEditingController();
+
     await _showFormSheet(
-      title: 'Add cash',
+      title: 'Receive capital',
       actionLabel: 'Save',
-      builder: (setModalState) => [
-        _AmountField(controller: amount, label: 'Amount'),
+      builder: (_) => [
+        _AmountField(
+          controller: amount,
+          label: 'Amount',
+        ),
         const SizedBox(height: 10),
-        _TextField(controller: description, label: 'Reason', maxLines: 3),
+        _TextField(
+          controller: description,
+          label: 'Reason',
+          maxLines: 3,
+        ),
       ],
       onSubmit: () async {
-        final value = _parseAmount(amount.text);
-        if (value == null || value <= 0) {
-          throw ApiException('Enter the amount.');
+        final value =
+            _parseAmount(amount.text);
+
+        if (value == null ||
+            value <= 0) {
+          throw ApiException(
+            'Enter the amount.',
+          );
         }
+
         await _api.recordBranchTopUp(
           session: widget.session,
           branchId: widget.session.branchId,
           date: _date,
           amount: value,
-          description: description.text,
+          description:
+              description.text,
         );
-        _setNotice('Cash added.');
+
+        _setNotice(
+          'Capital received.',
+        );
       },
     );
   }
 
   Future<void> _showExpenseSheet() async {
-    final amount = TextEditingController();
-    final description = TextEditingController();
-    var category = 'TRANSPORT';
+    final amount =
+        TextEditingController();
+
+    final description =
+        TextEditingController();
+
+    var category =
+        'TRANSPORT';
+
     await _showFormSheet(
-      title: 'Expense',
+      title: 'Record expense',
       actionLabel: 'Save',
-      builder: (setModalState) => [
+      builder: (
+        setModalState,
+      ) =>
+          [
         DropdownButtonFormField<String>(
           initialValue: category,
-          items: _expenseCategories
-              .map(
-                (item) =>
-                    DropdownMenuItem(value: item, child: Text(_label(item))),
-              )
-              .toList(),
+          items: expenseCategories.map(
+            (item) {
+              return DropdownMenuItem(
+                value: item,
+                child: Text(
+                  _label(item),
+                ),
+              );
+            },
+          ).toList(),
           onChanged: (value) {
             if (value == null) return;
-            setModalState(() => category = value);
+
+            setModalState(() {
+              category = value;
+            });
           },
-          decoration: const InputDecoration(labelText: 'Category'),
+          decoration:
+              const InputDecoration(
+            labelText: 'Category',
+          ),
         ),
         const SizedBox(height: 10),
-        _AmountField(controller: amount, label: 'Amount'),
+        _AmountField(
+          controller: amount,
+          label: 'Amount',
+        ),
         const SizedBox(height: 10),
-        _TextField(controller: description, label: 'Details', maxLines: 3),
+        _TextField(
+          controller: description,
+          label: 'Details',
+          maxLines: 3,
+        ),
       ],
       onSubmit: () async {
-        final value = _parseAmount(amount.text);
-        if (value == null || value <= 0) {
-          throw ApiException('Enter the amount.');
+        final value =
+            _parseAmount(amount.text);
+
+        if (value == null ||
+            value <= 0) {
+          throw ApiException(
+            'Enter the amount.',
+          );
         }
+
         await _api.recordBranchExpense(
           session: widget.session,
           branchId: widget.session.branchId,
           date: _date,
           category: category,
           amount: value,
-          description: description.text,
+          description:
+              description.text,
         );
-        _setNotice('Expense saved.');
+
+        _setNotice(
+          'Expense saved.',
+        );
       },
     );
   }
 
-  Future<void> _showFloatSheet({required bool addMore}) async {
+  Future<void> _showFloatSheet({
+    required bool addMore,
+  }) async {
     if (_agents.isEmpty) {
-      setState(() => _error = 'No agents found.');
+      setState(() {
+        _error =
+            'No agents found.';
+      });
       return;
     }
-    final amount = TextEditingController();
-    final notes = TextEditingController();
-    var agentId = _agents.first['id'] as String? ?? '';
+
+    final amount =
+        TextEditingController();
+
+    final notes =
+        TextEditingController();
+
+    var agentId =
+        _string(_agents.first['id']) ??
+        '';
+
     await _showFormSheet(
-      title: addMore ? 'Add float' : 'Issue float',
+      title: addMore
+          ? 'Add float'
+          : 'Allocate float',
       actionLabel: 'Save',
-      builder: (setModalState) => [
+      builder: (
+        setModalState,
+      ) =>
+          [
         _AgentPicker(
           agents: _agents,
           value: agentId,
-          onChanged: (value) => setModalState(() => agentId = value),
+          onChanged: (value) {
+            setModalState(() {
+              agentId = value;
+            });
+          },
         ),
         const SizedBox(height: 10),
-        _AmountField(controller: amount, label: 'Amount'),
+        _AmountField(
+          controller: amount,
+          label: 'Amount',
+        ),
         const SizedBox(height: 10),
-        _TextField(controller: notes, label: 'Notes', maxLines: 3),
+        _TextField(
+          controller: notes,
+          label: 'Notes',
+          maxLines: 3,
+        ),
       ],
       onSubmit: () async {
-        final value = _parseAmount(amount.text);
-        if (agentId.isEmpty) throw ApiException('Choose an agent.');
-        if (value == null || value <= 0) throw ApiException('Enter amount.');
+        final value =
+            _parseAmount(amount.text);
+
+        if (agentId.isEmpty) {
+          throw ApiException(
+            'Choose an agent.',
+          );
+        }
+
+        if (value == null ||
+            value <= 0) {
+          throw ApiException(
+            'Enter amount.',
+          );
+        }
+
         await _api.recordAgentFloat(
           session: widget.session,
           agentId: agentId,
@@ -550,37 +1160,80 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           notes: notes.text,
           addMore: addMore,
         );
-        _setNotice(addMore ? 'Float added.' : 'Float issued.');
+
+        _setNotice(
+          addMore
+              ? 'Float added.'
+              : 'Float allocated.',
+        );
       },
     );
   }
 
   Future<void> _showReturnSheet() async {
     if (_agents.isEmpty) {
-      setState(() => _error = 'No agents found.');
+      setState(() {
+        _error =
+            'No agents found.';
+      });
       return;
     }
-    final amount = TextEditingController();
-    final notes = TextEditingController();
-    var agentId = _agents.first['id'] as String? ?? '';
+
+    final amount =
+        TextEditingController();
+
+    final notes =
+        TextEditingController();
+
+    var agentId =
+        _string(_agents.first['id']) ??
+        '';
+
     await _showFormSheet(
       title: 'Agent return',
       actionLabel: 'Save',
-      builder: (setModalState) => [
+      builder: (
+        setModalState,
+      ) =>
+          [
         _AgentPicker(
           agents: _agents,
           value: agentId,
-          onChanged: (value) => setModalState(() => agentId = value),
+          onChanged: (value) {
+            setModalState(() {
+              agentId = value;
+            });
+          },
         ),
         const SizedBox(height: 10),
-        _AmountField(controller: amount, label: 'Cash returned'),
+        _AmountField(
+          controller: amount,
+          label: 'Cash returned',
+        ),
         const SizedBox(height: 10),
-        _TextField(controller: notes, label: 'Notes', maxLines: 3),
+        _TextField(
+          controller: notes,
+          label: 'Notes',
+          maxLines: 3,
+        ),
       ],
       onSubmit: () async {
-        final value = _parseAmount(amount.text);
-        if (agentId.isEmpty) throw ApiException('Choose an agent.');
-        if (value == null || value < 0) throw ApiException('Enter amount.');
+        final value =
+            _parseAmount(amount.text);
+
+        if (agentId.isEmpty) {
+          throw ApiException(
+            'Choose an agent.',
+          );
+        }
+
+        if (value == null ||
+            value < 0) {
+          throw ApiException(
+            'Enter amount.',
+          );
+        }
+
         await _api.recordAgentReturn(
           session: widget.session,
           branchId: widget.session.branchId,
@@ -589,72 +1242,179 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           amountReturned: value,
           notes: notes.text,
         );
-        _setNotice('Return saved.');
+
+        _setNotice(
+          'Return saved.',
+        );
       },
     );
   }
 
   Future<void> _showCloseDaySheet() async {
-    final operation = _operation;
-    if (operation == null) return;
-    final operationDate = _string(operation['operationDate']) ?? _date;
-    final expected = _num(operation['expectedClosingBalance']);
-    final counted = TextEditingController(text: _moneyText(expected));
-    final notes = TextEditingController();
-    var responsibleId = _agents.isNotEmpty ? _agents.first['id'] as String : '';
+    final operation =
+        _operation;
+
+    if (operation == null) {
+      return;
+    }
+
+    final operationDate =
+        _string(
+          operation['operationDate'],
+        ) ??
+        _date;
+
+    final expected =
+        _num(
+      operation['expectedClosingBalance'],
+    );
+
+    final counted =
+        TextEditingController(
+      text: _moneyText(expected),
+    );
+
+    final notes =
+        TextEditingController();
+
+    var responsibleId =
+        _agents.isNotEmpty
+        ? _string(
+              _agents.first['id'],
+            ) ??
+            ''
+        : '';
+
     var variance = 0;
 
-    void recompute(StateSetter setModalState) {
-      final countedValue = _parseAmount(counted.text) ?? 0;
-      setModalState(() => variance = (countedValue - expected).round());
+    void recompute(
+      StateSetter setModalState,
+    ) {
+      final countedValue =
+          _parseAmount(counted.text) ??
+          0;
+
+      setModalState(() {
+        variance =
+            (countedValue - expected)
+                .round();
+      });
     }
 
     await _showFormSheet(
-      title: 'Close day',
-      actionLabel: 'Close Day',
-      builder: (setModalState) => [
-        _MoneyPreview(label: 'Expected close', amount: expected),
-        const SizedBox(height: 10),
-        _AmountField(
-          controller: counted,
-          label: 'Counted cash',
-          onChanged: (_) => recompute(setModalState),
+      title:
+          'Reconcile & close day',
+      actionLabel:
+          'Close Day',
+      builder: (
+        setModalState,
+      ) =>
+          [
+        _MoneyPreview(
+          label:
+              'Expected closing cash',
+          amount:
+              expected,
         ),
+
         const SizedBox(height: 10),
-        _VariancePreview(variance: variance),
+
+        _AmountField(
+          controller:
+              counted,
+          label:
+              'Counted branch cash',
+          onChanged: (_) {
+            recompute(
+              setModalState,
+            );
+          },
+        ),
+
+        const SizedBox(height: 10),
+
+        _VariancePreview(
+          variance:
+              variance,
+        ),
+
         if (variance < 0) ...[
-          const SizedBox(height: 10),
+          const SizedBox(
+            height: 10,
+          ),
           _AgentPicker(
-            agents: _agents,
-            value: responsibleId,
-            label: 'Responsible person',
-            onChanged: (value) => setModalState(() => responsibleId = value),
+            agents:
+                _agents,
+            value:
+                responsibleId,
+            label:
+                'Responsible person',
+            onChanged: (value) {
+              setModalState(() {
+                responsibleId =
+                    value;
+              });
+            },
           ),
         ],
+
         const SizedBox(height: 10),
-        _TextField(controller: notes, label: 'Notes', maxLines: 3),
+
+        _TextField(
+          controller:
+              notes,
+          label:
+              'Notes',
+          maxLines:
+              3,
+        ),
       ],
       onSubmit: () async {
-        final countedValue = _parseAmount(counted.text);
-        if (countedValue == null || countedValue < 0) {
-          throw ApiException('Enter counted cash.');
+        final countedValue =
+            _parseAmount(
+          counted.text,
+        );
+
+        if (countedValue == null ||
+            countedValue < 0) {
+          throw ApiException(
+            'Enter counted cash.',
+          );
         }
-        final closeVariance = (countedValue - expected).round();
-        if (closeVariance != 0 && notes.text.trim().isEmpty) {
-          throw ApiException('Add a note for the difference.');
+
+        final closeVariance =
+            (countedValue - expected)
+                .round();
+
+        if (closeVariance != 0 &&
+            notes.text.trim().isEmpty) {
+          throw ApiException(
+            'Add a note for the difference.',
+          );
         }
-        if (closeVariance < 0 && responsibleId.isEmpty) {
-          throw ApiException('Choose who will account for the shortage.');
+
+        if (closeVariance < 0 &&
+            responsibleId.isEmpty) {
+          throw ApiException(
+            'Choose who will account for the shortage.',
+          );
         }
+
         await _api.closeBranchOperation(
           session: widget.session,
           branchId: widget.session.branchId,
           date: operationDate,
           countedCash: countedValue,
           notes: notes.text,
-          shortageResponsibleUserId: closeVariance < 0 ? responsibleId : null,
+          shortageResponsibleUserId:
+              closeVariance < 0
+              ? responsibleId
+              : null,
         );
-        _setNotice('Day closed.');
+
+        _setNotice(
+          'Day closed.',
+        );
       },
     );
   }
@@ -662,83 +1422,148 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   Future<void> _showFormSheet({
     required String title,
     required String actionLabel,
-    required List<Widget> Function(StateSetter setModalState) builder,
-    required Future<void> Function() onSubmit,
+    required List<Widget> Function(
+      StateSetter setModalState,
+    )
+    builder,
+    required Future<void> Function()
+    onSubmit,
   }) {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (context) {
+      builder: (sheetContext) {
         var localError = '';
+
         return StatefulBuilder(
-          builder: (context, setModalState) {
+          builder: (
+            context,
+            setModalState,
+          ) {
             return Padding(
               padding: EdgeInsets.only(
                 left: 16,
                 right: 16,
                 top: 16,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+                bottom:
+                    MediaQuery.of(context)
+                            .viewInsets
+                            .bottom +
+                        16,
               ),
               child: SingleChildScrollView(
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize:
+                      MainAxisSize.min,
+                  crossAxisAlignment:
+                      CrossAxisAlignment.stretch,
                   children: [
                     Row(
                       children: [
                         Expanded(
                           child: Text(
                             title,
-                            style: const TextStyle(
-                              color: midnightNavy,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
+                            style:
+                                const TextStyle(
+                              color:
+                                  midnightNavy,
+                              fontSize:
+                                  18,
+                              fontWeight:
+                                  FontWeight.w900,
                             ),
                           ),
                         ),
                         IconButton(
-                          onPressed: _saving
+                          onPressed:
+                              _saving
                               ? null
-                              : () => Navigator.of(context).pop(),
-                          icon: const Icon(Icons.close),
+                              : () {
+                                  Navigator.of(
+                                    context,
+                                  ).pop();
+                                },
+                          icon:
+                              const Icon(
+                            Icons.close,
+                          ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    ...builder(setModalState),
+
+                    const SizedBox(
+                      height: 8,
+                    ),
+
+                    ...builder(
+                      setModalState,
+                    ),
+
                     if (localError.isNotEmpty) ...[
-                      const SizedBox(height: 10),
-                      _Banner(message: localError, tone: _BannerTone.error),
+                      const SizedBox(
+                        height: 10,
+                      ),
+                      _Banner(
+                        message:
+                            localError,
+                        tone:
+                            _BannerTone.error,
+                      ),
                     ],
-                    const SizedBox(height: 14),
+
+                    const SizedBox(
+                      height: 14,
+                    ),
+
                     FilledButton(
-                      onPressed: _saving
+                      onPressed:
+                          _saving
                           ? null
                           : () async {
-                              setModalState(() => localError = '');
+                              setModalState(() {
+                                localError =
+                                    '';
+                              });
+
                               try {
-                                await _runSave(onSubmit);
-                                if (context.mounted) {
-                                  Navigator.of(context).pop();
+                                await _runSave(
+                                  onSubmit,
+                                );
+
+                                if (context
+                                    .mounted) {
+                                  Navigator.of(
+                                    context,
+                                  ).pop();
                                 }
                               } catch (error) {
-                                setModalState(
-                                  () =>
-                                      localError = friendlyErrorMessage(error),
-                                );
+                                setModalState(() {
+                                  localError =
+                                      friendlyErrorMessage(
+                                    error,
+                                  );
+                                });
                               }
                             },
-                      child: _saving
+                      child:
+                          _saving
                           ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
+                              width:
+                                  18,
+                              height:
+                                  18,
+                              child:
+                                  CircularProgressIndicator(
+                                strokeWidth:
+                                    2,
+                                color:
+                                    Colors.white,
                               ),
                             )
-                          : Text(actionLabel),
+                          : Text(
+                              actionLabel,
+                            ),
                     ),
                   ],
                 ),
@@ -750,344 +1575,494 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     );
   }
 
+  // ===========================================================================
+  // BUILD
+  // ===========================================================================
+
   @override
   Widget build(BuildContext context) {
     return SessionActivityListener(
       controller: _activity,
       child: Scaffold(
         backgroundColor: softIvory,
+
         body: SafeArea(
           child: Column(
             children: [
-              _BranchHeader(
-                workspaceName: widget.session.workspaceName,
-                branchName: _branchName,
-                roleName: widget.session.roleName ?? 'Team',
-                loading: _loading,
-                onRefresh: _load,
-                onSignOut: _signOut,
+              BranchHeader(
+                workspaceName:
+                    widget.session.workspaceName,
+                branchName:
+                    _branchName,
+                roleName:
+                    widget.session.roleName ??
+                    'Team',
+                loading:
+                    _loading,
+                onRefresh:
+                    _load,
+                onSignOut:
+                    _signOut,
               ),
+
               if (_notice != null)
-                _Banner(message: _notice!, tone: _BannerTone.success),
+                _Banner(
+                  message:
+                      _notice!,
+                  tone:
+                      _BannerTone.success,
+                ),
+
               if (_error != null)
-                _Banner(message: _error!, tone: _BannerTone.error),
+                _Banner(
+                  message:
+                      _error!,
+                  tone:
+                      _BannerTone.error,
+                ),
+
               Expanded(
-                child: _loading && _data == null
-                    ? const Center(
-                        child: CircularProgressIndicator(color: forestEmerald),
-                      )
-                    : IndexedStack(
-                        index: _index,
-                        children: [
-                          _DashboardTab(
-                            session: widget.session,
-                            operation: _operation,
-                            report: _report,
-                            branchName: _branchName,
-                            customers: _customers,
-                            loans: _loans,
-                            repayments: _repayments,
-                            reports: _reports,
-                            shortages: _shortages,
-                            collectionSummary: _collectionSummary,
-                            onRefresh: _load,
-                            onOpenOperations: () => _openTab(1),
-                            onOpenClients: () =>
-                                _openTab(3, searchAutofocus: true),
-                            onOpenRecords: _openRecords,
-                            onOpenMore: () => _openTab(4),
-                            onNewCustomer:
-                                widget.session.hasPermission('customer.create')
-                                ? () => unawaited(_openNewCustomer())
-                                : null,
-                            onNewLoan:
-                                widget.session.hasPermission('loan.create')
-                                ? () => unawaited(_openNewLoan())
-                                : null,
-                          ),
-                          _OverviewTab(
-                            session: widget.session,
-                            operation: _operation,
-                            report: _report,
-                            pendingClosure: _pendingClosure,
-                            awaitingReport: _awaitingReport,
-                            branchName: _branchName,
-                            agents: _agents,
-                            dayOpen: _dayOpen,
-                            onOpenDay: _showOpenDaySheet,
-                            onTopUp: _showTopUpSheet,
-                            onExpense: _showExpenseSheet,
-                            onIssueFloat: () => _showFloatSheet(addMore: false),
-                            onAddFloat: () => _showFloatSheet(addMore: true),
-                            onReturn: _showReturnSheet,
-                            onCloseDay: _showCloseDaySheet,
-                            onSubmitReport: () => unawaited(
-                              _submitCloseReport(returnToToday: true),
+                child:
+                    _loading &&
+                            _data == null
+                        ? const Center(
+                            child:
+                                CircularProgressIndicator(
+                              color:
+                                  forestEmerald,
                             ),
-                            onReviewPendingClosure: () =>
-                                unawaited(_reviewPendingClosure()),
-                            onSendAwaitingReport: () =>
-                                unawaited(_sendAwaitingReport()),
-                            onRefresh: _load,
-                            onOpenFieldTools:
-                                widget.session.canUseFieldWorkspace
-                                ? _openFieldTools
-                                : null,
+                          )
+                        : IndexedStack(
+                            index:
+                                _index,
+                            children: [
+                              _buildHomeTab(),
+                              _buildOperationsTab(),
+                              _buildRecordsTab(),
+                              _buildClientsTab(),
+                              _buildMoreTab(),
+                            ],
                           ),
-                          RecordsTab(
-                            session: widget.session,
-                            section: _recordsSection,
-                            filter: _recordsFilter,
-                            onSectionChanged: (section) {
-                              unawaited(_activity.touch());
-                              setState(() => _recordsSection = section);
-                            },
-                            onFilterChanged: (filter) {
-                              unawaited(_activity.touch());
-                              setState(() => _recordsFilter = filter);
-                            },
-                          ),
-                          SearchTab(
-                            autofocus: _searchAutofocus,
-                            focusToken: _searchFocusToken,
-                          ),
-                          _MoreTab(
-                            session: widget.session,
-                            agents: _agents,
-                            customers: _customers,
-                            loans: _loans,
-                            repayments: _repayments,
-                            reports: _reports,
-                            shortages: _shortages,
-                            onRefresh: _load,
-                            onOpenOperations: () => _openTab(1),
-                            onOpenClients: () =>
-                                _openTab(3, searchAutofocus: true),
-                            onOpenRecords: _openRecords,
-                            onOpenFieldTools:
-                                widget.session.canUseFieldWorkspace
-                                ? _openFieldTools
-                                : null,
-                            onNewCustomer:
-                                widget.session.hasPermission('customer.create')
-                                ? () => unawaited(_openNewCustomer())
-                                : null,
-                            onNewLoan:
-                                widget.session.hasPermission('loan.create')
-                                ? () => unawaited(_openNewLoan())
-                                : null,
-                          ),
-                        ],
-                      ),
               ),
             ],
           ),
         ),
-        bottomNavigationBar: Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: line)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: NavigationBar(
-              height: 64,
-              selectedIndex: _index,
-              onDestinationSelected: (index) {
-                _openTab(index, searchAutofocus: index == 3);
-              },
-              destinations: const [
-                NavigationDestination(
-                  icon: Icon(Icons.home_outlined),
-                  selectedIcon: Icon(Icons.home, color: forestEmerald),
-                  label: 'Home',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.today_outlined),
-                  selectedIcon: Icon(Icons.today, color: forestEmerald),
-                  label: 'Ops',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.receipt_long_outlined),
-                  selectedIcon: Icon(Icons.receipt_long, color: forestEmerald),
-                  label: 'Records',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.search),
-                  selectedIcon: Icon(Icons.search, color: forestEmerald),
-                  label: 'Clients',
-                ),
-                NavigationDestination(
-                  icon: Icon(Icons.grid_view_outlined),
-                  selectedIcon: Icon(Icons.grid_view, color: forestEmerald),
-                  label: 'More',
-                ),
-              ],
-            ),
-          ),
+
+        bottomNavigationBar:
+            WorkspaceBottomNavigation(
+          selectedIndex:
+              _index,
+          onChanged: (index) {
+            _openTab(
+              index,
+              searchAutofocus:
+                  index == 3,
+            );
+          },
         ),
       ),
     );
   }
-}
 
-class _DashboardTab extends StatelessWidget {
-  const _DashboardTab({
-    required this.session,
-    required this.operation,
-    required this.report,
-    required this.branchName,
-    required this.customers,
-    required this.loans,
-    required this.repayments,
-    required this.reports,
-    required this.shortages,
-    required this.collectionSummary,
-    required this.onRefresh,
-    required this.onOpenOperations,
-    required this.onOpenClients,
-    required this.onOpenRecords,
-    required this.onOpenMore,
-    this.onNewCustomer,
-    this.onNewLoan,
-  });
+  // ===========================================================================
+  // TAB BUILDERS
+  // ===========================================================================
 
-  final RembehSession session;
-  final Map<String, dynamic>? operation;
-  final Map<String, dynamic>? report;
-  final String branchName;
-  final List<Map<String, dynamic>> customers;
-  final List<Map<String, dynamic>> loans;
-  final List<Map<String, dynamic>> repayments;
-  final List<Map<String, dynamic>> reports;
-  final List<Map<String, dynamic>> shortages;
-  final Map<String, dynamic>? collectionSummary;
-  final Future<void> Function() onRefresh;
-  final VoidCallback onOpenOperations;
-  final VoidCallback onOpenClients;
-  final void Function({RecordsSection section, RecordsFilter filter})
-  onOpenRecords;
-  final VoidCallback onOpenMore;
-  final VoidCallback? onNewCustomer;
-  final VoidCallback? onNewLoan;
+  Widget _buildHomeTab() {
+    final today =
+        DateTime.now();
 
-  @override
-  Widget build(BuildContext context) {
-    final activeLoans = loans.where(_loanIsActive).length;
-    final overdueLoans = loans.where(_loanNeedsAttention).length;
-    final loanBalance = _sumMoney(loans, 'balance');
-    final collectedToday = _num(collectionSummary?['amountCollectedToday']);
-    final dueToday = _num(collectionSummary?['dueTodayCount']);
-    final openShortages = shortages.where(_shortageOpen).toList();
-    final reportsToSend = reports.where(_reportNeedsManagerSubmission).length;
-    final status = _statusLabel(_string(operation?['status']) ?? 'NOT_OPEN');
+    final loansIssuedToday =
+        _loans.where(
+      (loan) {
+        final raw =
+            _string(
+          loan['disbursedAt'],
+        );
 
-    return RefreshIndicator(
-      color: forestEmerald,
-      onRefresh: onRefresh,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _HeroPanel(
-            title: branchName,
-            subtitle: '${session.roleName ?? 'Team'} - $status',
-            icon: Icons.business_center_outlined,
+        if (raw == null) {
+          return false;
+        }
+
+        final date =
+            DateTime.tryParse(raw);
+
+        return date != null &&
+            _isSameDay(
+              date,
+              today,
+            );
+      },
+    );
+
+    final newBorrowersToday =
+        _customers.where(
+      (customer) {
+        final raw =
+            _string(
+          customer['createdAt'],
+        );
+
+        if (raw == null) {
+          return false;
+        }
+
+        final date =
+            DateTime.tryParse(raw);
+
+        return date != null &&
+            _isSameDay(
+              date,
+              today,
+            );
+      },
+    );
+
+    return ManagerOwnerHomeTab(
+      session:
+          widget.session,
+
+      onOpenProfile:
+          _signOut,
+
+      onOpenSearch: () {
+        _openTab(
+          3,
+          searchAutofocus: true,
+        );
+      },
+
+      onOpenRecords:
+          _openRecords,
+
+      onOpenNewLoan:
+          widget.session.hasPermission(
+        'loan.create',
+      )
+              ? () {
+                  unawaited(
+                    _openNewLoan(),
+                  );
+                }
+              : () {},
+
+      onOpenNewBorrower:
+          widget.session.hasPermission(
+        'customer.create',
+      )
+              ? () {
+                  unawaited(
+                    _openNewCustomer(),
+                  );
+                }
+              : () {},
+
+      onOpenDailyOps:
+          () => _openTab(1),
+
+      onOpenRecordRepayment: () {
+        _openRecords(
+          section:
+              RecordsSection.repayments,
+          filter:
+              RecordsFilter.all,
+        );
+      },
+
+      onOpenFindClient: () {
+        _openTab(
+          3,
+          searchAutofocus: true,
+        );
+      },
+
+      collectedToday: _num(
+        _collectionSummary?[
+            'amountCollectedToday'],
+      ).round(),
+
+      expensesToday: _num(
+        _operation?[
+            'expensesTotal'],
+      ).round(),
+
+      shortagesAmount: _sumMoney(
+        _shortages.where(
+          _shortageOpen,
+        ),
+        'amountOutstanding',
+      ).round(),
+
+      expectedClosingCash: _num(
+        _operation?[
+            'expectedClosingBalance'],
+      ).round(),
+
+      loansIssuedToday:
+          loansIssuedToday.length,
+
+      amountIssuedToday: _sumMoney(
+        loansIssuedToday,
+        'principal',
+      ).round(),
+
+      overdueLoansCount:
+          _loans
+              .where(
+                _loanNeedsAttention,
+              )
+              .length,
+
+      activeLoansCount:
+          _loans
+              .where(
+                _loanIsActive,
+              )
+              .length,
+
+      borrowersDueToday: _num(
+        _collectionSummary?[
+            'dueTodayCount'],
+      ).round(),
+
+      newBorrowersToday:
+          newBorrowersToday.length,
+
+      overdueBorrowersCount:
+          _customers
+              .where(
+                (customer) =>
+                    customer[
+                        'hasOverdueLoan'] ==
+                    true,
+              )
+              .length,
+
+      activeBorrowersCount:
+          _customers
+              .where(
+                (customer) =>
+                    _num(
+                      customer[
+                          'activeLoanCount'],
+                    ) >
+                    0,
+              )
+              .length,
+
+      attentionItems:
+          _buildAttentionItems(),
+
+      recentActivities:
+          _buildRecentActivities(),
+    );
+  }
+
+  Widget _buildOperationsTab() {
+    return OperationsTab(
+      session:
+          widget.session,
+
+      operation:
+          _buildOperationDashboardData(),
+
+      agents:
+          _buildAgentFloatPositions(),
+
+      activities:
+          _buildOperationActivities(),
+
+      dayOpen:
+          _dayOpen,
+
+      onRefresh:
+          _load,
+
+      onOpenDay:
+          _showOpenDaySheet,
+
+      onReceiveCapital:
+          _showTopUpSheet,
+
+      onRecordExpense:
+          _showExpenseSheet,
+
+      onAllocateFloat: () {
+        unawaited(
+          _showFloatSheet(
+            addMore: false,
           ),
-          const SizedBox(height: 12),
-          GridView.count(
-            crossAxisCount: 2,
-            childAspectRatio: 1.55,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            children: [
-              _MetricCard(
-                label: 'Active loans',
-                amount: activeLoans,
-                currency: false,
-              ),
-              _MetricCard(label: 'Outstanding', amount: loanBalance),
-              _MetricCard(label: 'Collected today', amount: collectedToday),
-              _MetricCard(
-                label: 'Shortages',
-                amount: _sumMoney(openShortages, 'amountOutstanding'),
-                tone: openShortages.isEmpty
-                    ? _MetricTone.good
-                    : _MetricTone.danger,
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          _ActionGrid(
-            actions: [
-              _BranchAction(
-                label: 'Daily ops',
-                icon: Icons.today_outlined,
-                onTap: onOpenOperations,
-                strong: true,
-              ),
-              _BranchAction(
-                label: 'Clients',
-                icon: Icons.search,
-                onTap: onOpenClients,
-              ),
-              _BranchAction(
-                label: 'Repayments',
-                icon: Icons.payments_outlined,
-                onTap: () => onOpenRecords(
-                  section: RecordsSection.repayments,
-                  filter: RecordsFilter.all,
-                ),
-              ),
-              _BranchAction(
-                label: 'More pages',
-                icon: Icons.grid_view_outlined,
-                onTap: onOpenMore,
-              ),
-              if (onNewCustomer != null)
-                _BranchAction(
-                  label: 'New borrower',
-                  icon: Icons.person_add_alt_1_outlined,
-                  onTap: onNewCustomer!,
-                ),
-              if (onNewLoan != null)
-                _BranchAction(
-                  label: 'New loan',
-                  icon: Icons.note_add_outlined,
-                  onTap: onNewLoan!,
-                ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          _AttentionPanel(
-            overdueLoans: overdueLoans,
-            dueToday: dueToday.round(),
-            openShortages: openShortages.length,
-            reportsToSend: reportsToSend,
-            reportWaiting: _reportNeedsManagerSubmission(report),
-          ),
-          const SizedBox(height: 14),
-          _ManagementSection(
-            title: 'Recent repayments',
-            emptyTitle: 'No repayments yet',
-            rows: repayments
-                .take(5)
-                .map(
-                  (row) => _SimpleTile(
-                    icon: Icons.payments_outlined,
-                    title: _string(row['clientName']) ?? 'Borrower',
-                    subtitle: _dateTime(row['recordedAt']),
-                    trailing: _moneyOrDash(row['amount']),
-                  ),
-                )
-                .toList(),
-          ),
-        ],
-      ),
+        );
+      },
+
+      onCloseDay:
+          _showCloseDaySheet,
+
+      onViewActivity: () {
+        _openRecords(
+          section:
+              RecordsSection.repayments,
+          filter:
+              RecordsFilter.all,
+        );
+      },
+
+      pendingClosureMessage:
+          _pendingClosure == null
+          ? null
+          : '${_dateLabel(_pendingClosure?['operationDate'])} '
+              'has activity that must be closed before today can open.',
+
+      awaitingReportMessage:
+          _awaitingReport == null
+          ? null
+          : '${_dateLabel(_awaitingReport?['operationDate'])} '
+              'is closed. Send its report before today can open.',
+
+      onPendingClosure:
+          _pendingClosure == null
+          ? null
+          : () {
+              unawaited(
+                _reviewPendingClosure(),
+              );
+            },
+
+      onSendAwaitingReport:
+          _awaitingReport == null
+          ? null
+          : () {
+              unawaited(
+                _sendAwaitingReport(),
+              );
+            },
+
+      onOpenAgentPositions:
+          widget.session.canUseFieldWorkspace
+          ? _openFieldTools
+          : null,
+    );
+  }
+
+  Widget _buildRecordsTab() {
+    return RecordsTab(
+      session:
+          widget.session,
+      section:
+          _recordsSection,
+      filter:
+          _recordsFilter,
+
+      onSectionChanged: (section) {
+        unawaited(
+          _activity.touch(),
+        );
+
+        setState(() {
+          _recordsSection =
+              section;
+        });
+      },
+
+      onFilterChanged: (filter) {
+        unawaited(
+          _activity.touch(),
+        );
+
+        setState(() {
+          _recordsFilter =
+              filter;
+        });
+      },
+    );
+  }
+
+  Widget _buildClientsTab() {
+    return SearchTab(
+      autofocus:
+          _searchAutofocus,
+      focusToken:
+          _searchFocusToken,
+    );
+  }
+
+  Widget _buildMoreTab() {
+    return _MoreTab(
+      session:
+          widget.session,
+
+      agents:
+          _agents,
+
+      customers:
+          _customers,
+
+      loans:
+          _loans,
+
+      repayments:
+          _repayments,
+
+      reports:
+          _reports,
+
+      shortages:
+          _shortages,
+
+      onRefresh:
+          _load,
+
+      onOpenOperations:
+          () => _openTab(1),
+
+      onOpenClients: () {
+        _openTab(
+          3,
+          searchAutofocus: true,
+        );
+      },
+
+      onOpenRecords:
+          _openRecords,
+
+      onOpenFieldTools:
+          widget.session.canUseFieldWorkspace
+          ? _openFieldTools
+          : null,
+
+      onNewCustomer:
+          widget.session.hasPermission(
+        'customer.create',
+      )
+              ? () {
+                  unawaited(
+                    _openNewCustomer(),
+                  );
+                }
+              : null,
+
+      onNewLoan:
+          widget.session.hasPermission(
+        'loan.create',
+      )
+              ? () {
+                  unawaited(
+                    _openNewLoan(),
+                  );
+                }
+              : null,
     );
   }
 }
+
+// =============================================================================
+// MORE TAB
+//
+// Temporary location.
+// This is the next feature that should move to:
+//
+// lib/features/more/presentation/screens/more_tab.dart
+// =============================================================================
 
 class _MoreTab extends StatelessWidget {
   const _MoreTab({
@@ -1108,183 +2083,320 @@ class _MoreTab extends StatelessWidget {
   });
 
   final RembehSession session;
+
   final List<Map<String, dynamic>> agents;
   final List<Map<String, dynamic>> customers;
   final List<Map<String, dynamic>> loans;
   final List<Map<String, dynamic>> repayments;
   final List<Map<String, dynamic>> reports;
   final List<Map<String, dynamic>> shortages;
+
   final Future<void> Function() onRefresh;
+
   final VoidCallback onOpenOperations;
   final VoidCallback onOpenClients;
-  final void Function({RecordsSection section, RecordsFilter filter})
+
+  final void Function({
+    RecordsSection section,
+    RecordsFilter filter,
+  })
   onOpenRecords;
+
   final VoidCallback? onOpenFieldTools;
   final VoidCallback? onNewCustomer;
   final VoidCallback? onNewLoan;
 
   @override
   Widget build(BuildContext context) {
-    final openShortages = shortages.where(_shortageOpen).toList();
+    final openShortages =
+        shortages
+            .where(_shortageOpen)
+            .toList();
+
     return RefreshIndicator(
       color: forestEmerald,
       onRefresh: onRefresh,
       child: ListView(
-        padding: const EdgeInsets.all(16),
+        padding:
+            const EdgeInsets.all(16),
         children: [
-          const _SectionHeading(title: 'Manager workspace'),
+          const _SectionHeading(
+            title:
+                'Manager workspace',
+          ),
+
           _ActionGrid(
             actions: [
               _BranchAction(
-                label: 'Operations',
-                icon: Icons.today_outlined,
-                onTap: onOpenOperations,
+                label:
+                    'Operations',
+                icon:
+                    Icons.today_outlined,
+                onTap:
+                    onOpenOperations,
               ),
+
               _BranchAction(
-                label: 'Borrowers',
-                icon: Icons.people_outline,
-                onTap: onOpenClients,
+                label:
+                    'Borrowers',
+                icon:
+                    Icons.people_outline,
+                onTap:
+                    onOpenClients,
               ),
+
               _BranchAction(
-                label: 'Repayments',
-                icon: Icons.payments_outlined,
-                onTap: () => onOpenRecords(
-                  section: RecordsSection.repayments,
-                  filter: RecordsFilter.all,
-                ),
+                label:
+                    'Repayments',
+                icon:
+                    Icons.payments_outlined,
+                onTap: () {
+                  onOpenRecords(
+                    section:
+                        RecordsSection.repayments,
+                    filter:
+                        RecordsFilter.all,
+                  );
+                },
               ),
+
               _BranchAction(
-                label: 'Applications',
-                icon: Icons.assignment_outlined,
-                onTap: () => onOpenRecords(
-                  section: RecordsSection.applications,
-                  filter: RecordsFilter.all,
-                ),
+                label:
+                    'Applications',
+                icon:
+                    Icons.assignment_outlined,
+                onTap: () {
+                  onOpenRecords(
+                    section:
+                        RecordsSection.applications,
+                    filter:
+                        RecordsFilter.all,
+                  );
+                },
               ),
+
               if (onNewCustomer != null)
                 _BranchAction(
-                  label: 'New borrower',
-                  icon: Icons.person_add_alt_1_outlined,
-                  onTap: onNewCustomer!,
+                  label:
+                      'New borrower',
+                  icon:
+                      Icons.person_add_alt_1_outlined,
+                  onTap:
+                      onNewCustomer!,
                 ),
+
               if (onNewLoan != null)
                 _BranchAction(
-                  label: 'New loan',
-                  icon: Icons.note_add_outlined,
-                  onTap: onNewLoan!,
+                  label:
+                      'New loan',
+                  icon:
+                      Icons.note_add_outlined,
+                  onTap:
+                      onNewLoan!,
                 ),
+
               if (onOpenFieldTools != null)
                 _BranchAction(
-                  label: 'Agent tools',
-                  icon: Icons.phone_android_outlined,
-                  onTap: onOpenFieldTools!,
+                  label:
+                      'Agent tools',
+                  icon:
+                      Icons.phone_android_outlined,
+                  onTap:
+                      onOpenFieldTools!,
                 ),
             ],
           ),
+
           const SizedBox(height: 16),
+
           _ManagementSection(
-            title: 'Loans',
-            emptyTitle: 'No loans found',
+            title:
+                'Loans',
+            emptyTitle:
+                'No loans found',
             rows: loans
                 .take(20)
                 .map(
                   (loan) => _SimpleTile(
-                    icon: _loanNeedsAttention(loan)
+                    icon:
+                        _loanNeedsAttention(
+                          loan,
+                        )
                         ? Icons.warning_amber_outlined
                         : Icons.account_balance_wallet_outlined,
-                    title: _string(loan['borrowerName']) ?? 'Borrower',
+                    title:
+                        _string(
+                          loan['borrowerName'],
+                        ) ??
+                        'Borrower',
                     subtitle:
-                        '${_label(_string(loan['status']) ?? '')} - ${_string(loan['nextDueLabel']) ?? 'No due date'}',
-                    trailing: _moneyOrDash(loan['balance']),
-                  ),
-                )
-                .toList(),
-          ),
-          const SizedBox(height: 14),
-          _ManagementSection(
-            title: 'Borrowers',
-            emptyTitle: 'No borrowers found',
-            rows: customers
-                .take(20)
-                .map(
-                  (customer) => _SimpleTile(
-                    icon: customer['hasOverdueLoan'] == true
-                        ? Icons.warning_amber_outlined
-                        : Icons.person_outline,
-                    title: _string(customer['fullName']) ?? 'Borrower',
-                    subtitle:
-                        '${_string(customer['phone']) ?? ''} - ${_num(customer['activeLoanCount']).round()} active',
-                    trailing: _label(
-                      _string(customer['verificationStatus']) ?? 'NOT_VERIFIED',
+                        '${_label(_string(loan['status']) ?? '')} - '
+                        '${_string(loan['nextDueLabel']) ?? 'No due date'}',
+                    trailing:
+                        _moneyOrDash(
+                      loan['balance'],
                     ),
                   ),
                 )
                 .toList(),
           ),
+
           const SizedBox(height: 14),
+
           _ManagementSection(
-            title: 'Repayments',
-            emptyTitle: 'No repayments found',
+            title:
+                'Borrowers',
+            emptyTitle:
+                'No borrowers found',
+            rows: customers
+                .take(20)
+                .map(
+                  (customer) =>
+                      _SimpleTile(
+                    icon:
+                        customer['hasOverdueLoan'] ==
+                                true
+                            ? Icons.warning_amber_outlined
+                            : Icons.person_outline,
+                    title:
+                        _string(
+                          customer['fullName'],
+                        ) ??
+                        'Borrower',
+                    subtitle:
+                        '${_string(customer['phone']) ?? ''} - '
+                        '${_num(customer['activeLoanCount']).round()} active',
+                    trailing:
+                        _label(
+                      _string(
+                            customer['verificationStatus'],
+                          ) ??
+                          'NOT_VERIFIED',
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+
+          const SizedBox(height: 14),
+
+          _ManagementSection(
+            title:
+                'Repayments',
+            emptyTitle:
+                'No repayments found',
             rows: repayments
                 .take(20)
                 .map(
-                  (row) => _SimpleTile(
-                    icon: Icons.payments_outlined,
-                    title: _string(row['clientName']) ?? 'Borrower',
+                  (row) =>
+                      _SimpleTile(
+                    icon:
+                        Icons.payments_outlined,
+                    title:
+                        _string(
+                          row['clientName'],
+                        ) ??
+                        'Borrower',
                     subtitle:
-                        '${_string(row['recordedByName']) ?? 'Recorded'} - ${_dateTime(row['recordedAt'])}',
-                    trailing: _moneyOrDash(row['amount']),
+                        '${_string(row['recordedByName']) ?? 'Recorded'} - '
+                        '${_dateTime(row['recordedAt'])}',
+                    trailing:
+                        _moneyOrDash(
+                      row['amount'],
+                    ),
                   ),
                 )
                 .toList(),
           ),
+
           const SizedBox(height: 14),
+
           _ManagementSection(
-            title: 'Shortages',
-            emptyTitle: 'No open shortages',
+            title:
+                'Shortages',
+            emptyTitle:
+                'No open shortages',
             rows: openShortages
                 .take(20)
                 .map(
-                  (row) => _SimpleTile(
-                    icon: Icons.report_problem_outlined,
-                    title: _string(row['responsibleName']) ?? 'Responsible',
+                  (row) =>
+                      _SimpleTile(
+                    icon:
+                        Icons.report_problem_outlined,
+                    title:
+                        _string(
+                          row['responsibleName'],
+                        ) ??
+                        'Responsible',
                     subtitle:
-                        '${_dateLabel(row['operationDate'])} - ${_label(_string(row['status']) ?? '')}',
-                    trailing: _moneyOrDash(row['amountOutstanding']),
+                        '${_dateLabel(row['operationDate'])} - '
+                        '${_label(_string(row['status']) ?? '')}',
+                    trailing:
+                        _moneyOrDash(
+                      row['amountOutstanding'],
+                    ),
                   ),
                 )
                 .toList(),
           ),
+
           const SizedBox(height: 14),
+
           _ManagementSection(
-            title: 'Reports',
-            emptyTitle: 'No reports found',
+            title:
+                'Reports',
+            emptyTitle:
+                'No reports found',
             rows: reports
                 .take(20)
                 .map(
-                  (row) => _SimpleTile(
-                    icon: Icons.summarize_outlined,
-                    title: _string(row['reportNumber']) ?? 'Daily report',
+                  (row) =>
+                      _SimpleTile(
+                    icon:
+                        Icons.summarize_outlined,
+                    title:
+                        _string(
+                          row['reportNumber'],
+                        ) ??
+                        'Daily report',
                     subtitle:
-                        '${_dateLabel(row['operationDate'])} - ${_label(_string(row['status']) ?? '')}',
-                    trailing: _moneyOrDash(row['closingBalance']),
+                        '${_dateLabel(row['operationDate'])} - '
+                        '${_label(_string(row['status']) ?? '')}',
+                    trailing:
+                        _moneyOrDash(
+                      row['closingBalance'],
+                    ),
                   ),
                 )
                 .toList(),
           ),
+
           const SizedBox(height: 14),
+
           _ManagementSection(
-            title: 'Team',
-            emptyTitle: 'No agents found',
+            title:
+                'Team',
+            emptyTitle:
+                'No agents found',
             rows: agents
                 .take(20)
                 .map(
-                  (agent) => _SimpleTile(
-                    icon: Icons.person_outline,
-                    title: _string(agent['name']) ?? 'Agent',
+                  (agent) =>
+                      _SimpleTile(
+                    icon:
+                        Icons.person_outline,
+                    title:
+                        _string(
+                          agent['name'],
+                        ) ??
+                        'Agent',
                     subtitle:
-                        '${_label(_string(agent['status']) ?? '')} - ${_string(agent['phone']) ?? _string(agent['email']) ?? ''}',
-                    trailing: _moneyOrDash(agent['floatToday']),
+                        '${_label(_string(agent['status']) ?? '')} - '
+                        '${_string(agent['phone']) ?? _string(agent['email']) ?? ''}',
+                    trailing:
+                        _moneyOrDash(
+                      agent['floatToday'],
+                    ),
                   ),
                 )
                 .toList(),
@@ -1295,658 +2407,68 @@ class _MoreTab extends StatelessWidget {
   }
 }
 
-class _HeroPanel extends StatelessWidget {
-  const _HeroPanel({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-  });
-
-  final String title;
-  final String subtitle;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: midnightNavy,
-        borderRadius: rembehBorderRadius(rembehRadiusLg),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.white, size: 30),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.76),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AttentionPanel extends StatelessWidget {
-  const _AttentionPanel({
-    required this.overdueLoans,
-    required this.dueToday,
-    required this.openShortages,
-    required this.reportsToSend,
-    required this.reportWaiting,
-  });
-
-  final int overdueLoans;
-  final int dueToday;
-  final int openShortages;
-  final int reportsToSend;
-  final bool reportWaiting;
-
-  @override
-  Widget build(BuildContext context) {
-    final items = <String>[
-      if (overdueLoans > 0)
-        '$overdueLoans overdue loan${overdueLoans == 1 ? '' : 's'}',
-      if (dueToday > 0)
-        '$dueToday borrower${dueToday == 1 ? '' : 's'} due today',
-      if (openShortages > 0)
-        '$openShortages open shortage${openShortages == 1 ? '' : 's'}',
-      if (reportsToSend > 0 || reportWaiting) 'Close report needs sending',
-    ];
-    final clear = items.isEmpty;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: clear
-            ? forestEmerald.withValues(alpha: 0.08)
-            : warmGold.withValues(alpha: 0.12),
-        border: Border.all(
-          color: clear
-              ? forestEmerald.withValues(alpha: 0.24)
-              : warmGold.withValues(alpha: 0.34),
-        ),
-        borderRadius: rembehBorderRadius(rembehRadiusMd),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            clear ? Icons.verified_outlined : Icons.priority_high_outlined,
-            color: clear ? forestEmerald : warmGold,
-            size: 22,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              clear ? 'No urgent branch items.' : items.join('\n'),
-              style: const TextStyle(
-                color: midnightNavy,
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                height: 1.4,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
+// =============================================================================
+// MORE TAB COMPONENTS
+// =============================================================================
 
 class _SectionHeading extends StatelessWidget {
-  const _SectionHeading({required this.title});
+  const _SectionHeading({
+    required this.title,
+  });
 
   final String title;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding:
+          const EdgeInsets.only(
+        bottom: 10,
+      ),
       child: Text(
         title,
-        style: const TextStyle(
-          color: midnightNavy,
-          fontSize: 18,
-          fontWeight: FontWeight.w900,
+        style:
+            const TextStyle(
+          color:
+              midnightNavy,
+          fontSize:
+              18,
+          fontWeight:
+              FontWeight.w900,
         ),
       ),
     );
   }
 }
-
-class _OverviewTab extends StatelessWidget {
-  const _OverviewTab({
-    required this.session,
-    required this.operation,
-    required this.report,
-    required this.pendingClosure,
-    required this.awaitingReport,
-    required this.branchName,
-    required this.agents,
-    required this.dayOpen,
-    required this.onOpenDay,
-    required this.onTopUp,
-    required this.onExpense,
-    required this.onIssueFloat,
-    required this.onAddFloat,
-    required this.onReturn,
-    required this.onCloseDay,
-    required this.onSubmitReport,
-    required this.onReviewPendingClosure,
-    required this.onSendAwaitingReport,
-    required this.onRefresh,
-    this.onOpenFieldTools,
-  });
-
-  final RembehSession session;
-  final Map<String, dynamic>? operation;
-  final Map<String, dynamic>? report;
-  final Map<String, dynamic>? pendingClosure;
-  final Map<String, dynamic>? awaitingReport;
-  final String branchName;
-  final List<Map<String, dynamic>> agents;
-  final bool dayOpen;
-  final VoidCallback onOpenDay;
-  final VoidCallback onTopUp;
-  final VoidCallback onExpense;
-  final VoidCallback onIssueFloat;
-  final VoidCallback onAddFloat;
-  final VoidCallback onReturn;
-  final VoidCallback onCloseDay;
-  final VoidCallback onSubmitReport;
-  final VoidCallback onReviewPendingClosure;
-  final VoidCallback onSendAwaitingReport;
-  final Future<void> Function() onRefresh;
-  final VoidCallback? onOpenFieldTools;
-
-  @override
-  Widget build(BuildContext context) {
-    final op = operation;
-    final status = _string(op?['status']) ?? 'NOT_OPEN';
-    final expected = _num(op?['expectedClosingBalance']);
-    final counted = op?['closingBalance'] == null
-        ? null
-        : _num(op?['closingBalance']);
-    final variance = counted == null ? null : (counted - expected).round();
-
-    return RefreshIndicator(
-      color: forestEmerald,
-      onRefresh: onRefresh,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          _StatusPanel(
-            branchName: branchName,
-            status: _statusLabel(status),
-            operationDate: _string(op?['operationDate']) ?? _todayLabel(),
-          ),
-          const SizedBox(height: 12),
-          if (op == null)
-            pendingClosure != null
-                ? _CarryoverDayCard(
-                    icon: Icons.lock_clock_outlined,
-                    title: 'Previous day needs closing',
-                    message:
-                        '${_dateLabel(pendingClosure?['operationDate'])} has activity that must be closed before today can open.',
-                    actionLabel: 'Close this day',
-                    onAction: session.hasPermission('operation.close')
-                        ? onReviewPendingClosure
-                        : null,
-                  )
-                : awaitingReport != null
-                ? _CarryoverDayCard(
-                    icon: Icons.receipt_long_outlined,
-                    title: 'Report needs sending',
-                    message:
-                        '${_dateLabel(awaitingReport?['operationDate'])} is closed. Send its report to open today.',
-                    actionLabel: 'Send report',
-                    onAction: session.hasPermission('operation.report.review')
-                        ? onSendAwaitingReport
-                        : null,
-                  )
-                : _EmptyDayCard(
-                    canOpen: session.hasPermission('operation.open'),
-                    onOpenDay: onOpenDay,
-                  )
-          else ...[
-            GridView.count(
-              crossAxisCount: 2,
-              childAspectRatio: 1.55,
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              mainAxisSpacing: 10,
-              crossAxisSpacing: 10,
-              children: [
-                _MetricCard(label: 'Expected close', amount: expected),
-                _MetricCard(label: 'Counted cash', amount: counted ?? 0),
-                _MetricCard(
-                  label: 'Variance',
-                  amount: variance == null ? 0 : variance.abs(),
-                  tone: variance != null && variance < 0
-                      ? _MetricTone.danger
-                      : _MetricTone.good,
-                ),
-                _MetricCard(
-                  label: 'Float left',
-                  amount: _num(op['floatRemaining']),
-                ),
-                _MetricCard(
-                  label: 'Collections',
-                  amount: _num(op['collectionsReceived']),
-                ),
-                _MetricCard(
-                  label: 'Expenses',
-                  amount: _num(op['expensesTotal']),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            _ActionGrid(
-              actions: [
-                if (dayOpen && session.hasPermission('operation.cash.topup'))
-                  _BranchAction(
-                    label: 'Add cash',
-                    icon: Icons.add_card_outlined,
-                    onTap: onTopUp,
-                  ),
-                if (dayOpen &&
-                    session.hasPermission('operation.expense.create'))
-                  _BranchAction(
-                    label: 'Expense',
-                    icon: Icons.payments_outlined,
-                    onTap: onExpense,
-                  ),
-                if (dayOpen && session.hasPermission('operation.float.manage'))
-                  _BranchAction(
-                    label: 'Issue float',
-                    icon: Icons.account_balance_wallet_outlined,
-                    onTap: onIssueFloat,
-                  ),
-                if (dayOpen && session.hasPermission('operation.float.manage'))
-                  _BranchAction(
-                    label: 'Add float',
-                    icon: Icons.wallet_outlined,
-                    onTap: onAddFloat,
-                  ),
-                if (dayOpen && session.hasPermission('operation.float.return'))
-                  _BranchAction(
-                    label: 'Return',
-                    icon: Icons.assignment_return_outlined,
-                    onTap: onReturn,
-                  ),
-                if (dayOpen && session.hasPermission('operation.close'))
-                  _BranchAction(
-                    label: 'Close day',
-                    icon: Icons.lock_outline,
-                    onTap: onCloseDay,
-                    strong: true,
-                  ),
-                if (!dayOpen &&
-                    _reportNeedsManagerSubmission(report) &&
-                    session.hasPermission('operation.report.review'))
-                  _BranchAction(
-                    label: 'Send report',
-                    icon: Icons.send_outlined,
-                    onTap: onSubmitReport,
-                    strong: true,
-                  ),
-                if (onOpenFieldTools != null)
-                  _BranchAction(
-                    label: 'Agent tools',
-                    icon: Icons.phone_android_outlined,
-                    onTap: onOpenFieldTools!,
-                  ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _BranchHeader extends StatelessWidget {
-  const _BranchHeader({
-    required this.workspaceName,
-    required this.branchName,
-    required this.roleName,
-    required this.loading,
-    required this.onRefresh,
-    required this.onSignOut,
-  });
-
-  final String workspaceName;
-  final String branchName;
-  final String roleName;
-  final bool loading;
-  final VoidCallback onRefresh;
-  final VoidCallback onSignOut;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-        child: Row(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: sage,
-                borderRadius: rembehBorderRadius(rembehRadiusMd),
-              ),
-              child: const Icon(Icons.business_outlined, color: forestEmerald),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    workspaceName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: midnightNavy,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  Text(
-                    '$branchName - $roleName',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: slateText,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            IconButton(
-              tooltip: 'Refresh',
-              onPressed: loading ? null : onRefresh,
-              icon: loading
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: forestEmerald,
-                      ),
-                    )
-                  : const Icon(Icons.refresh, color: forestEmerald),
-            ),
-            IconButton(
-              tooltip: 'Sign out',
-              onPressed: onSignOut,
-              icon: const Icon(Icons.logout, color: slateText),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusPanel extends StatelessWidget {
-  const _StatusPanel({
-    required this.branchName,
-    required this.status,
-    required this.operationDate,
-  });
-
-  final String branchName;
-  final String status;
-  final String operationDate;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: midnightNavy,
-        borderRadius: rembehBorderRadius(rembehRadiusLg),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.today_outlined, color: Colors.white, size: 28),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  branchName,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '$operationDate - $status',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.78),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EmptyDayCard extends StatelessWidget {
-  const _EmptyDayCard({required this.canOpen, required this.onOpenDay});
-
-  final bool canOpen;
-  final VoidCallback onOpenDay;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: line),
-        borderRadius: rembehBorderRadius(rembehRadiusLg),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Icon(Icons.lock_open_outlined, color: forestEmerald, size: 36),
-          const SizedBox(height: 10),
-          const Text(
-            'Day not open',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: midnightNavy,
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 8),
-          FilledButton(
-            onPressed: canOpen ? onOpenDay : null,
-            child: const Text('Open Day'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CarryoverDayCard extends StatelessWidget {
-  const _CarryoverDayCard({
-    required this.icon,
-    required this.title,
-    required this.message,
-    this.actionLabel,
-    this.onAction,
-  });
-
-  final IconData icon;
-  final String title;
-  final String message;
-  final String? actionLabel;
-  final VoidCallback? onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: line),
-        borderRadius: rembehBorderRadius(rembehRadiusLg),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Icon(icon, color: warmGold, size: 36),
-          const SizedBox(height: 10),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: midnightNavy,
-              fontSize: 19,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            message,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: slateText,
-              fontSize: 13,
-              height: 1.35,
-            ),
-          ),
-          if (actionLabel != null) ...[
-            const SizedBox(height: 14),
-            FilledButton(onPressed: onAction, child: Text(actionLabel!)),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _MetricCard extends StatelessWidget {
-  const _MetricCard({
-    required this.label,
-    required this.amount,
-    this.tone = _MetricTone.normal,
-    this.currency = true,
-  });
-
-  final String label;
-  final num amount;
-  final _MetricTone tone;
-  final bool currency;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = switch (tone) {
-      _MetricTone.good => forestEmerald,
-      _MetricTone.danger => const Color(0xFFB42318),
-      _MetricTone.normal => midnightNavy,
-    };
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: line),
-        borderRadius: rembehBorderRadius(rembehRadiusMd),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: slateText,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 6),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(
-              currency ? 'UGX ${formatMoney(amount)}' : formatMoney(amount),
-              style: TextStyle(
-                color: color,
-                fontSize: 17,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-enum _MetricTone { normal, good, danger }
 
 class _ActionGrid extends StatelessWidget {
-  const _ActionGrid({required this.actions});
+  const _ActionGrid({
+    required this.actions,
+  });
 
   final List<_BranchAction> actions;
 
   @override
   Widget build(BuildContext context) {
-    if (actions.isEmpty) return const SizedBox.shrink();
+    if (actions.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     return GridView.count(
-      crossAxisCount: 2,
-      childAspectRatio: 2.25,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: 10,
-      crossAxisSpacing: 10,
-      children: actions,
+      crossAxisCount:
+          2,
+      childAspectRatio:
+          2.25,
+      shrinkWrap:
+          true,
+      physics:
+          const NeverScrollableScrollPhysics(),
+      mainAxisSpacing:
+          10,
+      crossAxisSpacing:
+          10,
+      children:
+          actions,
     );
   }
 }
@@ -1956,42 +2478,74 @@ class _BranchAction extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.onTap,
-    this.strong = false,
   });
 
   final String label;
   final IconData icon;
   final VoidCallback onTap;
-  final bool strong;
 
   @override
   Widget build(BuildContext context) {
-    final bg = strong ? forestEmerald : Colors.white;
-    final fg = strong ? Colors.white : midnightNavy;
     return Material(
-      color: bg,
-      shape: RoundedRectangleBorder(
-        borderRadius: rembehBorderRadius(rembehRadiusMd),
-        side: BorderSide(color: strong ? forestEmerald : line),
+      color:
+          Colors.white,
+      shape:
+          RoundedRectangleBorder(
+        borderRadius:
+            rembehBorderRadius(
+          rembehRadiusMd,
+        ),
+        side:
+            const BorderSide(
+          color:
+              line,
+        ),
       ),
       child: InkWell(
-        onTap: onTap,
-        borderRadius: rembehBorderRadius(rembehRadiusMd),
+        onTap:
+            onTap,
+        borderRadius:
+            rembehBorderRadius(
+          rembehRadiusMd,
+        ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding:
+              const EdgeInsets.symmetric(
+            horizontal:
+                12,
+            vertical:
+                10,
+          ),
           child: Row(
             children: [
-              Icon(icon, color: fg, size: 20),
-              const SizedBox(width: 8),
+              const SizedBox(
+                width: 0,
+              ),
+              Icon(
+                icon,
+                color:
+                    midnightNavy,
+                size:
+                    20,
+              ),
+              const SizedBox(
+                width: 8,
+              ),
               Expanded(
                 child: Text(
                   label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: fg,
-                    fontWeight: FontWeight.w900,
-                    fontSize: 13,
+                  maxLines:
+                      1,
+                  overflow:
+                      TextOverflow.ellipsis,
+                  style:
+                      const TextStyle(
+                    color:
+                        midnightNavy,
+                    fontWeight:
+                        FontWeight.w900,
+                    fontSize:
+                        13,
                   ),
                 ),
               ),
@@ -2017,43 +2571,62 @@ class _ManagementSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment:
+          CrossAxisAlignment.stretch,
       children: [
         Row(
           children: [
             Expanded(
               child: Text(
                 title,
-                style: const TextStyle(
-                  color: midnightNavy,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w900,
+                style:
+                    const TextStyle(
+                  color:
+                      midnightNavy,
+                  fontSize:
+                      15,
+                  fontWeight:
+                      FontWeight.w900,
                 ),
               ),
             ),
             Text(
-              rows.length.toString(),
-              style: const TextStyle(
-                color: slateText,
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
+              '${rows.length}',
+              style:
+                  const TextStyle(
+                color:
+                    slateText,
+                fontSize:
+                    12,
+                fontWeight:
+                    FontWeight.w800,
               ),
             ),
           ],
         ),
+
         const SizedBox(height: 8),
+
         if (rows.isEmpty)
           _SimpleTile(
-            icon: Icons.info_outline,
-            title: emptyTitle,
-            subtitle: '',
-            trailing: '',
+            icon:
+                Icons.info_outline,
+            title:
+                emptyTitle,
+            subtitle:
+                '',
+            trailing:
+                '',
           )
         else
-          ...rows.expand((row) sync* {
-            yield row;
-            yield const SizedBox(height: 8);
-          }),
+          ...rows.expand(
+            (row) sync* {
+              yield row;
+              yield const SizedBox(
+                height: 8,
+              );
+            },
+          ),
       ],
     );
   }
@@ -2075,51 +2648,91 @@ class _SimpleTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border.all(color: line),
-        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      padding:
+          const EdgeInsets.all(
+        12,
+      ),
+      decoration:
+          BoxDecoration(
+        color:
+            Colors.white,
+        border:
+            Border.all(
+          color:
+              line,
+        ),
+        borderRadius:
+            rembehBorderRadius(
+          rembehRadiusMd,
+        ),
       ),
       child: Row(
         children: [
-          Icon(icon, color: forestEmerald, size: 20),
+          Icon(
+            icon,
+            color:
+                forestEmerald,
+            size:
+                20,
+          ),
+
           const SizedBox(width: 10),
+
           Expanded(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: midnightNavy,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
+                  maxLines:
+                      1,
+                  overflow:
+                      TextOverflow.ellipsis,
+                  style:
+                      const TextStyle(
+                    color:
+                        midnightNavy,
+                    fontSize:
+                        13,
+                    fontWeight:
+                        FontWeight.w900,
                   ),
                 ),
+
                 if (subtitle.isNotEmpty)
                   Text(
                     subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: slateText,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
+                    maxLines:
+                        1,
+                    overflow:
+                        TextOverflow.ellipsis,
+                    style:
+                        const TextStyle(
+                      color:
+                          slateText,
+                      fontSize:
+                          11,
+                      fontWeight:
+                          FontWeight.w600,
                     ),
                   ),
               ],
             ),
           ),
+
           const SizedBox(width: 8),
+
           Text(
             trailing,
-            style: const TextStyle(
-              color: forestEmerald,
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
+            style:
+                const TextStyle(
+              color:
+                  forestEmerald,
+              fontSize:
+                  12,
+              fontWeight:
+                  FontWeight.w900,
             ),
           ),
         ],
@@ -2127,6 +2740,12 @@ class _SimpleTile extends StatelessWidget {
     );
   }
 }
+
+// =============================================================================
+// TEMPORARY OPERATION FORM COMPONENTS
+//
+// These move into features/operations/presentation/sheets/ next.
+// =============================================================================
 
 class _AmountField extends StatelessWidget {
   const _AmountField({
@@ -2142,10 +2761,22 @@ class _AmountField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TextField(
-      controller: controller,
-      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-      onChanged: onChanged,
-      decoration: InputDecoration(labelText: label, prefixText: 'UGX '),
+      controller:
+          controller,
+      keyboardType:
+          const TextInputType.numberWithOptions(
+        decimal:
+            true,
+      ),
+      onChanged:
+          onChanged,
+      decoration:
+          InputDecoration(
+        labelText:
+            label,
+        prefixText:
+            'UGX ',
+      ),
     );
   }
 }
@@ -2164,9 +2795,15 @@ class _TextField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return TextField(
-      controller: controller,
-      maxLines: maxLines,
-      decoration: InputDecoration(labelText: label),
+      controller:
+          controller,
+      maxLines:
+          maxLines,
+      decoration:
+          InputDecoration(
+        labelText:
+            label,
+      ),
     );
   }
 }
@@ -2187,26 +2824,50 @@ class _AgentPicker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String>(
-      initialValue: value.isEmpty ? null : value,
-      items: agents
-          .map(
-            (agent) => DropdownMenuItem(
-              value: agent['id'] as String? ?? '',
-              child: Text(_string(agent['name']) ?? 'Agent'),
+      initialValue:
+          value.isEmpty
+          ? null
+          : value,
+
+      items:
+          agents.map(
+        (agent) {
+          return DropdownMenuItem<String>(
+            value:
+                _string(agent['id']) ??
+                '',
+            child:
+                Text(
+              _string(agent['name']) ??
+                  'Agent',
             ),
-          )
-          .toList(),
-      onChanged: (value) {
-        if (value == null) return;
+          );
+        },
+      ).toList(),
+
+      onChanged:
+          (value) {
+        if (value == null) {
+          return;
+        }
+
         onChanged(value);
       },
-      decoration: InputDecoration(labelText: label),
+
+      decoration:
+          InputDecoration(
+        labelText:
+            label,
+      ),
     );
   }
 }
 
 class _MoneyPreview extends StatelessWidget {
-  const _MoneyPreview({required this.label, required this.amount});
+  const _MoneyPreview({
+    required this.label,
+    required this.amount,
+  });
 
   final String label;
   final num amount;
@@ -2214,30 +2875,53 @@ class _MoneyPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: sage,
-        border: Border.all(color: forestEmerald.withValues(alpha: 0.22)),
-        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      padding:
+          const EdgeInsets.all(
+        12,
+      ),
+      decoration:
+          BoxDecoration(
+        color:
+            sage,
+        border:
+            Border.all(
+          color:
+              forestEmerald.withValues(
+            alpha:
+                0.22,
+          ),
+        ),
+        borderRadius:
+            rembehBorderRadius(
+          rembehRadiusMd,
+        ),
       ),
       child: Row(
         children: [
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(
-                color: slateText,
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
+              style:
+                  const TextStyle(
+                color:
+                    slateText,
+                fontSize:
+                    12,
+                fontWeight:
+                    FontWeight.w800,
               ),
             ),
           ),
           Text(
             'UGX ${formatMoney(amount)}',
-            style: const TextStyle(
-              color: forestEmerald,
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
+            style:
+                const TextStyle(
+              color:
+                  forestEmerald,
+              fontSize:
+                  14,
+              fontWeight:
+                  FontWeight.w900,
             ),
           ),
         ],
@@ -2247,45 +2931,85 @@ class _MoneyPreview extends StatelessWidget {
 }
 
 class _VariancePreview extends StatelessWidget {
-  const _VariancePreview({required this.variance});
+  const _VariancePreview({
+    required this.variance,
+  });
 
   final int variance;
 
   @override
   Widget build(BuildContext context) {
-    final balanced = variance == 0;
-    final short = variance < 0;
-    final color = balanced || !short ? forestEmerald : const Color(0xFFB42318);
-    final label = balanced
+    final balanced =
+        variance == 0;
+
+    final short =
+        variance < 0;
+
+    final color =
+        balanced || !short
+        ? forestEmerald
+        : const Color(
+            0xFFB42318,
+          );
+
+    final label =
+        balanced
         ? 'Variance balanced'
         : short
         ? 'Shortage'
         : 'Excess';
+
     return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        border: Border.all(color: color.withValues(alpha: 0.28)),
-        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      padding:
+          const EdgeInsets.all(
+        12,
+      ),
+      decoration:
+          BoxDecoration(
+        color:
+            color.withValues(
+          alpha:
+              0.08,
+        ),
+        border:
+            Border.all(
+          color:
+              color.withValues(
+            alpha:
+                0.28,
+          ),
+        ),
+        borderRadius:
+            rembehBorderRadius(
+          rembehRadiusMd,
+        ),
       ),
       child: Row(
         children: [
           Expanded(
             child: Text(
               label,
-              style: TextStyle(
-                color: color,
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
+              style:
+                  TextStyle(
+                color:
+                    color,
+                fontSize:
+                    12,
+                fontWeight:
+                    FontWeight.w900,
               ),
             ),
           ),
           Text(
             'UGX ${formatMoney(variance.abs())}',
-            style: TextStyle(
-              color: color,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
+            style:
+                TextStyle(
+              color:
+                  color,
+              fontSize:
+                  13,
+              fontWeight:
+                  FontWeight.w900,
             ),
           ),
         ],
@@ -2294,131 +3018,339 @@ class _VariancePreview extends StatelessWidget {
   }
 }
 
-enum _BannerTone { success, error }
+// =============================================================================
+// BANNERS
+// =============================================================================
+
+enum _BannerTone {
+  success,
+  error,
+}
 
 class _Banner extends StatelessWidget {
-  const _Banner({required this.message, required this.tone});
+  const _Banner({
+    required this.message,
+    required this.tone,
+  });
 
   final String message;
   final _BannerTone tone;
 
   @override
   Widget build(BuildContext context) {
-    final error = tone == _BannerTone.error;
-    final color = error ? const Color(0xFFB42318) : forestEmerald;
+    final isError =
+        tone == _BannerTone.error;
+
+    final color =
+        isError
+        ? const Color(
+            0xFFB42318,
+          )
+        : forestEmerald;
+
     return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        border: Border.all(color: color.withValues(alpha: 0.22)),
-        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      width:
+          double.infinity,
+      margin:
+          const EdgeInsets.fromLTRB(
+        16,
+        8,
+        16,
+        0,
+      ),
+      padding:
+          const EdgeInsets.all(
+        12,
+      ),
+      decoration:
+          BoxDecoration(
+        color:
+            color.withValues(
+          alpha:
+              0.08,
+        ),
+        border:
+            Border.all(
+          color:
+              color.withValues(
+            alpha:
+                0.22,
+          ),
+        ),
+        borderRadius:
+            rembehBorderRadius(
+          rembehRadiusMd,
+        ),
       ),
       child: Text(
         message,
-        style: TextStyle(
-          color: color,
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
+        style:
+            TextStyle(
+          color:
+              color,
+          fontSize:
+              12,
+          fontWeight:
+              FontWeight.w800,
         ),
       ),
     );
   }
 }
 
+// =============================================================================
+// HELPERS
+// =============================================================================
+
 String _todayLabel() {
-  final now = DateTime.now();
-  final month = now.month.toString().padLeft(2, '0');
-  final day = now.day.toString().padLeft(2, '0');
+  final now =
+      DateTime.now();
+
+  final month =
+      now.month
+          .toString()
+          .padLeft(
+            2,
+            '0',
+          );
+
+  final day =
+      now.day
+          .toString()
+          .padLeft(
+            2,
+            '0',
+          );
+
   return '${now.year}-$month-$day';
 }
 
 String _moneyText(num amount) {
-  if (amount == 0) return '';
-  return amount.round().toString();
+  if (amount == 0) {
+    return '';
+  }
+
+  return amount
+      .round()
+      .toString();
 }
 
 num? _parseAmount(String value) {
-  final cleaned = value.replaceAll(',', '').trim();
-  if (cleaned.isEmpty) return null;
-  return num.tryParse(cleaned);
+  final cleaned =
+      value
+          .replaceAll(
+            ',',
+            '',
+          )
+          .trim();
+
+  if (cleaned.isEmpty) {
+    return null;
+  }
+
+  return num.tryParse(
+    cleaned,
+  );
 }
 
 num _num(Object? value) {
-  if (value is num) return value;
-  if (value is String) return num.tryParse(value) ?? 0;
+  if (value is num) {
+    return value;
+  }
+
+  if (value is String) {
+    return num.tryParse(
+          value,
+        ) ??
+        0;
+  }
+
   return 0;
 }
 
 String? _string(Object? value) {
-  if (value is String && value.trim().isNotEmpty) return value.trim();
+  if (value is String &&
+      value.trim().isNotEmpty) {
+    return value.trim();
+  }
+
   return null;
 }
 
 String _label(String value) {
-  final words = value.toLowerCase().split('_');
-  return words
-      .map(
-        (word) => word.isEmpty
-            ? word
-            : '${word[0].toUpperCase()}${word.substring(1)}',
-      )
-      .join(' ');
+  final words =
+      value
+          .toLowerCase()
+          .split('_');
+
+  return words.map(
+    (word) {
+      if (word.isEmpty) {
+        return word;
+      }
+
+      return '${word[0].toUpperCase()}${word.substring(1)}';
+    },
+  ).join(' ');
 }
 
-String _statusLabel(String status) {
-  if (status == 'NOT_OPEN') return 'Not open';
-  return _label(status);
+bool _reportNeedsManagerSubmission(
+  Map<String, dynamic>? report,
+) {
+  final status =
+      _string(
+    report?['status'],
+  );
+
+  return status ==
+          'MANAGER_REVIEW' ||
+      status ==
+          'RETURNED_TO_MANAGER';
 }
 
-bool _reportNeedsManagerSubmission(Map<String, dynamic>? report) {
-  final status = _string(report?['status']);
-  return status == 'MANAGER_REVIEW' || status == 'RETURNED_TO_MANAGER';
-}
+bool _loanIsActive(
+  Map<String, dynamic> loan,
+) {
+  final status =
+      (_string(
+                loan['status'],
+              ) ??
+              '')
+          .toUpperCase();
 
-bool _loanIsActive(Map<String, dynamic> loan) {
-  final status = (_string(loan['status']) ?? '').toUpperCase();
   return !{
     'CLOSED',
     'WRITTEN_OFF',
     'REJECTED',
     'DRAFT',
     'CANCELLED',
-  }.contains(status);
+  }.contains(
+    status,
+  );
 }
 
-bool _loanNeedsAttention(Map<String, dynamic> loan) {
-  return _num(loan['overdueDays']) > 0 ||
-      _string(loan['nextDueLabel'])?.toLowerCase().contains('overdue') == true;
+bool _loanNeedsAttention(
+  Map<String, dynamic> loan,
+) {
+  final overdueDays =
+      _num(
+    loan['overdueDays'],
+  );
+
+  final nextDue =
+      _string(
+    loan['nextDueLabel'],
+  );
+
+  return overdueDays > 0 ||
+      nextDue
+              ?.toLowerCase()
+              .contains(
+                'overdue',
+              ) ==
+          true;
 }
 
-bool _shortageOpen(Map<String, dynamic> row) {
-  final status = (_string(row['status']) ?? '').toUpperCase();
-  return status != 'CLEARED';
+bool _shortageOpen(
+  Map<String, dynamic> row,
+) {
+  final status =
+      (_string(
+                row['status'],
+              ) ??
+              '')
+          .toUpperCase();
+
+  return status !=
+      'CLEARED';
 }
 
-num _sumMoney(Iterable<Map<String, dynamic>> rows, String key) {
-  return rows.fold<num>(0, (sum, row) => sum + _num(row[key]));
+num _sumMoney(
+  Iterable<Map<String, dynamic>> rows,
+  String key,
+) {
+  return rows.fold<num>(
+    0,
+    (sum, row) =>
+        sum + _num(row[key]),
+  );
 }
 
 String _dateLabel(Object? value) {
-  final raw = _string(value);
-  if (raw == null) return 'The previous day';
-  final parsed = DateTime.tryParse(raw);
-  if (parsed == null) return raw;
-  return formatActivityTime(parsed, DateTime.now()).split(',').first;
+  final raw =
+      _string(value);
+
+  if (raw == null) {
+    return 'The previous day';
+  }
+
+  final parsed =
+      DateTime.tryParse(raw);
+
+  if (parsed == null) {
+    return raw;
+  }
+
+  return formatActivityTime(
+    parsed,
+    DateTime.now(),
+  ).split(',').first;
 }
 
 String _moneyOrDash(Object? value) {
-  if (value == null) return '-';
+  if (value == null) {
+    return '-';
+  }
+
   return 'UGX ${formatMoney(_num(value))}';
 }
 
 String _dateTime(Object? value) {
-  final raw = _string(value);
-  if (raw == null) return '';
-  final parsed = DateTime.tryParse(raw);
-  if (parsed == null) return raw;
-  return formatActivityTime(parsed, DateTime.now());
+  final raw =
+      _string(value);
+
+  if (raw == null) {
+    return '';
+  }
+
+  final parsed =
+      DateTime.tryParse(
+    raw,
+  );
+
+  if (parsed == null) {
+    return raw;
+  }
+
+  return formatActivityTime(
+    parsed,
+    DateTime.now(),
+  );
+}
+
+bool _isSameDay(
+  DateTime a,
+  DateTime b,
+) {
+  return a.year == b.year &&
+      a.month == b.month &&
+      a.day == b.day;
+}
+
+num _firstAvailableMoney(
+  Map<String, dynamic> data,
+  List<String> keys,
+) {
+  for (final key in keys) {
+    final value =
+        data[key];
+
+    if (value != null) {
+      return _num(
+        value,
+      );
+    }
+  }
+
+  return 0;
 }

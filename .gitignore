@@ -56,3 +56,4 @@ tmp-releases/
 
 # Cognate/Coglim migration exports (PII + financial records)
 data/coglim-export/
+data/.history-restore/
