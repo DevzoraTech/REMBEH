@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import {
   CashShortagePaymentMethod,
+  CashShortageReason,
   CashShortageSource,
   CashShortageStatus,
   Prisma,
@@ -19,13 +20,14 @@ import { OPERATIONS_PERMISSIONS } from '../operations/operations.permissions';
 export class CashShortagesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async createShortage(input: {
+    async createShortage(input: {
     tenantId: string;
     branchId: string;
     responsibleUserId: string;
     createdByUserId: string;
     sourceType: CashShortageSource;
     sourceId?: string | null;
+    reason?: CashShortageReason | null;
     operationDate: Date;
     amount: number;
     notes?: string | null;
@@ -44,21 +46,27 @@ export class CashShortagesService {
       : null;
     if (existing) return existing;
 
-    return this.prisma.cashShortage.create({
-      data: {
-        tenantId: input.tenantId,
-        branchId: input.branchId,
-        responsibleUserId: input.responsibleUserId,
-        createdByUserId: input.createdByUserId,
-        sourceType: input.sourceType,
-        sourceId: input.sourceId ?? null,
-        operationDate: input.operationDate,
-        amountOriginal: new Prisma.Decimal(amount),
-        amountOutstanding: new Prisma.Decimal(amount),
-        status: CashShortageStatus.OPEN,
-        notes: input.notes?.trim() || null,
-      },
-    });
+  return this.prisma.cashShortage.create({
+  data: {
+    tenantId: input.tenantId,
+    branchId: input.branchId,
+    responsibleUserId:
+      input.responsibleUserId,
+    createdByUserId:
+      input.createdByUserId,
+    sourceType: input.sourceType,
+    sourceId: input.sourceId ?? null,
+    reason: input.reason ?? null,
+    operationDate: input.operationDate,
+    amountOriginal:
+      new Prisma.Decimal(amount),
+    amountOutstanding:
+      new Prisma.Decimal(amount),
+    status: CashShortageStatus.OPEN,
+    notes:
+      input.notes?.trim() || null,
+  },
+});
   }
 
   async listForScope(
@@ -168,6 +176,7 @@ export class CashShortagesService {
     responsibleUserId: string;
     sourceType: CashShortageSource;
     sourceId: string | null;
+    reason: CashShortageReason | null;
     operationDate: Date;
     amountOriginal: Prisma.Decimal;
     amountOutstanding: Prisma.Decimal;
@@ -201,6 +210,7 @@ export class CashShortagesService {
       createdByName: row.createdBy.displayName,
       sourceType: row.sourceType,
       sourceId: row.sourceId,
+      reason: row.reason,
       operationDate: row.operationDate.toISOString().slice(0, 10),
       amountOriginal: Number(row.amountOriginal),
       amountOutstanding: Number(row.amountOutstanding),

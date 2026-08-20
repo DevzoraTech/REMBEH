@@ -303,6 +303,14 @@ enum CashShortageSource {
   MANUAL
 }
 
+enum CashShortageReason {
+  CASH_NOT_RETURNED
+  COLLECTION_NOT_ACCOUNTED_FOR
+  PROCESSING_FEE_NOT_ACCOUNTED_FOR
+  FLOAT_NOT_ACCOUNTED_FOR
+  OTHER
+}
+
 enum CashShortageStatus {
   OPEN
   PARTIALLY_PAID
@@ -1782,21 +1790,22 @@ model SmsProviderRequestLog {
 }
 
 model CashShortage {
-  id                String             @id @default(uuid()) @db.Uuid
-  tenantId          String             @map("tenant_id") @db.Uuid
-  branchId          String             @map("branch_id") @db.Uuid
-  responsibleUserId String             @map("responsible_user_id") @db.Uuid
-  sourceType        CashShortageSource @map("source_type")
-  sourceId          String?            @map("source_id") @db.Uuid
-  operationDate     DateTime           @map("operation_date") @db.Date
-  amountOriginal    Decimal            @map("amount_original") @db.Decimal(18, 2)
-  amountOutstanding Decimal            @map("amount_outstanding") @db.Decimal(18, 2)
-  status            CashShortageStatus @default(OPEN)
+  id                String              @id @default(uuid()) @db.Uuid
+  tenantId          String              @map("tenant_id") @db.Uuid
+  branchId          String              @map("branch_id") @db.Uuid
+  responsibleUserId String              @map("responsible_user_id") @db.Uuid
+  sourceType        CashShortageSource  @map("source_type")
+  sourceId          String?             @map("source_id") @db.Uuid
+  reason            CashShortageReason? @map("reason")
+  operationDate     DateTime            @map("operation_date") @db.Date
+  amountOriginal    Decimal             @map("amount_original") @db.Decimal(18, 2)
+  amountOutstanding Decimal             @map("amount_outstanding") @db.Decimal(18, 2)
+  status            CashShortageStatus  @default(OPEN)
   notes             String?
-  createdByUserId   String             @map("created_by_user_id") @db.Uuid
-  createdAt         DateTime           @default(now()) @map("created_at")
-  updatedAt         DateTime           @updatedAt @map("updated_at")
-  clearedAt         DateTime?          @map("cleared_at")
+  createdByUserId   String              @map("created_by_user_id") @db.Uuid
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+  clearedAt         DateTime?           @map("cleared_at")
 
   tenant          Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   branch          Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)

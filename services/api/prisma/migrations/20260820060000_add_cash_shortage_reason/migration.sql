@@ -1,0 +1,10 @@
+CREATE TYPE "CashShortageReason" AS ENUM (
+  'CASH_NOT_RETURNED',
+  'COLLECTION_NOT_ACCOUNTED_FOR',
+  'PROCESSING_FEE_NOT_ACCOUNTED_FOR',
+  'FLOAT_NOT_ACCOUNTED_FOR',
+  'OTHER'
+);
+
+ALTER TABLE "cash_shortages"
+ADD COLUMN "reason" "CashShortageReason";

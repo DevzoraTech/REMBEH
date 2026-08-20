@@ -870,104 +870,246 @@ export class OperationsService {
     });
   }
 
-  async recordAgentReturn(
-    user: AuthenticatedUser,
-    dto: RecordAgentReturnDto,
-  ): Promise<DailyOperationResponseContract> {
-    this.assertCanReturnFloat(user);
+async recordAgentReturn(
+  user: AuthenticatedUser,
+  dto: RecordAgentReturnDto,
+): Promise<DailyOperationResponseContract> {
+  this.assertCanReturnFloat(user);
 
-    const branch = await this.resolveBranch(user, dto.branchId);
+  const branch = await this.resolveBranch(
+    user,
+    dto.branchId,
+  );
 
-    if (!branch) {
-      throw new NotFoundException('Branch was not found.');
-    }
+  if (!branch) {
+    throw new NotFoundException(
+      'Branch was not found.',
+    );
+  }
 
-    const bounds = this.parseDayBounds(dto.date);
+  const bounds = this.parseDayBounds(
+    dto.date,
+  );
 
-    const operation = await this.repository.findOperationForDay({
+  const operation =
+    await this.repository.findOperationForDay({
       tenantId: user.tenantId,
       branchId: branch.id,
       operationDate: bounds.dateOnly,
     });
 
-    if (!operation || operation.status !== BranchOperationStatus.OPEN) {
-      throw new BadRequestException(
-        'Open the branch before recording agent returns.',
-      );
-    }
+  if (
+    !operation ||
+    operation.status !==
+      BranchOperationStatus.OPEN
+  ) {
+    throw new BadRequestException(
+      'Open the branch before recording agent returns.',
+    );
+  }
 
-    const float = await this.repository.findAgentFloatForDay({
+  const float =
+    await this.repository.findAgentFloatForDay({
       tenantId: user.tenantId,
       branchId: branch.id,
       agentId: dto.agentId,
       floatDate: operation.operationDate,
     });
 
-    if (!float) {
-      throw new BadRequestException(
-        'Assign float to this agent before recording a return.',
-      );
-    }
+  if (!float) {
+    throw new BadRequestException(
+      'Assign float to this agent before recording a return.',
+    );
+  }
 
-    const returnedFloat = await this.repository.recordAgentReturn({
+  if (float.amountReturned != null) {
+    throw new BadRequestException(
+      'This agent cash handover has already been recorded.',
+    );
+  }
+
+  /*
+   * Calculate the expected handover BEFORE writing anything.
+   *
+   * Expected handover:
+   *
+   * float received
+   * - loans issued
+   * + collections
+   * + processing fees
+   */
+  const [
+    loansAgg,
+    collectionsAgg,
+  ] = await Promise.all([
+    this.repository.sumLoansIssuedForAgent({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      agentId: dto.agentId,
+      dayStart: bounds.dayStart,
+      dayEnd: bounds.dayEnd,
+    }),
+
+    this.repository.sumCollectionsForAgent({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      agentId: dto.agentId,
+      dayStart: bounds.dayStart,
+      dayEnd: bounds.dayEnd,
+    }),
+  ]);
+
+  const amountGiven =
+    this.decimalToNumber(
+      float.amountGiven,
+    );
+
+  const amountDisbursed =
+    this.decimalToNumber(
+      loansAgg._sum.principalAmount,
+    );
+
+  const processingFees =
+    this.decimalToNumber(
+      loansAgg._sum.processingFee,
+    );
+
+  const amountCollected =
+    this.decimalToNumber(
+      collectionsAgg._sum.amount,
+    );
+
+  const expectedReturn =
+    this.roundMoney(
+      amountGiven -
+        amountDisbursed +
+        amountCollected +
+        processingFees,
+    );
+
+  const amountReturned =
+    this.roundMoney(
+      dto.amountReturned,
+    );
+
+  const handoverVariance =
+    this.roundMoney(
+      amountReturned -
+        expectedReturn,
+    );
+
+  /*
+   * A shortage must be classified before the
+   * cash handover is persisted.
+   */
+  if (
+    handoverVariance < 0 &&
+    !dto.shortageReason
+  ) {
+    throw new BadRequestException(
+      'Choose a reason for the cash shortage.',
+    );
+  }
+
+  const returnedFloat =
+    await this.repository.recordAgentReturn({
       tenantId: user.tenantId,
       branchId: branch.id,
       agentId: dto.agentId,
       floatDate: operation.operationDate,
-      amountReturned: new Prisma.Decimal(dto.amountReturned),
+      amountReturned:
+        new Prisma.Decimal(
+          amountReturned,
+        ),
       returnedAt: new Date(),
-      returnedByUserId: user.userId,
-      notes: dto.notes?.trim() || null,
+      returnedByUserId:
+        user.userId,
+      notes:
+        dto.notes?.trim() || null,
       operationId: operation.id,
-      operationDate: operation.operationDate,
+      operationDate:
+        operation.operationDate,
     });
 
-    this.broadcastOperationEvent(OPERATIONS_EVENTS.agentFloatReturned, {
-      operationId: operation.id,
-      tenantId: user.tenantId,
-      branchId: branch.id,
-      operationDate: bounds.dateLabel,
-      status: operation.status,
-      agentId: dto.agentId,
-      floatId: returnedFloat.id,
-      amountReturned: this.decimalToNumber(returnedFloat.amountReturned),
-    });
-
-    const dayContract = await this.toContract(
-      operation,
-      bounds.dayStart,
-      bounds.dayEnd,
-    );
-
-    const agentReturn = dayContract.agentReturns.find(
-      (row) => row.agentId === dto.agentId,
-    );
-
-    if (
-      agentReturn &&
-      agentReturn.variance != null &&
-      agentReturn.variance < 0
-    ) {
-      await this.cashShortagesService.createShortage({
+  /*
+   * A negative variance becomes an accountable
+   * shortage against this agent.
+   */
+  if (handoverVariance < 0) {
+    await this.cashShortagesService.createShortage(
+      {
         tenantId: user.tenantId,
         branchId: branch.id,
-        responsibleUserId: dto.agentId,
-        createdByUserId: user.userId,
-        sourceType: CashShortageSource.AGENT_FLOAT_RETURN,
-        sourceId: returnedFloat.id,
-        operationDate: operation.operationDate,
-        amount: Math.abs(agentReturn.variance),
+        responsibleUserId:
+          dto.agentId,
+        createdByUserId:
+          user.userId,
+
+        sourceType:
+          CashShortageSource.AGENT_FLOAT_RETURN,
+
+        sourceId:
+          returnedFloat.id,
+
+        reason:
+          dto.shortageReason!,
+
+        operationDate:
+          operation.operationDate,
+
+        amount:
+          Math.abs(
+            handoverVariance,
+          ),
+
         notes:
           dto.notes?.trim() ||
-          `Float return shortage for ${agentReturn.agentName}`,
-      });
-    }
-
-    return this.getToday(user, {
-      branchId: branch.id,
-      date: bounds.dateLabel,
-    });
+          'Agent cash handover shortage',
+      },
+    );
   }
+
+  this.broadcastOperationEvent(
+    OPERATIONS_EVENTS.agentFloatReturned,
+    {
+      operationId:
+        operation.id,
+      tenantId:
+        user.tenantId,
+      branchId:
+        branch.id,
+      operationDate:
+        bounds.dateLabel,
+      status:
+        operation.status,
+
+      agentId:
+        dto.agentId,
+
+      floatId:
+        returnedFloat.id,
+
+      amountReturned,
+      expectedReturn,
+      variance:
+        handoverVariance,
+
+      handoverStatus:
+        handoverVariance === 0
+          ? 'RETURNED'
+          : handoverVariance < 0
+            ? 'SHORT'
+            : 'OVER',
+    },
+  );
+
+  return this.getToday(user, {
+    branchId:
+      branch.id,
+    date:
+      bounds.dateLabel,
+  });
+}
 
   /**
    * Starts end-of-day reconciliation.

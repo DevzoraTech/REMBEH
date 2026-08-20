@@ -1,5 +1,9 @@
 import { Type } from 'class-transformer';
 import {
+  CashShortageReason,
+} from '@prisma/client';
+import {
+  IsEnum,
   IsNumber,
   IsOptional,
   IsString,
@@ -23,11 +27,21 @@ export class RecordAgentReturnDto {
   @IsUUID()
   agentId!: string;
 
-  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsNumber({
+    maxDecimalPlaces: 2,
+  })
   @Min(0)
   @Max(10_000_000_000)
   @Type(() => Number)
   amountReturned!: number;
+
+  /**
+   * Required when amount returned is lower than
+   * the system-calculated expected handover.
+   */
+  @IsOptional()
+  @IsEnum(CashShortageReason)
+  shortageReason?: CashShortageReason;
 
   @IsOptional()
   @IsString()
