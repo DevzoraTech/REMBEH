@@ -3,6 +3,7 @@ import { UpdateOperationCashCountDto } from './dto/update-operation-reconciliati
 import { SubmitOperationReconciliationDto } from './dto/submit-operation-reconciliation';
 import { UpdateOperationExpenseDto } from './dto/update-operation-expense.dto';
 import { VoidOperationExpenseDto } from './dto/void-operation-expense.dto';
+import { UpdateOperationReconciliationNotesDto } from './dto/update-operation-reconciliation-notes.dto';
 import {
   BadRequestException,
   ConflictException,
@@ -1241,6 +1242,99 @@ export class OperationsService {
     });
   }
 
+
+async updateReconciliationNotes(
+  user: AuthenticatedUser,
+  dto: UpdateOperationReconciliationNotesDto,
+): Promise<DailyOperationResponseContract> {
+  this.assertCanClose(user);
+
+  const branch = await this.resolveBranch(
+    user,
+    dto.branchId,
+  );
+
+  if (!branch) {
+    throw new NotFoundException(
+      'Branch was not found.',
+    );
+  }
+
+  const bounds = this.parseDayBounds(
+    dto.date,
+  );
+
+  const operation =
+    await this.repository.findOperationForDay({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateOnly,
+    });
+
+  if (!operation) {
+    throw new BadRequestException(
+      'There is no branch day to reconcile.',
+    );
+  }
+
+  if (
+    operation.status ===
+    BranchOperationStatus.CLOSED
+  ) {
+    throw new BadRequestException(
+      'This branch day has already been closed.',
+    );
+  }
+
+  let reconciliation =
+    await this.repository.findReconciliationForOperation(
+      {
+        tenantId: user.tenantId,
+        operationId: operation.id,
+      },
+    );
+
+  if (!reconciliation) {
+    const contract = await this.toContract(
+      operation,
+      bounds.dayStart,
+      bounds.dayEnd,
+    );
+
+    const pendingReturns =
+      contract.agentReturns.filter(
+        (row) => row.amountReturned == null,
+      );
+
+    if (pendingReturns.length > 0) {
+      throw new BadRequestException(
+        'Record all agent cash returns before starting reconciliation.',
+      );
+    }
+
+    reconciliation =
+      await this.repository.startReconciliation({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        operationId: operation.id,
+        startedByUserId: user.userId,
+        notes: dto.notes.trim() || null,
+      });
+  } else {
+    await this.repository.updateReconciliationNotes({
+      tenantId: user.tenantId,
+      reconciliationId: reconciliation.id,
+      updatedByUserId: user.userId,
+      notes: dto.notes.trim() || null,
+    });
+  }
+
+  return this.getToday(user, {
+    branchId: branch.id,
+    date: bounds.dateLabel,
+  });
+}
+
   /**
    * Finalises reconciliation and closes the business day.
    *
@@ -1431,7 +1525,14 @@ export class OperationsService {
 
     const bounds = this.parseDayBounds(dto.date);
 
-    this.assertCanChangeDay(bounds.dateOnly);
+    /*
+     * IMPORTANT:
+     *
+     * Do not call assertCanChangeDay() here.
+     *
+     * A previous business day may legitimately remain OPEN/CLOSING
+     * until the manager completes reconciliation on a later calendar day.
+     */
 
     const operation = await this.repository.findOperationForDay({
       tenantId: user.tenantId,
@@ -1440,9 +1541,7 @@ export class OperationsService {
     });
 
     if (!operation) {
-      throw new BadRequestException(
-        'There is no open branch day to reconcile.',
-      );
+      throw new BadRequestException('There is no branch day to reconcile.');
     }
 
     if (operation.status === BranchOperationStatus.CLOSED) {
@@ -1451,9 +1550,6 @@ export class OperationsService {
 
     /*
      * Starting reconciliation is idempotent.
-     *
-     * If reconciliation was already started, simply return the
-     * current persisted state instead of creating another record.
      */
     const existingReconciliation =
       await this.repository.findReconciliationForOperation({
@@ -1468,11 +1564,16 @@ export class OperationsService {
       });
     }
 
+    if (
+      operation.status !== BranchOperationStatus.OPEN &&
+      operation.status !== BranchOperationStatus.CLOSING
+    ) {
+      throw new BadRequestException('This branch day cannot be reconciled.');
+    }
+
     /*
-     * All field officers must first account for their daily cash.
-     *
-     * This prevents the branch manager from counting branch cash
-     * while an agent still has an unresolved handover.
+     * Every agent who received float must first complete
+     * their cash handover.
      */
     const operationContract = await this.toContract(
       operation,
@@ -1497,15 +1598,13 @@ export class OperationsService {
       startedByUserId: user.userId,
     });
 
-    if (operation) {
-      this.broadcastOperationEvent('operation.reconciliation.started', {
-        operationId: operation.id,
-        tenantId: user.tenantId,
-        branchId: branch.id,
-        operationDate: bounds.dateLabel,
-        status: operation.status,
-      });
-    }
+    this.broadcastOperationEvent('operation.reconciliation.started', {
+      operationId: operation.id,
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateLabel,
+      status: BranchOperationStatus.CLOSING,
+    });
 
     return this.getToday(user, {
       branchId: branch.id,
@@ -1527,7 +1626,12 @@ export class OperationsService {
 
     const bounds = this.parseDayBounds(dto.date);
 
-    this.assertCanChangeDay(bounds.dateOnly);
+    /*
+     * Do NOT use assertCanChangeDay().
+     *
+     * Reconciliation is allowed for an unresolved previous
+     * business day.
+     */
 
     const operation = await this.repository.findOperationForDay({
       tenantId: user.tenantId,
@@ -1551,24 +1655,49 @@ export class OperationsService {
         'This branch day cannot accept another cash count.',
       );
     }
-    const reconciliation = await this.repository.findReconciliationForOperation(
-      {
-        tenantId: user.tenantId,
-        operationId: operation.id,
-      },
-    );
 
+    let reconciliation = await this.repository.findReconciliationForOperation({
+      tenantId: user.tenantId,
+      operationId: operation.id,
+    });
+
+    /*
+     * Defensive handling:
+     *
+     * If the client submits the first count before explicitly
+     * starting reconciliation, create the reconciliation here.
+     */
     if (!reconciliation) {
-      throw new BadRequestException(
-        'Start reconciliation before recording the cash count.',
+      const contract = await this.toContract(
+        operation,
+        bounds.dayStart,
+        bounds.dayEnd,
       );
+
+      const pendingReturns = contract.agentReturns.filter(
+        (agentReturn) => agentReturn.amountReturned == null,
+      );
+
+      if (pendingReturns.length > 0) {
+        throw new BadRequestException(
+          'Record all agent cash handovers before counting branch cash.',
+        );
+      }
+
+      reconciliation = await this.repository.startReconciliation({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        operationId: operation.id,
+        startedByUserId: user.userId,
+        notes: dto.notes?.trim() || null,
+      });
     }
 
     /*
-     * Every physical cash count creates an immutable history row.
+     * Every count is immutable history.
      *
-     * The reconciliation.countedCash field is then updated to point
-     * to the latest authoritative count.
+     * The reconciliation itself stores the latest authoritative
+     * physical cash value.
      */
     await this.repository.recordReconciliationCashCount({
       tenantId: user.tenantId,
@@ -1578,8 +1707,8 @@ export class OperationsService {
     });
 
     /*
-     * A note entered while counting becomes the current
-     * reconciliation explanation.
+     * If the client supplied a reconciliation note alongside
+     * the count, persist it.
      */
     if (dto.notes !== undefined) {
       await this.repository.updateReconciliationNotes({
@@ -1718,7 +1847,12 @@ export class OperationsService {
 
     const bounds = this.parseDayBounds(dto.date);
 
-    this.assertCanChangeDay(bounds.dateOnly);
+    /*
+     * Do NOT call assertCanChangeDay().
+     *
+     * An unresolved previous business day must remain
+     * closable until reconciliation is completed.
+     */
 
     const operation = await this.repository.findOperationForDay({
       tenantId: user.tenantId,
@@ -1763,10 +1897,8 @@ export class OperationsService {
     }
 
     /*
-     * Recalculate the expected balance immediately before closing.
-     *
-     * We deliberately do not trust an expected balance previously
-     * displayed to the client.
+     * Recalculate everything from authoritative server data
+     * immediately before closing.
      */
     const contract = await this.toContract(
       operation,
@@ -1795,28 +1927,33 @@ export class OperationsService {
     const variance = this.roundMoney(countedCash - expectedClosingBalance);
 
     /*
-     * We can use either the final submit note or a note already
-     * entered while counting cash.
+     * Prefer a note supplied at final submission, otherwise
+     * retain the persisted draft reconciliation note.
      */
     const finalNotes =
       dto.notes?.trim() || reconciliation.notes?.trim() || null;
 
+    /*
+     * Any difference between expected and physical cash must
+     * have an explanation.
+     */
     if (variance !== 0 && !finalNotes) {
       throw new BadRequestException(
         'Add a note explaining the cash variance before closing the branch.',
       );
     }
 
-    if (variance < 0 && !dto.shortageResponsibleUserId?.trim()) {
-      throw new BadRequestException(
-        'Assign the cash shortage to an agent or cashier before closing.',
-      );
-    }
-
     /*
-     * Persist the final note before close so the reconciliation record
-     * itself remains a complete audit trail.
+     * IMPORTANT:
+     *
+     * We no longer require shortageResponsibleUserId merely
+     * because branch variance is negative.
+     *
+     * Agent shortages were already established during agent
+     * balancing. A residual branch discrepancy must not be
+     * arbitrarily attributed to an individual.
      */
+
     if (finalNotes !== reconciliation.notes) {
       await this.repository.updateReconciliationNotes({
         tenantId: user.tenantId,
@@ -1827,11 +1964,8 @@ export class OperationsService {
     }
 
     /*
-     * Final submission begins the very short controlled closing phase.
-     *
-     * Draft reconciliation leaves the branch OPEN. We only freeze branch
-     * money operations after every reconciliation validation has succeeded
-     * and immediately before committing the final close.
+     * Ensure the operation is in the controlled closing state
+     * before committing the close.
      */
     if (operation.status === BranchOperationStatus.OPEN) {
       await this.repository.markOperationClosing({
@@ -1842,8 +1976,7 @@ export class OperationsService {
     }
 
     /*
-     * The persisted reconciliation count — not a value supplied
-     * in this submit request — becomes the authoritative closing balance.
+     * The persisted physical cash count is authoritative.
      */
     const closedOperation = await this.repository.closeBranch({
       tenantId: user.tenantId,
@@ -1859,9 +1992,14 @@ export class OperationsService {
     });
 
     /*
-     * Negative branch variance becomes an accountable shortage.
+     * Only create a person-accountable BRANCH_CLOSE shortage
+     * when the caller explicitly identifies a responsible user.
+     *
+     * Otherwise the negative branch variance remains recorded
+     * in reconciliation/report variance without falsely assigning
+     * liability.
      */
-    if (variance < 0 && dto.shortageResponsibleUserId) {
+    if (variance < 0 && dto.shortageResponsibleUserId?.trim()) {
       await this.cashShortagesService.createShortage({
         tenantId: user.tenantId,
         branchId: branch.id,
@@ -1888,8 +2026,8 @@ export class OperationsService {
     });
 
     /*
-     * Reload the operation after closing so the report snapshot is
-     * built from the final persisted CLOSED state.
+     * Reload the CLOSED operation so the report snapshot is
+     * generated from final persisted values.
      */
     const closedForReport = await this.repository.findOperationForDay({
       tenantId: user.tenantId,

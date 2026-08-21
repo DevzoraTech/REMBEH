@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -21,6 +22,7 @@ import { RecordOperationTopUpDto } from './dto/record-operation-top-up.dto';
 import { ReviewOperationReportDto } from './dto/review-operation-report.dto';
 import { UpdateOperationExpenseDto } from './dto/update-operation-expense.dto';
 import { VoidOperationExpenseDto } from './dto/void-operation-expense.dto';
+import { UpdateOperationReconciliationNotesDto } from './dto/update-operation-reconciliation-notes.dto';
 
 import { StartOperationReconciliationDto } from './dto/start-operation-reconciliation.dto';
 import { UpdateOperationCashCountDto } from './dto/update-operation-reconciliation';
@@ -28,7 +30,6 @@ import { SubmitOperationReconciliationDto } from './dto/submit-operation-reconci
 
 import { OperationsService } from './operations.service';
 import { OPERATIONS_PERMISSIONS } from './operations.permissions';
-import { Patch } from '@nestjs/common';
 @Controller('operations')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class OperationsController {
@@ -169,6 +170,18 @@ export class OperationsController {
   ) {
     return this.operationsService.updateReconciliationCashCount(user, dto);
   }
+
+  @Post('reconciliation/notes')
+@RequirePermissions(OPERATIONS_PERMISSIONS.close)
+updateReconciliationNotes(
+  @CurrentUser() user: AuthenticatedUser,
+  @Body() dto: UpdateOperationReconciliationNotesDto,
+) {
+  return this.operationsService.updateReconciliationNotes(
+    user,
+    dto,
+  );
+}
 
   /**
    * Final reconciliation submission.
