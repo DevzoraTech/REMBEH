@@ -646,12 +646,13 @@ model User {
   operationReconciliationsUpdated BranchOperationReconciliation[] @relation("BranchOperationReconciliationUpdatedBy")
   operationCashCountsRecorded     BranchOperationCashCount[]      @relation("BranchOperationCashCountRecordedBy")
 
-  operationExpensesRecorded BranchOperationExpense[] @relation("BranchOperationExpenseRecordedBy")
-  operationExpensesApproved BranchOperationExpense[] @relation("BranchOperationExpenseApprovedBy")
-  operationTopUpsRecorded   BranchOperationTopUp[]   @relation("BranchOperationTopUpRecordedBy")
-  operationReportsReviewed  BranchOperationReport[]  @relation("BranchOperationReportReviewedBy")
-  operationReportsApproved  BranchOperationReport[]  @relation("BranchOperationReportApprovedBy")
-  operationReportsReturned  BranchOperationReport[]  @relation("BranchOperationReportReturnedBy")
+  operationExpensesRecorded     BranchOperationExpense[] @relation("BranchOperationExpenseRecordedBy")
+  operationExpensesApproved     BranchOperationExpense[] @relation("BranchOperationExpenseApprovedBy")
+  operationTopUpsRecorded       BranchOperationTopUp[]   @relation("BranchOperationTopUpRecordedBy")
+  operationReportsReviewed      BranchOperationReport[]  @relation("BranchOperationReportReviewedBy")
+  operationReportsApproved      BranchOperationReport[]  @relation("BranchOperationReportApprovedBy")
+  operationReportsReturned      BranchOperationReport[]  @relation("BranchOperationReportReturnedBy")
+  voidedBranchOperationExpenses BranchOperationExpense[] @relation("BranchOperationExpenseVoidedBy")
 
   devicePushTokens    DevicePushToken[]
   authSessions        AuthSession[]
@@ -833,14 +834,20 @@ model BranchOperationExpense {
   recordedByUserId String                         @map("recorded_by_user_id") @db.Uuid
   approvedAt       DateTime?                      @map("approved_at")
   approvedByUserId String?                        @map("approved_by_user_id") @db.Uuid
-  createdAt        DateTime                       @default(now()) @map("created_at")
-  updatedAt        DateTime                       @updatedAt @map("updated_at")
+
+  voidedAt       DateTime? @map("voided_at")
+  voidedByUserId String?   @map("voided_by_user_id") @db.Uuid
+  voidReason     String?   @map("void_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   tenant     Tenant               @relation(fields: [tenantId], references: [id])
   branch     Branch               @relation(fields: [branchId], references: [id])
   operation  BranchDailyOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
   recordedBy User                 @relation("BranchOperationExpenseRecordedBy", fields: [recordedByUserId], references: [id])
   approvedBy User?                @relation("BranchOperationExpenseApprovedBy", fields: [approvedByUserId], references: [id])
+  voidedBy   User?                @relation("BranchOperationExpenseVoidedBy", fields: [voidedByUserId], references: [id])
 
   @@index([tenantId, branchId, incurredAt])
   @@index([tenantId, operationId])

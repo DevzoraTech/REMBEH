@@ -30,8 +30,13 @@ export type DailyOperationExpenseContract = {
   description: string | null;
   incurredAt: string;
   recordedByName: string;
+
   approvedAt: string | null;
   approvedByName: string | null;
+
+  voidedAt: string | null;
+  voidedByName: string | null;
+  voidReason: string | null;
 };
 
 export type DailyOperationTopUpContract = {

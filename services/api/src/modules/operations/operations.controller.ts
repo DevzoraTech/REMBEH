@@ -19,6 +19,8 @@ import { RecordAgentReturnDto } from './dto/record-agent-return.dto';
 import { RecordOperationExpenseDto } from './dto/record-operation-expense.dto';
 import { RecordOperationTopUpDto } from './dto/record-operation-top-up.dto';
 import { ReviewOperationReportDto } from './dto/review-operation-report.dto';
+import { UpdateOperationExpenseDto } from './dto/update-operation-expense.dto';
+import { VoidOperationExpenseDto } from './dto/void-operation-expense.dto';
 
 import { StartOperationReconciliationDto } from './dto/start-operation-reconciliation.dto';
 import { UpdateOperationCashCountDto } from './dto/update-operation-reconciliation';
@@ -26,7 +28,7 @@ import { SubmitOperationReconciliationDto } from './dto/submit-operation-reconci
 
 import { OperationsService } from './operations.service';
 import { OPERATIONS_PERMISSIONS } from './operations.permissions';
-
+import { Patch } from '@nestjs/common';
 @Controller('operations')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class OperationsController {
@@ -84,6 +86,26 @@ export class OperationsController {
     @Body() dto: RecordOperationExpenseDto,
   ) {
     return this.operationsService.recordExpense(user, dto);
+  }
+
+  @Patch('expenses/:expenseId')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.expenseCreate)
+  updateExpense(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('expenseId') expenseId: string,
+    @Body() dto: UpdateOperationExpenseDto,
+  ) {
+    return this.operationsService.updateExpense(user, expenseId, dto);
+  }
+
+  @Post('expenses/:expenseId/void')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.expenseCreate)
+  voidExpense(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('expenseId') expenseId: string,
+    @Body() dto: VoidOperationExpenseDto,
+  ) {
+    return this.operationsService.voidExpense(user, expenseId, dto);
   }
 
   // ---------------------------------------------------------------------------

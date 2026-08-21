@@ -950,6 +950,40 @@ export class OperationsRepository {
     });
   }
 
+  findExpenseById(input: {
+    tenantId: string;
+    branchId: string;
+    expenseId: string;
+  }) {
+    return this.prisma.branchOperationExpense.findFirst({
+      where: {
+        id: input.expenseId,
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+      },
+      include: {
+        operation: true,
+        recordedBy: {
+          select: {
+            id: true,
+            displayName: true,
+          },
+        },
+        approvedBy: {
+          select: {
+            id: true,
+            displayName: true,
+          },
+        },
+        voidedBy: {
+          select: {
+            id: true,
+            displayName: true,
+          },
+        },
+      },
+    });
+  }
   markOperationClosing(input: {
     tenantId: string;
     operationId: string;
@@ -980,6 +1014,113 @@ export class OperationsRepository {
       });
 
       return operation;
+    });
+  }
+
+  updateExpense(input: {
+    tenantId: string;
+    expenseId: string;
+    actorUserId: string;
+    category?: BranchOperationExpenseCategory;
+    amount?: Prisma.Decimal;
+    description?: string | null;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.branchOperationExpense.findFirst({
+        where: {
+          id: input.expenseId,
+          tenantId: input.tenantId,
+        },
+      });
+
+      if (!existing) {
+        throw new Error('Expense was not found.');
+      }
+
+      const expense = await tx.branchOperationExpense.update({
+        where: {
+          id: input.expenseId,
+        },
+        data: {
+          ...(input.category !== undefined ? { category: input.category } : {}),
+          ...(input.amount !== undefined ? { amount: input.amount } : {}),
+          ...(input.description !== undefined
+            ? { description: input.description }
+            : {}),
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          action: 'operation.expense.update',
+          entityType: 'branch_operation_expense',
+          entityId: expense.id,
+          oldValue: {
+            category: existing.category,
+            amount: existing.amount.toString(),
+            description: existing.description,
+          },
+          newValue: {
+            category: expense.category,
+            amount: expense.amount.toString(),
+            description: expense.description,
+          },
+        },
+      });
+
+      return expense;
+    });
+  }
+
+  voidExpense(input: {
+    tenantId: string;
+    expenseId: string;
+    actorUserId: string;
+    reason?: string | null;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.branchOperationExpense.findFirst({
+        where: {
+          id: input.expenseId,
+          tenantId: input.tenantId,
+        },
+      });
+
+      if (!existing) {
+        throw new Error('Expense was not found.');
+      }
+
+      const expense = await tx.branchOperationExpense.update({
+        where: {
+          id: input.expenseId,
+        },
+        data: {
+          voidedAt: new Date(),
+          voidedByUserId: input.actorUserId,
+          voidReason: input.reason?.trim() || null,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          action: 'operation.expense.void',
+          entityType: 'branch_operation_expense',
+          entityId: expense.id,
+          oldValue: {
+            voidedAt: null,
+          },
+          newValue: {
+            voidedAt: expense.voidedAt?.toISOString(),
+            voidReason: expense.voidReason,
+          },
+        },
+      });
+
+      return expense;
     });
   }
 
@@ -1667,6 +1808,12 @@ export class OperationsRepository {
             displayName: true,
           },
         },
+        voidedBy: {
+          select: {
+            id: true,
+            displayName: true,
+          },
+        },
       },
       orderBy: [
         {
@@ -1684,6 +1831,7 @@ export class OperationsRepository {
       where: {
         tenantId: input.tenantId,
         operationId: input.operationId,
+        voidedAt: null,
       },
       _sum: {
         amount: true,
@@ -1697,6 +1845,7 @@ export class OperationsRepository {
   private formatDateLabel(value: Date) {
     const year = value.getUTCFullYear();
     const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+
     const day = String(value.getUTCDate()).padStart(2, '0');
 
     return `${year}-${month}-${day}`;
