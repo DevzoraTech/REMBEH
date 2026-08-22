@@ -11,8 +11,7 @@ class UploadService {
   final LocalDatabase _db = LocalDatabase.instance;
   final PendingOperationsRepository _operationsRepo =
       PendingOperationsRepository();
-  final LoanApplicationsRepository _loanAppsRepo =
-      LoanApplicationsRepository();
+  final LoanApplicationsRepository _loanAppsRepo = LoanApplicationsRepository();
   final AuthService _authService;
   final String _baseUrl;
 
@@ -70,10 +69,7 @@ class UploadService {
         conflicts: conflicts,
       );
     } catch (e) {
-      return UploadResult(
-        success: false,
-        error: e.toString(),
-      );
+      return UploadResult(success: false, error: e.toString());
     }
   }
 
@@ -82,36 +78,41 @@ class UploadService {
     String token,
     List<PendingOperation> operations,
   ) async {
-    final uri = Uri.parse('$_baseUrl/api/v1/sync/upload-queue');
+    final uri = Uri.parse('$_baseUrl/sync/upload-queue');
 
     final body = jsonEncode({
       'operations': operations
-          .map((op) => {
-                'localId': op.localEntityId,
-                'type': op.operationType,
-                'createdAt': op.createdAt.toIso8601String(),
-                'payload': jsonDecode(op.payload),
-              })
+          .map(
+            (op) => {
+              'localId': op.localEntityId,
+              'type': op.operationType,
+              'createdAt': op.createdAt.toIso8601String(),
+              'payload': jsonDecode(op.payload),
+            },
+          )
           .toList(),
     });
 
-    final response = await http.post(
-      uri,
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: body,
-    ).timeout(
-      const Duration(seconds: 60),
-      onTimeout: () {
-        throw Exception('Upload timeout - check your internet connection');
-      },
-    );
+    final response = await http
+        .post(
+          uri,
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json',
+          },
+          body: body,
+        )
+        .timeout(
+          const Duration(seconds: 60),
+          onTimeout: () {
+            throw Exception('Upload timeout - check your internet connection');
+          },
+        );
 
     if (response.statusCode != 200 && response.statusCode != 201) {
       throw Exception(
-          'Failed to upload operations: ${response.statusCode} ${response.body}');
+        'Failed to upload operations: ${response.statusCode} ${response.body}',
+      );
     }
 
     final data = jsonDecode(response.body);
@@ -193,16 +194,13 @@ class UploadService {
   /// Store conflict for user review
   Future<void> _storeConflict(Conflict conflict) async {
     final database = await _db.database;
-    await database.insert(
-      'sync_conflicts',
-      {
-        'operation_type': conflict.localId,
-        'local_entity_id': conflict.localId,
-        'local_data': '{}', // TODO: Load from operation
-        'server_data': jsonEncode(conflict.serverData ?? {}),
-        'created_at': DateTime.now().millisecondsSinceEpoch,
-      },
-    );
+    await database.insert('sync_conflicts', {
+      'operation_type': conflict.localId,
+      'local_entity_id': conflict.localId,
+      'local_data': '{}', // TODO: Load from operation
+      'server_data': jsonEncode(conflict.serverData ?? {}),
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+    });
   }
 }
 

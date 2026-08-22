@@ -1,16 +1,12 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../core/sync/sync_service.dart';
-import '../core/sync/connectivity_monitor.dart';
 
 /// Widget displaying sync status in app bar or bottom of screen
 class SyncStatusIndicator extends StatefulWidget {
   final SyncService syncService;
 
-  const SyncStatusIndicator({
-    super.key,
-    required this.syncService,
-  });
+  const SyncStatusIndicator({super.key, required this.syncService});
 
   @override
   State<SyncStatusIndicator> createState() => _SyncStatusIndicatorState();
@@ -88,7 +84,7 @@ class _SyncStatusIndicatorState extends State<SyncStatusIndicator> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(

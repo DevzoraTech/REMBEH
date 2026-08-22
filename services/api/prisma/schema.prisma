@@ -323,6 +323,19 @@ enum CashShortagePaymentMethod {
   OTHER
 }
 
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum SalaryPaymentMethod {
+  CASH
+  MOBILE_MONEY
+  BANK_TRANSFER
+  OTHER
+}
+
 enum PushPlatform {
   WEB
   ANDROID
@@ -388,6 +401,8 @@ model Tenant {
   loanReminderItems       LoanReminderItem[]
   cashShortages           CashShortage[]
   cashShortagePayments    CashShortagePayment[]
+  employees               Employee[]
+  salaryPayments          SalaryPayment[]
   smsNotificationSettings TenantSmsNotificationSettings?
 
   @@map("tenants")
@@ -438,6 +453,8 @@ model Branch {
   loanReminderBatches    LoanReminderBatch[]
   loanReminderItems      LoanReminderItem[]
   cashShortages          CashShortage[]
+  employees              Employee[]
+  salaryPayments         SalaryPayment[]
 
   @@unique([tenantId, name])
   @@index([tenantId, name])
@@ -662,6 +679,9 @@ model User {
   cashShortagesResponsible CashShortage[]        @relation("CashShortageResponsible")
   cashShortagesCreated     CashShortage[]        @relation("CashShortageCreatedBy")
   cashShortagePayments     CashShortagePayment[] @relation("CashShortagePaymentRecordedBy")
+  employeeProfile          Employee?             @relation("EmployeeUser")
+  employeesCreated         Employee[]            @relation("EmployeeCreatedBy")
+  salaryPaymentsRecorded   SalaryPayment[]       @relation("SalaryPaymentRecordedBy")
 
   smsNotificationSettingsUpdated TenantSmsNotificationSettings[] @relation("SmsNotificationSettingsUpdatedBy")
 
@@ -1846,4 +1866,66 @@ model CashShortagePayment {
   @@index([shortageId, paidAt])
   @@index([tenantId, paidAt])
   @@map("cash_shortage_payments")
+}
+
+model Employee {
+  id                   String               @id @default(uuid()) @db.Uuid
+  tenantId             String               @map("tenant_id") @db.Uuid
+  branchId             String?              @map("branch_id") @db.Uuid
+  userId               String?              @unique @map("user_id") @db.Uuid
+  fullName             String               @map("full_name")
+  phone                String?
+  email                String?
+  ninNumber            String?              @map("nin_number")
+  roleName             String?              @map("role_name")
+  status               EmployeeStatus       @default(ACTIVE)
+  monthlySalary        Decimal              @default(0) @map("monthly_salary") @db.Decimal(18, 2)
+  dateJoined           DateTime             @map("date_joined") @db.Date
+  paymentMethod        SalaryPaymentMethod? @map("payment_method")
+  paymentProvider      String?              @map("payment_provider")
+  paymentAccountName   String?              @map("payment_account_name")
+  paymentAccountNumber String?              @map("payment_account_number")
+  notes                String?
+  createdByUserId      String               @map("created_by_user_id") @db.Uuid
+  createdAt            DateTime             @default(now()) @map("created_at")
+  updatedAt            DateTime             @updatedAt @map("updated_at")
+
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch    Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  user      User?   @relation("EmployeeUser", fields: [userId], references: [id], onDelete: SetNull)
+  createdBy User    @relation("EmployeeCreatedBy", fields: [createdByUserId], references: [id])
+
+  salaryPayments SalaryPayment[]
+
+  @@unique([tenantId, userId])
+  @@index([tenantId, branchId, status])
+  @@index([tenantId, fullName])
+  @@map("employees")
+}
+
+model SalaryPayment {
+  id               String              @id @default(uuid()) @db.Uuid
+  tenantId         String              @map("tenant_id") @db.Uuid
+  branchId         String?             @map("branch_id") @db.Uuid
+  employeeId       String              @map("employee_id") @db.Uuid
+  cycleStart       DateTime            @map("cycle_start") @db.Date
+  cycleEnd         DateTime            @map("cycle_end") @db.Date
+  amount           Decimal             @db.Decimal(18, 2)
+  method           SalaryPaymentMethod @default(CASH)
+  paidAt           DateTime            @default(now()) @map("paid_at")
+  referenceNote    String?             @map("reference_note")
+  recordedByUserId String              @map("recorded_by_user_id") @db.Uuid
+  reversedAt       DateTime?           @map("reversed_at")
+  reversalReason   String?             @map("reversal_reason")
+  createdAt        DateTime            @default(now()) @map("created_at")
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch     Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  recordedBy User     @relation("SalaryPaymentRecordedBy", fields: [recordedByUserId], references: [id])
+
+  @@index([tenantId, branchId, cycleStart])
+  @@index([employeeId, cycleStart])
+  @@index([tenantId, paidAt])
+  @@map("salary_payments")
 }

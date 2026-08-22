@@ -7,17 +7,14 @@ import '../core/sync/upload_service.dart';
 class SyncConflictsScreen extends StatefulWidget {
   final SyncService syncService;
 
-  const SyncConflictsScreen({
-    super.key,
-    required this.syncService,
-  });
+  const SyncConflictsScreen({super.key, required this.syncService});
 
   @override
   State<SyncConflictsScreen> createState() => _SyncConflictsScreenState();
 }
 
 class _SyncConflictsScreenState extends State<SyncConflictsScreen> {
-  List<Conflict> _conflicts = [];
+  final List<Conflict> _conflicts = [];
   bool _isLoading = true;
 
   @override
@@ -43,14 +40,12 @@ class _SyncConflictsScreenState extends State<SyncConflictsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Sync Conflicts'),
-      ),
+      appBar: AppBar(title: const Text('Sync Conflicts')),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _conflicts.isEmpty
-              ? _buildEmptyState()
-              : _buildConflictList(),
+          ? _buildEmptyState()
+          : _buildConflictList(),
     );
   }
 
@@ -67,18 +62,12 @@ class _SyncConflictsScreenState extends State<SyncConflictsScreen> {
           const SizedBox(height: 16),
           const Text(
             'No sync conflicts',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           Text(
             'All your changes are in sync',
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey.shade600,
-            ),
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
           ),
         ],
       ),
@@ -122,10 +111,7 @@ class _SyncConflictsScreenState extends State<SyncConflictsScreen> {
             const SizedBox(height: 8),
             Text(
               conflict.message,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade700,
-              ),
+              style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
             ),
             const SizedBox(height: 12),
             Row(
@@ -148,7 +134,10 @@ class _SyncConflictsScreenState extends State<SyncConflictsScreen> {
     );
   }
 
-  Future<void> _resolveConflict(Conflict conflict, {required bool keepLocal}) async {
+  Future<void> _resolveConflict(
+    Conflict conflict, {
+    required bool keepLocal,
+  }) async {
     // Implement conflict resolution logic
     // This would mark the conflict as resolved in the database
     // and either keep local changes or accept server version
@@ -160,9 +149,7 @@ class _SyncConflictsScreenState extends State<SyncConflictsScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          keepLocal
-              ? 'Keeping your local changes'
-              : 'Accepted server version',
+          keepLocal ? 'Keeping your local changes' : 'Accepted server version',
         ),
       ),
     );

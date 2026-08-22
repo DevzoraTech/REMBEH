@@ -117,6 +117,22 @@ class OfflineMediaService {
     return results.map((row) => QueuedMedia.fromMap(row)).toList();
   }
 
+  /// Get pending media for a single locally-created entity.
+  Future<List<QueuedMedia>> getPendingMediaForEntity({
+    required String entityType,
+    required String entityId,
+  }) async {
+    final database = await _db.database;
+    final results = await database.query(
+      'pending_media',
+      where: 'entity_type = ? AND entity_id = ? AND upload_status = ?',
+      whereArgs: [entityType, entityId, MediaUploadStatus.pending],
+      orderBy: 'created_at ASC',
+    );
+
+    return results.map((row) => QueuedMedia.fromMap(row)).toList();
+  }
+
   /// Mark media as uploaded
   Future<void> markAsUploaded({
     required String mediaId,

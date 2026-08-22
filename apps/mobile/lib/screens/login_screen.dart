@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/auth/auth_manager.dart';
 import '../services/api_client.dart';
 import '../services/push_notification_service.dart';
 import '../services/session_store.dart';
@@ -32,7 +33,8 @@ class _LoginScreenState extends State<LoginScreen>
   final _email = TextEditingController();
   final _password = TextEditingController();
   final _store = SessionStore();
-  late final _api = ApiClient(_store);
+  final _auth = AuthManager();
+  late final Future<void> _authReady;
   late final AnimationController _motion;
   late final Animation<double> _fade;
   late final Animation<Offset> _slide;
@@ -46,6 +48,7 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   void initState() {
     super.initState();
+    _authReady = _auth.initialize();
     _motion = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 480),
@@ -106,6 +109,7 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   void dispose() {
     _motion.dispose();
+    _auth.dispose();
     _email.dispose();
     _password.dispose();
     super.dispose();
@@ -119,9 +123,16 @@ class _LoginScreenState extends State<LoginScreen>
 
     try {
       await _persistRememberMe();
-      await _api.login(email: _email.text, password: _password.text);
-      final session = await _store.read();
-      if (!mounted || session == null) return;
+      await _authReady;
+      final result = await _auth.login(
+        email: _email.text,
+        password: _password.text,
+      );
+      final session = result.session ?? await _store.read();
+      if (!result.success || session == null) {
+        throw ApiException(result.error ?? 'Login failed. Please try again.');
+      }
+      if (!mounted) return;
       await widget.pushService?.requestPermissionAndSync();
       if (!mounted) return;
       final next = session.canUseBranchWorkspace

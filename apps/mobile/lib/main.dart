@@ -87,7 +87,7 @@ class _BootScreenState extends State<_BootScreen> {
     if (session != null) {
       if (!session.isAccessExpired) {
         try {
-          await widget.pushService?.requestPermissionAndSync();
+          await _preparePush();
         } catch (error, stack) {
           debugPrint('Push permission sync failed during boot: $error');
           debugPrint('$stack');
@@ -104,7 +104,7 @@ class _BootScreenState extends State<_BootScreen> {
           if (!mounted) return;
           if (refreshed != null) {
             try {
-              await widget.pushService?.requestPermissionAndSync();
+              await _preparePush();
             } catch (error, stack) {
               debugPrint('Push permission sync failed during refresh: $error');
               debugPrint('$stack');
@@ -124,12 +124,24 @@ class _BootScreenState extends State<_BootScreen> {
           }
         }
       }
+
+      // Keep the user inside the app with cached/offline data when refresh
+      // cannot happen in the field. Account blocks still go through the guarded
+      // refresh path above and lock the app.
+      if (!mounted) return;
+      _goShell(session);
+      return;
     }
 
     await clearTenantScopedClientState();
     await store.clear();
     if (!mounted) return;
     _goLogin();
+  }
+
+  Future<void> _preparePush() async {
+    await widget.pushService?.requestPermissionAndSync();
+    await widget.pushService?.scheduleDefaultReminders();
   }
 
   void _goLogin() {

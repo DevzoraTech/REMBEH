@@ -5,12 +5,14 @@ import {
   useEffect,
   useMemo,
   useState,
+  type FormEvent,
   type ReactNode,
 } from "react";
 import {
   Banknote,
   CheckCircle2,
   Clock3,
+  Edit3,
   KeyRound,
   Laptop,
   Loader2,
@@ -150,6 +152,12 @@ type AgentDetailDrawerProps = {
   onChanged?: () => void;
 };
 
+type AgentProfileForm = {
+  displayName: string;
+  email: string;
+  phone: string;
+};
+
 const PREVIEW_LIMIT = 5;
 
 export function AgentDetailDrawer({
@@ -174,7 +182,14 @@ export function AgentDetailDrawer({
   const [accountLoading, setAccountLoading] = useState(false);
   const [deviceBusy, setDeviceBusy] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
+  const [profileBusy, setProfileBusy] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<AgentProfileForm>({
+    displayName: "",
+    email: "",
+    phone: "",
+  });
   const [showAllLoans, setShowAllLoans] = useState(false);
   const [showAllRepayments, setShowAllRepayments] = useState(false);
   const [showAllOther, setShowAllOther] = useState(false);
@@ -295,6 +310,7 @@ export function AgentDetailDrawer({
         setShowAllLoans(false);
         setShowAllRepayments(false);
         setShowAllOther(false);
+        setEditOpen(false);
         return;
       }
       void loadDetail(agentId);
@@ -350,6 +366,70 @@ export function AgentDetailDrawer({
       );
     } finally {
       setStatusBusy(false);
+    }
+  }
+
+  function openEditProfile() {
+    if (!detail) return;
+    setEditForm({
+      displayName: detail.name,
+      email: detail.email,
+      phone: detail.phone ?? "",
+    });
+    setError(null);
+    setMenuOpen(false);
+    setEditOpen(true);
+  }
+
+  async function saveProfile(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!agentId || !detail || profileBusy) return;
+
+    const displayName = editForm.displayName.trim();
+    const email = editForm.email.trim();
+    const phone = editForm.phone.trim();
+
+    if (displayName.length < 2) {
+      setError("Enter the agent name.");
+      return;
+    }
+
+    if (!email.includes("@") || !email.includes(".")) {
+      setError("Enter a valid email address.");
+      return;
+    }
+
+    setProfileBusy(true);
+    setError(null);
+    try {
+      const response = await fetch(`${apiBaseUrl}/agents/${agentId}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: authHeader,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          displayName,
+          email,
+          phone,
+        }),
+      });
+      const payload = await readApiJson<{
+        agent?: AgentDetail;
+        message?: string | string[];
+      }>(response);
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      if (payload.agent) setDetail(payload.agent);
+      setEditOpen(false);
+      onChanged?.();
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not update profile.",
+      );
+    } finally {
+      setProfileBusy(false);
     }
   }
 
@@ -508,6 +588,15 @@ export function AgentDetailDrawer({
                       role="menu"
                       className="absolute right-0 top-20 z-20 min-w-[168px] overflow-hidden rounded-xl border border-[#e6ebf0] bg-white py-1 shadow-[0_16px_40px_rgba(15,23,42,0.14)]"
                     >
+                      <button
+                        type="button"
+                        role="menuitem"
+                        className="block w-full px-3 py-2 text-left text-xs font-semibold text-[#07885f] hover:bg-[#f8faf9]"
+                        disabled={profileBusy}
+                        onClick={openEditProfile}
+                      >
+                        Edit profile
+                      </button>
                       {detail.status === "ACTIVE" ? (
                         <button
                           type="button"
@@ -639,10 +728,20 @@ export function AgentDetailDrawer({
                           : "The agent is locked out and cannot sign in until the account is activated."}
                       </p>
                       {canManage && detail ? (
-                        isActive ? (
+                        <div className="mt-4 flex flex-col gap-2">
                           <button
                             type="button"
-                            className="mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-red-300 bg-white px-3 text-[13px] font-semibold text-red-700 transition hover:bg-red-50"
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-[#b7ddc7] bg-white px-3 text-[13px] font-semibold text-[#07885f] transition hover:bg-[#f4fbf7]"
+                            disabled={profileBusy}
+                            onClick={openEditProfile}
+                          >
+                            <Edit3 className="size-4" />
+                            Edit profile
+                          </button>
+                          {isActive ? (
+                          <button
+                            type="button"
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-red-300 bg-white px-3 text-[13px] font-semibold text-red-700 transition hover:bg-red-50"
                             disabled={statusBusy}
                             onClick={() =>
                               setStatusConfirm({
@@ -658,7 +757,7 @@ export function AgentDetailDrawer({
                         ) : (
                           <button
                             type="button"
-                            className="mt-4 inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3 text-[13px] font-semibold text-white transition hover:opacity-95"
+                            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3 text-[13px] font-semibold text-white transition hover:opacity-95"
                             disabled={statusBusy}
                             onClick={() =>
                               setStatusConfirm({
@@ -671,7 +770,8 @@ export function AgentDetailDrawer({
                             <ShieldCheck className="size-4" />
                             Activate Field Officer
                           </button>
-                        )
+                        )}
+                        </div>
                       ) : null}
                     </div>
                   </div>
@@ -900,6 +1000,18 @@ export function AgentDetailDrawer({
 
       </aside>
 
+      {editOpen && detail ? (
+        <AgentProfileEditModal
+          form={editForm}
+          busy={profileBusy}
+          onChange={setEditForm}
+          onClose={() => {
+            if (!profileBusy) setEditOpen(false);
+          }}
+          onSubmit={saveProfile}
+        />
+      ) : null}
+
       <AgentStatusConfirmModal
         confirm={statusConfirm}
         busy={statusBusy}
@@ -908,6 +1020,110 @@ export function AgentDetailDrawer({
         }}
         onConfirm={(payload) => void setStatus(payload.status, payload.reason)}
       />
+    </div>
+  );
+}
+
+function AgentProfileEditModal({
+  form,
+  busy,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  form: AgentProfileForm;
+  busy: boolean;
+  onChange: (next: AgentProfileForm) => void;
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-[60] grid place-items-center bg-[rgba(8,15,31,0.44)] px-4">
+      <form
+        onSubmit={onSubmit}
+        className="w-full max-w-[460px] rounded-2xl border border-[#e6ebf0] bg-white p-5 shadow-[0_24px_70px_rgba(15,23,42,0.24)]"
+      >
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="text-lg font-bold tracking-[-0.02em] text-[#0b1220]">
+              Edit agent profile
+            </h3>
+            <p className="mt-1 text-sm text-slate-500">
+              Update the officer details used across mobile and web.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="grid size-8 place-items-center rounded-lg text-slate-500 transition hover:bg-slate-100"
+            onClick={onClose}
+            disabled={busy}
+            aria-label="Close profile editor"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="mt-5 grid gap-4">
+          <label className="grid gap-1.5 text-sm font-semibold text-[#0b1220]">
+            Full name
+            <input
+              value={form.displayName}
+              disabled={busy}
+              onChange={(event) =>
+                onChange({ ...form, displayName: event.target.value })
+              }
+              className="h-11 rounded-xl border border-[#d7dee7] px-3 text-sm font-medium outline-none transition focus:border-[#07885f] focus:ring-4 focus:ring-[#07885f]/10"
+              placeholder="Agent name"
+            />
+          </label>
+
+          <label className="grid gap-1.5 text-sm font-semibold text-[#0b1220]">
+            Email
+            <input
+              type="email"
+              value={form.email}
+              disabled={busy}
+              onChange={(event) =>
+                onChange({ ...form, email: event.target.value })
+              }
+              className="h-11 rounded-xl border border-[#d7dee7] px-3 text-sm font-medium outline-none transition focus:border-[#07885f] focus:ring-4 focus:ring-[#07885f]/10"
+              placeholder="agent@example.com"
+            />
+          </label>
+
+          <label className="grid gap-1.5 text-sm font-semibold text-[#0b1220]">
+            Phone
+            <input
+              value={form.phone}
+              disabled={busy}
+              onChange={(event) =>
+                onChange({ ...form, phone: event.target.value })
+              }
+              className="h-11 rounded-xl border border-[#d7dee7] px-3 text-sm font-medium outline-none transition focus:border-[#07885f] focus:ring-4 focus:ring-[#07885f]/10"
+              placeholder="+256..."
+            />
+          </label>
+        </div>
+
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            className="inline-flex h-10 items-center justify-center rounded-xl border border-[#d7dee7] px-4 text-sm font-semibold text-[#0b1220] transition hover:bg-[#f8faf9]"
+            onClick={onClose}
+            disabled={busy}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-4 text-sm font-semibold text-white transition hover:opacity-95 disabled:opacity-60"
+            disabled={busy}
+          >
+            {busy ? <Loader2 className="size-4 animate-spin" /> : <Edit3 className="size-4" />}
+            Save profile
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

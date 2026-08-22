@@ -22,6 +22,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { PlatformModule } from './modules/platform/platform.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
+import { SalariesModule } from './modules/salaries/salaries.module';
 import { SmsCreditsModule } from './modules/sms-credits/sms-credits.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { SyncModule } from './modules/sync/sync.module';
@@ -52,6 +53,7 @@ import { SyncModule } from './modules/sync/sync.module';
     LoanProductsModule,
     OperationsModule,
     CashShortagesModule,
+    SalariesModule,
     PaymentsModule,
     PlatformModule,
     AppUpdateModule,

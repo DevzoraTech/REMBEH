@@ -11,6 +11,8 @@ Invitation and verification emails are sent through **Resend** from the Nest API
 | `RESEND_API_KEY` | `re_…` | Resend API key (never commit) |
 | `EMAIL_FROM` or `OTP_EMAIL_FROM` | `auth@antikra.com` | From address (must be a verified Resend domain/sender) |
 | `EMAIL_FROM_NAME` | `REMBEH` | Display name → `REMBEH <auth@antikra.com>` |
+| `PAYMENT_VERIFICATION_REPLY_TO` | `payments@<id>.resend.app` | Resend inbound address for team replies to payment claim emails |
+| `RESEND_WEBHOOK_SECRET` | `whsec_...` | Resend/Svix webhook signing secret for inbound email events |
 | `NODE_ENV` | `production` | Disables silent email stubs |
 
 Invitation buttons resolve to:
@@ -41,11 +43,26 @@ In your DNS provider (and mirrored in the Resend dashboard → Domain):
 
 Until SPF/DKIM verify as green in Resend, messages may land in spam or be rejected.
 
+### Resend inbound replies for payment claims
+
+Payment claim verification works through Resend inbound email. `PAYMENT_VERIFICATION_REPLY_TO` must be an address that Resend receives, not just the normal sender `auth@antikra.com`.
+
+Use either:
+
+- A Resend-managed inbox like `payments@<id>.resend.app`.
+- A custom inbound subdomain such as `payments@inbound.antikra.com` after its MX record points to Resend.
+
+The Resend webhook must send `email.received` events to:
+
+`https://rembeh-api.antikra.com/api/v1/billing/webhooks/resend`
+
+If the reply-to stays as `auth@antikra.com` without inbound MX routing, Gmail replies can bounce with `554 5.7.1 Relay access denied`.
+
 ## Quick checks
 
 ```bash
 # On EC2 — confirm web URL (do not print secrets)
-grep -E '^(WEB_APP_URL|APP_WEB_URL|FRONTEND_URL|EMAIL_FROM|EMAIL_FROM_NAME|NODE_ENV)=' /home/ubuntu/rembeh/.env
+grep -E '^(WEB_APP_URL|APP_WEB_URL|FRONTEND_URL|EMAIL_FROM|EMAIL_FROM_NAME|PAYMENT_VERIFICATION_REPLY_TO|NODE_ENV)=' /home/ubuntu/rembeh/.env
 
 # After inviting a staff member, open the email and confirm the Accept button host is rembeh.antikra.com
 ```

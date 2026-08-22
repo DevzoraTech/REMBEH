@@ -95,31 +95,75 @@ class LoanLocal {
 
   /// Create from API JSON
   factory LoanLocal.fromJson(Map<String, dynamic> json) {
+    final application = json['application'] is Map<String, dynamic>
+        ? json['application'] as Map<String, dynamic>
+        : const <String, dynamic>{};
+    final principal = _double(json['principal']);
+    final outstanding = _double(json['outstandingBalance'] ?? json['balance']);
     return LoanLocal(
       id: json['id'] as String,
       tenantId: json['tenantId'] as String,
       branchId: json['branchId'] as String,
       customerId: json['customerId'] as String,
-      loanProductId: json['loanProductId'] as String,
-      principal: (json['principal'] as num).toDouble(),
-      interestRate: (json['interestRate'] as num).toDouble(),
-      termMonths: json['termMonths'] as int,
-      installmentAmount: (json['installmentAmount'] as num).toDouble(),
-      status: json['status'] as String,
+      loanProductId:
+          _text(json['loanProductId']) ??
+          _text(application['loanProductTemplateId']) ??
+          '',
+      principal: principal,
+      interestRate: _double(
+        json['interestRate'] ?? application['interestRatePercent'],
+      ),
+      termMonths:
+          _int(json['termMonths']) ??
+          ((_int(application['durationDays']) ?? 30) / 30).ceil(),
+      installmentAmount: _double(json['installmentAmount']),
+      status: _localStatus(_text(json['status']) ?? 'ACTIVE'),
       disbursedAt: json['disbursedAt'] != null
           ? DateTime.parse(json['disbursedAt'] as String)
           : null,
       maturityDate: json['maturityDate'] != null
           ? DateTime.parse(json['maturityDate'] as String)
           : null,
-      outstandingBalance: json['outstandingBalance'] != null
-          ? (json['outstandingBalance'] as num).toDouble()
-          : null,
+      outstandingBalance: outstanding,
       totalPaid: json['totalPaid'] != null
-          ? (json['totalPaid'] as num).toDouble()
-          : null,
+          ? _double(json['totalPaid'])
+          : principal > outstanding
+          ? principal - outstanding
+          : 0,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
   }
+}
+
+String _localStatus(String status) {
+  switch (status.toUpperCase()) {
+    case 'CURRENT':
+    case 'DISBURSED':
+      return 'ACTIVE';
+    case 'IN_ARREARS':
+      return 'OVERDUE';
+    case 'PAID_OFF':
+    case 'CLOSED':
+      return 'COMPLETED';
+    default:
+      return status.toUpperCase();
+  }
+}
+
+String? _text(Object? value) {
+  if (value == null) return null;
+  final text = value.toString().trim();
+  return text.isEmpty ? null : text;
+}
+
+double _double(Object? value) {
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+int? _int(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '');
 }

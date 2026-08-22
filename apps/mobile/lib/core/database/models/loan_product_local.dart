@@ -62,18 +62,32 @@ class LoanProductLocal {
 
   /// Create from API JSON
   factory LoanProductLocal.fromJson(Map<String, dynamic> json) {
+    final term = _int(json['termValue']) ?? 1;
     return LoanProductLocal(
       id: json['id'] as String,
       tenantId: json['tenantId'] as String,
       name: json['name'] as String,
-      minAmount: (json['minAmount'] as num).toDouble(),
-      maxAmount: (json['maxAmount'] as num).toDouble(),
-      interestRate: (json['interestRate'] as num).toDouble(),
-      minTerm: json['minTerm'] as int,
-      maxTerm: json['maxTerm'] as int,
-      isActive: json['isActive'] as bool,
+      minAmount: _double(json['minAmount']),
+      maxAmount: _double(json['maxAmount']),
+      interestRate: _double(
+        json['interestRate'] ?? json['interestRatePercent'],
+      ),
+      minTerm: _int(json['minTerm']) ?? term,
+      maxTerm: _int(json['maxTerm']) ?? term,
+      isActive: json['isActive'] as bool? ?? true,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
   }
+}
+
+double _double(Object? value) {
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+int? _int(Object? value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '');
 }

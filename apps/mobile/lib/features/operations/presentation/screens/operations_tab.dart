@@ -22,6 +22,7 @@ class OperationsTab extends StatelessWidget {
     required this.agents,
     required this.activities,
     required this.dayOpen,
+    required this.dayActive,
     required this.onRefresh,
     required this.onOpenDay,
     required this.onReceiveCapital,
@@ -42,7 +43,15 @@ class OperationsTab extends StatelessWidget {
   final List<AgentFloatPosition> agents;
   final List<OperationActivity> activities;
 
+  /// True only when the operation is OPEN.
   final bool dayOpen;
+
+  /// True when the operation is either OPEN or CLOSING.
+  ///
+  /// We deliberately keep this separate from [dayOpen]:
+  /// - OPEN: normal cash movement is allowed.
+  /// - CLOSING: reconciliation remains accessible.
+  final bool dayActive;
 
   final Future<void> Function() onRefresh;
 
@@ -110,6 +119,45 @@ class OperationsTab extends StatelessWidget {
       (sum, agent) => sum + agent.remainingFloat,
     );
 
+    final canReceiveCapital =
+        dayOpen &&
+        session.hasPermission(
+          'operation.cash.topup',
+        );
+
+    final canAllocateFloat =
+        dayOpen &&
+        session.hasPermission(
+          'operation.float.manage',
+        );
+
+    final canRecordExpense =
+        dayOpen &&
+        session.hasPermission(
+          'operation.expense.create',
+        );
+
+    final canReconcile =
+        dayActive &&
+        session.hasPermission(
+          'operation.close',
+        );
+
+    /*
+     * Agent positions must remain accessible even when the branch
+     * has moved into CLOSING.
+     *
+     * The manager may need to inspect agent positions while
+     * reconciling the day.
+     *
+     * This is intentionally NOT tied to canUseFieldWorkspace.
+     */
+    final canOpenAgentPositions =
+        onOpenAgentPositions != null &&
+        session.hasPermission(
+          'operation.float.manage',
+        );
+
     return RefreshIndicator(
       color: forestEmerald,
       onRefresh: onRefresh,
@@ -127,48 +175,57 @@ class OperationsTab extends StatelessWidget {
           OperationsStatusCard(
             operation: data,
           ),
+
           const SizedBox(height: 10),
+
           CashPositionCard(
             operation: data,
           ),
+
+          /*
+           * Do not hide this section merely because no float has
+           * been issued yet.
+           *
+           * Managers still need an entry point for allocating float
+           * and opening agent positions.
+           */
           if (agents.isNotEmpty) ...[
             const SizedBox(height: 10),
             AgentFloatCard(
               agents: agents,
               totalFloat: totalFloat,
-              canAllocate:
-                  dayOpen &&
-                  session.hasPermission(
-                    'operation.float.manage',
-                  ),
+              canAllocate: canAllocateFloat,
               onAllocateFloat: onAllocateFloat,
-              onViewAll: onOpenAgentPositions,
+              onViewAll: canOpenAgentPositions
+                  ? onOpenAgentPositions
+                  : null,
             ),
           ],
+
           const SizedBox(height: 10),
+
+          /*
+           * Operational cash actions are available only while OPEN.
+           *
+           * Once the branch enters CLOSING:
+           * - receive capital is locked
+           * - allocate float is locked
+           * - record expense is locked
+           * - agent positions remain viewable
+           */
           OperationsActionsCard(
-            canReceiveCapital:
-                dayOpen &&
-                session.hasPermission(
-                  'operation.cash.topup',
-                ),
-            canAllocateFloat:
-                dayOpen &&
-                session.hasPermission(
-                  'operation.float.manage',
-                ),
-            canRecordExpense:
-                dayOpen &&
-                session.hasPermission(
-                  'operation.expense.create',
-                ),
-            canOpenAgentPositions:
-                onOpenAgentPositions != null,
+            canReceiveCapital: canReceiveCapital,
+            canAllocateFloat: canAllocateFloat,
+            canRecordExpense: canRecordExpense,
+            canOpenAgentPositions: canOpenAgentPositions,
             onReceiveCapital: onReceiveCapital,
             onAllocateFloat: onAllocateFloat,
             onRecordExpense: onRecordExpense,
-            onAgentPositions: onOpenAgentPositions,
+            onAgentPositions: canOpenAgentPositions
+                ? onOpenAgentPositions
+                : null,
           ),
+
           if (activities.isNotEmpty) ...[
             const SizedBox(height: 10),
             OperationsActivityCard(
@@ -176,10 +233,18 @@ class OperationsTab extends StatelessWidget {
               onViewAll: onViewActivity,
             ),
           ],
-          if (dayOpen &&
-              session.hasPermission(
-                'operation.close',
-              )) ...[
+
+          /*
+           * Reconciliation must remain visible for both:
+           *
+           * OPEN    -> manager can begin reconciliation
+           * CLOSING -> manager can resume reconciliation
+           *
+           * Previously this was hidden once the backend changed
+           * status to CLOSING, which trapped the manager outside
+           * the reconciliation flow.
+           */
+          if (canReconcile) ...[
             const SizedBox(height: 10),
             ReconcileCloseCard(
               onTap: onCloseDay,

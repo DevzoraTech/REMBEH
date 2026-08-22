@@ -83,24 +83,43 @@ class CustomerLocal {
 
   /// Create from API JSON
   factory CustomerLocal.fromJson(Map<String, dynamic> json) {
+    final fullName = _text(json['fullName']);
+    final names = _splitName(fullName);
     return CustomerLocal(
       id: json['id'] as String,
       tenantId: json['tenantId'] as String,
       branchId: json['branchId'] as String,
-      nin: json['nin'] as String?,
-      firstName: json['firstName'] as String,
-      lastName: json['lastName'] as String,
-      phone: json['phone'] as String,
-      email: json['email'] as String?,
-      village: json['village'] as String?,
-      subCounty: json['subCounty'] as String?,
-      district: json['district'] as String?,
+      nin: _text(json['nin']) ?? _text(json['nationalId']),
+      firstName: _text(json['firstName']) ?? names.$1,
+      lastName: _text(json['lastName']) ?? names.$2,
+      phone: _text(json['phone']) ?? '',
+      email: _text(json['email']),
+      village: _text(json['village']),
+      subCounty: _text(json['subCounty']),
+      district: _text(json['district']),
       dateOfBirth: json['dateOfBirth'] != null
           ? DateTime.parse(json['dateOfBirth'] as String)
           : null,
-      gender: json['gender'] as String?,
+      gender: _text(json['gender']),
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );
   }
+}
+
+(String, String) _splitName(String? fullName) {
+  final parts = (fullName ?? '')
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((part) => part.isNotEmpty)
+      .toList();
+  if (parts.isEmpty) return ('Unknown', '');
+  if (parts.length == 1) return (parts.first, '');
+  return (parts.first, parts.skip(1).join(' '));
+}
+
+String? _text(Object? value) {
+  if (value == null) return null;
+  final text = value.toString().trim();
+  return text.isEmpty ? null : text;
 }

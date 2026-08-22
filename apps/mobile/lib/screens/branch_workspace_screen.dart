@@ -1,19 +1,32 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config.dart';
 import '../core/constants/expense_categories.dart';
+import '../core/sync/sync_service.dart';
 import '../features/applications_list/data/applications_live_store.dart';
+import '../features/more/presentation/screens/more_tab.dart';
 import '../features/operations/domain/models/agent_float_position.dart';
 import '../features/operations/domain/models/operation_activity.dart';
 import '../features/operations/domain/models/operation_dashboard_data.dart';
 import '../features/operations/domain/utils/operation_formatters.dart';
+import '../features/operations/presentation/screens/agent_positions_screen.dart';
+import '../features/operations/presentation/screens/day_reconciliation_screen.dart';
+import '../features/operations/presentation/screens/expenses_screen.dart';
 import '../features/operations/presentation/screens/operations_tab.dart';
+import '../features/operations/presentation/report/screens/daily_report_screen.dart';
 import '../features/repayment/data/repayments_live_store.dart';
+import '../features/salaries/presentation/screens/salaries_screen.dart';
+import '../features/shortages/presentation/screens/shortages_screen.dart';
 import '../features/workspace/presentation/widgets/branch_header.dart';
 import '../features/workspace/presentation/widgets/workspace_bottom_navigation.dart';
+import '../features/agents/presentation/screens/agents_screen.dart';
 import '../models/field_records.dart';
 import '../services/api_client.dart';
+import '../services/auth_service.dart';
+import '../services/offline_cache_store.dart';
 import '../services/session_activity.dart';
 import '../services/session_cleanup.dart';
 import '../services/session_store.dart';
@@ -21,34 +34,37 @@ import '../theme.dart';
 import '../utils/account_access.dart';
 import '../utils/friendly_errors.dart';
 import '../utils/money.dart';
+import '../widgets/day_start_sync_dialog.dart';
 import 'account_locked_screen.dart';
 import 'agent_shell.dart';
 import 'home/manager_owner_home_tab.dart';
 import 'home/needs_attention_section.dart';
 import 'home/recent_activity_list.dart';
-import 'login_screen.dart';
 import 'loan_application/new_loan_application_screen.dart';
+import 'login_screen.dart';
 import 'records/records_tab.dart';
 import 'register_customer_screen.dart';
 import 'search/search_tab.dart';
+import 'profile/agent_profile_screen.dart';
 
 class BranchWorkspaceScreen extends StatefulWidget {
-  const BranchWorkspaceScreen({
-    super.key,
-    required this.session,
-  });
+  const BranchWorkspaceScreen({super.key, required this.session});
 
   final RembehSession session;
 
   @override
-  State<BranchWorkspaceScreen> createState() =>
-      _BranchWorkspaceScreenState();
+  State<BranchWorkspaceScreen> createState() => _BranchWorkspaceScreenState();
 }
 
 class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   final SessionStore _store = SessionStore();
+  final OfflineCacheStore _offlineCache = OfflineCacheStore.instance;
 
   late final ApiClient _api = ApiClient(_store);
+  late final SyncService _syncService = SyncService(
+    AuthService(sessionStore: _store),
+    rembehApiBaseUrl,
+  );
 
   late final SessionActivityController _activity;
 
@@ -71,10 +87,12 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   int _index = 0;
 
   RecordsSection _recordsSection = RecordsSection.repayments;
+
   RecordsFilter _recordsFilter = RecordsFilter.all;
 
   bool _searchAutofocus = false;
   int _searchFocusToken = 0;
+  bool _syncPromptScheduled = false;
 
   String _date = _todayLabel();
 
@@ -94,6 +112,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
     _activity.start();
 
+    unawaited(_initialiseOfflineSync());
     unawaited(_startLiveStores());
     unawaited(_load());
   }
@@ -101,7 +120,58 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   @override
   void dispose() {
     _activity.dispose();
+    _syncService.dispose();
     super.dispose();
+  }
+
+  Future<void> _initialiseOfflineSync() async {
+    try {
+      await _syncService.initialize();
+    } catch (_) {
+      // The workspace still works from the last cached snapshot.
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      unawaited(_showDayStartSyncIfNeeded());
+    });
+  }
+
+  Future<void> _showDayStartSyncIfNeeded() async {
+    if (_syncPromptScheduled || !mounted) {
+      return;
+    }
+
+    _syncPromptScheduled = true;
+    final prefs = await SharedPreferences.getInstance();
+    final key =
+        'rembeh.manager_day_start_sync.$_cacheTenantId.$_cacheBranchId.${_todayLabel()}';
+    if (prefs.getBool(key) == true || !mounted) {
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => DayStartSyncDialog(
+        syncService: _syncService,
+        onSyncComplete: () {
+          unawaited(prefs.setBool(key, true));
+          Navigator.of(dialogContext).pop();
+          unawaited(_load());
+        },
+        onSkip: () {
+          unawaited(prefs.setBool(key, true));
+          Navigator.of(dialogContext).pop();
+        },
+      ),
+    );
   }
 
   // ===========================================================================
@@ -123,21 +193,27 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   Map<String, dynamic>? get _report =>
       _data?['report'] as Map<String, dynamic>?;
 
-  String get _branchName =>
-      _string(_branch?['name']) ??
-      widget.session.branchName ??
-      'Branch';
+  String get _cacheTenantId => widget.session.tenantId ?? 'tenant';
 
-  bool get _dayOpen =>
-      _string(_operation?['status']) == 'OPEN';
+  String get _cacheBranchId => widget.session.branchId ?? 'all';
+
+  String get _branchName =>
+      _string(_branch?['name']) ?? widget.session.branchName ?? 'Branch';
+
+  String get _operationStatus =>
+      (_string(_operation?['status']) ?? '').toUpperCase();
+
+  bool get _dayOpen => _operationStatus == 'OPEN';
+
+  bool get _dayClosing => _operationStatus == 'CLOSING';
+
+  bool get _dayActive => _dayOpen || _dayClosing;
 
   // ===========================================================================
   // INITIAL DATA LOADING
   // ===========================================================================
 
-  Future<void> _load({
-    String? date,
-  }) async {
+  Future<void> _load({String? date}) async {
     final targetDate = date ?? _date;
 
     setState(() {
@@ -167,7 +243,11 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         }
       }
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
+
+      unawaited(_cacheBranchOperationSnapshot(targetDate, data, agents));
 
       setState(() {
         _date = targetDate;
@@ -182,10 +262,32 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
       if (isAccountAccessBlockedMessage(message)) {
         await _handleAccountBlocked(message);
+
         return;
       }
 
-      if (!mounted) return;
+      final cached = await _readCachedBranchOperation(targetDate);
+      if (cached != null) {
+        if (!mounted) {
+          return;
+        }
+
+        setState(() {
+          _date = targetDate;
+          _data = cached.data;
+          _agents = cached.agents;
+          _loading = false;
+          _error = null;
+          _notice = 'Offline mode: showing last synced branch data.';
+        });
+
+        unawaited(_loadManagementData());
+        return;
+      }
+
+      if (!mounted) {
+        return;
+      }
 
       setState(() {
         _error = message;
@@ -197,31 +299,27 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   Future<void> _startLiveStores() async {
     try {
       await Future.wait([
-        ApplicationsLiveStore.instance.start(
-          widget.session,
-        ),
-        RepaymentsLiveStore.instance.start(
-          widget.session,
-        ),
+        ApplicationsLiveStore.instance.start(widget.session),
+        RepaymentsLiveStore.instance.start(widget.session),
       ]);
     } catch (_) {
-      // Management data continues loading independently.
+      // Management data continues
+      // loading independently.
     }
   }
 
   Future<void> _loadManagementData() async {
     final session = widget.session;
+    final cached = await _readManagementCache();
 
-    var customers = _customers;
-    var loans = _loans;
-    var repayments = _repayments;
-    var reports = _reports;
-    var shortages = _shortages;
-    var summary = _collectionSummary;
+    var customers = cached.customers ?? _customers;
+    var loans = cached.loans ?? _loans;
+    var repayments = cached.repayments ?? _repayments;
+    var reports = cached.reports ?? _reports;
+    var shortages = cached.shortages ?? _shortages;
+    var summary = cached.summary ?? _collectionSummary;
 
-    Future<T?> optional<T>(
-      Future<T> Function() loader,
-    ) async {
+    Future<T?> optional<T>(Future<T> Function() loader) async {
       try {
         return await loader();
       } catch (_) {
@@ -231,30 +329,22 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
     final results = await Future.wait<Object?>([
       if (session.hasPermission('customer.read'))
-        optional(
-          () => _api.listCustomers(session),
-        )
+        optional(() => _api.listCustomers(session))
       else
         Future<Object?>.value(null),
 
       if (session.hasPermission('loan.read'))
-        optional(
-          () => _api.listLoans(session),
-        )
+        optional(() => _api.listLoans(session))
       else
         Future<Object?>.value(null),
 
       if (session.hasPermission('collection.read'))
-        optional(
-          () => _api.listRepayments(session),
-        )
+        optional(() => _api.listRepayments(session))
       else
         Future<Object?>.value(null),
 
       if (session.hasPermission('collection.read'))
-        optional(
-          () => _api.getCollectionSummary(session),
-        )
+        optional(() => _api.getCollectionSummary(session))
       else
         Future<Object?>.value(null),
 
@@ -283,9 +373,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     }
 
     if (results[1] is List) {
-      loans = (results[1] as List)
-          .whereType<Map<String, dynamic>>()
-          .toList();
+      loans = (results[1] as List).whereType<Map<String, dynamic>>().toList();
     }
 
     if (results[2] is List) {
@@ -299,9 +387,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     }
 
     if (results[4] is List) {
-      reports = (results[4] as List)
-          .whereType<Map<String, dynamic>>()
-          .toList();
+      reports = (results[4] as List).whereType<Map<String, dynamic>>().toList();
     }
 
     if (results[5] is List) {
@@ -310,7 +396,20 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           .toList();
     }
 
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
+
+    unawaited(
+      _cacheManagementData(
+        customers: customers,
+        loans: loans,
+        repayments: repayments,
+        reports: reports,
+        shortages: shortages,
+        summary: summary,
+      ),
+    );
 
     setState(() {
       _customers = customers;
@@ -322,35 +421,111 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     });
   }
 
+  String _managerCacheKey(String name, {String? date}) {
+    final scopeDate = date == null ? '' : '.$date';
+    return 'manager.$_cacheTenantId.$_cacheBranchId$scopeDate.$name';
+  }
+
+  Future<void> _cacheBranchOperationSnapshot(
+    String date,
+    Map<String, dynamic> data,
+    List<Map<String, dynamic>> agents,
+  ) async {
+    try {
+      await _offlineCache.putJson(_managerCacheKey('operation', date: date), {
+        'data': data,
+        'agents': agents,
+      });
+    } catch (_) {
+      // Keep the live workspace flow even if cache persistence fails.
+    }
+  }
+
+  Future<_BranchOperationSnapshot?> _readCachedBranchOperation(
+    String date,
+  ) async {
+    final payload = await _offlineCache.getPayload(
+      _managerCacheKey('operation', date: date),
+    );
+    final map = _mapPayload(payload);
+    final data = _mapPayload(map?['data']);
+    if (data == null) {
+      return null;
+    }
+
+    return _BranchOperationSnapshot(
+      data: data,
+      agents: _mapListPayload(map?['agents']) ?? const [],
+    );
+  }
+
+  Future<void> _cacheManagementData({
+    required List<Map<String, dynamic>> customers,
+    required List<Map<String, dynamic>> loans,
+    required List<Map<String, dynamic>> repayments,
+    required List<Map<String, dynamic>> reports,
+    required List<Map<String, dynamic>> shortages,
+    required Map<String, dynamic>? summary,
+  }) async {
+    try {
+      await _offlineCache.putJson(_managerCacheKey('customers'), customers);
+      await _offlineCache.putJson(_managerCacheKey('loans'), loans);
+      await _offlineCache.putJson(_managerCacheKey('repayments'), repayments);
+      await _offlineCache.putJson(_managerCacheKey('reports'), reports);
+      await _offlineCache.putJson(_managerCacheKey('shortages'), shortages);
+      if (summary != null) {
+        await _offlineCache.putJson(_managerCacheKey('summary'), summary);
+      }
+    } catch (_) {
+      // A failed cache write must not overwrite the previously working copy.
+    }
+  }
+
+  Future<_ManagementSnapshot> _readManagementCache() async {
+    final payloads = await Future.wait<Object?>([
+      _offlineCache.getPayload(_managerCacheKey('customers')),
+      _offlineCache.getPayload(_managerCacheKey('loans')),
+      _offlineCache.getPayload(_managerCacheKey('repayments')),
+      _offlineCache.getPayload(_managerCacheKey('reports')),
+      _offlineCache.getPayload(_managerCacheKey('shortages')),
+      _offlineCache.getPayload(_managerCacheKey('summary')),
+    ]);
+
+    return _ManagementSnapshot(
+      customers: _mapListPayload(payloads[0]),
+      loans: _mapListPayload(payloads[1]),
+      repayments: _mapListPayload(payloads[2]),
+      reports: _mapListPayload(payloads[3]),
+      shortages: _mapListPayload(payloads[4]),
+      summary: _mapPayload(payloads[5]),
+    );
+  }
+
   // ===========================================================================
   // SESSION
   // ===========================================================================
 
   Future<void> _handleSessionCleared() async {
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
 
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (_) => const LoginScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
       (_) => false,
     );
   }
 
-  Future<void> _handleAccountBlocked(
-    String message,
-  ) async {
+  Future<void> _handleAccountBlocked(String message) async {
     await clearTenantScopedClientState();
     await _store.clear();
 
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
 
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (_) => AccountLockedScreen(
-          message: message,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => AccountLockedScreen(message: message)),
       (_) => false,
     );
   }
@@ -359,28 +534,87 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     await clearTenantScopedClientState();
     await _store.clear();
 
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
 
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (_) => const LoginScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
       (_) => false,
     );
   }
 
   // ===========================================================================
-  // NAVIGATION
+  // FEATURE NAVIGATION
   // ===========================================================================
 
-  void _openTab(
-    int index, {
-    bool searchAutofocus = false,
-  }) {
+  Future<void> _openExpenses() async {
+    final operation = _operation;
+
+    if (operation == null) {
+      setState(() {
+        _error = 'Today’s branch operation is not available.';
+      });
+
+      return;
+    }
+
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => ExpensesScreen(
+          session: widget.session,
+          branchId: widget.session.branchId,
+          date: _date,
+          operation: operation,
+          dayOpen: _dayOpen,
+        ),
+      ),
+    );
+
+    if (changed == true && mounted) {
+      await _load();
+    }
+  }
+
+  Future<void> _openAgentPositions() async {
+    final operation = _operation;
+
+    if (operation == null) {
+      setState(() {
+        _error = 'Today’s branch operation is not available.';
+      });
+
+      return;
+    }
+
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => AgentPositionsScreen(
+          session: widget.session,
+          branchId: widget.session.branchId,
+          date: _date,
+          agents: _agents,
+          operation: operation,
+          dayOpen: _dayOpen,
+        ),
+      ),
+    );
+
+    if (changed == true) {
+      await _load();
+    }
+  }
+
+  // ===========================================================================
+  // WORKSPACE NAVIGATION
+  // ===========================================================================
+
+  void _openTab(int index, {bool searchAutofocus = false}) {
     unawaited(_activity.touch());
 
     setState(() {
       _index = index;
+
       _searchAutofocus = searchAutofocus;
 
       if (searchAutofocus) {
@@ -401,28 +635,39 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     _openTab(2);
   }
 
+  // ignore: unused_element
   void _openFieldTools() {
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => AgentShell(
-          session: widget.session,
-        ),
-      ),
+      MaterialPageRoute(builder: (_) => AgentShell(session: widget.session)),
     );
   }
 
+  Future<void> _openAgents() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(builder: (_) => AgentsScreen(session: widget.session)),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    await _load();
+  }
+
   Future<void> _openNewCustomer() async {
-    final created =
-        await Navigator.of(context).push<bool>(
+    final created = await Navigator.of(context, rootNavigator: true).push<bool>(
       MaterialPageRoute(
-        builder: (_) => RegisterCustomerScreen(
-          session: widget.session,
-        ),
+        builder: (_) => RegisterCustomerScreen(session: widget.session),
       ),
     );
 
+    if (!mounted) {
+      return;
+    }
+
     if (created == true) {
       _setNotice('Borrower saved.');
+
       await _loadManagementData();
     }
   }
@@ -430,14 +675,96 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   Future<void> _openNewLoan() async {
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => NewLoanApplicationScreen(
-          session: widget.session,
-        ),
+        builder: (_) => NewLoanApplicationScreen(session: widget.session),
       ),
     );
 
     await _startLiveStores();
     await _loadManagementData();
+  }
+
+  Future<void> _openDayReconciliation() async {
+    final operation = _operation;
+
+    if (operation == null) {
+      return;
+    }
+
+    final operationDate = _string(operation['operationDate']) ?? _date;
+
+    final result = await Navigator.of(context).push<Map<String, dynamic>>(
+      MaterialPageRoute(
+        builder: (_) => DayReconciliationScreen(
+          session: widget.session,
+          branchId: widget.session.branchId,
+          date: operationDate,
+        ),
+      ),
+    );
+
+    if (result != null) {
+      final nextDate = _string(result['date']) ?? _todayLabel();
+
+      _setNotice('Report sent. Next day is open.');
+
+      await _load(date: nextDate);
+    } else {
+      // The manager may have updated
+      // the count and saved the draft.
+      await _load(date: operationDate);
+    }
+  }
+
+  Future<void> _openReportsList() async {
+    await _loadManagementData();
+
+    if (!mounted) {
+      return;
+    }
+
+    if (_reports.isEmpty) {
+      _setNotice('No daily reports found for this branch yet.');
+
+      return;
+    }
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) =>
+            _ReportsListScreen(session: widget.session, reports: _reports),
+      ),
+    );
+  }
+
+  Future<void> _openShortagesList() async {
+    await _loadManagementData();
+
+    if (!mounted) {
+      return;
+    }
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => ShortagesScreen(
+          session: widget.session,
+          branchId: widget.session.branchId,
+        ),
+      ),
+    );
+
+    await _loadManagementData();
+  }
+
+  void _openBranchDetails() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => _BranchDetailsScreen(
+          session: widget.session,
+          branch: _branch,
+          operation: _operation,
+        ),
+      ),
+    );
   }
 
   // ===========================================================================
@@ -447,8 +774,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   List<AttentionItem> _buildAttentionItems() {
     final items = <AttentionItem>[];
 
-    final overdueLoans =
-        _loans.where(_loanNeedsAttention).length;
+    final overdueLoans = _loans.where(_loanNeedsAttention).length;
 
     if (overdueLoans > 0) {
       items.add(
@@ -457,8 +783,11 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           iconColor: warmGold,
           title: 'Overdue loans',
           subtitle:
-              '$overdueLoans loan${overdueLoans == 1 ? '' : 's'} '
-              'need${overdueLoans == 1 ? 's' : ''} attention',
+              '$overdueLoans loan'
+              '${overdueLoans == 1 ? '' : 's'} '
+              'need'
+              '${overdueLoans == 1 ? 's' : ''} '
+              'attention',
           count: '$overdueLoans',
           onTap: () {
             _openRecords(
@@ -470,8 +799,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       );
     }
 
-    final openShortages =
-        _shortages.where(_shortageOpen).length;
+    final openShortages = _shortages.where(_shortageOpen).length;
 
     if (openShortages > 0) {
       items.add(
@@ -481,18 +809,17 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           title: 'Unreconciled shortages',
           subtitle:
               '$openShortages shortage'
-              '${openShortages == 1 ? '' : 's'} pending',
+              '${openShortages == 1 ? '' : 's'} '
+              'pending',
           count: '$openShortages',
           onTap: () => _openTab(4),
         ),
       );
     }
 
-    final reportsToSend =
-        _reports.where(_reportNeedsManagerSubmission).length;
+    final reportsToSend = _reports.where(_reportNeedsManagerSubmission).length;
 
-    if (reportsToSend > 0 ||
-        _reportNeedsManagerSubmission(_report)) {
+    if (reportsToSend > 0 || _reportNeedsManagerSubmission(_report)) {
       items.add(
         AttentionItem(
           icon: Icons.receipt_long_outlined,
@@ -508,46 +835,37 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   }
 
   List<ActivityItem> _buildRecentActivities() {
-    return _repayments.take(5).map(
-      (repayment) {
-        final clientName =
-            _string(repayment['clientName']) ??
-            'Borrower';
+    return _repayments.take(5).map((repayment) {
+      final clientName = _string(repayment['clientName']) ?? 'Borrower';
 
-        final amount =
-            _num(repayment['amount']).round();
+      final amount = _num(repayment['amount']).round();
 
-        final recordedAt =
-            _string(repayment['recordedAt']);
+      final recordedAt = _string(repayment['recordedAt']);
 
-        final time = recordedAt != null
-            ? formatActivityTime(
-                DateTime.tryParse(recordedAt) ??
-                    DateTime.now(),
-                DateTime.now(),
-              )
-            : 'Recently';
+      final time = recordedAt != null
+          ? formatActivityTime(
+              DateTime.tryParse(recordedAt) ?? DateTime.now(),
+              DateTime.now(),
+            )
+          : 'Recently';
 
-        return ActivityItem(
-          initials: _getInitials(clientName),
-          initialsBackgroundColor: forestEmerald,
-          name: clientName,
-          activityType: 'Repayment',
-          time: time.split(',').last.trim(),
-          amount: amount,
-          isIncome: true,
-        );
-      },
-    ).toList();
+      return ActivityItem(
+        initials: _getInitials(clientName),
+        initialsBackgroundColor: forestEmerald,
+        name: clientName,
+        activityType: 'Repayment',
+        time: time.split(',').last.trim(),
+        amount: amount,
+        isIncome: true,
+      );
+    }).toList();
   }
 
   String _getInitials(String name) {
     final parts = name
         .trim()
         .split(RegExp(r'\s+'))
-        .where(
-          (part) => part.isNotEmpty,
-        )
+        .where((part) => part.isNotEmpty)
         .toList();
 
     if (parts.isEmpty) {
@@ -557,15 +875,11 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     if (parts.length == 1) {
       final value = parts.first;
 
-      return value
-          .substring(
-            0,
-            value.length.clamp(0, 2),
-          )
-          .toUpperCase();
+      return value.substring(0, value.length.clamp(0, 2)).toUpperCase();
     }
 
-    return '${parts.first[0]}${parts.last[0]}'
+    return '${parts.first[0]}'
+            '${parts.last[0]}'
         .toUpperCase();
   }
 
@@ -580,84 +894,55 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       return null;
     }
 
-    final positions =
-        _buildAgentFloatPositions();
+    final positions = _buildAgentFloatPositions();
 
-    final floatWithAgents =
-        positions.fold<num>(
+    final floatWithAgents = positions.fold<num>(
       0,
-      (sum, position) =>
-          sum + position.remainingFloat,
+      (sum, position) => sum + position.remainingFloat,
     );
 
     return OperationDashboardData(
-      status:
-          _string(operation['status']) ??
-          'OPEN',
+      status: _string(operation['status']) ?? 'OPEN',
 
       operationDate:
-          DateTime.tryParse(
-            _string(
-                  operation['operationDate'],
-                ) ??
-                '',
-          ) ??
+          DateTime.tryParse(_string(operation['operationDate']) ?? '') ??
           DateTime.now(),
 
-      openingCash: _firstAvailableMoney(
-        operation,
-        const [
-          'openingBalance',
-          'openingCash',
-        ],
-      ),
+      openingCash: _firstAvailableMoney(operation, const [
+        'openingBalance',
+        'openingCash',
+      ]),
 
-      capitalReceived: _firstAvailableMoney(
-        operation,
-        const [
-          'cashAddedToday',
-          'topUpsTotal',
-          'capitalReceived',
-          'capitalReceivedTotal',
-        ],
-      ),
+      capitalReceived: _firstAvailableMoney(operation, const [
+        'cashAddedToday',
+        'topUpsTotal',
+        'capitalReceived',
+        'capitalReceivedTotal',
+      ]),
 
-      collections: _firstAvailableMoney(
-        operation,
-        const [
-          'collectionsReceived',
-          'collectionsTotal',
-        ],
-      ),
+      collections: _firstAvailableMoney(operation, const [
+        'collectionsReceived',
+        'collectionsTotal',
+      ]),
 
-      processingFees: _firstAvailableMoney(
-        operation,
-        const [
-          'processingFeesTotal',
-          'processingFeesReceived',
-          'applicationFeesCollected',
-          'feesCollected',
-        ],
-      ),
+      processingFees: _firstAvailableMoney(operation, const [
+        'processingFeesTotal',
+        'processingFeesReceived',
+        'applicationFeesCollected',
+        'feesCollected',
+      ]),
 
-      expenses: _firstAvailableMoney(
-        operation,
-        const [
-          'expensesTotal',
-          'expenses',
-        ],
-      ),
+      expenses: _firstAvailableMoney(operation, const [
+        'expensesTotal',
+        'expenses',
+      ]),
 
-      floatWithAgents:
-          floatWithAgents,
+      floatWithAgents: floatWithAgents,
 
-      expectedClosingCash: _firstAvailableMoney(
-        operation,
-        const [
-          'expectedClosingBalance',
-          'expectedClosingCash',
-        ],
-      ),
+      expectedClosingCash: _firstAvailableMoney(operation, const [
+        'expectedClosingBalance',
+        'expectedClosingCash',
+      ]),
 
       openedBy:
           _string(operation['openedByName']) ??
@@ -666,67 +951,51 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           widget.session.userName,
 
       openedAt: DateTime.tryParse(
-        _string(operation['openedAt']) ??
-            _string(operation['createdAt']) ??
-            '',
+        _string(operation['openedAt']) ?? _string(operation['createdAt']) ?? '',
       ),
     );
   }
 
   List<AgentFloatPosition> _buildAgentFloatPositions() {
-    return _agents.map(
-      (agent) {
-        return AgentFloatPosition(
-          id: _string(agent['id']) ?? '',
-          name:
-              _string(agent['name']) ??
-              'Agent',
-          remainingFloat: _firstAvailableMoney(
-            agent,
-            const [
-              'floatRemaining',
-              'remainingFloat',
-              'floatToday',
-            ],
-          ),
-        );
-      },
-    ).toList();
+    return _agents.map((agent) {
+      return AgentFloatPosition(
+        id: _string(agent['id']) ?? '',
+        name: _string(agent['name']) ?? 'Agent',
+        remainingFloat: _firstAvailableMoney(agent, const [
+          'floatRemaining',
+          'remainingFloat',
+          'floatToday',
+        ]),
+      );
+    }).toList();
   }
 
   List<OperationActivity> _buildOperationActivities() {
-    return _repayments.take(5).map(
-      (repayment) {
-        final clientName =
-            _string(repayment['clientName']) ??
-            'Borrower';
+    return _repayments.take(5).map((repayment) {
+      final clientName = _string(repayment['clientName']) ?? 'Borrower';
 
-        final recordedAt =
-            DateTime.tryParse(
-          _string(repayment['recordedAt']) ??
-              '',
-        );
+      final recordedAt = DateTime.tryParse(
+        _string(repayment['recordedAt']) ?? '',
+      );
 
-        return OperationActivity(
-          title: 'Repayment',
-          description: clientName,
-          time: operationTime(recordedAt),
-          amount:
-              _num(repayment['amount']),
-          isIncome: true,
-        );
-      },
-    ).toList();
+      return OperationActivity(
+        title: 'Repayment',
+        description: clientName,
+        time: operationTime(recordedAt),
+        amount: _num(repayment['amount']),
+        isIncome: true,
+      );
+    }).toList();
   }
 
   // ===========================================================================
   // OPERATION COMMANDS
   // ===========================================================================
 
-  Future<void> _runSave(
-    Future<void> Function() action,
-  ) async {
-    if (_saving) return;
+  Future<void> _runSave(Future<void> Function() action) async {
+    if (_saving) {
+      return;
+    }
 
     setState(() {
       _saving = true;
@@ -738,15 +1007,17 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       await action();
       await _load();
     } catch (error) {
-      final message =
-          friendlyErrorMessage(error);
+      final message = friendlyErrorMessage(error);
 
       if (isAccountAccessBlockedMessage(message)) {
         await _handleAccountBlocked(message);
+
         return;
       }
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       setState(() {
         _error = message;
@@ -763,7 +1034,9 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   }
 
   void _setNotice(String message) {
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
 
     setState(() {
       _notice = message;
@@ -771,10 +1044,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   }
 
   Future<void> _reviewPendingClosure() async {
-    final operationDate =
-        _string(
-      _pendingClosure?['operationDate'],
-    );
+    final operationDate = _string(_pendingClosure?['operationDate']);
 
     if (operationDate == null) {
       return;
@@ -785,57 +1055,47 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       'Today opens after that.',
     );
 
-    await _load(
-      date: operationDate,
-    );
+    await _load(date: operationDate);
 
     if (!mounted ||
-        !widget.session.hasPermission(
-          'operation.close',
-        ) ||
-        !_dayOpen) {
+        !widget.session.hasPermission('operation.close') ||
+        !_dayActive) {
       return;
     }
 
-    await _showCloseDaySheet();
+    await _openDayReconciliation();
   }
 
   Future<void> _sendAwaitingReport() async {
-    final operationDate =
-        _string(
-      _awaitingReport?['operationDate'],
-    );
+    final operationDate = _string(_awaitingReport?['operationDate']);
 
     if (operationDate == null) {
       return;
     }
 
-    await _load(
-      date: operationDate,
-    );
+    await _load(date: operationDate);
 
-    if (!mounted) return;
-
-    await _submitCloseReport(
-      returnToToday: true,
-    );
-  }
-
-  Future<void> _submitCloseReport({
-    bool returnToToday = false,
-  }) async {
-    final reportId =
-        _string(_report?['id']);
-
-    if (reportId == null) {
-      setState(() {
-        _error =
-            'Close report is not ready yet.';
-      });
+    if (!mounted) {
       return;
     }
 
-    if (_saving) return;
+    await _submitCloseReport(returnToToday: true);
+  }
+
+  Future<void> _submitCloseReport({bool returnToToday = false}) async {
+    final reportId = _string(_report?['id']);
+
+    if (reportId == null) {
+      setState(() {
+        _error = 'Close report is not ready yet.';
+      });
+
+      return;
+    }
+
+    if (_saving) {
+      return;
+    }
 
     setState(() {
       _saving = true;
@@ -844,30 +1104,29 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     });
 
     try {
-      await _api.managerConfirmOperationReport(
+      final response = await _api.managerConfirmOperationReport(
         session: widget.session,
         reportId: reportId,
       );
 
-      _setNotice(
-        'Close report sent.',
-      );
+      final nextDate =
+          _string(response['date']) ?? (returnToToday ? _todayLabel() : _date);
 
-      await _load(
-        date: returnToToday
-            ? _todayLabel()
-            : _date,
-      );
+      _setNotice('Report sent. Next day is open.');
+
+      await _load(date: nextDate);
     } catch (error) {
-      final message =
-          friendlyErrorMessage(error);
+      final message = friendlyErrorMessage(error);
 
       if (isAccountAccessBlockedMessage(message)) {
         await _handleAccountBlocked(message);
+
         return;
       }
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       setState(() {
         _error = message;
@@ -884,58 +1143,36 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   // ===========================================================================
   // OPERATION SHEETS
   //
-  // These remain here temporarily.
-  // Next refactor moves them to:
-  // features/operations/presentation/sheets/
+  // Still temporary.
+  // These should later move into the operations feature.
   // ===========================================================================
 
   Future<void> _showOpenDaySheet() async {
-    final opening =
-        TextEditingController(
-      text: _moneyText(
-        _num(_data?['openingBalance']),
-      ),
+    final opening = TextEditingController(
+      text: _moneyText(_num(_data?['openingBalance'])),
     );
 
-    final cashAdded =
-        TextEditingController();
+    final cashAdded = TextEditingController();
 
-    final notes =
-        TextEditingController();
+    final notes = TextEditingController();
 
     await _showFormSheet(
       title: 'Open day',
       actionLabel: 'Open Day',
       builder: (_) => [
-        _AmountField(
-          controller: opening,
-          label: 'Opening cash',
-        ),
+        _AmountField(controller: opening, label: 'Opening cash'),
         const SizedBox(height: 10),
-        _AmountField(
-          controller: cashAdded,
-          label: 'Cash added',
-        ),
+        _AmountField(controller: cashAdded, label: 'Cash added'),
         const SizedBox(height: 10),
-        _TextField(
-          controller: notes,
-          label: 'Notes',
-          maxLines: 3,
-        ),
+        _TextField(controller: notes, label: 'Notes', maxLines: 3),
       ],
       onSubmit: () async {
-        final openingAmount =
-            _parseAmount(opening.text);
+        final openingAmount = _parseAmount(opening.text);
 
-        final cashAddedAmount =
-            _parseAmount(cashAdded.text) ??
-            0;
+        final cashAddedAmount = _parseAmount(cashAdded.text) ?? 0;
 
-        if (openingAmount == null ||
-            openingAmount < 0) {
-          throw ApiException(
-            'Enter opening cash.',
-          );
+        if (openingAmount == null || openingAmount < 0) {
+          throw ApiException('Enter opening cash.');
         }
 
         await _api.openBranchOperation(
@@ -947,44 +1184,29 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           notes: notes.text,
         );
 
-        _setNotice(
-          'Day opened.',
-        );
+        _setNotice('Day opened.');
       },
     );
   }
 
   Future<void> _showTopUpSheet() async {
-    final amount =
-        TextEditingController();
+    final amount = TextEditingController();
 
-    final description =
-        TextEditingController();
+    final description = TextEditingController();
 
     await _showFormSheet(
       title: 'Receive capital',
       actionLabel: 'Save',
       builder: (_) => [
-        _AmountField(
-          controller: amount,
-          label: 'Amount',
-        ),
+        _AmountField(controller: amount, label: 'Amount'),
         const SizedBox(height: 10),
-        _TextField(
-          controller: description,
-          label: 'Reason',
-          maxLines: 3,
-        ),
+        _TextField(controller: description, label: 'Reason', maxLines: 3),
       ],
       onSubmit: () async {
-        final value =
-            _parseAmount(amount.text);
+        final value = _parseAmount(amount.text);
 
-        if (value == null ||
-            value <= 0) {
-          throw ApiException(
-            'Enter the amount.',
-          );
+        if (value == null || value <= 0) {
+          throw ApiException('Enter the amount.');
         }
 
         await _api.recordBranchTopUp(
@@ -992,79 +1214,55 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           branchId: widget.session.branchId,
           date: _date,
           amount: value,
-          description:
-              description.text,
+          description: description.text,
         );
 
-        _setNotice(
-          'Capital received.',
-        );
+        _setNotice('Capital received.');
       },
     );
   }
 
+  // ignore: unused_element
   Future<void> _showExpenseSheet() async {
-    final amount =
-        TextEditingController();
+    final amount = TextEditingController();
 
-    final description =
-        TextEditingController();
+    final description = TextEditingController();
 
-    var category =
-        'TRANSPORT';
+    var category = 'TRANSPORT';
 
     await _showFormSheet(
       title: 'Record expense',
       actionLabel: 'Save',
-      builder: (
-        setModalState,
-      ) =>
-          [
+      builder: (setModalState) => [
         DropdownButtonFormField<String>(
           initialValue: category,
-          items: expenseCategories.map(
-            (item) {
-              return DropdownMenuItem(
-                value: item,
-                child: Text(
-                  _label(item),
-                ),
-              );
-            },
-          ).toList(),
+          items: expenseCategories.map((item) {
+            return DropdownMenuItem<String>(
+              value: item,
+              child: Text(_label(item)),
+            );
+          }).toList(),
           onChanged: (value) {
-            if (value == null) return;
+            if (value == null) {
+              return;
+            }
 
             setModalState(() {
               category = value;
             });
           },
-          decoration:
-              const InputDecoration(
-            labelText: 'Category',
-          ),
+          decoration: const InputDecoration(labelText: 'Category'),
         ),
         const SizedBox(height: 10),
-        _AmountField(
-          controller: amount,
-          label: 'Amount',
-        ),
+        _AmountField(controller: amount, label: 'Amount'),
         const SizedBox(height: 10),
-        _TextField(
-          controller: description,
-          label: 'Details',
-          maxLines: 3,
-        ),
+        _TextField(controller: description, label: 'Details', maxLines: 3),
       ],
       onSubmit: () async {
-        final value =
-            _parseAmount(amount.text);
+        final value = _parseAmount(amount.text);
 
-        if (value == null ||
-            value <= 0) {
-          throw ApiException(
-            'Enter the amount.',
-          );
+        if (value == null || value <= 0) {
+          throw ApiException('Enter the amount.');
         }
 
         await _api.recordBranchExpense(
@@ -1073,47 +1271,33 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           date: _date,
           category: category,
           amount: value,
-          description:
-              description.text,
+          description: description.text,
         );
 
-        _setNotice(
-          'Expense saved.',
-        );
+        _setNotice('Expense saved.');
       },
     );
   }
 
-  Future<void> _showFloatSheet({
-    required bool addMore,
-  }) async {
+  Future<void> _showFloatSheet({required bool addMore}) async {
     if (_agents.isEmpty) {
       setState(() {
-        _error =
-            'No agents found.';
+        _error = 'No agents found.';
       });
+
       return;
     }
 
-    final amount =
-        TextEditingController();
+    final amount = TextEditingController();
 
-    final notes =
-        TextEditingController();
+    final notes = TextEditingController();
 
-    var agentId =
-        _string(_agents.first['id']) ??
-        '';
+    var agentId = _string(_agents.first['id']) ?? '';
 
     await _showFormSheet(
-      title: addMore
-          ? 'Add float'
-          : 'Allocate float',
+      title: addMore ? 'Add float' : 'Allocate float',
       actionLabel: 'Save',
-      builder: (
-        setModalState,
-      ) =>
-          [
+      builder: (setModalState) => [
         _AgentPicker(
           agents: _agents,
           value: agentId,
@@ -1124,32 +1308,19 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           },
         ),
         const SizedBox(height: 10),
-        _AmountField(
-          controller: amount,
-          label: 'Amount',
-        ),
+        _AmountField(controller: amount, label: 'Amount'),
         const SizedBox(height: 10),
-        _TextField(
-          controller: notes,
-          label: 'Notes',
-          maxLines: 3,
-        ),
+        _TextField(controller: notes, label: 'Notes', maxLines: 3),
       ],
       onSubmit: () async {
-        final value =
-            _parseAmount(amount.text);
+        final value = _parseAmount(amount.text);
 
         if (agentId.isEmpty) {
-          throw ApiException(
-            'Choose an agent.',
-          );
+          throw ApiException('Choose an agent.');
         }
 
-        if (value == null ||
-            value <= 0) {
-          throw ApiException(
-            'Enter amount.',
-          );
+        if (value == null || value <= 0) {
+          throw ApiException('Enter amount.');
         }
 
         await _api.recordAgentFloat(
@@ -1161,41 +1332,31 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           addMore: addMore,
         );
 
-        _setNotice(
-          addMore
-              ? 'Float added.'
-              : 'Float allocated.',
-        );
+        _setNotice(addMore ? 'Float added.' : 'Float allocated.');
       },
     );
   }
 
+  // ignore: unused_element
   Future<void> _showReturnSheet() async {
     if (_agents.isEmpty) {
       setState(() {
-        _error =
-            'No agents found.';
+        _error = 'No agents found.';
       });
+
       return;
     }
 
-    final amount =
-        TextEditingController();
+    final amount = TextEditingController();
 
-    final notes =
-        TextEditingController();
+    final notes = TextEditingController();
 
-    var agentId =
-        _string(_agents.first['id']) ??
-        '';
+    var agentId = _string(_agents.first['id']) ?? '';
 
     await _showFormSheet(
       title: 'Agent return',
       actionLabel: 'Save',
-      builder: (
-        setModalState,
-      ) =>
-          [
+      builder: (setModalState) => [
         _AgentPicker(
           agents: _agents,
           value: agentId,
@@ -1206,32 +1367,19 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           },
         ),
         const SizedBox(height: 10),
-        _AmountField(
-          controller: amount,
-          label: 'Cash returned',
-        ),
+        _AmountField(controller: amount, label: 'Cash returned'),
         const SizedBox(height: 10),
-        _TextField(
-          controller: notes,
-          label: 'Notes',
-          maxLines: 3,
-        ),
+        _TextField(controller: notes, label: 'Notes', maxLines: 3),
       ],
       onSubmit: () async {
-        final value =
-            _parseAmount(amount.text);
+        final value = _parseAmount(amount.text);
 
         if (agentId.isEmpty) {
-          throw ApiException(
-            'Choose an agent.',
-          );
+          throw ApiException('Choose an agent.');
         }
 
-        if (value == null ||
-            value < 0) {
-          throw ApiException(
-            'Enter amount.',
-          );
+        if (value == null || value < 0) {
+          throw ApiException('Enter amount.');
         }
 
         await _api.recordAgentReturn(
@@ -1243,178 +1391,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           notes: notes.text,
         );
 
-        _setNotice(
-          'Return saved.',
-        );
-      },
-    );
-  }
-
-  Future<void> _showCloseDaySheet() async {
-    final operation =
-        _operation;
-
-    if (operation == null) {
-      return;
-    }
-
-    final operationDate =
-        _string(
-          operation['operationDate'],
-        ) ??
-        _date;
-
-    final expected =
-        _num(
-      operation['expectedClosingBalance'],
-    );
-
-    final counted =
-        TextEditingController(
-      text: _moneyText(expected),
-    );
-
-    final notes =
-        TextEditingController();
-
-    var responsibleId =
-        _agents.isNotEmpty
-        ? _string(
-              _agents.first['id'],
-            ) ??
-            ''
-        : '';
-
-    var variance = 0;
-
-    void recompute(
-      StateSetter setModalState,
-    ) {
-      final countedValue =
-          _parseAmount(counted.text) ??
-          0;
-
-      setModalState(() {
-        variance =
-            (countedValue - expected)
-                .round();
-      });
-    }
-
-    await _showFormSheet(
-      title:
-          'Reconcile & close day',
-      actionLabel:
-          'Close Day',
-      builder: (
-        setModalState,
-      ) =>
-          [
-        _MoneyPreview(
-          label:
-              'Expected closing cash',
-          amount:
-              expected,
-        ),
-
-        const SizedBox(height: 10),
-
-        _AmountField(
-          controller:
-              counted,
-          label:
-              'Counted branch cash',
-          onChanged: (_) {
-            recompute(
-              setModalState,
-            );
-          },
-        ),
-
-        const SizedBox(height: 10),
-
-        _VariancePreview(
-          variance:
-              variance,
-        ),
-
-        if (variance < 0) ...[
-          const SizedBox(
-            height: 10,
-          ),
-          _AgentPicker(
-            agents:
-                _agents,
-            value:
-                responsibleId,
-            label:
-                'Responsible person',
-            onChanged: (value) {
-              setModalState(() {
-                responsibleId =
-                    value;
-              });
-            },
-          ),
-        ],
-
-        const SizedBox(height: 10),
-
-        _TextField(
-          controller:
-              notes,
-          label:
-              'Notes',
-          maxLines:
-              3,
-        ),
-      ],
-      onSubmit: () async {
-        final countedValue =
-            _parseAmount(
-          counted.text,
-        );
-
-        if (countedValue == null ||
-            countedValue < 0) {
-          throw ApiException(
-            'Enter counted cash.',
-          );
-        }
-
-        final closeVariance =
-            (countedValue - expected)
-                .round();
-
-        if (closeVariance != 0 &&
-            notes.text.trim().isEmpty) {
-          throw ApiException(
-            'Add a note for the difference.',
-          );
-        }
-
-        if (closeVariance < 0 &&
-            responsibleId.isEmpty) {
-          throw ApiException(
-            'Choose who will account for the shortage.',
-          );
-        }
-
-        await _api.closeBranchOperation(
-          session: widget.session,
-          branchId: widget.session.branchId,
-          date: operationDate,
-          countedCash: countedValue,
-          notes: notes.text,
-          shortageResponsibleUserId:
-              closeVariance < 0
-              ? responsibleId
-              : null,
-        );
-
-        _setNotice(
-          'Day closed.',
-        );
+        _setNotice('Return saved.');
       },
     );
   }
@@ -1422,12 +1399,8 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   Future<void> _showFormSheet({
     required String title,
     required String actionLabel,
-    required List<Widget> Function(
-      StateSetter setModalState,
-    )
-    builder,
-    required Future<void> Function()
-    onSubmit,
+    required List<Widget> Function(StateSetter setModalState) builder,
+    required Future<void> Function() onSubmit,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -1437,133 +1410,83 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         var localError = '';
 
         return StatefulBuilder(
-          builder: (
-            context,
-            setModalState,
-          ) {
+          builder: (context, setModalState) {
             return Padding(
               padding: EdgeInsets.only(
                 left: 16,
                 right: 16,
                 top: 16,
-                bottom:
-                    MediaQuery.of(context)
-                            .viewInsets
-                            .bottom +
-                        16,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 16,
               ),
               child: SingleChildScrollView(
                 child: Column(
-                  mainAxisSize:
-                      MainAxisSize.min,
-                  crossAxisAlignment:
-                      CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Row(
                       children: [
                         Expanded(
                           child: Text(
                             title,
-                            style:
-                                const TextStyle(
-                              color:
-                                  midnightNavy,
-                              fontSize:
-                                  18,
-                              fontWeight:
-                                  FontWeight.w900,
+                            style: const TextStyle(
+                              color: midnightNavy,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
                             ),
                           ),
                         ),
                         IconButton(
-                          onPressed:
-                              _saving
+                          onPressed: _saving
                               ? null
                               : () {
-                                  Navigator.of(
-                                    context,
-                                  ).pop();
+                                  Navigator.of(context).pop();
                                 },
-                          icon:
-                              const Icon(
-                            Icons.close,
-                          ),
+                          icon: const Icon(Icons.close),
                         ),
                       ],
                     ),
 
-                    const SizedBox(
-                      height: 8,
-                    ),
+                    const SizedBox(height: 8),
 
-                    ...builder(
-                      setModalState,
-                    ),
+                    ...builder(setModalState),
 
                     if (localError.isNotEmpty) ...[
-                      const SizedBox(
-                        height: 10,
-                      ),
-                      _Banner(
-                        message:
-                            localError,
-                        tone:
-                            _BannerTone.error,
-                      ),
+                      const SizedBox(height: 10),
+                      _Banner(message: localError, tone: _BannerTone.error),
                     ],
 
-                    const SizedBox(
-                      height: 14,
-                    ),
+                    const SizedBox(height: 14),
 
                     FilledButton(
-                      onPressed:
-                          _saving
+                      onPressed: _saving
                           ? null
                           : () async {
                               setModalState(() {
-                                localError =
-                                    '';
+                                localError = '';
                               });
 
                               try {
-                                await _runSave(
-                                  onSubmit,
-                                );
+                                await _runSave(onSubmit);
 
-                                if (context
-                                    .mounted) {
-                                  Navigator.of(
-                                    context,
-                                  ).pop();
+                                if (context.mounted) {
+                                  Navigator.of(context).pop();
                                 }
                               } catch (error) {
                                 setModalState(() {
-                                  localError =
-                                      friendlyErrorMessage(
-                                    error,
-                                  );
+                                  localError = friendlyErrorMessage(error);
                                 });
                               }
                             },
-                      child:
-                          _saving
+                      child: _saving
                           ? const SizedBox(
-                              width:
-                                  18,
-                              height:
-                                  18,
-                              child:
-                                  CircularProgressIndicator(
-                                strokeWidth:
-                                    2,
-                                color:
-                                    Colors.white,
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
                               ),
                             )
-                          : Text(
-                              actionLabel,
-                            ),
+                          : Text(actionLabel),
                     ),
                   ],
                 ),
@@ -1590,74 +1513,44 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           child: Column(
             children: [
               BranchHeader(
-                workspaceName:
-                    widget.session.workspaceName,
-                branchName:
-                    _branchName,
-                roleName:
-                    widget.session.roleName ??
-                    'Team',
-                loading:
-                    _loading,
-                onRefresh:
-                    _load,
-                onSignOut:
-                    _signOut,
+                workspaceName: widget.session.workspaceName,
+                branchName: _branchName,
+                roleName: widget.session.roleName ?? 'Team',
+                loading: _loading,
+                onRefresh: _load,
+                onSignOut: _signOut,
               ),
 
               if (_notice != null)
-                _Banner(
-                  message:
-                      _notice!,
-                  tone:
-                      _BannerTone.success,
-                ),
+                _Banner(message: _notice!, tone: _BannerTone.success),
 
               if (_error != null)
-                _Banner(
-                  message:
-                      _error!,
-                  tone:
-                      _BannerTone.error,
-                ),
+                _Banner(message: _error!, tone: _BannerTone.error),
 
               Expanded(
-                child:
-                    _loading &&
-                            _data == null
-                        ? const Center(
-                            child:
-                                CircularProgressIndicator(
-                              color:
-                                  forestEmerald,
-                            ),
-                          )
-                        : IndexedStack(
-                            index:
-                                _index,
-                            children: [
-                              _buildHomeTab(),
-                              _buildOperationsTab(),
-                              _buildRecordsTab(),
-                              _buildClientsTab(),
-                              _buildMoreTab(),
-                            ],
-                          ),
+                child: _loading && _data == null
+                    ? const Center(
+                        child: CircularProgressIndicator(color: forestEmerald),
+                      )
+                    : IndexedStack(
+                        index: _index,
+                        children: [
+                          _buildHomeTab(),
+                          _buildOperationsTab(),
+                          _buildRecordsTab(),
+                          _buildClientsTab(),
+                          _buildMoreTab(),
+                        ],
+                      ),
               ),
             ],
           ),
         ),
 
-        bottomNavigationBar:
-            WorkspaceBottomNavigation(
-          selectedIndex:
-              _index,
+        bottomNavigationBar: WorkspaceBottomNavigation(
+          selectedIndex: _index,
           onChanged: (index) {
-            _openTab(
-              index,
-              searchAutofocus:
-                  index == 3,
-            );
+            _openTab(index, searchAutofocus: index == 3);
           },
         ),
       ),
@@ -1669,309 +1562,194 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   // ===========================================================================
 
   Widget _buildHomeTab() {
-    final today =
-        DateTime.now();
+    final today = DateTime.now();
 
-    final loansIssuedToday =
-        _loans.where(
-      (loan) {
-        final raw =
-            _string(
-          loan['disbursedAt'],
-        );
+    final loansIssuedToday = _loans.where((loan) {
+      final raw = _string(loan['disbursedAt']);
 
-        if (raw == null) {
-          return false;
-        }
+      if (raw == null) {
+        return false;
+      }
 
-        final date =
-            DateTime.tryParse(raw);
+      final date = DateTime.tryParse(raw);
 
-        return date != null &&
-            _isSameDay(
-              date,
-              today,
-            );
-      },
-    );
+      return date != null && _isSameDay(date, today);
+    });
 
-    final newBorrowersToday =
-        _customers.where(
-      (customer) {
-        final raw =
-            _string(
-          customer['createdAt'],
-        );
+    final newBorrowersToday = _customers.where((customer) {
+      final raw = _string(customer['createdAt']);
 
-        if (raw == null) {
-          return false;
-        }
+      if (raw == null) {
+        return false;
+      }
 
-        final date =
-            DateTime.tryParse(raw);
+      final date = DateTime.tryParse(raw);
 
-        return date != null &&
-            _isSameDay(
-              date,
-              today,
-            );
-      },
-    );
+      return date != null && _isSameDay(date, today);
+    });
 
     return ManagerOwnerHomeTab(
-      session:
-          widget.session,
+      session: widget.session,
 
-      onOpenProfile:
-          _signOut,
+      onOpenProfile: _signOut,
 
       onOpenSearch: () {
-        _openTab(
-          3,
-          searchAutofocus: true,
-        );
+        _openTab(3, searchAutofocus: true);
       },
 
-      onOpenRecords:
-          _openRecords,
+      onOpenRecords: _openRecords,
 
-      onOpenNewLoan:
-          widget.session.hasPermission(
-        'loan.create',
-      )
-              ? () {
-                  unawaited(
-                    _openNewLoan(),
-                  );
-                }
-              : () {},
+      onOpenNewLoan: widget.session.hasPermission('loan.create')
+          ? () {
+              unawaited(_openNewLoan());
+            }
+          : () {},
 
-      onOpenNewBorrower:
-          widget.session.hasPermission(
-        'customer.create',
-      )
-              ? () {
-                  unawaited(
-                    _openNewCustomer(),
-                  );
-                }
-              : () {},
+      onOpenNewBorrower: widget.session.hasPermission('customer.create')
+          ? () {
+              unawaited(_openNewCustomer());
+            }
+          : () {},
 
-      onOpenDailyOps:
-          () => _openTab(1),
+      onOpenDailyOps: () => _openTab(1),
 
       onOpenRecordRepayment: () {
         _openRecords(
-          section:
-              RecordsSection.repayments,
-          filter:
-              RecordsFilter.all,
+          section: RecordsSection.repayments,
+          filter: RecordsFilter.all,
         );
       },
 
       onOpenFindClient: () {
-        _openTab(
-          3,
-          searchAutofocus: true,
-        );
+        _openTab(3, searchAutofocus: true);
       },
 
-      collectedToday: _num(
-        _collectionSummary?[
-            'amountCollectedToday'],
-      ).round(),
+      collectedToday: _num(_collectionSummary?['amountCollectedToday']).round(),
 
-      expensesToday: _num(
-        _operation?[
-            'expensesTotal'],
-      ).round(),
+      expensesToday: _num(_operation?['expensesTotal']).round(),
 
       shortagesAmount: _sumMoney(
-        _shortages.where(
-          _shortageOpen,
-        ),
+        _shortages.where(_shortageOpen),
         'amountOutstanding',
       ).round(),
 
-      expectedClosingCash: _num(
-        _operation?[
-            'expectedClosingBalance'],
-      ).round(),
+      expectedClosingCash: _num(_operation?['expectedClosingBalance']).round(),
 
-      loansIssuedToday:
-          loansIssuedToday.length,
+      loansIssuedToday: loansIssuedToday.length,
 
-      amountIssuedToday: _sumMoney(
-        loansIssuedToday,
-        'principal',
-      ).round(),
+      amountIssuedToday: _sumMoney(loansIssuedToday, 'principal').round(),
 
-      overdueLoansCount:
-          _loans
-              .where(
-                _loanNeedsAttention,
-              )
-              .length,
+      overdueLoansCount: _loans.where(_loanNeedsAttention).length,
 
-      activeLoansCount:
-          _loans
-              .where(
-                _loanIsActive,
-              )
-              .length,
+      activeLoansCount: _loans.where(_loanIsActive).length,
 
-      borrowersDueToday: _num(
-        _collectionSummary?[
-            'dueTodayCount'],
-      ).round(),
+      borrowersDueToday: _num(_collectionSummary?['dueTodayCount']).round(),
 
-      newBorrowersToday:
-          newBorrowersToday.length,
+      newBorrowersToday: newBorrowersToday.length,
 
-      overdueBorrowersCount:
-          _customers
-              .where(
-                (customer) =>
-                    customer[
-                        'hasOverdueLoan'] ==
-                    true,
-              )
-              .length,
+      overdueBorrowersCount: _customers
+          .where((customer) => customer['hasOverdueLoan'] == true)
+          .length,
 
-      activeBorrowersCount:
-          _customers
-              .where(
-                (customer) =>
-                    _num(
-                      customer[
-                          'activeLoanCount'],
-                    ) >
-                    0,
-              )
-              .length,
+      activeBorrowersCount: _customers
+          .where((customer) => _num(customer['activeLoanCount']) > 0)
+          .length,
 
-      attentionItems:
-          _buildAttentionItems(),
+      attentionItems: _buildAttentionItems(),
 
-      recentActivities:
-          _buildRecentActivities(),
+      recentActivities: _buildRecentActivities(),
     );
   }
 
   Widget _buildOperationsTab() {
     return OperationsTab(
-      session:
-          widget.session,
+      session: widget.session,
 
-      operation:
-          _buildOperationDashboardData(),
+      operation: _buildOperationDashboardData(),
 
-      agents:
-          _buildAgentFloatPositions(),
+      agents: _buildAgentFloatPositions(),
 
-      activities:
-          _buildOperationActivities(),
+      activities: _buildOperationActivities(),
 
-      dayOpen:
-          _dayOpen,
+      dayOpen: _dayOpen,
 
-      onRefresh:
-          _load,
+      dayActive: _dayActive,
 
-      onOpenDay:
-          _showOpenDaySheet,
+      onRefresh: _load,
 
-      onReceiveCapital:
-          _showTopUpSheet,
+      onOpenDay: _showOpenDaySheet,
 
-      onRecordExpense:
-          _showExpenseSheet,
+      onReceiveCapital: _showTopUpSheet,
 
-      onAllocateFloat: () {
-        unawaited(
-          _showFloatSheet(
-            addMore: false,
-          ),
-        );
+      onRecordExpense: () {
+        unawaited(_openExpenses());
       },
 
-      onCloseDay:
-          _showCloseDaySheet,
+      onAllocateFloat: () {
+        unawaited(_showFloatSheet(addMore: false));
+      },
+
+      onCloseDay: () {
+        unawaited(_openDayReconciliation());
+      },
 
       onViewActivity: () {
         _openRecords(
-          section:
-              RecordsSection.repayments,
-          filter:
-              RecordsFilter.all,
+          section: RecordsSection.repayments,
+          filter: RecordsFilter.all,
         );
       },
 
-      pendingClosureMessage:
-          _pendingClosure == null
+      pendingClosureMessage: _pendingClosure == null
           ? null
           : '${_dateLabel(_pendingClosure?['operationDate'])} '
-              'has activity that must be closed before today can open.',
+                'has activity that must be closed before today can open.',
 
-      awaitingReportMessage:
-          _awaitingReport == null
+      awaitingReportMessage: _awaitingReport == null
           ? null
           : '${_dateLabel(_awaitingReport?['operationDate'])} '
-              'is closed. Send its report before today can open.',
+                'is closed. Send its report before today can open.',
 
-      onPendingClosure:
-          _pendingClosure == null
+      onPendingClosure: _pendingClosure == null
           ? null
           : () {
-              unawaited(
-                _reviewPendingClosure(),
-              );
+              unawaited(_reviewPendingClosure());
             },
 
-      onSendAwaitingReport:
-          _awaitingReport == null
+      onSendAwaitingReport: _awaitingReport == null
           ? null
           : () {
-              unawaited(
-                _sendAwaitingReport(),
-              );
+              unawaited(_sendAwaitingReport());
             },
 
       onOpenAgentPositions:
-          widget.session.canUseFieldWorkspace
-          ? _openFieldTools
+          widget.session.hasPermission('operation.float.manage')
+          ? () {
+              unawaited(_openAgentPositions());
+            }
           : null,
     );
   }
 
   Widget _buildRecordsTab() {
     return RecordsTab(
-      session:
-          widget.session,
-      section:
-          _recordsSection,
-      filter:
-          _recordsFilter,
+      session: widget.session,
+      section: _recordsSection,
+      filter: _recordsFilter,
 
       onSectionChanged: (section) {
-        unawaited(
-          _activity.touch(),
-        );
+        unawaited(_activity.touch());
 
         setState(() {
-          _recordsSection =
-              section;
+          _recordsSection = section;
         });
       },
 
       onFilterChanged: (filter) {
-        unawaited(
-          _activity.touch(),
-        );
+        unawaited(_activity.touch());
 
         setState(() {
-          _recordsFilter =
-              filter;
+          _recordsFilter = filter;
         });
       },
     );
@@ -1979,427 +1757,184 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
   Widget _buildClientsTab() {
     return SearchTab(
-      autofocus:
-          _searchAutofocus,
-      focusToken:
-          _searchFocusToken,
+      autofocus: _searchAutofocus,
+      focusToken: _searchFocusToken,
     );
   }
 
   Widget _buildMoreTab() {
-    return _MoreTab(
-      session:
-          widget.session,
+    return MoreTab(
+      onAgentsTap: () {
+        unawaited(_openAgents());
+      },
 
-      agents:
-          _agents,
-
-      customers:
-          _customers,
-
-      loans:
-          _loans,
-
-      repayments:
-          _repayments,
-
-      reports:
-          _reports,
-
-      shortages:
-          _shortages,
-
-      onRefresh:
-          _load,
-
-      onOpenOperations:
-          () => _openTab(1),
-
-      onOpenClients: () {
-        _openTab(
-          3,
-          searchAutofocus: true,
+      onSalariesTap: () {
+        Navigator.of(context).push<void>(
+          MaterialPageRoute(
+            builder: (_) => SalariesScreen(
+              session: widget.session,
+              branchId: widget.session.branchId,
+            ),
+          ),
         );
       },
 
-      onOpenRecords:
-          _openRecords,
+      onShortagesTap: () {
+        unawaited(_openShortagesList());
+      },
 
-      onOpenFieldTools:
-          widget.session.canUseFieldWorkspace
-          ? _openFieldTools
-          : null,
+      onReportsTap: () {
+        unawaited(_openReportsList());
+      },
 
-      onNewCustomer:
-          widget.session.hasPermission(
-        'customer.create',
-      )
-              ? () {
-                  unawaited(
-                    _openNewCustomer(),
-                  );
-                }
-              : null,
+      onBranchTap: () {
+        _openBranchDetails();
+      },
 
-      onNewLoan:
-          widget.session.hasPermission(
-        'loan.create',
-      )
-              ? () {
-                  unawaited(
-                    _openNewLoan(),
-                  );
-                }
-              : null,
+      onSubscriptionTap: () {
+        _setNotice('Subscription management is handled on the web dashboard.');
+      },
+
+      onSettingsTap: () {
+        Navigator.of(context).push<void>(
+          MaterialPageRoute(
+            builder: (_) => AgentProfileScreen(session: widget.session),
+          ),
+        );
+      },
+
+      onSupportTap: () {
+        _setNotice('Contact ANTIKRA support from the web dashboard.');
+      },
     );
   }
 }
 
-// =============================================================================
-// MORE TAB
-//
-// Temporary location.
-// This is the next feature that should move to:
-//
-// lib/features/more/presentation/screens/more_tab.dart
-// =============================================================================
-
-class _MoreTab extends StatelessWidget {
-  const _MoreTab({
-    required this.session,
-    required this.agents,
-    required this.customers,
-    required this.loans,
-    required this.repayments,
-    required this.reports,
-    required this.shortages,
-    required this.onRefresh,
-    required this.onOpenOperations,
-    required this.onOpenClients,
-    required this.onOpenRecords,
-    this.onOpenFieldTools,
-    this.onNewCustomer,
-    this.onNewLoan,
-  });
+class _ReportsListScreen extends StatelessWidget {
+  const _ReportsListScreen({required this.session, required this.reports});
 
   final RembehSession session;
-
-  final List<Map<String, dynamic>> agents;
-  final List<Map<String, dynamic>> customers;
-  final List<Map<String, dynamic>> loans;
-  final List<Map<String, dynamic>> repayments;
   final List<Map<String, dynamic>> reports;
-  final List<Map<String, dynamic>> shortages;
-
-  final Future<void> Function() onRefresh;
-
-  final VoidCallback onOpenOperations;
-  final VoidCallback onOpenClients;
-
-  final void Function({
-    RecordsSection section,
-    RecordsFilter filter,
-  })
-  onOpenRecords;
-
-  final VoidCallback? onOpenFieldTools;
-  final VoidCallback? onNewCustomer;
-  final VoidCallback? onNewLoan;
 
   @override
   Widget build(BuildContext context) {
-    final openShortages =
-        shortages
-            .where(_shortageOpen)
-            .toList();
+    return Scaffold(
+      backgroundColor: softIvory,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        title: const Text('Daily reports'),
+      ),
+      body: ListView.separated(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 28),
+        itemCount: reports.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 10),
+        itemBuilder: (context, index) {
+          final report = reports[index];
+          final reportId = _string(report['id']);
+          final status = _string(report['status']) ?? 'MANAGER_REVIEW';
 
-    return RefreshIndicator(
-      color: forestEmerald,
-      onRefresh: onRefresh,
-      child: ListView(
-        padding:
-            const EdgeInsets.all(16),
+          return _MoreDataTile(
+            icon: Icons.description_outlined,
+            title: _string(report['reportNumber']) ?? 'Report ${index + 1}',
+            subtitle:
+                '${_dateLabel(report['operationDate'])} • '
+                '${_label(status)}',
+            trailing: _moneyOrDash(
+              report['closingBalance'] ?? report['expectedClosingBalance'],
+            ),
+            tone: _reportStatusColor(status),
+            onTap: reportId == null
+                ? null
+                : () {
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute(
+                        builder: (_) => DailyReportScreen(
+                          session: session,
+                          reportId: reportId,
+                        ),
+                      ),
+                    );
+                  },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _BranchDetailsScreen extends StatelessWidget {
+  const _BranchDetailsScreen({
+    required this.session,
+    required this.branch,
+    required this.operation,
+  });
+
+  final RembehSession session;
+  final Map<String, dynamic>? branch;
+  final Map<String, dynamic>? operation;
+
+  @override
+  Widget build(BuildContext context) {
+    final branchName =
+        _string(branch?['name']) ?? session.branchName ?? 'Branch';
+    final branchAddress =
+        _string(branch?['address']) ?? session.branchAddress ?? 'Not set';
+    final status = _string(operation?['status']) ?? 'No active day';
+
+    return Scaffold(
+      backgroundColor: softIvory,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        title: const Text('Branch details'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(14, 14, 14, 28),
         children: [
-          const _SectionHeading(
-            title:
-                'Manager workspace',
-          ),
-
-          _ActionGrid(
-            actions: [
-              _BranchAction(
-                label:
-                    'Operations',
-                icon:
-                    Icons.today_outlined,
-                onTap:
-                    onOpenOperations,
-              ),
-
-              _BranchAction(
-                label:
-                    'Borrowers',
-                icon:
-                    Icons.people_outline,
-                onTap:
-                    onOpenClients,
-              ),
-
-              _BranchAction(
-                label:
-                    'Repayments',
-                icon:
-                    Icons.payments_outlined,
-                onTap: () {
-                  onOpenRecords(
-                    section:
-                        RecordsSection.repayments,
-                    filter:
-                        RecordsFilter.all,
-                  );
-                },
-              ),
-
-              _BranchAction(
-                label:
-                    'Applications',
-                icon:
-                    Icons.assignment_outlined,
-                onTap: () {
-                  onOpenRecords(
-                    section:
-                        RecordsSection.applications,
-                    filter:
-                        RecordsFilter.all,
-                  );
-                },
-              ),
-
-              if (onNewCustomer != null)
-                _BranchAction(
-                  label:
-                      'New borrower',
-                  icon:
-                      Icons.person_add_alt_1_outlined,
-                  onTap:
-                      onNewCustomer!,
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: line),
+              borderRadius: rembehBorderRadius(rembehRadiusLg),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  branchName,
+                  style: const TextStyle(
+                    color: midnightNavy,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-
-              if (onNewLoan != null)
-                _BranchAction(
-                  label:
-                      'New loan',
-                  icon:
-                      Icons.note_add_outlined,
-                  onTap:
-                      onNewLoan!,
+                const SizedBox(height: 4),
+                Text(
+                  session.workspaceName,
+                  style: const TextStyle(
+                    color: slateText,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-
-              if (onOpenFieldTools != null)
-                _BranchAction(
-                  label:
-                      'Agent tools',
-                  icon:
-                      Icons.phone_android_outlined,
-                  onTap:
-                      onOpenFieldTools!,
+                const SizedBox(height: 14),
+                _BranchInfoRow(label: 'Address', value: branchAddress),
+                _BranchInfoRow(label: 'Manager', value: session.userName),
+                _BranchInfoRow(
+                  label: 'Role',
+                  value: session.roleName ?? 'Team',
                 ),
-            ],
-          ),
-
-          const SizedBox(height: 16),
-
-          _ManagementSection(
-            title:
-                'Loans',
-            emptyTitle:
-                'No loans found',
-            rows: loans
-                .take(20)
-                .map(
-                  (loan) => _SimpleTile(
-                    icon:
-                        _loanNeedsAttention(
-                          loan,
-                        )
-                        ? Icons.warning_amber_outlined
-                        : Icons.account_balance_wallet_outlined,
-                    title:
-                        _string(
-                          loan['borrowerName'],
-                        ) ??
-                        'Borrower',
-                    subtitle:
-                        '${_label(_string(loan['status']) ?? '')} - '
-                        '${_string(loan['nextDueLabel']) ?? 'No due date'}',
-                    trailing:
-                        _moneyOrDash(
-                      loan['balance'],
-                    ),
-                  ),
-                )
-                .toList(),
-          ),
-
-          const SizedBox(height: 14),
-
-          _ManagementSection(
-            title:
-                'Borrowers',
-            emptyTitle:
-                'No borrowers found',
-            rows: customers
-                .take(20)
-                .map(
-                  (customer) =>
-                      _SimpleTile(
-                    icon:
-                        customer['hasOverdueLoan'] ==
-                                true
-                            ? Icons.warning_amber_outlined
-                            : Icons.person_outline,
-                    title:
-                        _string(
-                          customer['fullName'],
-                        ) ??
-                        'Borrower',
-                    subtitle:
-                        '${_string(customer['phone']) ?? ''} - '
-                        '${_num(customer['activeLoanCount']).round()} active',
-                    trailing:
-                        _label(
-                      _string(
-                            customer['verificationStatus'],
-                          ) ??
-                          'NOT_VERIFIED',
-                    ),
-                  ),
-                )
-                .toList(),
-          ),
-
-          const SizedBox(height: 14),
-
-          _ManagementSection(
-            title:
-                'Repayments',
-            emptyTitle:
-                'No repayments found',
-            rows: repayments
-                .take(20)
-                .map(
-                  (row) =>
-                      _SimpleTile(
-                    icon:
-                        Icons.payments_outlined,
-                    title:
-                        _string(
-                          row['clientName'],
-                        ) ??
-                        'Borrower',
-                    subtitle:
-                        '${_string(row['recordedByName']) ?? 'Recorded'} - '
-                        '${_dateTime(row['recordedAt'])}',
-                    trailing:
-                        _moneyOrDash(
-                      row['amount'],
-                    ),
-                  ),
-                )
-                .toList(),
-          ),
-
-          const SizedBox(height: 14),
-
-          _ManagementSection(
-            title:
-                'Shortages',
-            emptyTitle:
-                'No open shortages',
-            rows: openShortages
-                .take(20)
-                .map(
-                  (row) =>
-                      _SimpleTile(
-                    icon:
-                        Icons.report_problem_outlined,
-                    title:
-                        _string(
-                          row['responsibleName'],
-                        ) ??
-                        'Responsible',
-                    subtitle:
-                        '${_dateLabel(row['operationDate'])} - '
-                        '${_label(_string(row['status']) ?? '')}',
-                    trailing:
-                        _moneyOrDash(
-                      row['amountOutstanding'],
-                    ),
-                  ),
-                )
-                .toList(),
-          ),
-
-          const SizedBox(height: 14),
-
-          _ManagementSection(
-            title:
-                'Reports',
-            emptyTitle:
-                'No reports found',
-            rows: reports
-                .take(20)
-                .map(
-                  (row) =>
-                      _SimpleTile(
-                    icon:
-                        Icons.summarize_outlined,
-                    title:
-                        _string(
-                          row['reportNumber'],
-                        ) ??
-                        'Daily report',
-                    subtitle:
-                        '${_dateLabel(row['operationDate'])} - '
-                        '${_label(_string(row['status']) ?? '')}',
-                    trailing:
-                        _moneyOrDash(
-                      row['closingBalance'],
-                    ),
-                  ),
-                )
-                .toList(),
-          ),
-
-          const SizedBox(height: 14),
-
-          _ManagementSection(
-            title:
-                'Team',
-            emptyTitle:
-                'No agents found',
-            rows: agents
-                .take(20)
-                .map(
-                  (agent) =>
-                      _SimpleTile(
-                    icon:
-                        Icons.person_outline,
-                    title:
-                        _string(
-                          agent['name'],
-                        ) ??
-                        'Agent',
-                    subtitle:
-                        '${_label(_string(agent['status']) ?? '')} - '
-                        '${_string(agent['phone']) ?? _string(agent['email']) ?? ''}',
-                    trailing:
-                        _moneyOrDash(
-                      agent['floatToday'],
-                    ),
-                  ),
-                )
-                .toList(),
+                _BranchInfoRow(label: 'Today status', value: _label(status)),
+                _BranchInfoRow(
+                  label: 'Expected closing cash',
+                  value: _moneyOrDash(operation?['expectedClosingBalance']),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -2407,376 +1942,180 @@ class _MoreTab extends StatelessWidget {
   }
 }
 
-// =============================================================================
-// MORE TAB COMPONENTS
-// =============================================================================
+class _BranchInfoRow extends StatelessWidget {
+  const _BranchInfoRow({required this.label, required this.value});
 
-class _SectionHeading extends StatelessWidget {
-  const _SectionHeading({
-    required this.title,
-  });
-
-  final String title;
+  final String label;
+  final String value;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding:
-          const EdgeInsets.only(
-        bottom: 10,
-      ),
-      child: Text(
-        title,
-        style:
-            const TextStyle(
-          color:
-              midnightNavy,
-          fontSize:
-              18,
-          fontWeight:
-              FontWeight.w900,
-        ),
-      ),
-    );
-  }
-}
-
-class _ActionGrid extends StatelessWidget {
-  const _ActionGrid({
-    required this.actions,
-  });
-
-  final List<_BranchAction> actions;
-
-  @override
-  Widget build(BuildContext context) {
-    if (actions.isEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return GridView.count(
-      crossAxisCount:
-          2,
-      childAspectRatio:
-          2.25,
-      shrinkWrap:
-          true,
-      physics:
-          const NeverScrollableScrollPhysics(),
-      mainAxisSpacing:
-          10,
-      crossAxisSpacing:
-          10,
-      children:
-          actions,
-    );
-  }
-}
-
-class _BranchAction extends StatelessWidget {
-  const _BranchAction({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-  });
-
-  final String label;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color:
-          Colors.white,
-      shape:
-          RoundedRectangleBorder(
-        borderRadius:
-            rembehBorderRadius(
-          rembehRadiusMd,
-        ),
-        side:
-            const BorderSide(
-          color:
-              line,
-        ),
-      ),
-      child: InkWell(
-        onTap:
-            onTap,
-        borderRadius:
-            rembehBorderRadius(
-          rembehRadiusMd,
-        ),
-        child: Padding(
-          padding:
-              const EdgeInsets.symmetric(
-            horizontal:
-                12,
-            vertical:
-                10,
-          ),
-          child: Row(
-            children: [
-              const SizedBox(
-                width: 0,
-              ),
-              Icon(
-                icon,
-                color:
-                    midnightNavy,
-                size:
-                    20,
-              ),
-              const SizedBox(
-                width: 8,
-              ),
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines:
-                      1,
-                  overflow:
-                      TextOverflow.ellipsis,
-                  style:
-                      const TextStyle(
-                    color:
-                        midnightNavy,
-                    fontWeight:
-                        FontWeight.w900,
-                    fontSize:
-                        13,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ManagementSection extends StatelessWidget {
-  const _ManagementSection({
-    required this.title,
-    required this.emptyTitle,
-    required this.rows,
-  });
-
-  final String title;
-  final String emptyTitle;
-  final List<Widget> rows;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment:
-          CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                title,
-                style:
-                    const TextStyle(
-                  color:
-                      midnightNavy,
-                  fontSize:
-                      15,
-                  fontWeight:
-                      FontWeight.w900,
-                ),
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: slateText,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
               ),
             ),
-            Text(
-              '${rows.length}',
-              style:
-                  const TextStyle(
-                color:
-                    slateText,
-                fontSize:
-                    12,
-                fontWeight:
-                    FontWeight.w800,
+          ),
+          const SizedBox(width: 12),
+          Flexible(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: midnightNavy,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
               ),
             ),
-          ],
-        ),
-
-        const SizedBox(height: 8),
-
-        if (rows.isEmpty)
-          _SimpleTile(
-            icon:
-                Icons.info_outline,
-            title:
-                emptyTitle,
-            subtitle:
-                '',
-            trailing:
-                '',
-          )
-        else
-          ...rows.expand(
-            (row) sync* {
-              yield row;
-              yield const SizedBox(
-                height: 8,
-              );
-            },
           ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-class _SimpleTile extends StatelessWidget {
-  const _SimpleTile({
+class _MoreDataTile extends StatelessWidget {
+  const _MoreDataTile({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.trailing,
+    required this.tone,
+    this.onTap,
   });
 
   final IconData icon;
   final String title;
   final String subtitle;
   final String trailing;
+  final Color tone;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding:
-          const EdgeInsets.all(
-        12,
-      ),
-      decoration:
-          BoxDecoration(
-        color:
-            Colors.white,
-        border:
-            Border.all(
-          color:
-              line,
-        ),
-        borderRadius:
-            rembehBorderRadius(
-          rembehRadiusMd,
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            color:
-                forestEmerald,
-            size:
-                20,
+    return Material(
+      color: Colors.white,
+      borderRadius: rembehBorderRadius(rembehRadiusLg),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: rembehBorderRadius(rembehRadiusLg),
+        child: Container(
+          padding: const EdgeInsets.all(13),
+          decoration: BoxDecoration(
+            border: Border.all(color: line),
+            borderRadius: rembehBorderRadius(rembehRadiusLg),
           ),
-
-          const SizedBox(width: 10),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines:
-                      1,
-                  overflow:
-                      TextOverflow.ellipsis,
-                  style:
-                      const TextStyle(
-                    color:
-                        midnightNavy,
-                    fontSize:
-                        13,
-                    fontWeight:
-                        FontWeight.w900,
-                  ),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: tone.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(11),
                 ),
-
-                if (subtitle.isNotEmpty)
-                  Text(
-                    subtitle,
-                    maxLines:
-                        1,
-                    overflow:
-                        TextOverflow.ellipsis,
-                    style:
-                        const TextStyle(
-                      color:
-                          slateText,
-                      fontSize:
-                          11,
-                      fontWeight:
-                          FontWeight.w600,
+                child: Icon(icon, color: tone, size: 21),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: midnightNavy,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: slateText,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                trailing,
+                style: TextStyle(
+                  color: tone,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              if (onTap != null) ...[
+                const SizedBox(width: 5),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: slateText,
+                  size: 20,
+                ),
               ],
-            ),
+            ],
           ),
-
-          const SizedBox(width: 8),
-
-          Text(
-            trailing,
-            style:
-                const TextStyle(
-              color:
-                  forestEmerald,
-              fontSize:
-                  12,
-              fontWeight:
-                  FontWeight.w900,
-            ),
-          ),
-        ],
+        ),
       ),
     );
+  }
+}
+
+Color _reportStatusColor(String status) {
+  switch (status.toUpperCase()) {
+    case 'SENT_TO_OWNER':
+    case 'OWNER_APPROVED':
+      return forestEmerald;
+    case 'RETURNED_TO_MANAGER':
+      return const Color(0xFFB42318);
+    default:
+      return warmGold;
   }
 }
 
 // =============================================================================
 // TEMPORARY OPERATION FORM COMPONENTS
 //
-// These move into features/operations/presentation/sheets/ next.
+// These are unrelated to More.
+// They remain here until the operations refactor.
+// =============================================================================
+// =============================================================================
+// TEMPORARY OPERATION FORM COMPONENTS
+//
+// These are unrelated to More.
+// They remain here until the operations refactor.
 // =============================================================================
 
 class _AmountField extends StatelessWidget {
-  const _AmountField({
-    required this.controller,
-    required this.label,
-    this.onChanged,
-  });
+  const _AmountField({required this.controller, required this.label});
 
   final TextEditingController controller;
+
   final String label;
-  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
-      controller:
-          controller,
-      keyboardType:
-          const TextInputType.numberWithOptions(
-        decimal:
-            true,
-      ),
-      onChanged:
-          onChanged,
-      decoration:
-          InputDecoration(
-        labelText:
-            label,
-        prefixText:
-            'UGX ',
-      ),
+      controller: controller,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      decoration: InputDecoration(labelText: label, prefixText: 'UGX '),
     );
   }
 }
@@ -2789,21 +2128,17 @@ class _TextField extends StatelessWidget {
   });
 
   final TextEditingController controller;
+
   final String label;
+
   final int maxLines;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
-      controller:
-          controller,
-      maxLines:
-          maxLines,
-      decoration:
-          InputDecoration(
-        labelText:
-            label,
-      ),
+      controller: controller,
+      maxLines: maxLines,
+      decoration: InputDecoration(labelText: label),
     );
   }
 }
@@ -2813,40 +2148,27 @@ class _AgentPicker extends StatelessWidget {
     required this.agents,
     required this.value,
     required this.onChanged,
-    this.label = 'Agent',
   });
 
   final List<Map<String, dynamic>> agents;
+
   final String value;
+
   final ValueChanged<String> onChanged;
-  final String label;
 
   @override
   Widget build(BuildContext context) {
     return DropdownButtonFormField<String>(
-      initialValue:
-          value.isEmpty
-          ? null
-          : value,
+      initialValue: value.isEmpty ? null : value,
 
-      items:
-          agents.map(
-        (agent) {
-          return DropdownMenuItem<String>(
-            value:
-                _string(agent['id']) ??
-                '',
-            child:
-                Text(
-              _string(agent['name']) ??
-                  'Agent',
-            ),
-          );
-        },
-      ).toList(),
+      items: agents.map((agent) {
+        return DropdownMenuItem<String>(
+          value: _string(agent['id']) ?? '',
+          child: Text(_string(agent['name']) ?? 'Agent'),
+        );
+      }).toList(),
 
-      onChanged:
-          (value) {
+      onChanged: (value) {
         if (value == null) {
           return;
         }
@@ -2854,166 +2176,7 @@ class _AgentPicker extends StatelessWidget {
         onChanged(value);
       },
 
-      decoration:
-          InputDecoration(
-        labelText:
-            label,
-      ),
-    );
-  }
-}
-
-class _MoneyPreview extends StatelessWidget {
-  const _MoneyPreview({
-    required this.label,
-    required this.amount,
-  });
-
-  final String label;
-  final num amount;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding:
-          const EdgeInsets.all(
-        12,
-      ),
-      decoration:
-          BoxDecoration(
-        color:
-            sage,
-        border:
-            Border.all(
-          color:
-              forestEmerald.withValues(
-            alpha:
-                0.22,
-          ),
-        ),
-        borderRadius:
-            rembehBorderRadius(
-          rembehRadiusMd,
-        ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style:
-                  const TextStyle(
-                color:
-                    slateText,
-                fontSize:
-                    12,
-                fontWeight:
-                    FontWeight.w800,
-              ),
-            ),
-          ),
-          Text(
-            'UGX ${formatMoney(amount)}',
-            style:
-                const TextStyle(
-              color:
-                  forestEmerald,
-              fontSize:
-                  14,
-              fontWeight:
-                  FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _VariancePreview extends StatelessWidget {
-  const _VariancePreview({
-    required this.variance,
-  });
-
-  final int variance;
-
-  @override
-  Widget build(BuildContext context) {
-    final balanced =
-        variance == 0;
-
-    final short =
-        variance < 0;
-
-    final color =
-        balanced || !short
-        ? forestEmerald
-        : const Color(
-            0xFFB42318,
-          );
-
-    final label =
-        balanced
-        ? 'Variance balanced'
-        : short
-        ? 'Shortage'
-        : 'Excess';
-
-    return Container(
-      padding:
-          const EdgeInsets.all(
-        12,
-      ),
-      decoration:
-          BoxDecoration(
-        color:
-            color.withValues(
-          alpha:
-              0.08,
-        ),
-        border:
-            Border.all(
-          color:
-              color.withValues(
-            alpha:
-                0.28,
-          ),
-        ),
-        borderRadius:
-            rembehBorderRadius(
-          rembehRadiusMd,
-        ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              label,
-              style:
-                  TextStyle(
-                color:
-                    color,
-                fontSize:
-                    12,
-                fontWeight:
-                    FontWeight.w900,
-              ),
-            ),
-          ),
-          Text(
-            'UGX ${formatMoney(variance.abs())}',
-            style:
-                TextStyle(
-              color:
-                  color,
-              fontSize:
-                  13,
-              fontWeight:
-                  FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
+      decoration: const InputDecoration(labelText: 'Agent'),
     );
   }
 }
@@ -3022,76 +2185,35 @@ class _VariancePreview extends StatelessWidget {
 // BANNERS
 // =============================================================================
 
-enum _BannerTone {
-  success,
-  error,
-}
+enum _BannerTone { success, error }
 
 class _Banner extends StatelessWidget {
-  const _Banner({
-    required this.message,
-    required this.tone,
-  });
+  const _Banner({required this.message, required this.tone});
 
   final String message;
   final _BannerTone tone;
 
   @override
   Widget build(BuildContext context) {
-    final isError =
-        tone == _BannerTone.error;
+    final isError = tone == _BannerTone.error;
 
-    final color =
-        isError
-        ? const Color(
-            0xFFB42318,
-          )
-        : forestEmerald;
+    final color = isError ? const Color(0xFFB42318) : forestEmerald;
 
     return Container(
-      width:
-          double.infinity,
-      margin:
-          const EdgeInsets.fromLTRB(
-        16,
-        8,
-        16,
-        0,
-      ),
-      padding:
-          const EdgeInsets.all(
-        12,
-      ),
-      decoration:
-          BoxDecoration(
-        color:
-            color.withValues(
-          alpha:
-              0.08,
-        ),
-        border:
-            Border.all(
-          color:
-              color.withValues(
-            alpha:
-                0.22,
-          ),
-        ),
-        borderRadius:
-            rembehBorderRadius(
-          rembehRadiusMd,
-        ),
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
       ),
       child: Text(
         message,
-        style:
-            TextStyle(
-          color:
-              color,
-          fontSize:
-              12,
-          fontWeight:
-              FontWeight.w800,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );
@@ -3102,25 +2224,55 @@ class _Banner extends StatelessWidget {
 // HELPERS
 // =============================================================================
 
+class _BranchOperationSnapshot {
+  const _BranchOperationSnapshot({required this.data, required this.agents});
+
+  final Map<String, dynamic> data;
+  final List<Map<String, dynamic>> agents;
+}
+
+class _ManagementSnapshot {
+  const _ManagementSnapshot({
+    this.customers,
+    this.loans,
+    this.repayments,
+    this.reports,
+    this.shortages,
+    this.summary,
+  });
+
+  final List<Map<String, dynamic>>? customers;
+  final List<Map<String, dynamic>>? loans;
+  final List<Map<String, dynamic>>? repayments;
+  final List<Map<String, dynamic>>? reports;
+  final List<Map<String, dynamic>>? shortages;
+  final Map<String, dynamic>? summary;
+}
+
+Map<String, dynamic>? _mapPayload(Object? value) {
+  if (value is! Map) {
+    return null;
+  }
+
+  return value.map((key, item) => MapEntry(key.toString(), item));
+}
+
+List<Map<String, dynamic>>? _mapListPayload(Object? value) {
+  if (value is! List) {
+    return null;
+  }
+
+  return value.whereType<Map>().map((item) {
+    return item.map((key, entry) => MapEntry(key.toString(), entry));
+  }).toList();
+}
+
 String _todayLabel() {
-  final now =
-      DateTime.now();
+  final now = DateTime.now();
 
-  final month =
-      now.month
-          .toString()
-          .padLeft(
-            2,
-            '0',
-          );
+  final month = now.month.toString().padLeft(2, '0');
 
-  final day =
-      now.day
-          .toString()
-          .padLeft(
-            2,
-            '0',
-          );
+  final day = now.day.toString().padLeft(2, '0');
 
   return '${now.year}-$month-$day';
 }
@@ -3130,27 +2282,17 @@ String _moneyText(num amount) {
     return '';
   }
 
-  return amount
-      .round()
-      .toString();
+  return amount.round().toString();
 }
 
 num? _parseAmount(String value) {
-  final cleaned =
-      value
-          .replaceAll(
-            ',',
-            '',
-          )
-          .trim();
+  final cleaned = value.replaceAll(',', '').trim();
 
   if (cleaned.isEmpty) {
     return null;
   }
 
-  return num.tryParse(
-    cleaned,
-  );
+  return num.tryParse(cleaned);
 }
 
 num _num(Object? value) {
@@ -3159,18 +2301,14 @@ num _num(Object? value) {
   }
 
   if (value is String) {
-    return num.tryParse(
-          value,
-        ) ??
-        0;
+    return num.tryParse(value) ?? 0;
   }
 
   return 0;
 }
 
 String? _string(Object? value) {
-  if (value is String &&
-      value.trim().isNotEmpty) {
+  if (value is String && value.trim().isNotEmpty) {
     return value.trim();
   }
 
@@ -3178,45 +2316,28 @@ String? _string(Object? value) {
 }
 
 String _label(String value) {
-  final words =
-      value
-          .toLowerCase()
-          .split('_');
+  final words = value.toLowerCase().split('_');
 
-  return words.map(
-    (word) {
-      if (word.isEmpty) {
-        return word;
-      }
+  return words
+      .map((word) {
+        if (word.isEmpty) {
+          return word;
+        }
 
-      return '${word[0].toUpperCase()}${word.substring(1)}';
-    },
-  ).join(' ');
+        return '${word[0].toUpperCase()}'
+            '${word.substring(1)}';
+      })
+      .join(' ');
 }
 
-bool _reportNeedsManagerSubmission(
-  Map<String, dynamic>? report,
-) {
-  final status =
-      _string(
-    report?['status'],
-  );
+bool _reportNeedsManagerSubmission(Map<String, dynamic>? report) {
+  final status = _string(report?['status']);
 
-  return status ==
-          'MANAGER_REVIEW' ||
-      status ==
-          'RETURNED_TO_MANAGER';
+  return status == 'MANAGER_REVIEW' || status == 'RETURNED_TO_MANAGER';
 }
 
-bool _loanIsActive(
-  Map<String, dynamic> loan,
-) {
-  final status =
-      (_string(
-                loan['status'],
-              ) ??
-              '')
-          .toUpperCase();
+bool _loanIsActive(Map<String, dynamic> loan) {
+  final status = (_string(loan['status']) ?? '').toUpperCase();
 
   return !{
     'CLOSED',
@@ -3224,77 +2345,41 @@ bool _loanIsActive(
     'REJECTED',
     'DRAFT',
     'CANCELLED',
-  }.contains(
-    status,
-  );
+  }.contains(status);
 }
 
-bool _loanNeedsAttention(
-  Map<String, dynamic> loan,
-) {
-  final overdueDays =
-      _num(
-    loan['overdueDays'],
-  );
+bool _loanNeedsAttention(Map<String, dynamic> loan) {
+  final overdueDays = _num(loan['overdueDays']);
 
-  final nextDue =
-      _string(
-    loan['nextDueLabel'],
-  );
+  final nextDue = _string(loan['nextDueLabel']);
 
-  return overdueDays > 0 ||
-      nextDue
-              ?.toLowerCase()
-              .contains(
-                'overdue',
-              ) ==
-          true;
+  return overdueDays > 0 || nextDue?.toLowerCase().contains('overdue') == true;
 }
 
-bool _shortageOpen(
-  Map<String, dynamic> row,
-) {
-  final status =
-      (_string(
-                row['status'],
-              ) ??
-              '')
-          .toUpperCase();
+bool _shortageOpen(Map<String, dynamic> row) {
+  final status = (_string(row['status']) ?? '').toUpperCase();
 
-  return status !=
-      'CLEARED';
+  return status != 'CLEARED';
 }
 
-num _sumMoney(
-  Iterable<Map<String, dynamic>> rows,
-  String key,
-) {
-  return rows.fold<num>(
-    0,
-    (sum, row) =>
-        sum + _num(row[key]),
-  );
+num _sumMoney(Iterable<Map<String, dynamic>> rows, String key) {
+  return rows.fold<num>(0, (sum, row) => sum + _num(row[key]));
 }
 
 String _dateLabel(Object? value) {
-  final raw =
-      _string(value);
+  final raw = _string(value);
 
   if (raw == null) {
     return 'The previous day';
   }
 
-  final parsed =
-      DateTime.tryParse(raw);
+  final parsed = DateTime.tryParse(raw);
 
   if (parsed == null) {
     return raw;
   }
 
-  return formatActivityTime(
-    parsed,
-    DateTime.now(),
-  ).split(',').first;
+  return formatActivityTime(parsed, DateTime.now()).split(',').first;
 }
 
 String _moneyOrDash(Object? value) {
@@ -3305,50 +2390,16 @@ String _moneyOrDash(Object? value) {
   return 'UGX ${formatMoney(_num(value))}';
 }
 
-String _dateTime(Object? value) {
-  final raw =
-      _string(value);
-
-  if (raw == null) {
-    return '';
-  }
-
-  final parsed =
-      DateTime.tryParse(
-    raw,
-  );
-
-  if (parsed == null) {
-    return raw;
-  }
-
-  return formatActivityTime(
-    parsed,
-    DateTime.now(),
-  );
+bool _isSameDay(DateTime a, DateTime b) {
+  return a.year == b.year && a.month == b.month && a.day == b.day;
 }
 
-bool _isSameDay(
-  DateTime a,
-  DateTime b,
-) {
-  return a.year == b.year &&
-      a.month == b.month &&
-      a.day == b.day;
-}
-
-num _firstAvailableMoney(
-  Map<String, dynamic> data,
-  List<String> keys,
-) {
+num _firstAvailableMoney(Map<String, dynamic> data, List<String> keys) {
   for (final key in keys) {
-    final value =
-        data[key];
+    final value = data[key];
 
     if (value != null) {
-      return _num(
-        value,
-      );
+      return _num(value);
     }
   }
 

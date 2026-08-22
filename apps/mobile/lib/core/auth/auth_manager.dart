@@ -1,10 +1,10 @@
 import 'dart:async';
-import 'package:http/http.dart' as http;
 import '../sync/connectivity_monitor.dart';
 import 'offline_auth_service.dart';
 import '../../services/api_client.dart';
 import '../../services/session_store.dart';
-import '../../config.dart';
+import '../../utils/account_access.dart';
+import '../../utils/friendly_errors.dart';
 
 /// Unified authentication manager handling both online and offline auth
 class AuthManager {
@@ -26,8 +26,6 @@ class AuthManager {
   RembehSession? _currentSession;
   RembehSession? get currentSession => _currentSession;
 
-  ApiClient? _apiClient;
-
   /// Initialize auth manager
   Future<void> initialize() async {
     await _connectivity.initialize();
@@ -41,9 +39,6 @@ class AuthManager {
       _sessionController.add(_currentSession);
       _authModeController.add(_currentMode);
     }
-
-    // Initialize API client
-    _apiClient = ApiClient(_sessionStore);
 
     // Listen for connectivity changes
     _connectivity.onConnectivityChanged.listen((isOnline) {
@@ -75,18 +70,12 @@ class AuthManager {
   }) async {
     try {
       final apiClient = ApiClient(_sessionStore);
-      final response = await apiClient.login(
-        email: email,
-        password: password,
-      );
+      await apiClient.login(email: email, password: password);
 
       // Retrieve the saved session
       _currentSession = await _sessionStore.read();
       if (_currentSession == null) {
-        return AuthResult(
-          success: false,
-          error: 'Failed to create session',
-        );
+        return AuthResult(success: false, error: 'Failed to create session');
       }
 
       // Cache credentials for offline use
@@ -107,14 +96,16 @@ class AuthManager {
         mode: AuthMode.online,
       );
     } catch (e) {
+      final message = friendlyErrorMessage(e);
+      if (isAccountAccessBlockedMessage(message)) {
+        return AuthResult(success: false, error: message);
+      }
+
       // If online login fails, try offline as fallback
       if (await _offlineAuth.hasCachedCredentials(email)) {
         return _loginOffline(email: email, password: password);
       }
-      return AuthResult(
-        success: false,
-        error: e.toString(),
-      );
+      return AuthResult(success: false, error: e.toString());
     }
   }
 
@@ -164,14 +155,9 @@ class AuthManager {
   }
 
   /// Switch from offline to online mode
-  Future<AuthResult> switchToOnlineMode({
-    required String password,
-  }) async {
+  Future<AuthResult> switchToOnlineMode({required String password}) async {
     if (_currentSession == null || _currentMode != AuthMode.offline) {
-      return AuthResult(
-        success: false,
-        error: 'Not in offline mode',
-      );
+      return AuthResult(success: false, error: 'Not in offline mode');
     }
 
     final email = _currentSession!.userEmail;
@@ -244,11 +230,7 @@ class AuthManager {
 }
 
 /// Authentication mode
-enum AuthMode {
-  unknown,
-  online,
-  offline,
-}
+enum AuthMode { unknown, online, offline }
 
 /// Authentication result
 class AuthResult {

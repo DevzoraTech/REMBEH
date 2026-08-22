@@ -109,8 +109,8 @@ class _DayStartSyncDialogState extends State<DayStartSyncDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async => !_isSyncing,
+    return PopScope(
+      canPop: !_isSyncing,
       child: AlertDialog(
         title: const Text('Start Your Day'),
         content: _buildContent(),
@@ -177,10 +177,7 @@ class _DayStartSyncDialogState extends State<DayStartSyncDialog> {
           children: [
             Icon(Icons.cloud_done, color: Colors.green),
             SizedBox(width: 8),
-            Text(
-              'Connected',
-              style: TextStyle(fontWeight: FontWeight.w600),
-            ),
+            Text('Connected', style: TextStyle(fontWeight: FontWeight.w600)),
           ],
         ),
         SizedBox(height: 12),
@@ -198,10 +195,7 @@ class _DayStartSyncDialogState extends State<DayStartSyncDialog> {
 
     if (!_hasInternet) {
       return [
-        TextButton(
-          onPressed: _checkConnectivity,
-          child: const Text('Retry'),
-        ),
+        TextButton(onPressed: _checkConnectivity, child: const Text('Retry')),
         ElevatedButton(
           onPressed: widget.onSkip,
           child: const Text('Continue Offline'),
@@ -210,14 +204,8 @@ class _DayStartSyncDialogState extends State<DayStartSyncDialog> {
     }
 
     return [
-      TextButton(
-        onPressed: widget.onSkip,
-        child: const Text('Skip'),
-      ),
-      ElevatedButton(
-        onPressed: _startSync,
-        child: const Text('Sync Now'),
-      ),
+      TextButton(onPressed: widget.onSkip, child: const Text('Skip')),
+      ElevatedButton(onPressed: _startSync, child: const Text('Sync Now')),
     ];
   }
 }

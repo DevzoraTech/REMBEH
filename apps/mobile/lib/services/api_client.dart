@@ -232,13 +232,32 @@ class ApiClient {
     return reports.cast<Map<String, dynamic>>();
   }
 
+  Future<Map<String, dynamic>> getOperationReport({
+    required RembehSession session,
+    required String reportId,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/operations/reports/$reportId');
+
+    final response = await http.get(uri, headers: _authHeaders(session));
+
+    final body = _decode(response);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+
+    return body;
+  }
+
   Future<List<Map<String, dynamic>>> listCashShortages({
     required RembehSession session,
     String? branchId,
+    String? userId,
     String? status,
   }) async {
     final query = <String, String>{
       if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
+      if (userId != null && userId.isNotEmpty) 'userId': userId,
       if (status != null && status.isNotEmpty) 'status': status,
     };
     final uri = Uri.parse(
@@ -251,6 +270,53 @@ class ApiClient {
     }
     final shortages = body['shortages'] as List<dynamic>? ?? const [];
     return shortages.cast<Map<String, dynamic>>();
+  }
+
+  Future<Map<String, dynamic>> getCashShortage({
+    required RembehSession session,
+    required String shortageId,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/cash-shortages/$shortageId');
+    final response = await http.get(uri, headers: _authHeaders(session));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+    final shortage = body['shortage'];
+    if (shortage is Map<String, dynamic>) {
+      return shortage;
+    }
+    throw ApiException('Shortage details could not be loaded.');
+  }
+
+  Future<Map<String, dynamic>> recordCashShortagePayment({
+    required RembehSession session,
+    required String shortageId,
+    required num amount,
+    String method = 'CASH',
+    String? notes,
+  }) async {
+    final uri = Uri.parse(
+      '$rembehApiBaseUrl/cash-shortages/$shortageId/payments',
+    );
+    final response = await http.post(
+      uri,
+      headers: {..._authHeaders(session), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'amount': amount,
+        'method': method,
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+      }),
+    );
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+    final shortage = body['shortage'];
+    if (shortage is Map<String, dynamic>) {
+      return shortage;
+    }
+    throw ApiException('Shortage settlement could not be recorded.');
   }
 
   Future<AgentDayStatus> getAgentDayStatus(RembehSession session) async {
@@ -299,6 +365,320 @@ class ApiClient {
     return agents.cast<Map<String, dynamic>>();
   }
 
+  Future<Map<String, dynamic>> listAgentsOverview({
+    required RembehSession session,
+    String? search,
+    String? date,
+  }) async {
+    final query = <String, String>{
+      if (search != null && search.trim().isNotEmpty) 'q': search.trim(),
+      if (date != null && date.isNotEmpty) 'date': date,
+    };
+
+    final uri = Uri.parse(
+      '$rembehApiBaseUrl/agents',
+    ).replace(queryParameters: query.isEmpty ? null : query);
+
+    final response = await http.get(uri, headers: _authHeaders(session));
+
+    final body = _decode(response);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+
+    return body;
+  }
+
+  Future<Map<String, dynamic>> getAgentDetail({
+    required RembehSession session,
+    required String agentId,
+    String? date,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/agents/$agentId').replace(
+      queryParameters: date == null || date.isEmpty ? null : {'date': date},
+    );
+
+    final response = await http.get(uri, headers: _authHeaders(session));
+
+    final body = _decode(response);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+
+    return body;
+  }
+
+  Future<Map<String, dynamic>> getAgentActivity({
+    required RembehSession session,
+    required String agentId,
+    String? date,
+    String? range,
+  }) async {
+    final query = <String, String>{
+      if (date != null && date.isNotEmpty) 'date': date,
+      if (range != null && range.isNotEmpty) 'range': range,
+    };
+
+    final uri = Uri.parse(
+      '$rembehApiBaseUrl/agents/$agentId/activity',
+    ).replace(queryParameters: query.isEmpty ? null : query);
+
+    final response = await http.get(uri, headers: _authHeaders(session));
+
+    final body = _decode(response);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+
+    return body;
+  }
+
+  Future<Map<String, dynamic>> getAgentAccount({
+    required RembehSession session,
+    required String agentId,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/agents/$agentId/account');
+
+    final response = await http.get(uri, headers: _authHeaders(session));
+
+    final body = _decode(response);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+
+    return body;
+  }
+
+  Future<Map<String, dynamic>> updateAgentStatus({
+    required RembehSession session,
+    required String agentId,
+    required String status,
+    String? reason,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/agents/$agentId/status');
+
+    final response = await http.patch(
+      uri,
+      headers: {..._authHeaders(session), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'status': status,
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      }),
+    );
+
+    final body = _decode(response);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+
+    return body;
+  }
+
+  Future<Map<String, dynamic>> updateAgentProfile({
+    required RembehSession session,
+    required String agentId,
+    String? displayName,
+    String? email,
+    String? phone,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/agents/$agentId');
+
+    final response = await http.patch(
+      uri,
+      headers: {..._authHeaders(session), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        if (displayName != null) 'displayName': displayName.trim(),
+        if (email != null) 'email': email.trim(),
+        if (phone != null) 'phone': phone.trim(),
+      }),
+    );
+
+    final body = _decode(response);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+
+    return body;
+  }
+
+  Future<Map<String, dynamic>> revokeAgentSession({
+    required RembehSession session,
+    required String agentId,
+    required String sessionId,
+  }) async {
+    final uri = Uri.parse(
+      '$rembehApiBaseUrl/agents/$agentId/sessions/$sessionId',
+    );
+
+    final response = await http.delete(uri, headers: _authHeaders(session));
+
+    final body = _decode(response);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+
+    return body;
+  }
+
+  Future<Map<String, dynamic>> revokeAllAgentSessions({
+    required RembehSession session,
+    required String agentId,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/agents/$agentId/sessions/revoke-all',
+      body: const {},
+    );
+  }
+
+  Future<Map<String, dynamic>> getSalariesDashboard({
+    required RembehSession session,
+    String? branchId,
+    String? cycleStart,
+    String? search,
+  }) async {
+    final query = <String, String>{
+      if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
+      if (cycleStart != null && cycleStart.isNotEmpty) 'cycleStart': cycleStart,
+      if (search != null && search.trim().isNotEmpty) 'q': search.trim(),
+    };
+    final uri = Uri.parse(
+      '$rembehApiBaseUrl/salaries',
+    ).replace(queryParameters: query.isEmpty ? null : query);
+    final response = await http.get(uri, headers: _authHeaders(session));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+    return body;
+  }
+
+  Future<List<Map<String, dynamic>>> listSalaryAgentCandidates({
+    required RembehSession session,
+    String? branchId,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/salaries/agent-candidates')
+        .replace(
+          queryParameters: branchId == null || branchId.isEmpty
+              ? null
+              : {'branchId': branchId},
+        );
+    final response = await http.get(uri, headers: _authHeaders(session));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+    final agents = body['agents'] as List<dynamic>? ?? const [];
+    return agents.cast<Map<String, dynamic>>();
+  }
+
+  Future<Map<String, dynamic>> createSalaryEmployee({
+    required RembehSession session,
+    required Map<String, dynamic> body,
+  }) {
+    return _postJson(session: session, path: '/salaries/employees', body: body);
+  }
+
+  Future<Map<String, dynamic>> getSalaryEmployee({
+    required RembehSession session,
+    required String employeeId,
+    String? cycleStart,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/salaries/employees/$employeeId')
+        .replace(
+          queryParameters: cycleStart == null || cycleStart.isEmpty
+              ? null
+              : {'cycleStart': cycleStart},
+        );
+    final response = await http.get(uri, headers: _authHeaders(session));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+    return body;
+  }
+
+  Future<Map<String, dynamic>> updateSalaryEmployee({
+    required RembehSession session,
+    required String employeeId,
+    required Map<String, dynamic> body,
+  }) {
+    return _patchJson(
+      session: session,
+      path: '/salaries/employees/$employeeId',
+      body: body,
+    );
+  }
+
+  Future<Map<String, dynamic>> getSalaryHistory({
+    required RembehSession session,
+    required String employeeId,
+  }) async {
+    final uri = Uri.parse(
+      '$rembehApiBaseUrl/salaries/employees/$employeeId/history',
+    );
+    final response = await http.get(uri, headers: _authHeaders(session));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+    return body;
+  }
+
+  Future<Map<String, dynamic>> recordSalaryPayment({
+    required RembehSession session,
+    required String employeeId,
+    required Map<String, dynamic> body,
+    String? cycleStart,
+  }) {
+    final suffix = cycleStart == null || cycleStart.isEmpty
+        ? ''
+        : '?cycleStart=$cycleStart';
+    return _postJson(
+      session: session,
+      path: '/salaries/employees/$employeeId/payments$suffix',
+      body: body,
+    );
+  }
+
+  Future<Map<String, dynamic>> reverseSalaryPayment({
+    required RembehSession session,
+    required String paymentId,
+    String? reason,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/salaries/payments/$paymentId/reverse',
+      body: {
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> inviteBranchAgent({
+    required RembehSession session,
+    required String branchId,
+    required String displayName,
+    required String email,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/branches/$branchId/staff-invitations',
+      body: {
+        'displayName': displayName.trim(),
+        'email': email.trim(),
+        'roleName': 'Agent',
+      },
+    );
+  }
+
   Future<Map<String, dynamic>> openBranchOperation({
     required RembehSession session,
     String? branchId,
@@ -335,6 +715,48 @@ class ApiClient {
         'amount': amount,
         if (description != null && description.trim().isNotEmpty)
           'description': description.trim(),
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> updateBranchExpense({
+    required RembehSession session,
+    required String expenseId,
+    String? category,
+    num? amount,
+    String? description,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/operations/expenses/$expenseId');
+
+    final response = await http.patch(
+      uri,
+      headers: {..._authHeaders(session), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        if (category != null && category.isNotEmpty) 'category': category,
+        'amount': ?amount,
+        if (description != null) 'description': description.trim(),
+      }),
+    );
+
+    final body = _decode(response);
+
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+
+    return body;
+  }
+
+  Future<Map<String, dynamic>> voidBranchExpense({
+    required RembehSession session,
+    required String expenseId,
+    String? reason,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/operations/expenses/$expenseId/void',
+      body: {
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
       },
     );
   }
@@ -387,6 +809,7 @@ class ApiClient {
     required String date,
     required String agentId,
     required num amountReturned,
+    String? shortageReason,
     String? notes,
   }) {
     return _postJson(
@@ -397,27 +820,78 @@ class ApiClient {
         'date': date,
         'agentId': agentId,
         'amountReturned': amountReturned,
+        if (shortageReason != null && shortageReason.isNotEmpty)
+          'shortageReason': shortageReason,
         if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
       },
     );
   }
 
-  Future<Map<String, dynamic>> closeBranchOperation({
+  Future<Map<String, dynamic>> startOperationReconciliation({
+    required RembehSession session,
+    String? branchId,
+    required String date,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/operations/reconciliation/start',
+      body: {
+        if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
+        'date': date,
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> updateOperationReconciliationCashCount({
     required RembehSession session,
     String? branchId,
     required String date,
     required num countedCash,
     String? notes,
-    String? shortageResponsibleUserId,
   }) {
     return _postJson(
       session: session,
-      path: '/operations/close',
+      path: '/operations/reconciliation/cash-count',
       body: {
         if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
         'date': date,
         'countedCash': countedCash,
-        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+        if (notes != null) 'notes': notes.trim(),
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> updateOperationReconciliationNotes({
+    required RembehSession session,
+    String? branchId,
+    required String date,
+    required String notes,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/operations/reconciliation/notes',
+      body: {
+        if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
+        'date': date,
+        'notes': notes.trim(),
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> submitOperationReconciliation({
+    required RembehSession session,
+    String? branchId,
+    required String date,
+    String? notes,
+    String? shortageResponsibleUserId,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/operations/reconciliation/submit',
+      body: {
+        if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
+        'date': date,
+        if (notes != null) 'notes': notes.trim(),
         if (shortageResponsibleUserId != null &&
             shortageResponsibleUserId.isNotEmpty)
           'shortageResponsibleUserId': shortageResponsibleUserId,
@@ -508,6 +982,24 @@ class ApiClient {
   }) async {
     final uri = Uri.parse('$rembehApiBaseUrl$path');
     final response = await http.post(
+      uri,
+      headers: {..._authHeaders(session), 'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+    final payload = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(payload, response.statusCode, uri));
+    }
+    return payload;
+  }
+
+  Future<Map<String, dynamic>> _patchJson({
+    required RembehSession session,
+    required String path,
+    required Map<String, dynamic> body,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl$path');
+    final response = await http.patch(
       uri,
       headers: {..._authHeaders(session), 'Content-Type': 'application/json'},
       body: jsonEncode(body),

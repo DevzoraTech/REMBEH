@@ -127,21 +127,12 @@ export function readAuthState() {
 }
 
 export function isSessionExpired(session: RembehSession) {
-  const expiresAt = Date.parse(session.expiresAt);
-
-  if (!Number.isFinite(expiresAt)) {
-    return true;
-  }
-
-  return expiresAt <= Date.now() + 30_000;
+  return !session.accessToken;
 }
 
 export function canRefreshSession(session: RembehSession) {
   if (!session.refreshToken) return false;
-  if (!session.refreshExpiresAt) return true;
-  const expiresAt = Date.parse(session.refreshExpiresAt);
-  if (!Number.isFinite(expiresAt)) return true;
-  return expiresAt > Date.now() + 30_000;
+  return true;
 }
 
 export async function refreshAuthSession(

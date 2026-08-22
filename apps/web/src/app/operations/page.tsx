@@ -427,6 +427,11 @@ export default function OperationsPage() {
   const canFinishOpenOperation = Boolean(
     canOperateBranch && operation && operation.status === "OPEN",
   );
+  const canReconcileOperation = Boolean(
+    canOperateBranch &&
+      operation &&
+      (operation.status === "OPEN" || operation.status === "CLOSING"),
+  );
 
   useEffect(() => {
     const boot = window.setTimeout(() => {
@@ -914,40 +919,90 @@ export default function OperationsPage() {
 
   async function closeBranch() {
     if (!session || !activeBranch || closing) return;
-    if (!canFinishOpenOperation) {
-      setError("Only an open branch day can be closed.");
+    if (!canReconcileOperation) {
+      setError("Only an active branch day can be reconciled.");
+      return;
+    }
+    const countedCash = Number(closingForm.countedCash);
+    if (!Number.isFinite(countedCash) || countedCash < 0) {
+      setError("Enter counted branch cash.");
       return;
     }
     setClosing(true);
     setError(null);
     setNotice(null);
     try {
-      const response = await fetch(`${apiBaseUrl}/operations/close`, {
-        method: "POST",
-        headers: {
-          Authorization: `${session.tokenType} ${session.accessToken}`,
-          "Content-Type": "application/json",
+      const headers = {
+        Authorization: `${session.tokenType} ${session.accessToken}`,
+        "Content-Type": "application/json",
+      };
+      const body = {
+        branchId: activeBranch.id,
+        date,
+        notes: closingForm.notes.trim() || undefined,
+      };
+      const startResponse = await fetch(
+        `${apiBaseUrl}/operations/reconciliation/start`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
         },
-        body: JSON.stringify({
-          branchId: activeBranch.id,
-          date,
-          countedCash: Number(closingForm.countedCash),
-          notes: closingForm.notes.trim() || undefined,
-          shortageResponsibleUserId:
-            closingForm.shortageResponsibleUserId || undefined,
-        }),
-      });
+      );
+      const startPayload = await readApiJson<OperationResponse>(startResponse);
+      if (!startResponse.ok) {
+        throw new Error(formatApiError(startPayload.message));
+      }
+
+      const countResponse = await fetch(
+        `${apiBaseUrl}/operations/reconciliation/cash-count`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            ...body,
+            countedCash,
+          }),
+        },
+      );
+      const countPayload = await readApiJson<OperationResponse>(countResponse);
+      if (!countResponse.ok) {
+        throw new Error(formatApiError(countPayload.message));
+      }
+
+      const response = await fetch(
+        `${apiBaseUrl}/operations/reconciliation/submit`,
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            ...body,
+            shortageResponsibleUserId:
+              closingForm.shortageResponsibleUserId || undefined,
+          }),
+        },
+      );
       const payload = await readApiJson<OperationResponse>(response);
       if (!response.ok) {
         throw new Error(formatApiError(payload.message));
       }
       setData(payload);
+      if (payload.date) {
+        setDate(payload.date);
+        router.replace(`/operations?date=${encodeURIComponent(payload.date)}`);
+      }
       setClosingForm(emptyClosingForm);
       setActivePanel(null);
-      setNotice("Branch closed.");
+      setNotice(
+        payload.operation?.status === "OPEN"
+          ? "Report sent. Next day is open."
+          : "Report sent to owner.",
+      );
     } catch (caught) {
       setError(
-        caught instanceof Error ? caught.message : "Could not close branch.",
+        caught instanceof Error
+          ? caught.message
+          : "Could not send reconciliation report.",
       );
     } finally {
       setClosing(false);
@@ -1434,6 +1489,7 @@ export default function OperationsPage() {
               canRecordExpense={canRecordExpense}
               canManageFloat={canManageFloat}
               canClose={canClose}
+              canReconcile={canReconcileOperation}
               loadingAgents={loadingAgents}
               pendingReturnsCount={pendingAgentReturns.length}
               assignableAgentsCount={assignableAgents.length}
@@ -1488,6 +1544,7 @@ export default function OperationsPage() {
           addFloatOptions={addFloatOptions}
           pendingAgentReturns={pendingAgentReturns}
           editable={canFinishOpenOperation}
+          canReconcile={canReconcileOperation}
           canRecordTopUp={canRecordTopUp}
           canRecordExpense={canRecordExpense}
           canManageFloat={canManageFloat}
@@ -1680,6 +1737,7 @@ function OpenOperationView({
   canRecordExpense,
   canManageFloat,
   canClose,
+  canReconcile,
   loadingAgents,
   pendingReturnsCount,
   assignableAgentsCount,
@@ -1710,6 +1768,7 @@ function OpenOperationView({
   canRecordExpense: boolean;
   canManageFloat: boolean;
   canClose: boolean;
+  canReconcile: boolean;
   loadingAgents: boolean;
   pendingReturnsCount: number;
   assignableAgentsCount: number;
@@ -1829,8 +1888,20 @@ function OpenOperationView({
         <div className="flex flex-wrap items-center justify-between gap-2.5">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             <StatusChip
-              tone={operation.status === "OPEN" ? "green" : "slate"}
-              label={operation.status === "OPEN" ? "Open" : "Closed"}
+              tone={
+                operation.status === "OPEN"
+                  ? "green"
+                  : operation.status === "CLOSING"
+                    ? "amber"
+                    : "slate"
+              }
+              label={
+                operation.status === "OPEN"
+                  ? "Open"
+                  : operation.status === "CLOSING"
+                    ? "Closing"
+                    : "Closed"
+              }
             />
             <StatusChip
               tone="slate"
@@ -1897,7 +1968,7 @@ function OpenOperationView({
                 icon={<LockKeyhole className="size-3.5" />}
                 label="Close day"
                 primary
-                disabled={!editable || !canClose || !allReturnsRecorded}
+                disabled={!canReconcile || !canClose || !allReturnsRecorded}
                 onClick={() => onAction("close-day")}
               />
             </div>
@@ -1997,7 +2068,7 @@ function OpenOperationView({
           canOperate={canOperateBranch && editable}
           onAction={onAction}
           onCloseDay={
-            canOperateBranch && editable && canClose && allReturnsRecorded
+            canOperateBranch && canReconcile && canClose && allReturnsRecorded
               ? () => onAction("close-day")
               : undefined
           }
@@ -3590,6 +3661,7 @@ function OperationActionDrawer({
   addFloatOptions,
   pendingAgentReturns,
   editable,
+  canReconcile,
   canRecordTopUp,
   canRecordExpense,
   canManageFloat,
@@ -3630,6 +3702,7 @@ function OperationActionDrawer({
   addFloatOptions: DailyOperationAgentReturn[];
   pendingAgentReturns: DailyOperationAgentReturn[];
   editable: boolean;
+  canReconcile: boolean;
   canRecordTopUp: boolean;
   canRecordExpense: boolean;
   canManageFloat: boolean;
@@ -3708,9 +3781,9 @@ function OperationActionDrawer({
   const closingCashToSave =
     variance == null ? null : Math.round(countedCash * 100) / 100;
   const needsCloseNote = variance != null && variance !== 0;
-  const needsShortageOwner = variance != null && variance < 0;
+  const needsShortageOwner = false;
   const canSubmitClose =
-    editable &&
+    canReconcile &&
     canClose &&
     allReturnsRecorded &&
     closingForm.countedCash !== "" &&
@@ -4029,7 +4102,7 @@ function OperationActionDrawer({
                 <MoneyField
                   label="Counted cash"
                   value={closingForm.countedCash}
-                  locked={!editable || !canClose}
+                  locked={!canReconcile || !canClose}
                   onChange={(value) =>
                     setClosingForm({ ...closingForm, countedCash: value })
                   }
@@ -4049,7 +4122,7 @@ function OperationActionDrawer({
                     </span>
                     <select
                       value={closingForm.shortageResponsibleUserId}
-                      disabled={!editable || !canClose}
+                      disabled={!canReconcile || !canClose}
                       onChange={(event) =>
                         setClosingForm({
                           ...closingForm,
@@ -4070,7 +4143,7 @@ function OperationActionDrawer({
                 <TextAreaField
                   label={needsCloseNote ? "Notes required" : "Notes"}
                   value={closingForm.notes}
-                  locked={!editable || !canClose}
+                  locked={!canReconcile || !canClose}
                   onChange={(value) =>
                     setClosingForm({ ...closingForm, notes: value })
                   }

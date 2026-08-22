@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 
@@ -306,7 +308,9 @@ class LocalDatabase {
 
   /// Create database indexes
   Future<void> _createIndexes(Database db) async {
-    await db.execute('CREATE INDEX idx_customers_branch ON customers(branch_id, tenant_id)');
+    await db.execute(
+      'CREATE INDEX idx_customers_branch ON customers(branch_id, tenant_id)',
+    );
     await db.execute('CREATE INDEX idx_customers_phone ON customers(phone)');
     await db.execute('CREATE INDEX idx_customers_nin ON customers(nin)');
 
@@ -314,19 +318,35 @@ class LocalDatabase {
     await db.execute('CREATE INDEX idx_loans_status ON loans(status)');
     await db.execute('CREATE INDEX idx_loans_branch ON loans(branch_id)');
 
-    await db.execute('CREATE INDEX idx_loan_applications_status ON loan_applications(status)');
-    await db.execute('CREATE INDEX idx_loan_applications_agent ON loan_applications(agent_id)');
+    await db.execute(
+      'CREATE INDEX idx_loan_applications_status ON loan_applications(status)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_loan_applications_agent ON loan_applications(agent_id)',
+    );
 
-    await db.execute('CREATE INDEX idx_collections_loan ON collections(loan_id)');
-    await db.execute('CREATE INDEX idx_collections_status ON collections(status)');
-    await db.execute('CREATE INDEX idx_collections_date ON collections(collection_date)');
+    await db.execute(
+      'CREATE INDEX idx_collections_loan ON collections(loan_id)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_collections_status ON collections(status)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_collections_date ON collections(collection_date)',
+    );
 
     await db.execute('CREATE INDEX idx_payments_loan ON payments(loan_id)');
     await db.execute('CREATE INDEX idx_payments_status ON payments(status)');
 
-    await db.execute('CREATE INDEX idx_pending_operations_status ON pending_operations(status)');
-    await db.execute('CREATE INDEX idx_media_upload_status ON loan_application_media(upload_status)');
-    await db.execute('CREATE INDEX idx_pending_media_status ON pending_media(upload_status, entity_type, entity_id)');
+    await db.execute(
+      'CREATE INDEX idx_pending_operations_status ON pending_operations(status)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_media_upload_status ON loan_application_media(upload_status)',
+    );
+    await db.execute(
+      'CREATE INDEX idx_pending_media_status ON pending_media(upload_status, entity_type, entity_id)',
+    );
   }
 
   /// Handle database schema upgrades
@@ -354,15 +374,11 @@ class LocalDatabase {
   /// Set sync metadata value
   Future<void> setMetadata(String key, String value) async {
     final db = await database;
-    await db.insert(
-      'sync_metadata',
-      {
-        'key': key,
-        'value': value,
-        'updated_at': DateTime.now().millisecondsSinceEpoch,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('sync_metadata', {
+      'key': key,
+      'value': value,
+      'updated_at': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   /// Get last sync timestamp
@@ -397,10 +413,18 @@ class LocalDatabase {
     await db.delete('loan_products');
     await db.delete('agents');
     await db.delete('branches');
-    await db.delete('loan_applications', where: 'status = ?', whereArgs: ['SYNCED']);
+    await db.delete(
+      'loan_applications',
+      where: 'status = ?',
+      whereArgs: ['SYNCED'],
+    );
     await db.delete('collections', where: 'status = ?', whereArgs: ['SYNCED']);
     await db.delete('payments', where: 'status = ?', whereArgs: ['SYNCED']);
-    await db.delete('loan_application_media', where: 'upload_status = ?', whereArgs: ['UPLOADED']);
+    await db.delete(
+      'loan_application_media',
+      where: 'upload_status = ?',
+      whereArgs: ['UPLOADED'],
+    );
   }
 
   /// Get database size in bytes
