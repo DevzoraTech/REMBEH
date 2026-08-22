@@ -278,7 +278,8 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           _agents = cached.agents;
           _loading = false;
           _error = null;
-          _notice = 'Offline mode: showing last synced branch data.';
+          _notice =
+              'Could not refresh online data. Showing last synced branch data.';
         });
 
         unawaited(_loadManagementData());

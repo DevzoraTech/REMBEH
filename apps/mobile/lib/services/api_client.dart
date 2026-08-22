@@ -8,6 +8,7 @@ import '../models/agent_day_status.dart';
 import '../utils/account_access.dart';
 import '../utils/friendly_errors.dart';
 import 'device_identity.dart';
+import 'network_status_store.dart';
 import 'session_store.dart';
 
 class ApiClient {
@@ -1012,6 +1013,9 @@ class ApiClient {
   }
 
   Map<String, dynamic> _decode(http.Response response) {
+    if (response.statusCode >= 200 && response.statusCode < 500) {
+      NetworkStatusStore.instance.markOnline();
+    }
     if (response.body.isEmpty) return <String, dynamic>{};
     final decoded = jsonDecode(response.body);
     if (decoded is Map<String, dynamic>) return decoded;

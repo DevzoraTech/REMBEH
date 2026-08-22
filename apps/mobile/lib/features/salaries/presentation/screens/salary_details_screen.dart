@@ -103,6 +103,7 @@ class _SalaryDetailsScreenState extends State<SalaryDetailsScreen> {
           return RecordEmployeeSheet(
             agentCandidates: const [],
             initialEmployee: _employee,
+            branchId: _employee.branchId,
           );
         },
       ),

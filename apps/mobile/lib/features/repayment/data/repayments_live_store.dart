@@ -214,7 +214,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
     final tenantId = session.tenantId;
     final branchId = session.branchId;
     if (tenantId == null || branchId == null) return;
-    if (NetworkStatusStore.instance.isOffline) return;
+    final network = NetworkStatusStore.instance;
+    if (network.isOffline && !await network.checkNow()) return;
     final repo = _locator.repository;
     if (repo is! RepaymentRepositoryImpl) return;
     final clients = await repo.offlineSnapshotClients();
@@ -301,7 +302,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
     String method = 'CASH',
     DateTime? paidAt,
   }) async {
-    if (NetworkStatusStore.instance.isOffline) {
+    final network = NetworkStatusStore.instance;
+    if (network.isOffline && !await network.checkNow()) {
       return _queueOfflineRepayment(
         loanId: loanId,
         amount: amount,
@@ -345,7 +347,9 @@ class RepaymentsLiveStore extends ChangeNotifier {
   }) async {
     final tenantId = _tenantId;
     if (tenantId == null) {
-      throw ApiException('Offline cache is not ready. Open the app online once.');
+      throw ApiException(
+        'Offline cache is not ready. Open the app online once.',
+      );
     }
     final cached = _detailCache[loanId];
     if (cached == null) {
@@ -369,8 +373,9 @@ class RepaymentsLiveStore extends ChangeNotifier {
       pending,
     );
 
-    final nextOutstanding =
-        cached.outstanding - amount < 0 ? 0 : cached.outstanding - amount;
+    final nextOutstanding = cached.outstanding - amount < 0
+        ? 0
+        : cached.outstanding - amount;
     final detail = ClientLoanDetail(
       id: cached.id,
       loanId: cached.loanId,
@@ -431,7 +436,10 @@ class RepaymentsLiveStore extends ChangeNotifier {
 
   Future<void> flushPendingWrites() async {
     final tenantId = _tenantId;
-    if (tenantId == null || NetworkStatusStore.instance.isOffline) return;
+    final network = NetworkStatusStore.instance;
+    if (tenantId == null || network.isOffline && !await network.checkNow()) {
+      return;
+    }
     final pending = await _readPendingWrites(tenantId);
     if (pending.isEmpty) return;
     final remaining = <Map<String, dynamic>>[];

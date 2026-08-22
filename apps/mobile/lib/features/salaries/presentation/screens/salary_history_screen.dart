@@ -287,43 +287,72 @@ class _SalaryHistoryScreenState extends State<SalaryHistoryScreen> {
                 border: Border.all(color: const Color(0xFFDDE6FF)),
                 borderRadius: rembehBorderRadius(rembehRadiusMd),
               ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 42,
-                    height: 42,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE5EDFF),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.folder_outlined,
-                      color: Color(0xFF1359C8),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      'Need older records?\nContact your administrator to export salary records older than 12 months.',
-                      style: TextStyle(
-                        color: slateText,
-                        height: 1.35,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final compact = constraints.maxWidth < 340;
+
+                  return Row(
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE5EDFF),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.folder_outlined,
+                          color: Color(0xFF1359C8),
+                        ),
                       ),
-                    ),
-                  ),
-                  OutlinedButton(
-                    onPressed: () {},
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF1359C8),
-                      side: const BorderSide(color: Color(0xFFD6E1F5)),
-                      minimumSize: const Size(0, 38),
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                    ),
-                    child: const Text('Request export'),
-                  ),
-                ],
+
+                      const SizedBox(width: 12),
+
+                      const Expanded(
+                        child: Text(
+                          'Need older records?\nContact your administrator to export salary records older than 12 months.',
+                          style: TextStyle(
+                            color: slateText,
+                            height: 1.35,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(width: 8),
+
+                      if (compact)
+                        SizedBox(
+                          width: 40,
+                          height: 38,
+                          child: OutlinedButton(
+                            onPressed: () {},
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF1359C8),
+                              side: const BorderSide(color: Color(0xFFD6E1F5)),
+                              padding: EdgeInsets.zero,
+                            ),
+                            child: const Icon(
+                              Icons.download_outlined,
+                              size: 18,
+                            ),
+                          ),
+                        )
+                      else
+                        OutlinedButton(
+                          onPressed: () {},
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF1359C8),
+                            side: const BorderSide(color: Color(0xFFD6E1F5)),
+                            minimumSize: const Size(0, 38),
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                          ),
+                          child: const Text('Request export'),
+                        ),
+                    ],
+                  );
+                },
               ),
             ),
           ],

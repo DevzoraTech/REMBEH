@@ -10,10 +10,12 @@ class RecordEmployeeSheet extends StatefulWidget {
     super.key,
     required this.agentCandidates,
     this.initialEmployee,
+    this.branchId,
   });
 
   final List<SalaryAgentCandidate> agentCandidates;
   final SalaryEmployee? initialEmployee;
+  final String? branchId;
 
   @override
   State<RecordEmployeeSheet> createState() => _RecordEmployeeSheetState();
@@ -26,12 +28,17 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
   late final TextEditingController _nin;
   late final TextEditingController _role;
   late final TextEditingController _monthlySalary;
+  late final TextEditingController _paymentProvider;
+  late final TextEditingController _paymentAccountName;
+  late final TextEditingController _paymentAccountNumber;
+  late final TextEditingController _notes;
 
   final _formKey = GlobalKey<FormState>();
 
   DateTime _dateJoined = DateTime.now();
 
   String _status = 'ACTIVE';
+  String _paymentMethod = 'CASH';
 
   SalaryAgentCandidate? _matchedAgent;
 
@@ -48,25 +55,15 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
 
     final employee = widget.initialEmployee;
 
-    _fullName = TextEditingController(
-      text: employee?.fullName ?? '',
-    );
+    _fullName = TextEditingController(text: employee?.fullName ?? '');
 
-    _phone = TextEditingController(
-      text: _displayPhone(employee?.phone),
-    );
+    _phone = TextEditingController(text: _displayPhone(employee?.phone));
 
-    _email = TextEditingController(
-      text: employee?.email ?? '',
-    );
+    _email = TextEditingController(text: employee?.email ?? '');
 
-    _nin = TextEditingController(
-      text: employee?.ninNumber ?? '',
-    );
+    _nin = TextEditingController(text: employee?.ninNumber ?? '');
 
-    _role = TextEditingController(
-      text: employee?.roleName ?? '',
-    );
+    _role = TextEditingController(text: employee?.roleName ?? '');
 
     _monthlySalary = TextEditingController(
       text: employee == null || employee.monthlySalary <= 0
@@ -74,9 +71,24 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
           : employee.monthlySalary.round().toString(),
     );
 
+    _paymentProvider = TextEditingController(
+      text: employee?.paymentProvider ?? '',
+    );
+
+    _paymentAccountName = TextEditingController(
+      text: employee?.paymentAccountName ?? '',
+    );
+
+    _paymentAccountNumber = TextEditingController(
+      text: employee?.paymentAccountNumber ?? '',
+    );
+
+    _notes = TextEditingController(text: employee?.notes ?? '');
+
     _dateJoined = employee?.dateJoined ?? DateTime.now();
 
     _status = employee?.status.toUpperCase() ?? 'ACTIVE';
+    _paymentMethod = employee?.paymentMethod?.toUpperCase() ?? 'CASH';
 
     if (_editing) {
       _lookupCompleted = true;
@@ -91,6 +103,10 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
     _nin.dispose();
     _role.dispose();
     _monthlySalary.dispose();
+    _paymentProvider.dispose();
+    _paymentAccountName.dispose();
+    _paymentAccountNumber.dispose();
+    _notes.dispose();
 
     super.dispose();
   }
@@ -126,9 +142,7 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
       _checking = true;
     });
 
-    await Future<void>.delayed(
-      const Duration(milliseconds: 180),
-    );
+    await Future<void>.delayed(const Duration(milliseconds: 180));
 
     final enteredName = _normalizeText(_fullName.text);
     final enteredPhone = _normalizePhone(_phone.text);
@@ -160,7 +174,8 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
        * We deliberately do not match on name alone because doing so can
        * produce incorrect employee recommendations.
        */
-      if (phoneMatches && (nameMatches || emailMatches || enteredEmail.isEmpty)) {
+      if (phoneMatches &&
+          (nameMatches || emailMatches || enteredEmail.isEmpty)) {
         exactMatch = candidate;
         break;
       }
@@ -189,9 +204,7 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
     return nameValid && phoneValid && ninValid;
   }
 
-  void _applyMatchedAgent(
-    SalaryAgentCandidate candidate,
-  ) {
+  void _applyMatchedAgent(SalaryAgentCandidate candidate) {
     _fullName.text = candidate.name;
 
     if ((candidate.phone ?? '').trim().isNotEmpty) {
@@ -204,6 +217,17 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
 
     if ((candidate.roleName ?? '').trim().isNotEmpty) {
       _role.text = candidate.roleName!.trim();
+    }
+  }
+
+  void _selectAgentCandidate(SalaryAgentCandidate? candidate) {
+    setState(() {
+      _matchedAgent = candidate;
+      _lookupCompleted = candidate != null;
+    });
+
+    if (candidate != null) {
+      _applyMatchedAgent(candidate);
     }
   }
 
@@ -238,9 +262,7 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
     if (!_editing && !_lookupCompleted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Check the employee identity before continuing.',
-          ),
+          content: Text('Check the employee identity before continuing.'),
         ),
       );
       return;
@@ -250,52 +272,52 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
       return;
     }
 
-    final salary = num.tryParse(
-      _monthlySalary.text
-          .replaceAll(',', '')
-          .trim(),
-    );
+    final salary = num.tryParse(_monthlySalary.text.replaceAll(',', '').trim());
 
     if (salary == null || salary <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Enter a valid monthly salary.',
-          ),
-        ),
+        const SnackBar(content: Text('Enter a valid monthly salary.')),
       );
       return;
     }
 
     final phone = _apiPhone(_phone.text);
 
-    Navigator.of(context).pop(
-      <String, dynamic>{
-        if (_matchedAgent != null)
-          'agentUserId': _matchedAgent!.id,
+    Navigator.of(context).pop(<String, dynamic>{
+      if (_matchedAgent != null) 'agentUserId': _matchedAgent!.id,
 
-        'fullName': _fullName.text.trim(),
+      if (!_editing && (widget.branchId ?? '').trim().isNotEmpty)
+        'branchId': widget.branchId!.trim(),
 
-        'phone': phone,
+      'fullName': _fullName.text.trim(),
 
-        if (_email.text.trim().isNotEmpty)
-          'email': _email.text.trim(),
+      'phone': phone,
 
-        if (_nin.text.trim().isNotEmpty)
-          'ninNumber': _nin.text.trim(),
+      if (_email.text.trim().isNotEmpty) 'email': _email.text.trim(),
 
-        if (_role.text.trim().isNotEmpty)
-          'roleName': _role.text.trim(),
+      if (_nin.text.trim().isNotEmpty) 'ninNumber': _nin.text.trim(),
 
-        'monthlySalary': salary,
+      if (_role.text.trim().isNotEmpty) 'roleName': _role.text.trim(),
 
-        'dateJoined': _dateOnly(
-          _dateJoined,
-        ),
+      'monthlySalary': salary,
 
-        'status': _status,
-      },
-    );
+      'dateJoined': _dateOnly(_dateJoined),
+
+      'status': _status,
+
+      'paymentMethod': _paymentMethod,
+
+      if (_paymentProvider.text.trim().isNotEmpty)
+        'paymentProvider': _paymentProvider.text.trim(),
+
+      if (_paymentAccountName.text.trim().isNotEmpty)
+        'paymentAccountName': _paymentAccountName.text.trim(),
+
+      if (_paymentAccountNumber.text.trim().isNotEmpty)
+        'paymentAccountNumber': _paymentAccountNumber.text.trim(),
+
+      if (_notes.text.trim().isNotEmpty) 'notes': _notes.text.trim(),
+    });
   }
 
   // ===========================================================================
@@ -329,9 +351,7 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
         titleSpacing: 2,
 
         title: Text(
-          _editing
-              ? 'Edit Employee'
-              : 'Record Employee',
+          _editing ? 'Edit Employee' : 'Record Employee',
           style: const TextStyle(
             color: midnightNavy,
             fontSize: 18,
@@ -341,10 +361,7 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
 
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(1),
-          child: Divider(
-            height: 1,
-            color: line,
-          ),
+          child: Divider(height: 1, color: line),
         ),
       ),
 
@@ -360,15 +377,51 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
               MediaQuery.of(context).viewInsets.bottom + 24,
             ),
             children: [
-              const _SectionTitle(
-                title: 'Identity details',
-              ),
+              const _SectionTitle(title: 'Identity details'),
 
               const SizedBox(height: 12),
 
-              _RequiredLabel(
-                label: 'Full name',
-              ),
+              if (!_editing) ...[
+                const _FieldLabel(label: 'Link existing agent (optional)'),
+
+                const SizedBox(height: 6),
+
+                DropdownButtonFormField<SalaryAgentCandidate?>(
+                  initialValue: _matchedAgent,
+                  isExpanded: true,
+                  decoration: _fieldDecoration(
+                    hint: 'Select an available agent',
+                    prefixIcon: Icons.people_alt_outlined,
+                  ),
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                  items: [
+                    const DropdownMenuItem<SalaryAgentCandidate?>(
+                      value: null,
+                      child: Text(
+                        'Create employee manually',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    for (final candidate in widget.agentCandidates)
+                      DropdownMenuItem<SalaryAgentCandidate?>(
+                        value: candidate,
+                        child: Text(
+                          [
+                            candidate.name,
+                            if ((candidate.phone ?? '').trim().isNotEmpty)
+                              _displayPhone(candidate.phone),
+                          ].join(' - '),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  onChanged: _selectAgentCandidate,
+                ),
+
+                const SizedBox(height: 14),
+              ],
+
+              _RequiredLabel(label: 'Full name'),
 
               const SizedBox(height: 6),
 
@@ -379,9 +432,7 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
                 },
                 textCapitalization: TextCapitalization.words,
                 textInputAction: TextInputAction.next,
-                decoration: _fieldDecoration(
-                  hint: 'Enter full name',
-                ),
+                decoration: _fieldDecoration(hint: 'Enter full name'),
                 validator: (value) {
                   if ((value ?? '').trim().length < 2) {
                     return 'Enter the employee name.';
@@ -393,9 +444,7 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
 
               const SizedBox(height: 15),
 
-              const _RequiredLabel(
-                label: 'Phone number',
-              ),
+              const _RequiredLabel(label: 'Phone number'),
 
               const SizedBox(height: 6),
 
@@ -404,14 +453,10 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
                 children: [
                   Container(
                     height: 48,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 11,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 11),
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      border: Border.all(
-                        color: line,
-                      ),
+                      border: Border.all(color: line),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: const Row(
@@ -444,13 +489,9 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
                       },
                       keyboardType: TextInputType.phone,
                       textInputAction: TextInputAction.next,
-                      decoration: _fieldDecoration(
-                        hint: 'Enter phone number',
-                      ),
+                      decoration: _fieldDecoration(hint: 'Enter phone number'),
                       validator: (value) {
-                        final normalized = _normalizePhone(
-                          value ?? '',
-                        );
+                        final normalized = _normalizePhone(value ?? '');
 
                         if (normalized.length < 9) {
                           return 'Enter a valid phone number.';
@@ -465,9 +506,7 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
 
               const SizedBox(height: 15),
 
-              const _FieldLabel(
-                label: 'Email (optional)',
-              ),
+              const _FieldLabel(label: 'Email (optional)'),
 
               const SizedBox(height: 6),
 
@@ -489,8 +528,7 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
                     return null;
                   }
 
-                  if (!email.contains('@') ||
-                      !email.contains('.')) {
+                  if (!email.contains('@') || !email.contains('.')) {
                     return 'Enter a valid email address.';
                   }
 
@@ -500,9 +538,7 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
 
               const SizedBox(height: 15),
 
-              const _RequiredLabel(
-                label: 'NIN number',
-              ),
+              const _RequiredLabel(label: 'NIN number'),
 
               const SizedBox(height: 6),
 
@@ -529,48 +565,34 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
               const SizedBox(height: 14),
 
               if (!_editing) ...[
-                if (!_lookupCompleted)
-                  const _LookupInformationCard(),
+                if (!_lookupCompleted) const _LookupInformationCard(),
 
-                if (_lookupCompleted &&
-                    _hasExistingMatch)
-                  _ExistingRecordCard(
-                    candidate: _matchedAgent!,
-                  ),
+                if (_lookupCompleted && _hasExistingMatch)
+                  _ExistingRecordCard(candidate: _matchedAgent!),
 
-                if (_lookupCompleted &&
-                    !_hasExistingMatch)
+                if (_lookupCompleted && !_hasExistingMatch)
                   const _NoRecordCard(),
 
                 const SizedBox(height: 18),
               ],
 
-              if (_editing ||
-                  _lookupCompleted) ...[
-                const _SectionTitle(
-                  title: 'Employment details',
-                ),
+              if (_editing || _lookupCompleted) ...[
+                const _SectionTitle(title: 'Employment details'),
 
                 const SizedBox(height: 12),
 
-                const _RequiredLabel(
-                  label: 'Date joined',
-                ),
+                const _RequiredLabel(label: 'Date joined'),
 
                 const SizedBox(height: 6),
 
                 _DateField(
-                  value: salaryDate(
-                    _dateJoined,
-                  ),
+                  value: salaryDate(_dateJoined),
                   onTap: _pickJoinedDate,
                 ),
 
                 const SizedBox(height: 15),
 
-                const _RequiredLabel(
-                  label: 'Role / Position',
-                ),
+                const _RequiredLabel(label: 'Role / Position'),
 
                 const SizedBox(height: 6),
 
@@ -578,9 +600,7 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
                   controller: _role,
                   textCapitalization: TextCapitalization.words,
                   textInputAction: TextInputAction.next,
-                  decoration: _fieldDecoration(
-                    hint: 'Enter role or position',
-                  ),
+                  decoration: _fieldDecoration(hint: 'Enter role or position'),
                   validator: (value) {
                     if ((value ?? '').trim().isEmpty) {
                       return 'Enter the employee role.';
@@ -592,29 +612,24 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
 
                 const SizedBox(height: 15),
 
-                const _RequiredLabel(
-                  label: 'Monthly salary',
-                ),
+                const _RequiredLabel(label: 'Monthly salary'),
 
                 const SizedBox(height: 6),
 
                 TextFormField(
                   controller: _monthlySalary,
                   keyboardType: TextInputType.number,
-                  textInputAction: TextInputAction.done,
+                  textInputAction: TextInputAction.next,
                   decoration: _fieldDecoration(
                     hint: 'Enter monthly salary',
                     prefixText: 'UGX  ',
                   ),
                   validator: (value) {
                     final amount = num.tryParse(
-                      (value ?? '')
-                          .replaceAll(',', '')
-                          .trim(),
+                      (value ?? '').replaceAll(',', '').trim(),
                     );
 
-                    if (amount == null ||
-                        amount <= 0) {
+                    if (amount == null || amount <= 0) {
                       return 'Enter a valid monthly salary.';
                     }
 
@@ -624,26 +639,123 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
 
                 const SizedBox(height: 15),
 
-                const _RequiredLabel(
-                  label: 'Employment status',
+                const _FieldLabel(label: 'Payment method'),
+
+                const SizedBox(height: 6),
+
+                DropdownButtonFormField<String>(
+                  initialValue: _paymentMethod,
+                  decoration: _fieldDecoration(
+                    prefixIcon: Icons.account_balance_wallet_outlined,
+                  ),
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                  items: const [
+                    DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                    DropdownMenuItem(
+                      value: 'MOBILE_MONEY',
+                      child: Text('Mobile Money'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'BANK_TRANSFER',
+                      child: Text('Bank transfer'),
+                    ),
+                    DropdownMenuItem(value: 'OTHER', child: Text('Other')),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) {
+                      return;
+                    }
+
+                    setState(() {
+                      _paymentMethod = value;
+                    });
+                  },
                 ),
+
+                const SizedBox(height: 15),
+
+                if (_paymentMethod != 'CASH') ...[
+                  const _FieldLabel(label: 'Payment provider (optional)'),
+
+                  const SizedBox(height: 6),
+
+                  TextFormField(
+                    controller: _paymentProvider,
+                    textCapitalization: TextCapitalization.words,
+                    textInputAction: TextInputAction.next,
+                    decoration: _fieldDecoration(
+                      hint: _paymentProviderHint(_paymentMethod),
+                      prefixIcon: Icons.business_outlined,
+                    ),
+                  ),
+
+                  const SizedBox(height: 15),
+
+                  const _FieldLabel(label: 'Account name (optional)'),
+
+                  const SizedBox(height: 6),
+
+                  TextFormField(
+                    controller: _paymentAccountName,
+                    textCapitalization: TextCapitalization.words,
+                    textInputAction: TextInputAction.next,
+                    decoration: _fieldDecoration(
+                      hint: 'Enter account holder name',
+                      prefixIcon: Icons.person_outline_rounded,
+                    ),
+                  ),
+
+                  const SizedBox(height: 15),
+
+                  const _FieldLabel(label: 'Account number (optional)'),
+
+                  const SizedBox(height: 6),
+
+                  TextFormField(
+                    controller: _paymentAccountNumber,
+                    keyboardType: TextInputType.text,
+                    textInputAction: TextInputAction.next,
+                    decoration: _fieldDecoration(
+                      hint: 'Enter phone, bank account, or wallet number',
+                      prefixIcon: Icons.numbers_rounded,
+                    ),
+                  ),
+
+                  const SizedBox(height: 15),
+                ],
+
+                const _FieldLabel(label: 'Notes (optional)'),
+
+                const SizedBox(height: 6),
+
+                TextFormField(
+                  controller: _notes,
+                  textCapitalization: TextCapitalization.sentences,
+                  textInputAction: TextInputAction.newline,
+                  minLines: 2,
+                  maxLines: 4,
+                  decoration: _fieldDecoration(
+                    hint: 'Enter salary or payment notes',
+                    prefixIcon: Icons.notes_outlined,
+                  ),
+                ),
+
+                const SizedBox(height: 15),
+
+                const _RequiredLabel(label: 'Employment status'),
 
                 const SizedBox(height: 6),
 
                 DropdownButtonFormField<String>(
                   initialValue: _status,
                   decoration: _fieldDecoration(),
-                  icon: const Icon(
-                    Icons.keyboard_arrow_down_rounded,
-                  ),
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
                   items: const [
                     DropdownMenuItem(
                       value: 'ACTIVE',
                       child: Row(
                         children: [
-                          _StatusDot(
-                            color: forestEmerald,
-                          ),
+                          _StatusDot(color: forestEmerald),
                           SizedBox(width: 8),
                           Text('Active'),
                         ],
@@ -653,11 +765,19 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
                       value: 'INACTIVE',
                       child: Row(
                         children: [
-                          _StatusDot(
-                            color: Color(0xFFF79009),
-                          ),
+                          _StatusDot(color: Color(0xFFF79009)),
                           SizedBox(width: 8),
                           Text('Inactive'),
+                        ],
+                      ),
+                    ),
+                    DropdownMenuItem(
+                      value: 'SUSPENDED',
+                      child: Row(
+                        children: [
+                          _StatusDot(color: Color(0xFFD92D20)),
+                          SizedBox(width: 8),
+                          Text('Suspended'),
                         ],
                       ),
                     ),
@@ -687,16 +807,10 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
                             : null
                       : _save,
                   style: FilledButton.styleFrom(
-                    backgroundColor: const Color(
-                      0xFF075CD8,
-                    ),
+                    backgroundColor: const Color(0xFF075CD8),
                     foregroundColor: Colors.white,
-                    disabledBackgroundColor: const Color(
-                      0xFFE5E7EB,
-                    ),
-                    disabledForegroundColor: const Color(
-                      0xFF98A2B3,
-                    ),
+                    disabledBackgroundColor: const Color(0xFFE5E7EB),
+                    disabledForegroundColor: const Color(0xFF98A2B3),
                     elevation: 0,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(7),
@@ -715,8 +829,7 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Text(
-                              !_editing &&
-                                      !_lookupCompleted
+                              !_editing && !_lookupCompleted
                                   ? 'Check & Continue'
                                   : _editing
                                   ? 'Save changes'
@@ -729,10 +842,7 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
 
                             const Spacer(),
 
-                            const Icon(
-                              Icons.arrow_forward_rounded,
-                              size: 18,
-                            ),
+                            const Icon(Icons.arrow_forward_rounded, size: 18),
                           ],
                         ),
                 ),
@@ -763,11 +873,7 @@ class _LookupInformationCard extends StatelessWidget {
       child: const Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.info_outline_rounded,
-            color: Color(0xFF175CD3),
-            size: 18,
-          ),
+          Icon(Icons.info_outline_rounded, color: Color(0xFF175CD3), size: 18),
 
           SizedBox(width: 9),
 
@@ -789,9 +895,7 @@ class _LookupInformationCard extends StatelessWidget {
 }
 
 class _ExistingRecordCard extends StatelessWidget {
-  const _ExistingRecordCard({
-    required this.candidate,
-  });
+  const _ExistingRecordCard({required this.candidate});
 
   final SalaryAgentCandidate candidate;
 
@@ -852,9 +956,7 @@ class _ExistingRecordCard extends StatelessWidget {
           padding: const EdgeInsets.all(11),
           decoration: BoxDecoration(
             color: Colors.white,
-            border: Border.all(
-              color: line,
-            ),
+            border: Border.all(color: line),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
@@ -899,10 +1001,7 @@ class _ExistingRecordCard extends StatelessWidget {
               ),
 
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: const Color(0xFFEAF5ED),
                   borderRadius: BorderRadius.circular(6),
@@ -939,11 +1038,7 @@ class _NoRecordCard extends StatelessWidget {
       child: const Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            Icons.search_off_rounded,
-            color: Color(0xFFD97706),
-            size: 18,
-          ),
+          Icon(Icons.search_off_rounded, color: Color(0xFFD97706), size: 18),
 
           SizedBox(width: 9),
 
@@ -985,9 +1080,7 @@ class _NoRecordCard extends StatelessWidget {
 // =============================================================================
 
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({
-    required this.title,
-  });
+  const _SectionTitle({required this.title});
 
   final String title;
 
@@ -1005,9 +1098,7 @@ class _SectionTitle extends StatelessWidget {
 }
 
 class _FieldLabel extends StatelessWidget {
-  const _FieldLabel({
-    required this.label,
-  });
+  const _FieldLabel({required this.label});
 
   final String label;
 
@@ -1025,9 +1116,7 @@ class _FieldLabel extends StatelessWidget {
 }
 
 class _RequiredLabel extends StatelessWidget {
-  const _RequiredLabel({
-    required this.label,
-  });
+  const _RequiredLabel({required this.label});
 
   final String label;
 
@@ -1060,10 +1149,7 @@ class _RequiredLabel extends StatelessWidget {
 }
 
 class _DateField extends StatelessWidget {
-  const _DateField({
-    required this.value,
-    required this.onTap,
-  });
+  const _DateField({required this.value, required this.onTap});
 
   final String value;
   final VoidCallback onTap;
@@ -1077,13 +1163,9 @@ class _DateField extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         child: Container(
           height: 48,
-          padding: const EdgeInsets.symmetric(
-            horizontal: 12,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
-            border: Border.all(
-              color: line,
-            ),
+            border: Border.all(color: line),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
@@ -1107,11 +1189,7 @@ class _DateField extends StatelessWidget {
                 ),
               ),
 
-              const Icon(
-                Icons.close_rounded,
-                color: slateText,
-                size: 16,
-              ),
+              const Icon(Icons.close_rounded, color: slateText, size: 16),
             ],
           ),
         ),
@@ -1121,9 +1199,7 @@ class _DateField extends StatelessWidget {
 }
 
 class _StatusDot extends StatelessWidget {
-  const _StatusDot({
-    required this.color,
-  });
+  const _StatusDot({required this.color});
 
   final Color color;
 
@@ -1132,10 +1208,7 @@ class _StatusDot extends StatelessWidget {
     return Container(
       width: 7,
       height: 7,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-      ),
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 }
@@ -1154,11 +1227,7 @@ InputDecoration _fieldDecoration({
     ),
     prefixIcon: prefixIcon == null
         ? null
-        : Icon(
-            prefixIcon,
-            color: slateText,
-            size: 17,
-          ),
+        : Icon(prefixIcon, color: slateText, size: 17),
     prefixText: prefixText,
     prefixStyle: const TextStyle(
       color: midnightNavy,
@@ -1167,38 +1236,24 @@ InputDecoration _fieldDecoration({
     ),
     filled: true,
     fillColor: Colors.white,
-    contentPadding: const EdgeInsets.symmetric(
-      horizontal: 12,
-      vertical: 13,
-    ),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(8),
-      borderSide: const BorderSide(
-        color: line,
-      ),
+      borderSide: const BorderSide(color: line),
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(8),
-      borderSide: const BorderSide(
-        color: Color(0xFF175CD3),
-        width: 1.2,
-      ),
+      borderSide: const BorderSide(color: Color(0xFF175CD3), width: 1.2),
     ),
     errorBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(8),
-      borderSide: const BorderSide(
-        color: Color(0xFFD92D20),
-      ),
+      borderSide: const BorderSide(color: Color(0xFFD92D20)),
     ),
     focusedErrorBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(8),
-      borderSide: const BorderSide(
-        color: Color(0xFFD92D20),
-      ),
+      borderSide: const BorderSide(color: Color(0xFFD92D20)),
     ),
-    errorStyle: const TextStyle(
-      fontSize: 8,
-    ),
+    errorStyle: const TextStyle(fontSize: 8),
   );
 }
 
@@ -1207,20 +1262,11 @@ InputDecoration _fieldDecoration({
 // =============================================================================
 
 String _normalizeText(String value) {
-  return value
-      .trim()
-      .toLowerCase()
-      .replaceAll(
-        RegExp(r'\s+'),
-        ' ',
-      );
+  return value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 }
 
 String _normalizePhone(String value) {
-  var digits = value.replaceAll(
-    RegExp(r'[^0-9]'),
-    '',
-  );
+  var digits = value.replaceAll(RegExp(r'[^0-9]'), '');
 
   if (digits.startsWith('256')) {
     digits = digits.substring(3);
@@ -1241,6 +1287,14 @@ String _apiPhone(String value) {
   }
 
   return '+256$local';
+}
+
+String _paymentProviderHint(String method) {
+  return switch (method) {
+    'MOBILE_MONEY' => 'e.g. MTN Mobile Money or Airtel Money',
+    'BANK_TRANSFER' => 'e.g. Stanbic, Centenary, Equity',
+    _ => 'Enter provider',
+  };
 }
 
 String _displayPhone(String? value) {

@@ -11,6 +11,7 @@ import '../../application/record_salary_payment.dart';
 import '../../application/save_salary_employee.dart';
 import '../../data/repositories/salaries_repository_impl.dart';
 import '../../domain/models/salary_models.dart';
+import '../../../shortages/presentation/screens/shortages_screen.dart';
 import '../controllers/salaries_controller.dart';
 import '../sheets/record_employee_sheet.dart';
 import '../utils/salary_formatters.dart';
@@ -110,6 +111,7 @@ class _SalariesScreenState extends State<SalariesScreen> {
         builder: (_) {
           return RecordEmployeeSheet(
             agentCandidates: _controller.agentCandidates,
+            branchId: widget.branchId ?? widget.session.branchId,
           );
         },
       ),
@@ -171,10 +173,15 @@ class _SalariesScreenState extends State<SalariesScreen> {
   }
 
   void _openShortages() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Employee shortages are shown against each affected employee.',
+    unawaited(
+      Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) {
+            return ShortagesScreen(
+              session: widget.session,
+              branchId: widget.branchId ?? widget.session.branchId,
+            );
+          },
         ),
       ),
     );

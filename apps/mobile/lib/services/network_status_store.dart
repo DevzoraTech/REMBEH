@@ -1,16 +1,20 @@
 import 'dart:async';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
 
-/// Tracks online/offline for the field app without extra plugins.
+/// Tracks online/offline for the field app.
 class NetworkStatusStore extends ChangeNotifier {
   NetworkStatusStore._();
   static final NetworkStatusStore instance = NetworkStatusStore._();
 
+  final Connectivity _connectivity = Connectivity();
+
   Timer? _timer;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
   bool _online = true;
   bool _started = false;
   bool _checking = false;
@@ -21,6 +25,16 @@ class NetworkStatusStore extends ChangeNotifier {
   Future<void> start() async {
     if (_started) return;
     _started = true;
+    _connectivitySubscription = _connectivity.onConnectivityChanged.listen((
+      results,
+    ) {
+      if (_hasNetworkFromResults(results)) {
+        // ignore: discarded_futures
+        checkNow();
+      } else {
+        _setOnline(false);
+      }
+    });
     await checkNow();
     _timer = Timer.periodic(const Duration(seconds: 12), (_) {
       // ignore: discarded_futures
@@ -29,6 +43,8 @@ class NetworkStatusStore extends ChangeNotifier {
   }
 
   void disposeStore() {
+    _connectivitySubscription?.cancel();
+    _connectivitySubscription = null;
     _timer?.cancel();
     _timer = null;
     _started = false;
@@ -38,13 +54,22 @@ class NetworkStatusStore extends ChangeNotifier {
     if (_checking) return _online;
     _checking = true;
     try {
+      final results = await _connectivity.checkConnectivity();
+      if (!_hasNetworkFromResults(results)) {
+        _setOnline(false);
+        return _online;
+      }
+
       final uri = Uri.parse(rembehApiBaseUrl);
-      final response = await http
-          .get(uri)
-          .timeout(const Duration(seconds: 4));
-      _setOnline(response.statusCode >= 200 && response.statusCode < 500);
+      await http.get(uri).timeout(const Duration(seconds: 4));
+      _setOnline(true);
     } catch (_) {
-      _setOnline(false);
+      /*
+       * A transport probe can fail on networks that still allow ordinary app
+       * requests shortly after reconnecting. Do not leave the app pinned in
+       * offline mode when the OS reports usable connectivity.
+       */
+      _setOnline(true);
     } finally {
       _checking = false;
     }
@@ -59,5 +84,9 @@ class NetworkStatusStore extends ChangeNotifier {
     if (_online == next) return;
     _online = next;
     notifyListeners();
+  }
+
+  bool _hasNetworkFromResults(List<ConnectivityResult> results) {
+    return results.any((result) => result != ConnectivityResult.none);
   }
 }

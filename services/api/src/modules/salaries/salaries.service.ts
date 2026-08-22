@@ -568,10 +568,9 @@ export class SalariesService {
       endDate.getUTCMonth(),
       27,
     );
-    const paymentWindowEnd = this.startOfUtcDate(
+    const paymentWindowEnd = this.endOfUtcMonth(
       endDate.getUTCFullYear(),
-      endDate.getUTCMonth() + 1,
-      31,
+      endDate.getUTCMonth(),
     );
 
     return {
@@ -623,6 +622,10 @@ export class SalariesService {
 
   private startOfUtcDate(year: number, month: number, day: number) {
     return new Date(Date.UTC(year, month, day));
+  }
+
+  private endOfUtcMonth(year: number, month: number) {
+    return this.startOfUtcDate(year, month + 1, 0);
   }
 
   private formatDate(date: Date) {
