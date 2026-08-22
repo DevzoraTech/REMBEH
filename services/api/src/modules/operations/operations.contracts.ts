@@ -1,15 +1,19 @@
 export type BranchOperationStatusContract = 'OPEN' | 'CLOSING' | 'CLOSED';
 
 export type DailyOperationReportStatusContract =
-  | 'MANAGER_REVIEW'
-  | 'SENT_TO_OWNER'
-  | 'OWNER_APPROVED'
-  | 'RETURNED_TO_MANAGER';
+  'MANAGER_REVIEW' | 'SENT_TO_OWNER' | 'OWNER_APPROVED' | 'RETURNED_TO_MANAGER';
 
 export type DailyOperationBranchContract = {
   id: string;
   name: string;
   address: string;
+};
+
+export type DailyOperationBranchAccessContract = {
+  canOperate: boolean;
+  locked: boolean;
+  subscriptionStatus: string | null;
+  message: string | null;
 };
 
 export type DailyOperationExpenseCategoryContract =
@@ -48,10 +52,7 @@ export type DailyOperationTopUpContract = {
 };
 
 export type DailyOperationAgentReturnStatusContract =
-  | 'PENDING'
-  | 'RETURNED'
-  | 'SHORT'
-  | 'OVER';
+  'PENDING' | 'RETURNED' | 'SHORT' | 'OVER';
 
 export type DailyOperationAgentReturnContract = {
   floatId: string;
@@ -292,6 +293,8 @@ export type DailyOperationResponseContract = {
   date: string;
 
   branch: DailyOperationBranchContract | null;
+
+  branchAccess: DailyOperationBranchAccessContract | null;
 
   openingBalance: number | null;
   openingBalanceSource: 'PREVIOUS_CLOSING' | 'MANUAL';

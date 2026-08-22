@@ -66,7 +66,7 @@ class _AgentActivityScreenState extends State<AgentActivityScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
-              'Agent activity',
+              'Field officer activity',
               style: TextStyle(
                 color: midnightNavy,
                 fontSize: 18,

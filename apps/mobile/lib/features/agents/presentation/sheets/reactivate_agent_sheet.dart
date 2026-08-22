@@ -58,7 +58,7 @@ class ReactivateAgentSheet extends StatelessWidget {
                 const SizedBox(width: 10),
                 const Expanded(
                   child: Text(
-                    'Reactivate agent',
+                    'Reactivate field officer',
                     style: TextStyle(
                       color: midnightNavy,
                       fontSize: 18,
@@ -113,7 +113,7 @@ class ReactivateAgentSheet extends StatelessWidget {
                 tone: forestEmerald,
                 icon: Icons.info_outline_rounded,
                 message:
-                    'This agent was suspended with a recent shortage record. '
+                    'This field officer was suspended with a recent shortage record. '
                     'Reason: ${shortageReason(latestShortage!)} '
                     '(${shortageMoney(latestShortage!.amountOutstanding)}).',
               ),
@@ -123,7 +123,7 @@ class ReactivateAgentSheet extends StatelessWidget {
               tone: Color(0xFF175CD3),
               icon: Icons.info_outline_rounded,
               message:
-                  'Reactivate this agent to allow them access to the app and perform operations again.',
+                  'Reactivate this field officer to allow app access and operations again.',
             ),
             const SizedBox(height: 18),
             Row(
@@ -147,7 +147,7 @@ class ReactivateAgentSheet extends StatelessWidget {
                       minimumSize: const Size(0, 48),
                     ),
                     child: const Text(
-                      'Reactivate agent',
+                      'Reactivate field officer',
                       style: TextStyle(fontWeight: FontWeight.w900),
                     ),
                   ),

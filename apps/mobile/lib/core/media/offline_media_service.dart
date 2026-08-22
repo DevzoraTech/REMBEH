@@ -33,7 +33,9 @@ class OfflineMediaService {
 
     // Generate unique ID and filename
     final mediaId = _uuid.v4();
-    final extension = _getFileExtension(photoFile.path);
+    final extension = _getFileExtension(photoFile.path).isEmpty
+        ? 'jpg'
+        : _getFileExtension(photoFile.path);
     final filename = '$mediaId.$extension';
 
     // Save compressed file to pending media directory
@@ -68,6 +70,53 @@ class OfflineMediaService {
       filename: filename,
       mimeType: mimeType,
       fileSize: fileSize,
+      caption: caption,
+      uploadStatus: MediaUploadStatus.pending,
+      createdAt: DateTime.now(),
+    );
+  }
+
+  /// Queue already-loaded media bytes for upload.
+  Future<QueuedMedia> queueBytes({
+    required Uint8List bytes,
+    required String entityType,
+    required String entityId,
+    required String filename,
+    required String mimeType,
+    String? caption,
+  }) async {
+    final mediaId = _uuid.v4();
+    final extension = _getFileExtension(filename).isEmpty
+        ? _getExtensionForMimeType(mimeType)
+        : _getFileExtension(filename);
+    final savedName = '$mediaId.$extension';
+
+    final mediaDir = await _pendingMediaDir;
+    final savedFile = File('${mediaDir.path}/$savedName');
+    await savedFile.writeAsBytes(bytes);
+
+    final database = await _db.database;
+    await database.insert('pending_media', {
+      'media_id': mediaId,
+      'entity_type': entityType,
+      'entity_id': entityId,
+      'local_path': savedFile.path,
+      'filename': filename.trim().isEmpty ? savedName : filename.trim(),
+      'mime_type': mimeType,
+      'file_size': bytes.length,
+      'caption': caption,
+      'upload_status': MediaUploadStatus.pending,
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+    });
+
+    return QueuedMedia(
+      mediaId: mediaId,
+      entityType: entityType,
+      entityId: entityId,
+      localPath: savedFile.path,
+      filename: filename.trim().isEmpty ? savedName : filename.trim(),
+      mimeType: mimeType,
+      fileSize: bytes.length,
       caption: caption,
       uploadStatus: MediaUploadStatus.pending,
       createdAt: DateTime.now(),
@@ -228,7 +277,23 @@ class OfflineMediaService {
 
   String _getFileExtension(String path) {
     final parts = path.split('.');
-    return parts.isNotEmpty ? parts.last.toLowerCase() : 'jpg';
+    if (parts.length < 2) {
+      return '';
+    }
+    return parts.last.toLowerCase();
+  }
+
+  String _getExtensionForMimeType(String mimeType) {
+    switch (mimeType.toLowerCase()) {
+      case 'image/png':
+        return 'png';
+      case 'image/webp':
+        return 'webp';
+      case 'application/pdf':
+        return 'pdf';
+      default:
+        return 'jpg';
+    }
   }
 
   String _getMimeType(String extension) {

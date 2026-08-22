@@ -7,10 +7,7 @@ import 'report_section.dart';
 import 'report_table.dart';
 
 class AgentAccountabilityReportTable extends StatelessWidget {
-  const AgentAccountabilityReportTable({
-    super.key,
-    required this.agentReturns,
-  });
+  const AgentAccountabilityReportTable({super.key, required this.agentReturns});
 
   final List<DailyReportAgentReturn> agentReturns;
 
@@ -42,15 +39,12 @@ class AgentAccountabilityReportTable extends StatelessWidget {
     );
 
     return ReportSection(
-      title: 'AGENT ACCOUNTABILITY',
+      title: 'FIELD OFFICER ACCOUNTABILITY',
       child: ReportTable(
         emptyMessage:
-            'No agent float was issued during this business day.',
+            'No field officer float was issued during this business day.',
         columns: const [
-          ReportTableColumn(
-            label: 'Agent',
-            flex: 25,
-          ),
+          ReportTableColumn(label: 'Field officer', flex: 25),
           ReportTableColumn(
             label: 'Float\nissued',
             flex: 17,
@@ -91,9 +85,7 @@ class AgentAccountabilityReportTable extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildRow(
-    DailyReportAgentReturn row,
-  ) {
+  List<Widget> _buildRow(DailyReportAgentReturn row) {
     final variance = row.variance ?? 0;
 
     return [
@@ -101,39 +93,26 @@ class AgentAccountabilityReportTable extends StatelessWidget {
         primary: row.agentName,
         secondary: row.agentPublicId,
       ),
-      ReportTableMoney(
-        formatMoney(row.amountGiven),
-      ),
-      ReportTableMoney(
-        formatMoney(row.amountDisbursed),
-      ),
-      ReportTableMoney(
-        formatMoney(row.amountCollected),
-      ),
+      ReportTableMoney(formatMoney(row.amountGiven)),
+      ReportTableMoney(formatMoney(row.amountDisbursed)),
+      ReportTableMoney(formatMoney(row.amountCollected)),
       row.amountReturned == null
-          ? const ReportTableText(
-              'Pending',
-              textAlign: TextAlign.right,
-            )
-          : ReportTableMoney(
-              formatMoney(row.amountReturned!),
-            ),
+          ? const ReportTableText('Pending', textAlign: TextAlign.right)
+          : ReportTableMoney(formatMoney(row.amountReturned!)),
       ReportTableStackedText(
         primary: _signedAmount(variance),
         secondary: _status(row),
         primaryColor: variance < 0
             ? const Color(0xFFB42318)
             : variance > 0
-                ? const Color(0xFFB54708)
-                : forestEmerald,
+            ? const Color(0xFFB54708)
+            : forestEmerald,
         alignment: CrossAxisAlignment.end,
       ),
     ];
   }
 
-  String _status(
-    DailyReportAgentReturn row,
-  ) {
+  String _status(DailyReportAgentReturn row) {
     if (!row.hasReturned) {
       return 'Pending';
     }
@@ -168,55 +147,35 @@ class _TotalsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 8,
-        vertical: 9,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
       child: Row(
         children: [
           const Expanded(
             flex: 25,
-            child: ReportTableText(
-              'Total',
-              strong: true,
-            ),
+            child: ReportTableText('Total', strong: true),
           ),
           Expanded(
             flex: 17,
-            child: ReportTableMoney(
-              formatMoney(issued),
-              strong: true,
-            ),
+            child: ReportTableMoney(formatMoney(issued), strong: true),
           ),
           Expanded(
             flex: 16,
-            child: ReportTableMoney(
-              formatMoney(loans),
-              strong: true,
-            ),
+            child: ReportTableMoney(formatMoney(loans), strong: true),
           ),
           Expanded(
             flex: 17,
-            child: ReportTableMoney(
-              formatMoney(collections),
-              strong: true,
-            ),
+            child: ReportTableMoney(formatMoney(collections), strong: true),
           ),
           Expanded(
             flex: 17,
-            child: ReportTableMoney(
-              formatMoney(returned),
-              strong: true,
-            ),
+            child: ReportTableMoney(formatMoney(returned), strong: true),
           ),
           Expanded(
             flex: 16,
             child: ReportTableMoney(
               _signedAmount(variance),
               strong: true,
-              color: variance < 0
-                  ? const Color(0xFFB42318)
-                  : forestEmerald,
+              color: variance < 0 ? const Color(0xFFB42318) : forestEmerald,
             ),
           ),
         ],

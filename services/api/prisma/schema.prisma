@@ -342,6 +342,22 @@ enum PushPlatform {
   IOS
 }
 
+enum ControlCenterAdminStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum ControlCenterMessageChannel {
+  EMAIL
+  SMS
+}
+
+enum ControlCenterMessageStatus {
+  SENT
+  FAILED
+  SKIPPED
+}
+
 model Tenant {
   id                 String       @id @default(uuid()) @db.Uuid
   name               String
@@ -384,26 +400,28 @@ model Tenant {
   operationReconciliations BranchOperationReconciliation[]
   operationCashCounts      BranchOperationCashCount[]
 
-  devicePushTokens        DevicePushToken[]
-  authSessions            AuthSession[]
-  billing                 TenantBilling?
-  branchSubscriptions     BranchSubscription[]
-  subscriptionPayments    SubscriptionPayment[]
-  branchSmsWallets        BranchSmsWallet[]
-  smsCreditPayments       SmsCreditPayment[]
-  smsUsageLogs            SmsUsageLog[]
-  smsPurchases            SmsPurchase[]
-  smsWalletLedgers        SmsWalletLedger[]
-  smsMessages             SmsMessage[]
-  smsCallbackEvents       SmsCallbackEvent[]
-  smsProviderRequestLogs  SmsProviderRequestLog[]
-  loanReminderBatches     LoanReminderBatch[]
-  loanReminderItems       LoanReminderItem[]
-  cashShortages           CashShortage[]
-  cashShortagePayments    CashShortagePayment[]
-  employees               Employee[]
-  salaryPayments          SalaryPayment[]
-  smsNotificationSettings TenantSmsNotificationSettings?
+  devicePushTokens           DevicePushToken[]
+  authSessions               AuthSession[]
+  billing                    TenantBilling?
+  branchSubscriptions        BranchSubscription[]
+  subscriptionPayments       SubscriptionPayment[]
+  branchSmsWallets           BranchSmsWallet[]
+  smsCreditPayments          SmsCreditPayment[]
+  smsUsageLogs               SmsUsageLog[]
+  smsPurchases               SmsPurchase[]
+  smsWalletLedgers           SmsWalletLedger[]
+  smsMessages                SmsMessage[]
+  smsCallbackEvents          SmsCallbackEvent[]
+  smsProviderRequestLogs     SmsProviderRequestLog[]
+  loanReminderBatches        LoanReminderBatch[]
+  loanReminderItems          LoanReminderItem[]
+  cashShortages              CashShortage[]
+  cashShortagePayments       CashShortagePayment[]
+  employees                  Employee[]
+  salaryPayments             SalaryPayment[]
+  smsNotificationSettings    TenantSmsNotificationSettings?
+  subscriptionPriceOverrides SubscriptionPriceOverride[]
+  controlCenterMessageLogs   ControlCenterMessageLog[]
 
   @@map("tenants")
 }
@@ -441,20 +459,22 @@ model Branch {
   operationReports         BranchOperationReport[]
   operationReconciliations BranchOperationReconciliation[]
 
-  subscription           BranchSubscription?
-  subscriptionPayments   SubscriptionPayment[]
-  smsWallet              BranchSmsWallet?
-  smsCreditPayments      SmsCreditPayment[]
-  smsUsageLogs           SmsUsageLog[]
-  smsPurchases           SmsPurchase[]
-  smsWalletLedgers       SmsWalletLedger[]
-  smsMessages            SmsMessage[]
-  smsProviderRequestLogs SmsProviderRequestLog[]
-  loanReminderBatches    LoanReminderBatch[]
-  loanReminderItems      LoanReminderItem[]
-  cashShortages          CashShortage[]
-  employees              Employee[]
-  salaryPayments         SalaryPayment[]
+  subscription               BranchSubscription?
+  subscriptionPayments       SubscriptionPayment[]
+  smsWallet                  BranchSmsWallet?
+  smsCreditPayments          SmsCreditPayment[]
+  smsUsageLogs               SmsUsageLog[]
+  smsPurchases               SmsPurchase[]
+  smsWalletLedgers           SmsWalletLedger[]
+  smsMessages                SmsMessage[]
+  smsProviderRequestLogs     SmsProviderRequestLog[]
+  loanReminderBatches        LoanReminderBatch[]
+  loanReminderItems          LoanReminderItem[]
+  cashShortages              CashShortage[]
+  employees                  Employee[]
+  salaryPayments             SalaryPayment[]
+  subscriptionPriceOverrides SubscriptionPriceOverride[]
+  controlCenterMessageLogs   ControlCenterMessageLog[]
 
   @@unique([tenantId, name])
   @@index([tenantId, name])
@@ -1377,6 +1397,107 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+model ControlCenterAdmin {
+  id           String                   @id @default(uuid()) @db.Uuid
+  email        String                   @unique
+  displayName  String                   @map("display_name")
+  passwordHash String?                  @map("password_hash")
+  status       ControlCenterAdminStatus @default(ACTIVE)
+  lastLoginAt  DateTime?                @map("last_login_at")
+  createdAt    DateTime                 @default(now()) @map("created_at")
+  updatedAt    DateTime                 @updatedAt @map("updated_at")
+
+  pricingOverrides SubscriptionPriceOverride[]
+  messageLogs      ControlCenterMessageLog[]
+  auditLogs        ControlCenterAuditLog[]
+
+  @@map("control_center_admins")
+}
+
+model SubscriptionPriceOverride {
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  branchId         String?   @map("branch_id") @db.Uuid
+  planId           String    @map("plan_id") @db.Uuid
+  amount           Decimal   @db.Decimal(14, 2)
+  currency         String    @default("UGX")
+  effectiveFrom    DateTime  @default(now()) @map("effective_from")
+  effectiveUntil   DateTime? @map("effective_until")
+  reason           String
+  changedByAdminId String    @map("changed_by_admin_id") @db.Uuid
+  revokedAt        DateTime? @map("revoked_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  tenant    Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch    Branch?            @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  plan      SubscriptionPlan   @relation(fields: [planId], references: [id])
+  changedBy ControlCenterAdmin @relation(fields: [changedByAdminId], references: [id])
+
+  @@index([tenantId, branchId, planId, effectiveFrom])
+  @@index([tenantId, branchId, revokedAt])
+  @@index([planId])
+  @@map("subscription_price_overrides")
+}
+
+model ControlCenterMessageTemplate {
+  id        String                      @id @default(uuid()) @db.Uuid
+  code      String                      @unique
+  name      String
+  channel   ControlCenterMessageChannel
+  subject   String?
+  body      String
+  isSystem  Boolean                     @default(true) @map("is_system")
+  createdAt DateTime                    @default(now()) @map("created_at")
+  updatedAt DateTime                    @updatedAt @map("updated_at")
+
+  @@index([channel])
+  @@map("control_center_message_templates")
+}
+
+model ControlCenterMessageLog {
+  id               String                      @id @default(uuid()) @db.Uuid
+  tenantId         String?                     @map("tenant_id") @db.Uuid
+  branchId         String?                     @map("branch_id") @db.Uuid
+  createdByAdminId String                      @map("created_by_admin_id") @db.Uuid
+  channel          ControlCenterMessageChannel
+  recipient        String
+  subject          String?
+  body             String
+  status           ControlCenterMessageStatus
+  provider         String?
+  error            String?
+  sentAt           DateTime?                   @map("sent_at")
+  createdAt        DateTime                    @default(now()) @map("created_at")
+
+  tenant    Tenant?            @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  branch    Branch?            @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  createdBy ControlCenterAdmin @relation(fields: [createdByAdminId], references: [id])
+
+  @@index([createdByAdminId, createdAt])
+  @@index([tenantId, createdAt])
+  @@index([channel, status, createdAt])
+  @@map("control_center_message_logs")
+}
+
+model ControlCenterAuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  adminId    String?  @map("admin_id") @db.Uuid
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  oldValue   Json?    @map("old_value")
+  newValue   Json?    @map("new_value")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  admin ControlCenterAdmin? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([adminId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action, createdAt])
+  @@map("control_center_audit_logs")
+}
+
 model OutboxEvent {
   id            String       @id @default(uuid()) @db.Uuid
   tenantId      String       @map("tenant_id") @db.Uuid
@@ -1470,8 +1591,9 @@ model SubscriptionPlan {
   createdAt DateTime             @default(now()) @map("created_at")
   updatedAt DateTime             @updatedAt @map("updated_at")
 
-  subscriptions BranchSubscription[]
-  payments      SubscriptionPayment[]
+  subscriptions  BranchSubscription[]
+  payments       SubscriptionPayment[]
+  priceOverrides SubscriptionPriceOverride[]
 
   @@map("subscription_plans")
 }

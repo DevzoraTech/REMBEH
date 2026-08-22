@@ -492,7 +492,7 @@ class _SalaryDetailsScreenState extends State<SalaryDetailsScreen> {
               const SizedBox(height: 12),
 
               const Text(
-                'Reversed payments',
+                'Corrections (reversed payments)',
                 style: TextStyle(
                   color: slateText,
                   fontSize: 10,
@@ -583,7 +583,7 @@ class _EmployeeHeader extends StatelessWidget {
               const SizedBox(height: 5),
 
               Text(
-                employee.roleName ?? 'Employee',
+                salaryRoleLabel(employee.roleName),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(

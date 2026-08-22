@@ -23,6 +23,8 @@ class OperationsTab extends StatelessWidget {
     required this.activities,
     required this.dayOpen,
     required this.dayActive,
+    required this.canOpenDay,
+    required this.canRecordCashMovements,
     required this.onRefresh,
     required this.onOpenDay,
     required this.onReceiveCapital,
@@ -32,6 +34,8 @@ class OperationsTab extends StatelessWidget {
     required this.onViewActivity,
     this.pendingClosureMessage,
     this.awaitingReportMessage,
+    this.openDayBlockedMessage,
+    this.operationReadOnlyMessage,
     this.onPendingClosure,
     this.onSendAwaitingReport,
     this.onOpenAgentPositions,
@@ -52,6 +56,8 @@ class OperationsTab extends StatelessWidget {
   /// - OPEN: normal cash movement is allowed.
   /// - CLOSING: reconciliation remains accessible.
   final bool dayActive;
+  final bool canOpenDay;
+  final bool canRecordCashMovements;
 
   final Future<void> Function() onRefresh;
 
@@ -64,6 +70,8 @@ class OperationsTab extends StatelessWidget {
 
   final String? pendingClosureMessage;
   final String? awaitingReportMessage;
+  final String? openDayBlockedMessage;
+  final String? operationReadOnlyMessage;
 
   final VoidCallback? onPendingClosure;
   final VoidCallback? onSendAwaitingReport;
@@ -76,12 +84,7 @@ class OperationsTab extends StatelessWidget {
         color: forestEmerald,
         onRefresh: onRefresh,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(
-            18,
-            14,
-            18,
-            30,
-          ),
+          padding: const EdgeInsets.fromLTRB(18, 14, 18, 30),
           physics: const AlwaysScrollableScrollPhysics(),
           children: [
             if (pendingClosureMessage != null)
@@ -102,9 +105,8 @@ class OperationsTab extends StatelessWidget {
               )
             else
               EmptyDayCard(
-                canOpen: session.hasPermission(
-                  'operation.open',
-                ),
+                canOpen: canOpenDay,
+                blockedMessage: openDayBlockedMessage,
                 onOpenDay: onOpenDay,
               ),
           ],
@@ -121,27 +123,20 @@ class OperationsTab extends StatelessWidget {
 
     final canReceiveCapital =
         dayOpen &&
-        session.hasPermission(
-          'operation.cash.topup',
-        );
+        canRecordCashMovements &&
+        session.hasPermission('operation.cash.topup');
 
     final canAllocateFloat =
         dayOpen &&
-        session.hasPermission(
-          'operation.float.manage',
-        );
+        canRecordCashMovements &&
+        session.hasPermission('operation.float.manage');
 
     final canRecordExpense =
         dayOpen &&
-        session.hasPermission(
-          'operation.expense.create',
-        );
+        canRecordCashMovements &&
+        session.hasPermission('operation.expense.create');
 
-    final canReconcile =
-        dayActive &&
-        session.hasPermission(
-          'operation.close',
-        );
+    final canReconcile = dayActive && session.hasPermission('operation.close');
 
     /*
      * Agent positions must remain accessible even when the branch
@@ -154,33 +149,27 @@ class OperationsTab extends StatelessWidget {
      */
     final canOpenAgentPositions =
         onOpenAgentPositions != null &&
-        session.hasPermission(
-          'operation.float.manage',
-        );
+        session.hasPermission('operation.float.manage');
 
     return RefreshIndicator(
       color: forestEmerald,
       onRefresh: onRefresh,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(
-          18,
-          14,
-          18,
-          28,
-        ),
+        padding: const EdgeInsets.fromLTRB(18, 14, 18, 28),
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
         ),
         children: [
-          OperationsStatusCard(
-            operation: data,
-          ),
+          if (operationReadOnlyMessage != null) ...[
+            _OperationReadOnlyBanner(message: operationReadOnlyMessage!),
+            const SizedBox(height: 10),
+          ],
+
+          OperationsStatusCard(operation: data),
 
           const SizedBox(height: 10),
 
-          CashPositionCard(
-            operation: data,
-          ),
+          CashPositionCard(operation: data),
 
           /*
            * Do not hide this section merely because no float has
@@ -196,9 +185,7 @@ class OperationsTab extends StatelessWidget {
               totalFloat: totalFloat,
               canAllocate: canAllocateFloat,
               onAllocateFloat: onAllocateFloat,
-              onViewAll: canOpenAgentPositions
-                  ? onOpenAgentPositions
-                  : null,
+              onViewAll: canOpenAgentPositions ? onOpenAgentPositions : null,
             ),
           ],
 
@@ -246,10 +233,44 @@ class OperationsTab extends StatelessWidget {
            */
           if (canReconcile) ...[
             const SizedBox(height: 10),
-            ReconcileCloseCard(
-              onTap: onCloseDay,
-            ),
+            ReconcileCloseCard(onTap: onCloseDay),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _OperationReadOnlyBanner extends StatelessWidget {
+  const _OperationReadOnlyBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: warmGold.withValues(alpha: 0.10),
+        border: Border.all(color: warmGold.withValues(alpha: 0.24)),
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline_rounded, color: warmGold, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: midnightNavy,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                height: 1.35,
+              ),
+            ),
+          ),
         ],
       ),
     );

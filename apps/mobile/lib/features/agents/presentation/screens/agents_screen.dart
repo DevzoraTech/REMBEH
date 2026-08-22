@@ -401,7 +401,7 @@ class _AgentsHeader extends StatelessWidget {
             const SizedBox(width: 2),
             const Expanded(
               child: Text(
-                'Agents',
+                'Field Officers',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -471,7 +471,7 @@ class _SearchField extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
           decoration: InputDecoration(
-            hintText: 'Search agents...',
+            hintText: 'Search field officers...',
             hintStyle: const TextStyle(
               color: slateText,
               fontSize: 14,
@@ -841,7 +841,7 @@ class _EmptyAgents extends StatelessWidget {
       padding: EdgeInsets.symmetric(vertical: 54),
       child: Center(
         child: Text(
-          'No agents found.',
+          'No field officers found.',
           style: TextStyle(
             color: slateText,
             fontSize: 11,

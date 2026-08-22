@@ -29,4 +29,16 @@ export class RecordSalaryPaymentDto {
   @IsString()
   @Length(0, 500)
   referenceNote?: string;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(10_000_000_000)
+  @Type(() => Number)
+  shortageSettlementAmount?: number;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 500)
+  shortageSettlementNote?: string;
 }

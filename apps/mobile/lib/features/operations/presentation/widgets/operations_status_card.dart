@@ -7,30 +7,31 @@ import 'ops_icon.dart';
 import 'ops_surface.dart';
 
 class OperationsStatusCard extends StatelessWidget {
-  const OperationsStatusCard({
-    super.key,
-    required this.operation,
-  });
+  const OperationsStatusCard({super.key, required this.operation});
 
   final OperationDashboardData operation;
 
   @override
   Widget build(BuildContext context) {
+    final title = _isSameLocalDay(operation.operationDate, DateTime.now())
+        ? 'Today\'s Operations'
+        : '${operationDate(operation.operationDate)} Operations';
+
     return OpsSurface(
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const OpsIcon(
-            icon: Icons.calendar_today_outlined,
-          ),
+          const OpsIcon(icon: Icons.calendar_today_outlined),
           const SizedBox(width: 11),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Today\'s Operations',
-                  style: TextStyle(
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
                     color: midnightNavy,
                     fontSize: 14.5,
                     fontWeight: FontWeight.w900,
@@ -52,18 +53,13 @@ class OperationsStatusCard extends StatelessWidget {
                       padding: EdgeInsets.symmetric(horizontal: 6),
                       child: Text(
                         '•',
-                        style: TextStyle(
-                          color: slateText,
-                          fontSize: 10,
-                        ),
+                        style: TextStyle(color: slateText, fontSize: 10),
                       ),
                     ),
                     Text(
                       operation.isOpen ? 'Open' : operation.status,
                       style: TextStyle(
-                        color: operation.isOpen
-                            ? forestEmerald
-                            : slateText,
+                        color: operation.isOpen ? forestEmerald : slateText,
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
                       ),
@@ -94,6 +90,13 @@ class OperationsStatusCard extends StatelessWidget {
   }
 }
 
+bool _isSameLocalDay(DateTime left, DateTime right) {
+  final a = left.toLocal();
+  final b = right.toLocal();
+
+  return a.year == b.year && a.month == b.month && a.day == b.day;
+}
+
 class _OpenChip extends StatelessWidget {
   const _OpenChip();
 
@@ -105,9 +108,7 @@ class _OpenChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: forestEmerald.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: forestEmerald.withValues(alpha: 0.16),
-        ),
+        border: Border.all(color: forestEmerald.withValues(alpha: 0.16)),
       ),
       child: const Row(
         mainAxisSize: MainAxisSize.min,

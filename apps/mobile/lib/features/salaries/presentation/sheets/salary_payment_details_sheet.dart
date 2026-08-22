@@ -266,7 +266,7 @@ class _EmployeeSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final role = employee.roleName?.trim();
+    final role = salaryRoleLabel(employee.roleName);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -298,7 +298,7 @@ class _EmployeeSummary extends StatelessWidget {
               const SizedBox(height: 4),
 
               Text(
-                role == null || role.isEmpty ? 'Employee' : role,
+                role,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(

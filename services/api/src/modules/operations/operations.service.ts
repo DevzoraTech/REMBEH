@@ -8,6 +8,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
@@ -38,6 +39,7 @@ import { ReviewOperationReportDto } from './dto/review-operation-report.dto';
 import {
   AgentDailyOperationResponseContract,
   BranchOperationReconciliationContract,
+  DailyOperationBranchAccessContract,
   DailyOperationAgentReturnContract,
   DailyOperationCarryoverContract,
   DailyOperationContract,
@@ -108,6 +110,7 @@ export class OperationsService {
       return {
         date: bounds.dateLabel,
         branch: null,
+        branchAccess: null,
         openingBalance: null,
         openingBalanceSource: 'MANUAL',
         previousClosedOperation: null,
@@ -212,6 +215,10 @@ export class OperationsService {
         name: branch.name,
         address: branch.address,
       },
+      branchAccess: await this.getBranchAccessContract(
+        user.tenantId,
+        branch.id,
+      ),
       openingBalance,
       openingBalanceSource: previousClosed ? 'PREVIOUS_CLOSING' : 'MANUAL',
       previousClosedOperation: previousClosed
@@ -752,6 +759,11 @@ export class OperationsService {
       throw new NotFoundException('Branch was not found.');
     }
 
+    await this.billingService.assertBranchSubscriptionActive(
+      user.tenantId,
+      branch.id,
+    );
+
     const bounds = this.parseDayBounds(dto.date);
 
     const operation = await this.repository.findOperationForDay({
@@ -833,6 +845,11 @@ export class OperationsService {
     if (!branch) {
       throw new NotFoundException('Branch was not found.');
     }
+
+    await this.billingService.assertBranchSubscriptionActive(
+      user.tenantId,
+      branch.id,
+    );
 
     const bounds = this.parseDayBounds(dto.date);
 
@@ -1669,7 +1686,8 @@ export class OperationsService {
 
     if (
       reportForSubmission &&
-      (reportForSubmission.status === BranchOperationReportStatus.MANAGER_REVIEW ||
+      (reportForSubmission.status ===
+        BranchOperationReportStatus.MANAGER_REVIEW ||
         reportForSubmission.status ===
           BranchOperationReportStatus.RETURNED_TO_MANAGER)
     ) {
@@ -1856,6 +1874,11 @@ export class OperationsService {
       throw new ForbiddenException('Branch scope is required.');
     }
 
+    await this.billingService.assertBranchSubscriptionActive(
+      input.tenantId,
+      input.branchId,
+    );
+
     const bounds = this.parseDayBounds(input.date);
 
     this.assertCanChangeDay(bounds.dateOnly);
@@ -1884,6 +1907,11 @@ export class OperationsService {
     if (!input.branchId) {
       throw new ForbiddenException('Branch scope is required.');
     }
+
+    await this.billingService.assertBranchSubscriptionActive(
+      input.tenantId,
+      input.branchId,
+    );
 
     const bounds = this.parseDayBounds(input.date);
 
@@ -3860,6 +3888,41 @@ export class OperationsService {
     const day = String(shifted.getUTCDate()).padStart(2, '0');
 
     return `${year}-${month}-${day}`;
+  }
+
+  private async getBranchAccessContract(
+    tenantId: string,
+    branchId: string,
+  ): Promise<DailyOperationBranchAccessContract> {
+    try {
+      const subscription =
+        await this.billingService.assertBranchSubscriptionActive(
+          tenantId,
+          branchId,
+        );
+
+      return {
+        canOperate: this.billingService.isBranchMutationsAllowed(
+          subscription.status,
+        ),
+        locked: false,
+        subscriptionStatus: subscription.status,
+        message: null,
+      };
+    } catch (error) {
+      if (error instanceof HttpException && error.getStatus() === 402) {
+        return {
+          canOperate: false,
+          locked: true,
+          subscriptionStatus: 'LOCKED',
+          message:
+            error.message ||
+            'This branch is paused. Renew on Subscription to continue.',
+        };
+      }
+
+      throw error;
+    }
   }
 
   private formatDateLabel(value: Date) {

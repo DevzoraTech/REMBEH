@@ -1,7 +1,10 @@
 import '../../features/loan_application/application/loan_application_use_cases.dart';
 import '../../features/loan_application/data/loan_application_api_datasource.dart';
 import '../../features/loan_application/data/loan_application_repository_impl.dart';
+import '../../features/loan_application/data/offline_capable_loan_application_repository.dart';
 import '../../features/loan_application/domain/repositories/loan_application_repository.dart';
+import '../database/models/loan_product_local.dart';
+import '../database/repositories/loan_products_repository.dart';
 import '../../services/session_store.dart';
 
 class LoanApplicationLocator {
@@ -14,32 +17,78 @@ class LoanApplicationLocator {
   late final LoanApplicationApiDatasource apiDatasource =
       LoanApplicationApiDatasource(sessionStore);
 
-  late final LoanApplicationRepository repository =
+  late final LoanApplicationRepository remoteRepository =
       LoanApplicationRepositoryImpl(apiDatasource);
+  late final LoanApplicationRepository repository =
+      OfflineCapableLoanApplicationRepository(
+        remote: remoteRepository,
+        sessionStore: sessionStore,
+      );
+  late final LoanProductsRepository localLoanProducts =
+      LoanProductsRepository();
 
-  late final CreateLoanDraftUseCase createDraft =
-      CreateLoanDraftUseCase(repository);
-  late final VerifyApplicantUseCase verifyApplicant =
-      VerifyApplicantUseCase(repository);
+  late final CreateLoanDraftUseCase createDraft = CreateLoanDraftUseCase(
+    repository,
+  );
+  late final VerifyApplicantUseCase verifyApplicant = VerifyApplicantUseCase(
+    repository,
+  );
   late final SaveLoanStepUseCase saveStep = SaveLoanStepUseCase(repository);
-  late final UploadLoanMediaUseCase uploadMedia =
-      UploadLoanMediaUseCase(repository);
+  late final UploadLoanMediaUseCase uploadMedia = UploadLoanMediaUseCase(
+    repository,
+  );
   late final UploadLoanSignatureUseCase uploadSignature =
       UploadLoanSignatureUseCase(repository);
-  late final SubmitLoanApplicationUseCase submit =
-      SubmitLoanApplicationUseCase(repository);
+  late final SubmitLoanApplicationUseCase submit = SubmitLoanApplicationUseCase(
+    repository,
+  );
   late final ListLoanApplicationsUseCase listApplications =
       ListLoanApplicationsUseCase(repository);
-  late final GetLoanApplicationUseCase getById =
-      GetLoanApplicationUseCase(repository);
+  late final GetLoanApplicationUseCase getById = GetLoanApplicationUseCase(
+    repository,
+  );
 
   Future<
-      ({
-        List<LoanProductTemplateOption> templates,
-        List<LoanRateOption> rates,
-        List<LoanPeriodOption> periods,
-      })> loadLoanProducts() async {
-    final payload = await apiDatasource.listLoanProducts();
+    ({
+      List<LoanProductTemplateOption> templates,
+      List<LoanRateOption> rates,
+      List<LoanPeriodOption> periods,
+    })
+  >
+  loadLoanProducts() async {
+    try {
+      final payload = await apiDatasource.listLoanProducts();
+      final catalog = _catalogFromApi(payload);
+      if (catalog.templates.isNotEmpty) {
+        return catalog;
+      }
+    } catch (_) {
+      final cached = await _catalogFromCache();
+      if (cached.templates.isNotEmpty) {
+        return cached;
+      }
+
+      rethrow;
+    }
+
+    final cached = await _catalogFromCache();
+    if (cached.templates.isNotEmpty) {
+      return cached;
+    }
+
+    return (
+      templates: const <LoanProductTemplateOption>[],
+      rates: const <LoanRateOption>[],
+      periods: const <LoanPeriodOption>[],
+    );
+  }
+
+  ({
+    List<LoanProductTemplateOption> templates,
+    List<LoanRateOption> rates,
+    List<LoanPeriodOption> periods,
+  })
+  _catalogFromApi(Map<String, dynamic> payload) {
     final templates = ((payload['templates'] as List?) ?? const [])
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
@@ -70,6 +119,49 @@ class LoanApplicationLocator {
         )
         .toList();
     return (templates: templates, rates: rates, periods: periods);
+  }
+
+  Future<
+    ({
+      List<LoanProductTemplateOption> templates,
+      List<LoanRateOption> rates,
+      List<LoanPeriodOption> periods,
+    })
+  >
+  _catalogFromCache() async {
+    final products = await localLoanProducts.getAllActive();
+    return (
+      templates: products.map(_templateFromCachedProduct).toList(),
+      rates: const <LoanRateOption>[],
+      periods: const <LoanPeriodOption>[],
+    );
+  }
+
+  LoanProductTemplateOption _templateFromCachedProduct(
+    LoanProductLocal product,
+  ) {
+    final durationDays = product.maxTerm > 0
+        ? product.maxTerm
+        : product.minTerm > 0
+        ? product.minTerm
+        : 30;
+
+    return LoanProductTemplateOption(
+      id: product.id,
+      name: product.name,
+      interestRatePercent: product.interestRate,
+      interestType: 'FLAT',
+      termValue: durationDays,
+      termUnit: 'DAYS',
+      durationDays: durationDays,
+      repaymentFrequency: 'DAILY',
+      processingFeePercent: 0,
+      penaltyRatePercent: 0,
+      finePeriodDays: 10,
+      paymentStartPolicy: 'NEXT_DAY',
+      minLoanAmount: product.minAmount > 0 ? product.minAmount : null,
+      maxLoanAmount: product.maxAmount > 0 ? product.maxAmount : null,
+    );
   }
 }
 
@@ -193,8 +285,7 @@ class LoanProductTemplateOption {
       repaymentFrequency: json['repaymentFrequency'] as String? ?? 'DAILY',
       processingFeePercent:
           (json['processingFeePercent'] as num?)?.toDouble() ?? 0,
-      penaltyRatePercent:
-          (json['penaltyRatePercent'] as num?)?.toDouble() ?? 0,
+      penaltyRatePercent: (json['penaltyRatePercent'] as num?)?.toDouble() ?? 0,
       finePeriodDays: (json['finePeriodDays'] as num?)?.toInt() ?? 10,
       paymentStartPolicy: json['paymentStartPolicy'] as String? ?? 'NEXT_DAY',
       paymentStartDelayDays: (json['paymentStartDelayDays'] as num?)?.toInt(),

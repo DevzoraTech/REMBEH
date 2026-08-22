@@ -226,6 +226,9 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   Map<String, dynamic>? get _branch =>
       _data?['branch'] as Map<String, dynamic>?;
 
+  Map<String, dynamic>? get _branchAccess =>
+      _data?['branchAccess'] as Map<String, dynamic>?;
+
   Map<String, dynamic>? get _pendingClosure =>
       _data?['pendingClosureOperation'] as Map<String, dynamic>?;
 
@@ -250,6 +253,91 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   bool get _dayClosing => _operationStatus == 'CLOSING';
 
   bool get _dayActive => _dayOpen || _dayClosing;
+
+  DateTime get _loadedOperationDate {
+    return DateTime.tryParse(
+          _string(_operation?['operationDate']) ??
+              _string(_data?['date']) ??
+              _date,
+        )?.toLocal() ??
+        DateTime.now();
+  }
+
+  String get _loadedOperationDateKey => _dateKey(_loadedOperationDate);
+
+  bool get _loadedOperationDateIsToday =>
+      _loadedOperationDateKey == _todayLabel();
+
+  String get _homeSummaryPeriodLabel {
+    if (_showingCachedData) {
+      return 'Cached ${_shortDateLabel(_loadedOperationDate)}';
+    }
+
+    return _loadedOperationDateIsToday
+        ? 'Today'
+        : _shortDateLabel(_loadedOperationDate);
+  }
+
+  String get _homeMetricSuffix {
+    if (_loadedOperationDateIsToday && !_showingCachedData) {
+      return 'today';
+    }
+
+    return 'on ${_shortDateLabel(_loadedOperationDate)}';
+  }
+
+  bool get _branchCanOperate {
+    final value = _branchAccess?['canOperate'];
+
+    return value is bool ? value : true;
+  }
+
+  bool get _branchAccessLocked {
+    final locked = _branchAccess?['locked'];
+
+    if (locked is bool) {
+      return locked;
+    }
+
+    return (_string(_branchAccess?['subscriptionStatus']) ?? '')
+            .toUpperCase() ==
+        'LOCKED';
+  }
+
+  String? get _branchAccessMessage => _string(_branchAccess?['message']);
+
+  String? get _operationMutationBlockedMessage {
+    if (_showingCachedData) {
+      return 'You are viewing cached branch data. Connect to the internet and refresh before changing operations.';
+    }
+
+    if (_branchAccessLocked || !_branchCanOperate) {
+      return _branchAccessMessage ??
+          'This branch is paused. Renew on Subscription to continue.';
+    }
+
+    return null;
+  }
+
+  String? get _openDayBlockedMessage {
+    if (!widget.session.hasPermission('operation.open')) {
+      return 'You do not have permission to open branch operations.';
+    }
+
+    final mutationBlock = _operationMutationBlockedMessage;
+
+    if (mutationBlock != null) {
+      return mutationBlock;
+    }
+
+    if (!_isOperationOpenableDate(_loadedOperationDateKey)) {
+      return 'Only today or the next business day can be opened.';
+    }
+
+    return null;
+  }
+
+  bool get _canOpenDay => _openDayBlockedMessage == null;
 
   // ===========================================================================
   // INITIAL DATA LOADING
@@ -607,6 +695,14 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   // ===========================================================================
 
   Future<void> _openExpenses() async {
+    final blockedMessage = _operationMutationBlockedMessage;
+
+    if (blockedMessage != null) {
+      _setError(blockedMessage);
+
+      return;
+    }
+
     final operation = _operation;
 
     if (operation == null) {
@@ -893,30 +989,216 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   }
 
   List<ActivityItem> _buildRecentActivities() {
-    return _repayments.take(5).map((repayment) {
-      final clientName = _string(repayment['clientName']) ?? 'Borrower';
+    final entries = <_HomeActivityEntry>[];
 
-      final amount = _num(repayment['amount']).round();
+    for (final repayment in _operationRows('repayments')) {
+      final borrower =
+          _string(repayment['borrowerName']) ??
+          _string(repayment['clientName']) ??
+          'Borrower';
 
-      final recordedAt = _string(repayment['recordedAt']);
+      final occurredAt = _dateFromFields(repayment, const [
+        'paidAt',
+        'recordedAt',
+        'createdAt',
+      ]);
 
-      final time = recordedAt != null
-          ? formatActivityTime(
-              DateTime.tryParse(recordedAt) ?? DateTime.now(),
-              DateTime.now(),
-            )
-          : 'Recently';
+      if (occurredAt == null) {
+        continue;
+      }
 
-      return ActivityItem(
-        initials: _getInitials(clientName),
-        initialsBackgroundColor: forestEmerald,
-        name: clientName,
-        activityType: 'Repayment',
-        time: time.split(',').last.trim(),
-        amount: amount,
-        isIncome: true,
+      entries.add(
+        _HomeActivityEntry(
+          occurredAt: occurredAt,
+          item: ActivityItem(
+            initials: _getInitials(borrower),
+            initialsBackgroundColor: forestEmerald.withValues(alpha: 0.12),
+            name: borrower,
+            activityType: 'Repayment',
+            time: operationTime(occurredAt),
+            amount: _num(repayment['amount']).round(),
+            isIncome: true,
+          ),
+        ),
       );
-    }).toList();
+    }
+
+    for (final loan in _operationRows('loansIssued')) {
+      final borrower =
+          _string(loan['borrowerName']) ??
+          _string(loan['clientName']) ??
+          'Borrower';
+
+      final occurredAt = _dateFromFields(loan, const [
+        'issuedAt',
+        'disbursedAt',
+        'submittedAt',
+        'createdAt',
+      ]);
+
+      if (occurredAt == null) {
+        continue;
+      }
+
+      entries.add(
+        _HomeActivityEntry(
+          occurredAt: occurredAt,
+          item: ActivityItem(
+            initials: _getInitials(borrower),
+            initialsBackgroundColor: const Color(0xFFEAF0FF),
+            name: borrower,
+            activityType: 'Loan issued',
+            time: operationTime(occurredAt),
+            amount: _firstAvailableMoney(loan, const [
+              'principalAmount',
+              'principal',
+            ]).round(),
+            isIncome: true,
+          ),
+        ),
+      );
+    }
+
+    for (final expense in _operationRows('expenses')) {
+      final occurredAt = _dateFromFields(expense, const [
+        'incurredAt',
+        'recordedAt',
+        'createdAt',
+      ]);
+
+      if (occurredAt == null) {
+        continue;
+      }
+
+      entries.add(
+        _HomeActivityEntry(
+          occurredAt: occurredAt,
+          item: ActivityItem(
+            initials: 'EX',
+            initialsBackgroundColor: const Color(0xFFFFF1E5),
+            name:
+                _string(expense['description']) ??
+                _label(_string(expense['category']) ?? 'Expense'),
+            activityType: 'Expense',
+            time: operationTime(occurredAt),
+            amount: _num(expense['amount']).round(),
+            isIncome: false,
+          ),
+        ),
+      );
+    }
+
+    for (final topUp in _operationRows('topUps')) {
+      final occurredAt = _dateFromFields(topUp, const [
+        'addedAt',
+        'recordedAt',
+        'createdAt',
+      ]);
+
+      if (occurredAt == null) {
+        continue;
+      }
+
+      entries.add(
+        _HomeActivityEntry(
+          occurredAt: occurredAt,
+          item: ActivityItem(
+            initials: 'CA',
+            initialsBackgroundColor: const Color(0xFFEAF5ED),
+            name: 'Branch cash',
+            activityType: 'Capital received',
+            time: operationTime(occurredAt),
+            amount: _num(topUp['amount']).round(),
+            isIncome: true,
+          ),
+        ),
+      );
+    }
+
+    if (entries.isEmpty) {
+      for (final repayment in _rowsForDay(
+        _repayments,
+        _loadedOperationDate,
+        const ['paidAt', 'recordedAt', 'createdAt'],
+      )) {
+        final borrower =
+            _string(repayment['borrowerName']) ??
+            _string(repayment['clientName']) ??
+            'Borrower';
+
+        final occurredAt = _dateFromFields(repayment, const [
+          'paidAt',
+          'recordedAt',
+          'createdAt',
+        ]);
+
+        if (occurredAt == null) {
+          continue;
+        }
+
+        entries.add(
+          _HomeActivityEntry(
+            occurredAt: occurredAt,
+            item: ActivityItem(
+              initials: _getInitials(borrower),
+              initialsBackgroundColor: forestEmerald.withValues(alpha: 0.12),
+              name: borrower,
+              activityType: 'Repayment',
+              time: operationTime(occurredAt),
+              amount: _num(repayment['amount']).round(),
+              isIncome: true,
+            ),
+          ),
+        );
+      }
+    }
+
+    entries.sort((a, b) => b.occurredAt.compareTo(a.occurredAt));
+
+    return entries.take(5).map((entry) => entry.item).toList(growable: false);
+  }
+
+  List<Map<String, dynamic>> _operationRows(String key) {
+    return _mapListPayload(_operation?[key]) ?? const [];
+  }
+
+  List<Map<String, dynamic>> _rowsForDay(
+    Iterable<Map<String, dynamic>> rows,
+    DateTime day,
+    List<String> dateKeys,
+  ) {
+    return rows
+        .where((row) {
+          final date = _dateFromFields(row, dateKeys);
+
+          return date != null && _isSameDay(date, day);
+        })
+        .toList(growable: false);
+  }
+
+  int _borrowersDueForDate(DateTime day) {
+    final borrowerIds = <String>{};
+
+    for (final loan in _loans) {
+      if (!_loanIsActive(loan)) {
+        continue;
+      }
+
+      final nextDue = _dateFromFields(loan, const ['nextDueDate']);
+
+      if (nextDue == null || !_isSameDay(nextDue, day)) {
+        continue;
+      }
+
+      borrowerIds.add(
+        _string(loan['customerId']) ??
+            _string(loan['borrowerName']) ??
+            _string(loan['id']) ??
+            'borrower-${borrowerIds.length}',
+      );
+    }
+
+    return borrowerIds.length;
   }
 
   String _getInitials(String name) {
@@ -1029,21 +1311,157 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   }
 
   List<OperationActivity> _buildOperationActivities() {
-    return _repayments.take(5).map((repayment) {
-      final clientName = _string(repayment['clientName']) ?? 'Borrower';
+    final entries = <_OperationActivityEntry>[];
 
-      final recordedAt = DateTime.tryParse(
-        _string(repayment['recordedAt']) ?? '',
-      );
+    for (final repayment in _operationRows('repayments')) {
+      final occurredAt = _dateFromFields(repayment, const [
+        'paidAt',
+        'recordedAt',
+        'createdAt',
+      ]);
 
-      return OperationActivity(
-        title: 'Repayment',
-        description: clientName,
-        time: operationTime(recordedAt),
-        amount: _num(repayment['amount']),
-        isIncome: true,
+      if (occurredAt == null) {
+        continue;
+      }
+
+      entries.add(
+        _OperationActivityEntry(
+          occurredAt: occurredAt,
+          item: OperationActivity(
+            title: 'Repayment collected',
+            description:
+                _string(repayment['borrowerName']) ??
+                _string(repayment['clientName']) ??
+                'Borrower',
+            time: operationTime(occurredAt),
+            amount: _num(repayment['amount']),
+            isIncome: true,
+          ),
+        ),
       );
-    }).toList();
+    }
+
+    for (final loan in _operationRows('loansIssued')) {
+      final occurredAt = _dateFromFields(loan, const [
+        'issuedAt',
+        'disbursedAt',
+        'submittedAt',
+        'createdAt',
+      ]);
+
+      if (occurredAt == null) {
+        continue;
+      }
+
+      entries.add(
+        _OperationActivityEntry(
+          occurredAt: occurredAt,
+          item: OperationActivity(
+            title: 'Loan issued',
+            description:
+                _string(loan['borrowerName']) ??
+                _string(loan['clientName']) ??
+                'Borrower',
+            time: operationTime(occurredAt),
+            amount: _firstAvailableMoney(loan, const [
+              'principalAmount',
+              'principal',
+            ]),
+            isIncome: false,
+          ),
+        ),
+      );
+    }
+
+    for (final expense in _operationRows('expenses')) {
+      final occurredAt = _dateFromFields(expense, const [
+        'incurredAt',
+        'recordedAt',
+        'createdAt',
+      ]);
+
+      if (occurredAt == null) {
+        continue;
+      }
+
+      entries.add(
+        _OperationActivityEntry(
+          occurredAt: occurredAt,
+          item: OperationActivity(
+            title: 'Expense recorded',
+            description:
+                _string(expense['description']) ??
+                _label(_string(expense['category']) ?? 'Expense'),
+            time: operationTime(occurredAt),
+            amount: _num(expense['amount']),
+            isIncome: false,
+          ),
+        ),
+      );
+    }
+
+    for (final topUp in _operationRows('topUps')) {
+      final occurredAt = _dateFromFields(topUp, const [
+        'addedAt',
+        'recordedAt',
+        'createdAt',
+      ]);
+
+      if (occurredAt == null) {
+        continue;
+      }
+
+      entries.add(
+        _OperationActivityEntry(
+          occurredAt: occurredAt,
+          item: OperationActivity(
+            title: 'Capital received',
+            description: _string(topUp['description']) ?? 'Branch cash',
+            time: operationTime(occurredAt),
+            amount: _num(topUp['amount']),
+            isIncome: true,
+          ),
+        ),
+      );
+    }
+
+    if (entries.isEmpty) {
+      for (final repayment in _rowsForDay(
+        _repayments,
+        _loadedOperationDate,
+        const ['paidAt', 'recordedAt', 'createdAt'],
+      )) {
+        final occurredAt = _dateFromFields(repayment, const [
+          'paidAt',
+          'recordedAt',
+          'createdAt',
+        ]);
+
+        if (occurredAt == null) {
+          continue;
+        }
+
+        entries.add(
+          _OperationActivityEntry(
+            occurredAt: occurredAt,
+            item: OperationActivity(
+              title: 'Repayment collected',
+              description:
+                  _string(repayment['borrowerName']) ??
+                  _string(repayment['clientName']) ??
+                  'Borrower',
+              time: operationTime(occurredAt),
+              amount: _num(repayment['amount']),
+              isIncome: true,
+            ),
+          ),
+        );
+      }
+    }
+
+    entries.sort((a, b) => b.occurredAt.compareTo(a.occurredAt));
+
+    return entries.take(5).map((entry) => entry.item).toList(growable: false);
   }
 
   // ===========================================================================
@@ -1099,6 +1517,28 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     setState(() {
       _notice = message;
     });
+  }
+
+  void _setError(String message) {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _error = message;
+      _notice = null;
+    });
+  }
+
+  void _runIfBranchCanMutate(VoidCallback action) {
+    final blockedMessage = _operationMutationBlockedMessage;
+
+    if (blockedMessage != null) {
+      _setError(blockedMessage);
+      return;
+    }
+
+    action();
   }
 
   Future<void> _reviewPendingClosure() async {
@@ -1206,6 +1646,14 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   // ===========================================================================
 
   Future<void> _showOpenDaySheet() async {
+    final blockedMessage = _openDayBlockedMessage;
+
+    if (blockedMessage != null) {
+      _setError(blockedMessage);
+
+      return;
+    }
+
     final opening = TextEditingController(
       text: _moneyText(_num(_data?['openingBalance'])),
     );
@@ -1248,6 +1696,14 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   }
 
   Future<void> _showTopUpSheet() async {
+    final blockedMessage = _operationMutationBlockedMessage;
+
+    if (blockedMessage != null) {
+      _setError(blockedMessage);
+
+      return;
+    }
+
     final amount = TextEditingController();
 
     final description = TextEditingController();
@@ -1338,6 +1794,14 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   }
 
   Future<void> _showFloatSheet({required bool addMore}) async {
+    final blockedMessage = _operationMutationBlockedMessage;
+
+    if (blockedMessage != null) {
+      _setError(blockedMessage);
+
+      return;
+    }
+
     if (_agents.isEmpty) {
       setState(() {
         _error = 'No agents found.';
@@ -1620,31 +2084,47 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   // ===========================================================================
 
   Widget _buildHomeTab() {
-    final today = DateTime.now();
+    final operation = _operation;
 
-    final loansIssuedToday = _loans.where((loan) {
-      final raw = _string(loan['disbursedAt']);
+    final loadedDate = _loadedOperationDate;
 
-      if (raw == null) {
-        return false;
-      }
+    final operationLoansIssued = _operationRows('loansIssued');
 
-      final date = DateTime.tryParse(raw);
+    final loansIssuedForDay = operationLoansIssued.isNotEmpty
+        ? operationLoansIssued
+        : _rowsForDay(_loans, loadedDate, const [
+            'disbursedAt',
+            'issuedAt',
+            'submittedAt',
+            'createdAt',
+          ]);
 
-      return date != null && _isSameDay(date, today);
-    });
+    final newBorrowersForDay = _rowsForDay(_customers, loadedDate, const [
+      'createdAt',
+    ]);
 
-    final newBorrowersToday = _customers.where((customer) {
-      final raw = _string(customer['createdAt']);
+    final operationLoansIssuedAmount = _num(operation?['loansIssuedPrincipal']);
 
-      if (raw == null) {
-        return false;
-      }
+    final collectedForDay = operation == null
+        ? (_loadedOperationDateIsToday
+              ? _num(_collectionSummary?['amountCollectedToday']).round()
+              : 0)
+        : _num(operation['collectionsReceived']).round();
 
-      final date = DateTime.tryParse(raw);
+    final loansIssuedCount = operation == null
+        ? loansIssuedForDay.length
+        : _num(operation['loansIssuedCount']).round();
 
-      return date != null && _isSameDay(date, today);
-    });
+    final amountIssuedForDay = operationLoansIssuedAmount > 0
+        ? operationLoansIssuedAmount.round()
+        : _sumMoney(
+            loansIssuedForDay,
+            operationLoansIssued.isNotEmpty ? 'principalAmount' : 'principal',
+          ).round();
+
+    final borrowersDueForDay = _loadedOperationDateIsToday
+        ? _num(_collectionSummary?['dueTodayCount']).round()
+        : _borrowersDueForDate(loadedDate);
 
     return ManagerOwnerHomeTab(
       session: widget.session,
@@ -1659,30 +2139,44 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
       onOpenNewLoan: widget.session.hasPermission('loan.create')
           ? () {
-              unawaited(_openNewLoan());
+              _runIfBranchCanMutate(() {
+                unawaited(_openNewLoan());
+              });
             }
           : () {},
 
       onOpenNewBorrower: widget.session.hasPermission('customer.create')
           ? () {
-              unawaited(_openNewCustomer());
+              _runIfBranchCanMutate(() {
+                unawaited(_openNewCustomer());
+              });
             }
           : () {},
 
       onOpenDailyOps: () => _openTab(1),
 
       onOpenRecordRepayment: () {
-        _openRecords(
-          section: RecordsSection.repayments,
-          filter: RecordsFilter.all,
-        );
+        _runIfBranchCanMutate(() {
+          _openRecords(
+            section: RecordsSection.repayments,
+            filter: RecordsFilter.all,
+          );
+        });
       },
 
       onOpenFindClient: () {
         _openTab(3, searchAutofocus: true);
       },
 
-      collectedToday: _num(_collectionSummary?['amountCollectedToday']).round(),
+      summaryPeriodLabel: _homeSummaryPeriodLabel,
+
+      collectedMetricLabel: 'Collected $_homeMetricSuffix',
+
+      loansIssuedMetricLabel: 'Loans issued $_homeMetricSuffix',
+
+      borrowersDueMetricLabel: 'Borrowers due $_homeMetricSuffix',
+
+      collectedToday: collectedForDay,
 
       expensesToday: _num(_operation?['expensesTotal']).round(),
 
@@ -1693,17 +2187,17 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
       expectedClosingCash: _num(_operation?['expectedClosingBalance']).round(),
 
-      loansIssuedToday: loansIssuedToday.length,
+      loansIssuedToday: loansIssuedCount,
 
-      amountIssuedToday: _sumMoney(loansIssuedToday, 'principal').round(),
+      amountIssuedToday: amountIssuedForDay,
 
       overdueLoansCount: _loans.where(_loanNeedsAttention).length,
 
       activeLoansCount: _loans.where(_loanIsActive).length,
 
-      borrowersDueToday: _num(_collectionSummary?['dueTodayCount']).round(),
+      borrowersDueToday: borrowersDueForDay,
 
-      newBorrowersToday: newBorrowersToday.length,
+      newBorrowersToday: newBorrowersForDay.length,
 
       overdueBorrowersCount: _customers
           .where((customer) => customer['hasOverdueLoan'] == true)
@@ -1732,6 +2226,10 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       dayOpen: _dayOpen,
 
       dayActive: _dayActive,
+
+      canOpenDay: _canOpenDay,
+
+      canRecordCashMovements: _operationMutationBlockedMessage == null,
 
       onRefresh: _load,
 
@@ -1767,6 +2265,10 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           ? null
           : '${_dateLabel(_awaitingReport?['operationDate'])} '
                 'is closed. Send its report before today can open.',
+
+      openDayBlockedMessage: _openDayBlockedMessage,
+
+      operationReadOnlyMessage: _operationMutationBlockedMessage,
 
       onPendingClosure: _pendingClosure == null
           ? null
@@ -2307,6 +2809,20 @@ class _ManagementSnapshot {
   final Map<String, dynamic>? summary;
 }
 
+class _HomeActivityEntry {
+  const _HomeActivityEntry({required this.occurredAt, required this.item});
+
+  final DateTime occurredAt;
+  final ActivityItem item;
+}
+
+class _OperationActivityEntry {
+  const _OperationActivityEntry({required this.occurredAt, required this.item});
+
+  final DateTime occurredAt;
+  final OperationActivity item;
+}
+
 Map<String, dynamic>? _mapPayload(Object? value) {
   if (value is! Map) {
     return null;
@@ -2328,11 +2844,72 @@ List<Map<String, dynamic>>? _mapListPayload(Object? value) {
 String _todayLabel() {
   final now = DateTime.now();
 
-  final month = now.month.toString().padLeft(2, '0');
+  return _dateKey(now);
+}
 
-  final day = now.day.toString().padLeft(2, '0');
+String _dateKey(DateTime value) {
+  final local = value.toLocal();
 
-  return '${now.year}-$month-$day';
+  final month = local.month.toString().padLeft(2, '0');
+
+  final day = local.day.toString().padLeft(2, '0');
+
+  return '${local.year}-$month-$day';
+}
+
+String _nextDateKey(String dateKey) {
+  final date = DateTime.tryParse(dateKey);
+
+  if (date == null) {
+    return dateKey;
+  }
+
+  return _dateKey(date.add(const Duration(days: 1)));
+}
+
+bool _isOperationOpenableDate(String dateKey) {
+  final today = _todayLabel();
+
+  return dateKey == today || dateKey == _nextDateKey(today);
+}
+
+String _shortDateLabel(DateTime value) {
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+
+  final local = value.toLocal();
+
+  return '${local.day} ${months[local.month - 1]} ${local.year}';
+}
+
+DateTime? _dateFromFields(Map<String, dynamic> row, List<String> keys) {
+  for (final key in keys) {
+    final raw = _string(row[key]);
+
+    if (raw == null) {
+      continue;
+    }
+
+    final parsed = DateTime.tryParse(raw);
+
+    if (parsed != null) {
+      return parsed.toLocal();
+    }
+  }
+
+  return null;
 }
 
 String _moneyText(num amount) {

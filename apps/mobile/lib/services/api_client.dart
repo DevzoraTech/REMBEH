@@ -194,6 +194,10 @@ class ApiClient {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ApiException(_failureMessage(body, response.statusCode, uri));
     }
+    final summary = body['summary'];
+    if (summary is Map<String, dynamic>) {
+      return summary;
+    }
     return body;
   }
 

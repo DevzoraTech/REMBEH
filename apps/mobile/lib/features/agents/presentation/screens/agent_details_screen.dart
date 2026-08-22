@@ -158,7 +158,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
       final shortages = results[3];
 
       if (detail is! AgentDetail) {
-        throw StateError('Agent details response was invalid.');
+        throw StateError('Field officer details response was invalid.');
       }
 
       setState(() {
@@ -240,7 +240,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
     final agent = _agent;
 
     if (activity == null || activity.isEmpty || agent == null) {
-      _setNotice('No activity has been recorded for this agent yet.');
+      _setNotice('No activity has been recorded for this field officer yet.');
 
       return;
     }
@@ -380,7 +380,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
 
       setState(() {
         _agent = updated;
-        _notice = 'Agent profile updated.';
+        _notice = 'Field officer profile updated.';
       });
     } catch (error) {
       if (!mounted) {
@@ -463,8 +463,8 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
         }
 
         _notice = status == 'SUSPENDED'
-            ? 'Agent suspended and signed out.'
-            : 'Agent reactivated.';
+            ? 'Field officer suspended and signed out.'
+            : 'Field officer reactivated.';
       });
     } catch (error) {
       if (!mounted) {
@@ -498,7 +498,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
         return AlertDialog(
           title: const Text('Remove device?'),
           content: Text(
-            '${device.deviceName} will be signed out from this agent account.',
+            '${device.deviceName} will be signed out from this field officer account.',
           ),
           actions: [
             TextButton(
@@ -545,7 +545,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
         return AlertDialog(
           title: const Text('Sign out all devices?'),
           content: const Text(
-            'All active devices for this agent will be signed out.',
+            'All active devices for this field officer will be signed out.',
           ),
           actions: [
             TextButton(
@@ -576,7 +576,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
           agentId: widget.agentId,
         );
       },
-      notice: 'All agent devices signed out.',
+      notice: 'All field officer devices signed out.',
     );
   }
 
@@ -677,7 +677,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Agent details',
+                'Field officer details',
                 style: TextStyle(
                   color: midnightNavy,
                   fontSize: 21,
@@ -736,7 +736,10 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
 
     if (agent == null) {
       return const Center(
-        child: Text('Agent unavailable.', style: TextStyle(color: slateText)),
+        child: Text(
+          'Field officer unavailable.',
+          style: TextStyle(color: slateText),
+        ),
       );
     }
 
@@ -884,7 +887,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
                 _SheetAction(
                   icon: Icons.person_off_outlined,
                   iconColor: _dangerRed,
-                  label: 'Suspend agent',
+                  label: 'Suspend field officer',
                   labelColor: _dangerRed,
                   onTap: () {
                     Navigator.of(sheetContext).pop();
@@ -896,7 +899,7 @@ class _AgentDetailScreenState extends State<AgentDetailScreen> {
               if (canManage && suspended)
                 _SheetAction(
                   icon: Icons.person_add_alt_1_outlined,
-                  label: 'Reactivate agent',
+                  label: 'Reactivate field officer',
                   onTap: () {
                     Navigator.of(sheetContext).pop();
 
@@ -1778,7 +1781,7 @@ class _EmploymentCard extends StatelessWidget {
                     Expanded(
                       child: _AccountMetric(
                         label: 'Role',
-                        value: agent.roleName ?? 'Field Agent',
+                        value: agent.roleName ?? 'Field Officer',
                       ),
                     ),
 
@@ -1833,7 +1836,7 @@ class _EmploymentCard extends StatelessWidget {
                             size: 15,
                           ),
                     label: Text(
-                      suspended ? 'Reactivate' : 'Suspend agent',
+                      suspended ? 'Reactivate' : 'Suspend',
                       style: const TextStyle(
                         fontSize: 8.5,
                         fontWeight: FontWeight.w800,

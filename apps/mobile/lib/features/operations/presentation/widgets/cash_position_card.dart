@@ -7,10 +7,7 @@ import 'ops_icon.dart';
 import 'ops_surface.dart';
 
 class CashPositionCard extends StatelessWidget {
-  const CashPositionCard({
-    super.key,
-    required this.operation,
-  });
+  const CashPositionCard({super.key, required this.operation});
 
   final OperationDashboardData operation;
 
@@ -22,9 +19,7 @@ class CashPositionCard extends StatelessWidget {
         children: [
           const Row(
             children: [
-              OpsIcon(
-                icon: Icons.account_balance_wallet_outlined,
-              ),
+              OpsIcon(icon: Icons.account_balance_wallet_outlined),
               SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -36,11 +31,7 @@ class CashPositionCard extends StatelessWidget {
                   ),
                 ),
               ),
-              Icon(
-                Icons.info_outline_rounded,
-                size: 16,
-                color: slateText,
-              ),
+              Icon(Icons.info_outline_rounded, size: 16, color: slateText),
             ],
           ),
           const SizedBox(height: 9),
@@ -67,10 +58,7 @@ class CashPositionCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          _CashLine(
-            label: 'Opening cash',
-            amount: operation.openingCash,
-          ),
+          _CashLine(label: 'Opening cash', amount: operation.openingCash),
           _CashLine(
             label: 'Capital received',
             amount: operation.capitalReceived,
@@ -91,15 +79,12 @@ class CashPositionCard extends StatelessWidget {
             negative: true,
           ),
           _CashLine(
-            label: 'Float with agents',
+            label: 'Float with field officers',
             amount: operation.floatWithAgents,
             negative: true,
           ),
           const SizedBox(height: 4),
-          const Divider(
-            height: 1,
-            color: Color(0xFFE8ECE9),
-          ),
+          const Divider(height: 1, color: Color(0xFFE8ECE9)),
           const SizedBox(height: 9),
           Row(
             children: [

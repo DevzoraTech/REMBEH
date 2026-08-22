@@ -9,6 +9,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { BorrowerListsModule } from './modules/borrower-lists/borrower-lists.module';
 import { BranchesModule } from './modules/branches/branches.module';
 import { CollectionsModule } from './modules/collections/collections.module';
+import { ControlCenterModule } from './modules/control-center/control-center.module';
 import { CustomersModule } from './modules/customers/customers.module';
 import { IdentityVerificationModule } from './modules/identity-verification/identity-verification.module';
 import { LoanApplicationsModule } from './modules/loan-applications/loan-applications.module';
@@ -41,6 +42,7 @@ import { SyncModule } from './modules/sync/sync.module';
     NotificationsModule,
     AuthModule,
     BillingModule,
+    ControlCenterModule,
     SmsCreditsModule,
     BorrowerListsModule,
     AgentsModule,

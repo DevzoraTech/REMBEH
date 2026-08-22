@@ -28,12 +28,14 @@ class RecordSalaryPaymentSheet extends StatefulWidget {
 
 class _RecordSalaryPaymentSheetState extends State<RecordSalaryPaymentSheet> {
   late final TextEditingController _amountController;
+  late final TextEditingController _shortageSettlementController;
   late final TextEditingController _referenceController;
 
   String? _paymentMethod;
   DateTime _paidAt = DateTime.now();
 
   String? _amountError;
+  String? _shortageSettlementError;
   String? _methodError;
 
   @override
@@ -41,12 +43,14 @@ class _RecordSalaryPaymentSheetState extends State<RecordSalaryPaymentSheet> {
     super.initState();
 
     _amountController = TextEditingController();
+    _shortageSettlementController = TextEditingController();
     _referenceController = TextEditingController();
   }
 
   @override
   void dispose() {
     _amountController.dispose();
+    _shortageSettlementController.dispose();
     _referenceController.dispose();
 
     super.dispose();
@@ -81,14 +85,11 @@ class _RecordSalaryPaymentSheetState extends State<RecordSalaryPaymentSheet> {
   }
 
   void _save() {
-    final rawAmount = _amountController.text
-        .replaceAll(',', '')
-        .replaceAll('UGX', '')
-        .trim();
-
-    final amount = num.tryParse(rawAmount);
+    final amount = _parseAmount(_amountController.text);
+    final shortageSettlement = _parseAmount(_shortageSettlementController.text);
 
     String? amountError;
+    String? shortageSettlementError;
     String? methodError;
 
     if (amount == null || amount <= 0) {
@@ -98,13 +99,22 @@ class _RecordSalaryPaymentSheetState extends State<RecordSalaryPaymentSheet> {
           'Payment cannot exceed ${salaryMoney(widget.employee.outstanding)}.';
     }
 
+    if (shortageSettlement != null &&
+        shortageSettlement > widget.employee.shortageOutstanding) {
+      shortageSettlementError =
+          'Settlement cannot exceed ${salaryMoney(widget.employee.shortageOutstanding)}.';
+    }
+
     if (_paymentMethod == null) {
       methodError = 'Select a payment method.';
     }
 
-    if (amountError != null || methodError != null) {
+    if (amountError != null ||
+        shortageSettlementError != null ||
+        methodError != null) {
       setState(() {
         _amountError = amountError;
+        _shortageSettlementError = shortageSettlementError;
         _methodError = methodError;
       });
 
@@ -113,19 +123,41 @@ class _RecordSalaryPaymentSheetState extends State<RecordSalaryPaymentSheet> {
 
     setState(() {
       _amountError = null;
+      _shortageSettlementError = null;
       _methodError = null;
     });
 
+    final cleanAmount = amount ?? 0;
+    final cleanShortageSettlement = shortageSettlement ?? 0;
+
     Navigator.of(context).pop(<String, dynamic>{
-      'amount': amount,
+      'amount': cleanAmount,
       'method': _paymentMethod!,
       'paidAt': _paidAt.toIso8601String(),
       if (_referenceController.text.trim().isNotEmpty)
         'referenceNote': _referenceController.text.trim(),
+      if (cleanShortageSettlement > 0) ...{
+        'shortageSettlementAmount': cleanShortageSettlement,
+        'shortageSettlementNote': 'Recovered while recording salary payment.',
+      },
     });
   }
 
-  void _setAmount(num amount) {
+  num? _parseAmount(String value) {
+    final raw = value.replaceAll(',', '').replaceAll('UGX', '').trim();
+
+    if (raw.isEmpty) {
+      return null;
+    }
+
+    return num.tryParse(raw);
+  }
+
+  void _setAmount(
+    TextEditingController controller,
+    num amount, {
+    VoidCallback? clearError,
+  }) {
     if (amount <= 0) {
       return;
     }
@@ -134,14 +166,28 @@ class _RecordSalaryPaymentSheetState extends State<RecordSalaryPaymentSheet> {
         ? amount.toInt().toString()
         : amount.toStringAsFixed(2);
 
-    _amountController.value = TextEditingValue(
+    controller.value = TextEditingValue(
       text: text,
       selection: TextSelection.collapsed(offset: text.length),
     );
 
+    clearError?.call();
+  }
+
+  void _clearSalaryAmountError() {
     if (_amountError != null) {
       setState(() {
         _amountError = null;
+      });
+    }
+  }
+
+  void _clearShortageSettlement() {
+    _shortageSettlementController.clear();
+
+    if (_shortageSettlementError != null) {
+      setState(() {
+        _shortageSettlementError = null;
       });
     }
   }
@@ -258,12 +304,18 @@ class _RecordSalaryPaymentSheetState extends State<RecordSalaryPaymentSheet> {
                           _ShortagePaymentNotice(
                             employee: widget.employee,
                             onPayOutstanding: () {
-                              _setAmount(widget.employee.outstanding);
+                              _setAmount(
+                                _amountController,
+                                widget.employee.outstanding,
+                                clearError: _clearSalaryAmountError,
+                              );
                             },
                             onHoldShortage: () {
                               _setAmount(
+                                _amountController,
                                 widget.employee.outstanding -
                                     widget.employee.shortageOutstanding,
+                                clearError: _clearSalaryAmountError,
                               );
                             },
                           ),
@@ -289,6 +341,69 @@ class _RecordSalaryPaymentSheetState extends State<RecordSalaryPaymentSheet> {
                             }
                           },
                         ),
+
+                        if (widget.employee.hasShortage) ...[
+                          const SizedBox(height: 14),
+
+                          const _FieldLabel(
+                            label: 'Shortage settlement (optional)',
+                          ),
+
+                          const SizedBox(height: 6),
+
+                          _AmountField(
+                            controller: _shortageSettlementController,
+                            fieldKey: const ValueKey(
+                              'salary-payment-shortage-settlement-field',
+                            ),
+                            errorText: _shortageSettlementError,
+                            onChanged: (value) {
+                              if (_shortageSettlementError != null) {
+                                setState(() {
+                                  _shortageSettlementError = null;
+                                });
+                              }
+                            },
+                          ),
+
+                          const SizedBox(height: 8),
+
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _AmountChoiceButton(
+                                  label: 'Settle full shortage',
+                                  value: salaryMoney(
+                                    widget.employee.shortageOutstanding,
+                                  ),
+                                  onTap: () {
+                                    _setAmount(
+                                      _shortageSettlementController,
+                                      widget.employee.shortageOutstanding,
+                                      clearError: () {
+                                        if (_shortageSettlementError != null) {
+                                          setState(() {
+                                            _shortageSettlementError = null;
+                                          });
+                                        }
+                                      },
+                                    );
+                                  },
+                                ),
+                              ),
+
+                              const SizedBox(width: 8),
+
+                              Expanded(
+                                child: _AmountChoiceButton(
+                                  label: 'Do not settle now',
+                                  value: 'UGX 0',
+                                  onTap: _clearShortageSettlement,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
 
                         const SizedBox(height: 14),
 
@@ -469,7 +584,7 @@ class _EmployeeSummary extends StatelessWidget {
               const SizedBox(height: 4),
 
               Text(
-                employee.roleName ?? 'Employee',
+                salaryRoleLabel(employee.roleName),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -607,7 +722,7 @@ class _ShortagePaymentNotice extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     const Text(
-                      'Salary payment is recorded separately. Choose the salary amount to pay for this cycle.',
+                      'Shortages are not deducted automatically. Enter a settlement below only if part or all of the shortage is being recovered with this payment.',
                       style: TextStyle(
                         color: slateText,
                         fontSize: 8.5,
@@ -732,17 +847,19 @@ class _AmountField extends StatelessWidget {
   const _AmountField({
     required this.controller,
     required this.onChanged,
+    this.fieldKey = const ValueKey('salary-payment-amount-field'),
     this.errorText,
   });
 
   final TextEditingController controller;
   final ValueChanged<String> onChanged;
+  final Key fieldKey;
   final String? errorText;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
-      key: const ValueKey('salary-payment-amount-field'),
+      key: fieldKey,
       controller: controller,
       autofocus: false,
       keyboardType: const TextInputType.numberWithOptions(

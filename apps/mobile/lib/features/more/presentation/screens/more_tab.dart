@@ -27,20 +27,15 @@ class MoreTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListView(
-      padding: const EdgeInsets.fromLTRB(
-        16,
-        18,
-        16,
-        28,
-      ),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
       children: [
         _MoreSection(
           title: 'Management',
           children: [
             _MoreMenuItem(
               icon: Icons.people_outline_rounded,
-              title: 'Agents',
-              subtitle: 'View, manage and monitor your agents',
+              title: 'Field Officers',
+              subtitle: 'View, manage and monitor your field officers',
               onTap: onAgentsTap,
             ),
             _MoreMenuItem(
@@ -112,10 +107,7 @@ class MoreTab extends StatelessWidget {
 }
 
 class _MoreSection extends StatelessWidget {
-  const _MoreSection({
-    required this.title,
-    required this.children,
-  });
+  const _MoreSection({required this.title, required this.children});
 
   final String title;
   final List<Widget> children;
@@ -125,23 +117,14 @@ class _MoreSection extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        border: Border.all(
-          color: line,
-        ),
-        borderRadius: rembehBorderRadius(
-          rembehRadiusLg,
-        ),
+        border: Border.all(color: line),
+        borderRadius: rembehBorderRadius(rembehRadiusLg),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(
-              14,
-              12,
-              14,
-              4,
-            ),
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 4),
             child: Text(
               title,
               style: const TextStyle(
@@ -180,41 +163,28 @@ class _MoreMenuItem extends StatelessWidget {
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 14,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 10,
-                ),
+                padding: const EdgeInsets.symmetric(vertical: 10),
                 child: Row(
                   children: [
                     Container(
                       width: 38,
                       height: 38,
                       decoration: BoxDecoration(
-                        color: forestEmerald.withValues(
-                          alpha: 0.07,
-                        ),
-                        borderRadius: BorderRadius.circular(
-                          11,
-                        ),
+                        color: forestEmerald.withValues(alpha: 0.07),
+                        borderRadius: BorderRadius.circular(11),
                       ),
-                      child: Icon(
-                        icon,
-                        size: 20,
-                        color: forestEmerald,
-                      ),
+                      child: Icon(icon, size: 20, color: forestEmerald),
                     ),
 
                     const SizedBox(width: 12),
 
                     Expanded(
                       child: Column(
-                        crossAxisAlignment:
-                            CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             title,
@@ -253,13 +223,8 @@ class _MoreMenuItem extends StatelessWidget {
 
               if (showDivider)
                 const Padding(
-                  padding: EdgeInsets.only(
-                    left: 50,
-                  ),
-                  child: Divider(
-                    height: 1,
-                    color: line,
-                  ),
+                  padding: EdgeInsets.only(left: 50),
+                  child: Divider(height: 1, color: line),
                 ),
             ],
           ),

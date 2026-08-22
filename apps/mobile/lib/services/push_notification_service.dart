@@ -49,8 +49,7 @@ class PushNotificationService {
       options: DefaultFirebaseOptions.currentPlatform,
     );
 
-    tzdata.initializeTimeZones();
-    tz.setLocalLocation(tz.getLocation('Africa/Kampala'));
+    _initializeTimezone();
 
     _messaging = FirebaseMessaging.instance;
 
@@ -195,6 +194,19 @@ class PushNotificationService {
   }
 
   Future<void> cancelReminder(int id) => _local.cancel(id: id);
+
+  void _initializeTimezone() {
+    tzdata.initializeTimeZones();
+
+    for (final name in const ['Africa/Kampala', 'Africa/Nairobi', 'UTC']) {
+      try {
+        tz.setLocalLocation(tz.getLocation(name));
+        return;
+      } catch (error) {
+        debugPrint('Timezone lookup failed for $name: $error');
+      }
+    }
+  }
 
   tz.TZDateTime _nextDaily({required int hour, required int minute}) {
     final now = tz.TZDateTime.now(tz.local);

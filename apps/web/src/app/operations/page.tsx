@@ -61,6 +61,13 @@ type OperationBranch = {
   address: string;
 };
 
+type BranchOperationAccess = {
+  canOperate: boolean;
+  locked: boolean;
+  subscriptionStatus: string | null;
+  message: string | null;
+};
+
 type DailyOperation = {
   id: string;
   branchId: string;
@@ -210,6 +217,7 @@ type DailyOperationAgentReturn = {
 type OperationResponse = {
   date: string;
   branch: OperationBranch | null;
+  branchAccess: BranchOperationAccess | null;
   openingBalance: number | null;
   openingBalanceSource: "PREVIOUS_CLOSING" | "MANUAL";
   previousClosedOperation: OperationCarryover | null;
@@ -391,20 +399,32 @@ export default function OperationsPage() {
     [session, user],
   );
   const canOperateBranch = operatorRole === "manager";
+  const branchAccess = data?.branchAccess ?? null;
+  const branchAccessBlocked = Boolean(
+    branchAccess && (branchAccess.locked || !branchAccess.canOperate),
+  );
+  const branchAccessMessage = branchAccessBlocked
+    ? branchAccess?.message ||
+      "This branch is paused. Renew on Subscription to continue."
+    : null;
   const canRecordReturn = Boolean(
     canOperateBranch && session?.permissions.includes("operation.float.return"),
   );
   const canRecordExpense = Boolean(
     canOperateBranch &&
+    !branchAccessBlocked &&
     session?.permissions.includes("operation.expense.create"),
   );
   const canRecordTopUp = Boolean(
     canOperateBranch &&
+    !branchAccessBlocked &&
     (session?.permissions.includes("operation.cash.topup") ||
       session?.permissions.includes("operation.open")),
   );
   const canManageFloat = Boolean(
-    canOperateBranch && session?.permissions.includes("operation.float.manage"),
+    canOperateBranch &&
+    !branchAccessBlocked &&
+    session?.permissions.includes("operation.float.manage"),
   );
   const canClose = Boolean(
     canOperateBranch && session?.permissions.includes("operation.close"),
@@ -429,8 +449,8 @@ export default function OperationsPage() {
   );
   const canReconcileOperation = Boolean(
     canOperateBranch &&
-      operation &&
-      (operation.status === "OPEN" || operation.status === "CLOSING"),
+    operation &&
+    (operation.status === "OPEN" || operation.status === "CLOSING"),
   );
 
   useEffect(() => {
@@ -677,6 +697,18 @@ export default function OperationsPage() {
     extraFloatAmount <= (operation?.floatRemaining ?? 0);
 
   function openActionPanel(panel: Exclude<OperationActionPanel, null>) {
+    if (
+      branchAccessMessage &&
+      (panel === "top-up" ||
+        panel === "expense" ||
+        panel === "issue-float" ||
+        panel === "add-float")
+    ) {
+      setError(branchAccessMessage);
+      setNotice(null);
+      return;
+    }
+
     setError(null);
     setNotice(null);
     if (panel === "issue-float") {
@@ -714,8 +746,16 @@ export default function OperationsPage() {
     setActivePanel(panel);
   }
 
+  function stopIfBranchAccessBlocked() {
+    if (!branchAccessMessage) return false;
+    setError(branchAccessMessage);
+    setNotice(null);
+    return true;
+  }
+
   async function recordTopUp() {
     if (!session || !activeBranch || recordingTopUp) return;
+    if (stopIfBranchAccessBlocked()) return;
     if (!canFinishOpenOperation) {
       setError("Only an open branch day can be changed.");
       return;
@@ -761,6 +801,7 @@ export default function OperationsPage() {
 
   async function saveFloat(mode: "issue" | "add") {
     if (!session || savingFloat || savingFloatTopUp) return;
+    if (stopIfBranchAccessBlocked()) return;
     if (!canFinishOpenOperation) {
       setError("Only an open branch day can be changed.");
       return;
@@ -835,6 +876,7 @@ export default function OperationsPage() {
 
   async function recordExpense() {
     if (!session || !activeBranch || recordingExpense) return;
+    if (stopIfBranchAccessBlocked()) return;
     if (!canFinishOpenOperation) {
       setError("Only an open branch day can be changed.");
       return;
@@ -1462,6 +1504,11 @@ export default function OperationsPage() {
             {error}
           </p>
         ) : null}
+        {branchAccessMessage ? (
+          <p className="rounded-[14px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+            {branchAccessMessage}
+          </p>
+        ) : null}
 
         {loading && !data ? (
           <OperationsSkeleton />
@@ -1476,6 +1523,7 @@ export default function OperationsPage() {
             branch={activeBranch}
             date={date}
             pendingOperation={pendingClosureOperation}
+            branchAccessMessage={branchAccessMessage}
           />
         ) : operation ? (
           <>
@@ -1534,7 +1582,11 @@ export default function OperationsPage() {
             onReview={goToAwaitingReport}
           />
         ) : (
-          <AutoOpenPendingView branch={activeBranch} date={date} />
+          <AutoOpenPendingView
+            branch={activeBranch}
+            date={date}
+            branchAccessMessage={branchAccessMessage}
+          />
         )}
         <OperationActionDrawer
           panel={activePanel}
@@ -1666,9 +1718,11 @@ function AwaitingReportView({
 function AutoOpenPendingView({
   branch,
   date,
+  branchAccessMessage,
 }: {
   branch: OperationBranch;
   date: string;
+  branchAccessMessage?: string | null;
 }) {
   return (
     <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
@@ -1676,11 +1730,13 @@ function AutoOpenPendingView({
         Daily operations
       </p>
       <h2 className="mt-2 text-lg font-bold tracking-[-0.02em] text-[#0b1220]">
-        Preparing {formatDateOnly(date)} for {branch.name}
+        {branchAccessMessage
+          ? `Operations paused for ${branch.name}`
+          : `Preparing ${formatDateOnly(date)} for ${branch.name}`}
       </h2>
       <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-slate-600">
-        Branch days open automatically after the previous day is closed and its
-        report is submitted. Refresh if this stays empty.
+        {branchAccessMessage ||
+          "Branch days open automatically after the previous day is closed and its report is submitted. Refresh if this stays empty."}
       </p>
     </section>
   );
@@ -1690,10 +1746,12 @@ function OwnerOperationEmptyView({
   branch,
   date,
   pendingOperation,
+  branchAccessMessage,
 }: {
   branch: OperationBranch;
   date: string;
   pendingOperation: OperationCarryover | null;
+  branchAccessMessage?: string | null;
 }) {
   return (
     <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
@@ -1706,11 +1764,13 @@ function OwnerOperationEmptyView({
             No operation report for {formatDateOnly(date)}
           </h2>
           <p className="mt-2 max-w-2xl text-sm font-medium leading-6 text-slate-600">
-            {pendingOperation
-              ? `The manager still needs to close ${formatDateOnly(
-                  pendingOperation.operationDate,
-                )} before the next report can be prepared.`
-              : "This branch has not opened operations for the selected day."}
+            {branchAccessMessage
+              ? branchAccessMessage
+              : pendingOperation
+                ? `The manager still needs to close ${formatDateOnly(
+                    pendingOperation.operationDate,
+                  )} before the next report can be prepared.`
+                : "This branch has not opened operations for the selected day."}
           </p>
         </div>
         <div className="rounded-[14px] border border-[#e6ebf0] bg-[#f8faf9] p-4">

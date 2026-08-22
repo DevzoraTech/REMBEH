@@ -37,16 +37,14 @@ class AgentFloatCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const OpsIcon(
-                  icon: Icons.people_outline_rounded,
-                ),
+                const OpsIcon(icon: Icons.people_outline_rounded),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
-                        'Agent float',
+                        'Field officer float',
                         style: TextStyle(
                           color: midnightNavy,
                           fontSize: 13.5,
@@ -64,7 +62,7 @@ class AgentFloatCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 1),
                       const Text(
-                        'Currently with agents',
+                        'Currently with field officers',
                         style: TextStyle(
                           color: slateText,
                           fontSize: 9.5,
@@ -96,23 +94,17 @@ class AgentFloatCard extends StatelessWidget {
                       const SizedBox(height: 6),
                       OutlinedButton.icon(
                         onPressed: onAllocateFloat,
-                        icon: const Icon(
-                          Icons.add,
-                          size: 15,
-                        ),
+                        icon: const Icon(Icons.add, size: 15),
                         label: const Text('Allocate float'),
                         style: OutlinedButton.styleFrom(
                           foregroundColor: forestEmerald,
-                          side: const BorderSide(
-                            color: forestEmerald,
-                          ),
+                          side: const BorderSide(color: forestEmerald),
                           padding: const EdgeInsets.symmetric(
                             horizontal: 11,
                             vertical: 6,
                           ),
                           minimumSize: Size.zero,
-                          tapTargetSize:
-                              MaterialTapTargetSize.shrinkWrap,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           visualDensity: VisualDensity.compact,
                           textStyle: const TextStyle(
                             fontSize: 10,
@@ -127,33 +119,21 @@ class AgentFloatCard extends StatelessWidget {
             ),
           ),
           if (visibleAgents.isNotEmpty)
-            const Divider(
-              height: 1,
-              color: Color(0xFFE8ECE9),
-            ),
-          ...List.generate(
-            visibleAgents.length,
-            (index) {
-              final agent = visibleAgents[index];
+            const Divider(height: 1, color: Color(0xFFE8ECE9)),
+          ...List.generate(visibleAgents.length, (index) {
+            final agent = visibleAgents[index];
 
-              return Column(
-                children: [
-                  _AgentFloatRow(
-                    agent: agent,
-                    onTap: onViewAll,
+            return Column(
+              children: [
+                _AgentFloatRow(agent: agent, onTap: onViewAll),
+                if (index != visibleAgents.length - 1)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 14),
+                    child: Divider(height: 1, color: Color(0xFFE8ECE9)),
                   ),
-                  if (index != visibleAgents.length - 1)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 14),
-                      child: Divider(
-                        height: 1,
-                        color: Color(0xFFE8ECE9),
-                      ),
-                    ),
-                ],
-              );
-            },
-          ),
+              ],
+            );
+          }),
         ],
       ),
     );
@@ -161,10 +141,7 @@ class AgentFloatCard extends StatelessWidget {
 }
 
 class _AgentFloatRow extends StatelessWidget {
-  const _AgentFloatRow({
-    required this.agent,
-    this.onTap,
-  });
+  const _AgentFloatRow({required this.agent, this.onTap});
 
   final AgentFloatPosition agent;
   final VoidCallback? onTap;
@@ -174,10 +151,7 @@ class _AgentFloatRow extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 14,
-          vertical: 8,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         child: Row(
           children: [
             Container(
@@ -214,7 +188,7 @@ class _AgentFloatRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   const Text(
-                    'Agent',
+                    'Field Officer',
                     style: TextStyle(
                       color: slateText,
                       fontSize: 9,
@@ -238,19 +212,12 @@ class _AgentFloatRow extends StatelessWidget {
                 const SizedBox(height: 2),
                 const Text(
                   'Remaining',
-                  style: TextStyle(
-                    color: slateText,
-                    fontSize: 8,
-                  ),
+                  style: TextStyle(color: slateText, fontSize: 8),
                 ),
               ],
             ),
             const SizedBox(width: 7),
-            const Icon(
-              Icons.chevron_right_rounded,
-              size: 18,
-              color: slateText,
-            ),
+            const Icon(Icons.chevron_right_rounded, size: 18, color: slateText),
           ],
         ),
       ),

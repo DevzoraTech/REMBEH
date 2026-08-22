@@ -5,97 +5,62 @@ import '../../../../../utils/money.dart';
 import '../../../domain/models/report/daily_report_cash_position.dart';
 
 class CashMovementReportTable extends StatelessWidget {
-  const CashMovementReportTable({
-    super.key,
-    required this.cash,
-  });
+  const CashMovementReportTable({super.key, required this.cash});
 
   final DailyReportCashPosition cash;
 
   @override
   Widget build(BuildContext context) {
-    final totalAdditions =
-        cash.repaymentsCollected +
-        cash.processingFees;
+    final totalAdditions = cash.repaymentsCollected + cash.processingFees;
 
-    final netDeductions =
-        cash.expenses +
-        cash.floatIssued -
-        cash.floatReturned;
+    final netDeductions = cash.expenses + cash.floatIssued - cash.floatReturned;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const _SectionTitle(
-          number: '1.',
-          title: 'CASH POSITION SUMMARY',
-        ),
+        const _SectionTitle(number: '1.', title: 'CASH POSITION SUMMARY'),
 
         const SizedBox(height: 8),
 
         Container(
           decoration: BoxDecoration(
             color: Colors.white,
-            border: Border.all(
-              color: line,
-            ),
+            border: Border.all(color: line),
           ),
           child: Row(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: Padding(
-                  padding:
-                      const EdgeInsets.fromLTRB(
-                    10,
-                    9,
-                    10,
-                    9,
-                  ),
+                  padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
                   child: Column(
                     children: [
+                      _CashLine(label: 'Opening cash', value: cash.openingCash),
                       _CashLine(
-                        label: 'Opening cash',
-                        value: cash.openingCash,
+                        label: 'Capital received',
+                        value: cash.capitalReceived,
                       ),
                       _CashLine(
-                        label:
-                            'Capital received',
-                        value:
-                            cash.capitalReceived,
-                      ),
-                      _CashLine(
-                        label:
-                            'Total cash available',
-                        value:
-                            cash.totalCashAvailable,
+                        label: 'Total cash available',
+                        value: cash.totalCashAvailable,
                         strong: true,
                       ),
 
-                      const SizedBox(
-                        height: 8,
-                      ),
+                      const SizedBox(height: 8),
 
                       _CashLine(
-                        label:
-                            'Repayments collected',
-                        value:
-                            cash.repaymentsCollected,
+                        label: 'Repayments collected',
+                        value: cash.repaymentsCollected,
                         positive: true,
                       ),
                       _CashLine(
-                        label:
-                            'Loan processing fees',
-                        value:
-                            cash.processingFees,
+                        label: 'Loan processing fees',
+                        value: cash.processingFees,
                         positive: true,
                       ),
                       _CashLine(
-                        label:
-                            'Total additions',
-                        value:
-                            totalAdditions,
+                        label: 'Total additions',
+                        value: totalAdditions,
                         strong: true,
                         positive: true,
                       ),
@@ -104,21 +69,11 @@ class CashMovementReportTable extends StatelessWidget {
                 ),
               ),
 
-              Container(
-                width: 1,
-                height: 136,
-                color: line,
-              ),
+              Container(width: 1, height: 136, color: line),
 
               Expanded(
                 child: Padding(
-                  padding:
-                      const EdgeInsets.fromLTRB(
-                    10,
-                    9,
-                    10,
-                    9,
-                  ),
+                  padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
                   child: Column(
                     children: [
                       _CashLine(
@@ -127,32 +82,23 @@ class CashMovementReportTable extends StatelessWidget {
                         negative: true,
                       ),
                       _CashLine(
-                        label:
-                            'Float issued to agents',
-                        value:
-                            cash.floatIssued,
+                        label: 'Float issued to field officers',
+                        value: cash.floatIssued,
                         negative: true,
                       ),
                       _CashLine(
-                        label:
-                            'Float returned',
-                        value:
-                            cash.floatReturned,
+                        label: 'Float returned',
+                        value: cash.floatReturned,
                         positive: true,
                       ),
 
-                      const SizedBox(
-                        height: 8,
-                      ),
+                      const SizedBox(height: 8),
 
                       _CashLine(
-                        label:
-                            'Net deductions',
-                        value:
-                            netDeductions,
+                        label: 'Net deductions',
+                        value: netDeductions,
                         strong: true,
-                        negative:
-                            netDeductions > 0,
+                        negative: netDeductions > 0,
                       ),
                     ],
                   ),
@@ -166,24 +112,18 @@ class CashMovementReportTable extends StatelessWidget {
           decoration: const BoxDecoration(
             color: Colors.white,
             border: Border(
-              left:
-                  BorderSide(color: line),
-              right:
-                  BorderSide(color: line),
-              bottom:
-                  BorderSide(color: line),
+              left: BorderSide(color: line),
+              right: BorderSide(color: line),
+              bottom: BorderSide(color: line),
             ),
           ),
           child: Row(
             children: [
               Expanded(
                 child: _ClosingMetric(
-                  label:
-                      'Expected closing cash',
-                  value:
-                      cash.expectedClosingCash,
-                  color:
-                      forestEmerald,
+                  label: 'Expected closing cash',
+                  value: cash.expectedClosingCash,
+                  color: forestEmerald,
                 ),
               ),
 
@@ -192,19 +132,13 @@ class CashMovementReportTable extends StatelessWidget {
               Expanded(
                 child: _ClosingMetric(
                   label: 'Counted cash',
-                  value:
-                      cash.countedCash,
+                  value: cash.countedCash,
                 ),
               ),
 
               const _MetricDivider(),
 
-              Expanded(
-                child: _VarianceMetric(
-                  variance:
-                      cash.variance,
-                ),
-              ),
+              Expanded(child: _VarianceMetric(variance: cash.variance)),
             ],
           ),
         ),
@@ -216,8 +150,7 @@ class CashMovementReportTable extends StatelessWidget {
           style: TextStyle(
             color: slateText,
             fontSize: 7,
-            fontWeight:
-                FontWeight.w500,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ],
@@ -226,10 +159,7 @@ class CashMovementReportTable extends StatelessWidget {
 }
 
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle({
-    required this.number,
-    required this.title,
-  });
+  const _SectionTitle({required this.number, required this.title});
 
   final String number;
   final String title;
@@ -243,8 +173,7 @@ class _SectionTitle extends StatelessWidget {
           style: const TextStyle(
             color: forestEmerald,
             fontSize: 10,
-            fontWeight:
-                FontWeight.w900,
+            fontWeight: FontWeight.w900,
           ),
         ),
         const SizedBox(width: 4),
@@ -253,8 +182,7 @@ class _SectionTitle extends StatelessWidget {
           style: const TextStyle(
             color: forestEmerald,
             fontSize: 10,
-            fontWeight:
-                FontWeight.w900,
+            fontWeight: FontWeight.w900,
             letterSpacing: 0.1,
           ),
         ),
@@ -284,34 +212,26 @@ class _CashLine extends StatelessWidget {
     final valueColor = positive
         ? forestEmerald
         : negative
-            ? const Color(
-                0xFFB42318,
-              )
-            : midnightNavy;
+        ? const Color(0xFFB42318)
+        : midnightNavy;
 
     final prefix = positive
         ? '+ '
         : negative
-            ? '- '
-            : '';
+        ? '- '
+        : '';
 
     return Padding(
-      padding:
-          const EdgeInsets.symmetric(
-        vertical: 3.3,
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 3.3),
       child: Row(
         children: [
           Expanded(
             child: Text(
               label,
               style: TextStyle(
-                color:
-                    midnightNavy,
+                color: midnightNavy,
                 fontSize: 7.6,
-                fontWeight: strong
-                    ? FontWeight.w800
-                    : FontWeight.w500,
+                fontWeight: strong ? FontWeight.w800 : FontWeight.w500,
               ),
             ),
           ),
@@ -320,18 +240,13 @@ class _CashLine extends StatelessWidget {
 
           Text(
             '${prefix}UGX ${formatMoney(value.abs())}',
-            textAlign:
-                TextAlign.right,
+            textAlign: TextAlign.right,
             style: TextStyle(
-              color:
-                  valueColor,
+              color: valueColor,
               fontSize: 7.6,
-              fontWeight:
-                  strong ||
-                          positive ||
-                          negative
-                      ? FontWeight.w800
-                      : FontWeight.w600,
+              fontWeight: strong || positive || negative
+                  ? FontWeight.w800
+                  : FontWeight.w600,
             ),
           ),
         ],
@@ -354,45 +269,31 @@ class _ClosingMetric extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      constraints:
-          const BoxConstraints(
-        minHeight: 56,
-      ),
-      padding:
-          const EdgeInsets.symmetric(
-        horizontal: 8,
-        vertical: 9,
-      ),
+      constraints: const BoxConstraints(minHeight: 56),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
       child: Column(
-        mainAxisAlignment:
-            MainAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
             label,
-            textAlign:
-                TextAlign.center,
+            textAlign: TextAlign.center,
             style: const TextStyle(
               color: slateText,
               fontSize: 7.3,
-              fontWeight:
-                  FontWeight.w700,
+              fontWeight: FontWeight.w700,
             ),
           ),
 
           const SizedBox(height: 4),
 
           FittedBox(
-            fit:
-                BoxFit.scaleDown,
+            fit: BoxFit.scaleDown,
             child: Text(
-              value == null
-                  ? '—'
-                  : 'UGX ${formatMoney(value!)}',
+              value == null ? '—' : 'UGX ${formatMoney(value!)}',
               style: TextStyle(
                 color: color,
                 fontSize: 11,
-                fontWeight:
-                    FontWeight.w900,
+                fontWeight: FontWeight.w900,
               ),
             ),
           ),
@@ -403,9 +304,7 @@ class _ClosingMetric extends StatelessWidget {
 }
 
 class _VarianceMetric extends StatelessWidget {
-  const _VarianceMetric({
-    required this.variance,
-  });
+  const _VarianceMetric({required this.variance});
 
   final num? variance;
 
@@ -414,83 +313,58 @@ class _VarianceMetric extends StatelessWidget {
     final value = variance;
 
     if (value == null) {
-      return const _ClosingMetric(
-        label: 'Variance',
-        value: null,
-      );
+      return const _ClosingMetric(label: 'Variance', value: null);
     }
 
-    final isShortage =
-        value < 0;
+    final isShortage = value < 0;
 
-    final isExcess =
-        value > 0;
+    final isExcess = value > 0;
 
     final color = isShortage
-        ? const Color(
-            0xFFB42318,
-          )
+        ? const Color(0xFFB42318)
         : isExcess
-            ? const Color(
-                0xFFB54708,
-              )
-            : forestEmerald;
+        ? const Color(0xFFB54708)
+        : forestEmerald;
 
     final label = isShortage
         ? 'Variance (Shortage)'
         : isExcess
-            ? 'Variance (Excess)'
-            : 'Variance';
+        ? 'Variance (Excess)'
+        : 'Variance';
 
     final prefix = value < 0
         ? '- '
         : value > 0
-            ? '+ '
-            : '';
+        ? '+ '
+        : '';
 
     return Container(
-      constraints:
-          const BoxConstraints(
-        minHeight: 56,
-      ),
-      color: isShortage
-          ? const Color(
-              0xFFFFF8F7,
-            )
-          : null,
-      padding:
-          const EdgeInsets.symmetric(
-        horizontal: 8,
-        vertical: 9,
-      ),
+      constraints: const BoxConstraints(minHeight: 56),
+      color: isShortage ? const Color(0xFFFFF8F7) : null,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 9),
       child: Column(
-        mainAxisAlignment:
-            MainAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Text(
             label,
-            textAlign:
-                TextAlign.center,
+            textAlign: TextAlign.center,
             style: TextStyle(
               color: color,
               fontSize: 7.3,
-              fontWeight:
-                  FontWeight.w700,
+              fontWeight: FontWeight.w700,
             ),
           ),
 
           const SizedBox(height: 4),
 
           FittedBox(
-            fit:
-                BoxFit.scaleDown,
+            fit: BoxFit.scaleDown,
             child: Text(
               '${prefix}UGX ${formatMoney(value.abs())}',
               style: TextStyle(
                 color: color,
                 fontSize: 11,
-                fontWeight:
-                    FontWeight.w900,
+                fontWeight: FontWeight.w900,
               ),
             ),
           ),
@@ -505,10 +379,6 @@ class _MetricDivider extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 1,
-      height: 56,
-      color: line,
-    );
+    return Container(width: 1, height: 56, color: line);
   }
 }

@@ -78,3 +78,20 @@ String paymentStatusLabel(String status) {
     _ => 'Unpaid',
   };
 }
+
+String salaryRoleLabel(String? roleName) {
+  final clean = roleName?.trim();
+  if (clean == null || clean.isEmpty) {
+    return 'Employee';
+  }
+
+  final normalized = clean.toLowerCase();
+  if (normalized == 'agent' ||
+      normalized == 'field agent' ||
+      normalized == 'loan officer' ||
+      normalized == 'recovery officer') {
+    return 'Field Officer';
+  }
+
+  return clean;
+}

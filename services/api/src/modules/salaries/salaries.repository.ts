@@ -1,5 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import {
+  CashShortagePaymentMethod,
   CashShortageStatus,
   EmployeeStatus,
   Prisma,
@@ -223,24 +224,111 @@ export class SalariesRepository {
     paidAt: Date;
     referenceNote?: string | null;
     recordedByUserId: string;
+    shortageSettlement?: {
+      responsibleUserId: string;
+      amount: number;
+      paidAt: Date;
+      notes?: string | null;
+    };
   }) {
-    return this.prisma.salaryPayment.create({
-      data: {
-        tenantId: input.tenantId,
-        branchId: input.branchId,
-        employeeId: input.employeeId,
-        cycleStart: input.cycleStart,
-        cycleEnd: input.cycleEnd,
-        amount: new Prisma.Decimal(input.amount),
-        method: input.method,
-        paidAt: input.paidAt,
-        referenceNote: input.referenceNote ?? null,
-        recordedByUserId: input.recordedByUserId,
-      },
-      include: {
-        recordedBy: { select: { displayName: true } },
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const payment = await tx.salaryPayment.create({
+        data: {
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+          employeeId: input.employeeId,
+          cycleStart: input.cycleStart,
+          cycleEnd: input.cycleEnd,
+          amount: new Prisma.Decimal(input.amount),
+          method: input.method,
+          paidAt: input.paidAt,
+          referenceNote: input.referenceNote ?? null,
+          recordedByUserId: input.recordedByUserId,
+        },
+        include: {
+          recordedBy: { select: { displayName: true } },
+        },
+      });
+
+      if (input.shortageSettlement && input.shortageSettlement.amount > 0) {
+        await this.recordShortageSettlement(tx, {
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+          recordedByUserId: input.recordedByUserId,
+          ...input.shortageSettlement,
+        });
+      }
+
+      return payment;
     });
+  }
+
+  private async recordShortageSettlement(
+    tx: Prisma.TransactionClient,
+    input: {
+      tenantId: string;
+      branchId: string | null;
+      responsibleUserId: string;
+      amount: number;
+      paidAt: Date;
+      notes?: string | null;
+      recordedByUserId: string;
+    },
+  ) {
+    let remaining = Math.round(input.amount * 100) / 100;
+    const shortages = await tx.cashShortage.findMany({
+      where: {
+        tenantId: input.tenantId,
+        responsibleUserId: input.responsibleUserId,
+        ...(input.branchId ? { branchId: input.branchId } : {}),
+        status: {
+          in: [CashShortageStatus.OPEN, CashShortageStatus.PARTIALLY_PAID],
+        },
+        amountOutstanding: { gt: 0 },
+      },
+      orderBy: [{ operationDate: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    for (const shortage of shortages) {
+      if (remaining <= 0) break;
+
+      const outstanding = Number(shortage.amountOutstanding);
+      const amount = Math.round(Math.min(remaining, outstanding) * 100) / 100;
+      const nextOutstanding = Math.round((outstanding - amount) * 100) / 100;
+      const status =
+        nextOutstanding <= 0
+          ? CashShortageStatus.CLEARED
+          : CashShortageStatus.PARTIALLY_PAID;
+
+      await tx.cashShortagePayment.create({
+        data: {
+          tenantId: input.tenantId,
+          shortageId: shortage.id,
+          amount: new Prisma.Decimal(amount),
+          method: CashShortagePaymentMethod.SALARY_DEDUCTION,
+          paidAt: input.paidAt,
+          notes: input.notes?.trim() || null,
+          recordedByUserId: input.recordedByUserId,
+        },
+      });
+
+      await tx.cashShortage.update({
+        where: { id: shortage.id },
+        data: {
+          amountOutstanding: new Prisma.Decimal(Math.max(0, nextOutstanding)),
+          status,
+          clearedAt: status === CashShortageStatus.CLEARED ? new Date() : null,
+        },
+      });
+
+      remaining = Math.round((remaining - amount) * 100) / 100;
+    }
+
+    if (remaining > 0.001) {
+      throw new BadRequestException(
+        'Shortage settlement exceeds the employee outstanding shortage.',
+      );
+    }
   }
 
   listPaymentsForEmployee(input: {

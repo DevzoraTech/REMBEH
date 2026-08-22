@@ -20,6 +20,10 @@ class ManagerOwnerHomeTab extends StatefulWidget {
     required this.onOpenDailyOps,
     required this.onOpenRecordRepayment,
     required this.onOpenFindClient,
+    this.summaryPeriodLabel = 'Today',
+    this.collectedMetricLabel = 'Collected today',
+    this.loansIssuedMetricLabel = 'Loans issued today',
+    this.borrowersDueMetricLabel = 'Borrowers due today',
 
     // Finance
     this.collectedToday = 0,
@@ -49,16 +53,19 @@ class ManagerOwnerHomeTab extends StatefulWidget {
   final VoidCallback onOpenProfile;
   final VoidCallback onOpenSearch;
 
-  final void Function({
-    RecordsSection section,
-    RecordsFilter filter,
-  }) onOpenRecords;
+  final void Function({RecordsSection section, RecordsFilter filter})
+  onOpenRecords;
 
   final VoidCallback onOpenNewLoan;
   final VoidCallback onOpenNewBorrower;
   final VoidCallback onOpenDailyOps;
   final VoidCallback onOpenRecordRepayment;
   final VoidCallback onOpenFindClient;
+
+  final String summaryPeriodLabel;
+  final String collectedMetricLabel;
+  final String loansIssuedMetricLabel;
+  final String borrowersDueMetricLabel;
 
   // Finance
   final int collectedToday;
@@ -83,8 +90,7 @@ class ManagerOwnerHomeTab extends StatefulWidget {
   final List<ActivityItem> recentActivities;
 
   @override
-  State<ManagerOwnerHomeTab> createState() =>
-      _ManagerOwnerHomeTabState();
+  State<ManagerOwnerHomeTab> createState() => _ManagerOwnerHomeTabState();
 }
 
 class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
@@ -96,9 +102,7 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
   void initState() {
     super.initState();
 
-    _pageController = PageController(
-      viewportFraction: 0.88,
-    );
+    _pageController = PageController(viewportFraction: 0.88);
   }
 
   @override
@@ -111,11 +115,13 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
   Widget build(BuildContext context) {
     // Home only previews the first 2 records.
     // Everything else remains available through View all.
-    final visibleAttentionItems =
-        widget.attentionItems.take(2).toList(growable: false);
+    final visibleAttentionItems = widget.attentionItems
+        .take(2)
+        .toList(growable: false);
 
-    final visibleRecentActivities =
-        widget.recentActivities.take(2).toList(growable: false);
+    final visibleRecentActivities = widget.recentActivities
+        .take(2)
+        .toList(growable: false);
 
     return SafeArea(
       top: false,
@@ -127,7 +133,6 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
           // ------------------------------------------------------------------
           // Summary cards
           // ------------------------------------------------------------------
-
           const SizedBox(height: 14),
 
           _buildSummaryCarousel(),
@@ -139,7 +144,6 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
           // ------------------------------------------------------------------
           // Search
           // ------------------------------------------------------------------
-
           const SizedBox(height: 14),
 
           _buildSearchBar(),
@@ -147,7 +151,6 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
           // ------------------------------------------------------------------
           // Quick actions
           // ------------------------------------------------------------------
-
           const SizedBox(height: 16),
 
           _buildQuickActions(),
@@ -155,7 +158,6 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
           // ------------------------------------------------------------------
           // Needs attention
           // ------------------------------------------------------------------
-
           if (visibleAttentionItems.isNotEmpty) ...[
             const SizedBox(height: 22),
 
@@ -173,7 +175,6 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
           // ------------------------------------------------------------------
           // Recent activity
           // ------------------------------------------------------------------
-
           if (visibleRecentActivities.isNotEmpty) ...[
             const SizedBox(height: 20),
 
@@ -216,17 +217,15 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
           // ------------------------------------------------------------------
           // Finances
           // ------------------------------------------------------------------
-
           Padding(
             padding: const EdgeInsets.only(left: 18),
             child: StatCard(
               title: 'Finances',
-              subtitle: 'Today',
+              subtitle: widget.summaryPeriodLabel,
               icon: Icons.account_balance_wallet_outlined,
               iconBackgroundColor: forestEmerald,
-              primaryMetricLabel: 'Collected today',
-              primaryMetricValue:
-                  'UGX ${formatMoney(widget.collectedToday)}',
+              primaryMetricLabel: widget.collectedMetricLabel,
+              primaryMetricValue: 'UGX ${formatMoney(widget.collectedToday)}',
               primaryMetricColor: forestEmerald,
               supportingMetrics: [
                 SupportingMetric(
@@ -243,8 +242,7 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
                 ),
               ],
               overallLabel: 'Overall | Expected closing cash',
-              overallValue:
-                  'UGX ${formatMoney(widget.expectedClosingCash)}',
+              overallValue: 'UGX ${formatMoney(widget.expectedClosingCash)}',
               buttonLabel: 'Open',
             ),
           ),
@@ -252,13 +250,12 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
           // ------------------------------------------------------------------
           // Loans
           // ------------------------------------------------------------------
-
           StatCard(
             title: 'Loans',
-            subtitle: 'Today',
+            subtitle: widget.summaryPeriodLabel,
             icon: Icons.business_center_outlined,
             iconBackgroundColor: const Color(0xFF6D50B5),
-            primaryMetricLabel: 'Loans issued today',
+            primaryMetricLabel: widget.loansIssuedMetricLabel,
             primaryMetricValue: '${widget.loansIssuedToday}',
             primaryMetricColor: const Color(0xFF6D50B5),
             supportingMetrics: [
@@ -282,15 +279,14 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
           // ------------------------------------------------------------------
           // Borrowers
           // ------------------------------------------------------------------
-
           Padding(
             padding: const EdgeInsets.only(right: 18),
             child: StatCard(
               title: 'Borrowers',
-              subtitle: 'Today',
+              subtitle: widget.summaryPeriodLabel,
               icon: Icons.people_outline_rounded,
               iconBackgroundColor: const Color(0xFFB96D15),
-              primaryMetricLabel: 'Borrowers due today',
+              primaryMetricLabel: widget.borrowersDueMetricLabel,
               primaryMetricValue: '${widget.borrowersDueToday}',
               primaryMetricColor: const Color(0xFFA35808),
               supportingMetrics: [
@@ -323,26 +319,21 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
   Widget _buildPageIndicators() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(
-        3,
-        (index) {
-          final active = index == _currentPage;
+      children: List.generate(3, (index) {
+        final active = index == _currentPage;
 
-          return AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOut,
-            width: active ? 8 : 7,
-            height: active ? 8 : 7,
-            margin: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(
-              color: active
-                  ? forestEmerald
-                  : const Color(0xFFE0E5E2),
-              shape: BoxShape.circle,
-            ),
-          );
-        },
-      ),
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          width: active ? 8 : 7,
+          height: active ? 8 : 7,
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            color: active ? forestEmerald : const Color(0xFFE0E5E2),
+            shape: BoxShape.circle,
+          ),
+        );
+      }),
     );
   }
 
@@ -364,18 +355,12 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
               color: Colors.white,
-              border: Border.all(
-                color: const Color(0xFFD8DDDA),
-              ),
+              border: Border.all(color: const Color(0xFFD8DDDA)),
               borderRadius: BorderRadius.circular(12),
             ),
             child: const Row(
               children: [
-                Icon(
-                  Icons.search_rounded,
-                  size: 22,
-                  color: Color(0xFF555B62),
-                ),
+                Icon(Icons.search_rounded, size: 22, color: Color(0xFF555B62)),
                 SizedBox(width: 12),
                 Expanded(
                   child: Text(
@@ -481,15 +466,10 @@ class _QuickActionTile extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: Container(
           height: 86,
-          padding: const EdgeInsets.symmetric(
-            horizontal: 8,
-            vertical: 11,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 11),
           decoration: BoxDecoration(
             color: Colors.white,
-            border: Border.all(
-              color: const Color(0xFFEDF0EE),
-            ),
+            border: Border.all(color: const Color(0xFFEDF0EE)),
             borderRadius: BorderRadius.circular(12),
             boxShadow: const [
               BoxShadow(
@@ -502,11 +482,7 @@ class _QuickActionTile extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                icon,
-                color: forestEmerald,
-                size: 27,
-              ),
+              Icon(icon, color: forestEmerald, size: 27),
 
               const SizedBox(height: 8),
 

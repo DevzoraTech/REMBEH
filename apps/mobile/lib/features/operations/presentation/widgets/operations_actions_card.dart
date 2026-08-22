@@ -36,9 +36,7 @@ class OperationsActionsCard extends StatelessWidget {
         children: [
           const Row(
             children: [
-              OpsIcon(
-                icon: Icons.bolt_rounded,
-              ),
+              OpsIcon(icon: Icons.bolt_rounded),
               SizedBox(width: 10),
               Text(
                 'Actions',
@@ -83,7 +81,7 @@ class OperationsActionsCard extends StatelessWidget {
               Expanded(
                 child: _Action(
                   icon: Icons.groups_outlined,
-                  label: 'Agent\npositions',
+                  label: 'Field officer\npositions',
                   enabled: canOpenAgentPositions,
                   onTap: onAgentPositions,
                 ),
@@ -119,14 +117,9 @@ class _Action extends StatelessWidget {
         borderRadius: BorderRadius.circular(9),
         child: Container(
           height: 70,
-          padding: const EdgeInsets.symmetric(
-            horizontal: 3,
-            vertical: 7,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 7),
           decoration: BoxDecoration(
-            border: Border.all(
-              color: const Color(0xFFEDF0EE),
-            ),
+            border: Border.all(color: const Color(0xFFEDF0EE)),
             borderRadius: BorderRadius.circular(9),
           ),
           child: Opacity(
@@ -134,11 +127,7 @@ class _Action extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  icon,
-                  size: 21,
-                  color: forestEmerald,
-                ),
+                Icon(icon, size: 21, color: forestEmerald),
                 const SizedBox(height: 5),
                 Text(
                   label,

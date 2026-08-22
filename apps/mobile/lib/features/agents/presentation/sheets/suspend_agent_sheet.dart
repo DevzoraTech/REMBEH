@@ -75,7 +75,7 @@ class _SuspendAgentSheetState extends State<SuspendAgentSheet> {
                   const SizedBox(width: 10),
                   const Expanded(
                     child: Text(
-                      'Suspend agent',
+                      'Suspend field officer',
                       style: TextStyle(
                         color: midnightNavy,
                         fontSize: 18,
@@ -159,7 +159,7 @@ class _SuspendAgentSheetState extends State<SuspendAgentSheet> {
                 icon: Icons.error_outline_rounded,
                 tone: Color(0xFFD92D20),
                 message:
-                    'This agent will not be able to access the app or perform operations until reactivated.',
+                    'This field officer will not be able to access the app or perform operations until reactivated.',
               ),
               if (widget.hasOpenShortage) ...[
                 const SizedBox(height: 10),
@@ -167,7 +167,7 @@ class _SuspendAgentSheetState extends State<SuspendAgentSheet> {
                   icon: Icons.warning_amber_rounded,
                   tone: Color(0xFFB26A00),
                   message:
-                      'This agent has an unresolved daily position. Settle today’s operations before suspending.',
+                      'This field officer has an unresolved daily position. Settle today’s operations before suspending.',
                 ),
               ],
               const SizedBox(height: 18),
@@ -194,7 +194,7 @@ class _SuspendAgentSheetState extends State<SuspendAgentSheet> {
                         minimumSize: const Size(0, 48),
                       ),
                       child: const Text(
-                        'Suspend agent',
+                        'Suspend field officer',
                         style: TextStyle(fontWeight: FontWeight.w900),
                       ),
                     ),

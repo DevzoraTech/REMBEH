@@ -216,7 +216,7 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
     if (!_dayIsOpen) {
       setState(() {
         _error =
-            'Float cannot be changed after agent balancing has been locked.';
+            'Float cannot be changed after field officer balancing has been locked.';
       });
 
       return;
@@ -240,7 +240,7 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
         backgroundColor: Colors.transparent,
         builder: (_) {
           return _AllocateFloatSheet(
-            agentName: _string(agent['name']) ?? 'Agent',
+            agentName: _string(agent['name']) ?? 'Field Officer',
             addMore: addMore,
             amountController: amount,
             notesController: notes,
@@ -320,7 +320,7 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
     if (!_allBalanced) {
       setState(() {
         _error =
-            'Complete all agent handovers before starting branch reconciliation.';
+            'Complete all field officer handovers before starting branch reconciliation.';
       });
 
       return;
@@ -367,7 +367,7 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
         ),
         titleSpacing: 2,
         title: const Text(
-          'Agent Balancing',
+          'Field Officer Balancing',
           style: TextStyle(
             color: midnightNavy,
             fontSize: 17,
@@ -576,7 +576,7 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
         backgroundColor: Colors.transparent,
         builder: (_) {
           return _ConfirmShortageSheet(
-            agentName: _string(widget.agent['name']) ?? 'Agent',
+            agentName: _string(widget.agent['name']) ?? 'Field Officer',
             shortage: result.variance.abs(),
           );
         },
@@ -602,7 +602,7 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
         backgroundColor: Colors.transparent,
         builder: (_) {
           return _ConfirmExcessSheet(
-            agentName: _string(widget.agent['name']) ?? 'Agent',
+            agentName: _string(widget.agent['name']) ?? 'Field Officer',
             amount: result.variance,
           );
         },
@@ -615,7 +615,7 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
       await _recordReturn(
         amount: result.amount,
         notes:
-            'Agent handed over excess cash of UGX ${formatMoney(result.variance)}.',
+            'Field officer handed over excess cash of UGX ${formatMoney(result.variance)}.',
       );
 
       return;
@@ -662,7 +662,7 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
         barrierDismissible: false,
         builder: (_) {
           return _BalancedSuccessDialog(
-            agentName: _string(widget.agent['name']) ?? 'Agent',
+            agentName: _string(widget.agent['name']) ?? 'Field Officer',
           );
         },
       );
@@ -709,7 +709,7 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
         ),
         titleSpacing: 2,
         title: Text(
-          _balanced ? 'Agent Details' : 'Agent Position',
+          _balanced ? 'Field Officer Details' : 'Field Officer Position',
           style: const TextStyle(
             color: midnightNavy,
             fontSize: 17,
@@ -809,7 +809,7 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
                       ),
                     )
                   : const Text(
-                      'Balance Agent',
+                      'Balance Field Officer',
                       style: TextStyle(fontWeight: FontWeight.w800),
                     ),
             ),
@@ -862,7 +862,7 @@ class _BalancingSummaryCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Agent reconciliation',
+                      'Field officer reconciliation',
                       style: TextStyle(
                         color: slateText,
                         fontSize: 10,
@@ -1047,7 +1047,7 @@ class _AllBalancedCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'All agents balanced',
+                      'All field officers balanced',
                       style: TextStyle(
                         color: forestEmerald,
                         fontSize: 13,
@@ -1056,7 +1056,7 @@ class _AllBalancedCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '$balanced of $total agents have been balanced successfully.',
+                      '$balanced of $total field officers have been balanced successfully.',
                       style: const TextStyle(
                         color: slateText,
                         fontSize: 9,
@@ -1137,7 +1137,7 @@ class _AgentBalancingCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = _string(agent['name']) ?? 'Agent';
+    final name = _string(agent['name']) ?? 'Field Officer';
 
     final float = _num(position?['amountGiven']);
 
@@ -1326,7 +1326,7 @@ class _AgentIdentityHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = _string(agent['name']) ?? 'Agent';
+    final name = _string(agent['name']) ?? 'Field Officer';
 
     return Row(
       children: [
@@ -1346,7 +1346,7 @@ class _AgentIdentityHeader extends StatelessWidget {
               ),
               const SizedBox(height: 1),
               const Text(
-                'Agent',
+                'Field Officer',
                 style: TextStyle(
                   color: slateText,
                   fontSize: 9,
@@ -2020,7 +2020,8 @@ class _RecordHandoverSheetState extends State<_RecordHandoverSheet> {
 
             _WarningBox(
               title: 'Shortage detected',
-              message: 'Agent handed over less than the expected amount.',
+              message:
+                  'Field officer handed over less than the expected amount.',
               color: const Color(0xFFB42318),
             ),
           ],
@@ -2030,7 +2031,8 @@ class _RecordHandoverSheetState extends State<_RecordHandoverSheet> {
 
             _WarningBox(
               title: 'Excess detected',
-              message: 'Agent handed over more than the expected amount.',
+              message:
+                  'Field officer handed over more than the expected amount.',
               color: const Color(0xFFA15C00),
             ),
           ],
@@ -2214,7 +2216,7 @@ class _ConfirmShortageSheetState extends State<_ConfirmShortageSheet> {
               backgroundColor: const Color(0xFFD92D20),
               minimumSize: const Size.fromHeight(46),
             ),
-            child: const Text('Record Shortage & Balance Agent'),
+            child: const Text('Record Shortage & Balance Field Officer'),
           ),
 
           const SizedBox(height: 7),
@@ -2293,7 +2295,7 @@ class _ConfirmExcessSheet extends StatelessWidget {
               backgroundColor: forestEmerald,
               minimumSize: const Size.fromHeight(46),
             ),
-            child: const Text('Confirm Excess & Balance Agent'),
+            child: const Text('Confirm Excess & Balance Field Officer'),
           ),
 
           const SizedBox(height: 7),
@@ -2347,7 +2349,7 @@ class _BalancedSuccessDialog extends StatelessWidget {
             const SizedBox(height: 14),
 
             const Text(
-              'Agent balanced',
+              'Field officer balanced',
               style: TextStyle(
                 color: forestEmerald,
                 fontSize: 18,
@@ -2425,8 +2427,8 @@ class _NoFloatCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             dayOpen
-                ? 'This agent has not received float for this business day.'
-                : 'This agent did not receive float for this business day.',
+                ? 'This field officer has not received float for this business day.'
+                : 'This field officer did not receive float for this business day.',
             textAlign: TextAlign.center,
             style: const TextStyle(color: slateText, fontSize: 10, height: 1.4),
           ),
@@ -2605,7 +2607,7 @@ class _SearchField extends StatelessWidget {
         controller: controller,
         onChanged: onChanged,
         decoration: const InputDecoration(
-          hintText: 'Search agents',
+          hintText: 'Search field officers',
           prefixIcon: Icon(Icons.search_rounded, size: 19),
           contentPadding: EdgeInsets.symmetric(vertical: 0),
         ),
@@ -2907,7 +2909,7 @@ class _EmptyAgents extends StatelessWidget {
           Icon(Icons.people_outline_rounded, color: slateText),
           SizedBox(height: 7),
           Text(
-            'No agents found',
+            'No field officers found',
             style: TextStyle(color: midnightNavy, fontWeight: FontWeight.w800),
           ),
         ],

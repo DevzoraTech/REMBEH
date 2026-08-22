@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import '../../../../../theme.dart';
 import '../../domain/models/salary_models.dart';
 import '../utils/salary_formatters.dart';
-import '../widgets/salary_avatar.dart';
+
+const _employeeRoleOptions = ['Field Officer', 'Cashier', 'Manager'];
 
 class RecordEmployeeSheet extends StatefulWidget {
   const RecordEmployeeSheet({
@@ -42,12 +43,7 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
 
   SalaryAgentCandidate? _matchedAgent;
 
-  bool _lookupCompleted = false;
-  bool _checking = false;
-
   bool get _editing => widget.initialEmployee != null;
-
-  bool get _hasExistingMatch => _matchedAgent != null;
 
   @override
   void initState() {
@@ -63,7 +59,9 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
 
     _nin = TextEditingController(text: employee?.ninNumber ?? '');
 
-    _role = TextEditingController(text: employee?.roleName ?? '');
+    _role = TextEditingController(
+      text: _roleOptionFrom(employee?.roleName) ?? '',
+    );
 
     _monthlySalary = TextEditingController(
       text: employee == null || employee.monthlySalary <= 0
@@ -89,10 +87,6 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
 
     _status = employee?.status.toUpperCase() ?? 'ACTIVE';
     _paymentMethod = employee?.paymentMethod?.toUpperCase() ?? 'CASH';
-
-    if (_editing) {
-      _lookupCompleted = true;
-    }
   }
 
   @override
@@ -116,92 +110,13 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
   // ===========================================================================
 
   void _identityChanged() {
-    if (_editing) {
-      return;
-    }
-
-    if (!_lookupCompleted && _matchedAgent == null) {
+    if (_editing || _matchedAgent == null) {
       return;
     }
 
     setState(() {
-      _lookupCompleted = false;
       _matchedAgent = null;
     });
-  }
-
-  Future<void> _checkIdentity() async {
-    FocusScope.of(context).unfocus();
-
-    if (!_identityFieldsValid()) {
-      setState(() {});
-      return;
-    }
-
-    setState(() {
-      _checking = true;
-    });
-
-    await Future<void>.delayed(const Duration(milliseconds: 180));
-
-    final enteredName = _normalizeText(_fullName.text);
-    final enteredPhone = _normalizePhone(_phone.text);
-    final enteredEmail = _email.text.trim().toLowerCase();
-
-    SalaryAgentCandidate? exactMatch;
-
-    for (final candidate in widget.agentCandidates) {
-      final candidateName = _normalizeText(candidate.name);
-      final candidatePhone = _normalizePhone(candidate.phone ?? '');
-      final candidateEmail = (candidate.email ?? '').trim().toLowerCase();
-
-      final nameMatches = candidateName == enteredName;
-
-      final phoneMatches =
-          enteredPhone.isNotEmpty &&
-          candidatePhone.isNotEmpty &&
-          candidatePhone == enteredPhone;
-
-      final emailMatches =
-          enteredEmail.isNotEmpty &&
-          candidateEmail.isNotEmpty &&
-          candidateEmail == enteredEmail;
-
-      /*
-       * Phone is the strongest identity signal currently exposed by the
-       * salary agent-candidate API.
-       *
-       * We deliberately do not match on name alone because doing so can
-       * produce incorrect employee recommendations.
-       */
-      if (phoneMatches &&
-          (nameMatches || emailMatches || enteredEmail.isEmpty)) {
-        exactMatch = candidate;
-        break;
-      }
-    }
-
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _checking = false;
-      _lookupCompleted = true;
-      _matchedAgent = exactMatch;
-    });
-
-    if (exactMatch != null) {
-      _applyMatchedAgent(exactMatch);
-    }
-  }
-
-  bool _identityFieldsValid() {
-    final nameValid = _fullName.text.trim().length >= 2;
-    final phoneValid = _normalizePhone(_phone.text).length >= 9;
-    final ninValid = _nin.text.trim().length >= 5;
-
-    return nameValid && phoneValid && ninValid;
   }
 
   void _applyMatchedAgent(SalaryAgentCandidate candidate) {
@@ -215,15 +130,16 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
       _email.text = candidate.email!.trim();
     }
 
-    if ((candidate.roleName ?? '').trim().isNotEmpty) {
-      _role.text = candidate.roleName!.trim();
+    final role = _roleOptionFrom(candidate.roleName);
+
+    if (role != null) {
+      _role.text = role;
     }
   }
 
   void _selectAgentCandidate(SalaryAgentCandidate? candidate) {
     setState(() {
       _matchedAgent = candidate;
-      _lookupCompleted = candidate != null;
     });
 
     if (candidate != null) {
@@ -258,15 +174,6 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
 
   void _save() {
     FocusScope.of(context).unfocus();
-
-    if (!_editing && !_lookupCompleted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Check the employee identity before continuing.'),
-        ),
-      );
-      return;
-    }
 
     if (!_formKey.currentState!.validate()) {
       return;
@@ -382,26 +289,24 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
               const SizedBox(height: 12),
 
               if (!_editing) ...[
-                const _FieldLabel(label: 'Link existing agent (optional)'),
+                const _FieldLabel(
+                  label: 'Select existing field officer (optional)',
+                ),
 
                 const SizedBox(height: 6),
 
                 DropdownButtonFormField<SalaryAgentCandidate?>(
+                  key: ValueKey(_matchedAgent?.id ?? 'new-employee'),
                   initialValue: _matchedAgent,
                   isExpanded: true,
                   decoration: _fieldDecoration(
-                    hint: 'Select an available agent',
+                    hint: widget.agentCandidates.isEmpty
+                        ? 'No available field officers to link'
+                        : 'Choose a field officer to link',
                     prefixIcon: Icons.people_alt_outlined,
                   ),
                   icon: const Icon(Icons.keyboard_arrow_down_rounded),
                   items: [
-                    const DropdownMenuItem<SalaryAgentCandidate?>(
-                      value: null,
-                      child: Text(
-                        'Create employee manually',
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
                     for (final candidate in widget.agentCandidates)
                       DropdownMenuItem<SalaryAgentCandidate?>(
                         value: candidate,
@@ -415,10 +320,20 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
                         ),
                       ),
                   ],
-                  onChanged: _selectAgentCandidate,
+                  onChanged: widget.agentCandidates.isEmpty
+                      ? null
+                      : _selectAgentCandidate,
                 ),
 
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
+
+                const _OrDivider(),
+
+                const SizedBox(height: 12),
+
+                const _CreateNewEmployeePrompt(),
+
+                const SizedBox(height: 16),
               ],
 
               _RequiredLabel(label: 'Full name'),
@@ -562,250 +477,249 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
                 },
               ),
 
-              const SizedBox(height: 14),
+              const SizedBox(height: 18),
 
-              if (!_editing) ...[
-                if (!_lookupCompleted) const _LookupInformationCard(),
+              const _SectionTitle(title: 'Employment details'),
 
-                if (_lookupCompleted && _hasExistingMatch)
-                  _ExistingRecordCard(candidate: _matchedAgent!),
+              const SizedBox(height: 12),
 
-                if (_lookupCompleted && !_hasExistingMatch)
-                  const _NoRecordCard(),
+              const _RequiredLabel(label: 'Date joined'),
 
-                const SizedBox(height: 18),
-              ],
+              const SizedBox(height: 6),
 
-              if (_editing || _lookupCompleted) ...[
-                const _SectionTitle(title: 'Employment details'),
+              _DateField(
+                value: salaryDate(_dateJoined),
+                onTap: _pickJoinedDate,
+              ),
 
-                const SizedBox(height: 12),
+              const SizedBox(height: 15),
 
-                const _RequiredLabel(label: 'Date joined'),
+              const _RequiredLabel(label: 'Role / app access'),
 
-                const SizedBox(height: 6),
+              const SizedBox(height: 6),
 
-                _DateField(
-                  value: salaryDate(_dateJoined),
-                  onTap: _pickJoinedDate,
+              DropdownButtonFormField<String>(
+                key: ValueKey('employee-role-${_role.text}'),
+                initialValue: _roleOptionFrom(_role.text),
+                isExpanded: true,
+                decoration: _fieldDecoration(
+                  hint: 'Select app access role',
+                  prefixIcon: Icons.work_outline_rounded,
                 ),
+                icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                items: _employeeRoleOptions
+                    .map(
+                      (role) =>
+                          DropdownMenuItem(value: role, child: Text(role)),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null) {
+                    return;
+                  }
 
-                const SizedBox(height: 15),
+                  setState(() {
+                    _role.text = value;
+                  });
+                },
+                validator: (value) {
+                  if (_roleOptionFrom(value) == null) {
+                    return 'Select the employee app access role.';
+                  }
 
-                const _RequiredLabel(label: 'Role / Position'),
+                  return null;
+                },
+              ),
+
+              const SizedBox(height: 15),
+
+              const _RequiredLabel(label: 'Monthly salary'),
+
+              const SizedBox(height: 6),
+
+              TextFormField(
+                controller: _monthlySalary,
+                keyboardType: TextInputType.number,
+                textInputAction: TextInputAction.next,
+                decoration: _fieldDecoration(
+                  hint: 'Enter monthly salary',
+                  prefixText: 'UGX  ',
+                ),
+                validator: (value) {
+                  final amount = num.tryParse(
+                    (value ?? '').replaceAll(',', '').trim(),
+                  );
+
+                  if (amount == null || amount <= 0) {
+                    return 'Enter a valid monthly salary.';
+                  }
+
+                  return null;
+                },
+              ),
+
+              const SizedBox(height: 15),
+
+              const _FieldLabel(label: 'Payment method'),
+
+              const SizedBox(height: 6),
+
+              DropdownButtonFormField<String>(
+                initialValue: _paymentMethod,
+                decoration: _fieldDecoration(
+                  prefixIcon: Icons.account_balance_wallet_outlined,
+                ),
+                icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                items: const [
+                  DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                  DropdownMenuItem(
+                    value: 'MOBILE_MONEY',
+                    child: Text('Mobile Money'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'BANK_TRANSFER',
+                    child: Text('Bank transfer'),
+                  ),
+                  DropdownMenuItem(value: 'OTHER', child: Text('Other')),
+                ],
+                onChanged: (value) {
+                  if (value == null) {
+                    return;
+                  }
+
+                  setState(() {
+                    _paymentMethod = value;
+                  });
+                },
+              ),
+
+              const SizedBox(height: 15),
+
+              if (_paymentMethod != 'CASH') ...[
+                const _FieldLabel(label: 'Payment provider (optional)'),
 
                 const SizedBox(height: 6),
 
                 TextFormField(
-                  controller: _role,
+                  controller: _paymentProvider,
                   textCapitalization: TextCapitalization.words,
                   textInputAction: TextInputAction.next,
-                  decoration: _fieldDecoration(hint: 'Enter role or position'),
-                  validator: (value) {
-                    if ((value ?? '').trim().isEmpty) {
-                      return 'Enter the employee role.';
-                    }
-
-                    return null;
-                  },
+                  decoration: _fieldDecoration(
+                    hint: _paymentProviderHint(_paymentMethod),
+                    prefixIcon: Icons.business_outlined,
+                  ),
                 ),
 
                 const SizedBox(height: 15),
 
-                const _RequiredLabel(label: 'Monthly salary'),
+                const _FieldLabel(label: 'Account name (optional)'),
 
                 const SizedBox(height: 6),
 
                 TextFormField(
-                  controller: _monthlySalary,
-                  keyboardType: TextInputType.number,
+                  controller: _paymentAccountName,
+                  textCapitalization: TextCapitalization.words,
                   textInputAction: TextInputAction.next,
                   decoration: _fieldDecoration(
-                    hint: 'Enter monthly salary',
-                    prefixText: 'UGX  ',
+                    hint: 'Enter account holder name',
+                    prefixIcon: Icons.person_outline_rounded,
                   ),
-                  validator: (value) {
-                    final amount = num.tryParse(
-                      (value ?? '').replaceAll(',', '').trim(),
-                    );
-
-                    if (amount == null || amount <= 0) {
-                      return 'Enter a valid monthly salary.';
-                    }
-
-                    return null;
-                  },
                 ),
 
                 const SizedBox(height: 15),
 
-                const _FieldLabel(label: 'Payment method'),
-
-                const SizedBox(height: 6),
-
-                DropdownButtonFormField<String>(
-                  initialValue: _paymentMethod,
-                  decoration: _fieldDecoration(
-                    prefixIcon: Icons.account_balance_wallet_outlined,
-                  ),
-                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                  items: const [
-                    DropdownMenuItem(value: 'CASH', child: Text('Cash')),
-                    DropdownMenuItem(
-                      value: 'MOBILE_MONEY',
-                      child: Text('Mobile Money'),
-                    ),
-                    DropdownMenuItem(
-                      value: 'BANK_TRANSFER',
-                      child: Text('Bank transfer'),
-                    ),
-                    DropdownMenuItem(value: 'OTHER', child: Text('Other')),
-                  ],
-                  onChanged: (value) {
-                    if (value == null) {
-                      return;
-                    }
-
-                    setState(() {
-                      _paymentMethod = value;
-                    });
-                  },
-                ),
-
-                const SizedBox(height: 15),
-
-                if (_paymentMethod != 'CASH') ...[
-                  const _FieldLabel(label: 'Payment provider (optional)'),
-
-                  const SizedBox(height: 6),
-
-                  TextFormField(
-                    controller: _paymentProvider,
-                    textCapitalization: TextCapitalization.words,
-                    textInputAction: TextInputAction.next,
-                    decoration: _fieldDecoration(
-                      hint: _paymentProviderHint(_paymentMethod),
-                      prefixIcon: Icons.business_outlined,
-                    ),
-                  ),
-
-                  const SizedBox(height: 15),
-
-                  const _FieldLabel(label: 'Account name (optional)'),
-
-                  const SizedBox(height: 6),
-
-                  TextFormField(
-                    controller: _paymentAccountName,
-                    textCapitalization: TextCapitalization.words,
-                    textInputAction: TextInputAction.next,
-                    decoration: _fieldDecoration(
-                      hint: 'Enter account holder name',
-                      prefixIcon: Icons.person_outline_rounded,
-                    ),
-                  ),
-
-                  const SizedBox(height: 15),
-
-                  const _FieldLabel(label: 'Account number (optional)'),
-
-                  const SizedBox(height: 6),
-
-                  TextFormField(
-                    controller: _paymentAccountNumber,
-                    keyboardType: TextInputType.text,
-                    textInputAction: TextInputAction.next,
-                    decoration: _fieldDecoration(
-                      hint: 'Enter phone, bank account, or wallet number',
-                      prefixIcon: Icons.numbers_rounded,
-                    ),
-                  ),
-
-                  const SizedBox(height: 15),
-                ],
-
-                const _FieldLabel(label: 'Notes (optional)'),
+                const _FieldLabel(label: 'Account number (optional)'),
 
                 const SizedBox(height: 6),
 
                 TextFormField(
-                  controller: _notes,
-                  textCapitalization: TextCapitalization.sentences,
-                  textInputAction: TextInputAction.newline,
-                  minLines: 2,
-                  maxLines: 4,
+                  controller: _paymentAccountNumber,
+                  keyboardType: TextInputType.text,
+                  textInputAction: TextInputAction.next,
                   decoration: _fieldDecoration(
-                    hint: 'Enter salary or payment notes',
-                    prefixIcon: Icons.notes_outlined,
+                    hint: 'Enter phone, bank account, or wallet number',
+                    prefixIcon: Icons.numbers_rounded,
                   ),
                 ),
 
                 const SizedBox(height: 15),
-
-                const _RequiredLabel(label: 'Employment status'),
-
-                const SizedBox(height: 6),
-
-                DropdownButtonFormField<String>(
-                  initialValue: _status,
-                  decoration: _fieldDecoration(),
-                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'ACTIVE',
-                      child: Row(
-                        children: [
-                          _StatusDot(color: forestEmerald),
-                          SizedBox(width: 8),
-                          Text('Active'),
-                        ],
-                      ),
-                    ),
-                    DropdownMenuItem(
-                      value: 'INACTIVE',
-                      child: Row(
-                        children: [
-                          _StatusDot(color: Color(0xFFF79009)),
-                          SizedBox(width: 8),
-                          Text('Inactive'),
-                        ],
-                      ),
-                    ),
-                    DropdownMenuItem(
-                      value: 'SUSPENDED',
-                      child: Row(
-                        children: [
-                          _StatusDot(color: Color(0xFFD92D20)),
-                          SizedBox(width: 8),
-                          Text('Suspended'),
-                        ],
-                      ),
-                    ),
-                  ],
-                  onChanged: (value) {
-                    if (value == null) {
-                      return;
-                    }
-
-                    setState(() {
-                      _status = value;
-                    });
-                  },
-                ),
-
-                const SizedBox(height: 24),
               ],
+
+              const _FieldLabel(label: 'Notes (optional)'),
+
+              const SizedBox(height: 6),
+
+              TextFormField(
+                controller: _notes,
+                textCapitalization: TextCapitalization.sentences,
+                textInputAction: TextInputAction.newline,
+                minLines: 2,
+                maxLines: 4,
+                decoration: _fieldDecoration(
+                  hint: 'Enter salary or payment notes',
+                  prefixIcon: Icons.notes_outlined,
+                ),
+              ),
+
+              const SizedBox(height: 15),
+
+              const _RequiredLabel(label: 'Employment status'),
+
+              const SizedBox(height: 6),
+
+              DropdownButtonFormField<String>(
+                initialValue: _status,
+                decoration: _fieldDecoration(),
+                icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'ACTIVE',
+                    child: Row(
+                      children: [
+                        _StatusDot(color: forestEmerald),
+                        SizedBox(width: 8),
+                        Text('Active'),
+                      ],
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'INACTIVE',
+                    child: Row(
+                      children: [
+                        _StatusDot(color: Color(0xFFF79009)),
+                        SizedBox(width: 8),
+                        Text('Inactive'),
+                      ],
+                    ),
+                  ),
+                  DropdownMenuItem(
+                    value: 'SUSPENDED',
+                    child: Row(
+                      children: [
+                        _StatusDot(color: Color(0xFFD92D20)),
+                        SizedBox(width: 8),
+                        Text('Suspended'),
+                      ],
+                    ),
+                  ),
+                ],
+                onChanged: (value) {
+                  if (value == null) {
+                    return;
+                  }
+
+                  setState(() {
+                    _status = value;
+                  });
+                },
+              ),
+
+              const SizedBox(height: 24),
 
               SizedBox(
                 height: 48,
                 child: FilledButton(
-                  onPressed: _checking
-                      ? null
-                      : (!_editing && !_lookupCompleted)
-                      ? _identityFieldsValid()
-                            ? _checkIdentity
-                            : null
-                      : _save,
+                  onPressed: _save,
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFF075CD8),
                     foregroundColor: Colors.white,
@@ -816,35 +730,13 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
                       borderRadius: BorderRadius.circular(7),
                     ),
                   ),
-                  child: _checking
-                      ? const SizedBox(
-                          width: 19,
-                          height: 19,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              !_editing && !_lookupCompleted
-                                  ? 'Check & Continue'
-                                  : _editing
-                                  ? 'Save changes'
-                                  : 'Save employee',
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-
-                            const Spacer(),
-
-                            const Icon(Icons.arrow_forward_rounded, size: 18),
-                          ],
-                        ),
+                  child: Text(
+                    _editing ? 'Save changes' : 'Save employee',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -856,221 +748,83 @@ class _RecordEmployeeSheetState extends State<RecordEmployeeSheet> {
 }
 
 // =============================================================================
-// LOOKUP STATES
+// MANUAL CREATION CUE
 // =============================================================================
 
-class _LookupInformationCard extends StatelessWidget {
-  const _LookupInformationCard();
+class _OrDivider extends StatelessWidget {
+  const _OrDivider();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF2F6FF),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.info_outline_rounded, color: Color(0xFF175CD3), size: 18),
-
-          SizedBox(width: 9),
-
-          Expanded(
-            child: Text(
-              'We will check whether this person already exists as an agent before you create the employee record.',
-              style: TextStyle(
-                color: Color(0xFF344054),
-                fontSize: 9,
-                height: 1.35,
-                fontWeight: FontWeight.w600,
-              ),
+    return const Row(
+      children: [
+        Expanded(child: Divider(height: 1, color: line)),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: 10),
+          child: Text(
+            'or',
+            style: TextStyle(
+              color: slateText,
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
             ),
           ),
-        ],
-      ),
+        ),
+        Expanded(child: Divider(height: 1, color: line)),
+      ],
     );
   }
 }
 
-class _ExistingRecordCard extends StatelessWidget {
-  const _ExistingRecordCard({required this.candidate});
-
-  final SalaryAgentCandidate candidate;
+class _CreateNewEmployeePrompt extends StatelessWidget {
+  const _CreateNewEmployeePrompt();
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(12),
+          width: 30,
+          height: 30,
+          alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: const Color(0xFFECF8EF),
+            color: const Color(0xFFF2F6FF),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: const Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Icon(
-                Icons.check_circle_outline_rounded,
-                color: forestEmerald,
-                size: 18,
-              ),
-
-              SizedBox(width: 9),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Existing record found',
-                      style: TextStyle(
-                        color: forestEmerald,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    SizedBox(height: 3),
-                    Text(
-                      'This person is already registered as an agent. You can link them as an employee.',
-                      style: TextStyle(
-                        color: Color(0xFF40624A),
-                        fontSize: 8.5,
-                        height: 1.3,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          child: const Icon(
+            Icons.person_add_alt_1_outlined,
+            color: Color(0xFF175CD3),
+            size: 16,
           ),
         ),
-
-        const SizedBox(height: 8),
-
-        Container(
-          padding: const EdgeInsets.all(11),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border.all(color: line),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Row(
+        const SizedBox(width: 9),
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              SalaryAvatar(
-                name: candidate.name,
-                photoUrl: candidate.photoUrl,
-                radius: 23,
-              ),
-
-              const SizedBox(width: 10),
-
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      candidate.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: midnightNavy,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-
-                    const SizedBox(height: 3),
-
-                    Text(
-                      candidate.roleName?.trim().isNotEmpty == true
-                          ? candidate.roleName!
-                          : 'Agent',
-                      style: const TextStyle(
-                        color: slateText,
-                        fontSize: 8.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+              Text(
+                'Create new employee',
+                style: TextStyle(
+                  color: midnightNavy,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
-
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEAF5ED),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Text(
-                  'Active',
-                  style: TextStyle(
-                    color: forestEmerald,
-                    fontSize: 8,
-                    fontWeight: FontWeight.w800,
-                  ),
+              SizedBox(height: 2),
+              Text(
+                'Leave the selector empty to create a new employee record.',
+                style: TextStyle(
+                  color: slateText,
+                  fontSize: 8.5,
+                  height: 1.3,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],
           ),
         ),
       ],
-    );
-  }
-}
-
-class _NoRecordCard extends StatelessWidget {
-  const _NoRecordCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF5E9),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(Icons.search_off_rounded, color: Color(0xFFD97706), size: 18),
-
-          SizedBox(width: 9),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'No existing record found',
-                  style: TextStyle(
-                    color: Color(0xFFB45309),
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-
-                SizedBox(height: 3),
-
-                Text(
-                  'No available agent with these details was found. You can create a new employee.',
-                  style: TextStyle(
-                    color: Color(0xFF7C4A15),
-                    fontSize: 8.5,
-                    height: 1.3,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -1261,10 +1015,6 @@ InputDecoration _fieldDecoration({
 // HELPERS
 // =============================================================================
 
-String _normalizeText(String value) {
-  return value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
-}
-
 String _normalizePhone(String value) {
   var digits = value.replaceAll(RegExp(r'[^0-9]'), '');
 
@@ -1311,4 +1061,32 @@ String _dateOnly(DateTime value) {
   final day = value.day.toString().padLeft(2, '0');
 
   return '$year-$month-$day';
+}
+
+String? _roleOptionFrom(String? value) {
+  final clean = value?.trim();
+
+  if (clean == null || clean.isEmpty) {
+    return null;
+  }
+
+  final normalized = clean.toLowerCase();
+
+  if (normalized == 'field officer' ||
+      normalized == 'field agent' ||
+      normalized == 'agent' ||
+      normalized == 'loan officer' ||
+      normalized == 'recovery officer') {
+    return 'Field Officer';
+  }
+
+  if (normalized == 'cashier') {
+    return 'Cashier';
+  }
+
+  if (normalized == 'manager' || normalized == 'branch manager') {
+    return 'Manager';
+  }
+
+  return null;
 }

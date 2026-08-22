@@ -724,7 +724,7 @@ class _CashReconciliationSummary extends StatelessWidget {
           ),
           _CashRow(label: 'Expenses', value: expenses, negative: true),
           _CashRow(
-            label: 'Float with agents (not returned)',
+            label: 'Float with field officers (not returned)',
             value: floatNotReturned,
             negative: true,
           ),
@@ -807,7 +807,7 @@ class _AgentReturnsCard extends StatelessWidget {
               SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'Agent float returns',
+                  'Field officer float returns',
                   style: TextStyle(
                     color: midnightNavy,
                     fontSize: 14,
@@ -816,7 +816,7 @@ class _AgentReturnsCard extends StatelessWidget {
                 ),
               ),
               Text(
-                'View all agents',
+                'View all field officers',
                 style: TextStyle(
                   color: forestEmerald,
                   fontSize: 10,
@@ -835,7 +835,7 @@ class _AgentReturnsCard extends StatelessWidget {
               children: [
                 Expanded(
                   flex: 3,
-                  child: Text('Agent', style: _tableHeaderStyle),
+                  child: Text('Field officer', style: _tableHeaderStyle),
                 ),
                 Expanded(
                   flex: 2,
@@ -871,7 +871,7 @@ class _AgentReturnsCard extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 18),
               child: Text(
-                'No agent float was issued today.',
+                'No field officer float was issued today.',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: slateText, fontSize: 10),
               ),
@@ -907,7 +907,7 @@ class _AgentReturnsCard extends StatelessWidget {
                         ),
                         SizedBox(height: 2),
                         Text(
-                          'Follow up with the agents before sending the report.',
+                          'Follow up with the field officers before sending the report.',
                           style: TextStyle(
                             color: slateText,
                             fontSize: 9,
@@ -934,7 +934,7 @@ class _AgentReturnRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final name = _string(agent['agentName']) ?? 'Agent';
+    final name = _string(agent['agentName']) ?? 'Field Officer';
 
     final issued = _num(agent['amountGiven']);
 

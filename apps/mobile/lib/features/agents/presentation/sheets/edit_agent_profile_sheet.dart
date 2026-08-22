@@ -55,7 +55,7 @@ class _EditAgentProfileSheetState extends State<EditAgentProfileSheet> {
 
     if (name.length < 2) {
       setState(() {
-        _error = 'Enter the agent name.';
+        _error = 'Enter the field officer name.';
       });
       return;
     }

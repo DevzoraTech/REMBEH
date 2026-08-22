@@ -32,6 +32,41 @@ export class NotificationsService {
     private readonly smsService: SmsService,
   ) {}
 
+  async sendControlCenterEmail(input: {
+    to: string | string[];
+    subject: string;
+    text: string;
+    html?: string;
+    replyTo?: string;
+  }): Promise<{ delivered: boolean; provider: 'resend'; error?: string }> {
+    const from = this.getEmailFromHeader();
+    const apiKey = this.getResendApiKey();
+
+    if (!apiKey) {
+      const message = 'Email skipped because Resend is not configured.';
+      this.logger.warn(message);
+      return { delivered: false, provider: 'resend', error: message };
+    }
+
+    const response = await this.sendResendEmail({
+      apiKey,
+      from,
+      to: input.to,
+      subject: input.subject,
+      text: input.text,
+      html: input.html ?? this.plainTextHtml(input.text),
+      replyTo: input.replyTo,
+    });
+
+    if (!response.ok) {
+      const detail = await this.readResendError(response);
+      this.logger.warn(`Control center email failed: ${detail}`);
+      return { delivered: false, provider: 'resend', error: detail };
+    }
+
+    return { delivered: true, provider: 'resend' };
+  }
+
   async sendEmailOtp(
     input: EmailOtpDeliveryInput,
   ): Promise<EmailOtpDeliveryResult> {
@@ -814,6 +849,15 @@ export class NotificationsService {
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+  }
+
+  private plainTextHtml(value: string) {
+    return [
+      '<div style="font-family:Arial,Helvetica,sans-serif;color:#14213d;line-height:1.5;max-width:620px">',
+      this.brandHeaderHtml(),
+      `<p style="white-space:pre-wrap;margin:0">${this.escapeHtml(value)}</p>`,
+      '</div>',
+    ].join('');
   }
 
   private brandHeaderHtml() {

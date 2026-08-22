@@ -48,7 +48,7 @@ class _InviteAgentSheetState extends State<InviteAgentSheet> {
 
     if (name.length < 2) {
       setState(() {
-        _error = 'Enter the agent’s name.';
+        _error = 'Enter the field officer’s name.';
       });
 
       return;
@@ -132,7 +132,7 @@ class _InviteAgentSheetState extends State<InviteAgentSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Add agent',
+                        'Add field officer',
                         style: TextStyle(
                           color: midnightNavy,
                           fontSize: 20,
@@ -169,7 +169,7 @@ class _InviteAgentSheetState extends State<InviteAgentSheet> {
               textInputAction: TextInputAction.next,
               decoration: const InputDecoration(
                 labelText: 'Full name',
-                hintText: 'Enter agent name',
+                hintText: 'Enter field officer name',
               ),
             ),
 
@@ -184,7 +184,7 @@ class _InviteAgentSheetState extends State<InviteAgentSheet> {
               },
               decoration: const InputDecoration(
                 labelText: 'Email address',
-                hintText: 'agent@example.com',
+                hintText: 'fieldofficer@example.com',
               ),
             ),
 
@@ -197,7 +197,7 @@ class _InviteAgentSheetState extends State<InviteAgentSheet> {
                 SizedBox(width: 7),
                 Expanded(
                   child: Text(
-                    'The agent will receive an email with instructions to set up their account.',
+                    'The field officer will receive an email with instructions to set up their account.',
                     style: TextStyle(
                       color: slateText,
                       fontSize: 10,

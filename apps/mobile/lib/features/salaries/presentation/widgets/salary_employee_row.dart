@@ -13,7 +13,7 @@ class SalaryEmployeeRow extends StatelessWidget {
   });
 
   final SalaryEmployee employee;
-  final SalaryCycle? cycle;
+  final SalaryCycle cycle;
   final VoidCallback onTap;
 
   @override
@@ -162,13 +162,13 @@ class _EmployeeDetailText extends StatelessWidget {
 
 List<_EmployeeDetail> _buildDetails(
   SalaryEmployee employee,
-  SalaryCycle? cycle,
+  SalaryCycle cycle,
 ) {
   final details = <_EmployeeDetail>[];
 
-  final role = employee.roleName?.trim();
+  final role = salaryRoleLabel(employee.roleName);
 
-  if (role != null && role.isNotEmpty) {
+  if (role.isNotEmpty) {
     details.add(_EmployeeDetail(text: role));
   }
 
@@ -248,9 +248,9 @@ Color _detailColor(_DetailTone tone) {
   };
 }
 
-String _salaryDueLabel(SalaryCycle? cycle) {
-  final paymentWindowStart = cycle?.paymentWindowStart;
-  final paymentWindowEnd = cycle?.paymentWindowEnd;
+String _salaryDueLabel(SalaryCycle cycle) {
+  final paymentWindowStart = cycle.paymentWindowStart;
+  final paymentWindowEnd = cycle.paymentWindowEnd;
 
   if (paymentWindowStart == null || paymentWindowEnd == null) {
     return 'Due: current cycle';

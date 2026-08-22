@@ -97,7 +97,7 @@ class SalaryMapper {
   ) {
     return SalaryAgentCandidate(
       id: json['id'] as String? ?? '',
-      name: json['name'] as String? ?? 'Agent',
+      name: json['name'] as String? ?? 'Field Officer',
       phone: json['phone'] as String?,
       email: json['email'] as String?,
       roleName: json['roleName'] as String?,

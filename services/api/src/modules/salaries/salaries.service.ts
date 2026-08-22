@@ -106,7 +106,7 @@ export class SalariesService {
       });
       if (!linkedAgent) {
         throw new BadRequestException(
-          'Select an agent that belongs to this branch and is not already managed as an employee.',
+          'Select a field officer that belongs to this branch and is not already managed as an employee.',
         );
       }
     }
@@ -142,7 +142,7 @@ export class SalariesService {
     } catch (error) {
       if (isPrismaUniqueConstraintError(error)) {
         throw new ConflictException(
-          'This agent is already in employee salary management.',
+          'This field officer is already in employee salary management.',
         );
       }
       throw error;
@@ -234,13 +234,32 @@ export class SalariesService {
     this.assertCanManage(user);
     const current = await this.getEmployee(user, employeeId, cycleStart);
     const amount = this.money(dto.amount);
+    const shortageSettlementAmount = this.money(
+      dto.shortageSettlementAmount ?? 0,
+    );
     if (amount > current.employee.outstanding + 0.001) {
       throw new BadRequestException(
         `Payment exceeds outstanding salary (${current.employee.outstanding}).`,
       );
     }
+    if (shortageSettlementAmount > 0) {
+      if (!current.employee.userId) {
+        throw new BadRequestException(
+          'Shortage settlement is only available for employees linked to a field officer account.',
+        );
+      }
+      if (
+        shortageSettlementAmount >
+        current.employee.shortageOutstanding + 0.001
+      ) {
+        throw new BadRequestException(
+          `Settlement exceeds outstanding shortage (${current.employee.shortageOutstanding}).`,
+        );
+      }
+    }
 
     const cycle = this.resolveCycle(cycleStart);
+    const paidAt = dto.paidAt ? new Date(dto.paidAt) : new Date();
     const payment = await this.repository.recordPayment({
       tenantId: user.tenantId,
       branchId: current.employee.branchId,
@@ -249,9 +268,24 @@ export class SalariesService {
       cycleEnd: cycle.endDate,
       amount,
       method: dto.method,
-      paidAt: dto.paidAt ? new Date(dto.paidAt) : new Date(),
+      paidAt,
       referenceNote: this.clean(dto.referenceNote),
       recordedByUserId: user.userId,
+      ...(shortageSettlementAmount > 0 && current.employee.userId
+        ? {
+            shortageSettlement: {
+              responsibleUserId: current.employee.userId,
+              amount: shortageSettlementAmount,
+              paidAt,
+              notes:
+                this.clean(dto.shortageSettlementNote) ??
+                `Recovered during salary payment for ${this.cycleLabel(
+                  cycle.startDate,
+                  cycle.endDate,
+                )}.`,
+            },
+          }
+        : {}),
     });
 
     return {
@@ -320,26 +354,29 @@ export class SalariesService {
       paymentsByCycle.set(key, rows);
     }
 
-    const historyCycles = cycles.map((cycle) => {
-      const rows = paymentsByCycle.get(this.formatDate(cycle.startDate)) ?? [];
-      const salaryDue = this.salaryDueFor(
-        current.employee.monthlySalary,
-        current.employee.dateJoined,
-        cycle,
-      ).salaryDue;
-      const paid = this.sumActivePayments(rows);
-      const outstanding = this.roundMoney(Math.max(0, salaryDue - paid));
-      return {
-        start: this.formatDate(cycle.startDate),
-        end: this.formatDate(cycle.endDate),
-        label: this.cycleLabel(cycle.startDate, cycle.endDate),
-        salaryDue,
-        paid,
-        outstanding,
-        paymentStatus: this.paymentStatus(salaryDue, paid),
-        payments: rows.map((payment) => this.toPaymentContract(payment)),
-      };
-    });
+    const historyCycles = cycles
+      .map((cycle) => {
+        const rows =
+          paymentsByCycle.get(this.formatDate(cycle.startDate)) ?? [];
+        const salaryDue = this.salaryDueFor(
+          current.employee.monthlySalary,
+          current.employee.dateJoined,
+          cycle,
+        ).salaryDue;
+        const paid = this.sumActivePayments(rows);
+        const outstanding = this.roundMoney(Math.max(0, salaryDue - paid));
+        return {
+          start: this.formatDate(cycle.startDate),
+          end: this.formatDate(cycle.endDate),
+          label: this.cycleLabel(cycle.startDate, cycle.endDate),
+          salaryDue,
+          paid,
+          outstanding,
+          paymentStatus: this.paymentStatus(salaryDue, paid),
+          payments: rows.map((payment) => this.toPaymentContract(payment)),
+        };
+      })
+      .filter((cycle) => cycle.salaryDue > 0 || cycle.payments.length > 0);
 
     const totalDue = historyCycles.reduce((sum, row) => sum + row.salaryDue, 0);
     const totalPaid = historyCycles.reduce((sum, row) => sum + row.paid, 0);

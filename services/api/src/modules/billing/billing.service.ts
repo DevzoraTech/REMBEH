@@ -746,14 +746,20 @@ export class BillingService implements OnModuleInit {
       );
     }
 
+    const effectivePrice = await this.resolveEffectivePlanPrice(
+      user.tenantId,
+      branch.id,
+      plan,
+    );
+
     const payment = await this.prisma.subscriptionPayment.create({
       data: {
         tenantId: user.tenantId,
         branchId: branch.id,
         planId: plan.id,
         merchantReference,
-        amount: plan.amount,
-        currency: plan.currency,
+        amount: effectivePrice.amount,
+        currency: effectivePrice.currency,
         status: SubscriptionPaymentStatus.PENDING,
       },
     });
@@ -770,8 +776,8 @@ export class BillingService implements OnModuleInit {
     try {
       order = await this.pesapal.submitOrder({
         id: merchantReference,
-        currency: plan.currency,
-        amount: Number(plan.amount),
+        currency: effectivePrice.currency,
+        amount: Number(effectivePrice.amount),
         description: `REMBEH Pro ${definition.label} — ${branch.name}`.slice(
           0,
           100,
@@ -927,16 +933,26 @@ export class BillingService implements OnModuleInit {
     } satisfies Prisma.InputJsonObject;
 
     try {
+      const effectivePrice = await this.resolveEffectivePlanPrice(
+        user.tenantId,
+        branch.id,
+        plan,
+      );
+
       const payment = await this.prisma.subscriptionPayment.create({
         data: {
           tenantId: user.tenantId,
           branchId: branch.id,
           planId: plan.id,
           merchantReference,
-          amount: plan.amount,
-          currency: plan.currency,
+          amount: effectivePrice.amount,
+          currency: effectivePrice.currency,
           status: SubscriptionPaymentStatus.PENDING,
-          rawPayload,
+          rawPayload: {
+            ...rawPayload,
+            price_source: effectivePrice.source,
+            price_override_id: effectivePrice.overrideId,
+          },
         },
         include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
       });
@@ -1607,6 +1623,8 @@ export class BillingService implements OnModuleInit {
         HttpStatus.PAYMENT_REQUIRED,
       );
     }
+
+    return sub;
   }
 
   isBranchMutationsAllowed(status: BranchSubscriptionStatus) {
@@ -2927,9 +2945,7 @@ export class BillingService implements OnModuleInit {
 
   private paymentVerificationReplyTo() {
     return (
-      this.configService
-        .get<string>('PAYMENT_VERIFICATION_REPLY_TO')
-        ?.trim() ||
+      this.configService.get<string>('PAYMENT_VERIFICATION_REPLY_TO')?.trim() ||
       this.configService.get<string>('RESEND_INBOUND_REPLY_TO')?.trim() ||
       this.configService.get<string>('RESEND_INBOUND_EMAIL')?.trim() ||
       null
@@ -3185,5 +3201,45 @@ export class BillingService implements OnModuleInit {
         'Only the account owner can manage all branch subscriptions.',
       );
     }
+  }
+
+  private async resolveEffectivePlanPrice(
+    tenantId: string,
+    branchId: string,
+    plan: { id: string; amount: Prisma.Decimal; currency: string },
+  ) {
+    const now = new Date();
+    const overrides = await this.prisma.subscriptionPriceOverride.findMany({
+      where: {
+        tenantId,
+        planId: plan.id,
+        revokedAt: null,
+        effectiveFrom: { lte: now },
+        AND: [
+          {
+            OR: [{ branchId }, { branchId: null }],
+          },
+          {
+            OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: now } }],
+          },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const branchOverride = overrides.find((row) => row.branchId === branchId);
+    const organizationOverride = overrides.find((row) => row.branchId === null);
+    const override = branchOverride ?? organizationOverride;
+
+    return {
+      amount: override?.amount ?? plan.amount,
+      currency: override?.currency ?? plan.currency,
+      source: branchOverride
+        ? 'BRANCH_OVERRIDE'
+        : organizationOverride
+          ? 'ORGANIZATION_OVERRIDE'
+          : 'DEFAULT_PLAN',
+      overrideId: override?.id ?? null,
+    };
   }
 }

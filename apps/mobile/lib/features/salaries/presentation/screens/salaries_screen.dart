@@ -278,13 +278,16 @@ class _SalariesScreenState extends State<SalariesScreen> {
 
                         const SizedBox(height: 12),
 
-                        _EmployeeListCard(
-                          employees: _controller.visibleEmployees,
-                          cycle: cycle,
-                          onTap: (employee) {
-                            unawaited(_openDetails(employee));
-                          },
-                        ),
+                        if (dashboard != null)
+                          _EmployeeListCard(
+                            employees: _controller.visibleEmployees,
+                            cycle: dashboard.cycle,
+                            onTap: (employee) {
+                              unawaited(_openDetails(employee));
+                            },
+                          )
+                        else
+                          const _EmployeeListUnavailable(),
 
                         const SizedBox(height: 12),
 
@@ -471,6 +474,31 @@ class _SalaryHeader extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _EmployeeListUnavailable extends StatelessWidget {
+  const _EmployeeListUnavailable();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: line),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Text(
+        'Salary records could not be loaded. Pull down to refresh when online.',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: slateText,
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
@@ -1017,7 +1045,7 @@ class _EmployeeListCard extends StatelessWidget {
   });
 
   final List<SalaryEmployee> employees;
-  final SalaryCycle? cycle;
+  final SalaryCycle cycle;
   final ValueChanged<SalaryEmployee> onTap;
 
   @override
