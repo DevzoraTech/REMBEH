@@ -39,10 +39,7 @@ class SyncStatus {
   }
 
   factory SyncStatus.error(String message) {
-    return SyncStatus(
-      state: SyncState.error,
-      message: message,
-    );
+    return SyncStatus(state: SyncState.error, message: message);
   }
 
   factory SyncStatus.offline({int? pendingOperations}) {
@@ -92,8 +89,9 @@ class SyncService {
     await _emitCurrentStatus();
 
     // Listen for connectivity changes and auto-sync
-    _connectivitySubscription =
-        _connectivity.onConnectivityChanged.listen((isOnline) async {
+    _connectivitySubscription = _connectivity.onConnectivityChanged.listen((
+      isOnline,
+    ) async {
       if (isOnline && !_isSyncing) {
         await performFullSync(isAutoSync: true);
       } else if (!isOnline) {
@@ -106,10 +104,7 @@ class SyncService {
   /// Perform full sync: upload pending → download snapshot
   Future<SyncResult> performFullSync({bool isAutoSync = false}) async {
     if (_isSyncing) {
-      return SyncResult(
-        success: false,
-        error: 'Sync already in progress',
-      );
+      return SyncResult(success: false, error: 'Sync already in progress');
     }
 
     // Check connectivity
@@ -128,14 +123,25 @@ class SyncService {
         SyncStatus.syncing('Uploading pending changes...', progress: 0.2),
       );
       final uploadResult = await _uploadService.uploadPendingQueue();
+      if (!uploadResult.success) {
+        throw SyncException(
+          uploadResult.error ?? 'Could not upload pending changes.',
+        );
+      }
 
       // Step 2: Download fresh snapshot
       _statusController.add(
         SyncStatus.syncing('Downloading latest data...', progress: 0.5),
       );
       final lastSyncAt = await _db.getLastSyncTimestamp();
-      final downloadResult =
-          await _downloadService.downloadSnapshot(lastSyncAt: lastSyncAt);
+      final downloadResult = await _downloadService.downloadSnapshot(
+        lastSyncAt: lastSyncAt,
+      );
+      if (!downloadResult.success) {
+        throw SyncException(
+          downloadResult.error ?? 'Could not download latest data.',
+        );
+      }
 
       // Step 3: Cleanup old uploaded operations
       _statusController.add(
@@ -173,8 +179,7 @@ class SyncService {
       return UploadResult(success: false, error: 'No internet connection');
     }
 
-    _statusController
-        .add(SyncStatus.syncing('Uploading pending changes...'));
+    _statusController.add(SyncStatus.syncing('Uploading pending changes...'));
 
     final result = await _uploadService.uploadPendingQueue();
     await _emitCurrentStatus();
@@ -187,12 +192,12 @@ class SyncService {
       return SnapshotResult(success: false, error: 'No internet connection');
     }
 
-    _statusController
-        .add(SyncStatus.syncing('Downloading latest data...'));
+    _statusController.add(SyncStatus.syncing('Downloading latest data...'));
 
     final lastSyncAt = await _db.getLastSyncTimestamp();
-    final result =
-        await _downloadService.downloadSnapshot(lastSyncAt: lastSyncAt);
+    final result = await _downloadService.downloadSnapshot(
+      lastSyncAt: lastSyncAt,
+    );
 
     await _emitCurrentStatus();
     return result;
@@ -208,10 +213,7 @@ class SyncService {
       return SyncStatus.offline(pendingOperations: pending);
     }
 
-    return SyncStatus.idle(
-      lastSyncAt: lastSyncAt,
-      pendingOperations: pending,
-    );
+    return SyncStatus.idle(lastSyncAt: lastSyncAt, pendingOperations: pending);
   }
 
   /// Emit current status to stream
@@ -225,6 +227,15 @@ class SyncService {
     _connectivitySubscription?.cancel();
     _statusController.close();
   }
+}
+
+class SyncException implements Exception {
+  SyncException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 /// Full sync result

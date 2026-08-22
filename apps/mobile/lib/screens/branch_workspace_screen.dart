@@ -26,6 +26,7 @@ import '../features/agents/presentation/screens/agents_screen.dart';
 import '../models/field_records.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
+import '../services/network_status_store.dart';
 import '../services/offline_cache_store.dart';
 import '../services/session_activity.dart';
 import '../services/session_cleanup.dart';
@@ -59,6 +60,7 @@ class BranchWorkspaceScreen extends StatefulWidget {
 class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   final SessionStore _store = SessionStore();
   final OfflineCacheStore _offlineCache = OfflineCacheStore.instance;
+  final NetworkStatusStore _network = NetworkStatusStore.instance;
 
   late final ApiClient _api = ApiClient(_store);
   late final SyncService _syncService = SyncService(
@@ -80,6 +82,8 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
   bool _loading = true;
   bool _saving = false;
+  bool _showingCachedData = false;
+  bool _backgroundRefreshing = false;
 
   String? _error;
   String? _notice;
@@ -93,6 +97,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   bool _searchAutofocus = false;
   int _searchFocusToken = 0;
   bool _syncPromptScheduled = false;
+  Timer? _cacheRecoveryTimer;
 
   String _date = _todayLabel();
 
@@ -111,17 +116,54 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     );
 
     _activity.start();
+    _network.addListener(_onNetworkChanged);
 
+    unawaited(_network.start());
     unawaited(_initialiseOfflineSync());
     unawaited(_startLiveStores());
     unawaited(_load());
+    _cacheRecoveryTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (_showingCachedData || _error != null) {
+        unawaited(_refreshFreshDataInBackground());
+      }
+    });
   }
 
   @override
   void dispose() {
+    _cacheRecoveryTimer?.cancel();
+    _network.removeListener(_onNetworkChanged);
     _activity.dispose();
     _syncService.dispose();
     super.dispose();
+  }
+
+  void _onNetworkChanged() {
+    if (_network.isOnline) {
+      unawaited(_refreshFreshDataInBackground());
+    }
+  }
+
+  Future<void> _refreshFreshDataInBackground() async {
+    if (_backgroundRefreshing || !mounted) {
+      return;
+    }
+
+    _backgroundRefreshing = true;
+    try {
+      if (!await _network.checkNow()) {
+        return;
+      }
+
+      final syncResult = await _syncService.performFullSync(isAutoSync: true);
+      if (!syncResult.success) {
+        return;
+      }
+
+      await _load(date: _date, showLoading: false, allowCacheFallback: false);
+    } finally {
+      _backgroundRefreshing = false;
+    }
   }
 
   Future<void> _initialiseOfflineSync() async {
@@ -213,13 +255,19 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   // INITIAL DATA LOADING
   // ===========================================================================
 
-  Future<void> _load({String? date}) async {
+  Future<void> _load({
+    String? date,
+    bool showLoading = true,
+    bool allowCacheFallback = true,
+  }) async {
     final targetDate = date ?? _date;
 
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    if (showLoading) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
 
     try {
       final data = await _api.getBranchOperation(
@@ -253,7 +301,10 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         _date = targetDate;
         _data = data;
         _agents = agents;
+        _error = null;
+        _notice = null;
         _loading = false;
+        _showingCachedData = false;
       });
 
       unawaited(_loadManagementData());
@@ -266,7 +317,9 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         return;
       }
 
-      final cached = await _readCachedBranchOperation(targetDate);
+      final cached = allowCacheFallback
+          ? await _readCachedBranchOperation(targetDate)
+          : null;
       if (cached != null) {
         if (!mounted) {
           return;
@@ -278,11 +331,13 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           _agents = cached.agents;
           _loading = false;
           _error = null;
+          _showingCachedData = true;
           _notice =
               'Could not refresh online data. Showing last synced branch data.';
         });
 
         unawaited(_loadManagementData());
+        unawaited(_refreshFreshDataInBackground());
         return;
       }
 
@@ -290,10 +345,12 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         return;
       }
 
-      setState(() {
-        _error = message;
-        _loading = false;
-      });
+      if (showLoading) {
+        setState(() {
+          _error = message;
+          _loading = false;
+        });
+      }
     }
   }
 

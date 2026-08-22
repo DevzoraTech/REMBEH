@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../features/agent_day/data/agent_day_status_store.dart';
@@ -37,6 +39,8 @@ class _AgentShellState extends State<AgentShell> {
   final _network = NetworkStatusStore.instance;
   final _offline = OfflineCacheStore.instance;
   DateTime? _cacheSyncedAt;
+  Timer? _cacheRefreshTimer;
+  bool _cacheRefreshInFlight = false;
   late final SessionActivityController _activity;
 
   @override
@@ -52,10 +56,22 @@ class _AgentShellState extends State<AgentShell> {
     // ignore: discarded_futures
     _dayStore.start(widget.session);
     // ignore: discarded_futures
-    _network.start();
+    _startNetworkAndCacheRefresh();
     _activity.start();
-    // ignore: discarded_futures
-    _loadCacheSyncedAt();
+    _cacheRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (_network.isOnline) {
+        // ignore: discarded_futures
+        _refreshCaches();
+      }
+    });
+  }
+
+  Future<void> _startNetworkAndCacheRefresh() async {
+    await _network.start();
+    await _loadCacheSyncedAt();
+    if (_network.isOnline) {
+      await _refreshCaches();
+    }
   }
 
   Future<void> _loadCacheSyncedAt() async {
@@ -71,6 +87,7 @@ class _AgentShellState extends State<AgentShell> {
 
   @override
   void dispose() {
+    _cacheRefreshTimer?.cancel();
     _dayStore.removeListener(_onDayChanged);
     _network.removeListener(_onNetworkChanged);
     _activity.dispose();
@@ -87,25 +104,34 @@ class _AgentShellState extends State<AgentShell> {
   }
 
   Future<void> _refreshCaches() async {
+    if (_cacheRefreshInFlight) return;
+    _cacheRefreshInFlight = true;
     final session = widget.session;
     final tenantId = session.tenantId;
     final branchId = session.branchId;
-    if (tenantId == null || branchId == null) return;
+    if (tenantId == null || branchId == null) {
+      _cacheRefreshInFlight = false;
+      return;
+    }
     try {
+      if (_network.isOffline && !await _network.checkNow()) {
+        return;
+      }
+
+      await _dayStore.refresh();
+      await RepaymentsLiveStore.instance.refresh();
+
       final status = _dayStore.status;
       if (status != null) {
-        await _offline.putJson(
-          OfflineCacheKeys.agentDay(tenantId, branchId),
-          {
-            'date': status.date,
-            'canUseApp': status.canUseApp,
-            'canBrowseClients': status.canBrowseClients,
-            'lockReason': status.lockReason,
-            'lockTitle': status.lockTitle,
-            'lockMessage': status.lockMessage,
-            'branchStatus': status.branchStatus,
-          },
-        );
+        await _offline.putJson(OfflineCacheKeys.agentDay(tenantId, branchId), {
+          'date': status.date,
+          'canUseApp': status.canUseApp,
+          'canBrowseClients': status.canBrowseClients,
+          'lockReason': status.lockReason,
+          'lockTitle': status.lockTitle,
+          'lockMessage': status.lockMessage,
+          'branchStatus': status.branchStatus,
+        });
       }
       // Warm field client index used for offline search.
       await RepaymentsLiveStore.instance.refreshOfflineIndex(session);
@@ -118,6 +144,8 @@ class _AgentShellState extends State<AgentShell> {
       }
     } catch (_) {
       // Keep previous cache if refresh fails — never drop on failure.
+    } finally {
+      _cacheRefreshInFlight = false;
     }
   }
 
@@ -155,9 +183,7 @@ class _AgentShellState extends State<AgentShell> {
     if (!mounted) return;
     final navigator = Navigator.of(context);
     navigator.pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (_) => const LoginScreen(),
-      ),
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
       (_) => false,
     );
   }
@@ -167,9 +193,7 @@ class _AgentShellState extends State<AgentShell> {
     await SessionStore().clear();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(
-        builder: (_) => AccountLockedScreen(message: message),
-      ),
+      MaterialPageRoute(builder: (_) => AccountLockedScreen(message: message)),
       (_) => false,
     );
   }
@@ -317,7 +341,10 @@ class _AgentShellState extends State<AgentShell> {
                   destinations: const [
                     NavigationDestination(
                       icon: Icon(Icons.description_outlined),
-                      selectedIcon: Icon(Icons.description, color: forestEmerald),
+                      selectedIcon: Icon(
+                        Icons.description,
+                        color: forestEmerald,
+                      ),
                       label: 'Records',
                     ),
                     NavigationDestination(
@@ -483,7 +510,8 @@ class _BrowseOnlyBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = status.lockTitle ?? 'Field work paused';
-    final message = status.lockMessage ??
+    final message =
+        status.lockMessage ??
         'You can browse client records. Full field work unlocks at 6:00 AM.';
 
     return Material(
@@ -497,7 +525,11 @@ class _BrowseOnlyBanner extends StatelessWidget {
             children: [
               const Padding(
                 padding: EdgeInsets.only(top: 2),
-                child: Icon(Icons.lock_clock_outlined, color: warmGold, size: 20),
+                child: Icon(
+                  Icons.lock_clock_outlined,
+                  color: warmGold,
+                  size: 20,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
