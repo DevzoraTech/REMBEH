@@ -97,6 +97,26 @@ export class AgentsRepository {
     });
   }
 
+  updateAgentProfile(input: {
+    tenantId: string;
+    agentId: string;
+    displayName?: string;
+    email?: string;
+    phone?: string | null;
+  }) {
+    return this.prisma.user.updateMany({
+      where: {
+        id: input.agentId,
+        tenantId: input.tenantId,
+      },
+      data: {
+        ...(input.displayName ? { displayName: input.displayName } : {}),
+        ...(input.email ? { email: input.email } : {}),
+        ...(input.phone !== undefined ? { phone: input.phone } : {}),
+      },
+    });
+  }
+
   countRepayments(input: {
     tenantId: string;
     agentId: string;

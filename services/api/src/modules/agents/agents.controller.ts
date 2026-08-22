@@ -15,6 +15,7 @@ import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { AgentsService } from './agents.service';
 import { RecordAgentFloatDto } from './dto/record-agent-float.dto';
+import { UpdateAgentProfileDto } from './dto/update-agent-profile.dto';
 import { UpdateAgentStatusDto } from './dto/update-agent-status.dto';
 
 /**
@@ -97,6 +98,15 @@ export class AgentsController {
     @Body() dto: UpdateAgentStatusDto,
   ) {
     return this.agentsService.updateAgentStatus(user, agentId, dto);
+  }
+
+  @Patch(':agentId')
+  updateProfile(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('agentId', ParseUUIDPipe) agentId: string,
+    @Body() dto: UpdateAgentProfileDto,
+  ) {
+    return this.agentsService.updateAgentProfile(user, agentId, dto);
   }
 
   @Post(':agentId/floats')

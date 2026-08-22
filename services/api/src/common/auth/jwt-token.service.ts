@@ -3,9 +3,14 @@ import { ConfigService } from '@nestjs/config';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { AccessTokenPayload, RefreshTokenPayload } from './authenticated-user';
 
-/** Access tokens are short-lived; clients refresh via refresh token. */
-const ACCESS_TOKEN_TTL_SECONDS = 60 * 60; // 1 hour
-const REFRESH_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+/**
+ * Rembeh field teams work for long stretches without internet, so sessions are
+ * revoked explicitly on logout/device revocation/account block instead of
+ * expiring during normal use.
+ */
+const TEN_YEAR_TTL_SECONDS = 60 * 60 * 24 * 365 * 10;
+const ACCESS_TOKEN_TTL_SECONDS = TEN_YEAR_TTL_SECONDS;
+const REFRESH_TOKEN_TTL_SECONDS = TEN_YEAR_TTL_SECONDS;
 type TokenKind = 'access' | 'refresh';
 
 @Injectable()

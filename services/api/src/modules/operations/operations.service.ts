@@ -55,6 +55,7 @@ import { OperationsRepository } from './operations.repository';
 type OperationReportRecord = {
   id: string;
   operationId: string;
+  branchId: string;
   reportNumber: string;
   operationDate: Date;
   status: BranchOperationReportStatus;
@@ -1650,6 +1651,8 @@ export class OperationsService {
       operationDate: operation.operationDate,
     });
 
+    let reportForSubmission: OperationReportRecord | null = null;
+
     if (closedForReport) {
       const closedContract = await this.toContract(
         closedForReport,
@@ -1657,11 +1660,52 @@ export class OperationsService {
         bounds.dayEnd,
       );
 
-      await this.ensureReportForClosedOperation(
+      reportForSubmission = await this.ensureReportForClosedOperation(
         user,
         closedForReport,
         closedContract,
       );
+    }
+
+    if (
+      reportForSubmission &&
+      (reportForSubmission.status === BranchOperationReportStatus.MANAGER_REVIEW ||
+        reportForSubmission.status ===
+          BranchOperationReportStatus.RETURNED_TO_MANAGER)
+    ) {
+      const updated = await this.repository.managerConfirmReport({
+        tenantId: user.tenantId,
+        reportId: reportForSubmission.id,
+        reviewedByUserId: user.userId,
+        notes: finalNotes,
+      });
+
+      this.broadcastOperationEvent(OPERATIONS_EVENTS.reportManagerReviewed, {
+        operationId: reportForSubmission.operationId,
+        reportId: updated.id,
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        operationDate: this.formatDateLabel(reportForSubmission.operationDate),
+        status: updated.status,
+      });
+
+      const nextBounds = this.parseDayBounds(
+        this.nextDateLabel(reportForSubmission.operationDate),
+      );
+
+      await this.autoOpenBranchIfEligible({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        branchName: branch.name,
+        bounds: nextBounds,
+        openedByUserId: user.userId,
+        allowFirstDay: false,
+      });
+
+      return this.getToday(user, {
+        branchId: branch.id,
+        date: nextBounds.dateLabel,
+      });
     }
 
     return this.getToday(user, {

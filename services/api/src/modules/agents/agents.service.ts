@@ -28,6 +28,7 @@ import type {
 } from './agents.contracts';
 import { AgentsRepository } from './agents.repository';
 import { RecordAgentFloatDto } from './dto/record-agent-float.dto';
+import { UpdateAgentProfileDto } from './dto/update-agent-profile.dto';
 import { UpdateAgentStatusDto } from './dto/update-agent-status.dto';
 import { PrismaService } from '../../database/prisma.service';
 
@@ -533,6 +534,69 @@ export class AgentsService {
         newValue: {
           status: nextStatus,
           reason: suspensionReason,
+        },
+      },
+    });
+
+    return this.getAgentDetail(user, agentId);
+  }
+
+  async updateAgentProfile(
+    user: AuthenticatedUser,
+    agentId: string,
+    dto: UpdateAgentProfileDto,
+  ) {
+    this.assertCanManage(user);
+    const scope = this.scope(user);
+    const agent = await this.repository.findAgentById({
+      ...scope,
+      agentId,
+    });
+    if (!agent) {
+      throw new NotFoundException('Agent not found.');
+    }
+
+    const displayName = dto.displayName?.trim();
+    const email = dto.email?.trim().toLowerCase();
+    const phone = dto.phone?.trim();
+
+    if (!displayName && !email && dto.phone === undefined) {
+      throw new BadRequestException('Update at least one profile field.');
+    }
+
+    try {
+      await this.repository.updateAgentProfile({
+        tenantId: scope.tenantId,
+        agentId,
+        ...(displayName ? { displayName } : {}),
+        ...(email ? { email } : {}),
+        ...(dto.phone !== undefined ? { phone: phone || null } : {}),
+      });
+    } catch (error) {
+      if (isPrismaUniqueConstraintError(error)) {
+        throw new BadRequestException(
+          'Another user already uses that email or phone number.',
+        );
+      }
+      throw error;
+    }
+
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: scope.tenantId,
+        actorUserId: user.userId,
+        action: 'agent.profile_update',
+        entityType: 'User',
+        entityId: agentId,
+        oldValue: {
+          displayName: agent.displayName,
+          email: agent.email,
+          phone: agent.phone,
+        },
+        newValue: {
+          ...(displayName ? { displayName } : {}),
+          ...(email ? { email } : {}),
+          ...(dto.phone !== undefined ? { phone: phone || null } : {}),
         },
       },
     });

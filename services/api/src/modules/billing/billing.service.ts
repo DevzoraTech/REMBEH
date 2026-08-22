@@ -2046,9 +2046,7 @@ export class BillingService implements OnModuleInit {
     },
   ): Promise<SubscriptionPaymentWithBranchPlan | null> {
     const recipients = this.paymentVerificationEmails();
-    const replyTo =
-      this.configService.get<string>('PAYMENT_VERIFICATION_REPLY_TO')?.trim() ||
-      null;
+    const replyTo = this.paymentVerificationReplyTo();
     const months = monthsForInterval(payment.plan.interval);
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: payment.tenantId },
@@ -2106,9 +2104,7 @@ export class BillingService implements OnModuleInit {
     },
   ): Promise<SmsPurchaseWithBranch | null> {
     const recipients = this.paymentVerificationEmails();
-    const replyTo =
-      this.configService.get<string>('PAYMENT_VERIFICATION_REPLY_TO')?.trim() ||
-      null;
+    const replyTo = this.paymentVerificationReplyTo();
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: purchase.tenantId },
       select: { name: true },
@@ -2163,9 +2159,7 @@ export class BillingService implements OnModuleInit {
     replyFromEmail: string;
   }) {
     const recipients = this.paymentVerificationEmails();
-    const replyTo =
-      this.configService.get<string>('PAYMENT_VERIFICATION_REPLY_TO')?.trim() ||
-      null;
+    const replyTo = this.paymentVerificationReplyTo();
 
     await this.notificationsService
       .sendSubscriptionPaymentVerificationSummaryEmail({
@@ -2929,6 +2923,17 @@ export class BillingService implements OnModuleInit {
     return configured && configured.length > 0
       ? configured
       : DEFAULT_PAYMENT_VERIFICATION_EMAILS;
+  }
+
+  private paymentVerificationReplyTo() {
+    return (
+      this.configService
+        .get<string>('PAYMENT_VERIFICATION_REPLY_TO')
+        ?.trim() ||
+      this.configService.get<string>('RESEND_INBOUND_REPLY_TO')?.trim() ||
+      this.configService.get<string>('RESEND_INBOUND_EMAIL')?.trim() ||
+      null
+    );
   }
 
   private paymentReplyAllowedEmails() {

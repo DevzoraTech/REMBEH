@@ -34,20 +34,30 @@ export class SyncService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Generate snapshot of all data for agent's tenant + branch
+   * Generate a mobile snapshot. Branch staff receive their branch; owners who
+   * are not assigned to a branch receive the tenant-wide manager/owner copy.
    */
   async generateSnapshot(user: AuthenticatedUser, lastSyncAt?: string) {
     const { tenantId, branchId } = user;
+    const tenantWide =
+      !branchId &&
+      (user.permissions.includes('branch.create') ||
+        user.permissions.includes('billing.manage'));
 
-    if (!branchId) {
+    if (!branchId && !tenantWide) {
       throw new BadRequestException('Branch ID is required for sync');
     }
 
     const lastSyncDate = lastSyncAt ? new Date(lastSyncAt) : undefined;
     const isIncremental = !!lastSyncDate;
+    const branchWhere = branchId ? { branchId } : {};
+    const branchInfoWhere = branchId ? { id: branchId } : {};
+    const agentBranchWhere = branchId
+      ? { branchId }
+      : { branchId: { not: null } };
 
     this.logger.log(
-      `Generating ${isIncremental ? 'incremental' : 'full'} snapshot for tenant=${tenantId} branch=${branchId} user=${user.userId}`,
+      `Generating ${isIncremental ? 'incremental' : 'full'} snapshot for tenant=${tenantId} branch=${branchId ?? 'ALL'} user=${user.userId}`,
     );
 
     // Build where clause for incremental sync
@@ -68,7 +78,7 @@ export class SyncService {
       this.prisma.customer.findMany({
         where: {
           tenantId,
-          branchId,
+          ...branchWhere,
           ...incrementalWhere,
         },
         select: {
@@ -90,7 +100,7 @@ export class SyncService {
       this.prisma.loan.findMany({
         where: {
           tenantId,
-          branchId,
+          ...branchWhere,
           status: { in: ['CURRENT', 'IN_ARREARS', 'DISBURSED'] },
           ...incrementalWhere,
         },
@@ -146,7 +156,7 @@ export class SyncService {
       this.prisma.user.findMany({
         where: {
           tenantId,
-          branchId,
+          ...agentBranchWhere,
           status: 'ACTIVE',
           ...incrementalWhere,
         },
@@ -175,7 +185,7 @@ export class SyncService {
       this.prisma.branch.findMany({
         where: {
           tenantId,
-          id: branchId,
+          ...branchInfoWhere,
         },
         select: {
           id: true,
@@ -193,7 +203,7 @@ export class SyncService {
       this.prisma.repayment.findMany({
         where: {
           tenantId,
-          branchId,
+          ...branchWhere,
           paidAt: {
             gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
           },
@@ -271,7 +281,9 @@ export class SyncService {
         branches,
         repayments: repaymentsFormatted,
       },
-      deletedIds: isIncremental ? await this.getDeletedRecordsSince(tenantId, branchId, lastSyncDate!) : {},
+      deletedIds: isIncremental
+        ? await this.getDeletedRecordsSince(tenantId, branchId ?? null, lastSyncDate!)
+        : {},
     };
 
     this.logger.log(
@@ -287,7 +299,7 @@ export class SyncService {
    */
   private async getDeletedRecordsSince(
     tenantId: string,
-    branchId: string,
+    branchId: string | null,
     since: Date,
   ) {
     // TODO: Implement soft delete tracking
