@@ -9,6 +9,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { ControlCenterAdminContext } from './control-center-admin';
+import { ControlCenterUpdateMessageTemplateDto } from './dto/control-center-settings.dto';
+import { ControlCenterAuditQueryDto } from './dto/control-center-audit-query.dto';
+import { ControlCenterReportQueryDto } from './dto/control-center-report-query.dto';
+import { ControlCenterMessageQueryDto } from './dto/control-center-message-query.dto';
 import { ControlCenterAuthGuard } from './control-center-auth.guard';
 import { ControlCenterService } from './control-center.service';
 import { CurrentControlCenterAdmin } from './current-control-center-admin.decorator';
@@ -16,6 +20,10 @@ import {
   ControlCenterLoginDto,
   ControlCenterSetupDto,
 } from './dto/control-center-auth.dto';
+import {
+  ControlCenterRejectPaymentDto,
+  ControlCenterVerifyPaymentDto,
+} from './dto/control-center-payments.dto';
 import { ControlCenterSendMessageDto } from './dto/control-center-message.dto';
 import { ControlCenterSavePricingDto } from './dto/control-center-pricing.dto';
 import { ControlCenterUpdateUserStatusDto } from './dto/control-center-users.dto';
@@ -51,10 +59,73 @@ export class ControlCenterController {
     return this.controlCenterService.dashboard();
   }
 
+  @Get('reports/overview')
+  @UseGuards(ControlCenterAuthGuard)
+  reportsOverview(@Query() query: ControlCenterReportQueryDto) {
+    return this.controlCenterService.reportsOverview(query);
+  }
+  @Get('audit-logs')
+  @UseGuards(ControlCenterAuthGuard)
+  auditLogs(@Query() query: ControlCenterAuditQueryDto) {
+    return this.controlCenterService.listAuditLogs(query);
+  }
+
+  @Get('settings')
+  @UseGuards(ControlCenterAuthGuard)
+  settings() {
+    return this.controlCenterService.controlCenterSettings();
+  }
+
+  @Patch('message-templates/:templateId')
+  @UseGuards(ControlCenterAuthGuard)
+  updateMessageTemplate(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Param('templateId') templateId: string,
+    @Body() body: ControlCenterUpdateMessageTemplateDto,
+  ) {
+    return this.controlCenterService.updateMessageTemplate(
+      admin,
+      templateId,
+      body,
+    );
+  }
+
   @Get('clients')
   @UseGuards(ControlCenterAuthGuard)
   clients() {
     return this.controlCenterService.listClients();
+  }
+
+  @Get('subscriptions')
+  @UseGuards(ControlCenterAuthGuard)
+  subscriptions() {
+    return this.controlCenterService.listSubscriptions();
+  }
+
+  @Get('payments')
+  @UseGuards(ControlCenterAuthGuard)
+  payments() {
+    return this.controlCenterService.listPayments();
+  }
+
+  @Patch('payments/:paymentId/verify')
+  @UseGuards(ControlCenterAuthGuard)
+  verifyPayment(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Param('paymentId') paymentId: string,
+    @Body() body: ControlCenterVerifyPaymentDto,
+  ) {
+    return this.controlCenterService.verifyPayment(admin, paymentId, body);
+  }
+
+  @Patch('payments/:paymentId/reject')
+  @UseGuards(ControlCenterAuthGuard)
+  rejectPayment(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Param('paymentId') paymentId: string,
+    @Body() body: ControlCenterRejectPaymentDto,
+  ) {
+    return this.controlCenterService.rejectPayment(admin, paymentId, body);
   }
 
   @Get('clients/:tenantId')
@@ -125,6 +196,12 @@ export class ControlCenterController {
   @UseGuards(ControlCenterAuthGuard)
   messageTemplates() {
     return this.controlCenterService.listMessageTemplates();
+  }
+
+  @Get('messages')
+  @UseGuards(ControlCenterAuthGuard)
+  messages(@Query() query: ControlCenterMessageQueryDto) {
+    return this.controlCenterService.listMessages(query);
   }
 
   @Post('messages/send')

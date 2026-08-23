@@ -526,7 +526,7 @@ export class BillingService implements OnModuleInit {
   /** @deprecated Prefer ensureProPlans / resolvePlanByCode. */
   async ensureProPlan() {
     const plans = await this.ensureProPlans();
-    return plans.find((plan) => plan.code === PRO_PLAN_CODE) ?? plans[0]!;
+    return plans.find((plan) => plan.code === PRO_PLAN_CODE) ?? plans[0];
   }
 
   async resolvePlanByCode(planCode?: string | null) {
@@ -744,7 +744,7 @@ export class BillingService implements OnModuleInit {
     const plans = canManageAll
       ? defaultPlans
       : (rows[0]?.plans ?? defaultPlans);
-    const plan = plans.find((row) => row.code === PRO_PLAN_CODE) ?? plans[0]!;
+    const plan = plans.find((row) => row.code === PRO_PLAN_CODE) ?? plans[0];
 
     return {
       plan,
@@ -890,7 +890,7 @@ export class BillingService implements OnModuleInit {
       where: { id: payment.id },
       data: {
         orderTrackingId: order.order_tracking_id ?? null,
-        rawPayload: order as Prisma.InputJsonValue,
+        rawPayload: order,
       },
     });
 
@@ -2420,6 +2420,99 @@ export class BillingService implements OnModuleInit {
     return { periodStart, periodEnd };
   }
 
+  async completeManualSubscriptionPaymentFromControlCenter(input: {
+    paymentId: string;
+    adminEmail: string;
+    transactionId?: string | null;
+  }): Promise<SubscriptionPaymentRowContract> {
+    const payment = await this.prisma.subscriptionPayment.findUnique({
+      where: { id: input.paymentId },
+      include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
+    });
+
+    if (!payment) {
+      throw new NotFoundException('Subscription payment not found.');
+    }
+
+    if (payment.status === SubscriptionPaymentStatus.COMPLETED) {
+      return this.toSubscriptionPaymentRow(payment, {
+        useBranchSubscriptionPeriod: true,
+      });
+    }
+
+    if (payment.status !== SubscriptionPaymentStatus.PENDING) {
+      throw new ConflictException(
+        'Only pending subscription payments can be verified.',
+      );
+    }
+
+    if (!this.isManualMerchantPayload(payment.rawPayload)) {
+      throw new BadRequestException(
+        'Only manual merchant subscription payments can be verified in Control Center.',
+      );
+    }
+
+    const transactionId =
+      input.transactionId?.trim() ||
+      this.submittedManualTransactionId(payment.rawPayload) ||
+      payment.orderTrackingId ||
+      payment.merchantReference;
+
+    const updated = await this.completeManualMerchantPayment(payment, {
+      replyEmailId: `control-center:${payment.id}:${Date.now()}`,
+      replyFromEmail: input.adminEmail,
+      merchantTransactionId: transactionId,
+    });
+
+    return this.toSubscriptionPaymentRow(updated, {
+      useBranchSubscriptionPeriod: true,
+    });
+  }
+
+  async rejectManualSubscriptionPaymentFromControlCenter(input: {
+    paymentId: string;
+    adminEmail: string;
+    reason: string;
+    transactionId?: string | null;
+  }): Promise<SubscriptionPaymentRowContract> {
+    const payment = await this.prisma.subscriptionPayment.findUnique({
+      where: { id: input.paymentId },
+      include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
+    });
+
+    if (!payment) {
+      throw new NotFoundException('Subscription payment not found.');
+    }
+
+    if (payment.status === SubscriptionPaymentStatus.FAILED) {
+      return this.toSubscriptionPaymentRow(payment);
+    }
+
+    if (payment.status !== SubscriptionPaymentStatus.PENDING) {
+      throw new ConflictException(
+        'Only pending subscription payments can be rejected.',
+      );
+    }
+
+    if (!this.isManualMerchantPayload(payment.rawPayload)) {
+      throw new BadRequestException(
+        'Only manual merchant subscription payments can be rejected in Control Center.',
+      );
+    }
+
+    const updated = await this.failManualMerchantPayment(payment, {
+      replyEmailId: `control-center:${payment.id}:${Date.now()}`,
+      replyFromEmail: input.adminEmail,
+      reason: input.reason.trim(),
+      merchantTransactionId:
+        input.transactionId?.trim() ||
+        this.submittedManualTransactionId(payment.rawPayload) ||
+        null,
+    });
+
+    return this.toSubscriptionPaymentRow(updated);
+  }
+
   private async completeManualMerchantPayment(
     payment: SubscriptionPaymentWithBranchPlan,
     input: {
@@ -3273,7 +3366,7 @@ export class BillingService implements OnModuleInit {
     }
   }
 
-  private async resolveEffectivePlanPrice(
+  async resolveEffectivePlanPrice(
     tenantId: string,
     branchId: string,
     plan: { id: string; amount: Prisma.Decimal; currency: string },
@@ -3299,7 +3392,7 @@ export class BillingService implements OnModuleInit {
           },
         ],
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
     });
 
     const branchOverride = overrides.find((row) => row.branchId === branchId);

@@ -14,18 +14,20 @@ export function SectionTitle({
   action?: ReactNode;
 }) {
   return (
-    <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
-      <div>
-        <h1 className="text-2xl font-black tracking-normal text-[var(--midnight-navy)]">
+    <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+      <div className="min-w-0">
+        <h1 className="text-[26px] font-black tracking-[-0.025em] text-[var(--midnight-navy)]">
           {title}
         </h1>
+
         {subtitle ? (
-          <p className="mt-1 text-sm font-medium leading-5 text-slate-500">
+          <p className="mt-1 max-w-3xl text-sm font-medium leading-6 text-slate-500">
             {subtitle}
           </p>
         ) : null}
       </div>
-      {action}
+
+      {action ? <div className="shrink-0">{action}</div> : null}
     </div>
   );
 }
@@ -39,7 +41,7 @@ export function Panel({
 }) {
   return (
     <section
-      className={`rounded-xl border border-[#e2e8f0] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.045)] ${className}`}
+      className={`rounded-xl border border-[#e2e8f0] bg-white ${className}`}
     >
       {children}
     </section>
@@ -60,18 +62,19 @@ export function StatCard({
   tone?: "green" | "blue" | "gold" | "purple" | "red";
 }) {
   return (
-    <Panel className="p-5">
-      <div className="flex items-center gap-4">
+    <Panel className="min-h-[112px] p-4">
+      <div className="flex h-full items-start gap-4">
         <IconBadge icon={Icon} tone={tone} />
-        <div className="min-w-0">
-          <p className="text-sm font-black text-[var(--midnight-navy)]">
-            {title}
-          </p>
-          <p className="mt-1 text-2xl font-black text-[var(--midnight-navy)]">
+
+        <div className="min-w-0 pt-0.5">
+          <p className="text-xs font-bold text-slate-600">{title}</p>
+
+          <p className="mt-1 text-[25px] font-black leading-none tracking-[-0.02em] text-[var(--midnight-navy)]">
             {value}
           </p>
+
           {subtitle ? (
-            <p className="mt-1 text-xs font-semibold text-slate-500">
+            <p className="mt-2 text-xs font-medium leading-4 text-slate-500">
               {subtitle}
             </p>
           ) : null}
@@ -92,20 +95,20 @@ export function IconBadge({
 }) {
   const toneClass =
     tone === "blue"
-      ? "bg-blue-50 text-blue-700"
+      ? "bg-[#eaf2ff] text-[#2563eb]"
       : tone === "gold"
-        ? "bg-amber-50 text-amber-700"
+        ? "bg-[#fff3dc] text-[#d97706]"
         : tone === "purple"
-          ? "bg-violet-50 text-violet-700"
+          ? "bg-[#f1ebff] text-[#7c3aed]"
           : tone === "red"
-            ? "bg-red-50 text-red-700"
+            ? "bg-[#feecec] text-[#dc2626]"
             : tone === "slate"
-              ? "bg-slate-100 text-slate-700"
-              : "bg-emerald-50 text-[var(--forest-emerald)]";
+              ? "bg-slate-100 text-slate-600"
+              : "bg-[#e8f5ec] text-[var(--forest-emerald)]";
 
   return (
     <span
-      className={`grid size-12 shrink-0 place-items-center rounded-xl ${toneClass} ${className}`}
+      className={`grid size-12 shrink-0 place-items-center rounded-[11px] ${toneClass} ${className}`}
     >
       <Icon className="size-5" />
     </span>
@@ -120,31 +123,53 @@ export function StatusPill({
   tone?: "green" | "blue" | "gold" | "red" | "slate";
 }) {
   const normalized = value.toUpperCase();
+
   const resolved =
     tone ??
-    (["ACTIVE", "COMPLETED", "SENT"].includes(normalized)
+    ([
+      "ACTIVE",
+      "COMPLETED",
+      "SENT",
+      "DELIVERED",
+      "CUSTOM",
+      "CUSTOM PRICING",
+    ].includes(normalized)
       ? "green"
-      : ["TRIAL", "GRACE", "PENDING"].includes(normalized)
+      : [
+            "TRIAL",
+            "GRACE",
+            "PENDING",
+            "DEFAULT",
+            "DEFAULT PRICING",
+          ].includes(normalized)
         ? "blue"
-        : ["PAST_DUE", "LOCKED", "SUSPENDED", "FAILED"].includes(normalized)
+        : [
+              "PAST_DUE",
+              "PAST DUE",
+              "LOCKED",
+              "SUSPENDED",
+              "FAILED",
+              "EXPIRED",
+            ].includes(normalized)
           ? "red"
-          : ["CUSTOM", "DEFAULT"].includes(normalized)
-            ? "green"
+          : ["EXPIRING", "EXPIRING SOON", "SCHEDULED"].includes(normalized)
+            ? "gold"
             : "slate");
+
   const toneClass =
     resolved === "blue"
-      ? "bg-blue-50 text-blue-700"
+      ? "bg-[#eef4ff] text-[#2563eb]"
       : resolved === "gold"
-        ? "bg-amber-50 text-amber-700"
+        ? "bg-[#fff5df] text-[#b86606]"
         : resolved === "red"
-          ? "bg-red-50 text-red-700"
+          ? "bg-[#fff0f0] text-[#c83232]"
           : resolved === "slate"
-            ? "bg-slate-100 text-slate-700"
-            : "bg-emerald-50 text-[var(--forest-emerald)]";
+            ? "bg-slate-100 text-slate-600"
+            : "bg-[#eaf6ed] text-[#1d7d40]";
 
   return (
     <span
-      className={`inline-flex h-6 items-center rounded-md px-2 text-[11px] font-black ${toneClass}`}
+      className={`inline-flex min-h-6 items-center rounded-md px-2 text-[11px] font-bold ${toneClass}`}
     >
       {titleText(value)}
     </span>
@@ -168,7 +193,7 @@ export function InlineSearch({
       value={value}
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
-      className={`h-10 min-w-[220px] flex-1 rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm font-semibold text-[var(--midnight-navy)] outline-none placeholder:text-slate-400 focus:border-[var(--forest-emerald)] focus:shadow-[0_0_0_3px_rgba(15,138,108,0.11)] ${className}`}
+      className={`h-10 min-w-[220px] flex-1 rounded-lg border border-[#dde4eb] bg-white px-3 text-sm font-medium text-[var(--midnight-navy)] outline-none transition placeholder:text-slate-400 focus:border-[var(--forest-emerald)] focus:ring-2 focus:ring-emerald-100 ${className}`}
     />
   );
 }
@@ -191,7 +216,7 @@ export function SelectControl({
       value={value}
       onChange={(event) => onChange(event.target.value)}
       aria-label={ariaLabel}
-      className={`h-10 rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm font-bold text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] ${className}`}
+      className={`h-10 rounded-lg border border-[#dde4eb] bg-white px-3 text-sm font-semibold text-[var(--midnight-navy)] outline-none transition focus:border-[var(--forest-emerald)] focus:ring-2 focus:ring-emerald-100 ${className}`}
     >
       {options.map((option) => (
         <option key={option.value} value={option.value}>
@@ -210,10 +235,11 @@ export function EmptyState({
   subtitle?: string;
 }) {
   return (
-    <div className="rounded-xl border border-dashed border-[#cbd5e1] bg-slate-50 px-4 py-8 text-center">
-      <p className="text-sm font-black text-[var(--midnight-navy)]">{title}</p>
+    <div className="rounded-xl border border-dashed border-[#cbd5e1] bg-[#fafbfc] px-4 py-10 text-center">
+      <p className="text-sm font-bold text-[var(--midnight-navy)]">{title}</p>
+
       {subtitle ? (
-        <p className="mx-auto mt-1 max-w-md text-xs font-semibold leading-5 text-slate-500">
+        <p className="mx-auto mt-1 max-w-md text-xs font-medium leading-5 text-slate-500">
           {subtitle}
         </p>
       ) : null}

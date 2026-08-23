@@ -24,6 +24,207 @@ export type ControlCenterClientsResponse = {
   clients: ControlCenterClient[];
 };
 
+export type ControlCenterReportsOverview = {
+  period: {
+    from: string;
+    to: string;
+    previousFrom: string;
+    previousTo: string;
+  };
+
+  totals: {
+    organizations: number;
+    branches: number;
+    users: number;
+    borrowers: number;
+    loans: number;
+    repaymentCount: number;
+    repaymentsCollected: number;
+    subscriptionPayments: number;
+    subscriptionRevenue: number;
+  };
+
+  periodMetrics: {
+    newOrganizations: number;
+    newBranches: number;
+    newBorrowers: number;
+    disbursedLoans: number;
+    principalDisbursed: number;
+    repaymentCount: number;
+    repaymentsCollected: number;
+    subscriptionPayments: number;
+    subscriptionRevenue: number;
+  };
+
+  previousPeriod: {
+    newOrganizations: number;
+    newBranches: number;
+    newBorrowers: number;
+    disbursedLoans: number;
+    principalDisbursed: number;
+    repaymentCount: number;
+    repaymentsCollected: number;
+    subscriptionPayments: number;
+    subscriptionRevenue: number;
+  };
+
+  trends: Array<{
+    date: string;
+    borrowers: number;
+    loans: number;
+    principalDisbursed: number;
+    repaymentCount: number;
+    repaymentsCollected: number;
+    subscriptionPayments: number;
+    subscriptionRevenue: number;
+  }>;
+
+  organizations: Array<{
+    tenantId: string;
+    organizationName: string;
+    newBorrowers: number;
+    disbursedLoans: number;
+    principalDisbursed: number;
+    repaymentCount: number;
+    repaymentsCollected: number;
+    subscriptionPayments: number;
+    subscriptionRevenue: number;
+  }>;
+};
+
+export type ControlCenterAuditCategory =
+  | "GENERAL"
+  | "SECURITY"
+  | "COMMERCIAL"
+  | "COMMUNICATIONS";
+
+export type ControlCenterAuditLog = {
+  id: string;
+
+  action: string;
+
+  category:
+    ControlCenterAuditCategory;
+
+  entityType: string;
+
+  entityId: string | null;
+
+  oldValue:
+    unknown | null;
+
+  newValue:
+    unknown | null;
+
+  admin: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+
+  createdAt: string;
+};
+
+export type ControlCenterAuditResponse = {
+  stats: {
+    total: number;
+    last24Hours: number;
+    security: number;
+    commercial: number;
+    communications: number;
+  };
+
+  filteredStats: {
+    total: number;
+    security: number;
+    commercial: number;
+    communications: number;
+  };
+
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+
+  filters: {
+    admins: Array<{
+      id: string;
+      name: string;
+      email: string;
+    }>;
+
+    actions: string[];
+
+    entityTypes: string[];
+  };
+
+  logs:
+    ControlCenterAuditLog[];
+};
+
+export type ControlCenterSettingsAdmin = {
+  email: string;
+  displayName: string;
+  adminId: string | null;
+  status: string;
+  setupComplete: boolean;
+  lastLoginAt: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type ControlCenterSettingsTemplate = {
+  id: string;
+  code: string;
+  name: string;
+  channel: "EMAIL" | "SMS";
+  subject: string | null;
+  body: string;
+  isSystem: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ControlCenterSettingsPlan = {
+  id: string;
+  code: string;
+  name: string;
+  amount: number;
+  currency: string;
+  interval: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ControlCenterSettings = {
+  administrators: ControlCenterSettingsAdmin[];
+
+  accessConfiguration: {
+    source: "ENVIRONMENT" | "DEFAULT";
+    allowedCount: number;
+    jwtSecretConfigured: boolean;
+  };
+
+  templates: ControlCenterSettingsTemplate[];
+
+  plans: ControlCenterSettingsPlan[];
+
+  billing: {
+    providers: Array<{
+      provider:
+        | "MTN_MOMO"
+        | "AIRTEL_MONEY";
+      label: string;
+      merchantCode: string | null;
+      accountName: string | null;
+      configured: boolean;
+    }>;
+  };
+};
+
 export type ControlCenterDashboard = {
   stats: Record<string, number>;
   recentPayments: Array<{
@@ -45,6 +246,115 @@ export type ControlCenterDashboard = {
     adminName: string;
     createdAt: string;
   }>;
+};
+
+export type ControlCenterPaymentStatus =
+  | "PENDING"
+  | "COMPLETED"
+  | "FAILED"
+  | "CANCELLED"
+  | "REVERSED";
+
+export type ControlCenterPaymentMethod =
+  | "MTN"
+  | "AIRTEL"
+  | "OTHER"
+  | "UNKNOWN";
+
+export type ControlCenterPaymentRecord = {
+  id: string;
+  tenantId: string;
+  branchId: string;
+  planId: string;
+  organizationName: string;
+  branchName: string;
+  planCode: string;
+  planName: string;
+  interval: string | null;
+  amount: number;
+  expectedAmount: number | null;
+  currency: string;
+  status: ControlCenterPaymentStatus;
+  createdAt: string;
+  paidAt: string | null;
+  paymentMethod: ControlCenterPaymentMethod;
+  merchantReference: string | null;
+  merchantCode: string | null;
+  accountName: string | null;
+  transactionId: string | null;
+  verificationCode: string | null;
+  verifiedBy: string | null;
+  verifiedAt: string | null;
+  failureReason: string | null;
+  failedAt: string | null;
+  canReview: boolean;
+};
+
+export type ControlCenterPaymentsResponse = {
+  stats: {
+    total: number;
+    pending: number;
+    completed: number;
+    failed: number;
+    completedRevenue: number;
+    completedPayments: number;
+  };
+  payments: ControlCenterPaymentRecord[];
+};
+
+export type ControlCenterSubscriptionLifecycleStatus =
+  | "ACTIVE"
+  | "EXPIRING"
+  | "EXPIRED"
+  | "LOCKED"
+  | "NO_SUBSCRIPTION";
+
+export type ControlCenterSubscriptionRecord = {
+  id: string;
+  clientId: string;
+  branchId: string;
+  organizationName: string;
+  organizationStatus: string;
+  branchName: string;
+  branchAddress: string;
+  branchStatus: string;
+  planCode: string | null;
+  planName: string | null;
+  subscriptionStatus: string | null;
+  currentPeriodStart: string | null;
+  currentPeriodEnd: string | null;
+  graceEndsAt: string | null;
+  lockedAt: string | null;
+  users: number;
+  borrowers: number;
+  loans: number;
+  lifecycleStatus: ControlCenterSubscriptionLifecycleStatus;
+  daysRemaining: number | null;
+  currency: string;
+  effectiveAmount: number | null;
+  pricingSource:
+    | "DEFAULT_PLAN"
+    | "ORGANIZATION_OVERRIDE"
+    | "BRANCH_OVERRIDE"
+    | null;
+  priceOverrideId: string | null;
+  lastUsedAt: string | null;
+  subscriptionRevenue: number;
+  subscriptionPayments: number;
+  latestPayment: ControlCenterPaymentRecord | null;
+};
+
+export type ControlCenterSubscriptionsResponse = {
+  stats: {
+    total: number;
+    active: number;
+    expiring: number;
+    expired: number;
+    locked: number;
+    noSubscription: number;
+    attention: number;
+  };
+  subscriptions: ControlCenterSubscriptionRecord[];
 };
 
 export type ControlCenterClientDetail = {

@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "REMBEH Control Center",
+  title: "REMBEH Financial Software",
   description:
-    "Multi-tenant financial operations platform by ANTIKRA Mechanism.",
+    "REMBEH is financial operations software for branch lending teams, daily cash control, subscriptions, salaries, reporting, and customer operations.",
   icons: {
     icon: "/rembeh-icon.png",
     apple: "/rembeh-icon.png",
