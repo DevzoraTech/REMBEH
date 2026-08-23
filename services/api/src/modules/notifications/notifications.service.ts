@@ -367,9 +367,10 @@ export class NotificationsService {
       return { delivered: false, error: 'No payment verification recipients.' };
     }
 
-    const replyLine = input.replyTo
+    const replyEnabled = Boolean(input.replyTo);
+    const replyLine = replyEnabled
       ? `Reply to this email. Replies go to ${input.replyTo}.`
-      : 'Reply to this email after checking the merchant transaction.';
+      : 'Use the Control Center Payments queue to verify or reject this payment. Email-reply processing is not enabled until a Resend inbound reply address is configured.';
     const htmlInput = {
       paymentId: this.escapeHtml(input.paymentId),
       organizationName: this.escapeHtml(input.organizationName),
@@ -411,11 +412,17 @@ export class NotificationsService {
       `Payment request: REMBEH-PAY:${input.paymentId}`,
       replyLine,
       '',
-      'To verify one or many payments, reply with the merchant transaction IDs separated by commas.',
-      `This submitted ID: ${input.transactionId}`,
-      '',
-      'If this payment could not be verified, reply:',
-      'FAIL Transaction could not be found.',
+      ...(replyEnabled
+        ? [
+            'To verify one or many payments, reply with the merchant transaction IDs separated by commas.',
+            `This submitted ID: ${input.transactionId}`,
+            '',
+            'If this payment could not be verified, reply:',
+            'FAIL Transaction could not be found.',
+          ]
+        : [
+            'Open Control Center > Payments to verify this transaction or reject it with a reason.',
+          ]),
       '',
       'Only replies from allowed Antikra team emails are accepted by the server.',
       '',
@@ -446,10 +453,14 @@ export class NotificationsService {
       `<p style="margin:14px 0 0;color:#52606d;font-size:12px">Payment request: REMBEH-PAY:${htmlInput.paymentId}</p>`,
       '<h2 style="font-size:16px;margin:18px 0 8px">Reply instructions</h2>',
       `<p style="margin:0 0 10px">${htmlInput.replyLine}</p>`,
-      '<p style="margin:0 0 6px">To verify one or many payments, reply with the merchant transaction IDs separated by commas.</p>',
-      `<pre style="background:#eef8f2;border-radius:8px;padding:10px;font-family:monospace">This submitted ID: ${htmlInput.transactionId}</pre>`,
-      '<p style="margin:12px 0 6px">If this payment could not be verified, reply:</p>',
-      '<pre style="background:#fff1f2;border-radius:8px;padding:10px;font-family:monospace">FAIL Transaction could not be found.</pre>',
+      replyEnabled
+        ? [
+            '<p style="margin:0 0 6px">To verify one or many payments, reply with the merchant transaction IDs separated by commas.</p>',
+            `<pre style="background:#eef8f2;border-radius:8px;padding:10px;font-family:monospace">This submitted ID: ${htmlInput.transactionId}</pre>`,
+            '<p style="margin:12px 0 6px">If this payment could not be verified, reply:</p>',
+            '<pre style="background:#fff1f2;border-radius:8px;padding:10px;font-family:monospace">FAIL Transaction could not be found.</pre>',
+          ].join('')
+        : '<p style="margin:0 0 6px">Open Control Center &gt; Payments to verify this transaction or reject it with a reason.</p>',
       '<p style="margin:12px 0 0;color:#52606d;font-size:12px">Only replies from allowed Antikra team emails are accepted by the server.</p>',
       '</div>',
     ].join('');
