@@ -94,6 +94,7 @@ export type ControlCenterBranch = {
   repaymentCount: number;
   subscriptionRevenue: number;
   subscriptionPayments: number;
+  lastUsedAt: string | null;
 };
 
 export type ControlCenterPricing = {
@@ -128,6 +129,7 @@ export type ControlCenterPriceRow = {
     effectiveFrom: string;
     effectiveUntil: string | null;
     changedBy: string;
+    status: "ACTIVE" | "SCHEDULED" | "EXPIRED";
   } | null;
 };
 
@@ -161,6 +163,10 @@ export type ControlCenterUser = {
   tenant: { id: string; name: string; status: string };
   branch: { id: string; name: string } | null;
   roles: string[];
+  lastUsedAt: string | null;
+  lastUsedDevice: string | null;
+  lastUsedPlatform: string | null;
+  sessionActive: boolean;
   createdAt: string;
   updatedAt: string;
 };

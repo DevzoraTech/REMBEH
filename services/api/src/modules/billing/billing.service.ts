@@ -158,6 +158,16 @@ const DEFAULT_PAYMENT_VERIFICATION_EMAILS = [
   'services@antikra.com',
 ];
 
+function latestDate(values: Date[]) {
+  let latest: Date | null = null;
+  for (const value of values) {
+    if (!latest || value.getTime() > latest.getTime()) {
+      latest = value;
+    }
+  }
+  return latest;
+}
+
 @Injectable()
 export class BillingService implements OnModuleInit {
   private readonly logger = new Logger(BillingService.name);
@@ -230,9 +240,11 @@ export class BillingService implements OnModuleInit {
   async getMyBranchStatus(
     user: AuthenticatedUser,
   ): Promise<BranchBillingStatusContract> {
-    await this.ensureProPlans();
-    const planAmount = PRO_MONTHLY_AMOUNT_UGX;
-    const planCurrency = 'UGX';
+    const dbPlans = await this.ensureProPlans();
+    const monthlyPlan =
+      dbPlans.find((plan) => plan.code === PRO_PLAN_CODE) ?? dbPlans[0];
+    let planAmount = PRO_MONTHLY_AMOUNT_UGX;
+    let planCurrency = 'UGX';
 
     if (!user.branchId) {
       return {
@@ -253,6 +265,15 @@ export class BillingService implements OnModuleInit {
     }
 
     const billing = await this.ensureTenantBilling(user.tenantId);
+    if (monthlyPlan) {
+      const effectivePrice = await this.resolveEffectivePlanPrice(
+        user.tenantId,
+        user.branchId,
+        monthlyPlan,
+      );
+      planAmount = Number(effectivePrice.amount);
+      planCurrency = effectivePrice.currency;
+    }
     await this.syncTenantSubscriptions(user.tenantId);
     let sub = await this.prisma.branchSubscription.findUnique({
       where: { branchId: user.branchId },
@@ -526,16 +547,23 @@ export class BillingService implements OnModuleInit {
 
   private toPlanContract(
     definition: (typeof PRO_PLAN_CATALOGUE)[number],
+    price?: {
+      amount: Prisma.Decimal | number;
+      currency: string;
+      source?: 'DEFAULT_PLAN' | 'ORGANIZATION_OVERRIDE' | 'BRANCH_OVERRIDE';
+      overrideId?: string | null;
+    },
   ): BillingPlanContract {
+    const amount = Number(price?.amount ?? definition.amountUgx);
     const savings =
       definition.compareAtUgx != null
-        ? Math.max(0, definition.compareAtUgx - definition.amountUgx)
+        ? Math.max(0, definition.compareAtUgx - amount)
         : null;
     return {
       code: definition.code,
       name: definition.name,
-      amount: definition.amountUgx,
-      currency: 'UGX',
+      amount,
+      currency: price?.currency ?? 'UGX',
       interval: definition.interval,
       durationMonths: definition.durationMonths,
       label: definition.label,
@@ -544,6 +572,9 @@ export class BillingService implements OnModuleInit {
       savingsAmount: savings && savings > 0 ? savings : null,
       badge: definition.badge,
       defaultSelected: definition.defaultSelected,
+      standardAmount: definition.amountUgx,
+      pricingSource: price?.source ?? 'DEFAULT_PLAN',
+      priceOverrideId: price?.overrideId ?? null,
     };
   }
 
@@ -599,11 +630,11 @@ export class BillingService implements OnModuleInit {
     }
 
     const billing = await this.ensureTenantBilling(user.tenantId);
-    await this.ensureProPlans();
-    const plans = PRO_PLAN_CATALOGUE.map((definition) =>
+    const dbPlans = await this.ensureProPlans();
+    const plansByCode = new Map(dbPlans.map((row) => [row.code, row]));
+    const defaultPlans = PRO_PLAN_CATALOGUE.map((definition) =>
       this.toPlanContract(definition),
     );
-    const plan = plans.find((row) => row.code === PRO_PLAN_CODE) ?? plans[0]!;
     await this.syncTenantSubscriptions(user.tenantId);
 
     const branchWhere = canManageAll
@@ -628,7 +659,18 @@ export class BillingService implements OnModuleInit {
     const refreshed = await this.prisma.branch.findMany({
       where: branchWhere,
       orderBy: { name: 'asc' },
-      include: { subscription: true },
+      include: {
+        subscription: true,
+        users: {
+          select: {
+            authSessions: {
+              take: 1,
+              orderBy: { lastSeenAt: 'desc' },
+              select: { lastSeenAt: true },
+            },
+          },
+        },
+      },
     });
 
     const now = Date.now();
@@ -639,30 +681,53 @@ export class BillingService implements OnModuleInit {
     );
 
     const reminders: string[] = [];
-    const rows = refreshed.map((branch) => {
-      const sub = branch.subscription!;
-      const reminder = this.reminderFor(sub, branch.name);
-      if (reminder) reminders.push(reminder);
-      return {
-        branchId: branch.id,
-        branchName: branch.name,
-        status: sub.status,
-        currentPeriodStart: sub.currentPeriodStart?.toISOString() ?? null,
-        currentPeriodEnd: sub.currentPeriodEnd?.toISOString() ?? null,
-        graceEndsAt: sub.graceEndsAt?.toISOString() ?? null,
-        lockedAt: sub.lockedAt?.toISOString() ?? null,
-        daysUntilPeriodEnd: sub.currentPeriodEnd
-          ? Math.ceil(
-              (sub.currentPeriodEnd.getTime() - now) / (24 * 60 * 60 * 1000),
-            )
-          : null,
-        daysUntilGraceEnd: sub.graceEndsAt
-          ? Math.ceil((sub.graceEndsAt.getTime() - now) / (24 * 60 * 60 * 1000))
-          : null,
-        canCheckout: false,
-        reminder,
-      };
-    });
+    const rows = await Promise.all(
+      refreshed.map(async (branch) => {
+        const sub = branch.subscription!;
+        const reminder = this.reminderFor(sub, branch.name);
+        if (reminder) reminders.push(reminder);
+        const branchPlans = await Promise.all(
+          PRO_PLAN_CATALOGUE.map(async (definition) => {
+            const planRecord = plansByCode.get(definition.code);
+            if (!planRecord) return this.toPlanContract(definition);
+            const effectivePrice = await this.resolveEffectivePlanPrice(
+              user.tenantId,
+              branch.id,
+              planRecord,
+            );
+            return this.toPlanContract(definition, effectivePrice);
+          }),
+        );
+        const lastUsedAt = latestDate(
+          branch.users.flatMap((branchUser) =>
+            branchUser.authSessions.map((session) => session.lastSeenAt),
+          ),
+        );
+        return {
+          branchId: branch.id,
+          branchName: branch.name,
+          status: sub.status,
+          currentPeriodStart: sub.currentPeriodStart?.toISOString() ?? null,
+          currentPeriodEnd: sub.currentPeriodEnd?.toISOString() ?? null,
+          graceEndsAt: sub.graceEndsAt?.toISOString() ?? null,
+          lockedAt: sub.lockedAt?.toISOString() ?? null,
+          daysUntilPeriodEnd: sub.currentPeriodEnd
+            ? Math.ceil(
+                (sub.currentPeriodEnd.getTime() - now) / (24 * 60 * 60 * 1000),
+              )
+            : null,
+          daysUntilGraceEnd: sub.graceEndsAt
+            ? Math.ceil(
+                (sub.graceEndsAt.getTime() - now) / (24 * 60 * 60 * 1000),
+              )
+            : null,
+          canCheckout: false,
+          reminder,
+          plans: branchPlans,
+          lastUsedAt: lastUsedAt?.toISOString() ?? null,
+        };
+      }),
+    );
 
     for (const row of rows) {
       if (
@@ -675,6 +740,11 @@ export class BillingService implements OnModuleInit {
         row.canCheckout = true;
       }
     }
+
+    const plans = canManageAll
+      ? defaultPlans
+      : (rows[0]?.plans ?? defaultPlans);
+    const plan = plans.find((row) => row.code === PRO_PLAN_CODE) ?? plans[0]!;
 
     return {
       plan,
@@ -3207,7 +3277,12 @@ export class BillingService implements OnModuleInit {
     tenantId: string,
     branchId: string,
     plan: { id: string; amount: Prisma.Decimal; currency: string },
-  ) {
+  ): Promise<{
+    amount: Prisma.Decimal;
+    currency: string;
+    source: 'DEFAULT_PLAN' | 'ORGANIZATION_OVERRIDE' | 'BRANCH_OVERRIDE';
+    overrideId: string | null;
+  }> {
     const now = new Date();
     const overrides = await this.prisma.subscriptionPriceOverride.findMany({
       where: {

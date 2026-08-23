@@ -29,6 +29,13 @@ import {
 import { ccDateInputValue, ccMoney } from "./formatters";
 
 type PricingScope = "ORGANIZATION" | "BRANCH";
+type PricingSaveResponse = {
+  notification?: {
+    recipients: number;
+    delivered: boolean;
+    error: string | null;
+  };
+};
 
 export function ControlCenterPricingSection({
   session,
@@ -114,21 +121,34 @@ export function ControlCenterPricingSection({
         scope === "ORGANIZATION"
           ? `/clients/${client!.id}/pricing`
           : `/clients/${client!.id}/branches/${branchId}/pricing`;
-      await controlCenterFetch(path, session, {
-        method: "POST",
-        body: JSON.stringify({
-          prices,
-          effectiveFrom: dateToIso(effectiveFrom),
-          effectiveUntil: effectiveUntil
-            ? dateToIso(effectiveUntil)
-            : undefined,
-          reason,
-        }),
-      });
+      const response = await controlCenterFetch<PricingSaveResponse>(
+        path,
+        session,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            prices,
+            effectiveFrom: dateToIso(effectiveFrom),
+            effectiveUntil: effectiveUntil
+              ? dateToIso(effectiveUntil)
+              : undefined,
+            reason,
+          }),
+        },
+      );
+      const notificationCopy = response.notification
+        ? response.notification.delivered
+          ? ` ${response.notification.recipients} owner/manager email recipient(s) notified.`
+          : response.notification.error
+            ? ` Pricing saved, but email notification failed: ${response.notification.error}`
+            : " Pricing saved, but no owner/manager email recipients were found."
+        : "";
       setSuccess(
-        scope === "ORGANIZATION"
-          ? "Organization pricing saved."
-          : "Branch pricing saved.",
+        `${
+          scope === "ORGANIZATION"
+            ? "Organization pricing saved."
+            : "Branch pricing saved."
+        }${notificationCopy}`,
       );
       await onSaved();
     } catch (caughtError) {
@@ -237,7 +257,8 @@ export function ControlCenterPricingSection({
                     : `Custom pricing for ${selectedBranch?.name ?? "branch"}`}
                 </h2>
                 <p className="mt-1 text-xs font-semibold text-slate-500">
-                  Current active subscriptions are not changed mid-cycle.
+                  Prices saved for today apply to new checkout immediately.
+                  Future dates are scheduled and stay visible here.
                 </p>
               </div>
               <StatusPill
@@ -451,6 +472,26 @@ function PricingRow({
             className="min-w-0 flex-1 px-3 text-sm font-black outline-none"
           />
         </label>
+        {row.override ? (
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+            <StatusPill
+              value={
+                row.override.status === "SCHEDULED"
+                  ? "Scheduled"
+                  : row.override.status === "EXPIRED"
+                    ? "Expired"
+                    : "Active"
+              }
+              tone={row.override.status === "SCHEDULED" ? "gold" : "green"}
+            />
+            <span>
+              From {ccDateInputToLabel(row.override.effectiveFrom)}
+              {row.override.effectiveUntil
+                ? ` until ${ccDateInputToLabel(row.override.effectiveUntil)}`
+                : ""}
+            </span>
+          </div>
+        ) : null}
       </td>
     </tr>
   );
@@ -458,4 +499,12 @@ function PricingRow({
 
 function dateToIso(value: string) {
   return `${value}T00:00:00.000Z`;
+}
+
+function ccDateInputToLabel(value: string) {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value));
 }

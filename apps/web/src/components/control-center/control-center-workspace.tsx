@@ -411,6 +411,7 @@ function renderSection(input: {
       <ControlCenterMessagingSection
         session={input.session}
         clients={clientRows}
+        users={input.users}
         templates={input.templates}
       />
     );

@@ -23,6 +23,9 @@ const RESEND_EMAIL_ENDPOINT = 'https://api.resend.com/emails';
 const RESEND_RECEIVED_EMAIL_ENDPOINT =
   'https://api.resend.com/emails/receiving';
 
+type RembehEmailCategory =
+  'auth' | 'billing' | 'marketing' | 'operations' | 'support';
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
@@ -38,8 +41,9 @@ export class NotificationsService {
     text: string;
     html?: string;
     replyTo?: string;
+    category?: RembehEmailCategory;
   }): Promise<{ delivered: boolean; provider: 'resend'; error?: string }> {
-    const from = this.getEmailFromHeader();
+    const from = this.getEmailFromHeader(input.category ?? 'marketing');
     const apiKey = this.getResendApiKey();
 
     if (!apiKey) {
@@ -70,7 +74,7 @@ export class NotificationsService {
   async sendEmailOtp(
     input: EmailOtpDeliveryInput,
   ): Promise<EmailOtpDeliveryResult> {
-    const from = this.getEmailFromHeader();
+    const from = this.getEmailFromHeader('auth');
     const apiKey = this.getResendApiKey();
 
     if (!apiKey) {
@@ -139,7 +143,7 @@ export class NotificationsService {
   async sendStaffInvitationEmail(
     input: StaffInvitationEmailInput,
   ): Promise<StaffInvitationEmailResult> {
-    const from = this.getEmailFromHeader();
+    const from = this.getEmailFromHeader('auth');
     const apiKey = this.getResendApiKey();
 
     if (!apiKey) {
@@ -198,7 +202,7 @@ export class NotificationsService {
     newBalance: number;
     reference: string;
   }): Promise<{ delivered: boolean }> {
-    const from = this.getEmailFromHeader();
+    const from = this.getEmailFromHeader('billing');
     const apiKey = this.getResendApiKey();
     if (!apiKey) {
       this.logger.warn('SMS receipt email skipped — Resend not configured.');
@@ -268,7 +272,7 @@ export class NotificationsService {
     reference: string;
     tenantId: string;
   }): Promise<{ delivered: boolean }> {
-    const from = this.getEmailFromHeader();
+    const from = this.getEmailFromHeader('operations');
     const apiKey = this.getResendApiKey();
     if (!apiKey) {
       return { delivered: false };
@@ -344,7 +348,7 @@ export class NotificationsService {
     submittedAt: string;
     teamReminder?: string | null;
   }): Promise<{ delivered: boolean; error?: string }> {
-    const from = this.getEmailFromHeader();
+    const from = this.getEmailFromHeader('billing');
     const apiKey = this.getResendApiKey();
     if (!apiKey) {
       const message =
@@ -496,7 +500,7 @@ export class NotificationsService {
     ambiguousIds: string[];
     replyFromEmail: string;
   }): Promise<{ delivered: boolean; error?: string }> {
-    const from = this.getEmailFromHeader();
+    const from = this.getEmailFromHeader('billing');
     const apiKey = this.getResendApiKey();
     if (!apiKey) {
       const message =
@@ -606,7 +610,7 @@ export class NotificationsService {
     periodEnd?: Date | null;
     graceEndsAt?: Date | null;
   }): Promise<{ delivered: boolean; error?: string }> {
-    const from = this.getEmailFromHeader();
+    const from = this.getEmailFromHeader('billing');
     const apiKey = this.getResendApiKey();
     if (!apiKey) {
       const message =
@@ -726,6 +730,140 @@ export class NotificationsService {
     if (!response.ok) {
       const detail = await this.readResendError(response);
       this.logger.warn(`Subscription reminder email failed: ${detail}`);
+      return { delivered: false, error: detail };
+    }
+    return { delivered: true };
+  }
+
+  async sendSubscriptionPricingChangedEmail(input: {
+    recipients: string[];
+    organizationName: string;
+    branchName: string | null;
+    scope: 'ORGANIZATION' | 'BRANCH';
+    affectedBranches: number;
+    effectiveFrom: Date;
+    effectiveUntil: Date | null;
+    reason: string;
+    changedBy: string;
+    prices: Array<{
+      planName: string;
+      planCode: string;
+      oldAmount: number;
+      newAmount: number;
+      currency: string;
+    }>;
+  }): Promise<{ delivered: boolean; error?: string }> {
+    const from = this.getEmailFromHeader('billing');
+    const apiKey = this.getResendApiKey();
+    if (!apiKey) {
+      const message = 'Pricing update email skipped — Resend not configured.';
+      this.logger.warn(message);
+      return { delivered: false, error: message };
+    }
+
+    const recipients = [...new Set(input.recipients.filter(Boolean))];
+    if (recipients.length === 0) {
+      return { delivered: false, error: 'No pricing update recipients.' };
+    }
+
+    const effectiveFromLabel = this.formatEmailDate(input.effectiveFrom);
+    const effectiveUntilLabel = input.effectiveUntil
+      ? this.formatEmailDate(input.effectiveUntil)
+      : 'No end date';
+    const scopeLabel =
+      input.scope === 'BRANCH' && input.branchName
+        ? `${input.branchName} branch`
+        : `${input.organizationName} organization`;
+    const actionUrl = buildWebAppUrl(this.configService, '/subscription');
+    const priceLines = input.prices.map(
+      (price) =>
+        `${price.planName}: ${this.formatEmailMoney(
+          price.oldAmount,
+          price.currency,
+        )} → ${this.formatEmailMoney(price.newAmount, price.currency)}`,
+    );
+
+    const text = [
+      'REMBEH subscription pricing has been updated.',
+      '',
+      `Organization: ${input.organizationName}`,
+      `Scope: ${scopeLabel}`,
+      `Affected branches: ${input.affectedBranches}`,
+      `Effective from: ${effectiveFromLabel}`,
+      `Effective until: ${effectiveUntilLabel}`,
+      `Changed by: ${input.changedBy}`,
+      '',
+      'Updated prices:',
+      ...priceLines,
+      '',
+      `Reason: ${input.reason}`,
+      '',
+      `View subscription pricing: ${actionUrl}`,
+      '',
+      'Current active subscription periods are not changed mid-cycle. The updated amount is used for the next applicable checkout or renewal.',
+      '',
+      '— REMBEH Billing',
+    ].join('\n');
+
+    const htmlInput = {
+      organizationName: this.escapeHtml(input.organizationName),
+      scopeLabel: this.escapeHtml(scopeLabel),
+      effectiveFromLabel: this.escapeHtml(effectiveFromLabel),
+      effectiveUntilLabel: this.escapeHtml(effectiveUntilLabel),
+      changedBy: this.escapeHtml(input.changedBy),
+      reason: this.escapeHtml(input.reason),
+      actionUrl: this.escapeHtml(actionUrl),
+    };
+    const rows = input.prices
+      .map(
+        (price) => `
+          <tr>
+            <td style="padding:10px;border-bottom:1px solid #e6edf3"><strong>${this.escapeHtml(price.planName)}</strong><br><span style="color:#64748b;font-size:12px">${this.escapeHtml(price.planCode)}</span></td>
+            <td style="padding:10px;border-bottom:1px solid #e6edf3;text-align:right">${this.escapeHtml(this.formatEmailMoney(price.oldAmount, price.currency))}</td>
+            <td style="padding:10px;border-bottom:1px solid #e6edf3;text-align:right;color:#0f8a6c;font-weight:700">${this.escapeHtml(this.formatEmailMoney(price.newAmount, price.currency))}</td>
+          </tr>`,
+      )
+      .join('');
+    const html = [
+      '<div style="font-family:Arial,Helvetica,sans-serif;color:#14213d;line-height:1.5;max-width:680px">',
+      this.brandHeaderHtml(),
+      '<h1 style="font-size:22px;margin:0 0 10px">Subscription pricing updated</h1>',
+      `<p style="margin:0 0 16px">The REMBEH subscription pricing for <strong>${htmlInput.scopeLabel}</strong> has been updated.</p>`,
+      '<div style="border:1px solid #dfe7ef;border-radius:12px;padding:14px;background:#f8fbfa;margin:0 0 16px">',
+      `<p style="margin:0 0 8px"><strong>Organization:</strong> ${htmlInput.organizationName}</p>`,
+      `<p style="margin:0 0 8px"><strong>Scope:</strong> ${htmlInput.scopeLabel}</p>`,
+      `<p style="margin:0 0 8px"><strong>Affected branches:</strong> ${input.affectedBranches}</p>`,
+      `<p style="margin:0 0 8px"><strong>Effective from:</strong> ${htmlInput.effectiveFromLabel}</p>`,
+      `<p style="margin:0 0 8px"><strong>Effective until:</strong> ${htmlInput.effectiveUntilLabel}</p>`,
+      `<p style="margin:0"><strong>Changed by:</strong> ${htmlInput.changedBy}</p>`,
+      '</div>',
+      '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e6edf3;border-radius:12px;border-collapse:separate;border-spacing:0;overflow:hidden;margin:0 0 16px">',
+      '<thead><tr><th align="left" style="padding:10px;background:#f2f6f8;font-size:12px">Plan</th><th align="right" style="padding:10px;background:#f2f6f8;font-size:12px">Previous</th><th align="right" style="padding:10px;background:#f2f6f8;font-size:12px">Updated</th></tr></thead>',
+      `<tbody>${rows}</tbody>`,
+      '</table>',
+      `<p style="margin:0 0 14px"><strong>Reason:</strong> ${htmlInput.reason}</p>`,
+      '<p style="margin:0 0 16px;color:#52606d;font-size:13px">Current active subscription periods are not changed mid-cycle. The updated amount is used for the next applicable checkout or renewal.</p>',
+      `<p style="margin:0 0 16px"><a href="${htmlInput.actionUrl}" style="display:inline-block;background:#0f8a6c;color:#ffffff;padding:12px 18px;border-radius:8px;text-decoration:none;font-weight:700">Open Subscription</a></p>`,
+      '<p style="margin:0;color:#52606d;font-size:12px">— REMBEH Billing</p>',
+      '</div>',
+    ].join('');
+
+    const subject =
+      input.scope === 'BRANCH' && input.branchName
+        ? `[REMBEH Billing] Pricing updated — ${input.branchName}`
+        : `[REMBEH Billing] Pricing updated — ${input.organizationName}`;
+    const response = await this.sendResendEmail({
+      apiKey,
+      from,
+      to: recipients,
+      subject,
+      text,
+      html,
+    });
+
+    if (!response.ok) {
+      const detail = await this.readResendError(response);
+      this.logger.warn(`Pricing update email failed: ${detail}`);
       return { delivered: false, error: detail };
     }
     return { delivered: true };
@@ -900,19 +1038,74 @@ export class NotificationsService {
     }).format(value);
   }
 
-  /** Resend-style "Name <email@domain>" when EMAIL_FROM_NAME is set. */
-  private getEmailFromHeader(): string {
+  private formatEmailMoney(amount: number, currency: string) {
+    return `${currency} ${amount.toLocaleString('en-UG')}`;
+  }
+
+  /** Resend-style "Name <email@domain>" with category-specific fallbacks. */
+  private getEmailFromHeader(category: RembehEmailCategory = 'auth'): string {
+    const configByCategory: Record<
+      RembehEmailCategory,
+      {
+        emailKeys: string[];
+        nameKeys: string[];
+        fallbackEmail: string;
+        fallbackName: string;
+      }
+    > = {
+      auth: {
+        emailKeys: ['AUTH_EMAIL_FROM', 'OTP_EMAIL_FROM'],
+        nameKeys: ['AUTH_EMAIL_FROM_NAME', 'OTP_EMAIL_FROM_NAME'],
+        fallbackEmail: 'auth@antikra.com',
+        fallbackName: 'REMBEH Security',
+      },
+      billing: {
+        emailKeys: ['BILLING_EMAIL_FROM', 'SUBSCRIPTION_EMAIL_FROM'],
+        nameKeys: ['BILLING_EMAIL_FROM_NAME', 'SUBSCRIPTION_EMAIL_FROM_NAME'],
+        fallbackEmail: 'billing@antikra.com',
+        fallbackName: 'REMBEH Billing',
+      },
+      marketing: {
+        emailKeys: ['MARKETING_EMAIL_FROM'],
+        nameKeys: ['MARKETING_EMAIL_FROM_NAME'],
+        fallbackEmail: 'marketing@antikra.com',
+        fallbackName: 'REMBEH Growth',
+      },
+      operations: {
+        emailKeys: ['OPERATIONS_EMAIL_FROM'],
+        nameKeys: ['OPERATIONS_EMAIL_FROM_NAME'],
+        fallbackEmail: 'operations@antikra.com',
+        fallbackName: 'REMBEH Operations',
+      },
+      support: {
+        emailKeys: ['SUPPORT_EMAIL_FROM'],
+        nameKeys: ['SUPPORT_EMAIL_FROM_NAME'],
+        fallbackEmail: 'support@antikra.com',
+        fallbackName: 'REMBEH Support',
+      },
+    };
+    const config = configByCategory[category];
     const email =
-      this.configService.get<string>('OTP_EMAIL_FROM')?.trim() ||
+      this.firstConfiguredValue(config.emailKeys) ||
       this.configService.get<string>('EMAIL_FROM')?.trim() ||
-      'auth@antikra.com';
+      config.fallbackEmail;
     const name =
-      this.configService.get<string>('EMAIL_FROM_NAME')?.trim() || 'REMBEH';
+      this.firstConfiguredValue(config.nameKeys) ||
+      this.configService.get<string>('EMAIL_FROM_NAME')?.trim() ||
+      config.fallbackName;
 
     if (email.includes('<')) {
       return email;
     }
     return `${name} <${email}>`;
+  }
+
+  private firstConfiguredValue(keys: string[]) {
+    for (const key of keys) {
+      const value = this.configService.get<string>(key)?.trim();
+      if (value) return value;
+    }
+    return undefined;
   }
 
   private isProduction(): boolean {

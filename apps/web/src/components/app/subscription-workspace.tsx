@@ -73,6 +73,9 @@ type BillingPlanOption = {
   savingsAmount: number | null;
   badge: "MOST_POPULAR" | "BEST_VALUE" | null;
   defaultSelected: boolean;
+  standardAmount?: number;
+  pricingSource?: "DEFAULT_PLAN" | "ORGANIZATION_OVERRIDE" | "BRANCH_OVERRIDE";
+  priceOverrideId?: string | null;
 };
 
 type BillingSummary = {
@@ -98,6 +101,8 @@ type BillingSummary = {
     daysUntilGraceEnd: number | null;
     canCheckout: boolean;
     reminder: string | null;
+    plans?: BillingPlanOption[];
+    lastUsedAt?: string | null;
   }>;
   reminders: string[];
 };
@@ -1000,8 +1005,12 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
       null
     );
   }, [summary, focusedBranchId]);
-  const planOptions =
+  const basePlanOptions =
     summary?.plans && summary.plans.length > 0 ? summary.plans : FALLBACK_PLANS;
+  const planOptions =
+    focusedBranch?.plans && focusedBranch.plans.length > 0
+      ? focusedBranch.plans
+      : basePlanOptions;
   const selectedPlan =
     planOptions.find((plan) => plan.code === selectedPlanCode) ??
     planOptions.find((plan) => plan.defaultSelected) ??
@@ -1061,7 +1070,11 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     setPaymentResultOverlay({
       kind: result.status === "Paid" ? "success" : "failed",
       payment: result,
-      plan: planForPaymentRow(result, planOptions, selectedPlan),
+      plan: planForPaymentRow(
+        result,
+        planOptionsForBranch(result.branchId),
+        selectedPlan,
+      ),
     });
   }, [
     paymentPanelOpen,
@@ -1113,7 +1126,11 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     setTransactionId("");
     setConfirmTransactionId("");
     setSubmittedManualPayment(
-      submissionFromPendingPayment(pending, planOptions, selectedPlan),
+      submissionFromPendingPayment(
+        pending,
+        planOptionsForBranch(pending.branchId),
+        selectedPlan,
+      ),
     );
     setPaymentPanelOpen(true);
   }, [
@@ -1210,7 +1227,11 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
       setPaymentResultOverlay({
         kind: row.status === "Paid" ? "success" : "failed",
         payment: row,
-        plan: planForPaymentRow(row, planOptions, selectedPlan),
+        plan: planForPaymentRow(
+          row,
+          planOptionsForBranch(row.branchId),
+          selectedPlan,
+        ),
       });
     };
 
@@ -1264,7 +1285,11 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     setPaymentResultOverlay({
       kind: match.status === "Paid" ? "success" : "failed",
       payment: match,
-      plan: planForPaymentRow(match, planOptions, selectedPlan),
+      plan: planForPaymentRow(
+        match,
+        planOptionsForBranch(match.branchId),
+        selectedPlan,
+      ),
     });
   }, [
     focusedBranchId,
@@ -1293,7 +1318,11 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     setPaymentResultOverlay({
       kind: requested,
       payment: match,
-      plan: planForPaymentRow(match, planOptions, selectedPlan),
+      plan: planForPaymentRow(
+        match,
+        planOptionsForBranch(match.branchId),
+        selectedPlan,
+      ),
     });
   }, [
     failedPayment,
@@ -1384,7 +1413,11 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
       setTransactionId("");
       setConfirmTransactionId("");
       setSubmittedManualPayment(
-        submissionFromPendingPayment(pending, planOptions, selectedPlan),
+        submissionFromPendingPayment(
+          pending,
+          planOptionsForBranch(pending.branchId),
+          selectedPlan,
+        ),
       );
       setPaymentResultOverlay(null);
       setPaymentPanelOpen(true);
@@ -1410,12 +1443,22 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     );
   }
 
+  function planOptionsForBranch(branchId?: string | null) {
+    const branch = branchId
+      ? summary?.branches.find((item) => item.branchId === branchId)
+      : focusedBranch;
+    return branch?.plans && branch.plans.length > 0
+      ? branch.plans
+      : basePlanOptions;
+  }
+
   function pendingManualPaymentFor(planCode?: string, branchId?: string) {
     const targetBranchId =
       branchId ?? resolveSubscriptionBranch()?.branchId ?? focusedBranchId;
     if (!targetBranchId) return null;
+    const targetPlans = planOptionsForBranch(targetBranchId);
     const targetPlan =
-      planOptions.find((plan) => plan.code === planCode) ?? selectedPlan;
+      targetPlans.find((plan) => plan.code === planCode) ?? selectedPlan;
     return (
       planPayments.find(
         (row) =>
@@ -1560,7 +1603,11 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     setPaymentResultOverlay({
       kind: resultKind,
       payment: row,
-      plan: planForPaymentRow(row, planOptions, selectedPlan),
+      plan: planForPaymentRow(
+        row,
+        planOptionsForBranch(row.branchId),
+        selectedPlan,
+      ),
     });
   }
 
@@ -2018,6 +2065,14 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
                           >
                             {formatMoney(plan.amount, plan.currency)}
                           </p>
+                          {plan.pricingSource &&
+                          plan.pricingSource !== "DEFAULT_PLAN" ? (
+                            <p className="mt-0.5 text-[11px] font-semibold text-[#2b6cb0]">
+                              {plan.pricingSource === "BRANCH_OVERRIDE"
+                                ? "Branch negotiated price"
+                                : "Organization negotiated price"}
+                            </p>
+                          ) : null}
                           {plan.savingsAmount ? (
                             <p className="mt-0.5 text-[11px] font-semibold text-[#07885f]">
                               Save{" "}

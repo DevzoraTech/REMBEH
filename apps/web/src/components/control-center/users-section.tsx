@@ -14,7 +14,7 @@ import {
   StatCard,
   StatusPill,
 } from "./control-center-primitives";
-import { ccDate, ccNumber } from "./formatters";
+import { ccDate, ccDateTime, ccNumber } from "./formatters";
 
 export function ControlCenterUsersSection({
   session,
@@ -178,13 +178,14 @@ export function ControlCenterUsersSection({
         ) : null}
 
         <div className="overflow-x-auto">
-          <table className="min-w-[1100px] w-full text-left">
+          <table className="min-w-[1220px] w-full text-left">
             <thead className="bg-[#f2f6f8] text-xs font-black text-slate-600">
               <tr>
                 <th className="px-4 py-3">User</th>
                 <th className="px-4 py-3">Organization</th>
                 <th className="px-4 py-3">Branch</th>
                 <th className="px-4 py-3">Roles</th>
+                <th className="px-4 py-3">Last used</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Created</th>
                 <th className="px-4 py-3 text-right">Actions</th>
@@ -219,6 +220,22 @@ export function ControlCenterUsersSection({
                         <StatusPill key={item} value={item} tone="slate" />
                       ))}
                     </div>
+                  </td>
+                  <td className="px-4 py-4">
+                    <p className="font-semibold">
+                      {user.lastUsedAt
+                        ? ccDateTime(user.lastUsedAt)
+                        : "Not used yet"}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      {[
+                        user.lastUsedPlatform,
+                        user.lastUsedDevice,
+                        user.sessionActive ? "Active session" : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" - ") || "-"}
+                    </p>
                   </td>
                   <td className="px-4 py-4">
                     <StatusPill value={user.status} />

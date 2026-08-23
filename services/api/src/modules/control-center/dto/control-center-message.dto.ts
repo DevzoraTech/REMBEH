@@ -1,7 +1,6 @@
 import {
   ArrayMaxSize,
   IsArray,
-  IsEmail,
   IsIn,
   IsOptional,
   IsString,
@@ -41,6 +40,29 @@ export class ControlCenterSendMessageDto {
   recipients?: string[];
 
   @IsOptional()
-  @IsIn(['TENANT_USERS', 'BRANCH_USERS', 'TENANT_OWNERS'])
-  audience?: 'TENANT_USERS' | 'BRANCH_USERS' | 'TENANT_OWNERS';
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsString({ each: true })
+  userIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  roleNames?: string[];
+
+  @IsOptional()
+  @IsIn([
+    'TENANT_USERS',
+    'BRANCH_USERS',
+    'TENANT_OWNERS',
+    'SELECTED_USERS',
+    'ROLE_USERS',
+  ])
+  audience?:
+    | 'TENANT_USERS'
+    | 'BRANCH_USERS'
+    | 'TENANT_OWNERS'
+    | 'SELECTED_USERS'
+    | 'ROLE_USERS';
 }

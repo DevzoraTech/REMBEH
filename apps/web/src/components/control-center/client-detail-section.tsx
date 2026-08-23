@@ -207,13 +207,14 @@ export function ControlCenterClientDetailSection({
             <h2 className="font-black">Branches ({detail.branches.length})</h2>
           </div>
           <div className="overflow-x-auto">
-            <table className="min-w-[980px] w-full text-left">
+            <table className="min-w-[1080px] w-full text-left">
               <thead className="bg-[#f2f6f8] text-xs font-black text-slate-600">
                 <tr>
                   <th className="px-4 py-3">Branch name</th>
                   <th className="px-4 py-3">Subscription</th>
                   <th className="px-4 py-3">Performance</th>
                   <th className="px-4 py-3">Users</th>
+                  <th className="px-4 py-3">Last used</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
@@ -343,6 +344,11 @@ function BranchRow({
         </p>
       </td>
       <td className="px-4 py-4 font-black">{ccNumber(branch.users)}</td>
+      <td className="px-4 py-4">
+        <p className="font-semibold">
+          {branch.lastUsedAt ? ccDateTime(branch.lastUsedAt) : "Not used yet"}
+        </p>
+      </td>
       <td className="px-4 py-4">
         <StatusPill value={branch.status} />
       </td>

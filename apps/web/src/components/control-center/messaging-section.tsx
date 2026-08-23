@@ -9,6 +9,7 @@ import type {
   ControlCenterClient,
   ControlCenterClientDetail,
   ControlCenterTemplate,
+  ControlCenterUser,
 } from "./types";
 import {
   EmptyState,
@@ -32,19 +33,38 @@ type SendResult = {
   }>;
 };
 
+const ROLE_CATEGORIES = [
+  { value: "ALL", label: "All roles", roleNames: [] },
+  { value: "OWNER", label: "Owners", roleNames: ["Account Owner"] },
+  { value: "MANAGER", label: "Managers", roleNames: ["Manager"] },
+  { value: "CASHIER", label: "Cashiers", roleNames: ["Cashier"] },
+  {
+    value: "FIELD_OFFICER",
+    label: "Field officers",
+    roleNames: ["Field Officer"],
+  },
+] as const;
+
+type RecipientMode = "AUDIENCE" | "SELECTED_USERS" | "DIRECT";
+
 export function ControlCenterMessagingSection({
   session,
   clients,
+  users,
   templates,
 }: {
   session: ControlCenterSession;
   clients: ControlCenterClient[];
+  users: ControlCenterUser[];
   templates: ControlCenterTemplate[];
 }) {
   const [channel, setChannel] = useState<"EMAIL" | "SMS">("EMAIL");
+  const [recipientMode, setRecipientMode] = useState<RecipientMode>("AUDIENCE");
   const [tenantId, setTenantId] = useState("");
   const [branchId, setBranchId] = useState("");
   const [audience, setAudience] = useState("TENANT_USERS");
+  const [roleCategory, setRoleCategory] = useState("ALL");
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [templateCode, setTemplateCode] = useState("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
@@ -58,6 +78,29 @@ export function ControlCenterMessagingSection({
     () => templates.filter((template) => template.channel === channel),
     [channel, templates],
   );
+  const selectedRoleCategory = ROLE_CATEGORIES.find(
+    (category) => category.value === roleCategory,
+  );
+  const selectableUsers = useMemo(
+    () =>
+      users.filter((user) => {
+        if (tenantId && user.tenant.id !== tenantId) return false;
+        if (branchId && user.branch?.id !== branchId) return false;
+        if (
+          roleCategory !== "ALL" &&
+          !userMatchesRoleCategory(user, roleCategory)
+        ) {
+          return false;
+        }
+        if (channel === "EMAIL") return Boolean(user.email);
+        return Boolean(user.phone);
+      }),
+    [branchId, channel, roleCategory, tenantId, users],
+  );
+  const selectedUsers = useMemo(() => {
+    const selected = new Set(selectedUserIds);
+    return selectableUsers.filter((user) => selected.has(user.id));
+  }, [selectableUsers, selectedUserIds]);
 
   useEffect(() => {
     const selected = channelTemplates.find(
@@ -92,6 +135,12 @@ export function ControlCenterMessagingSection({
     };
   }, [session, tenantId]);
 
+  useEffect(() => {
+    setSelectedUserIds((current) =>
+      current.filter((id) => selectableUsers.some((user) => user.id === id)),
+    );
+  }, [selectableUsers]);
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSending(true);
@@ -102,18 +151,29 @@ export function ControlCenterMessagingSection({
         .split(/[,\n]/)
         .map((item) => item.trim())
         .filter(Boolean);
+      const directMode = recipientMode === "DIRECT";
+      const selectedMode = recipientMode === "SELECTED_USERS";
       const payload = {
         channel,
         templateCode: templateCode || undefined,
-        tenantId: directRecipients.length ? undefined : tenantId || undefined,
-        branchId:
-          directRecipients.length || !branchId || audience !== "BRANCH_USERS"
-            ? undefined
-            : branchId,
-        audience: directRecipients.length ? undefined : audience,
+        tenantId: directMode ? undefined : tenantId || undefined,
+        branchId: directMode || !branchId ? undefined : branchId,
+        audience: directMode
+          ? undefined
+          : selectedMode
+            ? "SELECTED_USERS"
+            : audience,
+        userIds: selectedMode
+          ? selectedUsers.map((user) => user.id)
+          : undefined,
+        roleNames:
+          !directMode && selectedRoleCategory?.roleNames.length
+            ? selectedRoleCategory.roleNames
+            : undefined,
         subject: channel === "EMAIL" ? subject : undefined,
         body,
-        recipients: directRecipients.length ? directRecipients : undefined,
+        recipients:
+          directMode && directRecipients.length ? directRecipients : undefined,
       };
       const response = await controlCenterFetch<SendResult>(
         "/messages/send",
@@ -220,77 +280,191 @@ export function ControlCenterMessagingSection({
               </label>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-3">
+            <div
+              className={`grid gap-4 ${
+                recipientMode === "DIRECT" ? "md:grid-cols-3" : "md:grid-cols-5"
+              }`}
+            >
               <label className="block">
-                <span className="mb-2 block text-xs font-black">Client</span>
+                <span className="mb-2 block text-xs font-black">Source</span>
                 <SelectControl
-                  value={tenantId}
-                  onChange={(value) => {
-                    setTenantId(value);
-                    setBranchId("");
-                  }}
-                  ariaLabel="Client organization"
+                  value={recipientMode}
+                  onChange={(value) => setRecipientMode(value as RecipientMode)}
+                  ariaLabel="Recipient source"
                   className="w-full"
                   options={[
-                    { value: "", label: "No client audience" },
-                    ...clients.map((client) => ({
-                      value: client.id,
-                      label: client.name,
-                    })),
+                    { value: "AUDIENCE", label: "Client audience" },
+                    { value: "SELECTED_USERS", label: "Selected users" },
+                    { value: "DIRECT", label: "Direct contacts" },
                   ]}
                 />
               </label>
-              <label className="block">
-                <span className="mb-2 block text-xs font-black">Audience</span>
-                <SelectControl
-                  value={audience}
-                  onChange={setAudience}
-                  ariaLabel="Audience"
-                  className="w-full"
-                  options={[
-                    { value: "TENANT_USERS", label: "All client users" },
-                    { value: "TENANT_OWNERS", label: "Client owners" },
-                    { value: "BRANCH_USERS", label: "Branch users" },
-                  ]}
-                />
-              </label>
-              <label className="block">
-                <span className="mb-2 block text-xs font-black">Branch</span>
-                <SelectControl
-                  value={branchId}
-                  onChange={setBranchId}
-                  ariaLabel="Branch"
-                  className="w-full"
-                  options={[
-                    { value: "", label: "All branches" },
-                    ...branchOptions.map((branch) => ({
-                      value: branch.id,
-                      label: branch.name,
-                    })),
-                  ]}
-                />
-              </label>
+              {recipientMode !== "DIRECT" ? (
+                <>
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-black">
+                      Client
+                    </span>
+                    <SelectControl
+                      value={tenantId}
+                      onChange={(value) => {
+                        setTenantId(value);
+                        setBranchId("");
+                      }}
+                      ariaLabel="Client organization"
+                      className="w-full"
+                      options={[
+                        { value: "", label: "All clients" },
+                        ...clients.map((client) => ({
+                          value: client.id,
+                          label: client.name,
+                        })),
+                      ]}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-black">
+                      Audience
+                    </span>
+                    <SelectControl
+                      value={audience}
+                      onChange={setAudience}
+                      ariaLabel="Audience"
+                      className="w-full"
+                      options={[
+                        { value: "TENANT_USERS", label: "All client users" },
+                        { value: "TENANT_OWNERS", label: "Client owners" },
+                        { value: "BRANCH_USERS", label: "Branch users" },
+                      ]}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-black">
+                      Branch
+                    </span>
+                    <SelectControl
+                      value={branchId}
+                      onChange={setBranchId}
+                      ariaLabel="Branch"
+                      className="w-full"
+                      options={[
+                        { value: "", label: "All branches" },
+                        ...branchOptions.map((branch) => ({
+                          value: branch.id,
+                          label: branch.name,
+                        })),
+                      ]}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-black">
+                      Category
+                    </span>
+                    <SelectControl
+                      value={roleCategory}
+                      onChange={setRoleCategory}
+                      ariaLabel="Role category"
+                      className="w-full"
+                      options={ROLE_CATEGORIES.map((category) => ({
+                        value: category.value,
+                        label: category.label,
+                      }))}
+                    />
+                  </label>
+                </>
+              ) : null}
             </div>
 
-            <label className="block">
-              <span className="mb-2 block text-xs font-black">
-                Direct recipients
-              </span>
-              <textarea
-                value={recipients}
-                onChange={(event) => setRecipients(event.target.value)}
-                rows={3}
-                placeholder={
-                  channel === "EMAIL"
-                    ? "name@example.com, another@example.com"
-                    : "+256700000000, +256701000000"
-                }
-                className="w-full resize-none rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-sm font-semibold outline-none placeholder:text-slate-400 focus:border-[var(--forest-emerald)]"
-              />
-              <span className="mt-1 block text-xs font-semibold text-slate-500">
-                Direct recipients override the selected client audience.
-              </span>
-            </label>
+            {recipientMode === "DIRECT" ? (
+              <label className="block">
+                <span className="mb-2 block text-xs font-black">
+                  Direct recipients
+                </span>
+                <textarea
+                  value={recipients}
+                  onChange={(event) => setRecipients(event.target.value)}
+                  rows={3}
+                  placeholder={
+                    channel === "EMAIL"
+                      ? "name@example.com, another@example.com"
+                      : "+256700000000, +256701000000"
+                  }
+                  className="w-full resize-none rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-sm font-semibold outline-none placeholder:text-slate-400 focus:border-[var(--forest-emerald)]"
+                />
+              </label>
+            ) : null}
+
+            {recipientMode === "SELECTED_USERS" ? (
+              <div className="rounded-xl border border-[#e2e8f0] bg-[#f8fbfa]">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e2e8f0] px-4 py-3">
+                  <div>
+                    <p className="text-sm font-black">Choose people</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      {selectedUsers.length} selected from{" "}
+                      {selectableUsers.length} matching users
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-ghost h-8 normal-case"
+                    onClick={() =>
+                      setSelectedUserIds(
+                        selectableUsers.length > 0 &&
+                          selectedUsers.length === selectableUsers.length
+                          ? []
+                          : selectableUsers.map((user) => user.id),
+                      )
+                    }
+                  >
+                    {selectableUsers.length > 0 &&
+                    selectedUsers.length === selectableUsers.length
+                      ? "Clear"
+                      : "Select all"}
+                  </button>
+                </div>
+                <div className="max-h-72 divide-y divide-[#edf2f7] overflow-y-auto">
+                  {selectableUsers.length ? (
+                    selectableUsers.map((user) => (
+                      <label
+                        key={user.id}
+                        className="flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-white"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedUserIds.includes(user.id)}
+                          onChange={(event) => {
+                            setSelectedUserIds((current) =>
+                              event.target.checked
+                                ? [...new Set([...current, user.id])]
+                                : current.filter((id) => id !== user.id),
+                            );
+                          }}
+                          className="size-4 accent-[var(--forest-emerald)]"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-black">
+                            {user.name}
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs font-semibold text-slate-500">
+                            {channel === "EMAIL" ? user.email : user.phone} -{" "}
+                            {user.tenant.name}
+                            {user.branch ? ` / ${user.branch.name}` : ""}
+                          </span>
+                        </span>
+                        <StatusPill
+                          value={user.roles[0] ?? "User"}
+                          tone="slate"
+                        />
+                      </label>
+                    ))
+                  ) : (
+                    <div className="px-4 py-6">
+                      <EmptyState title="No users match these filters" />
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
 
             {channel === "EMAIL" ? (
               <label className="block">
@@ -403,4 +577,16 @@ function ResultMetric({
       <p className="mt-1 text-xs font-bold text-slate-500">{label}</p>
     </div>
   );
+}
+
+function userMatchesRoleCategory(user: ControlCenterUser, category: string) {
+  const aliases: Record<string, string[]> = {
+    OWNER: ["Account Owner", "Owner"],
+    MANAGER: ["Manager", "Branch Manager"],
+    CASHIER: ["Cashier"],
+    FIELD_OFFICER: ["Field Officer", "Field Agent", "Agent", "Loan Officer"],
+  };
+  const accepted = aliases[category];
+  if (!accepted) return true;
+  return user.roles.some((role) => accepted.includes(role));
 }

@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   OnModuleInit,
   UnauthorizedException,
@@ -65,6 +66,41 @@ const DEFAULT_TEMPLATES = [
     subject: null,
     body: 'REMBEH notice: {{branch}} subscription needs attention. Renew to restore full access. ANTIKRA support is available.',
   },
+  {
+    code: 'pricing_update_email',
+    name: 'Pricing update',
+    channel: ControlCenterMessageChannel.EMAIL,
+    subject: 'REMBEH pricing update for {{organization}}',
+    body: 'Hello {{name}},\n\nWe have updated REMBEH subscription pricing for {{organization}}. Branch-specific pricing still applies where it has been agreed.\n\nOpen your subscription page to view the latest amount before making a payment.\n\nRegards,\nREMBEH Billing',
+  },
+  {
+    code: 'branch_manager_notice_email',
+    name: 'Branch manager notice',
+    channel: ControlCenterMessageChannel.EMAIL,
+    subject: 'REMBEH notice for {{branch}}',
+    body: 'Hello {{name}},\n\nThis is an important REMBEH update for {{branch}} under {{organization}}.\n\n{{branch}} teams should review the app for the latest operational and subscription information.\n\nRegards,\nREMBEH Operations',
+  },
+  {
+    code: 'field_officer_campaign_sms',
+    name: 'Field officer SMS',
+    channel: ControlCenterMessageChannel.SMS,
+    subject: null,
+    body: 'REMBEH update for {{branch}}: Please sync your app while online before field work and keep records up to date. ANTIKRA support is available.',
+  },
+  {
+    code: 'manager_campaign_sms',
+    name: 'Manager SMS',
+    channel: ControlCenterMessageChannel.SMS,
+    subject: null,
+    body: 'REMBEH manager notice: Review {{branch}} subscriptions, daily operations, and staff access when online. Contact ANTIKRA for support.',
+  },
+  {
+    code: 'service_announcement_email',
+    name: 'Service announcement',
+    channel: ControlCenterMessageChannel.EMAIL,
+    subject: 'REMBEH service announcement',
+    body: 'Hello {{name}},\n\nWe are sharing an update that affects REMBEH service for {{organization}}.\n\nPlease review the app and contact ANTIKRA support if your team needs help.\n\nRegards,\nREMBEH Support',
+  },
 ] as const;
 
 type ControlCenterTokenPayload = {
@@ -84,6 +120,8 @@ type ResolvedMessageRecipient = {
 
 @Injectable()
 export class ControlCenterService implements OnModuleInit {
+  private readonly logger = new Logger(ControlCenterService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
@@ -247,7 +285,6 @@ export class ControlCenterService implements OnModuleInit {
       this.prisma.subscriptionPriceOverride.count({
         where: {
           revokedAt: null,
-          effectiveFrom: { lte: now },
           OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: now } }],
         },
       }),
@@ -321,7 +358,6 @@ export class ControlCenterService implements OnModuleInit {
         subscriptionPriceOverrides: {
           where: {
             revokedAt: null,
-            effectiveFrom: { lte: now },
             OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: now } }],
           },
         },
@@ -382,13 +418,35 @@ export class ControlCenterService implements OnModuleInit {
       where: { id: tenantId },
       include: {
         users: {
-          include: { roles: { include: { role: true } } },
+          include: {
+            roles: { include: { role: true } },
+            authSessions: {
+              take: 1,
+              orderBy: { lastSeenAt: 'desc' },
+              select: {
+                lastSeenAt: true,
+                deviceName: true,
+                platform: true,
+                revokedAt: true,
+                expiresAt: true,
+              },
+            },
+          },
           orderBy: { createdAt: 'asc' },
         },
         branches: {
           include: {
             subscription: { include: { plan: true } },
             _count: { select: { users: true, customers: true, loans: true } },
+            users: {
+              select: {
+                authSessions: {
+                  take: 1,
+                  orderBy: { lastSeenAt: 'desc' },
+                  select: { lastSeenAt: true },
+                },
+              },
+            },
           },
           orderBy: { name: 'asc' },
         },
@@ -462,6 +520,11 @@ export class ControlCenterService implements OnModuleInit {
       branches: tenant.branches.map((branch) => {
         const repayment = repaymentsByBranch.get(branch.id);
         const payment = paymentsByBranch.get(branch.id);
+        const lastUsedAt = this.latestDate(
+          branch.users.flatMap((user) =>
+            user.authSessions.map((session) => session.lastSeenAt),
+          ),
+        );
         return {
           id: branch.id,
           name: branch.name,
@@ -478,6 +541,7 @@ export class ControlCenterService implements OnModuleInit {
           repaymentCount: repayment?._count._all ?? 0,
           subscriptionRevenue: this.decimal(payment?._sum.amount),
           subscriptionPayments: payment?._count._all ?? 0,
+          lastUsedAt: lastUsedAt?.toISOString() ?? null,
         };
       }),
       recentActivity: latestActivity.map((row) => ({
@@ -507,7 +571,6 @@ export class ControlCenterService implements OnModuleInit {
         where: {
           tenantId,
           revokedAt: null,
-          effectiveFrom: { lte: now },
           OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: now } }],
         },
         include: {
@@ -515,7 +578,7 @@ export class ControlCenterService implements OnModuleInit {
           branch: { select: { id: true, name: true } },
           changedBy: { select: { displayName: true, email: true } },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
       }),
     ]);
 
@@ -617,6 +680,17 @@ export class ControlCenterService implements OnModuleInit {
         tenant: { select: { id: true, name: true, status: true } },
         branch: { select: { id: true, name: true } },
         roles: { include: { role: true } },
+        authSessions: {
+          take: 1,
+          orderBy: { lastSeenAt: 'desc' },
+          select: {
+            lastSeenAt: true,
+            deviceName: true,
+            platform: true,
+            revokedAt: true,
+            expiresAt: true,
+          },
+        },
       },
     });
 
@@ -631,6 +705,13 @@ export class ControlCenterService implements OnModuleInit {
         tenant: user.tenant,
         branch: user.branch,
         roles: user.roles.map((role) => role.role.name),
+        lastUsedAt: user.authSessions[0]?.lastSeenAt.toISOString() ?? null,
+        lastUsedDevice: user.authSessions[0]?.deviceName ?? null,
+        lastUsedPlatform: user.authSessions[0]?.platform ?? null,
+        sessionActive:
+          user.authSessions[0] != null &&
+          !user.authSessions[0].revokedAt &&
+          user.authSessions[0].expiresAt.getTime() > Date.now(),
         createdAt: user.createdAt.toISOString(),
         updatedAt: user.updatedAt.toISOString(),
       })),
@@ -707,6 +788,7 @@ export class ControlCenterService implements OnModuleInit {
           to: recipient.value,
           subject: subject!,
           text: body,
+          category: this.messageEmailCategory(dto),
         });
         provider = result.provider;
         if (!result.delivered) {
@@ -807,25 +889,56 @@ export class ControlCenterService implements OnModuleInit {
     const effectiveUntil = dto.effectiveUntil
       ? new Date(dto.effectiveUntil)
       : null;
+    const now = new Date();
     if (effectiveUntil && effectiveUntil <= effectiveFrom) {
       throw new BadRequestException(
         'Effective until must be after effective from.',
       );
     }
+    const previousAmounts = await this.resolveCurrentPricingAmounts(
+      tenantId,
+      branchId,
+      plans,
+    );
+    const startsImmediately = effectiveFrom.getTime() <= now.getTime();
 
     const created = await this.prisma.$transaction(async (tx) => {
       const rows = [];
       for (const price of dto.prices) {
         const plan = planByCode.get(price.planCode.trim().toUpperCase())!;
-        await tx.subscriptionPriceOverride.updateMany({
-          where: {
-            tenantId,
-            branchId,
-            planId: plan.id,
-            revokedAt: null,
-          },
-          data: { revokedAt: new Date() },
-        });
+        const scopedWhere = {
+          tenantId,
+          branchId,
+          planId: plan.id,
+          revokedAt: null,
+        } satisfies Prisma.SubscriptionPriceOverrideWhereInput;
+
+        if (startsImmediately) {
+          await tx.subscriptionPriceOverride.updateMany({
+            where: scopedWhere,
+            data: { revokedAt: now },
+          });
+        } else {
+          await tx.subscriptionPriceOverride.updateMany({
+            where: {
+              ...scopedWhere,
+              effectiveFrom: { gte: effectiveFrom },
+            },
+            data: { revokedAt: now },
+          });
+          await tx.subscriptionPriceOverride.updateMany({
+            where: {
+              ...scopedWhere,
+              effectiveFrom: { lte: now },
+              OR: [
+                { effectiveUntil: null },
+                { effectiveUntil: { gte: effectiveFrom } },
+              ],
+            },
+            data: { effectiveUntil: effectiveFrom },
+          });
+        }
+
         rows.push(
           await tx.subscriptionPriceOverride.create({
             data: {
@@ -860,10 +973,22 @@ export class ControlCenterService implements OnModuleInit {
             reason: dto.reason,
             effectiveFrom: effectiveFrom.toISOString(),
             effectiveUntil: effectiveUntil?.toISOString() ?? null,
+            startsImmediately,
           },
         },
       });
       return rows;
+    });
+    const notification = await this.notifyPricingChange({
+      admin,
+      tenantId,
+      branchId,
+      plans,
+      created,
+      previousAmounts,
+      effectiveFrom,
+      effectiveUntil,
+      reason: dto.reason.trim(),
     });
 
     return {
@@ -873,7 +998,213 @@ export class ControlCenterService implements OnModuleInit {
         branchId: row.branchId,
         amount: this.decimal(row.amount),
       })),
+      notification,
     };
+  }
+
+  private async resolveCurrentPricingAmounts(
+    tenantId: string,
+    branchId: string | null,
+    plans: Array<{
+      id: string;
+      amount: Prisma.Decimal | number;
+      currency: string;
+    }>,
+  ) {
+    const now = new Date();
+    const overrides = await this.prisma.subscriptionPriceOverride.findMany({
+      where: {
+        tenantId,
+        planId: { in: plans.map((plan) => plan.id) },
+        revokedAt: null,
+        effectiveFrom: { lte: now },
+        AND: [
+          branchId
+            ? { OR: [{ branchId }, { branchId: null }] }
+            : { branchId: null },
+          { OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: now } }] },
+        ],
+      },
+      orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    const amounts = new Map<string, number>();
+    for (const plan of plans) {
+      const branchOverride = branchId
+        ? overrides.find(
+            (row) => row.planId === plan.id && row.branchId === branchId,
+          )
+        : null;
+      const organizationOverride = overrides.find(
+        (row) => row.planId === plan.id && row.branchId === null,
+      );
+      amounts.set(
+        plan.id,
+        this.decimal(
+          branchOverride?.amount ?? organizationOverride?.amount ?? plan.amount,
+        ),
+      );
+    }
+    return amounts;
+  }
+
+  private async notifyPricingChange(input: {
+    admin: ControlCenterAdminContext;
+    tenantId: string;
+    branchId: string | null;
+    plans: Array<{
+      id: string;
+      code: string;
+      name: string;
+      amount: Prisma.Decimal | number;
+      currency: string;
+    }>;
+    created: Array<{
+      id: string;
+      planId: string;
+      amount: Prisma.Decimal | number;
+      currency: string;
+    }>;
+    previousAmounts: Map<string, number>;
+    effectiveFrom: Date;
+    effectiveUntil: Date | null;
+    reason: string;
+  }) {
+    const [tenant, branch, recipients, branchCount] = await Promise.all([
+      this.prisma.tenant.findUnique({
+        where: { id: input.tenantId },
+        select: { name: true },
+      }),
+      input.branchId
+        ? this.prisma.branch.findFirst({
+            where: { id: input.branchId, tenantId: input.tenantId },
+            select: { name: true },
+          })
+        : Promise.resolve(null),
+      this.pricingNotificationRecipients(input.tenantId, input.branchId),
+      input.branchId
+        ? Promise.resolve(1)
+        : this.prisma.branch.count({ where: { tenantId: input.tenantId } }),
+    ]);
+
+    if (!tenant || recipients.length === 0) {
+      return {
+        recipients: recipients.length,
+        delivered: false,
+        error:
+          recipients.length === 0 ? 'No owner or manager emails found.' : null,
+      };
+    }
+
+    const plansById = new Map(input.plans.map((plan) => [plan.id, plan]));
+    const priceRows = input.created.map((row) => {
+      const plan = plansById.get(row.planId);
+      return {
+        planName: plan?.name ?? row.planId,
+        planCode: plan?.code ?? row.planId,
+        oldAmount: input.previousAmounts.get(row.planId) ?? 0,
+        newAmount: this.decimal(row.amount),
+        currency: row.currency,
+      };
+    });
+
+    try {
+      const result =
+        await this.notificationsService.sendSubscriptionPricingChangedEmail({
+          recipients: recipients.map((recipient) => recipient.email),
+          organizationName: tenant.name,
+          branchName: branch?.name ?? null,
+          scope: input.branchId ? 'BRANCH' : 'ORGANIZATION',
+          affectedBranches: branchCount,
+          effectiveFrom: input.effectiveFrom,
+          effectiveUntil: input.effectiveUntil,
+          reason: input.reason,
+          changedBy: input.admin.displayName || input.admin.email,
+          prices: priceRows,
+        });
+      await this.audit(
+        input.admin.adminId,
+        'control_center.pricing.notification_sent',
+        input.branchId ? 'Branch' : 'Tenant',
+        input.branchId ?? input.tenantId,
+        null,
+        {
+          recipients: recipients.length,
+          delivered: result.delivered,
+          error: result.error ?? null,
+        },
+      );
+      return {
+        recipients: recipients.length,
+        delivered: result.delivered,
+        error: result.error ?? null,
+      };
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Pricing notification could not be sent.';
+      this.logger.warn(`Pricing notification failed: ${message}`);
+      await this.audit(
+        input.admin.adminId,
+        'control_center.pricing.notification_failed',
+        input.branchId ? 'Branch' : 'Tenant',
+        input.branchId ?? input.tenantId,
+        null,
+        {
+          recipients: recipients.length,
+          error: message,
+        },
+      );
+      return {
+        recipients: recipients.length,
+        delivered: false,
+        error: message,
+      };
+    }
+  }
+
+  private async pricingNotificationRecipients(
+    tenantId: string,
+    branchId: string | null,
+  ) {
+    const ownerRoles = ['Account Owner', 'Owner'];
+    const managerRoles = ['Manager', 'Branch Manager'];
+    const users = await this.prisma.user.findMany({
+      where: {
+        tenantId,
+        status: UserStatus.ACTIVE,
+        email: { not: '' },
+        OR: branchId
+          ? [
+              { roles: { some: { role: { name: { in: ownerRoles } } } } },
+              {
+                branchId,
+                roles: { some: { role: { name: { in: managerRoles } } } },
+              },
+            ]
+          : [
+              {
+                roles: {
+                  some: {
+                    role: { name: { in: [...ownerRoles, ...managerRoles] } },
+                  },
+                },
+              },
+            ],
+      },
+      select: { email: true, displayName: true },
+      take: 300,
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const unique = new Map<string, { email: string; name: string }>();
+    for (const user of users) {
+      const email = user.email.trim().toLowerCase();
+      if (!email || unique.has(email)) continue;
+      unique.set(email, { email, name: user.displayName });
+    }
+    return [...unique.values()];
   }
 
   private async resolveRecipients(
@@ -895,14 +1226,33 @@ export class ControlCenterService implements OnModuleInit {
       }));
     }
 
-    if (!dto.tenantId) {
+    const userIds = [
+      ...new Set(
+        (dto.userIds ?? [])
+          .map((userId) => userId.trim())
+          .filter((userId) => userId.length > 0),
+      ),
+    ];
+
+    if (!dto.tenantId && userIds.length === 0) {
       throw new BadRequestException(
-        'Choose recipients directly or select a client organization.',
+        'Choose recipients directly, select users, or select a client organization.',
       );
     }
 
+    if (dto.audience === 'SELECTED_USERS' && userIds.length === 0) {
+      throw new BadRequestException('Choose at least one user.');
+    }
+
+    const roleNames = this.normalizeMessageRoleNames(
+      dto.audience === 'TENANT_OWNERS'
+        ? ['Account Owner']
+        : (dto.roleNames ?? []),
+    );
+
     const where: Prisma.UserWhereInput = {
-      tenantId: dto.tenantId,
+      ...(dto.tenantId ? { tenantId: dto.tenantId } : {}),
+      ...(userIds.length ? { id: { in: userIds } } : {}),
       ...(dto.branchId ? { branchId: dto.branchId } : {}),
       status: UserStatus.ACTIVE,
       ...(channel === ControlCenterMessageChannel.EMAIL
@@ -910,8 +1260,8 @@ export class ControlCenterService implements OnModuleInit {
         : { phone: { not: null } }),
     };
 
-    if (dto.audience === 'TENANT_OWNERS') {
-      where.roles = { some: { role: { name: 'Account Owner' } } };
+    if (roleNames.length) {
+      where.roles = { some: { role: { name: { in: roleNames } } } };
     }
 
     const users = await this.prisma.user.findMany({
@@ -944,6 +1294,39 @@ export class ControlCenterService implements OnModuleInit {
     return [...unique.values()];
   }
 
+  private normalizeMessageRoleNames(roleNames: string[]) {
+    const aliases = new Map<string, string[]>([
+      ['owner', ['Account Owner', 'Owner']],
+      ['account owner', ['Account Owner', 'Owner']],
+      ['manager', ['Manager', 'Branch Manager']],
+      ['branch manager', ['Manager', 'Branch Manager']],
+      ['cashier', ['Cashier']],
+      [
+        'field officer',
+        ['Field Officer', 'Field Agent', 'Agent', 'Loan Officer'],
+      ],
+      [
+        'field agent',
+        ['Field Officer', 'Field Agent', 'Agent', 'Loan Officer'],
+      ],
+      ['agent', ['Field Officer', 'Field Agent', 'Agent', 'Loan Officer']],
+      [
+        'loan officer',
+        ['Field Officer', 'Field Agent', 'Agent', 'Loan Officer'],
+      ],
+    ]);
+    const normalized = new Set<string>();
+    for (const item of roleNames) {
+      const trimmed = item.trim();
+      if (!trimmed) continue;
+      const expanded = aliases.get(trimmed.toLowerCase());
+      for (const name of expanded ?? [trimmed]) {
+        normalized.add(name);
+      }
+    }
+    return [...normalized];
+  }
+
   private renderMessageTemplate(
     template: string,
     recipient: ResolvedMessageRecipient,
@@ -959,6 +1342,35 @@ export class ControlCenterService implements OnModuleInit {
       /\{\{\s*(name|organization|branch)\s*\}\}/gi,
       (match, key: string) => values[key.toLowerCase()] ?? match,
     );
+  }
+
+  private messageEmailCategory(
+    dto: ControlCenterSendMessageDto,
+  ): 'billing' | 'marketing' | 'operations' | 'support' {
+    const haystack = [dto.templateCode, dto.subject, dto.body]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    if (
+      haystack.includes('price') ||
+      haystack.includes('pricing') ||
+      haystack.includes('subscription') ||
+      haystack.includes('payment') ||
+      haystack.includes('renewal')
+    ) {
+      return 'billing';
+    }
+    if (
+      haystack.includes('operation') ||
+      haystack.includes('branch') ||
+      haystack.includes('manager')
+    ) {
+      return 'operations';
+    }
+    if (haystack.includes('support') || haystack.includes('service')) {
+      return 'support';
+    }
+    return 'marketing';
   }
 
   private async ensureAllowedAdmins() {
@@ -1163,6 +1575,14 @@ export class ControlCenterService implements OnModuleInit {
     },
     fallbackOverride?: { amount: Prisma.Decimal | number },
   ) {
+    const now = Date.now();
+    const overrideStatus = override
+      ? override.effectiveFrom.getTime() > now
+        ? 'SCHEDULED'
+        : override.effectiveUntil && override.effectiveUntil.getTime() < now
+          ? 'EXPIRED'
+          : 'ACTIVE'
+      : null;
     return {
       plan: this.toPlan(plan),
       defaultAmount: this.decimal(plan.amount),
@@ -1182,6 +1602,7 @@ export class ControlCenterService implements OnModuleInit {
             effectiveUntil: override.effectiveUntil?.toISOString() ?? null,
             changedBy:
               override.changedBy.displayName || override.changedBy.email,
+            status: overrideStatus,
           }
         : null,
     };
@@ -1210,5 +1631,15 @@ export class ControlCenterService implements OnModuleInit {
   private decimal(value: Prisma.Decimal | number | null | undefined) {
     if (value == null) return 0;
     return Number(value);
+  }
+
+  private latestDate(values: Date[]) {
+    let latest: Date | null = null;
+    for (const value of values) {
+      if (!latest || value.getTime() > latest.getTime()) {
+        latest = value;
+      }
+    }
+    return latest;
   }
 }

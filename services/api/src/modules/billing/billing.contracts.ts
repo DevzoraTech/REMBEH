@@ -11,6 +11,9 @@ export type BillingPlanContract = {
   savingsAmount: number | null;
   badge: 'MOST_POPULAR' | 'BEST_VALUE' | null;
   defaultSelected: boolean;
+  standardAmount?: number;
+  pricingSource?: 'DEFAULT_PLAN' | 'ORGANIZATION_OVERRIDE' | 'BRANCH_OVERRIDE';
+  priceOverrideId?: string | null;
 };
 
 export type BranchBillingRowContract = {
@@ -25,6 +28,8 @@ export type BranchBillingRowContract = {
   daysUntilGraceEnd: number | null;
   canCheckout: boolean;
   reminder: string | null;
+  plans?: BillingPlanContract[];
+  lastUsedAt?: string | null;
 };
 
 export type BillingSummaryContract = {
