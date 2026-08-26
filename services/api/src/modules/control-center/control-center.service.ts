@@ -3871,7 +3871,8 @@ export class ControlCenterService implements OnModuleInit {
     if (
       action === 'control_center.message.sent' ||
       action === 'control_center.pricing.notification_sent' ||
-      action === 'control_center.pricing.notification_failed'
+      action === 'control_center.pricing.notification_failed' ||
+      action.startsWith('control_center.marketing.')
     ) {
       return 'COMMUNICATIONS';
     }

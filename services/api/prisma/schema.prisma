@@ -358,6 +358,32 @@ enum ControlCenterMessageStatus {
   SKIPPED
 }
 
+enum MarketingCampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum MarketingCampaignPlacement {
+  MOBILE_HEADER
+}
+
+enum MarketingCampaignAudience {
+  ALL_USERS
+  TENANT_USERS
+  BRANCH_USERS
+  TENANT_OWNERS
+  ROLE_USERS
+  SELECTED_USERS
+}
+
+enum MarketingCampaignMediaType {
+  NONE
+  IMAGE
+  VIDEO
+}
+
 model Tenant {
   id                 String       @id @default(uuid()) @db.Uuid
   name               String
@@ -422,6 +448,7 @@ model Tenant {
   smsNotificationSettings    TenantSmsNotificationSettings?
   subscriptionPriceOverrides SubscriptionPriceOverride[]
   controlCenterMessageLogs   ControlCenterMessageLog[]
+  marketingCampaigns         MarketingCampaign[]
 
   @@map("tenants")
 }
@@ -475,6 +502,7 @@ model Branch {
   salaryPayments             SalaryPayment[]
   subscriptionPriceOverrides SubscriptionPriceOverride[]
   controlCenterMessageLogs   ControlCenterMessageLog[]
+  marketingCampaigns         MarketingCampaign[]
 
   @@unique([tenantId, name])
   @@index([tenantId, name])
@@ -1407,9 +1435,10 @@ model ControlCenterAdmin {
   createdAt    DateTime                 @default(now()) @map("created_at")
   updatedAt    DateTime                 @updatedAt @map("updated_at")
 
-  pricingOverrides SubscriptionPriceOverride[]
-  messageLogs      ControlCenterMessageLog[]
-  auditLogs        ControlCenterAuditLog[]
+  pricingOverrides   SubscriptionPriceOverride[]
+  messageLogs        ControlCenterMessageLog[]
+  auditLogs          ControlCenterAuditLog[]
+  marketingCampaigns MarketingCampaign[]
 
   @@map("control_center_admins")
 }
@@ -1478,6 +1507,39 @@ model ControlCenterMessageLog {
   @@index([tenantId, createdAt])
   @@index([channel, status, createdAt])
   @@map("control_center_message_logs")
+}
+
+model MarketingCampaign {
+  id               String                     @id @default(uuid()) @db.Uuid
+  title            String
+  body             String                     @db.Text
+  ctaLabel         String?                    @map("cta_label")
+  ctaUrl           String?                    @map("cta_url")
+  mediaUrl         String?                    @map("media_url")
+  mediaStorageKey  String?                    @map("media_storage_key")
+  mediaType        MarketingCampaignMediaType @default(NONE) @map("media_type")
+  placement        MarketingCampaignPlacement @default(MOBILE_HEADER)
+  audience         MarketingCampaignAudience  @default(TENANT_USERS)
+  status           MarketingCampaignStatus    @default(DRAFT)
+  tenantId         String?                    @map("tenant_id") @db.Uuid
+  branchId         String?                    @map("branch_id") @db.Uuid
+  roleNames        String[]                   @default([]) @map("role_names")
+  userIds          String[]                   @default([]) @map("user_ids")
+  priority         Int                        @default(0)
+  startsAt         DateTime                   @default(now()) @map("starts_at")
+  endsAt           DateTime?                  @map("ends_at")
+  createdByAdminId String                     @map("created_by_admin_id") @db.Uuid
+  createdAt        DateTime                   @default(now()) @map("created_at")
+  updatedAt        DateTime                   @updatedAt @map("updated_at")
+
+  tenant    Tenant?            @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  branch    Branch?            @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  createdBy ControlCenterAdmin @relation(fields: [createdByAdminId], references: [id])
+
+  @@index([status, placement, startsAt, endsAt])
+  @@index([tenantId, branchId, status])
+  @@index([createdByAdminId, createdAt])
+  @@map("marketing_campaigns")
 }
 
 model ControlCenterAuditLog {

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../features/applications_list/data/applications_live_store.dart';
+import '../../features/marketing/domain/models/mobile_marketing_campaign.dart';
+import '../../features/marketing/presentation/widgets/mobile_marketing_banner.dart';
 import '../../features/repayment/data/repayments_live_store.dart';
 import '../../models/agent_day_status.dart';
 import '../../models/field_records.dart';
@@ -20,6 +22,8 @@ class HomeTab extends StatefulWidget {
     required this.onOpenProfile,
     required this.onOpenSearch,
     required this.onOpenRecords,
+    this.marketingCampaign,
+    this.onMarketingTap,
   });
 
   final RembehSession session;
@@ -27,6 +31,8 @@ class HomeTab extends StatefulWidget {
   final Future<void> Function() onRefreshDayStatus;
   final VoidCallback onOpenProfile;
   final VoidCallback onOpenSearch;
+  final MobileMarketingCampaign? marketingCampaign;
+  final VoidCallback? onMarketingTap;
   final void Function({
     required RecordsSection section,
     required RecordsFilter filter,
@@ -154,6 +160,13 @@ class _HomeTabState extends State<HomeTab> {
                 ),
               ],
             ),
+            if (widget.marketingCampaign != null) ...[
+              const SizedBox(height: 12),
+              MobileMarketingBanner(
+                campaign: widget.marketingCampaign!,
+                onTap: widget.onMarketingTap,
+              ),
+            ],
             const SizedBox(height: 16),
             Material(
               color: Colors.white,

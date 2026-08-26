@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+
 import { PrismaService } from '../../database/prisma.service';
 
 const loanListInclude = {
@@ -11,15 +12,29 @@ const loanListInclude = {
       nationalId: true,
     },
   },
+
   application: {
-    select: {
-      id: true,
-      templateName: true,
-      durationDays: true,
-      paymentStartDate: true,
-      processingFee: true,
-      interestRatePercent: true,
-      loanProductTemplate: { select: { name: true } },
+  select: {
+    id: true,
+    templateName: true,
+    durationDays: true,
+    repaymentFrequency: true,
+    paymentStartDate: true,
+    processingFee: true,
+    interestRatePercent: true,
+
+      loanProductTemplate: {
+        select: {
+          name: true,
+
+          /*
+           * Kept as an additional fallback for old/incomplete
+           * application snapshots.
+           */
+          repaymentFrequency: true,
+        },
+      },
+
       officer: {
         select: {
           displayName: true,
@@ -28,24 +43,31 @@ const loanListInclude = {
       },
     },
   },
+
   wallet: {
     select: {
       openingBalance: true,
       finesTotal: true,
     },
   },
+
   repayments: {
-    select: { amount: true },
+    select: {
+      amount: true,
+    },
   },
 } satisfies Prisma.LoanInclude;
 
-export type LoanListRecord = Prisma.LoanGetPayload<{
-  include: typeof loanListInclude;
-}>;
+export type LoanListRecord =
+  Prisma.LoanGetPayload<{
+    include: typeof loanListInclude;
+  }>;
 
 @Injectable()
 export class LoansRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+  ) {}
 
   listForScope(input: {
     tenantId: string;
@@ -55,14 +77,36 @@ export class LoansRepository {
     return this.prisma.loan.findMany({
       where: {
         tenantId: input.tenantId,
-        ...(input.branchId ? { branchId: input.branchId } : {}),
+
+        ...(input.branchId
+          ? {
+              branchId: input.branchId,
+            }
+          : {}),
       },
+
       include: loanListInclude,
-      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }],
-      // Branch-scoped lists are complete; cross-branch owner lists stay capped.
+
+      orderBy: [
+        {
+          updatedAt: 'desc',
+        },
+        {
+          createdAt: 'desc',
+        },
+      ],
+
+      /*
+       * Branch lists should remain complete.
+       *
+       * Account-owner cross-branch lists remain bounded so a very
+       * large tenant does not accidentally request an unbounded set.
+       */
       ...(input.branchId
         ? {}
-        : { take: input.limit ?? 2_000 }),
+        : {
+            take: input.limit ?? 2_000,
+          }),
     });
   }
 }

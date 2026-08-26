@@ -11,12 +11,16 @@ import {
   Download,
   Filter,
   Funnel,
+  Loader2,
+  MessageSquare,
   Phone,
   RefreshCw,
+  Send,
   Smartphone,
   TrendingUp,
   Users,
   FileText,
+  X,
 } from "lucide-react";
 import {
   type ReactNode,
@@ -39,6 +43,7 @@ import {
 import { OwnerHeader } from "../../app/owner/owner-header";
 import { Money } from "../app/money";
 import { TableSearchField } from "../app/table-search-field";
+import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import {
   RembehBranch,
   RembehSession,
@@ -56,6 +61,27 @@ type PaymentFilter = "collectedToday" | "all" | "yesterday" | "thisWeek";
 type MethodFilter = "all" | "CASH" | "MOBILE_MONEY" | "BANK_TRANSFER" | "OTHER";
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
+
+type RepaymentSmsResult = {
+  repaymentId: string;
+  clientName: string;
+  phone: string | null;
+  sms: NonNullable<OwnerRepayment["sms"]>;
+  sent: boolean;
+  alreadySent: boolean;
+  skipped: boolean;
+  reason: string | null;
+};
+
+type RepaymentBulkSmsResult = {
+  totalCount: number;
+  sentCount: number;
+  alreadySentCount: number;
+  failedCount: number;
+  skippedCount: number;
+  results: RepaymentSmsResult[];
+  failures: RepaymentSmsResult[];
+};
 
 const FILTER_LABELS: Record<PaymentFilter, string> = {
   collectedToday: "Collected Today",
@@ -94,7 +120,9 @@ function useCollectionsSession(mode: CollectionsMode): CollectionsSession {
       }
       const role = resolveOperatorRole(auth.session, auth.user);
       if (mode === "owner" && role !== "owner") {
-        router.replace(role === "manager" ? "/collections/daily" : "/dashboard");
+        router.replace(
+          role === "manager" ? "/collections/daily" : "/dashboard",
+        );
         return;
       }
       if (mode === "manager" && role !== "manager") {
@@ -127,9 +155,17 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [smsBusyIds, setSmsBusyIds] = useState<Set<string>>(new Set());
+  const [bulkSmsOpen, setBulkSmsOpen] = useState(false);
+  const [bulkSmsBusy, setBulkSmsBusy] = useState(false);
+  const [smsFailures, setSmsFailures] = useState<RepaymentSmsResult[]>([]);
   const currency = state.workspace?.currency ?? "UGX";
+  const canSendRepaymentSms = Boolean(
+    state.session?.permissions.includes("collection.create"),
+  );
 
   const loadPayments = useCallback(async () => {
     if (!state.session) return;
@@ -149,6 +185,162 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
       setLoading(false);
     }
   }, [filter, state.session]);
+
+  const applySmsResults = useCallback((results: RepaymentSmsResult[]) => {
+    if (results.length === 0) return;
+    const smsById = new Map(
+      results.map((result) => [result.repaymentId, result.sms]),
+    );
+    setRepayments((current) =>
+      current.map((payment) => {
+        const sms = smsById.get(payment.id);
+        return sms ? { ...payment, sms } : payment;
+      }),
+    );
+  }, []);
+
+  const setBusyForIds = useCallback((ids: string[], busy: boolean) => {
+    setSmsBusyIds((current) => {
+      const next = new Set(current);
+      ids.forEach((id) => {
+        if (busy) next.add(id);
+        else next.delete(id);
+      });
+      return next;
+    });
+  }, []);
+
+  const sendRepaymentSms = useCallback(
+    async (payment: OwnerRepayment, resend = false) => {
+      if (
+        !state.session ||
+        !canSendRepaymentSms ||
+        smsBusyIds.has(payment.id)
+      ) {
+        return;
+      }
+      setBusyForIds([payment.id], true);
+      setError(null);
+      setNotice(null);
+      setSmsFailures([]);
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/collections/repayments/${payment.id}/sms`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `${state.session.tokenType} ${state.session.accessToken}`,
+              "Content-Type": "application/json",
+              "Idempotency-Key": createClientIdempotencyKey(
+                `repayment_sms_${payment.id}`,
+              ),
+            },
+            body: JSON.stringify({ resend }),
+          },
+        );
+        const payload = await readApiJson<{
+          result?: RepaymentSmsResult;
+          message?: string | string[];
+        }>(response);
+        if (!response.ok || !payload.result) {
+          throw new Error(formatApiError(payload.message));
+        }
+        applySmsResults([payload.result]);
+        if (payload.result.sent) {
+          setNotice(`SMS sent to ${payment.clientName}.`);
+        } else if (payload.result.alreadySent) {
+          setNotice(`SMS was already sent to ${payment.clientName}.`);
+        } else if (payload.result.skipped) {
+          setNotice(smsResultMessage(payload.result));
+        } else {
+          setSmsFailures([payload.result]);
+          setError(smsResultMessage(payload.result));
+        }
+      } catch (caught) {
+        setError(
+          caught instanceof Error ? caught.message : "Could not send SMS.",
+        );
+      } finally {
+        setBusyForIds([payment.id], false);
+      }
+    },
+    [
+      applySmsResults,
+      canSendRepaymentSms,
+      setBusyForIds,
+      smsBusyIds,
+      state.session,
+    ],
+  );
+
+  const sendBulkRepaymentSms = useCallback(
+    async (ids: string[], retryFailed = false) => {
+      if (!state.session || !canSendRepaymentSms || bulkSmsBusy) return;
+      const repaymentIds = [...new Set(ids)];
+      if (repaymentIds.length === 0) return;
+      setBulkSmsBusy(true);
+      setBusyForIds(repaymentIds, true);
+      setError(null);
+      setNotice(null);
+      setSmsFailures([]);
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/collections/repayments/sms/bulk`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `${state.session.tokenType} ${state.session.accessToken}`,
+              "Content-Type": "application/json",
+              "Idempotency-Key": createClientIdempotencyKey(
+                retryFailed ? "repayment_sms_bulk_retry" : "repayment_sms_bulk",
+              ),
+            },
+            body: JSON.stringify({
+              repaymentIds,
+              resendFailed: retryFailed,
+            }),
+          },
+        );
+        const payload = await readApiJson<
+          RepaymentBulkSmsResult & { message?: string | string[] }
+        >(response);
+        if (!response.ok) {
+          throw new Error(formatApiError(payload.message));
+        }
+        applySmsResults(payload.results ?? []);
+        setSmsFailures(payload.failures ?? []);
+        setBulkSmsOpen(false);
+        const sentPart = `${payload.sentCount} sent`;
+        const alreadyPart =
+          payload.alreadySentCount > 0
+            ? `, ${payload.alreadySentCount} already sent`
+            : "";
+        if (payload.failedCount > 0) {
+          setError(
+            `Some SMS messages were not sent: ${sentPart}${alreadyPart}, ${payload.failedCount} failed.`,
+          );
+        } else {
+          setNotice(`Bulk SMS finished: ${sentPart}${alreadyPart}.`);
+        }
+      } catch (caught) {
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : "Could not send bulk repayment SMS.",
+        );
+      } finally {
+        setBusyForIds(repaymentIds, false);
+        setBulkSmsBusy(false);
+      }
+    },
+    [
+      applySmsResults,
+      bulkSmsBusy,
+      canSendRepaymentSms,
+      setBusyForIds,
+      state.session,
+    ],
+  );
 
   useEffect(() => {
     const boot = window.setTimeout(() => {
@@ -201,7 +393,8 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
-  const pageStart = filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const pageStart =
+    filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const pageEnd = Math.min(currentPage * pageSize, filtered.length);
   const paged = filtered.slice(
     (currentPage - 1) * pageSize,
@@ -280,6 +473,63 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
             {error}
           </p>
         ) : null}
+        {notice ? (
+          <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-[var(--forest-emerald)]">
+            {notice}
+          </p>
+        ) : null}
+        {smsFailures.length > 0 ? (
+          <section className="rounded-[16px] border border-red-200 bg-red-50 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-red-800">SMS not sent</h2>
+                <p className="mt-1 text-xs font-medium text-red-700">
+                  Review these repayments and retry after fixing the issue.
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={bulkSmsBusy || !canSendRepaymentSms}
+                onClick={() =>
+                  void sendBulkRepaymentSms(
+                    smsFailures.map((failure) => failure.repaymentId),
+                    true,
+                  )
+                }
+                className="inline-flex h-9 items-center gap-2 rounded-xl bg-red-700 px-3 text-xs font-semibold text-white disabled:opacity-60"
+              >
+                {bulkSmsBusy ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-3.5" />
+                )}
+                Retry failed
+              </button>
+            </div>
+            <div className="mt-3 divide-y divide-red-100 overflow-hidden rounded-xl border border-red-100 bg-white">
+              {smsFailures.slice(0, 8).map((failure) => (
+                <div
+                  key={failure.repaymentId}
+                  className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs"
+                >
+                  <span className="font-semibold text-[#0b1224]">
+                    {failure.clientName}
+                  </span>
+                  <span className="font-medium text-red-700">
+                    {friendlySmsReason(
+                      failure.reason ?? failure.sms.lastFailureReason,
+                    )}
+                  </span>
+                </div>
+              ))}
+              {smsFailures.length > 8 ? (
+                <p className="px-3 py-2 text-xs font-medium text-red-700">
+                  + {smsFailures.length - 8} more not sent
+                </p>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard
@@ -287,7 +537,9 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
             tone="green"
             label="Total Payments"
             value={formatNumber(scopedPayments.length)}
-            detail={filter === "collectedToday" ? "Collected Today" : "In This List"}
+            detail={
+              filter === "collectedToday" ? "Collected Today" : "In This List"
+            }
           />
           <MetricCard
             icon={<TrendingUp className="size-4" />}
@@ -323,11 +575,26 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
             </h2>
             <button
               type="button"
+              onClick={() => setBulkSmsOpen(true)}
+              disabled={
+                !canSendRepaymentSms || bulkSmsBusy || filtered.length === 0
+              }
+              className="ml-auto inline-flex h-9 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 text-xs font-semibold text-[var(--forest-emerald)] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-100 disabled:opacity-60"
+            >
+              {bulkSmsBusy ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <MessageSquare className="size-3.5" />
+              )}
+              Bulk SMS
+            </button>
+            <button
+              type="button"
               onClick={() =>
                 void exportPayments(filtered, currency, setExporting)
               }
               disabled={exporting || filtered.length === 0}
-              className="ml-auto inline-flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8faf9] disabled:opacity-60"
+              className="inline-flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3.5 text-xs font-semibold text-[#111a2e] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-[#f8faf9] disabled:opacity-60"
             >
               <Download className="size-3.5" />
               {exporting ? "Exporting" : "Export"}
@@ -402,7 +669,7 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
             </select>
           </div>
 
-          <div className="hidden grid-cols-[1.45fr_1.05fr_1fr_0.95fr_0.9fr_0.85fr_1.05fr_42px] gap-3 border-b border-[#dfe5eb] bg-[#e8edf2] px-4 py-3 text-[10px] font-semibold text-slate-600 xl:grid">
+          <div className="hidden grid-cols-[1.35fr_1fr_0.95fr_0.85fr_0.85fr_0.8fr_1fr_0.9fr_42px] gap-3 border-b border-[#dfe5eb] bg-[#e8edf2] px-4 py-3 text-[10px] font-semibold text-slate-600 xl:grid">
             <span>Borrower</span>
             <span>Phone</span>
             <span>Loan ID</span>
@@ -413,6 +680,7 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
               Date & Time
               <ArrowUpDown className="size-3 text-slate-300" />
             </span>
+            <span>SMS</span>
             <span className="text-right"> </span>
           </div>
 
@@ -445,6 +713,9 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
                   toneIndex={index}
                   copiedId={copiedId}
                   onCopy={copyValue}
+                  canSendSms={canSendRepaymentSms}
+                  smsBusy={smsBusyIds.has(payment.id)}
+                  onSendSms={(resend) => void sendRepaymentSms(payment, resend)}
                 />
               ))
             )}
@@ -466,23 +737,25 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
               >
                 <ChevronLeft className="size-3.5" />
               </button>
-              {Array.from({ length: Math.min(totalPages, 5) }).map((_, index) => {
-                const pageNumber = index + 1;
-                return (
-                  <button
-                    key={pageNumber}
-                    type="button"
-                    onClick={() => setPage(pageNumber)}
-                    className={`grid size-8 place-items-center rounded-xl text-xs font-semibold ${
-                      currentPage === pageNumber
-                        ? "bg-[var(--forest-emerald)] text-white"
-                        : "border border-[#edf1f5] text-slate-500"
-                    }`}
-                  >
-                    {pageNumber}
-                  </button>
-                );
-              })}
+              {Array.from({ length: Math.min(totalPages, 5) }).map(
+                (_, index) => {
+                  const pageNumber = index + 1;
+                  return (
+                    <button
+                      key={pageNumber}
+                      type="button"
+                      onClick={() => setPage(pageNumber)}
+                      className={`grid size-8 place-items-center rounded-xl text-xs font-semibold ${
+                        currentPage === pageNumber
+                          ? "bg-[var(--forest-emerald)] text-white"
+                          : "border border-[#edf1f5] text-slate-500"
+                      }`}
+                    >
+                      {pageNumber}
+                    </button>
+                  );
+                },
+              )}
               <button
                 type="button"
                 className="grid size-8 place-items-center rounded-xl border border-[#edf1f5] text-slate-400 disabled:opacity-40"
@@ -509,6 +782,77 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
           </div>
         </section>
       </div>
+
+      {bulkSmsOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(8,15,31,0.36)] p-4 backdrop-blur-[2px]">
+          <button
+            type="button"
+            className="absolute inset-0"
+            aria-label="Close bulk SMS"
+            onClick={() => !bulkSmsBusy && setBulkSmsOpen(false)}
+          />
+          <div className="relative z-10 w-full max-w-md rounded-2xl border border-[#e6ebf0] bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.2)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--forest-emerald)]">
+                  Bulk SMS
+                </p>
+                <h2 className="mt-1 text-lg font-bold text-[#0b1220]">
+                  Send repayment messages
+                </h2>
+                <p className="mt-1 text-xs font-medium text-slate-500">
+                  Messages use your SMS notification settings. Already sent
+                  repayments will be skipped.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="grid size-8 place-items-center rounded-xl border border-[#e6ebf0]"
+                onClick={() => !bulkSmsBusy && setBulkSmsOpen(false)}
+                aria-label="Close"
+                disabled={bulkSmsBusy}
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            <p className="mt-4 rounded-xl border border-[#e6ebf0] bg-[#f8faf9] px-3 py-2 text-xs font-semibold text-slate-600">
+              {formatNumber(filtered.length)} repayment
+              {filtered.length === 1 ? "" : "s"} match your current filters.
+            </p>
+
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                className="h-10 flex-1 rounded-xl border border-[#e6ebf0] text-xs font-semibold"
+                disabled={bulkSmsBusy}
+                onClick={() => setBulkSmsOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-[#003f35] text-xs font-semibold text-white disabled:opacity-55"
+                disabled={
+                  bulkSmsBusy || !canSendRepaymentSms || filtered.length === 0
+                }
+                onClick={() =>
+                  void sendBulkRepaymentSms(
+                    filtered.map((payment) => payment.id),
+                  )
+                }
+              >
+                {bulkSmsBusy ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <MessageSquare className="size-3.5" />
+                )}
+                Send messages
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </AppShell>
   );
 }
@@ -519,12 +863,18 @@ function PaymentRow({
   toneIndex,
   copiedId,
   onCopy,
+  canSendSms,
+  smsBusy,
+  onSendSms,
 }: {
   payment: OwnerRepayment;
   currency: string;
   toneIndex: number;
   copiedId: string | null;
   onCopy: (key: string, value: string) => void;
+  canSendSms: boolean;
+  smsBusy: boolean;
+  onSendSms: (resend: boolean) => void;
 }) {
   const methodKey = payment.method.toUpperCase().replace(/\s+/g, "_");
   const isMobile = methodKey.includes("MOBILE");
@@ -532,9 +882,18 @@ function PaymentRow({
     payment.loanId.length > 10
       ? `${payment.loanId.slice(0, 8)}…`
       : payment.loanId;
+  const sms = payment.sms ?? emptySmsStatus();
+  const smsCanSend =
+    canSendSms &&
+    !smsBusy &&
+    sms.status !== "sent" &&
+    sms.status !== "sending" &&
+    (sms.status !== "failed" || sms.canRetry) &&
+    Boolean(payment.phone?.trim());
+  const smsActionLabel = sms.status === "failed" ? "Retry SMS" : "Send SMS";
 
   return (
-    <article className="grid gap-3 px-4 py-3.5 transition-colors hover:bg-[#eef7f2] xl:grid-cols-[1.45fr_1.05fr_1fr_0.95fr_0.9fr_0.85fr_1.05fr_42px] xl:items-center">
+    <article className="grid gap-3 px-4 py-3.5 transition-colors hover:bg-[#eef7f2] xl:grid-cols-[1.35fr_1fr_0.95fr_0.85fr_0.85fr_0.8fr_1fr_0.9fr_42px] xl:items-center">
       <div className="flex min-w-0 items-center gap-3">
         <span
           className={`grid size-10 shrink-0 place-items-center rounded-full text-xs font-semibold ${avatarTone(toneIndex)}`}
@@ -628,9 +987,31 @@ function PaymentRow({
         </p>
       </Field>
 
+      <Field label="SMS">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <RepaymentSmsBadge sms={sms} />
+          {sms.status !== "sent" ? (
+            <button
+              type="button"
+              disabled={!smsCanSend}
+              onClick={() => onSendSms(sms.status === "failed")}
+              className="inline-flex h-7 items-center gap-1 rounded-lg border border-emerald-200 bg-white px-2 text-[10px] font-bold text-[var(--forest-emerald)] transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {smsBusy || sms.status === "sending" ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Send className="size-3" />
+              )}
+              {smsBusy || sms.status === "sending" ? "Sending" : smsActionLabel}
+            </button>
+          ) : null}
+        </div>
+      </Field>
+
       <div className="flex justify-end">
         <RowActions
           label={`Actions For ${payment.clientName}`}
+          busy={smsBusy}
           items={[
             {
               label: "Copy Loan ID",
@@ -640,6 +1021,11 @@ function PaymentRow({
               label: "Copy Phone",
               onSelect: () => onCopy(`${payment.id}-phone`, payment.phone),
               disabled: !payment.phone,
+            },
+            {
+              label: smsActionLabel,
+              onSelect: () => onSendSms(sms.status === "failed"),
+              disabled: !smsCanSend || sms.status === "sent",
             },
           ]}
         />
@@ -679,7 +1065,9 @@ function MetricCard({
         <p className="mt-1 truncate text-[clamp(0.95rem,1.1vw,1.2rem)] font-semibold leading-tight tabular-nums text-[#111827]">
           {value}
         </p>
-        <p className="mt-1 text-[11px] font-semibold text-slate-500">{detail}</p>
+        <p className="mt-1 text-[11px] font-semibold text-slate-500">
+          {detail}
+        </p>
       </div>
     </article>
   );
@@ -694,6 +1082,101 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       {children}
     </div>
   );
+}
+
+function RepaymentSmsBadge({
+  sms,
+}: {
+  sms: NonNullable<OwnerRepayment["sms"]>;
+}) {
+  if (sms.status === "sent") {
+    return (
+      <span
+        className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-[var(--forest-emerald)]"
+        title={
+          sms.lastSentAt ? `Sent ${formatDateTime(sms.lastSentAt)}` : "SMS sent"
+        }
+      >
+        Sent
+      </span>
+    );
+  }
+
+  if (sms.status === "sending") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-sky-700">
+        <Loader2 className="size-2.5 animate-spin" />
+        Sending
+      </span>
+    );
+  }
+
+  if (sms.status === "failed") {
+    return (
+      <span
+        className="inline-flex rounded-full bg-red-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-red-700"
+        title={friendlySmsReason(sms.lastFailureReason)}
+      >
+        Failed
+      </span>
+    );
+  }
+
+  return (
+    <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-slate-500">
+      Not sent
+    </span>
+  );
+}
+
+function emptySmsStatus(): NonNullable<OwnerRepayment["sms"]> {
+  return {
+    status: "not_sent",
+    messageId: null,
+    lastSentAt: null,
+    lastFailureReason: null,
+    canRetry: false,
+  };
+}
+
+function smsResultMessage(result: RepaymentSmsResult) {
+  return `SMS not sent to ${result.clientName}: ${friendlySmsReason(
+    result.reason ?? result.sms.lastFailureReason,
+  )}.`;
+}
+
+function friendlySmsReason(reason?: string | null) {
+  switch (reason) {
+    case "already_sending":
+      return "a message is already being sent";
+    case "already_sent":
+      return "the message was already sent";
+    case "invalid_phone":
+    case "no_phone":
+      return "there is no valid phone number";
+    case "no_credits":
+      return "the branch has no SMS credit";
+    case "sms_setting_disabled":
+      return "repayment SMS is turned off in settings";
+    case "provider_unavailable":
+      return "the SMS service is unavailable";
+    case "provider_rejected":
+    case "provider_failed":
+    case "provider_skipped":
+      return "the SMS provider rejected the message";
+    case "provider_ambiguous":
+      return "the provider has not confirmed the message yet";
+    default:
+      return reason ? titleCase(reason.replace(/_/g, " ")) : "unknown reason";
+  }
+}
+
+function createClientIdempotencyKey(prefix: string) {
+  const random =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `${prefix}_${random}`;
 }
 
 function formatDateTime(value: string) {
@@ -711,10 +1194,7 @@ function formatDateTime(value: string) {
     .replace(",", "");
 }
 
-function rangeLabelForFilter(
-  filter: PaymentFilter,
-  rows: OwnerRepayment[],
-) {
+function rangeLabelForFilter(filter: PaymentFilter, rows: OwnerRepayment[]) {
   const format = (date: Date) =>
     new Intl.DateTimeFormat("en-GB", {
       day: "numeric",

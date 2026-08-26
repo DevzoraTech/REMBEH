@@ -93,28 +93,22 @@ export type ControlCenterReportsOverview = {
 };
 
 export type ControlCenterAuditCategory =
-  | "GENERAL"
-  | "SECURITY"
-  | "COMMERCIAL"
-  | "COMMUNICATIONS";
+  "GENERAL" | "SECURITY" | "COMMERCIAL" | "COMMUNICATIONS";
 
 export type ControlCenterAuditLog = {
   id: string;
 
   action: string;
 
-  category:
-    ControlCenterAuditCategory;
+  category: ControlCenterAuditCategory;
 
   entityType: string;
 
   entityId: string | null;
 
-  oldValue:
-    unknown | null;
+  oldValue: unknown | null;
 
-  newValue:
-    unknown | null;
+  newValue: unknown | null;
 
   admin: {
     id: string;
@@ -160,8 +154,7 @@ export type ControlCenterAuditResponse = {
     entityTypes: string[];
   };
 
-  logs:
-    ControlCenterAuditLog[];
+  logs: ControlCenterAuditLog[];
 };
 
 export type ControlCenterSettingsAdmin = {
@@ -214,9 +207,7 @@ export type ControlCenterSettings = {
 
   billing: {
     providers: Array<{
-      provider:
-        | "MTN_MOMO"
-        | "AIRTEL_MONEY";
+      provider: "MTN_MOMO" | "AIRTEL_MONEY";
       label: string;
       merchantCode: string | null;
       accountName: string | null;
@@ -249,17 +240,9 @@ export type ControlCenterDashboard = {
 };
 
 export type ControlCenterPaymentStatus =
-  | "PENDING"
-  | "COMPLETED"
-  | "FAILED"
-  | "CANCELLED"
-  | "REVERSED";
+  "PENDING" | "COMPLETED" | "FAILED" | "CANCELLED" | "REVERSED";
 
-export type ControlCenterPaymentMethod =
-  | "MTN"
-  | "AIRTEL"
-  | "OTHER"
-  | "UNKNOWN";
+export type ControlCenterPaymentMethod = "MTN" | "AIRTEL" | "OTHER" | "UNKNOWN";
 
 export type ControlCenterPaymentRecord = {
   id: string;
@@ -303,11 +286,7 @@ export type ControlCenterPaymentsResponse = {
 };
 
 export type ControlCenterSubscriptionLifecycleStatus =
-  | "ACTIVE"
-  | "EXPIRING"
-  | "EXPIRED"
-  | "LOCKED"
-  | "NO_SUBSCRIPTION";
+  "ACTIVE" | "EXPIRING" | "EXPIRED" | "LOCKED" | "NO_SUBSCRIPTION";
 
 export type ControlCenterSubscriptionRecord = {
   id: string;
@@ -333,10 +312,7 @@ export type ControlCenterSubscriptionRecord = {
   currency: string;
   effectiveAmount: number | null;
   pricingSource:
-    | "DEFAULT_PLAN"
-    | "ORGANIZATION_OVERRIDE"
-    | "BRANCH_OVERRIDE"
-    | null;
+    "DEFAULT_PLAN" | "ORGANIZATION_OVERRIDE" | "BRANCH_OVERRIDE" | null;
   priceOverrideId: string | null;
   lastUsedAt: string | null;
   subscriptionRevenue: number;
@@ -488,4 +464,59 @@ export type ControlCenterTemplate = {
   channel: "EMAIL" | "SMS";
   subject: string | null;
   body: string;
+};
+
+export type ControlCenterMarketingCampaignStatus =
+  "DRAFT" | "ACTIVE" | "PAUSED" | "ARCHIVED";
+
+export type ControlCenterMarketingCampaignAudience =
+  | "ALL_USERS"
+  | "TENANT_USERS"
+  | "BRANCH_USERS"
+  | "TENANT_OWNERS"
+  | "ROLE_USERS"
+  | "SELECTED_USERS";
+
+export type ControlCenterMarketingCampaignMediaType =
+  "NONE" | "IMAGE" | "VIDEO";
+
+export type ControlCenterMarketingCampaign = {
+  id: string;
+  title: string;
+  body: string;
+  ctaLabel: string | null;
+  ctaUrl: string | null;
+  mediaUrl: string | null;
+  mediaStorageKey: string | null;
+  mediaType: ControlCenterMarketingCampaignMediaType;
+  placement: "MOBILE_HEADER";
+  audience: ControlCenterMarketingCampaignAudience;
+  status: ControlCenterMarketingCampaignStatus;
+  tenantId: string | null;
+  branchId: string | null;
+  tenantName: string | null;
+  branchName: string | null;
+  roleNames: string[];
+  userIds: string[];
+  priority: number;
+  startsAt: string;
+  endsAt: string | null;
+  createdBy: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ControlCenterMarketingCampaignsResponse = {
+  stats: {
+    total: number;
+    active: number;
+    draft: number;
+    paused: number;
+    archived: number;
+  };
+  campaigns: ControlCenterMarketingCampaign[];
 };

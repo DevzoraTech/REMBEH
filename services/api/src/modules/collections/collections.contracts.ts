@@ -38,6 +38,39 @@ export type RepaymentListItemContract = {
   /** Presigned GET for the recording agent's profile selfie. */
   agentPhotoUrl: string | null;
   agentPhotoStorageKey: string | null;
+  sms: RepaymentSmsStatusContract;
+};
+
+export type RepaymentSmsStatusValue =
+  'not_sent' | 'sending' | 'sent' | 'failed';
+
+export type RepaymentSmsStatusContract = {
+  status: RepaymentSmsStatusValue;
+  messageId: string | null;
+  lastSentAt: string | null;
+  lastFailureReason: string | null;
+  canRetry: boolean;
+};
+
+export type RepaymentSmsSendResultContract = {
+  repaymentId: string;
+  clientName: string;
+  phone: string | null;
+  sms: RepaymentSmsStatusContract;
+  sent: boolean;
+  alreadySent: boolean;
+  skipped: boolean;
+  reason: string | null;
+};
+
+export type RepaymentBulkSmsResultContract = {
+  totalCount: number;
+  sentCount: number;
+  alreadySentCount: number;
+  failedCount: number;
+  skippedCount: number;
+  results: RepaymentSmsSendResultContract[];
+  failures: RepaymentSmsSendResultContract[];
 };
 
 export type PaymentHistoryItemContract = {
@@ -142,6 +175,7 @@ export type DailyAgentPaymentItemContract = {
   method: string;
   note: string | null;
   paidAt: string;
+  sms: RepaymentSmsStatusContract;
 };
 
 export type DailyAgentSummaryContract = {

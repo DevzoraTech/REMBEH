@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
+import '../features/marketing/domain/models/mobile_marketing_campaign.dart';
 import '../models/agent_day_status.dart';
 import '../utils/account_access.dart';
 import '../utils/friendly_errors.dart';
@@ -916,6 +917,27 @@ class ApiClient {
         if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
       },
     );
+  }
+
+  Future<MobileMarketingCampaign?> getMobileHeaderCampaign(
+    RembehSession session,
+  ) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/marketing/mobile-header');
+    final response = await http.get(uri, headers: _authHeaders(session));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+
+    final campaign = body['campaign'];
+    if (campaign is Map<String, dynamic>) {
+      final parsed = MobileMarketingCampaign.fromJson(campaign);
+      if (parsed.id.isEmpty || parsed.title.isEmpty || parsed.isExpired) {
+        return null;
+      }
+      return parsed;
+    }
+    return null;
   }
 
   Future<Map<String, dynamic>> createCustomer({

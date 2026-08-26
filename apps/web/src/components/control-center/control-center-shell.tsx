@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   LogOut,
   Mail,
+  Megaphone,
   Menu,
   Settings,
   Tag,
@@ -31,6 +32,7 @@ export type ControlCenterSection =
   | "payments"
   | "pricing"
   | "communications"
+  | "marketing"
   | "reports"
   | "users"
   | "audit"
@@ -75,6 +77,11 @@ const secondaryNav: NavItem[] = [
     id: "communications",
     label: "Communications",
     icon: Mail,
+  },
+  {
+    id: "marketing",
+    label: "Marketing",
+    icon: Megaphone,
   },
   {
     id: "reports",

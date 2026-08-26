@@ -17,6 +17,9 @@ import '../features/operations/presentation/screens/day_reconciliation_screen.da
 import '../features/operations/presentation/screens/expenses_screen.dart';
 import '../features/operations/presentation/screens/operations_tab.dart';
 import '../features/operations/presentation/report/screens/daily_report_screen.dart';
+import '../features/marketing/data/mobile_marketing_campaign_store.dart';
+import '../features/marketing/domain/models/mobile_marketing_campaign.dart';
+import '../features/marketing/presentation/sheets/mobile_marketing_campaign_sheet.dart';
 import '../features/repayment/data/repayments_live_store.dart';
 import '../features/salaries/presentation/screens/salaries_screen.dart';
 import '../features/shortages/presentation/screens/shortages_screen.dart';
@@ -63,6 +66,8 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   final NetworkStatusStore _network = NetworkStatusStore.instance;
 
   late final ApiClient _api = ApiClient(_store);
+  late final MobileMarketingCampaignStore _marketingStore =
+      MobileMarketingCampaignStore(api: _api);
   late final SyncService _syncService = SyncService(
     AuthService(sessionStore: _store),
     rembehApiBaseUrl,
@@ -72,6 +77,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
   Map<String, dynamic>? _data;
   Map<String, dynamic>? _collectionSummary;
+  MobileMarketingCampaign? _marketingCampaign;
 
   List<Map<String, dynamic>> _agents = const [];
   List<Map<String, dynamic>> _customers = const [];
@@ -395,6 +401,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         _showingCachedData = false;
       });
 
+      unawaited(_loadMarketingCampaign());
       unawaited(_loadManagementData());
     } catch (error) {
       final message = friendlyErrorMessage(error);
@@ -424,6 +431,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
               'Could not refresh online data. Showing last synced branch data.';
         });
 
+        unawaited(_loadMarketingCampaign(onlineOnly: false));
         unawaited(_loadManagementData());
         unawaited(_refreshFreshDataInBackground());
         return;
@@ -567,6 +575,29 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     });
   }
 
+  Future<void> _loadMarketingCampaign({bool onlineOnly = true}) async {
+    final cached = await _marketingStore.readCached(widget.session);
+    if (!onlineOnly && cached != null && mounted) {
+      setState(() {
+        _marketingCampaign = cached;
+      });
+    }
+
+    try {
+      final campaign = await _marketingStore.fetchLatest(widget.session);
+      if (!mounted) return;
+      setState(() {
+        _marketingCampaign = campaign;
+      });
+    } catch (_) {
+      if (cached != null && mounted) {
+        setState(() {
+          _marketingCampaign = cached;
+        });
+      }
+    }
+  }
+
   String _managerCacheKey(String name, {String? date}) {
     final scopeDate = date == null ? '' : '.$date';
     return 'manager.$_cacheTenantId.$_cacheBranchId$scopeDate.$name';
@@ -645,6 +676,12 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       shortages: _mapListPayload(payloads[4]),
       summary: _mapPayload(payloads[5]),
     );
+  }
+
+  void _openMarketingCampaign() {
+    final campaign = _marketingCampaign;
+    if (campaign == null) return;
+    unawaited(showMobileMarketingCampaignSheet(context, campaign));
   }
 
   // ===========================================================================
@@ -2041,6 +2078,8 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
                 loading: _loading,
                 onRefresh: _load,
                 onSignOut: _signOut,
+                marketingCampaign: _marketingCampaign,
+                onMarketingTap: _openMarketingCampaign,
               ),
 
               if (_notice != null)

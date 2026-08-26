@@ -27,10 +27,20 @@ import {
 import { ControlCenterSendMessageDto } from './dto/control-center-message.dto';
 import { ControlCenterSavePricingDto } from './dto/control-center-pricing.dto';
 import { ControlCenterUpdateUserStatusDto } from './dto/control-center-users.dto';
+import { MarketingService } from '../marketing/marketing.service';
+import {
+  MarketingCampaignDto,
+  MarketingCampaignStatusDto,
+  MarketingMediaPresignDto,
+  UpdateMarketingCampaignDto,
+} from '../marketing/dto/marketing-campaign.dto';
 
 @Controller('control-center')
 export class ControlCenterController {
-  constructor(private readonly controlCenterService: ControlCenterService) {}
+  constructor(
+    private readonly controlCenterService: ControlCenterService,
+    private readonly marketingService: MarketingService,
+  ) {}
 
   @Get('auth/status')
   authStatus(@Query('email') email?: string) {
@@ -211,5 +221,57 @@ export class ControlCenterController {
     @Body() body: ControlCenterSendMessageDto,
   ) {
     return this.controlCenterService.sendMessage(admin, body);
+  }
+
+  @Get('marketing-campaigns')
+  @UseGuards(ControlCenterAuthGuard)
+  marketingCampaigns() {
+    return this.marketingService.listControlCenterCampaigns();
+  }
+
+  @Post('marketing-campaigns/media/presign')
+  @UseGuards(ControlCenterAuthGuard)
+  presignMarketingMedia(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Body() body: MarketingMediaPresignDto,
+  ) {
+    return this.marketingService.presignControlCenterMedia(admin, body);
+  }
+
+  @Post('marketing-campaigns')
+  @UseGuards(ControlCenterAuthGuard)
+  createMarketingCampaign(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Body() body: MarketingCampaignDto,
+  ) {
+    return this.marketingService.createControlCenterCampaign(admin, body);
+  }
+
+  @Patch('marketing-campaigns/:campaignId')
+  @UseGuards(ControlCenterAuthGuard)
+  updateMarketingCampaign(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Param('campaignId') campaignId: string,
+    @Body() body: UpdateMarketingCampaignDto,
+  ) {
+    return this.marketingService.updateControlCenterCampaign(
+      admin,
+      campaignId,
+      body,
+    );
+  }
+
+  @Patch('marketing-campaigns/:campaignId/status')
+  @UseGuards(ControlCenterAuthGuard)
+  updateMarketingCampaignStatus(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Param('campaignId') campaignId: string,
+    @Body() body: MarketingCampaignStatusDto,
+  ) {
+    return this.marketingService.updateControlCenterCampaignStatus(
+      admin,
+      campaignId,
+      body,
+    );
   }
 }

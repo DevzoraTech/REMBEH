@@ -103,7 +103,13 @@ export class LoansService {
     const periodDays =
       durationDays != null && durationDays > 0 ? durationDays : 1;
 
-    // Contractual total = flat principal×rate% + fee (current product rule).
+    /*
+     * Contractual borrower debt:
+     * principal + interest.
+     *
+     * Processing fee is separate income and does not form part
+     * of the loan balance or instalment.
+     */
     // Prefer that when the wallet snapshot is missing interest (principal-only)
     // or still on the legacy days/365 formula.
     const priced = computeLoanPricing({
@@ -126,6 +132,7 @@ export class LoansService {
       principalAmount: principal,
       interestRatePercent,
       durationDays: periodDays,
+      repaymentFrequency: loan.application?.repaymentFrequency ?? 'DAILY',
       processingFee,
       balance,
       recordedPaidAmount: paidAmount,
@@ -136,13 +143,10 @@ export class LoansService {
     // Match collections: original repayable + applied fines.
     const totalRepayable = this.roundMoney(baseRepayable + finesTotal);
     const expectedInterest = this.roundMoney(
-      Math.max(0, baseRepayable - principal - processingFee),
+      Math.max(0, baseRepayable - principal),
     );
 
-    const dueDate =
-      paymentStartDate && durationDays != null
-        ? this.addDays(paymentStartDate, durationDays)
-        : new Date(schedule.maturityDate);
+    const dueDate = new Date(schedule.maturityDate);
 
     const overdueDays = this.scheduleOverdueDays({
       balance,
@@ -150,6 +154,8 @@ export class LoansService {
       dailyInstalment: schedule.dailyInstalment,
       daysElapsed: schedule.daysElapsed,
       periodDays: schedule.loanPeriodDays,
+      nextDueIsToday: schedule.nextDueIsToday,
+      nextDueLabel: schedule.nextDueLabel,
     });
 
     const nextDueDate = this.resolveNextDueDate({
@@ -190,6 +196,7 @@ export class LoansService {
       branchId: loan.branchId,
       paymentStartDate: paymentStartDate?.toISOString() ?? null,
       durationDays,
+      repaymentFrequency: loan.application?.repaymentFrequency ?? 'DAILY',
       dueDate: dueDate.toISOString(),
       createdAt: loan.createdAt.toISOString(),
       disbursedAt: loan.disbursedAt?.toISOString() ?? null,
@@ -211,23 +218,75 @@ export class LoansService {
     return null;
   }
 
+  private calendarDaysBetween(from: Date, to: Date) {
+    const left = Date.UTC(from.getFullYear(), from.getMonth(), from.getDate());
+
+    const right = Date.UTC(to.getFullYear(), to.getMonth(), to.getDate());
+
+    return Math.max(0, Math.floor((right - left) / 86_400_000));
+  }
+
   private scheduleOverdueDays(input: {
     balance: number;
     paidAmount: number;
     dailyInstalment: number;
     daysElapsed: number;
     periodDays: number;
+    nextDueIsToday: boolean;
+    nextDueLabel: string;
   }) {
-    if (input.balance <= 0 || input.dailyInstalment <= 0) return 0;
-    const expectedDays = Math.min(
+    if (input.balance <= 0 || input.dailyInstalment <= 0) {
+      return 0;
+    }
+
+    /*
+     * daysElapsed means the number of repayment-calendar dates
+     * that have become due INCLUDING today.
+     *
+     * Example:
+     *
+     * repayment starts 27 Aug
+     *
+     * on 27 Aug:
+     *   daysElapsed = 1
+     *
+     * But that first instalment is merely DUE TODAY.
+     * It is not overdue yet.
+     */
+    const scheduledDaysReached = Math.min(
       input.periodDays,
       Math.max(0, input.daysElapsed),
     );
+
+    if (scheduledDaysReached <= 0) {
+      return 0;
+    }
+
     const coveredDays = Math.min(
-      expectedDays,
+      scheduledDaysReached,
       Math.floor(Math.max(0, input.paidAmount) / input.dailyInstalment),
     );
-    return Math.max(0, expectedDays - coveredDays);
+
+    /*
+     * Today's scheduled instalment must not be counted as overdue.
+     *
+     * Therefore:
+     *
+     * DUE TODAY:
+     * missed historical days =
+     * scheduled days reached - paid days - today's day
+     *
+     * OVERDUE:
+     * there is no current on-time instalment to protect,
+     * so all uncovered scheduled days are overdue.
+     */
+    const currentDueDayAllowance =
+      input.nextDueIsToday && input.nextDueLabel === 'Due today' ? 1 : 0;
+
+    return Math.max(
+      0,
+      scheduledDaysReached - coveredDays - currentDueDayAllowance,
+    );
   }
 
   private resolveNextDueDate(input: {

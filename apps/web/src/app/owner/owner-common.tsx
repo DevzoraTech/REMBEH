@@ -167,6 +167,13 @@ export type OwnerRepayment = {
   recordedAt: string;
   method: string;
   recordedByName: string;
+  sms?: {
+    status: "not_sent" | "sending" | "sent" | "failed";
+    messageId: string | null;
+    lastSentAt: string | null;
+    lastFailureReason: string | null;
+    canRetry: boolean;
+  };
 };
 
 export type OwnerReport = {

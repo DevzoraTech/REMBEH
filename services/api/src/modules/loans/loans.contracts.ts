@@ -1,54 +1,235 @@
+export type LoanRepaymentFrequencyContract =
+  | 'DAILY'
+  | 'WEEKLY'
+  | 'BIWEEKLY'
+  | 'MONTHLY'
+  | 'LUMP_SUM';
+
 export type LoanListItemContract = {
   id: string;
-  applicationId: string | null;
+
+  applicationId:
+    | string
+    | null;
+
   customerId: string;
+
   borrowerName: string;
+
   phone: string;
-  nationalId: string | null;
-  loanTypeName: string | null;
+
+  nationalId:
+    | string
+    | null;
+
+  loanTypeName:
+    | string
+    | null;
+
   status: string;
-  principal: number;
-  balance: number;
-  paidAmount: number;
-  /** Submit-time principal + interest + fee (excludes later fines). */
-  openingBalance: number | null;
-  /** Sum of applied overdue fines (included in balance). */
-  finesTotal: number;
+
   /**
-   * Full obligation: openingBalance + finesTotal
-   * (falls back to balance + paidAmount when opening is missing).
+   * Amount actually advanced to the borrower.
+   */
+  principal: number;
+
+  /**
+   * Current borrower debt outstanding.
+   *
+   * Includes:
+   * - principal
+   * - contractual interest
+   * - applied fines where applicable
+   *
+   * Excludes:
+   * - processing fee
+   */
+  balance: number;
+
+  /**
+   * Sum of actual loan repayments recorded.
+   *
+   * Processing-fee receipts are not loan repayments.
+   */
+  paidAmount: number;
+
+  /**
+   * Submit-time contractual borrower debt snapshot:
+   *
+   * principal + contractual interest
+   *
+   * Excludes:
+   * - processing fee
+   * - subsequently applied fines
+   */
+  openingBalance:
+    | number
+    | null;
+
+  /**
+   * Sum of applied overdue fines.
+   *
+   * These are included in the current loan balance once applied.
+   */
+  finesTotal: number;
+
+  /**
+   * Current total borrower obligation:
+   *
+   * contractual debt + applied fines.
+   *
+   * Processing fee is excluded.
+   *
+   * Falls back to balance + paidAmount where the opening
+   * snapshot is unavailable.
    */
   totalRepayable: number;
-  /** Interest portion of opening balance (excludes processing fee). */
+
+  /**
+   * Contractual interest portion of the original borrower debt.
+   *
+   * Processing fee is excluded.
+   */
   expectedInterest: number;
+
+  /**
+   * Separate fee collected by the business.
+   *
+   * This does not form part of borrower debt.
+   */
   processingFee: number;
+
+  /**
+   * Scheduled amount payable per repayment occurrence.
+   *
+   * For DAILY this is the daily instalment.
+   * For WEEKLY this is the weekly instalment.
+   * For BIWEEKLY this is the biweekly instalment.
+   * For MONTHLY this is the monthly instalment.
+   * For LUMP_SUM this represents the contractual lump-sum due amount.
+   *
+   * Field name retained for API compatibility.
+   */
   installmentAmount: number;
-  /** Missed repayment days on the daily schedule (0 when current/paid). */
+
+  /**
+   * Number of contractual repayment occurrences currently missed.
+   *
+   * This must follow repaymentFrequency rather than assuming
+   * every loan has a daily schedule.
+   *
+   * Zero means the borrower is not currently in arrears.
+   */
   overdueDays: number;
+
+  /**
+   * Human-readable schedule state.
+   *
+   * Examples:
+   * - Due today
+   * - Due in 1 day
+   * - Due in 7 days
+   * - Overdue
+   * - Paid up
+   */
   nextDueLabel: string;
+
+  /**
+   * True only where a contractual repayment is actually due today.
+   *
+   * Before paymentStartDate this must be false.
+   */
   nextDueIsToday: boolean;
-  /** Next installment calendar date (ISO), or null when paid/closed. */
-  nextDueDate: string | null;
+
+  /**
+   * Next contractual repayment date in ISO format.
+   *
+   * Null when the loan has been paid/closed.
+   */
+  nextDueDate:
+    | string
+    | null;
+
   currency: string;
-  officerName: string | null;
-  officerPublicId: string | null;
+
+  officerName:
+    | string
+    | null;
+
+  officerPublicId:
+    | string
+    | null;
+
   branchId: string;
-  paymentStartDate: string | null;
-  durationDays: number | null;
-  /** Maturity date (payment start + duration). */
-  dueDate: string | null;
+
+  /**
+   * First contractual repayment date.
+   *
+   * This is generated from the product's payment-start policy:
+   * SAME_DAY, NEXT_DAY or AFTER_N_DAYS.
+   */
+  paymentStartDate:
+    | string
+    | null;
+
+  /**
+   * Contractual term represented in calendar days.
+   */
+  durationDays:
+    | number
+    | null;
+
+  /**
+   * Contractual repayment frequency captured from the
+   * loan product template at application time.
+   */
+  repaymentFrequency:
+    LoanRepaymentFrequencyContract;
+
+  /**
+   * Final contractual repayment date.
+   *
+   * The central collection schedule engine is the source of truth
+   * for this value.
+   */
+  dueDate:
+    | string
+    | null;
+
   createdAt: string;
-  disbursedAt: string | null;
+
+  disbursedAt:
+    | string
+    | null;
+
   updatedAt: string;
+
   reminder: {
-    status: 'sent' | 'not_sent' | 'queued' | 'sending' | 'failed';
-    lastSentAt: string | null;
-    lastFailureReason: string | null;
-    canResend: boolean;
-    activeBatchId: string | null;
+    status:
+      | 'sent'
+      | 'not_sent'
+      | 'queued'
+      | 'sending'
+      | 'failed';
+
+    lastSentAt:
+      | string
+      | null;
+
+    lastFailureReason:
+      | string
+      | null;
+
+    canResend:
+      boolean;
+
+    activeBatchId:
+      | string
+      | null;
   };
 };
 
 export type LoanListResponseContract = {
-  loans: LoanListItemContract[];
+  loans:
+    LoanListItemContract[];
 };

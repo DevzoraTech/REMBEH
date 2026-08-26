@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   ParseUUIDPipe,
   Post,
@@ -16,6 +17,10 @@ import { PermissionsGuard } from '../../common/auth/permissions.guard';
 import { COLLECTION_PERMISSIONS } from './collections.permissions';
 import { CollectionsService } from './collections.service';
 import { RecordRepaymentDto } from './dto/record-repayment.dto';
+import {
+  BulkRepaymentSmsDto,
+  SendRepaymentSmsDto,
+} from './dto/repayment-sms.dto';
 
 @Controller('collections')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -69,6 +74,36 @@ export class CollectionsController {
     @Param('repaymentId', ParseUUIDPipe) repaymentId: string,
   ) {
     return this.collectionsService.getRepaymentDetail(user, repaymentId);
+  }
+
+  @Post('repayments/sms/bulk')
+  @RequirePermissions(COLLECTION_PERMISSIONS.create)
+  sendBulkRepaymentSms(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: BulkRepaymentSmsDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    return this.collectionsService.sendBulkRepaymentSms(
+      user,
+      dto,
+      idempotencyKey,
+    );
+  }
+
+  @Post('repayments/:repaymentId/sms')
+  @RequirePermissions(COLLECTION_PERMISSIONS.create)
+  sendRepaymentSms(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('repaymentId', ParseUUIDPipe) repaymentId: string,
+    @Body() dto: SendRepaymentSmsDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
+  ) {
+    return this.collectionsService.sendRepaymentSms(
+      user,
+      repaymentId,
+      dto,
+      idempotencyKey,
+    );
   }
 
   @Get('clients/search')

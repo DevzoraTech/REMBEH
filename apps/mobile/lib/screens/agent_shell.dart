@@ -3,9 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../features/agent_day/data/agent_day_status_store.dart';
+import '../features/marketing/data/mobile_marketing_campaign_store.dart';
+import '../features/marketing/domain/models/mobile_marketing_campaign.dart';
+import '../features/marketing/presentation/sheets/mobile_marketing_campaign_sheet.dart';
 import '../models/agent_day_status.dart';
 import '../models/field_records.dart';
 import '../features/repayment/data/repayments_live_store.dart';
+import '../services/api_client.dart';
 import '../services/network_status_store.dart';
 import '../services/offline_cache_store.dart';
 import '../services/session_cleanup.dart';
@@ -38,7 +42,11 @@ class _AgentShellState extends State<AgentShell> {
   final _dayStore = AgentDayStatusStore.instance;
   final _network = NetworkStatusStore.instance;
   final _offline = OfflineCacheStore.instance;
+  final _sessionStore = SessionStore();
+  late final MobileMarketingCampaignStore _marketingStore =
+      MobileMarketingCampaignStore(api: ApiClient(_sessionStore));
   DateTime? _cacheSyncedAt;
+  MobileMarketingCampaign? _marketingCampaign;
   Timer? _cacheRefreshTimer;
   bool _cacheRefreshInFlight = false;
   late final SessionActivityController _activity;
@@ -47,7 +55,7 @@ class _AgentShellState extends State<AgentShell> {
   void initState() {
     super.initState();
     _activity = SessionActivityController(
-      sessionStore: SessionStore(),
+      sessionStore: _sessionStore,
       onSessionCleared: _handleSessionCleared,
       onAccountBlocked: _handleAccountBlocked,
     );
@@ -69,6 +77,7 @@ class _AgentShellState extends State<AgentShell> {
   Future<void> _startNetworkAndCacheRefresh() async {
     await _network.start();
     await _loadCacheSyncedAt();
+    await _loadMarketingCampaign(preferCached: true);
     if (_network.isOnline) {
       await _refreshCaches();
     }
@@ -99,6 +108,8 @@ class _AgentShellState extends State<AgentShell> {
     setState(() {});
     if (_network.isOnline) {
       // ignore: discarded_futures
+      _loadMarketingCampaign();
+      // ignore: discarded_futures
       _refreshCaches();
     }
   }
@@ -120,6 +131,7 @@ class _AgentShellState extends State<AgentShell> {
 
       await _dayStore.refresh();
       await RepaymentsLiveStore.instance.refresh();
+      await _loadMarketingCampaign();
 
       final status = _dayStore.status;
       if (status != null) {
@@ -186,6 +198,35 @@ class _AgentShellState extends State<AgentShell> {
       MaterialPageRoute(builder: (_) => const LoginScreen()),
       (_) => false,
     );
+  }
+
+  Future<void> _loadMarketingCampaign({bool preferCached = false}) async {
+    final cached = await _marketingStore.readCached(widget.session);
+    if (preferCached && cached != null && mounted) {
+      setState(() {
+        _marketingCampaign = cached;
+      });
+    }
+
+    try {
+      final campaign = await _marketingStore.fetchLatest(widget.session);
+      if (!mounted) return;
+      setState(() {
+        _marketingCampaign = campaign;
+      });
+    } catch (_) {
+      if (cached != null && mounted) {
+        setState(() {
+          _marketingCampaign = cached;
+        });
+      }
+    }
+  }
+
+  void _openMarketingCampaign() {
+    final campaign = _marketingCampaign;
+    if (campaign == null) return;
+    unawaited(showMobileMarketingCampaignSheet(context, campaign));
   }
 
   Future<void> _handleAccountBlocked(String message) async {
@@ -424,6 +465,8 @@ class _AgentShellState extends State<AgentShell> {
                     onOpenProfile: _openProfile,
                     onOpenSearch: () => _openSearch(autofocus: true),
                     onOpenRecords: _openRecords,
+                    marketingCampaign: _marketingCampaign,
+                    onMarketingTap: _openMarketingCampaign,
                   ),
                   RecordsTab(
                     session: widget.session,

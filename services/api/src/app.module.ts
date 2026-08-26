@@ -15,6 +15,7 @@ import { IdentityVerificationModule } from './modules/identity-verification/iden
 import { LoanApplicationsModule } from './modules/loan-applications/loan-applications.module';
 import { LoansModule } from './modules/loans/loans.module';
 import { LoanProductsModule } from './modules/loan-products/loan-products.module';
+import { MarketingModule } from './modules/marketing/marketing.module';
 import { OperationsModule } from './modules/operations/operations.module';
 import { CashShortagesModule } from './modules/cash-shortages/cash-shortages.module';
 import { AppUpdateModule } from './modules/app-update/app-update.module';
@@ -53,6 +54,7 @@ import { SyncModule } from './modules/sync/sync.module';
     LoanApplicationsModule,
     LoansModule,
     LoanProductsModule,
+    MarketingModule,
     OperationsModule,
     CashShortagesModule,
     SalariesModule,

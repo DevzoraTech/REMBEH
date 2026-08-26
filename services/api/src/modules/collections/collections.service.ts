@@ -5,7 +5,13 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { LoanStatus, Prisma, RepaymentMethod } from '@prisma/client';
+import {
+  LoanStatus,
+  Prisma,
+  RepaymentMethod,
+  SmsMessageStatus,
+} from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { PrismaService } from '../../database/prisma.service';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
@@ -31,9 +37,12 @@ import {
   DailyAgentSummaryContract,
   DailyCollectionsSummaryContract,
   DueClientContract,
+  RepaymentBulkSmsResultContract,
   RecordRepaymentResponseContract,
   RepaymentDetailContract,
   RepaymentListItemContract,
+  RepaymentSmsSendResultContract,
+  RepaymentSmsStatusContract,
 } from './collections.contracts';
 import {
   CollectionsRepository,
@@ -41,6 +50,40 @@ import {
   activeLoanStatuses,
 } from './collections.repository';
 import { RecordRepaymentDto } from './dto/record-repayment.dto';
+import {
+  BulkRepaymentSmsDto,
+  SendRepaymentSmsDto,
+} from './dto/repayment-sms.dto';
+
+const PAYMENT_CONFIRMATION_PURPOSE = 'payment_confirmation';
+const PAYMENT_CONFIRMATION_TRIGGER = 'repayment_recorded';
+
+const ACCEPTED_SMS_STATUSES = new Set<SmsMessageStatus>([
+  SmsMessageStatus.PROVIDER_ACCEPTED,
+  SmsMessageStatus.SENT,
+]);
+
+const ACTIVE_SMS_STATUSES = new Set<SmsMessageStatus>([
+  SmsMessageStatus.PENDING_VALIDATION,
+  SmsMessageStatus.RESERVED,
+  SmsMessageStatus.PROVIDER_UNCERTAIN,
+]);
+
+const RETRYABLE_PAYMENT_SMS_STATUSES = new Set<SmsMessageStatus>([
+  SmsMessageStatus.FAILED_INSUFFICIENT_CREDITS,
+  SmsMessageStatus.BLOCKED_PROVIDER_UNAVAILABLE,
+  SmsMessageStatus.PROVIDER_FAILED,
+  SmsMessageStatus.RELEASED,
+]);
+
+type RepaymentSmsMessageRecord = {
+  id: string;
+  triggerReferenceId: string | null;
+  status: SmsMessageStatus;
+  failureReason: string | null;
+  sentAt: Date | null;
+  createdAt: Date;
+};
 
 @Injectable()
 export class CollectionsService {
@@ -60,15 +103,24 @@ export class CollectionsService {
     user: AuthenticatedUser,
   ): Promise<{ summary: CollectionSummaryContract }> {
     this.assertBranchAccess(user);
+
     const scope = this.scope(user);
+
     const now = new Date();
-    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    const dayStart = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
+
     const dayEnd = new Date(dayStart);
     dayEnd.setDate(dayEnd.getDate() + 1);
     dayEnd.setMilliseconds(dayEnd.getMilliseconds() - 1);
 
     const [loans, todayAgg] = await Promise.all([
       this.repository.listActiveLoans(scope),
+
       this.repository.sumRepaymentsToday({
         ...scope,
         dayStart,
@@ -79,21 +131,32 @@ export class CollectionsService {
     const dueCandidates = await Promise.all(
       loans.map((loan) => this.toDueClient(loan, now)),
     );
+
     const clientsDueToday = dueCandidates
       .filter(
-        (item): item is DueClientContract => item != null && item.amountDue > 0,
+        (item): item is DueClientContract =>
+          item != null && item.amountDue > 0,
       )
       .sort(
         (a, b) =>
           new Date(b.lastActivityAt).getTime() -
           new Date(a.lastActivityAt).getTime(),
       );
+
     return {
       summary: {
-        amountCollectedToday: this.decimalToNumber(todayAgg._sum.amount) ?? 0,
-        repaymentsTodayCount: todayAgg._count._all,
-        dueTodayCount: clientsDueToday.length,
-        pendingSyncCount: 0,
+        amountCollectedToday:
+          this.decimalToNumber(todayAgg._sum.amount) ?? 0,
+
+        repaymentsTodayCount:
+          todayAgg._count._all,
+
+        dueTodayCount:
+          clientsDueToday.length,
+
+        pendingSyncCount:
+          0,
+
         clientsDueToday,
       },
     };
@@ -102,8 +165,13 @@ export class CollectionsService {
   async listDueToday(
     user: AuthenticatedUser,
   ): Promise<{ clients: DueClientContract[] }> {
-    const { summary } = await this.getSummary(user);
-    return { clients: summary.clientsDueToday };
+    const { summary } =
+      await this.getSummary(user);
+
+    return {
+      clients:
+        summary.clientsDueToday,
+    };
   }
 
   async listRepayments(
@@ -111,57 +179,149 @@ export class CollectionsService {
     filter?: string,
   ): Promise<{ repayments: RepaymentListItemContract[] }> {
     this.assertBranchAccess(user);
-    const scope = this.scope(user);
-    const range = this.filterToRange(filter);
-    const rows = await this.repository.listRepayments({
-      ...scope,
-      from: range?.from,
-      to: range?.to,
-    });
 
-    const repayments = await Promise.all(
-      rows.map(async (row) => {
-        const loan = row.loan;
-        const detail = await this.buildDetail(loan);
-        const agentPhotoStorageKey =
-          row.recordedBy.profilePhotoStorageKey ?? null;
-        return {
-          id: row.id,
-          loanId: row.loanId,
-          customerId: loan.customerId,
-          clientName: loan.customer.fullName,
-          phone: loan.customer.phone,
-          amount: this.decimalToNumber(row.amount) ?? 0,
-          amountPaid: detail.paidAmount,
-          loanAmount: detail.loanAmount,
-          recordedAt: row.paidAt.toISOString(),
-          synced: true,
-          dueToday: detail.nextDueIsToday,
-          note: row.note,
-          method: row.method,
-          recordedByName: row.recordedBy.displayName,
-          recordedByPublicId: row.recordedBy.publicId ?? null,
-          agentPhotoUrl: await this.presignPhotoUrl(agentPhotoStorageKey),
-          agentPhotoStorageKey,
-        } satisfies RepaymentListItemContract;
-      }),
-    );
+    const scope =
+      this.scope(user);
 
-    if (filter === 'dueToday') {
-      return {
-        repayments: repayments.filter((item) => item.dueToday),
-      };
-    }
-    if (filter === 'collectedToday') {
-      const now = new Date();
-      return {
-        repayments: repayments.filter((item) =>
-          this.sameDay(new Date(item.recordedAt), now),
+    const range =
+      this.filterToRange(filter);
+
+    const rows =
+      await this.repository.listRepayments({
+        ...scope,
+        from: range?.from,
+        to: range?.to,
+      });
+
+    const smsByRepayment =
+      await this.summarizeRepaymentSms(
+        user.tenantId!,
+        rows.map(
+          (row) => row.id,
         ),
+      );
+
+    const repayments =
+      await Promise.all(
+        rows.map(async (row) => {
+          const loan =
+            row.loan;
+
+          const detail =
+            await this.buildDetail(
+              loan,
+            );
+
+          const agentPhotoStorageKey =
+            row.recordedBy
+              .profilePhotoStorageKey ??
+            null;
+
+          return {
+            id:
+              row.id,
+
+            loanId:
+              row.loanId,
+
+            customerId:
+              loan.customerId,
+
+            clientName:
+              loan.customer
+                .fullName,
+
+            phone:
+              loan.customer.phone,
+
+            amount:
+              this.decimalToNumber(
+                row.amount,
+              ) ?? 0,
+
+            amountPaid:
+              detail.paidAmount,
+
+            loanAmount:
+              detail.loanAmount,
+
+            recordedAt:
+              row.paidAt.toISOString(),
+
+            synced:
+              true,
+
+            dueToday:
+              detail.nextDueIsToday,
+
+            note:
+              row.note,
+
+            method:
+              row.method,
+
+            recordedByName:
+              row.recordedBy
+                .displayName,
+
+            recordedByPublicId:
+              row.recordedBy
+                .publicId ??
+              null,
+
+            agentPhotoUrl:
+              await this.presignPhotoUrl(
+                agentPhotoStorageKey,
+              ),
+
+            agentPhotoStorageKey,
+
+            sms:
+              smsByRepayment.get(
+                row.id,
+              ) ??
+              this.emptyRepaymentSmsStatus(),
+          } satisfies RepaymentListItemContract;
+        }),
+      );
+
+    if (
+      filter ===
+      'dueToday'
+    ) {
+      return {
+        repayments:
+          repayments.filter(
+            (item) =>
+              item.dueToday,
+          ),
       };
     }
 
-    return { repayments };
+    if (
+      filter ===
+      'collectedToday'
+    ) {
+      const now =
+        new Date();
+
+      return {
+        repayments:
+          repayments.filter(
+            (item) =>
+              this.sameDay(
+                new Date(
+                  item.recordedAt,
+                ),
+                now,
+              ),
+          ),
+      };
+    }
+
+    return {
+      repayments,
+    };
   }
 
   async searchClients(
@@ -169,109 +329,372 @@ export class CollectionsService {
     query: string,
   ): Promise<{ clients: ClientLoanDetailContract[] }> {
     this.assertBranchAccess(user);
+
     if (!user.tenantId?.trim()) {
-      throw new ForbiddenException('Tenant scope is required.');
+      throw new ForbiddenException(
+        'Tenant scope is required.',
+      );
     }
-    const q = query.trim();
+
+    const q =
+      query.trim();
+
     if (q.length < 1) {
-      return { clients: [] };
+      return {
+        clients: [],
+      };
     }
-    const scope = this.scope(user);
-    const loans = await this.repository.searchLoans({
-      ...scope,
-      query: q,
-    });
-    // Preserve repository phone-first ranking (do not re-sort by payment date).
-    const clients = await Promise.all(
-      loans.map((loan) => this.buildDetail(loan)),
-    );
-    return { clients };
+
+    const scope =
+      this.scope(user);
+
+    const loans =
+      await this.repository.searchLoans({
+        ...scope,
+        query: q,
+      });
+
+    /*
+     * Preserve repository phone-first ranking.
+     */
+    const clients =
+      await Promise.all(
+        loans.map((loan) =>
+          this.buildDetail(loan),
+        ),
+      );
+
+    return {
+      clients,
+    };
   }
 
-  async offlineSnapshot(user: AuthenticatedUser): Promise<{
+  async offlineSnapshot(
+    user: AuthenticatedUser,
+  ): Promise<{
     cachedAt: string;
+
     clients: Array<{
       loanId: string;
       customerId: string;
       fullName: string;
       phone: string;
       nationalId: string | null;
+
       outstanding: number;
       loanAmount: number;
+
       registeredBy: string;
+
       expectedToday: number;
       paidAmount: number;
+
       isFined: boolean;
       finesTotal: number;
+
       nextDueLabel: string;
       nextDueIsToday: boolean;
+
       daysLeft: number;
       loanPeriodDays: number;
+
       interestRatePercent: number;
+
       loanStartDate: string;
       maturityDate: string | null;
     }>;
   }> {
-    this.assertBranchAccess(user);
-    if (!user.tenantId?.trim()) {
-      throw new ForbiddenException('Tenant scope is required.');
+    this.assertBranchAccess(
+      user,
+    );
+
+    if (
+      !user.tenantId?.trim()
+    ) {
+      throw new ForbiddenException(
+        'Tenant scope is required.',
+      );
     }
-    const scope = this.scope(user);
-    const loans = await this.repository.listActiveLoansForOffline(scope);
-    const clients = loans.map((loan) => {
-      const outstanding = this.decimalToNumber(loan.balance) ?? 0;
-      const principal =
-        this.decimalToNumber(loan.application?.principalAmount) ??
-        this.decimalToNumber(loan.principal) ??
-        0;
-      const finesTotal =
-        this.decimalToNumber(loan.finesTotal) ??
-        this.decimalToNumber(loan.wallet?.finesTotal) ??
-        0;
-      const durationDays = loan.application?.durationDays ?? 0;
-      const startDate =
-        loan.paymentStartDate ??
-        loan.application?.paymentStartDate ??
-        loan.disbursedAt ??
-        loan.createdAt;
-      const maturityMs =
-        durationDays > 0
-          ? startDate.getTime() + durationDays * 24 * 60 * 60 * 1000
-          : null;
-      const daysLeft =
-        maturityMs == null
-          ? 0
-          : Math.max(
+
+    const scope =
+      this.scope(user);
+
+    const loans =
+      await this.repository
+        .listActiveLoansForOffline(
+          scope,
+        );
+
+    const clients =
+      loans.map((loan) => {
+        // =====================================================================
+        // BASE LOAN VALUES
+        // =====================================================================
+
+        const principal =
+          this.decimalToNumber(
+            loan.application
+              ?.principalAmount,
+          ) ??
+          this.decimalToNumber(
+            loan.principal,
+          ) ??
+          0;
+
+        const balance =
+          this.decimalToNumber(
+            loan.balance,
+          ) ??
+          0;
+
+        const interestRatePercent =
+          this.decimalToNumber(
+            loan.application
+              ?.interestRatePercent,
+          ) ??
+          0;
+
+        const processingFee =
+          this.decimalToNumber(
+            loan.application
+              ?.processingFee,
+          ) ??
+          0;
+
+        const finesTotal =
+          this.decimalToNumber(
+            loan.finesTotal,
+          ) ??
+          this.decimalToNumber(
+            loan.wallet
+              ?.finesTotal,
+          ) ??
+          0;
+
+        const durationDays =
+          loan.application
+            ?.durationDays ??
+          1;
+
+        const periodDays =
+          durationDays > 0
+            ? durationDays
+            : 1;
+
+        const repaymentFrequency =
+          loan.application
+            ?.repaymentFrequency ??
+          'DAILY';
+
+        // =====================================================================
+        // CONTRACTUAL REPAYMENT START
+        // =====================================================================
+
+        /*
+         * This is the first contractual repayment date.
+         *
+         * NEXT_DAY / AFTER_N_DAYS must remain respected.
+         */
+        const repaymentStartDate =
+          loan.paymentStartDate ??
+          loan.application
+            ?.paymentStartDate ??
+          loan.disbursedAt ??
+          loan.createdAt;
+
+        // =====================================================================
+        // PRICING
+        // =====================================================================
+
+        /*
+         * Processing fee remains independent fee income.
+         *
+         * pricing.totalRepayable must therefore represent:
+         *
+         * principal + contractual interest.
+         */
+        const pricing =
+          computeLoanPricing({
+            principalAmount:
+              principal,
+
+            interestRatePercent,
+
+            durationDays:
+              periodDays,
+
+            processingFee,
+          });
+
+        // =====================================================================
+        // CONTRACTUAL OPENING DEBT
+        // =====================================================================
+
+        const openingBalance =
+          this.decimalToNumber(
+            loan.wallet
+              ?.openingBalance,
+          );
+
+        const baseRepayable =
+          resolveBaseRepayable({
+            openingBalance,
+
+            pricedTotal:
+              pricing.totalRepayable,
+
+            principal,
+
+            balance,
+
+            finesTotal,
+          });
+
+        /*
+         * Offline snapshot does not load repayment rows.
+         *
+         * Current balance may include fines, so remove that effect
+         * when deriving contractual paid amount.
+         */
+        const contractualPaid =
+          this.roundMoney(
+            Math.max(
               0,
-              Math.ceil((maturityMs - Date.now()) / (1000 * 60 * 60 * 24)),
-            );
-      return {
-        loanId: loan.id,
-        customerId: loan.customerId,
-        fullName: loan.customer.fullName,
-        phone: loan.customer.phone,
-        nationalId: loan.customer.nationalId ?? null,
-        outstanding,
-        loanAmount: principal,
-        registeredBy:
-          loan.application?.officer?.displayName ?? 'Branch officer',
-        expectedToday: outstanding > 0 ? Math.min(outstanding, principal) : 0,
-        paidAmount: 0,
-        isFined: loan.isFined || (loan.wallet?.isFined ?? false),
-        finesTotal,
-        nextDueLabel: daysLeft === 0 ? 'Due' : `${daysLeft}d left`,
-        nextDueIsToday: daysLeft === 0,
-        daysLeft,
-        loanPeriodDays: durationDays,
-        interestRatePercent:
-          this.decimalToNumber(loan.application?.interestRatePercent) ?? 0,
-        loanStartDate: startDate.toISOString(),
-        maturityDate:
-          maturityMs == null ? null : new Date(maturityMs).toISOString(),
-      };
-    });
+
+              baseRepayable +
+                finesTotal -
+                balance,
+            ),
+          );
+
+        // =====================================================================
+        // SCHEDULE
+        // =====================================================================
+
+        const schedule =
+          computeCollectionSchedule({
+            principalAmount:
+              principal,
+
+            interestRatePercent,
+
+            durationDays:
+              periodDays,
+
+            repaymentFrequency,
+
+            processingFee,
+
+            balance,
+
+            recordedPaidAmount:
+              contractualPaid,
+
+            /*
+             * principal + interest only.
+             */
+            totalRepayableOverride:
+              baseRepayable,
+
+            /*
+             * First contractual repayment date.
+             */
+            startDate:
+              repaymentStartDate,
+          });
+
+        // =====================================================================
+        // OUTPUT
+        // =====================================================================
+
+        return {
+          loanId:
+            loan.id,
+
+          customerId:
+            loan.customerId,
+
+          fullName:
+            loan.customer
+              .fullName,
+
+          phone:
+            loan.customer
+              .phone,
+
+          nationalId:
+            loan.customer
+              .nationalId ??
+            null,
+
+          outstanding:
+            schedule.outstanding,
+
+          /*
+           * Borrower's current obligation.
+           *
+           * Processing fee excluded.
+           */
+          loanAmount:
+            this.roundMoney(
+              baseRepayable +
+                finesTotal,
+            ),
+
+          registeredBy:
+            loan.application
+              ?.officer
+              ?.displayName ??
+            'Branch officer',
+
+          expectedToday:
+            schedule.expectedToday,
+
+          paidAmount:
+            schedule.paidAmount,
+
+          isFined:
+            loan.isFined ||
+            (
+              loan.wallet
+                ?.isFined ??
+              false
+            ),
+
+          finesTotal,
+
+          nextDueLabel:
+            schedule.nextDueLabel,
+
+          nextDueIsToday:
+            schedule.nextDueIsToday,
+
+          daysLeft:
+            schedule.daysLeft,
+
+          loanPeriodDays:
+            schedule.loanPeriodDays,
+
+          interestRatePercent,
+
+          /*
+           * Compatibility field.
+           *
+           * Represents first repayment date.
+           */
+          loanStartDate:
+            schedule.loanStartDate,
+
+          maturityDate:
+            schedule.maturityDate,
+        };
+      });
+
     return {
-      cachedAt: new Date().toISOString(),
+      cachedAt:
+        new Date()
+          .toISOString(),
+
       clients,
     };
   }
@@ -280,61 +703,163 @@ export class CollectionsService {
     user: AuthenticatedUser,
     loanId: string,
   ): Promise<{ detail: ClientLoanDetailContract }> {
-    this.assertBranchAccess(user);
-    const loan = await this.repository.findLoanById({
-      ...this.scope(user),
-      loanId,
-    });
+    this.assertBranchAccess(
+      user,
+    );
+
+    const loan =
+      await this.repository.findLoanById({
+        ...this.scope(user),
+        loanId,
+      });
+
     if (!loan) {
-      throw new NotFoundException('Loan not found.');
+      throw new NotFoundException(
+        'Loan not found.',
+      );
     }
-    return { detail: await this.buildDetail(loan) };
+
+    return {
+      detail:
+        await this.buildDetail(
+          loan,
+        ),
+    };
   }
 
   async getRepaymentDetail(
     user: AuthenticatedUser,
     repaymentId: string,
   ): Promise<{ repayment: RepaymentDetailContract }> {
-    this.assertBranchAccess(user);
-    const row = await this.repository.findRepaymentById({
-      ...this.scope(user),
-      repaymentId,
-    });
+    this.assertBranchAccess(
+      user,
+    );
+
+    const row =
+      await this.repository.findRepaymentById({
+        ...this.scope(user),
+        repaymentId,
+      });
+
     if (!row) {
-      throw new NotFoundException('Payment not found.');
+      throw new NotFoundException(
+        'Payment not found.',
+      );
     }
 
-    const loan = row.loan;
-    const detail = await this.buildDetail(loan);
-    const agentPhotoStorageKey = row.recordedBy.profilePhotoStorageKey ?? null;
+    const loan =
+      row.loan;
+
+    const detail =
+      await this.buildDetail(
+        loan,
+      );
+
+    const agentPhotoStorageKey =
+      row.recordedBy
+        .profilePhotoStorageKey ??
+      null;
+
+    const smsByRepayment =
+      await this.summarizeRepaymentSms(
+        user.tenantId!,
+        [
+          row.id,
+        ],
+      );
 
     return {
       repayment: {
-        id: row.id,
-        loanId: row.loanId,
-        customerId: loan.customerId,
-        clientName: loan.customer.fullName,
-        phone: loan.customer.phone,
-        amount: this.decimalToNumber(row.amount) ?? 0,
-        amountPaid: detail.paidAmount,
-        loanAmount: detail.loanAmount,
-        recordedAt: row.paidAt.toISOString(),
-        synced: true,
-        dueToday: detail.nextDueIsToday,
-        note: row.note,
-        method: row.method,
-        recordedByName: row.recordedBy.displayName,
-        recordedByPublicId: row.recordedBy.publicId ?? null,
-        agentPhotoUrl: await this.presignPhotoUrl(agentPhotoStorageKey),
+        id:
+          row.id,
+
+        loanId:
+          row.loanId,
+
+        customerId:
+          loan.customerId,
+
+        clientName:
+          loan.customer
+            .fullName,
+
+        phone:
+          loan.customer
+            .phone,
+
+        amount:
+          this.decimalToNumber(
+            row.amount,
+          ) ?? 0,
+
+        amountPaid:
+          detail.paidAmount,
+
+        loanAmount:
+          detail.loanAmount,
+
+        recordedAt:
+          row.paidAt
+            .toISOString(),
+
+        synced:
+          true,
+
+        dueToday:
+          detail.nextDueIsToday,
+
+        note:
+          row.note,
+
+        method:
+          row.method,
+
+        recordedByName:
+          row.recordedBy
+            .displayName,
+
+        recordedByPublicId:
+          row.recordedBy
+            .publicId ??
+          null,
+
+        agentPhotoUrl:
+          await this.presignPhotoUrl(
+            agentPhotoStorageKey,
+          ),
+
         agentPhotoStorageKey,
-        companyName: row.tenant.name,
-        branchName: row.branch?.name ?? null,
-        branchId: row.branchId,
-        currency: loan.currency,
-        loanOutstanding: detail.outstanding,
-        loanStatus: detail.status,
-        isFined: detail.isFined,
-        finesTotal: detail.finesTotal,
+
+        sms:
+          smsByRepayment.get(
+            row.id,
+          ) ??
+          this.emptyRepaymentSmsStatus(),
+
+        companyName:
+          row.tenant.name,
+
+        branchName:
+          row.branch?.name ??
+          null,
+
+        branchId:
+          row.branchId,
+
+        currency:
+          loan.currency,
+
+        loanOutstanding:
+          detail.outstanding,
+
+        loanStatus:
+          detail.status,
+
+        isFined:
+          detail.isFined,
+
+        finesTotal:
+          detail.finesTotal,
       },
     };
   }
@@ -343,163 +868,388 @@ export class CollectionsService {
     user: AuthenticatedUser,
     date?: string,
   ): Promise<{ summary: DailyCollectionsSummaryContract }> {
-    this.assertBranchAccess(user);
-    const scope = this.scope(user);
-    const { dayStart, dayEnd, dateLabel } = this.parseDayBounds(date);
-
-    const [agents, applications, repayments] = await Promise.all([
-      this.repository.listFieldAgents(scope),
-      this.repository.listApplicationsSubmittedForDay({
-        ...scope,
-        dayStart,
-        dayEnd,
-      }),
-      this.repository.listRepaymentsForDay({
-        ...scope,
-        dayStart,
-        dayEnd,
-      }),
-    ]);
-
-    const agentMap = new Map<
-      string,
-      {
-        agentId: string;
-        agentName: string;
-        agentPublicId: string | null;
-        photoKey: string | null;
-        roleName: string | null;
-        branchId: string | null;
-        branchName: string | null;
-        applicationsCount: number;
-        principalLent: number;
-        paymentsCount: number;
-        amountCollected: number;
-      }
-    >();
-
-    for (const agent of agents) {
-      agentMap.set(agent.id, {
-        agentId: agent.id,
-        agentName: agent.displayName,
-        agentPublicId: agent.publicId ?? null,
-        photoKey: agent.profilePhotoStorageKey ?? null,
-        roleName: agent.roles[0]?.role.name ?? null,
-        branchId: agent.branchId,
-        branchName: agent.branch?.name ?? null,
-        applicationsCount: 0,
-        principalLent: 0,
-        paymentsCount: 0,
-        amountCollected: 0,
-      });
-    }
-
-    for (const app of applications) {
-      const existing = agentMap.get(app.officerUserId);
-      const principal = this.decimalToNumber(app.principalAmount) ?? 0;
-      if (existing) {
-        existing.applicationsCount += 1;
-        existing.principalLent = this.roundMoney(
-          existing.principalLent + principal,
-        );
-      } else {
-        agentMap.set(app.officerUserId, {
-          agentId: app.officerUserId,
-          agentName: app.officer.displayName,
-          agentPublicId: app.officer.publicId ?? null,
-          photoKey: app.officer.profilePhotoStorageKey ?? null,
-          roleName: null,
-          branchId: app.branchId,
-          branchName: app.branch?.name ?? null,
-          applicationsCount: 1,
-          principalLent: principal,
-          paymentsCount: 0,
-          amountCollected: 0,
-        });
-      }
-    }
-
-    for (const payment of repayments) {
-      const amount = this.decimalToNumber(payment.amount) ?? 0;
-      const existing = agentMap.get(payment.recordedByUserId);
-      if (existing) {
-        existing.paymentsCount += 1;
-        existing.amountCollected = this.roundMoney(
-          existing.amountCollected + amount,
-        );
-      } else {
-        agentMap.set(payment.recordedByUserId, {
-          agentId: payment.recordedByUserId,
-          agentName: payment.recordedBy.displayName,
-          agentPublicId: payment.recordedBy.publicId ?? null,
-          photoKey: payment.recordedBy.profilePhotoStorageKey ?? null,
-          roleName: null,
-          branchId: payment.branchId,
-          branchName: null,
-          applicationsCount: 0,
-          principalLent: 0,
-          paymentsCount: 1,
-          amountCollected: amount,
-        });
-      }
-    }
-
-    const summaries = await Promise.all(
-      [...agentMap.values()].map(async (row) => {
-        const agentPhotoUrl = await this.presignPhotoUrl(row.photoKey);
-        return {
-          agentId: row.agentId,
-          agentName: row.agentName,
-          agentPublicId: row.agentPublicId,
-          agentPhotoUrl,
-          roleName: row.roleName,
-          branchId: row.branchId,
-          branchName: row.branchName,
-          applicationsCount: row.applicationsCount,
-          principalLent: row.principalLent,
-          paymentsCount: row.paymentsCount,
-          amountCollected: row.amountCollected,
-          netCash: this.roundMoney(row.amountCollected - row.principalLent),
-        } satisfies DailyAgentSummaryContract;
-      }),
+    this.assertBranchAccess(
+      user,
     );
 
-    summaries.sort((a, b) => {
-      const activity =
-        b.paymentsCount +
-        b.applicationsCount -
-        (a.paymentsCount + a.applicationsCount);
-      if (activity !== 0) return activity;
-      return a.agentName.localeCompare(b.agentName);
-    });
+    const scope =
+      this.scope(user);
 
-    const totals = summaries.reduce(
-      (acc, row) => ({
-        applicationsCount: acc.applicationsCount + row.applicationsCount,
-        principalLent: this.roundMoney(acc.principalLent + row.principalLent),
-        paymentsCount: acc.paymentsCount + row.paymentsCount,
-        amountCollected: this.roundMoney(
-          acc.amountCollected + row.amountCollected,
+    const {
+      dayStart,
+      dayEnd,
+      dateLabel,
+    } =
+      this.parseDayBounds(
+        date,
+      );
+
+    const [
+      agents,
+      applications,
+      repayments,
+    ] =
+      await Promise.all([
+        this.repository
+          .listFieldAgents(
+            scope,
+          ),
+
+        this.repository
+          .listApplicationsSubmittedForDay({
+            ...scope,
+            dayStart,
+            dayEnd,
+          }),
+
+        this.repository
+          .listRepaymentsForDay({
+            ...scope,
+            dayStart,
+            dayEnd,
+          }),
+      ]);
+
+    const agentMap =
+      new Map<
+        string,
+        {
+          agentId: string;
+          agentName: string;
+          agentPublicId: string | null;
+          photoKey: string | null;
+          roleName: string | null;
+          branchId: string | null;
+          branchName: string | null;
+          applicationsCount: number;
+          principalLent: number;
+          paymentsCount: number;
+          amountCollected: number;
+        }
+      >();
+
+    for (
+      const agent of
+      agents
+    ) {
+      agentMap.set(
+        agent.id,
+        {
+          agentId:
+            agent.id,
+
+          agentName:
+            agent.displayName,
+
+          agentPublicId:
+            agent.publicId ??
+            null,
+
+          photoKey:
+            agent.profilePhotoStorageKey ??
+            null,
+
+          roleName:
+            agent.roles[0]
+              ?.role.name ??
+            null,
+
+          branchId:
+            agent.branchId,
+
+          branchName:
+            agent.branch?.name ??
+            null,
+
+          applicationsCount:
+            0,
+
+          principalLent:
+            0,
+
+          paymentsCount:
+            0,
+
+          amountCollected:
+            0,
+        },
+      );
+    }
+
+    for (
+      const app of
+      applications
+    ) {
+      const existing =
+        agentMap.get(
+          app.officerUserId,
+        );
+
+      const principal =
+        this.decimalToNumber(
+          app.principalAmount,
+        ) ?? 0;
+
+      if (existing) {
+        existing.applicationsCount +=
+          1;
+
+        existing.principalLent =
+          this.roundMoney(
+            existing.principalLent +
+              principal,
+          );
+      } else {
+        agentMap.set(
+          app.officerUserId,
+          {
+            agentId:
+              app.officerUserId,
+
+            agentName:
+              app.officer
+                .displayName,
+
+            agentPublicId:
+              app.officer
+                .publicId ??
+              null,
+
+            photoKey:
+              app.officer
+                .profilePhotoStorageKey ??
+              null,
+
+            roleName:
+              null,
+
+            branchId:
+              app.branchId,
+
+            branchName:
+              app.branch?.name ??
+              null,
+
+            applicationsCount:
+              1,
+
+            principalLent:
+              principal,
+
+            paymentsCount:
+              0,
+
+            amountCollected:
+              0,
+          },
+        );
+      }
+    }
+
+    for (
+      const payment of
+      repayments
+    ) {
+      const amount =
+        this.decimalToNumber(
+          payment.amount,
+        ) ?? 0;
+
+      const existing =
+        agentMap.get(
+          payment.recordedByUserId,
+        );
+
+      if (existing) {
+        existing.paymentsCount +=
+          1;
+
+        existing.amountCollected =
+          this.roundMoney(
+            existing.amountCollected +
+              amount,
+          );
+      } else {
+        agentMap.set(
+          payment.recordedByUserId,
+          {
+            agentId:
+              payment.recordedByUserId,
+
+            agentName:
+              payment.recordedBy
+                .displayName,
+
+            agentPublicId:
+              payment.recordedBy
+                .publicId ??
+              null,
+
+            photoKey:
+              payment.recordedBy
+                .profilePhotoStorageKey ??
+              null,
+
+            roleName:
+              null,
+
+            branchId:
+              payment.branchId,
+
+            branchName:
+              null,
+
+            applicationsCount:
+              0,
+
+            principalLent:
+              0,
+
+            paymentsCount:
+              1,
+
+            amountCollected:
+              amount,
+          },
+        );
+      }
+    }
+
+    const summaries =
+      await Promise.all(
+        [
+          ...agentMap.values(),
+        ].map(
+          async (row) => {
+            const agentPhotoUrl =
+              await this.presignPhotoUrl(
+                row.photoKey,
+              );
+
+            return {
+              agentId:
+                row.agentId,
+
+              agentName:
+                row.agentName,
+
+              agentPublicId:
+                row.agentPublicId,
+
+              agentPhotoUrl,
+
+              roleName:
+                row.roleName,
+
+              branchId:
+                row.branchId,
+
+              branchName:
+                row.branchName,
+
+              applicationsCount:
+                row.applicationsCount,
+
+              principalLent:
+                row.principalLent,
+
+              paymentsCount:
+                row.paymentsCount,
+
+              amountCollected:
+                row.amountCollected,
+
+              netCash:
+                this.roundMoney(
+                  row.amountCollected -
+                    row.principalLent,
+                ),
+            } satisfies DailyAgentSummaryContract;
+          },
         ),
-        netCash: 0,
-      }),
-      {
-        applicationsCount: 0,
-        principalLent: 0,
-        paymentsCount: 0,
-        amountCollected: 0,
-        netCash: 0,
+      );
+
+    summaries.sort(
+      (a, b) => {
+        const activity =
+          b.paymentsCount +
+          b.applicationsCount -
+          (
+            a.paymentsCount +
+            a.applicationsCount
+          );
+
+        if (activity !== 0) {
+          return activity;
+        }
+
+        return a.agentName.localeCompare(
+          b.agentName,
+        );
       },
     );
-    totals.netCash = this.roundMoney(
-      totals.amountCollected - totals.principalLent,
-    );
+
+    const totals =
+      summaries.reduce(
+        (acc, row) => ({
+          applicationsCount:
+            acc.applicationsCount +
+            row.applicationsCount,
+
+          principalLent:
+            this.roundMoney(
+              acc.principalLent +
+                row.principalLent,
+            ),
+
+          paymentsCount:
+            acc.paymentsCount +
+            row.paymentsCount,
+
+          amountCollected:
+            this.roundMoney(
+              acc.amountCollected +
+                row.amountCollected,
+            ),
+
+          netCash:
+            0,
+        }),
+        {
+          applicationsCount:
+            0,
+
+          principalLent:
+            0,
+
+          paymentsCount:
+            0,
+
+          amountCollected:
+            0,
+
+          netCash:
+            0,
+        },
+      );
+
+    totals.netCash =
+      this.roundMoney(
+        totals.amountCollected -
+          totals.principalLent,
+      );
 
     return {
       summary: {
-        date: dateLabel,
-        timezoneNote: 'Day bounds use the API server local calendar.',
-        agents: summaries,
+        date:
+          dateLabel,
+
+        timezoneNote:
+          'Day bounds use the API server local calendar.',
+
+        agents:
+          summaries,
+
         totals,
       },
     };
@@ -510,91 +1260,238 @@ export class CollectionsService {
     agentId: string,
     date?: string,
   ): Promise<{ detail: DailyAgentDetailContract }> {
-    this.assertBranchAccess(user);
-    const scope = this.scope(user);
-    const { dayStart, dayEnd, dateLabel } = this.parseDayBounds(date);
+    this.assertBranchAccess(
+      user,
+    );
 
-    const agent = await this.repository.findFieldAgentById({
-      ...scope,
-      agentId,
-    });
+    const scope =
+      this.scope(user);
+
+    const {
+      dayStart,
+      dayEnd,
+      dateLabel,
+    } =
+      this.parseDayBounds(
+        date,
+      );
+
+    const agent =
+      await this.repository.findFieldAgentById({
+        ...scope,
+        agentId,
+      });
+
     if (!agent) {
-      throw new NotFoundException('Agent not found.');
+      throw new NotFoundException(
+        'Agent not found.',
+      );
     }
 
-    const [applications, repayments] = await Promise.all([
-      this.repository.listApplicationsSubmittedForDay({
-        ...scope,
-        dayStart,
-        dayEnd,
-        officerUserId: agentId,
-      }),
-      this.repository.listRepaymentsForDay({
-        ...scope,
-        dayStart,
-        dayEnd,
-        recordedByUserId: agentId,
-      }),
-    ]);
+    const [
+      applications,
+      repayments,
+    ] =
+      await Promise.all([
+        this.repository
+          .listApplicationsSubmittedForDay({
+            ...scope,
+            dayStart,
+            dayEnd,
+            officerUserId:
+              agentId,
+          }),
 
-    const principalLent = this.roundMoney(
-      applications.reduce(
-        (sum, app) => sum + (this.decimalToNumber(app.principalAmount) ?? 0),
-        0,
-      ),
-    );
-    const amountCollected = this.roundMoney(
-      repayments.reduce(
-        (sum, row) => sum + (this.decimalToNumber(row.amount) ?? 0),
-        0,
-      ),
-    );
+        this.repository
+          .listRepaymentsForDay({
+            ...scope,
+            dayStart,
+            dayEnd,
+            recordedByUserId:
+              agentId,
+          }),
+      ]);
+
+    const smsByRepayment =
+      await this.summarizeRepaymentSms(
+        user.tenantId!,
+        repayments.map(
+          (row) => row.id,
+        ),
+      );
+
+    const principalLent =
+      this.roundMoney(
+        applications.reduce(
+          (sum, app) =>
+            sum +
+            (
+              this.decimalToNumber(
+                app.principalAmount,
+              ) ??
+              0
+            ),
+          0,
+        ),
+      );
+
+    const amountCollected =
+      this.roundMoney(
+        repayments.reduce(
+          (sum, row) =>
+            sum +
+            (
+              this.decimalToNumber(
+                row.amount,
+              ) ??
+              0
+            ),
+          0,
+        ),
+      );
 
     const summary: DailyAgentSummaryContract = {
-      agentId: agent.id,
-      agentName: agent.displayName,
-      agentPublicId: agent.publicId ?? null,
-      agentPhotoUrl: await this.presignPhotoUrl(
-        agent.profilePhotoStorageKey ?? null,
-      ),
-      roleName: agent.roles[0]?.role.name ?? null,
-      branchId: agent.branchId,
-      branchName: agent.branch?.name ?? null,
-      applicationsCount: applications.length,
+      agentId:
+        agent.id,
+
+      agentName:
+        agent.displayName,
+
+      agentPublicId:
+        agent.publicId ??
+        null,
+
+      agentPhotoUrl:
+        await this.presignPhotoUrl(
+          agent.profilePhotoStorageKey ??
+            null,
+        ),
+
+      roleName:
+        agent.roles[0]
+          ?.role.name ??
+        null,
+
+      branchId:
+        agent.branchId,
+
+      branchName:
+        agent.branch?.name ??
+        null,
+
+      applicationsCount:
+        applications.length,
+
       principalLent,
-      paymentsCount: repayments.length,
+
+      paymentsCount:
+        repayments.length,
+
       amountCollected,
-      netCash: this.roundMoney(amountCollected - principalLent),
+
+      netCash:
+        this.roundMoney(
+          amountCollected -
+            principalLent,
+        ),
     };
 
     return {
       detail: {
-        date: dateLabel,
-        agent: summary,
-        applications: applications.map((app) => ({
-          id: app.id,
-          customerId: app.customerId ?? app.customer?.id ?? null,
-          clientName:
-            app.customer?.fullName ||
-            [app.surname, app.givenNames].filter(Boolean).join(' ') ||
-            'Client',
-          phone: app.phone,
-          principalAmount: this.decimalToNumber(app.principalAmount) ?? 0,
-          status: app.status,
-          submittedAt: (app.submittedAt ?? app.createdAt).toISOString(),
-          loanId: app.loanId,
-        })),
-        payments: repayments.map((row) => ({
-          id: row.id,
-          loanId: row.loanId,
-          customerId: row.loan.customer.id,
-          clientName: row.loan.customer.fullName,
-          phone: row.loan.customer.phone,
-          amount: this.decimalToNumber(row.amount) ?? 0,
-          method: row.method,
-          note: row.note,
-          paidAt: row.paidAt.toISOString(),
-        })),
+        date:
+          dateLabel,
+
+        agent:
+          summary,
+
+        applications:
+          applications.map(
+            (app) => ({
+              id:
+                app.id,
+
+              customerId:
+                app.customerId ??
+                app.customer?.id ??
+                null,
+
+              clientName:
+                app.customer
+                  ?.fullName ||
+                [
+                  app.surname,
+                  app.givenNames,
+                ]
+                  .filter(Boolean)
+                  .join(' ') ||
+                'Client',
+
+              phone:
+                app.phone,
+
+              principalAmount:
+                this.decimalToNumber(
+                  app.principalAmount,
+                ) ?? 0,
+
+              status:
+                app.status,
+
+              submittedAt:
+                (
+                  app.submittedAt ??
+                  app.createdAt
+                ).toISOString(),
+
+              loanId:
+                app.loanId,
+            }),
+          ),
+
+        payments:
+          repayments.map(
+            (row) => ({
+              id:
+                row.id,
+
+              loanId:
+                row.loanId,
+
+              customerId:
+                row.loan
+                  .customer.id,
+
+              clientName:
+                row.loan
+                  .customer
+                  .fullName,
+
+              phone:
+                row.loan
+                  .customer.phone,
+
+              amount:
+                this.decimalToNumber(
+                  row.amount,
+                ) ?? 0,
+
+              method:
+                row.method,
+
+              note:
+                row.note,
+
+              paidAt:
+                row.paidAt
+                  .toISOString(),
+
+              sms:
+                smsByRepayment.get(
+                  row.id,
+                ) ??
+                this.emptyRepaymentSmsStatus(),
+            }),
+          ),
       },
     };
   }
@@ -603,356 +1500,1668 @@ export class CollectionsService {
     user: AuthenticatedUser,
     dto: RecordRepaymentDto,
   ): Promise<RecordRepaymentResponseContract> {
-    this.assertBranchAccess(user);
+    this.assertBranchAccess(
+      user,
+    );
+
     if (!user.branchId) {
       throw new ForbiddenException(
         'A branch assignment is required to record repayments.',
       );
     }
-    await this.billingService.assertBranchSubscriptionActive(
-      user.tenantId,
-      user.branchId,
-    );
 
-    const loan = await this.repository.findLoanById({
-      ...this.scope(user),
-      loanId: dto.loanId,
-    });
+    await this.billingService
+      .assertBranchSubscriptionActive(
+        user.tenantId,
+        user.branchId,
+      );
+
+    const loan =
+      await this.repository.findLoanById({
+        ...this.scope(user),
+        loanId:
+          dto.loanId,
+      });
+
     if (!loan) {
-      throw new NotFoundException('Loan not found.');
-    }
-    if (!activeLoanStatuses.includes(loan.status)) {
-      throw new BadRequestException('This loan cannot accept repayments.');
+      throw new NotFoundException(
+        'Loan not found.',
+      );
     }
 
-    const amount = this.roundMoney(dto.amount);
-    const balance = this.decimalToNumber(loan.balance) ?? 0;
-    if (amount <= 0) {
-      throw new BadRequestException('Amount must be greater than zero.');
+    if (
+      !activeLoanStatuses.includes(
+        loan.status,
+      )
+    ) {
+      throw new BadRequestException(
+        'This loan cannot accept repayments.',
+      );
     }
-    if (amount > balance + 0.001) {
+
+    const amount =
+      this.roundMoney(
+        dto.amount,
+      );
+
+    const balance =
+      this.decimalToNumber(
+        loan.balance,
+      ) ?? 0;
+
+    if (amount <= 0) {
+      throw new BadRequestException(
+        'Amount must be greater than zero.',
+      );
+    }
+
+    if (
+      amount >
+      balance + 0.001
+    ) {
       throw new BadRequestException(
         `Amount exceeds outstanding balance of ${balance}.`,
       );
     }
 
-    const pricing = this.loanPricing(loan);
-    const totals = loan.repayments.reduce(
-      (acc, item) => ({
-        fees: acc.fees + (this.decimalToNumber(item.feesAllocated) ?? 0),
-        interest:
-          acc.interest + (this.decimalToNumber(item.interestAllocated) ?? 0),
-        principal:
-          acc.principal + (this.decimalToNumber(item.principalAllocated) ?? 0),
-      }),
-      { fees: 0, interest: 0, principal: 0 },
-    );
+    const pricing =
+      this.loanPricing(
+        loan,
+      );
 
-    const finesTotal = this.decimalToNumber(loan.finesTotal) ?? 0;
-    // Fines are collected in the fees bucket ahead of interest / principal.
-    const allocation = allocateRepayment({
-      amount,
-      remainingFees: Math.max(
-        0,
-        pricing.processingFee + finesTotal - totals.fees,
-      ),
-      remainingInterest: Math.max(0, pricing.interestAmount - totals.interest),
-      remainingPrincipal: Math.max(
-        0,
-        pricing.principalAmount - totals.principal,
-      ),
-    });
+    const totals =
+      loan.repayments.reduce(
+        (acc, item) => ({
+          fees:
+            acc.fees +
+            (
+              this.decimalToNumber(
+                item.feesAllocated,
+              ) ??
+              0
+            ),
 
-    const nextBalance = this.roundMoney(Math.max(0, balance - amount));
+          interest:
+            acc.interest +
+            (
+              this.decimalToNumber(
+                item.interestAllocated,
+              ) ??
+              0
+            ),
+
+          principal:
+            acc.principal +
+            (
+              this.decimalToNumber(
+                item.principalAllocated,
+              ) ??
+              0
+            ),
+        }),
+        {
+          fees: 0,
+          interest: 0,
+          principal: 0,
+        },
+      );
+
+    /*
+     * Processing fee is NOT a repayment bucket.
+     *
+     * feesAllocated represents loan fines / penalties only.
+     */
+    const finesTotal =
+      this.decimalToNumber(
+        loan.finesTotal,
+      ) ??
+      this.decimalToNumber(
+        loan.wallet?.finesTotal,
+      ) ??
+      0;
+
+    const allocation =
+      allocateRepayment({
+        amount,
+
+        remainingFees:
+          Math.max(
+            0,
+            finesTotal -
+              totals.fees,
+          ),
+
+        remainingInterest:
+          Math.max(
+            0,
+            pricing.interestAmount -
+              totals.interest,
+          ),
+
+        remainingPrincipal:
+          Math.max(
+            0,
+            pricing.principalAmount -
+              totals.principal,
+          ),
+      });
+
+    const nextBalance =
+      this.roundMoney(
+        Math.max(
+          0,
+          balance -
+            amount,
+        ),
+      );
+
     const nextStatus =
       nextBalance <= 0
         ? LoanStatus.CLOSED
-        : loan.status === LoanStatus.SUBMITTED ||
-            loan.status === LoanStatus.APPROVED
+        : loan.status ===
+              LoanStatus.SUBMITTED ||
+            loan.status ===
+              LoanStatus.APPROVED
           ? LoanStatus.CURRENT
           : loan.status;
 
-    const paidAt = dto.paidAt ? new Date(dto.paidAt) : new Date();
-    if (Number.isNaN(paidAt.getTime())) {
-      throw new BadRequestException('Invalid paidAt timestamp.');
+    const paidAt =
+      dto.paidAt
+        ? new Date(
+            dto.paidAt,
+          )
+        : new Date();
+
+    if (
+      Number.isNaN(
+        paidAt.getTime(),
+      )
+    ) {
+      throw new BadRequestException(
+        'Invalid paidAt timestamp.',
+      );
     }
 
-    const { repayment, loan: updatedLoan } =
+    const {
+      repayment,
+      loan: updatedLoan,
+    } =
       await this.repository.recordRepayment({
-        tenantId: user.tenantId,
-        branchId: loan.branchId,
-        loanId: loan.id,
-        recordedByUserId: user.userId,
-        amount: new Prisma.Decimal(amount.toFixed(2)),
-        principalAllocated: new Prisma.Decimal(
-          allocation.principalAllocated.toFixed(2),
-        ),
-        interestAllocated: new Prisma.Decimal(
-          allocation.interestAllocated.toFixed(2),
-        ),
-        feesAllocated: new Prisma.Decimal(allocation.feesAllocated.toFixed(2)),
-        method: dto.method ?? RepaymentMethod.CASH,
+        tenantId:
+          user.tenantId,
+
+        branchId:
+          loan.branchId,
+
+        loanId:
+          loan.id,
+
+        recordedByUserId:
+          user.userId,
+
+        amount:
+          new Prisma.Decimal(
+            amount.toFixed(2),
+          ),
+
+        principalAllocated:
+          new Prisma.Decimal(
+            allocation
+              .principalAllocated
+              .toFixed(2),
+          ),
+
+        interestAllocated:
+          new Prisma.Decimal(
+            allocation
+              .interestAllocated
+              .toFixed(2),
+          ),
+
+        feesAllocated:
+          new Prisma.Decimal(
+            allocation
+              .feesAllocated
+              .toFixed(2),
+          ),
+
+        method:
+          dto.method ??
+          RepaymentMethod.CASH,
+
         paidAt,
-        note: dto.note?.trim() || null,
-        receiptNumber: `RCP-${Date.now().toString(36).toUpperCase()}`,
-        nextBalance: new Prisma.Decimal(nextBalance.toFixed(2)),
+
+        note:
+          dto.note?.trim() ||
+          null,
+
+        receiptNumber:
+          `RCP-${Date.now()
+            .toString(36)
+            .toUpperCase()}`,
+
+        nextBalance:
+          new Prisma.Decimal(
+            nextBalance.toFixed(
+              2,
+            ),
+          ),
+
         nextStatus,
       });
 
-    const detail = await this.buildDetail(updatedLoan);
+    const detail =
+      await this.buildDetail(
+        updatedLoan,
+      );
+
     const agentPhotoStorageKey =
-      repayment.recordedBy.profilePhotoStorageKey ?? null;
+      repayment.recordedBy
+        .profilePhotoStorageKey ??
+      null;
+
     const item: RepaymentListItemContract = {
-      id: repayment.id,
-      loanId: repayment.loanId,
-      customerId: updatedLoan.customerId,
-      clientName: updatedLoan.customer.fullName,
-      phone: updatedLoan.customer.phone,
+      id:
+        repayment.id,
+
+      loanId:
+        repayment.loanId,
+
+      customerId:
+        updatedLoan.customerId,
+
+      clientName:
+        updatedLoan.customer
+          .fullName,
+
+      phone:
+        updatedLoan.customer
+          .phone,
+
       amount,
-      amountPaid: detail.paidAmount,
-      loanAmount: detail.loanAmount,
-      recordedAt: repayment.paidAt.toISOString(),
-      synced: true,
-      dueToday: detail.nextDueIsToday,
-      note: repayment.note,
-      method: repayment.method,
-      recordedByName: repayment.recordedBy.displayName,
-      recordedByPublicId: repayment.recordedBy.publicId ?? null,
-      agentPhotoUrl: await this.presignPhotoUrl(agentPhotoStorageKey),
+
+      amountPaid:
+        detail.paidAmount,
+
+      loanAmount:
+        detail.loanAmount,
+
+      recordedAt:
+        repayment.paidAt
+          .toISOString(),
+
+      synced:
+        true,
+
+      dueToday:
+        detail.nextDueIsToday,
+
+      note:
+        repayment.note,
+
+      method:
+        repayment.method,
+
+      recordedByName:
+        repayment.recordedBy
+          .displayName,
+
+      recordedByPublicId:
+        repayment.recordedBy
+          .publicId ??
+        null,
+
+      agentPhotoUrl:
+        await this.presignPhotoUrl(
+          agentPhotoStorageKey,
+        ),
+
       agentPhotoStorageKey,
+
+      sms:
+        this.emptyRepaymentSmsStatus(),
     };
 
-    this.realtime.broadcastPayment(REALTIME_EVENTS.paymentMade, {
-      repaymentId: item.id,
-      loanId: item.loanId,
-      customerId: item.customerId,
-      tenantId: user.tenantId,
-      branchId: loan.branchId,
-      clientName: item.clientName,
-      phone: item.phone,
-      amount: item.amount,
-      amountPaid: item.amountPaid,
-      loanAmount: item.loanAmount,
-      outstanding: detail.outstanding,
-      recordedAt: item.recordedAt,
-      method: item.method,
-      note: item.note,
-      synced: true,
-      recordedByUserId: user.userId,
-      recordedByName: item.recordedByName,
-      agentPhotoUrl: item.agentPhotoUrl,
-    });
+    this.realtime.broadcastPayment(
+      REALTIME_EVENTS.paymentMade,
+      {
+        repaymentId:
+          item.id,
+
+        loanId:
+          item.loanId,
+
+        customerId:
+          item.customerId,
+
+        tenantId:
+          user.tenantId,
+
+        branchId:
+          loan.branchId,
+
+        clientName:
+          item.clientName,
+
+        phone:
+          item.phone,
+
+        amount:
+          item.amount,
+
+        amountPaid:
+          item.amountPaid,
+
+        loanAmount:
+          item.loanAmount,
+
+        outstanding:
+          detail.outstanding,
+
+        recordedAt:
+          item.recordedAt,
+
+        method:
+          item.method,
+
+        note:
+          item.note,
+
+        synced:
+          true,
+
+        recordedByUserId:
+          user.userId,
+
+        recordedByName:
+          item.recordedByName,
+
+        agentPhotoUrl:
+          item.agentPhotoUrl,
+      },
+    );
 
     void this.sendPaymentConfirmationSms({
-      tenantId: user.tenantId!,
-      branchId: loan.branchId,
-      repaymentId: item.id,
-      phone: item.phone,
-      fullName: item.clientName,
+      tenantId:
+        user.tenantId!,
+
+      branchId:
+        loan.branchId,
+
+      repaymentId:
+        item.id,
+
+      phone:
+        item.phone,
+
+      fullName:
+        item.clientName,
+
       amount,
-      balance: detail.outstanding,
+
+      balance:
+        detail.outstanding,
     });
 
-    return { repayment: item, detail };
+    return {
+      repayment:
+        item,
+
+      detail,
+    };
   }
 
-  private async sendPaymentConfirmationSms(input: {
-    tenantId: string;
-    branchId: string;
-    repaymentId: string;
-    phone: string;
-    fullName: string;
-    amount: number;
-    balance: number;
-  }) {
-    try {
-      const phone = input.phone?.trim();
-      if (!phone) return;
-      const allowed = await this.smsNotificationSettings.isKindEnabled(
-        input.tenantId,
-        'payment_confirmation',
+  async sendRepaymentSms(
+    user: AuthenticatedUser,
+    repaymentId: string,
+    dto: SendRepaymentSmsDto,
+    requestIdempotencyKey?: string,
+  ): Promise<{ result: RepaymentSmsSendResultContract }> {
+    this.assertBranchAccess(
+      user,
+    );
+
+    return {
+      result:
+        await this.sendRepaymentSmsForId({
+          user,
+          repaymentId,
+          resend:
+            Boolean(
+              dto.resend,
+            ),
+          requestIdempotencyKey,
+        }),
+    };
+  }
+
+  async sendBulkRepaymentSms(
+    user: AuthenticatedUser,
+    dto: BulkRepaymentSmsDto,
+    requestIdempotencyKey?: string,
+  ): Promise<RepaymentBulkSmsResultContract> {
+    this.assertBranchAccess(
+      user,
+    );
+
+    const uniqueIds = [
+      ...new Set(
+        dto.repaymentIds.map(
+          (id) =>
+            id.trim(),
+        ),
+      ),
+    ];
+
+    const bulkKey =
+      this.safeIdempotencyPart(
+        requestIdempotencyKey ||
+          `bulk_${randomUUID()}`,
       );
-      if (!allowed) return;
-      const supportPhone =
-        await this.smsNotificationSettings.resolveSupportPhone(input.branchId);
-      const body = buildPaymentConfirmationSms({
-        fullName: input.fullName,
-        amount: input.amount,
-        balance: input.balance,
-        supportPhone,
-      });
-      const result = await this.smsCreditsService.sendBranchSms({
-        tenantId: input.tenantId,
-        branchId: input.branchId,
-        destination: phone,
-        body,
-        purpose: 'payment_confirmation',
-        triggerSource: 'repayment_recorded',
-        triggerReferenceId: input.repaymentId,
-        idempotencyKey: `payment_confirmation_${input.repaymentId}`,
-      });
+
+    const results: RepaymentSmsSendResultContract[] =
+      [];
+
+    for (
+      const [
+        index,
+        repaymentId,
+      ] of
+      uniqueIds.entries()
+    ) {
+      try {
+        results.push(
+          await this.sendRepaymentSmsForId({
+            user,
+
+            repaymentId,
+
+            resend:
+              Boolean(
+                dto.resendFailed,
+              ),
+
+            requestIdempotencyKey:
+              `${bulkKey}_${index}`,
+          }),
+        );
+      } catch (error) {
+        results.push({
+          repaymentId,
+
+          clientName:
+            'Unknown repayment',
+
+          phone:
+            null,
+
+          sms: {
+            status:
+              'failed',
+
+            messageId:
+              null,
+
+            lastSentAt:
+              null,
+
+            lastFailureReason:
+              error instanceof Error
+                ? error.message
+                : 'send_failed',
+
+            canRetry:
+              false,
+          },
+
+          sent:
+            false,
+
+          alreadySent:
+            false,
+
+          skipped:
+            false,
+
+          reason:
+            error instanceof Error
+              ? error.message
+              : 'send_failed',
+        });
+      }
+    }
+
+    const failures =
+      results.filter(
+        (result) =>
+          !result.sent &&
+          !result.alreadySent &&
+          !result.skipped,
+      );
+
+    return {
+      totalCount:
+        results.length,
+
+      sentCount:
+        results.filter(
+          (result) =>
+            result.sent,
+        ).length,
+
+      alreadySentCount:
+        results.filter(
+          (result) =>
+            result.alreadySent,
+        ).length,
+
+      skippedCount:
+        results.filter(
+          (result) =>
+            result.skipped,
+        ).length,
+
+      failedCount:
+        failures.length,
+
+      results,
+
+      failures,
+    };
+  }
+
+  private async sendPaymentConfirmationSms(
+    input: {
+      tenantId: string;
+      branchId: string;
+      repaymentId: string;
+      phone: string;
+      fullName: string;
+      amount: number;
+      balance: number;
+    },
+  ) {
+    try {
+      const result =
+        await this.dispatchPaymentConfirmationSms({
+          tenantId:
+            input.tenantId,
+
+          branchId:
+            input.branchId,
+
+          repaymentId:
+            input.repaymentId,
+
+          phone:
+            input.phone,
+
+          fullName:
+            input.fullName,
+
+          amount:
+            input.amount,
+
+          balance:
+            input.balance,
+
+          idempotencyKey:
+            `payment_confirmation_${input.repaymentId}`,
+        });
+
       if (!result.sent) {
         this.logger.log(
-          `Payment confirmation SMS skipped for ${input.repaymentId}: ${result.reason ?? 'skipped'}`,
+          `Payment confirmation SMS skipped for ${input.repaymentId}: ${
+            result.reason ??
+            'skipped'
+          }`,
         );
       }
     } catch (error) {
       this.logger.warn(
         `Payment confirmation SMS failed for ${input.repaymentId}: ${
-          error instanceof Error ? error.message : String(error)
+          error instanceof Error
+            ? error.message
+            : String(
+                error,
+              )
         }`,
       );
     }
   }
 
-  private scope(user: AuthenticatedUser) {
-    if (!user.tenantId?.trim()) {
-      throw new ForbiddenException('Tenant scope is required.');
+  private async sendRepaymentSmsForId(
+    input: {
+      user: AuthenticatedUser;
+      repaymentId: string;
+      resend: boolean;
+      requestIdempotencyKey?: string;
+    },
+  ): Promise<RepaymentSmsSendResultContract> {
+    const row =
+      await this.repository.findRepaymentById({
+        ...this.scope(
+          input.user,
+        ),
+
+        repaymentId:
+          input.repaymentId,
+      });
+
+    if (!row) {
+      throw new NotFoundException(
+        'Payment not found.',
+      );
     }
-    // Only workspace owners (branch.create) may query across branches.
-    // Branch managers and agents stay on their assigned branch.
-    const canAllBranches = user.permissions.includes(BRANCH_PERMISSIONS.create);
+
+    const existingSms =
+      (
+        await this.summarizeRepaymentSms(
+          input.user
+            .tenantId!,
+          [
+            input.repaymentId,
+          ],
+        )
+      ).get(
+        input.repaymentId,
+      ) ??
+      this.emptyRepaymentSmsStatus();
+
+    if (
+      existingSms.status ===
+      'sent'
+    ) {
+      return {
+        repaymentId:
+          row.id,
+
+        clientName:
+          row.loan.customer
+            .fullName,
+
+        phone:
+          row.loan.customer
+            .phone,
+
+        sms:
+          existingSms,
+
+        sent:
+          false,
+
+        alreadySent:
+          true,
+
+        skipped:
+          true,
+
+        reason:
+          'already_sent',
+      };
+    }
+
+    if (
+      existingSms.status ===
+      'sending'
+    ) {
+      return {
+        repaymentId:
+          row.id,
+
+        clientName:
+          row.loan.customer
+            .fullName,
+
+        phone:
+          row.loan.customer
+            .phone,
+
+        sms:
+          existingSms,
+
+        sent:
+          false,
+
+        alreadySent:
+          false,
+
+        skipped:
+          true,
+
+        reason:
+          'already_sending',
+      };
+    }
+
+    const detail =
+      await this.buildDetail(
+        row.loan,
+      );
+
+    const retrying =
+      input.resend ||
+      (
+        existingSms.status ===
+          'failed' &&
+        existingSms.canRetry
+      );
+
+    const idempotencyKey =
+      retrying
+        ? [
+            PAYMENT_CONFIRMATION_PURPOSE,
+            row.id,
+            'retry',
+            this.safeIdempotencyPart(
+              input.requestIdempotencyKey ||
+                randomUUID(),
+            ),
+          ].join('_')
+        : `${PAYMENT_CONFIRMATION_PURPOSE}_${row.id}`;
+
+    const result =
+      await this.dispatchPaymentConfirmationSms({
+        tenantId:
+          row.tenantId,
+
+        branchId:
+          row.branchId,
+
+        repaymentId:
+          row.id,
+
+        phone:
+          row.loan.customer
+            .phone,
+
+        fullName:
+          row.loan.customer
+            .fullName,
+
+        amount:
+          this.decimalToNumber(
+            row.amount,
+          ) ?? 0,
+
+        balance:
+          detail.outstanding,
+
+        idempotencyKey,
+
+        parentMessageId:
+          retrying &&
+          existingSms.messageId
+            ? existingSms.messageId
+            : undefined,
+
+        requestedByUserId:
+          input.user.userId,
+      });
+
+    const nextSms =
+      (
+        await this.summarizeRepaymentSms(
+          row.tenantId,
+          [
+            row.id,
+          ],
+        )
+      ).get(
+        row.id,
+      ) ??
+      this.failedRepaymentSmsStatus(
+        result.reason ??
+          'send_failed',
+      );
+
     return {
-      tenantId: user.tenantId,
-      branchId: canAllBranches ? null : user.branchId,
+      repaymentId:
+        row.id,
+
+      clientName:
+        row.loan.customer
+          .fullName,
+
+      phone:
+        row.loan.customer
+          .phone,
+
+      sms:
+        nextSms,
+
+      sent:
+        result.sent,
+
+      alreadySent:
+        false,
+
+      skipped:
+        result.reason ===
+        'sms_setting_disabled',
+
+      reason:
+        result.reason ??
+        null,
     };
   }
 
-  private assertBranchAccess(user: AuthenticatedUser) {
-    if (!user.tenantId?.trim()) {
-      throw new ForbiddenException('Tenant scope is required.');
+  private async dispatchPaymentConfirmationSms(
+    input: {
+      tenantId: string;
+      branchId: string;
+      repaymentId: string;
+      phone: string;
+      fullName: string;
+      amount: number;
+      balance: number;
+      idempotencyKey: string;
+      parentMessageId?: string;
+      requestedByUserId?: string;
+    },
+  ) {
+    const allowed =
+      await this.smsNotificationSettings.isKindEnabled(
+        input.tenantId,
+        'payment_confirmation',
+      );
+
+    if (!allowed) {
+      return {
+        sent:
+          false,
+
+        reason:
+          'sms_setting_disabled',
+      };
     }
-    const canAllBranches = user.permissions.includes(BRANCH_PERMISSIONS.create);
-    if (!canAllBranches && !user.branchId) {
-      throw new ForbiddenException('Branch scope is required.');
+
+    const supportPhone =
+      await this.smsNotificationSettings.resolveSupportPhone(
+        input.branchId,
+      );
+
+    const body =
+      buildPaymentConfirmationSms({
+        fullName:
+          input.fullName,
+
+        amount:
+          input.amount,
+
+        balance:
+          input.balance,
+
+        supportPhone,
+      });
+
+    return this.smsCreditsService.sendBranchSms({
+      tenantId:
+        input.tenantId,
+
+      branchId:
+        input.branchId,
+
+      destination:
+        input.phone?.trim() ??
+        '',
+
+      body,
+
+      purpose:
+        PAYMENT_CONFIRMATION_PURPOSE,
+
+      triggerSource:
+        PAYMENT_CONFIRMATION_TRIGGER,
+
+      triggerReferenceId:
+        input.repaymentId,
+
+      requestedByUserId:
+        input.requestedByUserId,
+
+      idempotencyKey:
+        input.idempotencyKey,
+
+      parentMessageId:
+        input.parentMessageId,
+    });
+  }
+
+  private async summarizeRepaymentSms(
+    tenantId: string,
+    repaymentIds: string[],
+  ): Promise<Map<string, RepaymentSmsStatusContract>> {
+    const uniqueIds = [
+      ...new Set(
+        repaymentIds.filter(
+          Boolean,
+        ),
+      ),
+    ];
+
+    const statusByRepayment =
+      new Map<
+        string,
+        RepaymentSmsStatusContract
+      >();
+
+    if (
+      uniqueIds.length ===
+      0
+    ) {
+      return statusByRepayment;
+    }
+
+    const messages =
+      await this.prisma.smsMessage.findMany({
+        where: {
+          tenantId,
+
+          messageType:
+            PAYMENT_CONFIRMATION_PURPOSE,
+
+          triggerReferenceId: {
+            in:
+              uniqueIds,
+          },
+        },
+
+        orderBy: {
+          createdAt:
+            'desc',
+        },
+
+        select: {
+          id:
+            true,
+
+          triggerReferenceId:
+            true,
+
+          status:
+            true,
+
+          failureReason:
+            true,
+
+          sentAt:
+            true,
+
+          createdAt:
+            true,
+        },
+      });
+
+    const grouped =
+      new Map<
+        string,
+        RepaymentSmsMessageRecord[]
+      >();
+
+    for (
+      const message of
+      messages
+    ) {
+      if (
+        !message.triggerReferenceId
+      ) {
+        continue;
+      }
+
+      const list =
+        grouped.get(
+          message.triggerReferenceId,
+        ) ??
+        [];
+
+      list.push(
+        message,
+      );
+
+      grouped.set(
+        message.triggerReferenceId,
+        list,
+      );
+    }
+
+    for (
+      const repaymentId of
+      uniqueIds
+    ) {
+      statusByRepayment.set(
+        repaymentId,
+
+        this.repaymentSmsStatusFromMessages(
+          grouped.get(
+            repaymentId,
+          ) ??
+            [],
+        ),
+      );
+    }
+
+    return statusByRepayment;
+  }
+
+  private repaymentSmsStatusFromMessages(
+    messages: RepaymentSmsMessageRecord[],
+  ): RepaymentSmsStatusContract {
+    const sent =
+      messages.find(
+        (message) =>
+          ACCEPTED_SMS_STATUSES.has(
+            message.status,
+          ),
+      );
+
+    if (sent) {
+      return {
+        status:
+          'sent',
+
+        messageId:
+          sent.id,
+
+        lastSentAt:
+          (
+            sent.sentAt ??
+            sent.createdAt
+          ).toISOString(),
+
+        lastFailureReason:
+          null,
+
+        canRetry:
+          false,
+      };
+    }
+
+    const active =
+      messages.find(
+        (message) =>
+          ACTIVE_SMS_STATUSES.has(
+            message.status,
+          ),
+      );
+
+    if (active) {
+      return {
+        status:
+          'sending',
+
+        messageId:
+          active.id,
+
+        lastSentAt:
+          null,
+
+        lastFailureReason:
+          null,
+
+        canRetry:
+          false,
+      };
+    }
+
+    const failed =
+      messages[0];
+
+    if (failed) {
+      const reason =
+        failed.failureReason ??
+        failed.status
+          .toLowerCase();
+
+      return {
+        status:
+          'failed',
+
+        messageId:
+          failed.id,
+
+        lastSentAt:
+          null,
+
+        lastFailureReason:
+          reason,
+
+        canRetry:
+          this.canRetryPaymentConfirmationSms(
+            failed,
+          ),
+      };
+    }
+
+    return this.emptyRepaymentSmsStatus();
+  }
+
+  private emptyRepaymentSmsStatus(): RepaymentSmsStatusContract {
+    return {
+      status:
+        'not_sent',
+
+      messageId:
+        null,
+
+      lastSentAt:
+        null,
+
+      lastFailureReason:
+        null,
+
+      canRetry:
+        false,
+    };
+  }
+
+  private failedRepaymentSmsStatus(
+    reason: string,
+  ): RepaymentSmsStatusContract {
+    return {
+      status:
+        'failed',
+
+      messageId:
+        null,
+
+      lastSentAt:
+        null,
+
+      lastFailureReason:
+        reason,
+
+      canRetry:
+        reason !==
+        'sms_setting_disabled',
+    };
+  }
+
+  private canRetryPaymentConfirmationSms(
+    message: RepaymentSmsMessageRecord,
+  ): boolean {
+    if (
+      message.failureReason ===
+        'invalid_phone' ||
+      message.failureReason ===
+        'no_phone'
+    ) {
+      return false;
+    }
+
+    return RETRYABLE_PAYMENT_SMS_STATUSES.has(
+      message.status,
+    );
+  }
+
+  private safeIdempotencyPart(
+    value: string,
+  ): string {
+    const safe =
+      value
+        .trim()
+        .replace(
+          /[^a-zA-Z0-9_-]/g,
+          '_',
+        )
+        .slice(
+          0,
+          80,
+        );
+
+    return (
+      safe ||
+      randomUUID()
+    );
+  }
+
+  private scope(
+    user: AuthenticatedUser,
+  ) {
+    if (
+      !user.tenantId?.trim()
+    ) {
+      throw new ForbiddenException(
+        'Tenant scope is required.',
+      );
+    }
+
+    /*
+     * Only workspace owners with branch.create can cross branch boundaries.
+     *
+     * Branch managers and agents stay branch scoped.
+     */
+    const canAllBranches =
+      user.permissions.includes(
+        BRANCH_PERMISSIONS.create,
+      );
+
+    return {
+      tenantId:
+        user.tenantId,
+
+      branchId:
+        canAllBranches
+          ? null
+          : user.branchId,
+    };
+  }
+
+  private assertBranchAccess(
+    user: AuthenticatedUser,
+  ) {
+    if (
+      !user.tenantId?.trim()
+    ) {
+      throw new ForbiddenException(
+        'Tenant scope is required.',
+      );
+    }
+
+    const canAllBranches =
+      user.permissions.includes(
+        BRANCH_PERMISSIONS.create,
+      );
+
+    if (
+      !canAllBranches &&
+      !user.branchId
+    ) {
+      throw new ForbiddenException(
+        'Branch scope is required.',
+      );
     }
   }
 
   private async buildDetail(
     loan: LoanWithCollections,
   ): Promise<ClientLoanDetailContract> {
-    const pricing = this.loanPricing(loan);
-    // Prefer stored paymentStartDate (manager policy); fall back for legacy loans.
+    const pricing =
+      this.loanPricing(
+        loan,
+      );
+
+    /*
+     * Stored paymentStartDate is the first contractual repayment date.
+     *
+     * Only legacy loans fall back to issue dates.
+     */
     const startDate =
       loan.paymentStartDate ??
-      loan.application?.paymentStartDate ??
+      loan.application
+        ?.paymentStartDate ??
       loan.disbursedAt ??
-      loan.application?.submittedAt ??
+      loan.application
+        ?.submittedAt ??
       loan.createdAt;
+
     if (!startDate) {
       throw new BadRequestException(
         `Loan ${loan.id} is missing a payment/loan start date.`,
       );
     }
-    const repayments = (loan.repayments ?? []).filter(
-      (row) =>
-        row.paidAt instanceof Date && !Number.isNaN(row.paidAt.getTime()),
-    );
-    // Paid is strictly the sum of recorded repayments — never fees/interest
-    // inferred from totalRepayable − balance (that caused spurious "paid" on new loans).
-    const recordedPaidAmount = this.roundMoney(
-      repayments.reduce(
-        (sum, row) => sum + (this.decimalToNumber(row.amount) ?? 0),
-        0,
-      ),
-    );
-    const openingBalance = this.decimalToNumber(loan.wallet?.openingBalance);
-    const balance = this.decimalToNumber(loan.balance) ?? 0;
+
+    const repayments =
+      (
+        loan.repayments ??
+        []
+      ).filter(
+        (row) =>
+          row.paidAt instanceof
+            Date &&
+          !Number.isNaN(
+            row.paidAt.getTime(),
+          ),
+      );
+
+    /*
+     * Actual repayments are the source of truth.
+     *
+     * Do not infer repayments from processing fees or pricing differences.
+     */
+    const recordedPaidAmount =
+      this.roundMoney(
+        repayments.reduce(
+          (sum, row) =>
+            sum +
+            (
+              this.decimalToNumber(
+                row.amount,
+              ) ??
+              0
+            ),
+          0,
+        ),
+      );
+
+    const openingBalance =
+      this.decimalToNumber(
+        loan.wallet
+          ?.openingBalance,
+      );
+
+    const balance =
+      this.decimalToNumber(
+        loan.balance,
+      ) ?? 0;
+
     const finesTotal =
-      this.decimalToNumber(loan.finesTotal) ??
-      this.decimalToNumber(loan.wallet?.finesTotal) ??
+      this.decimalToNumber(
+        loan.finesTotal,
+      ) ??
+      this.decimalToNumber(
+        loan.wallet
+          ?.finesTotal,
+      ) ??
       0;
-    const baseRepayable = resolveBaseRepayable({
-      openingBalance,
-      pricedTotal: pricing.totalRepayable,
-      principal: pricing.principalAmount,
-      paidAmount: recordedPaidAmount,
-      balance,
-      finesTotal,
-    });
-    const schedule = computeCollectionSchedule({
-      principalAmount: pricing.principalAmount,
-      interestRatePercent: pricing.interestRatePercent,
-      durationDays: pricing.durationDays,
-      processingFee: pricing.processingFee,
-      balance,
-      recordedPaidAmount,
-      // Prefer corrected flat repayable when wallet snapshot is stale/wrong.
-      totalRepayableOverride: baseRepayable,
-      startDate,
-    });
-    const last = repayments[0] ?? null;
-    const officer = loan.application?.officer;
-    const agentPhotoStorageKey = officer?.profilePhotoStorageKey ?? null;
-    const lastPaymentKey = last?.recordedBy?.profilePhotoStorageKey ?? null;
-    const [agentPhotoUrl, lastPaymentByPhotoUrl, ...historyPhotos] =
+
+    const baseRepayable =
+      resolveBaseRepayable({
+        openingBalance,
+
+        pricedTotal:
+          pricing.totalRepayable,
+
+        principal:
+          pricing.principalAmount,
+
+        paidAmount:
+          recordedPaidAmount,
+
+        balance,
+
+        finesTotal,
+      });
+
+    const schedule =
+      computeCollectionSchedule({
+        principalAmount:
+          pricing.principalAmount,
+
+        interestRatePercent:
+          pricing.interestRatePercent,
+
+        durationDays:
+          pricing.durationDays,
+
+        repaymentFrequency:
+          loan.application
+            ?.repaymentFrequency ??
+          'DAILY',
+
+        processingFee:
+          pricing.processingFee,
+
+        balance,
+
+        recordedPaidAmount,
+
+        totalRepayableOverride:
+          baseRepayable,
+
+        startDate,
+      });
+
+    const last =
+      repayments[0] ??
+      null;
+
+    const officer =
+      loan.application
+        ?.officer;
+
+    const agentPhotoStorageKey =
+      officer
+        ?.profilePhotoStorageKey ??
+      null;
+
+    const lastPaymentKey =
+      last
+        ?.recordedBy
+        ?.profilePhotoStorageKey ??
+      null;
+
+    const [
+      agentPhotoUrl,
+      lastPaymentByPhotoUrl,
+      ...historyPhotos
+    ] =
       await Promise.all([
-        this.presignPhotoUrl(agentPhotoStorageKey),
-        this.presignPhotoUrl(lastPaymentKey),
-        ...repayments.map((row) =>
-          this.presignPhotoUrl(row.recordedBy?.profilePhotoStorageKey ?? null),
+        this.presignPhotoUrl(
+          agentPhotoStorageKey,
+        ),
+
+        this.presignPhotoUrl(
+          lastPaymentKey,
+        ),
+
+        ...repayments.map(
+          (row) =>
+            this.presignPhotoUrl(
+              row.recordedBy
+                ?.profilePhotoStorageKey ??
+                null,
+            ),
         ),
       ]);
-    const paymentHistory = repayments.map((row, index) => ({
-      id: row.id,
-      amount: this.decimalToNumber(row.amount) ?? 0,
-      method: row.method,
-      paidAt: row.paidAt.toISOString(),
-      recordedByName: row.recordedBy?.displayName ?? 'Agent',
-      recordedByPublicId: row.recordedBy?.publicId ?? null,
-      agentPhotoUrl: historyPhotos[index] ?? null,
-      note: row.note,
-    }));
-    const isFined = loan.isFined || (loan.wallet?.isFined ?? false);
-    const fineHistory = (loan.fines ?? []).map((row) => ({
-      id: row.id,
-      periodIndex: row.periodIndex,
-      amount: this.decimalToNumber(row.amount) ?? 0,
-      dueAt: row.dueAt.toISOString(),
-      appliedAt: row.appliedAt.toISOString(),
-    }));
-    // Past maturity (or when fined), due amount is full outstanding incl. fines.
+
+    const paymentHistory =
+      repayments.map(
+        (
+          row,
+          index,
+        ) => ({
+          id:
+            row.id,
+
+          amount:
+            this.decimalToNumber(
+              row.amount,
+            ) ?? 0,
+
+          method:
+            row.method,
+
+          paidAt:
+            row.paidAt
+              .toISOString(),
+
+          recordedByName:
+            row.recordedBy
+              ?.displayName ??
+            'Agent',
+
+          recordedByPublicId:
+            row.recordedBy
+              ?.publicId ??
+            null,
+
+          agentPhotoUrl:
+            historyPhotos[
+              index
+            ] ??
+            null,
+
+          note:
+            row.note,
+        }),
+      );
+
+    const isFined =
+      loan.isFined ||
+      (
+        loan.wallet
+          ?.isFined ??
+        false
+      );
+
+    const fineHistory =
+      (
+        loan.fines ??
+        []
+      ).map(
+        (row) => ({
+          id:
+            row.id,
+
+          periodIndex:
+            row.periodIndex,
+
+          amount:
+            this.decimalToNumber(
+              row.amount,
+            ) ?? 0,
+
+          dueAt:
+            row.dueAt
+              .toISOString(),
+
+          appliedAt:
+            row.appliedAt
+              .toISOString(),
+        }),
+      );
+
+    /*
+     * Once genuinely overdue or fined, entire outstanding obligation
+     * can be surfaced as due.
+     */
     const expectedToday =
-      schedule.nextDueLabel === 'Overdue' || finesTotal > 0
+      schedule.nextDueLabel ===
+        'Overdue' ||
+      finesTotal > 0
         ? schedule.outstanding
         : schedule.expectedToday;
 
     return {
-      id: loan.id,
-      loanId: loan.id,
-      walletId: loan.wallet?.id ?? null,
-      customerId: loan.customerId,
-      fullName: loan.customer.fullName,
-      phone: loan.customer.phone,
-      registeredBy: officer?.displayName ?? 'Branch officer',
-      registeredByPublicId: officer?.publicId ?? null,
+      id:
+        loan.id,
+
+      loanId:
+        loan.id,
+
+      walletId:
+        loan.wallet?.id ??
+        null,
+
+      customerId:
+        loan.customerId,
+
+      fullName:
+        loan.customer
+          .fullName,
+
+      phone:
+        loan.customer
+          .phone,
+
+      registeredBy:
+        officer?.displayName ??
+        'Branch officer',
+
+      registeredByPublicId:
+        officer?.publicId ??
+        null,
+
       agentPhotoUrl,
+
       agentPhotoStorageKey,
-      outstanding: schedule.outstanding,
-      lastPaymentAmount: last ? (this.decimalToNumber(last.amount) ?? 0) : 0,
-      lastPaymentAt: last?.paidAt.toISOString() ?? null,
-      lastPaymentBy: last?.recordedBy?.displayName ?? null,
+
+      outstanding:
+        schedule.outstanding,
+
+      lastPaymentAmount:
+        last
+          ? (
+              this.decimalToNumber(
+                last.amount,
+              ) ??
+              0
+            )
+          : 0,
+
+      lastPaymentAt:
+        last?.paidAt
+          .toISOString() ??
+        null,
+
+      lastPaymentBy:
+        last
+          ?.recordedBy
+          ?.displayName ??
+        null,
+
       lastPaymentByPhotoUrl,
+
       expectedToday,
-      carriedForward: schedule.carriedForward,
-      dailyInstalment: schedule.dailyInstalment,
-      loanPeriodDays: schedule.loanPeriodDays,
-      daysLeft: schedule.daysLeft,
-      nextDueLabel: schedule.nextDueLabel,
-      nextDueIsToday: schedule.nextDueIsToday,
-      paidAmount: schedule.paidAmount,
-      // Original repayable at submit + applied overdue fines.
-      loanAmount: this.roundMoney(baseRepayable + finesTotal),
-      interestRatePercent: pricing.interestRatePercent,
-      interestAmount: schedule.interestAmount,
-      processingFee: schedule.processingFee,
-      loanStartDate: schedule.loanStartDate,
-      paymentStartDate: startDate.toISOString(),
-      maturityDate: schedule.maturityDate,
-      status: loan.status,
+
+      carriedForward:
+        schedule.carriedForward,
+
+      dailyInstalment:
+        schedule.dailyInstalment,
+
+      loanPeriodDays:
+        schedule.loanPeriodDays,
+
+      daysLeft:
+        schedule.daysLeft,
+
+      nextDueLabel:
+        schedule.nextDueLabel,
+
+      nextDueIsToday:
+        schedule.nextDueIsToday,
+
+      paidAmount:
+        schedule.paidAmount,
+
+      /*
+       * Borrower obligation:
+       *
+       * principal + interest + applied fines.
+       *
+       * Processing fee excluded.
+       */
+      loanAmount:
+        this.roundMoney(
+          baseRepayable +
+            finesTotal,
+        ),
+
+      interestRatePercent:
+        pricing.interestRatePercent,
+
+      interestAmount:
+        schedule.interestAmount,
+
+      processingFee:
+        schedule.processingFee,
+
+      /*
+       * Compatibility API field.
+       *
+       * Represents first repayment date.
+       */
+      loanStartDate:
+        schedule.loanStartDate,
+
+      paymentStartDate:
+        startDate
+          .toISOString(),
+
+      maturityDate:
+        schedule.maturityDate,
+
+      status:
+        loan.status,
+
       isFined,
+
       finesTotal,
+
       paymentHistory,
+
       fineHistory,
     };
   }
@@ -961,147 +3170,446 @@ export class CollectionsService {
     loan: LoanWithCollections,
     asOf: Date,
   ): Promise<DueClientContract | null> {
-    const detail = await this.buildDetail(loan);
-    if (detail.outstanding <= 0) return null;
-    const last = loan.repayments[0];
+    const detail =
+      await this.buildDetail(
+        loan,
+      );
+
+    if (
+      detail.outstanding <=
+      0
+    ) {
+      return null;
+    }
+
+    const last =
+      loan.repayments[0];
+
     return {
-      id: loan.id,
-      loanId: loan.id,
-      customerId: loan.customerId,
-      fullName: detail.fullName,
-      phone: detail.phone,
-      amountPaid: detail.paidAmount,
-      loanAmount: detail.loanAmount,
-      amountDue: detail.expectedToday,
-      lastActivityAt: (last?.paidAt ?? loan.updatedAt ?? asOf).toISOString(),
-      synced: true,
+      id:
+        loan.id,
+
+      loanId:
+        loan.id,
+
+      customerId:
+        loan.customerId,
+
+      fullName:
+        detail.fullName,
+
+      phone:
+        detail.phone,
+
+      amountPaid:
+        detail.paidAmount,
+
+      loanAmount:
+        detail.loanAmount,
+
+      amountDue:
+        detail.expectedToday,
+
+      lastActivityAt:
+        (
+          last?.paidAt ??
+          loan.updatedAt ??
+          asOf
+        ).toISOString(),
+
+      synced:
+        true,
     };
   }
 
-  private loanPricing(loan: LoanWithCollections) {
-    const app = loan.application;
+  private loanPricing(
+    loan: LoanWithCollections,
+  ) {
+    const app =
+      loan.application;
+
     const principal =
-      this.decimalToNumber(app?.principalAmount) ??
-      this.decimalToNumber(loan.principal) ??
+      this.decimalToNumber(
+        app?.principalAmount,
+      ) ??
+      this.decimalToNumber(
+        loan.principal,
+      ) ??
       0;
-    const rate = this.decimalToNumber(app?.interestRatePercent) ?? 0;
-    // Match submit-time pricing: missing duration must not invent a 30-day term
-    // (that inflated totalRepayable and made interest look like "paid").
-    const days = app?.durationDays ?? 0;
-    const fee = this.decimalToNumber(app?.processingFee) ?? 0;
-    const computed = computeLoanPricing({
-      principalAmount: principal,
-      interestRatePercent: rate,
-      durationDays: days,
-      processingFee: fee,
-    });
-    // Prefer wallet opening snapshot so repayment allocation buckets stay
-    // aligned with the total stored at submit (formula may change over time).
-    const opening = this.decimalToNumber(loan.wallet?.openingBalance);
-    if (opening == null) {
+
+    const rate =
+      this.decimalToNumber(
+        app?.interestRatePercent,
+      ) ??
+      0;
+
+    const days =
+      app?.durationDays ??
+      0;
+
+    const fee =
+      this.decimalToNumber(
+        app?.processingFee,
+      ) ??
+      0;
+
+    const computed =
+      computeLoanPricing({
+        principalAmount:
+          principal,
+
+        interestRatePercent:
+          rate,
+
+        durationDays:
+          days,
+
+        processingFee:
+          fee,
+      });
+
+    /*
+     * Wallet openingBalance represents contractual borrower debt:
+     *
+     * principal + interest.
+     *
+     * Processing fee is separate income.
+     */
+    const opening =
+      this.decimalToNumber(
+        loan.wallet
+          ?.openingBalance,
+      );
+
+    if (
+      opening ==
+      null
+    ) {
       return computed;
     }
-    const interestAmount = this.roundMoney(
-      Math.max(0, opening - computed.principalAmount - computed.processingFee),
-    );
+
+    const interestAmount =
+      this.roundMoney(
+        Math.max(
+          0,
+          opening -
+            computed.principalAmount,
+        ),
+      );
+
     return {
       ...computed,
+
       interestAmount,
-      totalRepayable: opening,
+
+      totalRepayable:
+        opening,
     };
   }
 
-  private async presignPhotoUrl(storageKey: string | null | undefined) {
-    if (!storageKey) return null;
+  private async presignPhotoUrl(
+    storageKey:
+      | string
+      | null
+      | undefined,
+  ) {
+    if (!storageKey) {
+      return null;
+    }
+
     try {
-      const signed = await this.objectStorage.presignGet({ storageKey });
+      const signed =
+        await this.objectStorage.presignGet({
+          storageKey,
+        });
+
       return signed.downloadUrl;
     } catch {
       return null;
     }
   }
 
-  private parseDayBounds(date?: string): {
+  private parseDayBounds(
+    date?: string,
+  ): {
     dayStart: Date;
     dayEnd: Date;
     dateLabel: string;
   } {
-    const trimmed = date?.trim();
+    const trimmed =
+      date?.trim();
+
     let year: number;
     let month: number;
     let day: number;
 
-    if (trimmed && /^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-      const [y, m, d] = trimmed.split('-').map((part) => Number(part));
+    if (
+      trimmed &&
+      /^\d{4}-\d{2}-\d{2}$/.test(
+        trimmed,
+      )
+    ) {
+      const [
+        y,
+        m,
+        d,
+      ] =
+        trimmed
+          .split('-')
+          .map(
+            (part) =>
+              Number(
+                part,
+              ),
+          );
+
       year = y;
       month = m;
       day = d;
     } else if (trimmed) {
-      throw new BadRequestException('date must be YYYY-MM-DD.');
+      throw new BadRequestException(
+        'date must be YYYY-MM-DD.',
+      );
     } else {
-      const now = new Date();
-      year = now.getFullYear();
-      month = now.getMonth() + 1;
-      day = now.getDate();
+      const now =
+        new Date();
+
+      year =
+        now.getFullYear();
+
+      month =
+        now.getMonth() +
+        1;
+
+      day =
+        now.getDate();
     }
 
-    const dayStart = new Date(year, month - 1, day, 0, 0, 0, 0);
-    const dayEnd = new Date(year, month - 1, day, 23, 59, 59, 999);
-    if (Number.isNaN(dayStart.getTime()) || Number.isNaN(dayEnd.getTime())) {
-      throw new BadRequestException('Invalid date.');
+    const dayStart =
+      new Date(
+        year,
+        month - 1,
+        day,
+        0,
+        0,
+        0,
+        0,
+      );
+
+    const dayEnd =
+      new Date(
+        year,
+        month - 1,
+        day,
+        23,
+        59,
+        59,
+        999,
+      );
+
+    if (
+      Number.isNaN(
+        dayStart.getTime(),
+      ) ||
+      Number.isNaN(
+        dayEnd.getTime(),
+      )
+    ) {
+      throw new BadRequestException(
+        'Invalid date.',
+      );
     }
 
-    const dateLabel = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return { dayStart, dayEnd, dateLabel };
+    const dateLabel =
+      `${year}-${String(
+        month,
+      ).padStart(
+        2,
+        '0',
+      )}-${String(
+        day,
+      ).padStart(
+        2,
+        '0',
+      )}`;
+
+    return {
+      dayStart,
+      dayEnd,
+      dateLabel,
+    };
   }
 
-  private filterToRange(filter?: string) {
-    if (!filter || filter === 'all' || filter === 'dueToday') return null;
-    const now = new Date();
-    const startOfToday = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
-    if (filter === 'collectedToday' || filter === 'today') {
-      return { from: startOfToday, to: now };
+  private filterToRange(
+    filter?: string,
+  ) {
+    if (
+      !filter ||
+      filter ===
+        'all' ||
+      filter ===
+        'dueToday'
+    ) {
+      return null;
     }
-    if (filter === 'yesterday') {
-      const from = new Date(startOfToday);
-      from.setDate(from.getDate() - 1);
-      const to = new Date(startOfToday);
-      to.setMilliseconds(to.getMilliseconds() - 1);
-      return { from, to };
-    }
-    if (filter === 'thisWeek') {
-      const from = new Date(startOfToday);
-      from.setDate(
-        from.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1),
+
+    const now =
+      new Date();
+
+    const startOfToday =
+      new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        now.getDate(),
       );
-      return { from, to: now };
+
+    if (
+      filter ===
+        'collectedToday' ||
+      filter ===
+        'today'
+    ) {
+      return {
+        from:
+          startOfToday,
+
+        to:
+          now,
+      };
     }
-    if (filter === 'thisMonth') {
-      const from = new Date(now.getFullYear(), now.getMonth(), 1);
-      return { from, to: now };
+
+    if (
+      filter ===
+      'yesterday'
+    ) {
+      const from =
+        new Date(
+          startOfToday,
+        );
+
+      from.setDate(
+        from.getDate() -
+          1,
+      );
+
+      const to =
+        new Date(
+          startOfToday,
+        );
+
+      to.setMilliseconds(
+        to.getMilliseconds() -
+          1,
+      );
+
+      return {
+        from,
+        to,
+      };
     }
+
+    if (
+      filter ===
+      'thisWeek'
+    ) {
+      const from =
+        new Date(
+          startOfToday,
+        );
+
+      from.setDate(
+        from.getDate() -
+          (
+            now.getDay() ===
+            0
+              ? 6
+              : now.getDay() -
+                1
+          ),
+      );
+
+      return {
+        from,
+
+        to:
+          now,
+      };
+    }
+
+    if (
+      filter ===
+      'thisMonth'
+    ) {
+      const from =
+        new Date(
+          now.getFullYear(),
+          now.getMonth(),
+          1,
+        );
+
+      return {
+        from,
+
+        to:
+          now,
+      };
+    }
+
     return null;
   }
 
-  private sameDay(a: Date, b: Date) {
+  private sameDay(
+    a: Date,
+    b: Date,
+  ) {
     return (
-      a.getFullYear() === b.getFullYear() &&
-      a.getMonth() === b.getMonth() &&
-      a.getDate() === b.getDate()
+      a.getFullYear() ===
+        b.getFullYear() &&
+      a.getMonth() ===
+        b.getMonth() &&
+      a.getDate() ===
+        b.getDate()
     );
   }
 
-  private decimalToNumber(value: Prisma.Decimal | number | null | undefined) {
-    if (value == null) return null;
-    if (typeof value === 'number') return value;
-    return Number(value.toString());
+  private decimalToNumber(
+    value:
+      | Prisma.Decimal
+      | number
+      | null
+      | undefined,
+  ) {
+    if (
+      value ==
+      null
+    ) {
+      return null;
+    }
+
+    if (
+      typeof value ===
+      'number'
+    ) {
+      return value;
+    }
+
+    return Number(
+      value.toString(),
+    );
   }
 
-  private roundMoney(value: number) {
-    return Math.round((value + Number.EPSILON) * 100) / 100;
+  private roundMoney(
+    value: number,
+  ) {
+    return (
+      Math.round(
+        (
+          value +
+          Number.EPSILON
+        ) *
+          100,
+      ) /
+      100
+    );
   }
 }
