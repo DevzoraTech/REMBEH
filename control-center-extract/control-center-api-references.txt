@@ -1,0 +1,166 @@
+services/api/src/app.module.ts:12:import { ControlCenterModule } from './modules/control-center/control-center.module';
+services/api/src/app.module.ts:45:    ControlCenterModule,
+services/api/src/modules/control-center/dto/control-center-auth.dto.ts:3:export class ControlCenterLoginDto {
+services/api/src/modules/control-center/dto/control-center-auth.dto.ts:12:export class ControlCenterSetupDto extends ControlCenterLoginDto {
+services/api/src/modules/control-center/dto/control-center-users.dto.ts:3:export class ControlCenterUpdateUserStatusDto {
+services/api/src/modules/control-center/dto/control-center-message.dto.ts:10:export class ControlCenterSendMessageDto {
+services/api/src/modules/control-center/dto/control-center-pricing.dto.ts:14:export class ControlCenterPricingAmountDto {
+services/api/src/modules/control-center/dto/control-center-pricing.dto.ts:26:export class ControlCenterSavePricingDto {
+services/api/src/modules/control-center/dto/control-center-pricing.dto.ts:29:  @Type(() => ControlCenterPricingAmountDto)
+services/api/src/modules/control-center/dto/control-center-pricing.dto.ts:30:  prices!: ControlCenterPricingAmountDto[];
+services/api/src/modules/control-center/current-control-center-admin.decorator.ts:3:import type { ControlCenterAdminContext } from './control-center-admin';
+services/api/src/modules/control-center/current-control-center-admin.decorator.ts:5:type ControlCenterRequest = Request & {
+services/api/src/modules/control-center/current-control-center-admin.decorator.ts:6:  controlCenterAdmin?: ControlCenterAdminContext;
+services/api/src/modules/control-center/current-control-center-admin.decorator.ts:9:export const CurrentControlCenterAdmin = createParamDecorator(
+services/api/src/modules/control-center/current-control-center-admin.decorator.ts:11:    const request = context.switchToHttp().getRequest<ControlCenterRequest>();
+services/api/src/modules/control-center/current-control-center-admin.decorator.ts:12:    return request.controlCenterAdmin;
+services/api/src/modules/control-center/control-center.service.ts:13:  ControlCenterAdminStatus,
+services/api/src/modules/control-center/control-center.service.ts:14:  ControlCenterMessageChannel,
+services/api/src/modules/control-center/control-center.service.ts:15:  ControlCenterMessageStatus,
+services/api/src/modules/control-center/control-center.service.ts:24:import type { ControlCenterAdminContext } from './control-center-admin';
+services/api/src/modules/control-center/control-center.service.ts:26:  ControlCenterLoginDto,
+services/api/src/modules/control-center/control-center.service.ts:27:  ControlCenterSetupDto,
+services/api/src/modules/control-center/control-center.service.ts:28:} from './dto/control-center-auth.dto';
+services/api/src/modules/control-center/control-center.service.ts:29:import { ControlCenterSendMessageDto } from './dto/control-center-message.dto';
+services/api/src/modules/control-center/control-center.service.ts:30:import { ControlCenterSavePricingDto } from './dto/control-center-pricing.dto';
+services/api/src/modules/control-center/control-center.service.ts:31:import { ControlCenterUpdateUserStatusDto } from './dto/control-center-users.dto';
+services/api/src/modules/control-center/control-center.service.ts:44:    channel: ControlCenterMessageChannel.EMAIL,
+services/api/src/modules/control-center/control-center.service.ts:51:    channel: ControlCenterMessageChannel.EMAIL,
+services/api/src/modules/control-center/control-center.service.ts:58:    channel: ControlCenterMessageChannel.SMS,
+services/api/src/modules/control-center/control-center.service.ts:65:    channel: ControlCenterMessageChannel.SMS,
+services/api/src/modules/control-center/control-center.service.ts:72:    channel: ControlCenterMessageChannel.EMAIL,
+services/api/src/modules/control-center/control-center.service.ts:79:    channel: ControlCenterMessageChannel.EMAIL,
+services/api/src/modules/control-center/control-center.service.ts:86:    channel: ControlCenterMessageChannel.SMS,
+services/api/src/modules/control-center/control-center.service.ts:93:    channel: ControlCenterMessageChannel.SMS,
+services/api/src/modules/control-center/control-center.service.ts:100:    channel: ControlCenterMessageChannel.EMAIL,
+services/api/src/modules/control-center/control-center.service.ts:106:type ControlCenterTokenPayload = {
+services/api/src/modules/control-center/control-center.service.ts:107:  typ: 'control-center';
+services/api/src/modules/control-center/control-center.service.ts:122:export class ControlCenterService implements OnModuleInit {
+services/api/src/modules/control-center/control-center.service.ts:123:  private readonly logger = new Logger(ControlCenterService.name);
+services/api/src/modules/control-center/control-center.service.ts:142:      ? await this.prisma.controlCenterAdmin.findUnique({
+services/api/src/modules/control-center/control-center.service.ts:155:  async setup(dto: ControlCenterSetupDto) {
+services/api/src/modules/control-center/control-center.service.ts:157:    const existing = await this.prisma.controlCenterAdmin.findUnique({
+services/api/src/modules/control-center/control-center.service.ts:168:    const admin = await this.prisma.controlCenterAdmin.upsert({
+services/api/src/modules/control-center/control-center.service.ts:174:        status: ControlCenterAdminStatus.ACTIVE,
+services/api/src/modules/control-center/control-center.service.ts:180:        status: ControlCenterAdminStatus.ACTIVE,
+services/api/src/modules/control-center/control-center.service.ts:188:      'ControlCenterAdmin',
+services/api/src/modules/control-center/control-center.service.ts:199:  async login(dto: ControlCenterLoginDto) {
+services/api/src/modules/control-center/control-center.service.ts:201:    const admin = await this.prisma.controlCenterAdmin.findUnique({
+services/api/src/modules/control-center/control-center.service.ts:211:    if (admin.status !== ControlCenterAdminStatus.ACTIVE) {
+services/api/src/modules/control-center/control-center.service.ts:224:    const updated = await this.prisma.controlCenterAdmin.update({
+services/api/src/modules/control-center/control-center.service.ts:232:  async me(admin: ControlCenterAdminContext) {
+services/api/src/modules/control-center/control-center.service.ts:236:  async verifyAdminToken(token: string): Promise<ControlCenterAdminContext> {
+services/api/src/modules/control-center/control-center.service.ts:239:    const admin = await this.prisma.controlCenterAdmin.findUnique({
+services/api/src/modules/control-center/control-center.service.ts:246:      admin.status !== ControlCenterAdminStatus.ACTIVE
+services/api/src/modules/control-center/control-center.service.ts:300:      this.prisma.controlCenterAuditLog.findMany({
+services/api/src/modules/control-center/control-center.service.ts:610:    admin: ControlCenterAdminContext,
+services/api/src/modules/control-center/control-center.service.ts:612:    dto: ControlCenterSavePricingDto,
+services/api/src/modules/control-center/control-center.service.ts:618:    admin: ControlCenterAdminContext,
+services/api/src/modules/control-center/control-center.service.ts:621:    dto: ControlCenterSavePricingDto,
+services/api/src/modules/control-center/control-center.service.ts:722:    admin: ControlCenterAdminContext,
+services/api/src/modules/control-center/control-center.service.ts:724:    dto: ControlCenterUpdateUserStatusDto,
+services/api/src/modules/control-center/control-center.service.ts:755:    const templates = await this.prisma.controlCenterMessageTemplate.findMany({
+services/api/src/modules/control-center/control-center.service.ts:762:    admin: ControlCenterAdminContext,
+services/api/src/modules/control-center/control-center.service.ts:763:    dto: ControlCenterSendMessageDto,
+services/api/src/modules/control-center/control-center.service.ts:765:    const channel = dto.channel as ControlCenterMessageChannel;
+services/api/src/modules/control-center/control-center.service.ts:775:        channel === ControlCenterMessageChannel.EMAIL
+services/api/src/modules/control-center/control-center.service.ts:781:      let status: ControlCenterMessageStatus = ControlCenterMessageStatus.SENT;
+services/api/src/modules/control-center/control-center.service.ts:786:      if (channel === ControlCenterMessageChannel.EMAIL) {
+services/api/src/modules/control-center/control-center.service.ts:787:        const result = await this.notificationsService.sendControlCenterEmail({
+services/api/src/modules/control-center/control-center.service.ts:795:          status = ControlCenterMessageStatus.FAILED;
+services/api/src/modules/control-center/control-center.service.ts:808:              ? ControlCenterMessageStatus.SKIPPED
+services/api/src/modules/control-center/control-center.service.ts:809:              : ControlCenterMessageStatus.FAILED;
+services/api/src/modules/control-center/control-center.service.ts:816:        await this.prisma.controlCenterMessageLog.create({
+services/api/src/modules/control-center/control-center.service.ts:837:      'ControlCenterMessageLog',
+services/api/src/modules/control-center/control-center.service.ts:849:      sent: logs.filter((log) => log.status === ControlCenterMessageStatus.SENT)
+services/api/src/modules/control-center/control-center.service.ts:852:        (log) => log.status === ControlCenterMessageStatus.FAILED,
+services/api/src/modules/control-center/control-center.service.ts:855:        (log) => log.status === ControlCenterMessageStatus.SKIPPED,
+services/api/src/modules/control-center/control-center.service.ts:867:    admin: ControlCenterAdminContext,
+services/api/src/modules/control-center/control-center.service.ts:870:    dto: ControlCenterSavePricingDto,
+services/api/src/modules/control-center/control-center.service.ts:958:      await tx.controlCenterAuditLog.create({
+services/api/src/modules/control-center/control-center.service.ts:1052:    admin: ControlCenterAdminContext;
+services/api/src/modules/control-center/control-center.service.ts:1211:    dto: ControlCenterSendMessageDto,
+services/api/src/modules/control-center/control-center.service.ts:1212:    channel: ControlCenterMessageChannel,
+services/api/src/modules/control-center/control-center.service.ts:1258:      ...(channel === ControlCenterMessageChannel.EMAIL
+services/api/src/modules/control-center/control-center.service.ts:1283:        channel === ControlCenterMessageChannel.EMAIL
+services/api/src/modules/control-center/control-center.service.ts:1348:    dto: ControlCenterSendMessageDto,
+services/api/src/modules/control-center/control-center.service.ts:1378:      await this.prisma.controlCenterAdmin.upsert({
+services/api/src/modules/control-center/control-center.service.ts:1383:          status: ControlCenterAdminStatus.ACTIVE,
+services/api/src/modules/control-center/control-center.service.ts:1392:      await this.prisma.controlCenterMessageTemplate.upsert({
+services/api/src/modules/control-center/control-center.service.ts:1430:    status: ControlCenterAdminStatus;
+services/api/src/modules/control-center/control-center.service.ts:1451:    const payload: ControlCenterTokenPayload = {
+services/api/src/modules/control-center/control-center.service.ts:1452:      typ: 'control-center',
+services/api/src/modules/control-center/control-center.service.ts:1464:  private verifyToken(token: string): ControlCenterTokenPayload {
+services/api/src/modules/control-center/control-center.service.ts:1480:    ) as ControlCenterTokenPayload;
+services/api/src/modules/control-center/control-center.service.ts:1482:      payload.typ !== 'control-center' ||
+services/api/src/modules/control-center/control-center.service.ts:1503:      'rembeh-control-center-development-secret'
+services/api/src/modules/control-center/control-center.service.ts:1619:    await this.prisma.controlCenterAuditLog.create({
+services/api/src/modules/control-center/control-center-admin.ts:1:export type ControlCenterAdminContext = {
+services/api/src/modules/control-center/control-center.module.ts:5:import { ControlCenterAuthGuard } from './control-center-auth.guard';
+services/api/src/modules/control-center/control-center.module.ts:6:import { ControlCenterController } from './control-center.controller';
+services/api/src/modules/control-center/control-center.module.ts:7:import { ControlCenterService } from './control-center.service';
+services/api/src/modules/control-center/control-center.module.ts:11:  controllers: [ControlCenterController],
+services/api/src/modules/control-center/control-center.module.ts:12:  providers: [ControlCenterService, ControlCenterAuthGuard],
+services/api/src/modules/control-center/control-center.module.ts:13:  exports: [ControlCenterService],
+services/api/src/modules/control-center/control-center.module.ts:15:export class ControlCenterModule {}
+services/api/src/modules/control-center/control-center-auth.guard.ts:8:import type { ControlCenterAdminContext } from './control-center-admin';
+services/api/src/modules/control-center/control-center-auth.guard.ts:9:import { ControlCenterService } from './control-center.service';
+services/api/src/modules/control-center/control-center-auth.guard.ts:11:type ControlCenterRequest = Request & {
+services/api/src/modules/control-center/control-center-auth.guard.ts:12:  controlCenterAdmin?: ControlCenterAdminContext;
+services/api/src/modules/control-center/control-center-auth.guard.ts:16:export class ControlCenterAuthGuard implements CanActivate {
+services/api/src/modules/control-center/control-center-auth.guard.ts:17:  constructor(private readonly controlCenterService: ControlCenterService) {}
+services/api/src/modules/control-center/control-center-auth.guard.ts:20:    const request = context.switchToHttp().getRequest<ControlCenterRequest>();
+services/api/src/modules/control-center/control-center-auth.guard.ts:28:    request.controlCenterAdmin =
+services/api/src/modules/control-center/control-center-auth.guard.ts:29:      await this.controlCenterService.verifyAdminToken(token);
+services/api/src/modules/control-center/control-center.controller.ts:11:import type { ControlCenterAdminContext } from './control-center-admin';
+services/api/src/modules/control-center/control-center.controller.ts:12:import { ControlCenterAuthGuard } from './control-center-auth.guard';
+services/api/src/modules/control-center/control-center.controller.ts:13:import { ControlCenterService } from './control-center.service';
+services/api/src/modules/control-center/control-center.controller.ts:14:import { CurrentControlCenterAdmin } from './current-control-center-admin.decorator';
+services/api/src/modules/control-center/control-center.controller.ts:16:  ControlCenterLoginDto,
+services/api/src/modules/control-center/control-center.controller.ts:17:  ControlCenterSetupDto,
+services/api/src/modules/control-center/control-center.controller.ts:18:} from './dto/control-center-auth.dto';
+services/api/src/modules/control-center/control-center.controller.ts:19:import { ControlCenterSendMessageDto } from './dto/control-center-message.dto';
+services/api/src/modules/control-center/control-center.controller.ts:20:import { ControlCenterSavePricingDto } from './dto/control-center-pricing.dto';
+services/api/src/modules/control-center/control-center.controller.ts:21:import { ControlCenterUpdateUserStatusDto } from './dto/control-center-users.dto';
+services/api/src/modules/control-center/control-center.controller.ts:23:@Controller('control-center')
+services/api/src/modules/control-center/control-center.controller.ts:24:export class ControlCenterController {
+services/api/src/modules/control-center/control-center.controller.ts:25:  constructor(private readonly controlCenterService: ControlCenterService) {}
+services/api/src/modules/control-center/control-center.controller.ts:29:    return this.controlCenterService.authStatus(email);
+services/api/src/modules/control-center/control-center.controller.ts:33:  setup(@Body() body: ControlCenterSetupDto) {
+services/api/src/modules/control-center/control-center.controller.ts:34:    return this.controlCenterService.setup(body);
+services/api/src/modules/control-center/control-center.controller.ts:38:  login(@Body() body: ControlCenterLoginDto) {
+services/api/src/modules/control-center/control-center.controller.ts:39:    return this.controlCenterService.login(body);
+services/api/src/modules/control-center/control-center.controller.ts:43:  @UseGuards(ControlCenterAuthGuard)
+services/api/src/modules/control-center/control-center.controller.ts:44:  me(@CurrentControlCenterAdmin() admin: ControlCenterAdminContext) {
+services/api/src/modules/control-center/control-center.controller.ts:45:    return this.controlCenterService.me(admin);
+services/api/src/modules/control-center/control-center.controller.ts:49:  @UseGuards(ControlCenterAuthGuard)
+services/api/src/modules/control-center/control-center.controller.ts:51:    return this.controlCenterService.dashboard();
+services/api/src/modules/control-center/control-center.controller.ts:55:  @UseGuards(ControlCenterAuthGuard)
+services/api/src/modules/control-center/control-center.controller.ts:57:    return this.controlCenterService.listClients();
+services/api/src/modules/control-center/control-center.controller.ts:61:  @UseGuards(ControlCenterAuthGuard)
+services/api/src/modules/control-center/control-center.controller.ts:63:    return this.controlCenterService.getClient(tenantId);
+services/api/src/modules/control-center/control-center.controller.ts:67:  @UseGuards(ControlCenterAuthGuard)
+services/api/src/modules/control-center/control-center.controller.ts:69:    return this.controlCenterService.getPricing(tenantId);
+services/api/src/modules/control-center/control-center.controller.ts:73:  @UseGuards(ControlCenterAuthGuard)
+services/api/src/modules/control-center/control-center.controller.ts:75:    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+services/api/src/modules/control-center/control-center.controller.ts:77:    @Body() body: ControlCenterSavePricingDto,
+services/api/src/modules/control-center/control-center.controller.ts:79:    return this.controlCenterService.saveOrganizationPricing(
+services/api/src/modules/control-center/control-center.controller.ts:87:  @UseGuards(ControlCenterAuthGuard)
+services/api/src/modules/control-center/control-center.controller.ts:89:    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+services/api/src/modules/control-center/control-center.controller.ts:92:    @Body() body: ControlCenterSavePricingDto,
+services/api/src/modules/control-center/control-center.controller.ts:94:    return this.controlCenterService.saveBranchPricing(
+services/api/src/modules/control-center/control-center.controller.ts:103:  @UseGuards(ControlCenterAuthGuard)
+services/api/src/modules/control-center/control-center.controller.ts:105:    return this.controlCenterService.pricingHistory(tenantId);
+services/api/src/modules/control-center/control-center.controller.ts:109:  @UseGuards(ControlCenterAuthGuard)
+services/api/src/modules/control-center/control-center.controller.ts:111:    return this.controlCenterService.listUsers();
+services/api/src/modules/control-center/control-center.controller.ts:115:  @UseGuards(ControlCenterAuthGuard)
+services/api/src/modules/control-center/control-center.controller.ts:117:    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+services/api/src/modules/control-center/control-center.controller.ts:119:    @Body() body: ControlCenterUpdateUserStatusDto,
+services/api/src/modules/control-center/control-center.controller.ts:121:    return this.controlCenterService.updateUserStatus(admin, userId, body);
+services/api/src/modules/control-center/control-center.controller.ts:125:  @UseGuards(ControlCenterAuthGuard)
+services/api/src/modules/control-center/control-center.controller.ts:127:    return this.controlCenterService.listMessageTemplates();
+services/api/src/modules/control-center/control-center.controller.ts:131:  @UseGuards(ControlCenterAuthGuard)
+services/api/src/modules/control-center/control-center.controller.ts:133:    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+services/api/src/modules/control-center/control-center.controller.ts:134:    @Body() body: ControlCenterSendMessageDto,
+services/api/src/modules/control-center/control-center.controller.ts:136:    return this.controlCenterService.sendMessage(admin, body);
+services/api/src/modules/notifications/notifications.service.ts:38:  async sendControlCenterEmail(input: {

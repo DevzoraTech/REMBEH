@@ -92,7 +92,6 @@ const OWNER_RESTRICTED_OPERATION_PERMISSIONS = [
   'operation.open',
   'operation.float.manage',
   'operation.float.return',
-  'operation.cash.topup',
   'operation.expense.create',
   'operation.expense.approve',
   'operation.close',

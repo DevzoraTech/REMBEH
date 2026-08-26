@@ -1,0 +1,220 @@
+apps/web/src/app/control-center/page.tsx:1:import { ControlCenterWorkspace } from "../../components/control-center/control-center-workspace";
+apps/web/src/app/control-center/page.tsx:3:export default function ControlCenterPage() {
+apps/web/src/app/control-center/page.tsx:4:  return <ControlCenterWorkspace />;
+apps/web/src/app/control-center/login/page.tsx:13:  type ControlCenterAuthResponse,
+apps/web/src/app/control-center/login/page.tsx:14:  controlCenterPublicFetch,
+apps/web/src/app/control-center/login/page.tsx:15:} from "../../../lib/control-center-api";
+apps/web/src/app/control-center/login/page.tsx:17:  isControlCenterSessionValid,
+apps/web/src/app/control-center/login/page.tsx:18:  persistControlCenterAuth,
+apps/web/src/app/control-center/login/page.tsx:19:  readControlCenterAuth,
+apps/web/src/app/control-center/login/page.tsx:20:} from "../../../lib/control-center-session";
+apps/web/src/app/control-center/login/page.tsx:32:export default function ControlCenterLoginPage() {
+apps/web/src/app/control-center/login/page.tsx:34:    <AuthScene panelKey="control-center-login">
+apps/web/src/app/control-center/login/page.tsx:35:      <ControlCenterLoginForm />
+apps/web/src/app/control-center/login/page.tsx:40:function ControlCenterLoginForm() {
+apps/web/src/app/control-center/login/page.tsx:55:      const { session } = readControlCenterAuth();
+apps/web/src/app/control-center/login/page.tsx:56:      if (isControlCenterSessionValid(session)) {
+apps/web/src/app/control-center/login/page.tsx:57:        router.replace("/control-center");
+apps/web/src/app/control-center/login/page.tsx:71:        const status = await controlCenterPublicFetch<AuthStatus>(
+apps/web/src/app/control-center/login/page.tsx:86:          await controlCenterPublicFetch<ControlCenterAuthResponse>(
+apps/web/src/app/control-center/login/page.tsx:102:        await controlCenterPublicFetch<ControlCenterAuthResponse>(
+apps/web/src/app/control-center/login/page.tsx:124:  async function completeAuth(response: ControlCenterAuthResponse) {
+apps/web/src/app/control-center/login/page.tsx:125:    persistControlCenterAuth({
+apps/web/src/app/control-center/login/page.tsx:129:    router.replace("/control-center");
+apps/web/src/components/control-center/client-detail-section.tsx:14:import type { ControlCenterBranch, ControlCenterClientDetail } from "./types";
+apps/web/src/components/control-center/client-detail-section.tsx:21:} from "./control-center-primitives";
+apps/web/src/components/control-center/client-detail-section.tsx:30:export function ControlCenterClientDetailSection({
+apps/web/src/components/control-center/client-detail-section.tsx:37:  detail: ControlCenterClientDetail | null;
+apps/web/src/components/control-center/client-detail-section.tsx:304:  branch: ControlCenterBranch;
+apps/web/src/components/control-center/client-detail-section.tsx:386:function summarizeBranches(branches: ControlCenterBranch[]) {
+apps/web/src/components/control-center/messaging-section.tsx:5:import type { ControlCenterSession } from "../../lib/control-center-session";
+apps/web/src/components/control-center/messaging-section.tsx:6:import { controlCenterFetch } from "../../lib/control-center-api";
+apps/web/src/components/control-center/messaging-section.tsx:8:  ControlCenterBranch,
+apps/web/src/components/control-center/messaging-section.tsx:9:  ControlCenterClient,
+apps/web/src/components/control-center/messaging-section.tsx:10:  ControlCenterClientDetail,
+apps/web/src/components/control-center/messaging-section.tsx:11:  ControlCenterTemplate,
+apps/web/src/components/control-center/messaging-section.tsx:12:  ControlCenterUser,
+apps/web/src/components/control-center/messaging-section.tsx:21:} from "./control-center-primitives";
+apps/web/src/components/control-center/messaging-section.tsx:50:export function ControlCenterMessagingSection({
+apps/web/src/components/control-center/messaging-section.tsx:56:  session: ControlCenterSession;
+apps/web/src/components/control-center/messaging-section.tsx:57:  clients: ControlCenterClient[];
+apps/web/src/components/control-center/messaging-section.tsx:58:  users: ControlCenterUser[];
+apps/web/src/components/control-center/messaging-section.tsx:59:  templates: ControlCenterTemplate[];
+apps/web/src/components/control-center/messaging-section.tsx:72:  const [branchOptions, setBranchOptions] = useState<ControlCenterBranch[]>([]);
+apps/web/src/components/control-center/messaging-section.tsx:121:    void controlCenterFetch<ControlCenterClientDetail>(
+apps/web/src/components/control-center/messaging-section.tsx:178:      const response = await controlCenterFetch<SendResult>(
+apps/web/src/components/control-center/messaging-section.tsx:582:function userMatchesRoleCategory(user: ControlCenterUser, category: string) {
+apps/web/src/components/control-center/control-center-shell.tsx:21:import type { ControlCenterAdmin } from "../../lib/control-center-session";
+apps/web/src/components/control-center/control-center-shell.tsx:22:import { clearControlCenterAuth } from "../../lib/control-center-session";
+apps/web/src/components/control-center/control-center-shell.tsx:24:export type ControlCenterSection =
+apps/web/src/components/control-center/control-center-shell.tsx:48:  id: ControlCenterSection;
+apps/web/src/components/control-center/control-center-shell.tsx:53:export function ControlCenterShell({
+apps/web/src/components/control-center/control-center-shell.tsx:59:  admin: ControlCenterAdmin;
+apps/web/src/components/control-center/control-center-shell.tsx:60:  active: ControlCenterSection;
+apps/web/src/components/control-center/control-center-shell.tsx:61:  onSectionChange: (section: ControlCenterSection) => void;
+apps/web/src/components/control-center/control-center-shell.tsx:79:    clearControlCenterAuth();
+apps/web/src/components/control-center/control-center-shell.tsx:80:    router.replace("/control-center/login");
+apps/web/src/components/control-center/pricing-history-section.tsx:5:import type { ControlCenterClient, ControlCenterPricingHistory } from "./types";
+apps/web/src/components/control-center/pricing-history-section.tsx:12:} from "./control-center-primitives";
+apps/web/src/components/control-center/pricing-history-section.tsx:15:export function ControlCenterPricingHistorySection({
+apps/web/src/components/control-center/pricing-history-section.tsx:21:  client: ControlCenterClient | null;
+apps/web/src/components/control-center/pricing-history-section.tsx:22:  history: ControlCenterPricingHistory | null;
+apps/web/src/components/control-center/pricing-section.tsx:14:import type { ControlCenterSession } from "../../lib/control-center-session";
+apps/web/src/components/control-center/pricing-section.tsx:15:import { controlCenterFetch } from "../../lib/control-center-api";
+apps/web/src/components/control-center/pricing-section.tsx:17:  ControlCenterClient,
+apps/web/src/components/control-center/pricing-section.tsx:18:  ControlCenterPricing,
+apps/web/src/components/control-center/pricing-section.tsx:19:  ControlCenterPriceRow,
+apps/web/src/components/control-center/pricing-section.tsx:28:} from "./control-center-primitives";
+apps/web/src/components/control-center/pricing-section.tsx:40:export function ControlCenterPricingSection({
+apps/web/src/components/control-center/pricing-section.tsx:51:  session: ControlCenterSession;
+apps/web/src/components/control-center/pricing-section.tsx:52:  client: ControlCenterClient | null;
+apps/web/src/components/control-center/pricing-section.tsx:53:  pricing: ControlCenterPricing | null;
+apps/web/src/components/control-center/pricing-section.tsx:124:      const response = await controlCenterFetch<PricingSaveResponse>(
+apps/web/src/components/control-center/pricing-section.tsx:435:  row: ControlCenterPriceRow;
+apps/web/src/components/control-center/control-center-workspace.tsx:6:import { controlCenterFetch } from "../../lib/control-center-api";
+apps/web/src/components/control-center/control-center-workspace.tsx:8:  clearControlCenterAuth,
+apps/web/src/components/control-center/control-center-workspace.tsx:9:  isControlCenterSessionValid,
+apps/web/src/components/control-center/control-center-workspace.tsx:10:  readControlCenterAuth,
+apps/web/src/components/control-center/control-center-workspace.tsx:11:  type ControlCenterAdmin,
+apps/web/src/components/control-center/control-center-workspace.tsx:12:  type ControlCenterSession,
+apps/web/src/components/control-center/control-center-workspace.tsx:13:} from "../../lib/control-center-session";
+apps/web/src/components/control-center/control-center-workspace.tsx:14:import { ControlCenterClientDetailSection } from "./client-detail-section";
+apps/web/src/components/control-center/control-center-workspace.tsx:15:import { ControlCenterClientsSection } from "./clients-section";
+apps/web/src/components/control-center/control-center-workspace.tsx:17:  ControlCenterSection,
+apps/web/src/components/control-center/control-center-workspace.tsx:18:  ControlCenterShell,
+apps/web/src/components/control-center/control-center-workspace.tsx:19:} from "./control-center-shell";
+apps/web/src/components/control-center/control-center-workspace.tsx:20:import { ControlCenterDashboardSection } from "./dashboard-section";
+apps/web/src/components/control-center/control-center-workspace.tsx:21:import { ControlCenterMessagingSection } from "./messaging-section";
+apps/web/src/components/control-center/control-center-workspace.tsx:22:import { ControlCenterPricingHistorySection } from "./pricing-history-section";
+apps/web/src/components/control-center/control-center-workspace.tsx:23:import { ControlCenterPricingSection } from "./pricing-section";
+apps/web/src/components/control-center/control-center-workspace.tsx:31:import { ControlCenterUsersSection } from "./users-section";
+apps/web/src/components/control-center/control-center-workspace.tsx:33:  ControlCenterClient,
+apps/web/src/components/control-center/control-center-workspace.tsx:34:  ControlCenterClientDetail,
+apps/web/src/components/control-center/control-center-workspace.tsx:35:  ControlCenterClientsResponse,
+apps/web/src/components/control-center/control-center-workspace.tsx:36:  ControlCenterDashboard,
+apps/web/src/components/control-center/control-center-workspace.tsx:37:  ControlCenterPricing,
+apps/web/src/components/control-center/control-center-workspace.tsx:38:  ControlCenterPricingHistory,
+apps/web/src/components/control-center/control-center-workspace.tsx:39:  ControlCenterTemplate,
+apps/web/src/components/control-center/control-center-workspace.tsx:40:  ControlCenterUser,
+apps/web/src/components/control-center/control-center-workspace.tsx:45:export function ControlCenterWorkspace() {
+apps/web/src/components/control-center/control-center-workspace.tsx:47:  const [session, setSession] = useState<ControlCenterSession | null>(null);
+apps/web/src/components/control-center/control-center-workspace.tsx:48:  const [admin, setAdmin] = useState<ControlCenterAdmin | null>(null);
+apps/web/src/components/control-center/control-center-workspace.tsx:50:  const [active, setActive] = useState<ControlCenterSection>("dashboard");
+apps/web/src/components/control-center/control-center-workspace.tsx:53:  const [dashboard, setDashboard] = useState<ControlCenterDashboard | null>(
+apps/web/src/components/control-center/control-center-workspace.tsx:56:  const [clients, setClients] = useState<ControlCenterClientsResponse | null>(
+apps/web/src/components/control-center/control-center-workspace.tsx:59:  const [users, setUsers] = useState<ControlCenterUser[]>([]);
+apps/web/src/components/control-center/control-center-workspace.tsx:60:  const [templates, setTemplates] = useState<ControlCenterTemplate[]>([]);
+apps/web/src/components/control-center/control-center-workspace.tsx:62:    useState<ControlCenterClientDetail | null>(null);
+apps/web/src/components/control-center/control-center-workspace.tsx:63:  const [pricing, setPricing] = useState<ControlCenterPricing | null>(null);
+apps/web/src/components/control-center/control-center-workspace.tsx:65:    useState<ControlCenterPricingHistory | null>(null);
+apps/web/src/components/control-center/control-center-workspace.tsx:78:  const loadCore = useCallback(async (activeSession: ControlCenterSession) => {
+apps/web/src/components/control-center/control-center-workspace.tsx:81:        controlCenterFetch<ControlCenterDashboard>("/dashboard", activeSession),
+apps/web/src/components/control-center/control-center-workspace.tsx:82:        controlCenterFetch<ControlCenterClientsResponse>(
+apps/web/src/components/control-center/control-center-workspace.tsx:86:        controlCenterFetch<{ users: ControlCenterUser[] }>(
+apps/web/src/components/control-center/control-center-workspace.tsx:90:        controlCenterFetch<{ templates: ControlCenterTemplate[] }>(
+apps/web/src/components/control-center/control-center-workspace.tsx:104:        const auth = readControlCenterAuth();
+apps/web/src/components/control-center/control-center-workspace.tsx:108:          !isControlCenterSessionValid(auth.session)
+apps/web/src/components/control-center/control-center-workspace.tsx:110:          clearControlCenterAuth();
+apps/web/src/components/control-center/control-center-workspace.tsx:111:          router.replace("/control-center/login");
+apps/web/src/components/control-center/control-center-workspace.tsx:115:          await controlCenterFetch("/me", auth.session);
+apps/web/src/components/control-center/control-center-workspace.tsx:121:          clearControlCenterAuth();
+apps/web/src/components/control-center/control-center-workspace.tsx:127:          router.replace("/control-center/login");
+apps/web/src/components/control-center/control-center-workspace.tsx:140:        const detail = await controlCenterFetch<ControlCenterClientDetail>(
+apps/web/src/components/control-center/control-center-workspace.tsx:164:        const data = await controlCenterFetch<ControlCenterPricing>(
+apps/web/src/components/control-center/control-center-workspace.tsx:188:        const data = await controlCenterFetch<ControlCenterPricingHistory>(
+apps/web/src/components/control-center/control-center-workspace.tsx:242:    const usersData = await controlCenterFetch<{ users: ControlCenterUser[] }>(
+apps/web/src/components/control-center/control-center-workspace.tsx:249:  function changeSection(section: ControlCenterSection) {
+apps/web/src/components/control-center/control-center-workspace.tsx:261:    <ControlCenterShell
+apps/web/src/components/control-center/control-center-workspace.tsx:297:    </ControlCenterShell>
+apps/web/src/components/control-center/control-center-workspace.tsx:302:  active: ControlCenterSection;
+apps/web/src/components/control-center/control-center-workspace.tsx:304:  dashboard: ControlCenterDashboard | null;
+apps/web/src/components/control-center/control-center-workspace.tsx:305:  clients: ControlCenterClientsResponse | null;
+apps/web/src/components/control-center/control-center-workspace.tsx:306:  users: ControlCenterUser[];
+apps/web/src/components/control-center/control-center-workspace.tsx:307:  templates: ControlCenterTemplate[];
+apps/web/src/components/control-center/control-center-workspace.tsx:308:  session: ControlCenterSession;
+apps/web/src/components/control-center/control-center-workspace.tsx:309:  selectedClient: ControlCenterClient | null;
+apps/web/src/components/control-center/control-center-workspace.tsx:310:  clientDetail: ControlCenterClientDetail | null;
+apps/web/src/components/control-center/control-center-workspace.tsx:311:  pricing: ControlCenterPricing | null;
+apps/web/src/components/control-center/control-center-workspace.tsx:312:  pricingHistory: ControlCenterPricingHistory | null;
+apps/web/src/components/control-center/control-center-workspace.tsx:324:  setActive: (section: ControlCenterSection) => void;
+apps/web/src/components/control-center/control-center-workspace.tsx:330:      <ControlCenterDashboardSection
+apps/web/src/components/control-center/control-center-workspace.tsx:343:        <ControlCenterClientDetailSection
+apps/web/src/components/control-center/control-center-workspace.tsx:357:        <ControlCenterPricingSection
+apps/web/src/components/control-center/control-center-workspace.tsx:372:        <ControlCenterPricingHistorySection
+apps/web/src/components/control-center/control-center-workspace.tsx:381:      <ControlCenterClientsSection
+apps/web/src/components/control-center/control-center-workspace.tsx:391:      <ControlCenterClientsSection
+apps/web/src/components/control-center/control-center-workspace.tsx:401:      <ControlCenterUsersSection
+apps/web/src/components/control-center/control-center-workspace.tsx:411:      <ControlCenterMessagingSection
+apps/web/src/components/control-center/users-section.tsx:5:import type { ControlCenterSession } from "../../lib/control-center-session";
+apps/web/src/components/control-center/users-section.tsx:6:import { controlCenterFetch } from "../../lib/control-center-api";
+apps/web/src/components/control-center/users-section.tsx:8:import type { ControlCenterUser } from "./types";
+apps/web/src/components/control-center/users-section.tsx:16:} from "./control-center-primitives";
+apps/web/src/components/control-center/users-section.tsx:19:export function ControlCenterUsersSection({
+apps/web/src/components/control-center/users-section.tsx:24:  session: ControlCenterSession;
+apps/web/src/components/control-center/users-section.tsx:25:  users: ControlCenterUser[];
+apps/web/src/components/control-center/users-section.tsx:65:  async function updateStatus(user: ControlCenterUser, nextStatus: string) {
+apps/web/src/components/control-center/users-section.tsx:76:      await controlCenterFetch(`/users/${user.id}/status`, session, {
+apps/web/src/components/control-center/dashboard-section.tsx:12:import type { ControlCenterClient, ControlCenterDashboard } from "./types";
+apps/web/src/components/control-center/dashboard-section.tsx:19:} from "./control-center-primitives";
+apps/web/src/components/control-center/dashboard-section.tsx:22:export function ControlCenterDashboardSection({
+apps/web/src/components/control-center/dashboard-section.tsx:29:  dashboard: ControlCenterDashboard | null;
+apps/web/src/components/control-center/dashboard-section.tsx:30:  clients: ControlCenterClient[];
+apps/web/src/components/control-center/dashboard-section.tsx:196:                <EmptyState title="No control-center changes yet" />
+apps/web/src/components/control-center/types.ts:1:export type ControlCenterClient = {
+apps/web/src/components/control-center/types.ts:17:export type ControlCenterClientsResponse = {
+apps/web/src/components/control-center/types.ts:24:  clients: ControlCenterClient[];
+apps/web/src/components/control-center/types.ts:27:export type ControlCenterDashboard = {
+apps/web/src/components/control-center/types.ts:50:export type ControlCenterClientDetail = {
+apps/web/src/components/control-center/types.ts:72:  branches: ControlCenterBranch[];
+apps/web/src/components/control-center/types.ts:82:export type ControlCenterBranch = {
+apps/web/src/components/control-center/types.ts:100:export type ControlCenterPricing = {
+apps/web/src/components/control-center/types.ts:101:  plans: ControlCenterPlan[];
+apps/web/src/components/control-center/types.ts:103:  organization: ControlCenterPriceRow[];
+apps/web/src/components/control-center/types.ts:106:    prices: ControlCenterPriceRow[];
+apps/web/src/components/control-center/types.ts:110:export type ControlCenterPlan = {
+apps/web/src/components/control-center/types.ts:119:export type ControlCenterPriceRow = {
+apps/web/src/components/control-center/types.ts:120:  plan: ControlCenterPlan;
+apps/web/src/components/control-center/types.ts:136:export type ControlCenterPricingHistory = {
+apps/web/src/components/control-center/types.ts:156:export type ControlCenterUser = {
+apps/web/src/components/control-center/types.ts:174:export type ControlCenterTemplate = {
+apps/web/src/components/control-center/support-sections.tsx:13:  ControlCenterClient,
+apps/web/src/components/control-center/support-sections.tsx:14:  ControlCenterDashboard,
+apps/web/src/components/control-center/support-sections.tsx:15:  ControlCenterTemplate,
+apps/web/src/components/control-center/support-sections.tsx:23:} from "./control-center-primitives";
+apps/web/src/components/control-center/support-sections.tsx:31:  clients: ControlCenterClient[];
+apps/web/src/components/control-center/support-sections.tsx:32:  dashboard: ControlCenterDashboard | null;
+apps/web/src/components/control-center/support-sections.tsx:109:  dashboard: ControlCenterDashboard | null;
+apps/web/src/components/control-center/support-sections.tsx:193:  dashboard: ControlCenterDashboard | null;
+apps/web/src/components/control-center/support-sections.tsx:194:  clients: ControlCenterClient[];
+apps/web/src/components/control-center/support-sections.tsx:264:  dashboard: ControlCenterDashboard | null;
+apps/web/src/components/control-center/support-sections.tsx:309:  templates: ControlCenterTemplate[];
+apps/web/src/components/control-center/clients-section.tsx:13:  ControlCenterClient,
+apps/web/src/components/control-center/clients-section.tsx:14:  ControlCenterClientsResponse,
+apps/web/src/components/control-center/clients-section.tsx:23:} from "./control-center-primitives";
+apps/web/src/components/control-center/clients-section.tsx:26:export function ControlCenterClientsSection({
+apps/web/src/components/control-center/clients-section.tsx:31:  data: ControlCenterClientsResponse | null;
+apps/web/src/components/control-center/clients-section.tsx:199:  client: ControlCenterClient;
+apps/web/src/lib/control-center-api.ts:3:  ControlCenterAdmin,
+apps/web/src/lib/control-center-api.ts:4:  ControlCenterSession,
+apps/web/src/lib/control-center-api.ts:5:} from "./control-center-session";
+apps/web/src/lib/control-center-api.ts:7:export type ControlCenterAuthResponse = {
+apps/web/src/lib/control-center-api.ts:8:  admin: ControlCenterAdmin;
+apps/web/src/lib/control-center-api.ts:9:  session: ControlCenterSession;
+apps/web/src/lib/control-center-api.ts:13:export async function controlCenterFetch<T>(
+apps/web/src/lib/control-center-api.ts:15:  session: ControlCenterSession,
+apps/web/src/lib/control-center-api.ts:18:  const response = await fetch(`${apiBaseUrl}/control-center${path}`, {
+apps/web/src/lib/control-center-api.ts:35:export async function controlCenterPublicFetch<T>(
+apps/web/src/lib/control-center-api.ts:39:  const response = await fetch(`${apiBaseUrl}/control-center${path}`, {
+apps/web/src/lib/control-center-session.ts:1:export type ControlCenterSession = {
+apps/web/src/lib/control-center-session.ts:7:export type ControlCenterAdmin = {
+apps/web/src/lib/control-center-session.ts:14:const SESSION_KEY = "rembehControlCenterSession";
+apps/web/src/lib/control-center-session.ts:15:const ADMIN_KEY = "rembehControlCenterAdmin";
+apps/web/src/lib/control-center-session.ts:22:export function persistControlCenterAuth(input: {
+apps/web/src/lib/control-center-session.ts:23:  session: ControlCenterSession;
+apps/web/src/lib/control-center-session.ts:24:  admin: ControlCenterAdmin;
+apps/web/src/lib/control-center-session.ts:32:export function clearControlCenterAuth() {
+apps/web/src/lib/control-center-session.ts:39:export function readControlCenterAuth() {
+apps/web/src/lib/control-center-session.ts:41:    session: readJson<ControlCenterSession>(SESSION_KEY),
+apps/web/src/lib/control-center-session.ts:42:    admin: readJson<ControlCenterAdmin>(ADMIN_KEY),
+apps/web/src/lib/control-center-session.ts:46:export function isControlCenterSessionValid(
+apps/web/src/lib/control-center-session.ts:47:  session: ControlCenterSession | null,

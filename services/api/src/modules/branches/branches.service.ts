@@ -75,16 +75,21 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'loan.product.manage',
     'collection.create',
     'collection.read',
+
+    // Operations
     'operation.read',
     'operation.open',
+    'operation.cash.topup',
     'operation.float.manage',
     'operation.float.return',
     'operation.expense.create',
     'operation.expense.approve',
     'operation.close',
     'operation.report.review',
+
     'report.read',
   ],
+
   Supervisor: [
     ...SYNC_PERMISSION_LIST,
     'branch.read',
@@ -98,6 +103,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'collection.read',
     'operation.read',
   ],
+
   'Loan Officer': [
     ...SYNC_PERMISSION_LIST,
     'branch.read',
@@ -109,6 +115,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'collection.create',
     'collection.read',
   ],
+
   Agent: [
     ...SYNC_PERMISSION_LIST,
     'branch.read',
@@ -119,6 +126,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'collection.create',
     'collection.read',
   ],
+
   'Field Officer': [
     ...SYNC_PERMISSION_LIST,
     'branch.read',
@@ -129,6 +137,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'collection.create',
     'collection.read',
   ],
+
   Cashier: [
     ...SYNC_PERMISSION_LIST,
     'branch.read',
@@ -142,15 +151,18 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'cashdrawer.close',
     'cashdrawer.reconcile',
     'cashier.read',
+
+    // Operations
     'operation.read',
     'operation.open',
+    'operation.cash.topup',
     'operation.float.manage',
     'operation.float.return',
-    'operation.cash.topup',
     'operation.expense.create',
     'operation.close',
     'operation.report.review',
   ],
+
   'Recovery Officer': [
     ...SYNC_PERMISSION_LIST,
     'branch.read',
@@ -162,7 +174,6 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'recovery.assign',
   ],
 };
-
 type StaffUserRecord = {
   id: string;
   branchId: string | null;

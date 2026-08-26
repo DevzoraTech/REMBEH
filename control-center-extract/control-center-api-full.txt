@@ -1,0 +1,2027 @@
+
+================================================================================
+FILE: services/api/src/modules/control-center/control-center-admin.ts
+================================================================================
+export type ControlCenterAdminContext = {
+  adminId: string;
+  email: string;
+  displayName: string;
+};
+
+================================================================================
+FILE: services/api/src/modules/control-center/control-center-auth.guard.ts
+================================================================================
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import type { Request } from 'express';
+import type { ControlCenterAdminContext } from './control-center-admin';
+import { ControlCenterService } from './control-center.service';
+
+type ControlCenterRequest = Request & {
+  controlCenterAdmin?: ControlCenterAdminContext;
+};
+
+@Injectable()
+export class ControlCenterAuthGuard implements CanActivate {
+  constructor(private readonly controlCenterService: ControlCenterService) {}
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<ControlCenterRequest>();
+    const authorization = request.header('authorization') ?? '';
+    const [scheme, token] = authorization.split(/\s+/);
+
+    if (scheme?.toLowerCase() !== 'bearer' || !token) {
+      throw new UnauthorizedException('Control center login required.');
+    }
+
+    request.controlCenterAdmin =
+      await this.controlCenterService.verifyAdminToken(token);
+    return true;
+  }
+}
+
+================================================================================
+FILE: services/api/src/modules/control-center/control-center.controller.ts
+================================================================================
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import type { ControlCenterAdminContext } from './control-center-admin';
+import { ControlCenterAuthGuard } from './control-center-auth.guard';
+import { ControlCenterService } from './control-center.service';
+import { CurrentControlCenterAdmin } from './current-control-center-admin.decorator';
+import {
+  ControlCenterLoginDto,
+  ControlCenterSetupDto,
+} from './dto/control-center-auth.dto';
+import { ControlCenterSendMessageDto } from './dto/control-center-message.dto';
+import { ControlCenterSavePricingDto } from './dto/control-center-pricing.dto';
+import { ControlCenterUpdateUserStatusDto } from './dto/control-center-users.dto';
+
+@Controller('control-center')
+export class ControlCenterController {
+  constructor(private readonly controlCenterService: ControlCenterService) {}
+
+  @Get('auth/status')
+  authStatus(@Query('email') email?: string) {
+    return this.controlCenterService.authStatus(email);
+  }
+
+  @Post('auth/setup')
+  setup(@Body() body: ControlCenterSetupDto) {
+    return this.controlCenterService.setup(body);
+  }
+
+  @Post('auth/login')
+  login(@Body() body: ControlCenterLoginDto) {
+    return this.controlCenterService.login(body);
+  }
+
+  @Get('me')
+  @UseGuards(ControlCenterAuthGuard)
+  me(@CurrentControlCenterAdmin() admin: ControlCenterAdminContext) {
+    return this.controlCenterService.me(admin);
+  }
+
+  @Get('dashboard')
+  @UseGuards(ControlCenterAuthGuard)
+  dashboard() {
+    return this.controlCenterService.dashboard();
+  }
+
+  @Get('clients')
+  @UseGuards(ControlCenterAuthGuard)
+  clients() {
+    return this.controlCenterService.listClients();
+  }
+
+  @Get('clients/:tenantId')
+  @UseGuards(ControlCenterAuthGuard)
+  client(@Param('tenantId') tenantId: string) {
+    return this.controlCenterService.getClient(tenantId);
+  }
+
+  @Get('clients/:tenantId/pricing')
+  @UseGuards(ControlCenterAuthGuard)
+  pricing(@Param('tenantId') tenantId: string) {
+    return this.controlCenterService.getPricing(tenantId);
+  }
+
+  @Post('clients/:tenantId/pricing')
+  @UseGuards(ControlCenterAuthGuard)
+  saveOrganizationPricing(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Param('tenantId') tenantId: string,
+    @Body() body: ControlCenterSavePricingDto,
+  ) {
+    return this.controlCenterService.saveOrganizationPricing(
+      admin,
+      tenantId,
+      body,
+    );
+  }
+
+  @Post('clients/:tenantId/branches/:branchId/pricing')
+  @UseGuards(ControlCenterAuthGuard)
+  saveBranchPricing(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Param('tenantId') tenantId: string,
+    @Param('branchId') branchId: string,
+    @Body() body: ControlCenterSavePricingDto,
+  ) {
+    return this.controlCenterService.saveBranchPricing(
+      admin,
+      tenantId,
+      branchId,
+      body,
+    );
+  }
+
+  @Get('clients/:tenantId/pricing-history')
+  @UseGuards(ControlCenterAuthGuard)
+  pricingHistory(@Param('tenantId') tenantId: string) {
+    return this.controlCenterService.pricingHistory(tenantId);
+  }
+
+  @Get('users')
+  @UseGuards(ControlCenterAuthGuard)
+  users() {
+    return this.controlCenterService.listUsers();
+  }
+
+  @Patch('users/:userId/status')
+  @UseGuards(ControlCenterAuthGuard)
+  updateUserStatus(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Param('userId') userId: string,
+    @Body() body: ControlCenterUpdateUserStatusDto,
+  ) {
+    return this.controlCenterService.updateUserStatus(admin, userId, body);
+  }
+
+  @Get('message-templates')
+  @UseGuards(ControlCenterAuthGuard)
+  messageTemplates() {
+    return this.controlCenterService.listMessageTemplates();
+  }
+
+  @Post('messages/send')
+  @UseGuards(ControlCenterAuthGuard)
+  sendMessage(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Body() body: ControlCenterSendMessageDto,
+  ) {
+    return this.controlCenterService.sendMessage(admin, body);
+  }
+}
+
+================================================================================
+FILE: services/api/src/modules/control-center/control-center.module.ts
+================================================================================
+import { Module } from '@nestjs/common';
+import { SecurityModule } from '../../common/security/security.module';
+import { DatabaseModule } from '../../database/database.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { ControlCenterAuthGuard } from './control-center-auth.guard';
+import { ControlCenterController } from './control-center.controller';
+import { ControlCenterService } from './control-center.service';
+
+@Module({
+  imports: [DatabaseModule, SecurityModule, NotificationsModule],
+  controllers: [ControlCenterController],
+  providers: [ControlCenterService, ControlCenterAuthGuard],
+  exports: [ControlCenterService],
+})
+export class ControlCenterModule {}
+
+================================================================================
+FILE: services/api/src/modules/control-center/control-center.service.ts
+================================================================================
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleInit,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import {
+  ControlCenterAdminStatus,
+  ControlCenterMessageChannel,
+  ControlCenterMessageStatus,
+  Prisma,
+  UserStatus,
+} from '@prisma/client';
+import { createHmac, timingSafeEqual } from 'node:crypto';
+import { PasswordService } from '../../common/security/password.service';
+import { PrismaService } from '../../database/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import { SmsService } from '../notifications/sms.service';
+import type { ControlCenterAdminContext } from './control-center-admin';
+import {
+  ControlCenterLoginDto,
+  ControlCenterSetupDto,
+} from './dto/control-center-auth.dto';
+import { ControlCenterSendMessageDto } from './dto/control-center-message.dto';
+import { ControlCenterSavePricingDto } from './dto/control-center-pricing.dto';
+import { ControlCenterUpdateUserStatusDto } from './dto/control-center-users.dto';
+
+const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 365 * 10;
+
+const DEFAULT_ALLOWED_EMAILS = [
+  'antikra.ug@gmail.com',
+  'bonnefilleul@gmail.com',
+];
+
+const DEFAULT_TEMPLATES = [
+  {
+    code: 'subscription_offer_email',
+    name: 'Subscription price offer',
+    channel: ControlCenterMessageChannel.EMAIL,
+    subject: 'Your REMBEH subscription offer',
+    body: 'Hello {{name}},\n\nWe have prepared a custom REMBEH subscription offer for {{organization}}. Reply to this email or contact the ANTIKRA team to activate it.\n\nRegards,\nANTIKRA',
+  },
+  {
+    code: 'renewal_reminder_email',
+    name: 'Renewal reminder',
+    channel: ControlCenterMessageChannel.EMAIL,
+    subject: 'REMBEH subscription renewal reminder',
+    body: 'Hello {{name}},\n\nYour REMBEH subscription for {{organization}} is due for renewal soon. Please complete payment to avoid service interruption.\n\nRegards,\nANTIKRA',
+  },
+  {
+    code: 'marketing_update_sms',
+    name: 'Marketing SMS',
+    channel: ControlCenterMessageChannel.SMS,
+    subject: null,
+    body: 'REMBEH update: {{organization}} can now manage daily operations, salaries, and reports more smoothly. Contact ANTIKRA for help.',
+  },
+  {
+    code: 'subscription_locked_sms',
+    name: 'Locked branch SMS',
+    channel: ControlCenterMessageChannel.SMS,
+    subject: null,
+    body: 'REMBEH notice: {{branch}} subscription needs attention. Renew to restore full access. ANTIKRA support is available.',
+  },
+  {
+    code: 'pricing_update_email',
+    name: 'Pricing update',
+    channel: ControlCenterMessageChannel.EMAIL,
+    subject: 'REMBEH pricing update for {{organization}}',
+    body: 'Hello {{name}},\n\nWe have updated REMBEH subscription pricing for {{organization}}. Branch-specific pricing still applies where it has been agreed.\n\nOpen your subscription page to view the latest amount before making a payment.\n\nRegards,\nREMBEH Billing',
+  },
+  {
+    code: 'branch_manager_notice_email',
+    name: 'Branch manager notice',
+    channel: ControlCenterMessageChannel.EMAIL,
+    subject: 'REMBEH notice for {{branch}}',
+    body: 'Hello {{name}},\n\nThis is an important REMBEH update for {{branch}} under {{organization}}.\n\n{{branch}} teams should review the app for the latest operational and subscription information.\n\nRegards,\nREMBEH Operations',
+  },
+  {
+    code: 'field_officer_campaign_sms',
+    name: 'Field officer SMS',
+    channel: ControlCenterMessageChannel.SMS,
+    subject: null,
+    body: 'REMBEH update for {{branch}}: Please sync your app while online before field work and keep records up to date. ANTIKRA support is available.',
+  },
+  {
+    code: 'manager_campaign_sms',
+    name: 'Manager SMS',
+    channel: ControlCenterMessageChannel.SMS,
+    subject: null,
+    body: 'REMBEH manager notice: Review {{branch}} subscriptions, daily operations, and staff access when online. Contact ANTIKRA for support.',
+  },
+  {
+    code: 'service_announcement_email',
+    name: 'Service announcement',
+    channel: ControlCenterMessageChannel.EMAIL,
+    subject: 'REMBEH service announcement',
+    body: 'Hello {{name}},\n\nWe are sharing an update that affects REMBEH service for {{organization}}.\n\nPlease review the app and contact ANTIKRA support if your team needs help.\n\nRegards,\nREMBEH Support',
+  },
+] as const;
+
+type ControlCenterTokenPayload = {
+  typ: 'control-center';
+  sub: string;
+  email: string;
+  iat: number;
+  exp: number;
+};
+
+type ResolvedMessageRecipient = {
+  value: string;
+  name: string | null;
+  organization: string | null;
+  branch: string | null;
+};
+
+@Injectable()
+export class ControlCenterService implements OnModuleInit {
+  private readonly logger = new Logger(ControlCenterService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+    private readonly passwordService: PasswordService,
+    private readonly notificationsService: NotificationsService,
+    private readonly smsService: SmsService,
+  ) {}
+
+  async onModuleInit() {
+    await this.ensureAllowedAdmins();
+    await this.ensureMessageTemplates();
+  }
+
+  async authStatus(email?: string) {
+    const allowedEmails = this.allowedEmails();
+    const normalized = email ? this.normalizeEmail(email) : null;
+    const admin = normalized
+      ? await this.prisma.controlCenterAdmin.findUnique({
+          where: { email: normalized },
+        })
+      : null;
+
+    return {
+      allowedEmails,
+      allowed: normalized ? allowedEmails.includes(normalized) : false,
+      setupRequired: Boolean(normalized && !admin?.passwordHash),
+      configured: allowedEmails.length > 0,
+    };
+  }
+
+  async setup(dto: ControlCenterSetupDto) {
+    const email = this.assertAllowedEmail(dto.email);
+    const existing = await this.prisma.controlCenterAdmin.findUnique({
+      where: { email },
+    });
+
+    if (existing?.passwordHash) {
+      throw new ConflictException(
+        'This control center admin is already set up.',
+      );
+    }
+
+    const passwordHash = await this.passwordService.hashPassword(dto.password);
+    const admin = await this.prisma.controlCenterAdmin.upsert({
+      where: { email },
+      create: {
+        email,
+        displayName: dto.displayName.trim(),
+        passwordHash,
+        status: ControlCenterAdminStatus.ACTIVE,
+        lastLoginAt: new Date(),
+      },
+      update: {
+        displayName: dto.displayName.trim(),
+        passwordHash,
+        status: ControlCenterAdminStatus.ACTIVE,
+        lastLoginAt: new Date(),
+      },
+    });
+
+    await this.audit(
+      admin.id,
+      'control_center.admin.setup',
+      'ControlCenterAdmin',
+      admin.id,
+      null,
+      {
+        email,
+      },
+    );
+
+    return this.toAuthResponse(admin);
+  }
+
+  async login(dto: ControlCenterLoginDto) {
+    const email = this.assertAllowedEmail(dto.email);
+    const admin = await this.prisma.controlCenterAdmin.findUnique({
+      where: { email },
+    });
+
+    if (!admin?.passwordHash) {
+      throw new BadRequestException(
+        'First-time setup is required for this control center email.',
+      );
+    }
+
+    if (admin.status !== ControlCenterAdminStatus.ACTIVE) {
+      throw new ForbiddenException('This control center admin is suspended.');
+    }
+
+    const valid = await this.passwordService.verifyPassword(
+      dto.password,
+      admin.passwordHash,
+    );
+
+    if (!valid) {
+      throw new UnauthorizedException('Invalid email or password.');
+    }
+
+    const updated = await this.prisma.controlCenterAdmin.update({
+      where: { id: admin.id },
+      data: { lastLoginAt: new Date() },
+    });
+
+    return this.toAuthResponse(updated);
+  }
+
+  async me(admin: ControlCenterAdminContext) {
+    return { admin };
+  }
+
+  async verifyAdminToken(token: string): Promise<ControlCenterAdminContext> {
+    const payload = this.verifyToken(token);
+    const email = this.assertAllowedEmail(payload.email);
+    const admin = await this.prisma.controlCenterAdmin.findUnique({
+      where: { id: payload.sub },
+    });
+
+    if (
+      !admin ||
+      admin.email !== email ||
+      admin.status !== ControlCenterAdminStatus.ACTIVE
+    ) {
+      throw new UnauthorizedException('Control center login required.');
+    }
+
+    return {
+      adminId: admin.id,
+      email: admin.email,
+      displayName: admin.displayName,
+    };
+  }
+
+  async dashboard() {
+    const now = new Date();
+    const [
+      totalClients,
+      activeClients,
+      suspendedClients,
+      branchCount,
+      userCount,
+      activeBranches,
+      lockedBranches,
+      completedPayments,
+      activeOverrides,
+      recentPayments,
+      recentActivity,
+    ] = await Promise.all([
+      this.prisma.tenant.count(),
+      this.prisma.tenant.count({ where: { status: 'ACTIVE' } }),
+      this.prisma.tenant.count({ where: { status: 'SUSPENDED' } }),
+      this.prisma.branch.count(),
+      this.prisma.user.count(),
+      this.prisma.branchSubscription.count({ where: { status: 'ACTIVE' } }),
+      this.prisma.branchSubscription.count({ where: { status: 'LOCKED' } }),
+      this.prisma.subscriptionPayment.aggregate({
+        where: { status: 'COMPLETED' },
+        _sum: { amount: true },
+        _count: { _all: true },
+      }),
+      this.prisma.subscriptionPriceOverride.count({
+        where: {
+          revokedAt: null,
+          OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: now } }],
+        },
+      }),
+      this.prisma.subscriptionPayment.findMany({
+        take: 8,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          tenant: { select: { name: true } },
+          branch: { select: { name: true } },
+          plan: { select: { code: true, name: true, interval: true } },
+        },
+      }),
+      this.prisma.controlCenterAuditLog.findMany({
+        take: 8,
+        orderBy: { createdAt: 'desc' },
+        include: { admin: { select: { displayName: true, email: true } } },
+      }),
+    ]);
+
+    return {
+      stats: {
+        totalClients,
+        activeClients,
+        suspendedClients,
+        totalBranches: branchCount,
+        totalUsers: userCount,
+        activeBranches,
+        lockedBranches,
+        completedRevenue: this.decimal(completedPayments._sum.amount),
+        completedPayments: completedPayments._count._all,
+        activePricingOverrides: activeOverrides,
+      },
+      recentPayments: recentPayments.map((payment) => ({
+        id: payment.id,
+        organizationName: payment.tenant.name,
+        branchName: payment.branch.name,
+        amount: this.decimal(payment.amount),
+        currency: payment.currency,
+        status: payment.status,
+        planCode: payment.plan.code,
+        createdAt: payment.createdAt.toISOString(),
+        paidAt: payment.paidAt?.toISOString() ?? null,
+      })),
+      recentActivity: recentActivity.map((row) => ({
+        id: row.id,
+        action: row.action,
+        entityType: row.entityType,
+        entityId: row.entityId,
+        adminName: row.admin?.displayName ?? row.admin?.email ?? 'System',
+        createdAt: row.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  async listClients() {
+    const now = new Date();
+    const tenants = await this.prisma.tenant.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: {
+        branches: {
+          include: {
+            subscription: { include: { plan: true } },
+          },
+          orderBy: { name: 'asc' },
+        },
+        users: {
+          take: 20,
+          include: { roles: { include: { role: true } } },
+          orderBy: { createdAt: 'asc' },
+        },
+        subscriptionPriceOverrides: {
+          where: {
+            revokedAt: null,
+            OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: now } }],
+          },
+        },
+        _count: {
+          select: {
+            branches: true,
+            users: true,
+            customers: true,
+            loans: true,
+            subscriptionPayments: true,
+          },
+        },
+      },
+    });
+
+    const rows = tenants.map((tenant) => {
+      const owner =
+        tenant.users.find((user) =>
+          user.roles.some((role) => role.role.name === 'Account Owner'),
+        ) ?? tenant.users[0];
+      const activeBranches = tenant.branches.filter(
+        (branch) => branch.subscription?.status === 'ACTIVE',
+      ).length;
+      const hasCustomPricing = tenant.subscriptionPriceOverrides.length > 0;
+
+      return {
+        id: tenant.id,
+        name: tenant.name,
+        email: owner?.email ?? null,
+        phone: owner?.phone ?? null,
+        ownerName: owner?.displayName ?? null,
+        branchCount: tenant._count.branches,
+        activeBranchCount: activeBranches,
+        userCount: tenant._count.users,
+        customerCount: tenant._count.customers,
+        loanCount: tenant._count.loans,
+        pricingType: hasCustomPricing ? 'CUSTOM' : 'DEFAULT',
+        status: tenant.status,
+        createdAt: tenant.createdAt.toISOString(),
+      };
+    });
+
+    return {
+      stats: {
+        totalClients: rows.length,
+        customPricing: rows.filter((row) => row.pricingType === 'CUSTOM')
+          .length,
+        defaultPricing: rows.filter((row) => row.pricingType === 'DEFAULT')
+          .length,
+        activeClients: rows.filter((row) => row.status === 'ACTIVE').length,
+      },
+      clients: rows,
+    };
+  }
+
+  async getClient(tenantId: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      include: {
+        users: {
+          include: {
+            roles: { include: { role: true } },
+            authSessions: {
+              take: 1,
+              orderBy: { lastSeenAt: 'desc' },
+              select: {
+                lastSeenAt: true,
+                deviceName: true,
+                platform: true,
+                revokedAt: true,
+                expiresAt: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        },
+        branches: {
+          include: {
+            subscription: { include: { plan: true } },
+            _count: { select: { users: true, customers: true, loans: true } },
+            users: {
+              select: {
+                authSessions: {
+                  take: 1,
+                  orderBy: { lastSeenAt: 'desc' },
+                  select: { lastSeenAt: true },
+                },
+              },
+            },
+          },
+          orderBy: { name: 'asc' },
+        },
+      },
+    });
+
+    if (!tenant) {
+      throw new NotFoundException('Client organization not found.');
+    }
+
+    const [repaymentGroups, paymentGroups, latestActivity] = await Promise.all([
+      this.prisma.repayment.groupBy({
+        by: ['branchId'],
+        where: { tenantId },
+        _sum: { amount: true },
+        _count: { _all: true },
+      }),
+      this.prisma.subscriptionPayment.groupBy({
+        by: ['branchId'],
+        where: { tenantId, status: 'COMPLETED' },
+        _sum: { amount: true },
+        _count: { _all: true },
+      }),
+      this.prisma.auditLog.findMany({
+        where: { tenantId },
+        take: 8,
+        orderBy: { createdAt: 'desc' },
+        include: { actor: { select: { displayName: true, email: true } } },
+      }),
+    ]);
+
+    const repaymentsByBranch = new Map(
+      repaymentGroups.map((row) => [row.branchId, row]),
+    );
+    const paymentsByBranch = new Map(
+      paymentGroups.map((row) => [row.branchId, row]),
+    );
+    const owner =
+      tenant.users.find((user) =>
+        user.roles.some((role) => role.role.name === 'Account Owner'),
+      ) ?? tenant.users[0];
+
+    return {
+      client: {
+        id: tenant.id,
+        name: tenant.name,
+        registrationNumber: tenant.registrationNumber,
+        country: tenant.country,
+        currency: tenant.currency,
+        status: tenant.status,
+        createdAt: tenant.createdAt.toISOString(),
+        owner: owner
+          ? {
+              id: owner.id,
+              name: owner.displayName,
+              email: owner.email,
+              phone: owner.phone,
+            }
+          : null,
+        summary: {
+          totalBranches: tenant.branches.length,
+          activeBranches: tenant.branches.filter(
+            (branch) => branch.subscription?.status === 'ACTIVE',
+          ).length,
+          suspendedBranches: tenant.branches.filter(
+            (branch) => branch.subscription?.status === 'LOCKED',
+          ).length,
+          totalUsers: tenant.users.length,
+        },
+      },
+      branches: tenant.branches.map((branch) => {
+        const repayment = repaymentsByBranch.get(branch.id);
+        const payment = paymentsByBranch.get(branch.id);
+        const lastUsedAt = this.latestDate(
+          branch.users.flatMap((user) =>
+            user.authSessions.map((session) => session.lastSeenAt),
+          ),
+        );
+        return {
+          id: branch.id,
+          name: branch.name,
+          address: branch.address,
+          phone: branch.phone,
+          status: branch.subscription?.status ?? 'TRIAL',
+          planCode: branch.subscription?.plan.code ?? null,
+          currentPeriodEnd:
+            branch.subscription?.currentPeriodEnd?.toISOString() ?? null,
+          users: branch._count.users,
+          borrowers: branch._count.customers,
+          loans: branch._count.loans,
+          repaymentsCollected: this.decimal(repayment?._sum.amount),
+          repaymentCount: repayment?._count._all ?? 0,
+          subscriptionRevenue: this.decimal(payment?._sum.amount),
+          subscriptionPayments: payment?._count._all ?? 0,
+          lastUsedAt: lastUsedAt?.toISOString() ?? null,
+        };
+      }),
+      recentActivity: latestActivity.map((row) => ({
+        id: row.id,
+        action: row.action,
+        entityType: row.entityType,
+        actorName: row.actor?.displayName ?? row.actor?.email ?? 'System',
+        createdAt: row.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  async getPricing(tenantId: string) {
+    await this.assertTenant(tenantId);
+    const now = new Date();
+    const [plans, branches, overrides] = await Promise.all([
+      this.prisma.subscriptionPlan.findMany({
+        where: { isActive: true },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.branch.findMany({
+        where: { tenantId },
+        orderBy: { name: 'asc' },
+        select: { id: true, name: true, address: true },
+      }),
+      this.prisma.subscriptionPriceOverride.findMany({
+        where: {
+          tenantId,
+          revokedAt: null,
+          OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: now } }],
+        },
+        include: {
+          plan: true,
+          branch: { select: { id: true, name: true } },
+          changedBy: { select: { displayName: true, email: true } },
+        },
+        orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
+      }),
+    ]);
+
+    return {
+      plans: plans.map((plan) => this.toPlan(plan)),
+      branches,
+      organization: plans.map((plan) => {
+        const override = overrides.find(
+          (row) => row.planId === plan.id && row.branchId === null,
+        );
+        return this.toPriceRow(plan, override);
+      }),
+      branchOverrides: branches.map((branch) => ({
+        branch,
+        prices: plans.map((plan) => {
+          const override = overrides.find(
+            (row) => row.planId === plan.id && row.branchId === branch.id,
+          );
+          const organizationOverride = overrides.find(
+            (row) => row.planId === plan.id && row.branchId === null,
+          );
+          return this.toPriceRow(plan, override, organizationOverride);
+        }),
+      })),
+    };
+  }
+
+  async saveOrganizationPricing(
+    admin: ControlCenterAdminContext,
+    tenantId: string,
+    dto: ControlCenterSavePricingDto,
+  ) {
+    return this.savePricing(admin, tenantId, null, dto);
+  }
+
+  async saveBranchPricing(
+    admin: ControlCenterAdminContext,
+    tenantId: string,
+    branchId: string,
+    dto: ControlCenterSavePricingDto,
+  ) {
+    await this.assertBranch(tenantId, branchId);
+    return this.savePricing(admin, tenantId, branchId, dto);
+  }
+
+  async pricingHistory(tenantId: string) {
+    await this.assertTenant(tenantId);
+    const [plans, rows] = await Promise.all([
+      this.prisma.subscriptionPlan.findMany({ where: { isActive: true } }),
+      this.prisma.subscriptionPriceOverride.findMany({
+        where: { tenantId },
+        include: {
+          plan: true,
+          branch: { select: { id: true, name: true } },
+          changedBy: { select: { displayName: true, email: true } },
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ]);
+    const defaults = new Map(
+      plans.map((plan) => [plan.id, this.decimal(plan.amount)]),
+    );
+    const lastAmountByScope = new Map<string, number>();
+    const history = rows.map((row) => {
+      const scopeKey = `${row.branchId ?? 'org'}:${row.planId}`;
+      const oldAmount =
+        lastAmountByScope.get(scopeKey) ?? defaults.get(row.planId) ?? 0;
+      const newAmount = this.decimal(row.amount);
+      lastAmountByScope.set(scopeKey, newAmount);
+      return {
+        id: row.id,
+        scope: row.branchId ? 'BRANCH' : 'ORGANIZATION',
+        branch: row.branch
+          ? { id: row.branch.id, name: row.branch.name }
+          : null,
+        planCode: row.plan.code,
+        planName: row.plan.name,
+        interval: row.plan.interval,
+        oldAmount,
+        newAmount,
+        currency: row.currency,
+        effectiveFrom: row.effectiveFrom.toISOString(),
+        effectiveUntil: row.effectiveUntil?.toISOString() ?? null,
+        revokedAt: row.revokedAt?.toISOString() ?? null,
+        reason: row.reason,
+        changedBy: row.changedBy.displayName || row.changedBy.email,
+        createdAt: row.createdAt.toISOString(),
+      };
+    });
+
+    return { history: history.reverse() };
+  }
+
+  async listUsers() {
+    const users = await this.prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+      include: {
+        tenant: { select: { id: true, name: true, status: true } },
+        branch: { select: { id: true, name: true } },
+        roles: { include: { role: true } },
+        authSessions: {
+          take: 1,
+          orderBy: { lastSeenAt: 'desc' },
+          select: {
+            lastSeenAt: true,
+            deviceName: true,
+            platform: true,
+            revokedAt: true,
+            expiresAt: true,
+          },
+        },
+      },
+    });
+
+    return {
+      users: users.map((user) => ({
+        id: user.id,
+        name: user.displayName,
+        email: user.email,
+        phone: user.phone,
+        publicId: user.publicId,
+        status: user.status,
+        tenant: user.tenant,
+        branch: user.branch,
+        roles: user.roles.map((role) => role.role.name),
+        lastUsedAt: user.authSessions[0]?.lastSeenAt.toISOString() ?? null,
+        lastUsedDevice: user.authSessions[0]?.deviceName ?? null,
+        lastUsedPlatform: user.authSessions[0]?.platform ?? null,
+        sessionActive:
+          user.authSessions[0] != null &&
+          !user.authSessions[0].revokedAt &&
+          user.authSessions[0].expiresAt.getTime() > Date.now(),
+        createdAt: user.createdAt.toISOString(),
+        updatedAt: user.updatedAt.toISOString(),
+      })),
+    };
+  }
+
+  async updateUserStatus(
+    admin: ControlCenterAdminContext,
+    userId: string,
+    dto: ControlCenterUpdateUserStatusDto,
+  ) {
+    const existing = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!existing) {
+      throw new NotFoundException('User not found.');
+    }
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        status: dto.status as UserStatus,
+        suspensionReason:
+          dto.status === 'SUSPENDED' ? dto.reason?.trim() || null : null,
+      },
+    });
+
+    await this.audit(
+      admin.adminId,
+      'control_center.user.status_updated',
+      'User',
+      userId,
+      { status: existing.status },
+      { status: updated.status, reason: dto.reason ?? null },
+    );
+
+    return { user: { id: updated.id, status: updated.status } };
+  }
+
+  async listMessageTemplates() {
+    const templates = await this.prisma.controlCenterMessageTemplate.findMany({
+      orderBy: [{ channel: 'asc' }, { name: 'asc' }],
+    });
+    return { templates };
+  }
+
+  async sendMessage(
+    admin: ControlCenterAdminContext,
+    dto: ControlCenterSendMessageDto,
+  ) {
+    const channel = dto.channel as ControlCenterMessageChannel;
+    const recipients = await this.resolveRecipients(dto, channel);
+    if (recipients.length === 0) {
+      throw new BadRequestException('No recipients matched this message.');
+    }
+
+    const logs = [];
+    for (const recipient of recipients) {
+      const body = this.renderMessageTemplate(dto.body, recipient);
+      const subject =
+        channel === ControlCenterMessageChannel.EMAIL
+          ? this.renderMessageTemplate(
+              dto.subject?.trim() || 'REMBEH update',
+              recipient,
+            )
+          : null;
+      let status: ControlCenterMessageStatus = ControlCenterMessageStatus.SENT;
+      let provider: string | null = null;
+      let error: string | null = null;
+      let sentAt: Date | null = new Date();
+
+      if (channel === ControlCenterMessageChannel.EMAIL) {
+        const result = await this.notificationsService.sendControlCenterEmail({
+          to: recipient.value,
+          subject: subject!,
+          text: body,
+          category: this.messageEmailCategory(dto),
+        });
+        provider = result.provider;
+        if (!result.delivered) {
+          status = ControlCenterMessageStatus.FAILED;
+          error = result.error ?? 'Email provider rejected the message.';
+          sentAt = null;
+        }
+      } else {
+        const result = await this.smsService.sendText({
+          destination: recipient.value,
+          body,
+        });
+        provider = result.provider;
+        if (!result.delivered && result.outcome !== 'accepted') {
+          status =
+            result.outcome === 'skipped'
+              ? ControlCenterMessageStatus.SKIPPED
+              : ControlCenterMessageStatus.FAILED;
+          error = result.message;
+          sentAt = null;
+        }
+      }
+
+      logs.push(
+        await this.prisma.controlCenterMessageLog.create({
+          data: {
+            tenantId: dto.tenantId ?? null,
+            branchId: dto.branchId ?? null,
+            createdByAdminId: admin.adminId,
+            channel,
+            recipient: recipient.value,
+            subject,
+            body,
+            status,
+            provider,
+            error,
+            sentAt,
+          },
+        }),
+      );
+    }
+
+    await this.audit(
+      admin.adminId,
+      'control_center.message.sent',
+      'ControlCenterMessageLog',
+      null,
+      null,
+      {
+        channel,
+        recipients: recipients.length,
+        tenantId: dto.tenantId ?? null,
+        branchId: dto.branchId ?? null,
+      },
+    );
+
+    return {
+      sent: logs.filter((log) => log.status === ControlCenterMessageStatus.SENT)
+        .length,
+      failed: logs.filter(
+        (log) => log.status === ControlCenterMessageStatus.FAILED,
+      ).length,
+      skipped: logs.filter(
+        (log) => log.status === ControlCenterMessageStatus.SKIPPED,
+      ).length,
+      logs: logs.map((log) => ({
+        id: log.id,
+        recipient: log.recipient,
+        status: log.status,
+        error: log.error,
+      })),
+    };
+  }
+
+  private async savePricing(
+    admin: ControlCenterAdminContext,
+    tenantId: string,
+    branchId: string | null,
+    dto: ControlCenterSavePricingDto,
+  ) {
+    await this.assertTenant(tenantId);
+    if (!dto.prices.length) {
+      throw new BadRequestException('Add at least one pricing amount.');
+    }
+    const planCodes = dto.prices.map((row) =>
+      row.planCode.trim().toUpperCase(),
+    );
+    const plans = await this.prisma.subscriptionPlan.findMany({
+      where: { code: { in: planCodes }, isActive: true },
+    });
+    if (plans.length !== planCodes.length) {
+      throw new BadRequestException('Choose valid active subscription plans.');
+    }
+    const planByCode = new Map(plans.map((plan) => [plan.code, plan]));
+    const effectiveFrom = dto.effectiveFrom
+      ? new Date(dto.effectiveFrom)
+      : new Date();
+    const effectiveUntil = dto.effectiveUntil
+      ? new Date(dto.effectiveUntil)
+      : null;
+    const now = new Date();
+    if (effectiveUntil && effectiveUntil <= effectiveFrom) {
+      throw new BadRequestException(
+        'Effective until must be after effective from.',
+      );
+    }
+    const previousAmounts = await this.resolveCurrentPricingAmounts(
+      tenantId,
+      branchId,
+      plans,
+    );
+    const startsImmediately = effectiveFrom.getTime() <= now.getTime();
+
+    const created = await this.prisma.$transaction(async (tx) => {
+      const rows = [];
+      for (const price of dto.prices) {
+        const plan = planByCode.get(price.planCode.trim().toUpperCase())!;
+        const scopedWhere = {
+          tenantId,
+          branchId,
+          planId: plan.id,
+          revokedAt: null,
+        } satisfies Prisma.SubscriptionPriceOverrideWhereInput;
+
+        if (startsImmediately) {
+          await tx.subscriptionPriceOverride.updateMany({
+            where: scopedWhere,
+            data: { revokedAt: now },
+          });
+        } else {
+          await tx.subscriptionPriceOverride.updateMany({
+            where: {
+              ...scopedWhere,
+              effectiveFrom: { gte: effectiveFrom },
+            },
+            data: { revokedAt: now },
+          });
+          await tx.subscriptionPriceOverride.updateMany({
+            where: {
+              ...scopedWhere,
+              effectiveFrom: { lte: now },
+              OR: [
+                { effectiveUntil: null },
+                { effectiveUntil: { gte: effectiveFrom } },
+              ],
+            },
+            data: { effectiveUntil: effectiveFrom },
+          });
+        }
+
+        rows.push(
+          await tx.subscriptionPriceOverride.create({
+            data: {
+              tenantId,
+              branchId,
+              planId: plan.id,
+              amount: new Prisma.Decimal(price.amount),
+              currency: plan.currency,
+              effectiveFrom,
+              effectiveUntil,
+              reason: dto.reason.trim(),
+              changedByAdminId: admin.adminId,
+            },
+          }),
+        );
+      }
+      await tx.controlCenterAuditLog.create({
+        data: {
+          adminId: admin.adminId,
+          action: branchId
+            ? 'control_center.pricing.branch_updated'
+            : 'control_center.pricing.organization_updated',
+          entityType: branchId ? 'Branch' : 'Tenant',
+          entityId: branchId ?? tenantId,
+          newValue: {
+            tenantId,
+            branchId,
+            prices: dto.prices.map((price) => ({
+              planCode: price.planCode,
+              amount: price.amount,
+            })),
+            reason: dto.reason,
+            effectiveFrom: effectiveFrom.toISOString(),
+            effectiveUntil: effectiveUntil?.toISOString() ?? null,
+            startsImmediately,
+          },
+        },
+      });
+      return rows;
+    });
+    const notification = await this.notifyPricingChange({
+      admin,
+      tenantId,
+      branchId,
+      plans,
+      created,
+      previousAmounts,
+      effectiveFrom,
+      effectiveUntil,
+      reason: dto.reason.trim(),
+    });
+
+    return {
+      saved: created.map((row) => ({
+        id: row.id,
+        tenantId: row.tenantId,
+        branchId: row.branchId,
+        amount: this.decimal(row.amount),
+      })),
+      notification,
+    };
+  }
+
+  private async resolveCurrentPricingAmounts(
+    tenantId: string,
+    branchId: string | null,
+    plans: Array<{
+      id: string;
+      amount: Prisma.Decimal | number;
+      currency: string;
+    }>,
+  ) {
+    const now = new Date();
+    const overrides = await this.prisma.subscriptionPriceOverride.findMany({
+      where: {
+        tenantId,
+        planId: { in: plans.map((plan) => plan.id) },
+        revokedAt: null,
+        effectiveFrom: { lte: now },
+        AND: [
+          branchId
+            ? { OR: [{ branchId }, { branchId: null }] }
+            : { branchId: null },
+          { OR: [{ effectiveUntil: null }, { effectiveUntil: { gte: now } }] },
+        ],
+      },
+      orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    const amounts = new Map<string, number>();
+    for (const plan of plans) {
+      const branchOverride = branchId
+        ? overrides.find(
+            (row) => row.planId === plan.id && row.branchId === branchId,
+          )
+        : null;
+      const organizationOverride = overrides.find(
+        (row) => row.planId === plan.id && row.branchId === null,
+      );
+      amounts.set(
+        plan.id,
+        this.decimal(
+          branchOverride?.amount ?? organizationOverride?.amount ?? plan.amount,
+        ),
+      );
+    }
+    return amounts;
+  }
+
+  private async notifyPricingChange(input: {
+    admin: ControlCenterAdminContext;
+    tenantId: string;
+    branchId: string | null;
+    plans: Array<{
+      id: string;
+      code: string;
+      name: string;
+      amount: Prisma.Decimal | number;
+      currency: string;
+    }>;
+    created: Array<{
+      id: string;
+      planId: string;
+      amount: Prisma.Decimal | number;
+      currency: string;
+    }>;
+    previousAmounts: Map<string, number>;
+    effectiveFrom: Date;
+    effectiveUntil: Date | null;
+    reason: string;
+  }) {
+    const [tenant, branch, recipients, branchCount] = await Promise.all([
+      this.prisma.tenant.findUnique({
+        where: { id: input.tenantId },
+        select: { name: true },
+      }),
+      input.branchId
+        ? this.prisma.branch.findFirst({
+            where: { id: input.branchId, tenantId: input.tenantId },
+            select: { name: true },
+          })
+        : Promise.resolve(null),
+      this.pricingNotificationRecipients(input.tenantId, input.branchId),
+      input.branchId
+        ? Promise.resolve(1)
+        : this.prisma.branch.count({ where: { tenantId: input.tenantId } }),
+    ]);
+
+    if (!tenant || recipients.length === 0) {
+      return {
+        recipients: recipients.length,
+        delivered: false,
+        error:
+          recipients.length === 0 ? 'No owner or manager emails found.' : null,
+      };
+    }
+
+    const plansById = new Map(input.plans.map((plan) => [plan.id, plan]));
+    const priceRows = input.created.map((row) => {
+      const plan = plansById.get(row.planId);
+      return {
+        planName: plan?.name ?? row.planId,
+        planCode: plan?.code ?? row.planId,
+        oldAmount: input.previousAmounts.get(row.planId) ?? 0,
+        newAmount: this.decimal(row.amount),
+        currency: row.currency,
+      };
+    });
+
+    try {
+      const result =
+        await this.notificationsService.sendSubscriptionPricingChangedEmail({
+          recipients: recipients.map((recipient) => recipient.email),
+          organizationName: tenant.name,
+          branchName: branch?.name ?? null,
+          scope: input.branchId ? 'BRANCH' : 'ORGANIZATION',
+          affectedBranches: branchCount,
+          effectiveFrom: input.effectiveFrom,
+          effectiveUntil: input.effectiveUntil,
+          reason: input.reason,
+          changedBy: input.admin.displayName || input.admin.email,
+          prices: priceRows,
+        });
+      await this.audit(
+        input.admin.adminId,
+        'control_center.pricing.notification_sent',
+        input.branchId ? 'Branch' : 'Tenant',
+        input.branchId ?? input.tenantId,
+        null,
+        {
+          recipients: recipients.length,
+          delivered: result.delivered,
+          error: result.error ?? null,
+        },
+      );
+      return {
+        recipients: recipients.length,
+        delivered: result.delivered,
+        error: result.error ?? null,
+      };
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Pricing notification could not be sent.';
+      this.logger.warn(`Pricing notification failed: ${message}`);
+      await this.audit(
+        input.admin.adminId,
+        'control_center.pricing.notification_failed',
+        input.branchId ? 'Branch' : 'Tenant',
+        input.branchId ?? input.tenantId,
+        null,
+        {
+          recipients: recipients.length,
+          error: message,
+        },
+      );
+      return {
+        recipients: recipients.length,
+        delivered: false,
+        error: message,
+      };
+    }
+  }
+
+  private async pricingNotificationRecipients(
+    tenantId: string,
+    branchId: string | null,
+  ) {
+    const ownerRoles = ['Account Owner', 'Owner'];
+    const managerRoles = ['Manager', 'Branch Manager'];
+    const users = await this.prisma.user.findMany({
+      where: {
+        tenantId,
+        status: UserStatus.ACTIVE,
+        email: { not: '' },
+        OR: branchId
+          ? [
+              { roles: { some: { role: { name: { in: ownerRoles } } } } },
+              {
+                branchId,
+                roles: { some: { role: { name: { in: managerRoles } } } },
+              },
+            ]
+          : [
+              {
+                roles: {
+                  some: {
+                    role: { name: { in: [...ownerRoles, ...managerRoles] } },
+                  },
+                },
+              },
+            ],
+      },
+      select: { email: true, displayName: true },
+      take: 300,
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const unique = new Map<string, { email: string; name: string }>();
+    for (const user of users) {
+      const email = user.email.trim().toLowerCase();
+      if (!email || unique.has(email)) continue;
+      unique.set(email, { email, name: user.displayName });
+    }
+    return [...unique.values()];
+  }
+
+  private async resolveRecipients(
+    dto: ControlCenterSendMessageDto,
+    channel: ControlCenterMessageChannel,
+  ) {
+    if (dto.recipients?.length) {
+      return [
+        ...new Set(
+          dto.recipients
+            .map((recipient) => recipient.trim())
+            .filter((recipient) => recipient.length > 0),
+        ),
+      ].map((recipient) => ({
+        value: recipient,
+        name: null,
+        organization: null,
+        branch: null,
+      }));
+    }
+
+    const userIds = [
+      ...new Set(
+        (dto.userIds ?? [])
+          .map((userId) => userId.trim())
+          .filter((userId) => userId.length > 0),
+      ),
+    ];
+
+    if (!dto.tenantId && userIds.length === 0) {
+      throw new BadRequestException(
+        'Choose recipients directly, select users, or select a client organization.',
+      );
+    }
+
+    if (dto.audience === 'SELECTED_USERS' && userIds.length === 0) {
+      throw new BadRequestException('Choose at least one user.');
+    }
+
+    const roleNames = this.normalizeMessageRoleNames(
+      dto.audience === 'TENANT_OWNERS'
+        ? ['Account Owner']
+        : (dto.roleNames ?? []),
+    );
+
+    const where: Prisma.UserWhereInput = {
+      ...(dto.tenantId ? { tenantId: dto.tenantId } : {}),
+      ...(userIds.length ? { id: { in: userIds } } : {}),
+      ...(dto.branchId ? { branchId: dto.branchId } : {}),
+      status: UserStatus.ACTIVE,
+      ...(channel === ControlCenterMessageChannel.EMAIL
+        ? { email: { not: '' } }
+        : { phone: { not: null } }),
+    };
+
+    if (roleNames.length) {
+      where.roles = { some: { role: { name: { in: roleNames } } } };
+    }
+
+    const users = await this.prisma.user.findMany({
+      where,
+      take: 200,
+      orderBy: { createdAt: 'asc' },
+      select: {
+        displayName: true,
+        email: true,
+        phone: true,
+        tenant: { select: { name: true } },
+        branch: { select: { name: true } },
+      },
+    });
+
+    const unique = new Map<string, ResolvedMessageRecipient>();
+    for (const user of users) {
+      const value =
+        channel === ControlCenterMessageChannel.EMAIL
+          ? user.email.trim()
+          : (user.phone ?? '').trim();
+      if (!value || unique.has(value)) continue;
+      unique.set(value, {
+        value,
+        name: user.displayName,
+        organization: user.tenant.name,
+        branch: user.branch?.name ?? null,
+      });
+    }
+    return [...unique.values()];
+  }
+
+  private normalizeMessageRoleNames(roleNames: string[]) {
+    const aliases = new Map<string, string[]>([
+      ['owner', ['Account Owner', 'Owner']],
+      ['account owner', ['Account Owner', 'Owner']],
+      ['manager', ['Manager', 'Branch Manager']],
+      ['branch manager', ['Manager', 'Branch Manager']],
+      ['cashier', ['Cashier']],
+      [
+        'field officer',
+        ['Field Officer', 'Field Agent', 'Agent', 'Loan Officer'],
+      ],
+      [
+        'field agent',
+        ['Field Officer', 'Field Agent', 'Agent', 'Loan Officer'],
+      ],
+      ['agent', ['Field Officer', 'Field Agent', 'Agent', 'Loan Officer']],
+      [
+        'loan officer',
+        ['Field Officer', 'Field Agent', 'Agent', 'Loan Officer'],
+      ],
+    ]);
+    const normalized = new Set<string>();
+    for (const item of roleNames) {
+      const trimmed = item.trim();
+      if (!trimmed) continue;
+      const expanded = aliases.get(trimmed.toLowerCase());
+      for (const name of expanded ?? [trimmed]) {
+        normalized.add(name);
+      }
+    }
+    return [...normalized];
+  }
+
+  private renderMessageTemplate(
+    template: string,
+    recipient: ResolvedMessageRecipient,
+  ) {
+    const values: Record<string, string> = {
+      name:
+        recipient.name ?? recipient.organization ?? recipient.branch ?? 'there',
+      organization: recipient.organization ?? 'your organization',
+      branch: recipient.branch ?? 'your branch',
+    };
+
+    return template.replace(
+      /\{\{\s*(name|organization|branch)\s*\}\}/gi,
+      (match, key: string) => values[key.toLowerCase()] ?? match,
+    );
+  }
+
+  private messageEmailCategory(
+    dto: ControlCenterSendMessageDto,
+  ): 'billing' | 'marketing' | 'operations' | 'support' {
+    const haystack = [dto.templateCode, dto.subject, dto.body]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    if (
+      haystack.includes('price') ||
+      haystack.includes('pricing') ||
+      haystack.includes('subscription') ||
+      haystack.includes('payment') ||
+      haystack.includes('renewal')
+    ) {
+      return 'billing';
+    }
+    if (
+      haystack.includes('operation') ||
+      haystack.includes('branch') ||
+      haystack.includes('manager')
+    ) {
+      return 'operations';
+    }
+    if (haystack.includes('support') || haystack.includes('service')) {
+      return 'support';
+    }
+    return 'marketing';
+  }
+
+  private async ensureAllowedAdmins() {
+    for (const email of this.allowedEmails()) {
+      await this.prisma.controlCenterAdmin.upsert({
+        where: { email },
+        create: {
+          email,
+          displayName: this.defaultNameForEmail(email),
+          status: ControlCenterAdminStatus.ACTIVE,
+        },
+        update: {},
+      });
+    }
+  }
+
+  private async ensureMessageTemplates() {
+    for (const template of DEFAULT_TEMPLATES) {
+      await this.prisma.controlCenterMessageTemplate.upsert({
+        where: { code: template.code },
+        create: template,
+        update: {
+          name: template.name,
+          channel: template.channel,
+          subject: template.subject,
+          body: template.body,
+          isSystem: true,
+        },
+      });
+    }
+  }
+
+  private async assertTenant(tenantId: string) {
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true },
+    });
+    if (!tenant) {
+      throw new NotFoundException('Client organization not found.');
+    }
+  }
+
+  private async assertBranch(tenantId: string, branchId: string) {
+    const branch = await this.prisma.branch.findFirst({
+      where: { id: branchId, tenantId },
+      select: { id: true },
+    });
+    if (!branch) {
+      throw new NotFoundException('Branch not found for this organization.');
+    }
+  }
+
+  private toAuthResponse(admin: {
+    id: string;
+    email: string;
+    displayName: string;
+    status: ControlCenterAdminStatus;
+  }) {
+    return {
+      admin: {
+        id: admin.id,
+        email: admin.email,
+        displayName: admin.displayName,
+        status: admin.status,
+      },
+      session: {
+        tokenType: 'Bearer' as const,
+        accessToken: this.issueToken(admin),
+        expiresAt: new Date(
+          Date.now() + TOKEN_TTL_SECONDS * 1000,
+        ).toISOString(),
+      },
+    };
+  }
+
+  private issueToken(admin: { id: string; email: string }) {
+    const now = Math.floor(Date.now() / 1000);
+    const payload: ControlCenterTokenPayload = {
+      typ: 'control-center',
+      sub: admin.id,
+      email: admin.email,
+      iat: now,
+      exp: now + TOKEN_TTL_SECONDS,
+    };
+    const encodedHeader = this.encodeJson({ alg: 'HS256', typ: 'JWT' });
+    const encodedPayload = this.encodeJson(payload);
+    const signature = this.sign(encodedHeader, encodedPayload);
+    return `${encodedHeader}.${encodedPayload}.${signature}`;
+  }
+
+  private verifyToken(token: string): ControlCenterTokenPayload {
+    const [encodedHeader, encodedPayload, signature] = token.split('.');
+    if (!encodedHeader || !encodedPayload || !signature) {
+      throw new UnauthorizedException('Invalid control center token.');
+    }
+    const expected = this.sign(encodedHeader, encodedPayload);
+    const provided = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expected);
+    if (
+      provided.length !== expectedBuffer.length ||
+      !timingSafeEqual(provided, expectedBuffer)
+    ) {
+      throw new UnauthorizedException('Invalid control center token.');
+    }
+    const payload = JSON.parse(
+      Buffer.from(encodedPayload, 'base64url').toString('utf8'),
+    ) as ControlCenterTokenPayload;
+    if (
+      payload.typ !== 'control-center' ||
+      !payload.sub ||
+      !payload.email ||
+      payload.exp <= Math.floor(Date.now() / 1000)
+    ) {
+      throw new UnauthorizedException('Invalid control center token.');
+    }
+    return payload;
+  }
+
+  private sign(encodedHeader: string, encodedPayload: string) {
+    return createHmac('sha256', this.tokenSecret())
+      .update(`${encodedHeader}.${encodedPayload}`)
+      .digest('base64url');
+  }
+
+  private tokenSecret() {
+    return (
+      this.configService.get<string>('CONTROL_CENTER_JWT_SECRET')?.trim() ||
+      this.configService.get<string>('JWT_ACCESS_SECRET')?.trim() ||
+      this.configService.get<string>('JWT_SECRET')?.trim() ||
+      'rembeh-control-center-development-secret'
+    );
+  }
+
+  private encodeJson(value: unknown) {
+    return Buffer.from(JSON.stringify(value)).toString('base64url');
+  }
+
+  private assertAllowedEmail(email: string) {
+    const normalized = this.normalizeEmail(email);
+    if (!this.allowedEmails().includes(normalized)) {
+      throw new ForbiddenException(
+        'This email is not allowed in the control center.',
+      );
+    }
+    return normalized;
+  }
+
+  private allowedEmails() {
+    const configured = this.configService
+      .get<string>('CONTROL_CENTER_ALLOWED_EMAILS')
+      ?.split(',')
+      .map((email) => this.normalizeEmail(email))
+      .filter(Boolean);
+    return configured?.length ? configured : DEFAULT_ALLOWED_EMAILS;
+  }
+
+  private normalizeEmail(email: string) {
+    return email.trim().toLowerCase();
+  }
+
+  private defaultNameForEmail(email: string) {
+    if (email === 'antikra.ug@gmail.com') return 'Hamza Mpango';
+    if (email === 'bonnefilleul@gmail.com') return 'Bonny Kapere';
+    return email.split('@')[0] || 'Control Center Admin';
+  }
+
+  private toPlan(plan: {
+    id: string;
+    code: string;
+    name: string;
+    amount: Prisma.Decimal | number;
+    currency: string;
+    interval: string;
+  }) {
+    return {
+      id: plan.id,
+      code: plan.code,
+      name: plan.name,
+      amount: this.decimal(plan.amount),
+      currency: plan.currency,
+      interval: plan.interval,
+    };
+  }
+
+  private toPriceRow(
+    plan: {
+      id: string;
+      code: string;
+      name: string;
+      amount: Prisma.Decimal | number;
+      currency: string;
+      interval: string;
+    },
+    override?: {
+      id: string;
+      amount: Prisma.Decimal | number;
+      currency: string;
+      reason: string;
+      effectiveFrom: Date;
+      effectiveUntil: Date | null;
+      changedBy: { displayName: string; email: string };
+    },
+    fallbackOverride?: { amount: Prisma.Decimal | number },
+  ) {
+    const now = Date.now();
+    const overrideStatus = override
+      ? override.effectiveFrom.getTime() > now
+        ? 'SCHEDULED'
+        : override.effectiveUntil && override.effectiveUntil.getTime() < now
+          ? 'EXPIRED'
+          : 'ACTIVE'
+      : null;
+    return {
+      plan: this.toPlan(plan),
+      defaultAmount: this.decimal(plan.amount),
+      inheritedAmount: fallbackOverride
+        ? this.decimal(fallbackOverride.amount)
+        : null,
+      effectiveAmount: this.decimal(
+        override?.amount ?? fallbackOverride?.amount ?? plan.amount,
+      ),
+      override: override
+        ? {
+            id: override.id,
+            amount: this.decimal(override.amount),
+            currency: override.currency,
+            reason: override.reason,
+            effectiveFrom: override.effectiveFrom.toISOString(),
+            effectiveUntil: override.effectiveUntil?.toISOString() ?? null,
+            changedBy:
+              override.changedBy.displayName || override.changedBy.email,
+            status: overrideStatus,
+          }
+        : null,
+    };
+  }
+
+  private async audit(
+    adminId: string | null,
+    action: string,
+    entityType: string,
+    entityId: string | null,
+    oldValue: Prisma.InputJsonValue | null,
+    newValue: Prisma.InputJsonValue | null,
+  ) {
+    await this.prisma.controlCenterAuditLog.create({
+      data: {
+        adminId,
+        action,
+        entityType,
+        entityId,
+        ...(oldValue === null ? {} : { oldValue }),
+        ...(newValue === null ? {} : { newValue }),
+      },
+    });
+  }
+
+  private decimal(value: Prisma.Decimal | number | null | undefined) {
+    if (value == null) return 0;
+    return Number(value);
+  }
+
+  private latestDate(values: Date[]) {
+    let latest: Date | null = null;
+    for (const value of values) {
+      if (!latest || value.getTime() > latest.getTime()) {
+        latest = value;
+      }
+    }
+    return latest;
+  }
+}
+
+================================================================================
+FILE: services/api/src/modules/control-center/current-control-center-admin.decorator.ts
+================================================================================
+import { createParamDecorator, ExecutionContext } from '@nestjs/common';
+import type { Request } from 'express';
+import type { ControlCenterAdminContext } from './control-center-admin';
+
+type ControlCenterRequest = Request & {
+  controlCenterAdmin?: ControlCenterAdminContext;
+};
+
+export const CurrentControlCenterAdmin = createParamDecorator(
+  (_data: unknown, context: ExecutionContext) => {
+    const request = context.switchToHttp().getRequest<ControlCenterRequest>();
+    return request.controlCenterAdmin;
+  },
+);
+
+================================================================================
+FILE: services/api/src/modules/control-center/dto/control-center-auth.dto.ts
+================================================================================
+import { IsEmail, IsString, Length } from 'class-validator';
+
+export class ControlCenterLoginDto {
+  @IsEmail()
+  email!: string;
+
+  @IsString()
+  @Length(8, 128)
+  password!: string;
+}
+
+export class ControlCenterSetupDto extends ControlCenterLoginDto {
+  @IsString()
+  @Length(2, 120)
+  displayName!: string;
+}
+
+================================================================================
+FILE: services/api/src/modules/control-center/dto/control-center-message.dto.ts
+================================================================================
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsIn,
+  IsOptional,
+  IsString,
+  Length,
+} from 'class-validator';
+
+export class ControlCenterSendMessageDto {
+  @IsIn(['EMAIL', 'SMS'])
+  channel!: 'EMAIL' | 'SMS';
+
+  @IsOptional()
+  @IsString()
+  tenantId?: string;
+
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(2, 80)
+  templateCode?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(2, 200)
+  subject?: string;
+
+  @IsString()
+  @Length(2, 1600)
+  body!: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsString({ each: true })
+  recipients?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @IsString({ each: true })
+  userIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  roleNames?: string[];
+
+  @IsOptional()
+  @IsIn([
+    'TENANT_USERS',
+    'BRANCH_USERS',
+    'TENANT_OWNERS',
+    'SELECTED_USERS',
+    'ROLE_USERS',
+  ])
+  audience?:
+    | 'TENANT_USERS'
+    | 'BRANCH_USERS'
+    | 'TENANT_OWNERS'
+    | 'SELECTED_USERS'
+    | 'ROLE_USERS';
+}
+
+================================================================================
+FILE: services/api/src/modules/control-center/dto/control-center-pricing.dto.ts
+================================================================================
+import { Type } from 'class-transformer';
+import {
+  IsArray,
+  IsDateString,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Length,
+  Max,
+  Min,
+  ValidateNested,
+} from 'class-validator';
+
+export class ControlCenterPricingAmountDto {
+  @IsString()
+  @Length(2, 40)
+  planCode!: string;
+
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  @Max(10_000_000_000)
+  @Type(() => Number)
+  amount!: number;
+}
+
+export class ControlCenterSavePricingDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ControlCenterPricingAmountDto)
+  prices!: ControlCenterPricingAmountDto[];
+
+  @IsOptional()
+  @IsDateString()
+  effectiveFrom?: string;
+
+  @IsOptional()
+  @IsDateString()
+  effectiveUntil?: string;
+
+  @IsString()
+  @Length(3, 500)
+  reason!: string;
+}
+
+================================================================================
+FILE: services/api/src/modules/control-center/dto/control-center-users.dto.ts
+================================================================================
+import { IsIn, IsOptional, IsString, Length } from 'class-validator';
+
+export class ControlCenterUpdateUserStatusDto {
+  @IsIn(['ACTIVE', 'SUSPENDED', 'INACTIVE'])
+  status!: 'ACTIVE' | 'SUSPENDED' | 'INACTIVE';
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 500)
+  reason?: string;
+}

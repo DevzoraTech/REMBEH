@@ -1,0 +1,514 @@
+apps/web/src/components/control-center/client-detail-section.tsx:34:  onManagePricing,
+apps/web/src/components/control-center/client-detail-section.tsx:35:  onPricingHistory,
+apps/web/src/components/control-center/client-detail-section.tsx:40:  onManagePricing: () => void;
+apps/web/src/components/control-center/client-detail-section.tsx:41:  onPricingHistory: () => void;
+apps/web/src/components/control-center/client-detail-section.tsx:90:              onClick={onPricingHistory}
+apps/web/src/components/control-center/client-detail-section.tsx:93:              Pricing history
+apps/web/src/components/control-center/client-detail-section.tsx:97:              onClick={onManagePricing}
+apps/web/src/components/control-center/client-detail-section.tsx:100:              Manage pricing
+apps/web/src/components/control-center/client-detail-section.tsx:147:              <h2 className="text-sm font-black">Pricing status</h2>
+apps/web/src/components/control-center/client-detail-section.tsx:149:                Client-level and branch pricing
+apps/web/src/components/control-center/client-detail-section.tsx:153:                active subscriptions keep their existing period amount until
+apps/web/src/components/control-center/client-detail-section.tsx:161:            onClick={onManagePricing}
+apps/web/src/components/control-center/client-detail-section.tsx:164:            Manage pricing
+apps/web/src/components/control-center/client-detail-section.tsx:170:          <h2 className="text-sm font-black">Subscription overview</h2>
+apps/web/src/components/control-center/client-detail-section.tsx:214:                  <th className="px-4 py-3">Subscription</th>
+apps/web/src/components/control-center/client-detail-section.tsx:227:                    onManagePricing={onManagePricing}
+apps/web/src/components/control-center/client-detail-section.tsx:302:  onManagePricing,
+apps/web/src/components/control-center/client-detail-section.tsx:305:  onManagePricing: () => void;
+apps/web/src/components/control-center/client-detail-section.tsx:339:          {ccMoney(branch.repaymentsCollected)}
+apps/web/src/components/control-center/client-detail-section.tsx:342:          {ccNumber(branch.repaymentCount)} repayments -{" "}
+apps/web/src/components/control-center/client-detail-section.tsx:358:          onClick={onManagePricing}
+apps/web/src/components/control-center/messaging-section.tsx:6:import { controlCenterFetch } from "../../lib/control-center-api";
+apps/web/src/components/control-center/messaging-section.tsx:50:export function ControlCenterMessagingSection({
+apps/web/src/components/control-center/messaging-section.tsx:121:    void controlCenterFetch<ControlCenterClientDetail>(
+apps/web/src/components/control-center/messaging-section.tsx:178:      const response = await controlCenterFetch<SendResult>(
+apps/web/src/components/control-center/messaging-section.tsx:201:        title="Messaging"
+apps/web/src/components/control-center/control-center-shell.tsx:27:  | "subscriptions"
+apps/web/src/components/control-center/control-center-shell.tsx:28:  | "payments"
+apps/web/src/components/control-center/control-center-shell.tsx:29:  | "pricing"
+apps/web/src/components/control-center/control-center-shell.tsx:32:  | "messaging"
+apps/web/src/components/control-center/control-center-shell.tsx:39:  { id: "subscriptions", label: "Subscriptions", icon: Building2 },
+apps/web/src/components/control-center/control-center-shell.tsx:40:  { id: "payments", label: "Payments", icon: CreditCard },
+apps/web/src/components/control-center/control-center-shell.tsx:41:  { id: "pricing", label: "Pricing", icon: Tag },
+apps/web/src/components/control-center/control-center-shell.tsx:44:  { id: "messaging", label: "Messaging", icon: Mail },
+apps/web/src/components/control-center/pricing-history-section.tsx:5:import type { ControlCenterClient, ControlCenterPricingHistory } from "./types";
+apps/web/src/components/control-center/pricing-history-section.tsx:15:export function ControlCenterPricingHistorySection({
+apps/web/src/components/control-center/pricing-history-section.tsx:22:  history: ControlCenterPricingHistory | null;
+apps/web/src/components/control-center/pricing-history-section.tsx:83:    anchor.download = `${client?.name ?? "client"}-pricing-history.csv`;
+apps/web/src/components/control-center/pricing-history-section.tsx:96:        Back to pricing
+apps/web/src/components/control-center/pricing-history-section.tsx:100:        title="Pricing History"
+apps/web/src/components/control-center/pricing-history-section.tsx:103:            ? `View all pricing changes for ${client.name} and its branches.`
+apps/web/src/components/control-center/pricing-history-section.tsx:104:            : "View pricing changes."
+apps/web/src/components/control-center/pricing-history-section.tsx:129:              {rows.length} pricing records
+apps/web/src/components/control-center/pricing-history-section.tsx:233:            <EmptyState title="No pricing changes match the current filters" />
+apps/web/src/components/control-center/pricing-section.tsx:15:import { controlCenterFetch } from "../../lib/control-center-api";
+apps/web/src/components/control-center/pricing-section.tsx:18:  ControlCenterPricing,
+apps/web/src/components/control-center/pricing-section.tsx:31:type PricingScope = "ORGANIZATION" | "BRANCH";
+apps/web/src/components/control-center/pricing-section.tsx:32:type PricingSaveResponse = {
+apps/web/src/components/control-center/pricing-section.tsx:40:export function ControlCenterPricingSection({
+apps/web/src/components/control-center/pricing-section.tsx:43:  pricing,
+apps/web/src/components/control-center/pricing-section.tsx:53:  pricing: ControlCenterPricing | null;
+apps/web/src/components/control-center/pricing-section.tsx:61:  const [scope, setScope] = useState<PricingScope>("ORGANIZATION");
+apps/web/src/components/control-center/pricing-section.tsx:71:    if (!pricing) return [];
+apps/web/src/components/control-center/pricing-section.tsx:72:    if (scope === "ORGANIZATION") return pricing.organization;
+apps/web/src/components/control-center/pricing-section.tsx:74:      pricing.branchOverrides.find((row) => row.branch.id === branchId) ??
+apps/web/src/components/control-center/pricing-section.tsx:75:      pricing.branchOverrides[0];
+apps/web/src/components/control-center/pricing-section.tsx:77:  }, [branchId, pricing, scope]);
+apps/web/src/components/control-center/pricing-section.tsx:80:    if (!pricing) return;
+apps/web/src/components/control-center/pricing-section.tsx:81:    if (!branchId && pricing.branches[0]) {
+apps/web/src/components/control-center/pricing-section.tsx:82:      setBranchId(pricing.branches[0].id);
+apps/web/src/components/control-center/pricing-section.tsx:84:  }, [branchId, pricing]);
+apps/web/src/components/control-center/pricing-section.tsx:98:          title="Pricing"
+apps/web/src/components/control-center/pricing-section.tsx:99:          subtitle="Select a client organization before adjusting custom subscription prices."
+apps/web/src/components/control-center/pricing-section.tsx:103:          subtitle="Open the Clients section and choose Manage pricing for an organization."
+apps/web/src/components/control-center/pricing-section.tsx:111:    if (!pricing) return;
+apps/web/src/components/control-center/pricing-section.tsx:116:      const prices = pricing.plans.map((plan) => ({
+apps/web/src/components/control-center/pricing-section.tsx:122:          ? `/clients/${client!.id}/pricing`
+apps/web/src/components/control-center/pricing-section.tsx:123:          : `/clients/${client!.id}/branches/${branchId}/pricing`;
+apps/web/src/components/control-center/pricing-section.tsx:124:      const response = await controlCenterFetch<PricingSaveResponse>(
+apps/web/src/components/control-center/pricing-section.tsx:143:            ? ` Pricing saved, but email notification failed: ${response.notification.error}`
+apps/web/src/components/control-center/pricing-section.tsx:144:            : " Pricing saved, but no owner/manager email recipients were found."
+apps/web/src/components/control-center/pricing-section.tsx:149:            ? "Organization pricing saved."
+apps/web/src/components/control-center/pricing-section.tsx:150:            : "Branch pricing saved."
+apps/web/src/components/control-center/pricing-section.tsx:158:          : "Could not save pricing.",
+apps/web/src/components/control-center/pricing-section.tsx:165:  const selectedBranch = pricing?.branches.find(
+apps/web/src/components/control-center/pricing-section.tsx:181:        title="Manage Pricing"
+apps/web/src/components/control-center/pricing-section.tsx:190:            Pricing history
+apps/web/src/components/control-center/pricing-section.tsx:195:      {loading || !pricing ? (
+apps/web/src/components/control-center/pricing-section.tsx:202:            <h2 className="text-sm font-black">Pricing scope</h2>
+apps/web/src/components/control-center/pricing-section.tsx:204:              Choose how this pricing should apply.
+apps/web/src/components/control-center/pricing-section.tsx:217:                subtitle="Sets pricing for one branch and overrides organization pricing."
+apps/web/src/components/control-center/pricing-section.tsx:236:                    options={pricing.branches.map((branch) => ({
+apps/web/src/components/control-center/pricing-section.tsx:245:                This pricing will override the organization price and apply only
+apps/web/src/components/control-center/pricing-section.tsx:256:                    ? "Custom organization pricing"
+apps/web/src/components/control-center/pricing-section.tsx:257:                    : `Custom pricing for ${selectedBranch?.name ?? "branch"}`}
+apps/web/src/components/control-center/pricing-section.tsx:268:                    : "Overrides organization pricing"
+apps/web/src/components/control-center/pricing-section.tsx:276:                    <th className="px-5 py-3">Subscription plan</th>
+apps/web/src/components/control-center/pricing-section.tsx:286:                    <PricingRow
+apps/web/src/components/control-center/pricing-section.tsx:342:                  placeholder="Agreed pricing for client rollout"
+apps/web/src/components/control-center/pricing-section.tsx:384:                  ? "Save pricing"
+apps/web/src/components/control-center/pricing-section.tsx:385:                  : "Save branch pricing"}
+apps/web/src/components/control-center/pricing-section.tsx:429:function PricingRow({
+apps/web/src/components/control-center/pricing-section.tsx:437:  scope: PricingScope;
+apps/web/src/components/control-center/control-center-workspace.tsx:6:import { controlCenterFetch } from "../../lib/control-center-api";
+apps/web/src/components/control-center/control-center-workspace.tsx:21:import { ControlCenterMessagingSection } from "./messaging-section";
+apps/web/src/components/control-center/control-center-workspace.tsx:22:import { ControlCenterPricingHistorySection } from "./pricing-history-section";
+apps/web/src/components/control-center/control-center-workspace.tsx:23:import { ControlCenterPricingSection } from "./pricing-section";
+apps/web/src/components/control-center/control-center-workspace.tsx:26:  PaymentsSection,
+apps/web/src/components/control-center/control-center-workspace.tsx:29:  SubscriptionsSection,
+apps/web/src/components/control-center/control-center-workspace.tsx:30:} from "./support-sections";
+apps/web/src/components/control-center/control-center-workspace.tsx:37:  ControlCenterPricing,
+apps/web/src/components/control-center/control-center-workspace.tsx:38:  ControlCenterPricingHistory,
+apps/web/src/components/control-center/control-center-workspace.tsx:43:type ClientMode = "LIST" | "DETAIL" | "PRICING" | "HISTORY";
+apps/web/src/components/control-center/control-center-workspace.tsx:63:  const [pricing, setPricing] = useState<ControlCenterPricing | null>(null);
+apps/web/src/components/control-center/control-center-workspace.tsx:64:  const [pricingHistory, setPricingHistory] =
+apps/web/src/components/control-center/control-center-workspace.tsx:65:    useState<ControlCenterPricingHistory | null>(null);
+apps/web/src/components/control-center/control-center-workspace.tsx:67:  const [loadingPricing, setLoadingPricing] = useState(false);
+apps/web/src/components/control-center/control-center-workspace.tsx:69:  const [savingPricing, setSavingPricing] = useState(false);
+apps/web/src/components/control-center/control-center-workspace.tsx:81:        controlCenterFetch<ControlCenterDashboard>("/dashboard", activeSession),
+apps/web/src/components/control-center/control-center-workspace.tsx:82:        controlCenterFetch<ControlCenterClientsResponse>(
+apps/web/src/components/control-center/control-center-workspace.tsx:86:        controlCenterFetch<{ users: ControlCenterUser[] }>(
+apps/web/src/components/control-center/control-center-workspace.tsx:90:        controlCenterFetch<{ templates: ControlCenterTemplate[] }>(
+apps/web/src/components/control-center/control-center-workspace.tsx:115:          await controlCenterFetch("/me", auth.session);
+apps/web/src/components/control-center/control-center-workspace.tsx:140:        const detail = await controlCenterFetch<ControlCenterClientDetail>(
+apps/web/src/components/control-center/control-center-workspace.tsx:158:  const loadPricing = useCallback(
+apps/web/src/components/control-center/control-center-workspace.tsx:161:      setLoadingPricing(true);
+apps/web/src/components/control-center/control-center-workspace.tsx:164:        const data = await controlCenterFetch<ControlCenterPricing>(
+apps/web/src/components/control-center/control-center-workspace.tsx:165:          `/clients/${tenantId}/pricing`,
+apps/web/src/components/control-center/control-center-workspace.tsx:168:        setPricing(data);
+apps/web/src/components/control-center/control-center-workspace.tsx:173:            : "Could not load pricing.",
+apps/web/src/components/control-center/control-center-workspace.tsx:176:        setLoadingPricing(false);
+apps/web/src/components/control-center/control-center-workspace.tsx:188:        const data = await controlCenterFetch<ControlCenterPricingHistory>(
+apps/web/src/components/control-center/control-center-workspace.tsx:189:          `/clients/${tenantId}/pricing-history`,
+apps/web/src/components/control-center/control-center-workspace.tsx:192:        setPricingHistory(data);
+apps/web/src/components/control-center/control-center-workspace.tsx:197:            : "Could not load pricing history.",
+apps/web/src/components/control-center/control-center-workspace.tsx:214:  function openPricing(tenantId: string) {
+apps/web/src/components/control-center/control-center-workspace.tsx:217:    setClientMode("PRICING");
+apps/web/src/components/control-center/control-center-workspace.tsx:219:    void Promise.all([loadClient(tenantId), loadPricing(tenantId)]);
+apps/web/src/components/control-center/control-center-workspace.tsx:230:  async function refreshAfterPricing() {
+apps/web/src/components/control-center/control-center-workspace.tsx:234:      selectedClientId ? loadPricing(selectedClientId, session) : undefined,
+apps/web/src/components/control-center/control-center-workspace.tsx:242:    const usersData = await controlCenterFetch<{ users: ControlCenterUser[] }>(
+apps/web/src/components/control-center/control-center-workspace.tsx:282:        pricing,
+apps/web/src/components/control-center/control-center-workspace.tsx:283:        pricingHistory,
+apps/web/src/components/control-center/control-center-workspace.tsx:285:        loadingPricing,
+apps/web/src/components/control-center/control-center-workspace.tsx:287:        savingPricing,
+apps/web/src/components/control-center/control-center-workspace.tsx:289:        openPricing,
+apps/web/src/components/control-center/control-center-workspace.tsx:292:        setSavingPricing,
+apps/web/src/components/control-center/control-center-workspace.tsx:293:        refreshAfterPricing,
+apps/web/src/components/control-center/control-center-workspace.tsx:311:  pricing: ControlCenterPricing | null;
+apps/web/src/components/control-center/control-center-workspace.tsx:312:  pricingHistory: ControlCenterPricingHistory | null;
+apps/web/src/components/control-center/control-center-workspace.tsx:314:  loadingPricing: boolean;
+apps/web/src/components/control-center/control-center-workspace.tsx:316:  savingPricing: boolean;
+apps/web/src/components/control-center/control-center-workspace.tsx:318:  openPricing: (tenantId: string) => void;
+apps/web/src/components/control-center/control-center-workspace.tsx:321:  setSavingPricing: (saving: boolean) => void;
+apps/web/src/components/control-center/control-center-workspace.tsx:322:  refreshAfterPricing: () => Promise<void>;
+apps/web/src/components/control-center/control-center-workspace.tsx:335:        onOpenPricing={() => input.setActive("pricing")}
+apps/web/src/components/control-center/control-center-workspace.tsx:347:          onManagePricing={() => {
+apps/web/src/components/control-center/control-center-workspace.tsx:349:              input.openPricing(input.selectedClient.id);
+apps/web/src/components/control-center/control-center-workspace.tsx:351:          onPricingHistory={() => input.openHistory()}
+apps/web/src/components/control-center/control-center-workspace.tsx:355:    if (input.clientMode === "PRICING") {
+apps/web/src/components/control-center/control-center-workspace.tsx:357:        <ControlCenterPricingSection
+apps/web/src/components/control-center/control-center-workspace.tsx:360:          pricing={input.pricing}
+apps/web/src/components/control-center/control-center-workspace.tsx:361:          loading={input.loadingPricing}
+apps/web/src/components/control-center/control-center-workspace.tsx:362:          saving={input.savingPricing}
+apps/web/src/components/control-center/control-center-workspace.tsx:365:          onSaved={input.refreshAfterPricing}
+apps/web/src/components/control-center/control-center-workspace.tsx:366:          onSaveStateChange={input.setSavingPricing}
+apps/web/src/components/control-center/control-center-workspace.tsx:372:        <ControlCenterPricingHistorySection
+apps/web/src/components/control-center/control-center-workspace.tsx:374:          history={input.pricingHistory}
+apps/web/src/components/control-center/control-center-workspace.tsx:376:          onBack={() => input.setClientMode("PRICING")}
+apps/web/src/components/control-center/control-center-workspace.tsx:384:        onOpenPricing={input.openPricing}
+apps/web/src/components/control-center/control-center-workspace.tsx:389:  if (input.active === "pricing") {
+apps/web/src/components/control-center/control-center-workspace.tsx:394:        onOpenPricing={input.openPricing}
+apps/web/src/components/control-center/control-center-workspace.tsx:409:  if (input.active === "messaging") {
+apps/web/src/components/control-center/control-center-workspace.tsx:411:      <ControlCenterMessagingSection
+apps/web/src/components/control-center/control-center-workspace.tsx:420:  if (input.active === "subscriptions") {
+apps/web/src/components/control-center/control-center-workspace.tsx:422:      <SubscriptionsSection
+apps/web/src/components/control-center/control-center-workspace.tsx:430:  if (input.active === "payments") {
+apps/web/src/components/control-center/control-center-workspace.tsx:431:    return <PaymentsSection dashboard={input.dashboard} />;
+apps/web/src/components/control-center/users-section.tsx:6:import { controlCenterFetch } from "../../lib/control-center-api";
+apps/web/src/components/control-center/users-section.tsx:76:      await controlCenterFetch(`/users/${user.id}/status`, session, {
+apps/web/src/components/control-center/dashboard-section.tsx:27:  onOpenPricing,
+apps/web/src/components/control-center/dashboard-section.tsx:33:  onOpenPricing: () => void;
+apps/web/src/components/control-center/dashboard-section.tsx:44:        subtitle="Control live client organizations, pricing, users, subscriptions, and messaging from one place."
+apps/web/src/components/control-center/dashboard-section.tsx:58:          subtitle={`${ccNumber(stats.activeBranches)} active subscriptions`}
+apps/web/src/components/control-center/dashboard-section.tsx:63:          title="Custom pricing"
+apps/web/src/components/control-center/dashboard-section.tsx:64:          value={ccNumber(stats.activePricingOverrides)}
+apps/web/src/components/control-center/dashboard-section.tsx:72:          subtitle={`${ccNumber(stats.completedPayments)} completed payments`}
+apps/web/src/components/control-center/dashboard-section.tsx:90:              onClick={onOpenPricing}
+apps/web/src/components/control-center/dashboard-section.tsx:93:              Manage pricing
+apps/web/src/components/control-center/dashboard-section.tsx:121:                      client.pricingType === "CUSTOM"
+apps/web/src/components/control-center/dashboard-section.tsx:122:                        ? "Custom pricing"
+apps/web/src/components/control-center/dashboard-section.tsx:123:                        : "Default pricing"
+apps/web/src/components/control-center/dashboard-section.tsx:125:                    tone={client.pricingType === "CUSTOM" ? "green" : "blue"}
+apps/web/src/components/control-center/dashboard-section.tsx:144:                  Live counts from subscriptions and users.
+apps/web/src/components/control-center/types.ts:12:  pricingType: "CUSTOM" | "DEFAULT";
+apps/web/src/components/control-center/types.ts:20:    customPricing: number;
+apps/web/src/components/control-center/types.ts:21:    defaultPricing: number;
+apps/web/src/components/control-center/types.ts:29:  recentPayments: Array<{
+apps/web/src/components/control-center/types.ts:93:  repaymentsCollected: number;
+apps/web/src/components/control-center/types.ts:94:  repaymentCount: number;
+apps/web/src/components/control-center/types.ts:95:  subscriptionRevenue: number;
+apps/web/src/components/control-center/types.ts:96:  subscriptionPayments: number;
+apps/web/src/components/control-center/types.ts:100:export type ControlCenterPricing = {
+apps/web/src/components/control-center/types.ts:136:export type ControlCenterPricingHistory = {
+apps/web/src/components/control-center/support-sections.tsx:26:export function SubscriptionsSection({
+apps/web/src/components/control-center/support-sections.tsx:38:        title="Subscriptions"
+apps/web/src/components/control-center/support-sections.tsx:39:        subtitle="Monitor subscription coverage and branches needing attention."
+apps/web/src/components/control-center/support-sections.tsx:52:          subtitle="Subscription blocked"
+apps/web/src/components/control-center/support-sections.tsx:57:          title="Subscription revenue"
+apps/web/src/components/control-center/support-sections.tsx:59:          subtitle="Completed payments"
+apps/web/src/components/control-center/support-sections.tsx:64:          title="Pricing overrides"
+apps/web/src/components/control-center/support-sections.tsx:65:          value={ccNumber(dashboard?.stats.activePricingOverrides)}
+apps/web/src/components/control-center/support-sections.tsx:91:                  client.pricingType === "CUSTOM"
+apps/web/src/components/control-center/support-sections.tsx:92:                    ? "Custom pricing"
+apps/web/src/components/control-center/support-sections.tsx:93:                    : "Default pricing"
+apps/web/src/components/control-center/support-sections.tsx:95:                tone={client.pricingType === "CUSTOM" ? "green" : "blue"}
+apps/web/src/components/control-center/support-sections.tsx:106:export function PaymentsSection({
+apps/web/src/components/control-center/support-sections.tsx:114:        title="Payments"
+apps/web/src/components/control-center/support-sections.tsx:115:        subtitle="Recently created subscription payments and completed revenue."
+apps/web/src/components/control-center/support-sections.tsx:122:          subtitle={`${ccNumber(dashboard?.stats.completedPayments)} payments`}
+apps/web/src/components/control-center/support-sections.tsx:135:          subtitle="Need renewal or support"
+apps/web/src/components/control-center/support-sections.tsx:140:        {dashboard?.recentPayments.length ? (
+apps/web/src/components/control-center/support-sections.tsx:154:                {dashboard.recentPayments.map((payment) => (
+apps/web/src/components/control-center/support-sections.tsx:155:                  <tr key={payment.id}>
+apps/web/src/components/control-center/support-sections.tsx:157:                      {payment.organizationName}
+apps/web/src/components/control-center/support-sections.tsx:160:                      {payment.branchName}
+apps/web/src/components/control-center/support-sections.tsx:163:                      {payment.planCode}
+apps/web/src/components/control-center/support-sections.tsx:166:                      {ccMoney(payment.amount, payment.currency)}
+apps/web/src/components/control-center/support-sections.tsx:169:                      <StatusPill value={payment.status} />
+apps/web/src/components/control-center/support-sections.tsx:172:                      {ccDateTime(payment.createdAt)}
+apps/web/src/components/control-center/support-sections.tsx:181:            <EmptyState title="No subscription payments found" />
+apps/web/src/components/control-center/support-sections.tsx:232:          subtitle="Subscription payments"
+apps/web/src/components/control-center/clients-section.tsx:29:  onOpenPricing,
+apps/web/src/components/control-center/clients-section.tsx:33:  onOpenPricing: (tenantId: string) => void;
+apps/web/src/components/control-center/clients-section.tsx:36:  const [pricingType, setPricingType] = useState("ALL");
+apps/web/src/components/control-center/clients-section.tsx:54:      const matchesPricing =
+apps/web/src/components/control-center/clients-section.tsx:55:        pricingType === "ALL" || client.pricingType === pricingType;
+apps/web/src/components/control-center/clients-section.tsx:57:      return matchesSearch && matchesPricing && matchesStatus;
+apps/web/src/components/control-center/clients-section.tsx:59:  }, [data?.clients, pricingType, query, status]);
+apps/web/src/components/control-center/clients-section.tsx:66:        subtitle="Manage organizations, branches, subscription pricing, and performance."
+apps/web/src/components/control-center/clients-section.tsx:71:            onClick={() => onOpenPricing(filtered[0]?.id ?? "")}
+apps/web/src/components/control-center/clients-section.tsx:75:            Pricing action
+apps/web/src/components/control-center/clients-section.tsx:89:          title="Custom pricing"
+apps/web/src/components/control-center/clients-section.tsx:90:          value={ccNumber(stats?.customPricing)}
+apps/web/src/components/control-center/clients-section.tsx:91:          subtitle="Clients with custom pricing"
+apps/web/src/components/control-center/clients-section.tsx:96:          title="Default pricing"
+apps/web/src/components/control-center/clients-section.tsx:97:          value={ccNumber(stats?.defaultPricing)}
+apps/web/src/components/control-center/clients-section.tsx:98:          subtitle="Using standard pricing"
+apps/web/src/components/control-center/clients-section.tsx:122:            value={pricingType}
+apps/web/src/components/control-center/clients-section.tsx:124:              setPricingType(value);
+apps/web/src/components/control-center/clients-section.tsx:127:            ariaLabel="Pricing type"
+apps/web/src/components/control-center/clients-section.tsx:129:              { value: "ALL", label: "All pricing" },
+apps/web/src/components/control-center/clients-section.tsx:130:              { value: "CUSTOM", label: "Custom pricing" },
+apps/web/src/components/control-center/clients-section.tsx:131:              { value: "DEFAULT", label: "Default pricing" },
+apps/web/src/components/control-center/clients-section.tsx:159:                <th className="px-4 py-3">Pricing</th>
+apps/web/src/components/control-center/clients-section.tsx:171:                  onOpenPricing={onOpenPricing}
+apps/web/src/components/control-center/clients-section.tsx:197:  onOpenPricing,
+apps/web/src/components/control-center/clients-section.tsx:201:  onOpenPricing: (tenantId: string) => void;
+apps/web/src/components/control-center/clients-section.tsx:234:            client.pricingType === "CUSTOM"
+apps/web/src/components/control-center/clients-section.tsx:235:              ? "Custom pricing"
+apps/web/src/components/control-center/clients-section.tsx:236:              : "Default pricing"
+apps/web/src/components/control-center/clients-section.tsx:238:          tone={client.pricingType === "CUSTOM" ? "green" : "blue"}
+apps/web/src/components/control-center/clients-section.tsx:256:            onClick={() => onOpenPricing(client.id)}
+apps/web/src/components/control-center/clients-section.tsx:259:            Pricing
+apps/web/src/lib/push-notifications.ts:3:import { getToken, onMessage, type MessagePayload } from "firebase/messaging";
+apps/web/src/lib/push-notifications.ts:5:import { getFirebaseMessaging } from "./firebase";
+apps/web/src/lib/push-notifications.ts:12:  permission: NotificationPermission | "unsupported";
+apps/web/src/lib/push-notifications.ts:24:    return { permission: "unsupported", token: null, registered: false };
+apps/web/src/lib/push-notifications.ts:29:    return { permission: "unsupported", token: null, registered: false };
+apps/web/src/lib/push-notifications.ts:32:  const messaging = await getFirebaseMessaging();
+apps/web/src/lib/push-notifications.ts:33:  if (!messaging) {
+apps/web/src/lib/push-notifications.ts:34:    console.warn("[push] Firebase Messaging not supported here");
+apps/web/src/lib/push-notifications.ts:35:    return { permission: "unsupported", token: null, registered: false };
+apps/web/src/lib/push-notifications.ts:49:      "[push] NEXT_PUBLIC_FIREBASE_VAPID_KEY missing — generate Web Push certs in Firebase Console (rembeh-web → Cloud Messaging).",
+apps/web/src/lib/push-notifications.ts:56:      "/firebase-messaging-sw.js",
+apps/web/src/lib/push-notifications.ts:60:    const token = await getToken(messaging, {
+apps/web/src/lib/push-notifications.ts:86:    const response = await fetch(`${apiBaseUrl}/notifications/push/tokens`, {
+apps/web/src/lib/push-notifications.ts:113:  const messaging = await getFirebaseMessaging();
+apps/web/src/lib/push-notifications.ts:114:  if (!messaging) {
+apps/web/src/lib/push-notifications.ts:118:  return onMessage(messaging, (payload: MessagePayload) => {
+apps/web/src/lib/firebase.ts:2:import { getMessaging, isSupported, type Messaging } from "firebase/messaging";
+apps/web/src/lib/firebase.ts:12:  messagingSenderId:
+apps/web/src/lib/firebase.ts:13:    process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ?? "110942121490",
+apps/web/src/lib/firebase.ts:26:export async function getFirebaseMessaging(): Promise<Messaging | null> {
+apps/web/src/lib/firebase.ts:30:  const supported = await isSupported().catch(() => false);
+apps/web/src/lib/firebase.ts:31:  if (!supported) {
+apps/web/src/lib/firebase.ts:34:  return getMessaging(getFirebaseApp());
+apps/web/src/lib/auth-session.ts:144:    const response = await fetch(`${apiBase}/auth/refresh`, {
+apps/web/src/lib/control-center-api.ts:13:export async function controlCenterFetch<T>(
+apps/web/src/lib/control-center-api.ts:18:  const response = await fetch(`${apiBaseUrl}/control-center${path}`, {
+apps/web/src/lib/control-center-api.ts:39:  const response = await fetch(`${apiBaseUrl}/control-center${path}`, {
+apps/web/src/lib/realtime.ts:18:export type PaymentMadeEvent = {
+apps/web/src/lib/realtime.ts:19:  repaymentId: string;
+apps/web/src/lib/realtime.ts:39:export type SubscriptionPaymentUpdatedEvent = {
+apps/web/src/lib/realtime.ts:40:  paymentId: string;
+apps/web/src/lib/realtime.ts:44:  payment: {
+apps/web/src/lib/realtime.ts:49:    kind?: "subscription" | "sms";
+apps/web/src/lib/realtime.ts:62:    paymentMethod: string;
+apps/web/src/app/clients/[clientId]/page.tsx:48:  paymentStartDate: string | null;
+apps/web/src/app/clients/[clientId]/page.tsx:56:  repaymentsCount: number;
+apps/web/src/app/clients/[clientId]/page.tsx:58:  lastPaymentAt: string | null;
+apps/web/src/app/clients/[clientId]/page.tsx:74:type ClientPayment = {
+apps/web/src/app/clients/[clientId]/page.tsx:100:  recentPayments: ClientPayment[];
+apps/web/src/app/clients/[clientId]/page.tsx:122:  const [paymentPage, setPaymentPage] = useState(1);
+apps/web/src/app/clients/[clientId]/page.tsx:123:  const [paymentPageSize, setPaymentPageSize] = useState(DEFAULT_PAGE_SIZE);
+apps/web/src/app/clients/[clientId]/page.tsx:134:        const response = await fetch(`${apiBaseUrl}/customers/${clientId}`, {
+apps/web/src/app/clients/[clientId]/page.tsx:212:  const pagedPayments = useMemo(
+apps/web/src/app/clients/[clientId]/page.tsx:214:      paginateItems(client?.recentPayments ?? [], paymentPage, paymentPageSize),
+apps/web/src/app/clients/[clientId]/page.tsx:215:    [client?.recentPayments, paymentPage, paymentPageSize],
+apps/web/src/app/clients/[clientId]/page.tsx:370:                                {loan.lastPaymentAt
+apps/web/src/app/clients/[clientId]/page.tsx:371:                                  ? `last ${formatDateTime(loan.lastPaymentAt)}`
+apps/web/src/app/clients/[clientId]/page.tsx:372:                                  : "no payments"}
+apps/web/src/app/clients/[clientId]/page.tsx:464:                  recent payments
+apps/web/src/app/clients/[clientId]/page.tsx:467:              {client.recentPayments.length === 0 ? (
+apps/web/src/app/clients/[clientId]/page.tsx:469:                  no payments recorded for this client.
+apps/web/src/app/clients/[clientId]/page.tsx:494:                      {pagedPayments.items.map((payment) => (
+apps/web/src/app/clients/[clientId]/page.tsx:496:                          key={payment.id}
+apps/web/src/app/clients/[clientId]/page.tsx:501:                              {formatDateTime(payment.paidAt)}
+apps/web/src/app/clients/[clientId]/page.tsx:506:                              <Money value={payment.amount} currency="UGX" />
+apps/web/src/app/clients/[clientId]/page.tsx:511:                              {methodLabel(payment.method)}
+apps/web/src/app/clients/[clientId]/page.tsx:516:                              {payment.recordedByName}
+apps/web/src/app/clients/[clientId]/page.tsx:517:                              {payment.recordedByPublicId
+apps/web/src/app/clients/[clientId]/page.tsx:518:                                ? ` · ${payment.recordedByPublicId}`
+apps/web/src/app/clients/[clientId]/page.tsx:524:                              {payment.note?.trim() || "—"}
+apps/web/src/app/clients/[clientId]/page.tsx:532:                    page={pagedPayments.currentPage}
+apps/web/src/app/clients/[clientId]/page.tsx:533:                    pageSize={paymentPageSize}
+apps/web/src/app/clients/[clientId]/page.tsx:534:                    total={client.recentPayments.length}
+apps/web/src/app/clients/[clientId]/page.tsx:535:                    itemLabel="payments"
+apps/web/src/app/clients/[clientId]/page.tsx:536:                    onPageChange={setPaymentPage}
+apps/web/src/app/clients/[clientId]/page.tsx:538:                      setPaymentPageSize(nextPageSize);
+apps/web/src/app/clients/[clientId]/page.tsx:539:                      setPaymentPage(1);
+apps/web/src/app/clients/[clientId]/page.tsx:786:                label="repayments"
+apps/web/src/app/clients/[clientId]/page.tsx:787:                value={String(loan.repaymentsCount)}
+apps/web/src/app/clients/[clientId]/page.tsx:799:                label="payment starts"
+apps/web/src/app/clients/[clientId]/page.tsx:800:                value={formatDate(loan.paymentStartDate)}
+apps/web/src/app/clients/[clientId]/page.tsx:803:                label="last payment"
+apps/web/src/app/clients/[clientId]/page.tsx:804:                value={formatDateTime(loan.lastPaymentAt)}
+apps/web/src/app/clients/[clientId]/page.tsx:1055:    SUPPORTING_DOC: "Supporting document",
+apps/web/src/app/settings/page.tsx:52:  repaymentFrequency: "DAILY" | "WEEKLY" | "BIWEEKLY" | "MONTHLY" | "LUMP_SUM";
+apps/web/src/app/settings/page.tsx:56:  paymentStartPolicy: "SAME_DAY" | "NEXT_DAY" | "AFTER_N_DAYS";
+apps/web/src/app/settings/page.tsx:57:  paymentStartDelayDays: number | null;
+apps/web/src/app/settings/page.tsx:73:  repaymentFrequency: "DAILY" | "WEEKLY" | "BIWEEKLY" | "MONTHLY" | "LUMP_SUM";
+apps/web/src/app/settings/page.tsx:77:  paymentStartPolicy: "SAME_DAY" | "NEXT_DAY" | "AFTER_N_DAYS";
+apps/web/src/app/settings/page.tsx:78:  paymentStartDelayDays: string;
+apps/web/src/app/settings/page.tsx:86:  "basics" | "interest" | "term" | "payment-start" | "fines" | "review";
+apps/web/src/app/settings/page.tsx:92:  { id: "payment-start", label: "payment start" },
+apps/web/src/app/settings/page.tsx:122:  repaymentFrequency: "DAILY",
+apps/web/src/app/settings/page.tsx:126:  paymentStartPolicy: "NEXT_DAY",
+apps/web/src/app/settings/page.tsx:127:  paymentStartDelayDays: "1",
+apps/web/src/app/settings/page.tsx:146:    repaymentFrequency: template.repaymentFrequency,
+apps/web/src/app/settings/page.tsx:150:    paymentStartPolicy: template.paymentStartPolicy ?? "NEXT_DAY",
+apps/web/src/app/settings/page.tsx:151:    paymentStartDelayDays: String(template.paymentStartDelayDays ?? 1),
+apps/web/src/app/settings/page.tsx:163:    value === "payment-start" ||
+apps/web/src/app/settings/page.tsx:175:function paymentStartLabel(
+apps/web/src/app/settings/page.tsx:176:  template: Pick<LoanTemplate, "paymentStartPolicy" | "paymentStartDelayDays">,
+apps/web/src/app/settings/page.tsx:178:  switch (template.paymentStartPolicy) {
+apps/web/src/app/settings/page.tsx:182:      return `After ${template.paymentStartDelayDays ?? 1}d`;
+apps/web/src/app/settings/page.tsx:201:function frequencyLabel(value: LoanTemplate["repaymentFrequency"]) {
+apps/web/src/app/settings/page.tsx:389:    const response = await fetch(`${apiBaseUrl}/loan-products`, {
+apps/web/src/app/settings/page.tsx:443:      repaymentFrequency: form.repaymentFrequency,
+apps/web/src/app/settings/page.tsx:447:      paymentStartPolicy: form.paymentStartPolicy,
+apps/web/src/app/settings/page.tsx:448:      paymentStartDelayDays:
+apps/web/src/app/settings/page.tsx:449:        form.paymentStartPolicy === "AFTER_N_DAYS"
+apps/web/src/app/settings/page.tsx:450:          ? Number(form.paymentStartDelayDays || "1")
+apps/web/src/app/settings/page.tsx:494:      case "payment-start":
+apps/web/src/app/settings/page.tsx:496:          form.paymentStartPolicy === "AFTER_N_DAYS" &&
+apps/web/src/app/settings/page.tsx:497:          (!form.paymentStartDelayDays ||
+apps/web/src/app/settings/page.tsx:498:            Number(form.paymentStartDelayDays) < 1)
+apps/web/src/app/settings/page.tsx:500:          return "Enter the number of days before payment starts.";
+apps/web/src/app/settings/page.tsx:556:      const response = await fetch(url, {
+apps/web/src/app/settings/page.tsx:586:      const response = await fetch(
+apps/web/src/app/settings/page.tsx:619:      const response = await fetch(
+apps/web/src/app/settings/page.tsx:787:                                {paymentStartLabel(template)}
+apps/web/src/app/settings/page.tsx:804:                              {frequencyLabel(template.repaymentFrequency)}
+apps/web/src/app/settings/page.tsx:1079:                label="Repayment Frequency"
+apps/web/src/app/settings/page.tsx:1080:                value={form.repaymentFrequency}
+apps/web/src/app/settings/page.tsx:1083:                    "repaymentFrequency",
+apps/web/src/app/settings/page.tsx:1084:                    value as TemplateForm["repaymentFrequency"],
+apps/web/src/app/settings/page.tsx:1100:          {currentWizard?.id === "payment-start" ? (
+apps/web/src/app/settings/page.tsx:1103:                label="Payment start"
+apps/web/src/app/settings/page.tsx:1104:                value={form.paymentStartPolicy}
+apps/web/src/app/settings/page.tsx:1107:                    "paymentStartPolicy",
+apps/web/src/app/settings/page.tsx:1108:                    value as TemplateForm["paymentStartPolicy"],
+apps/web/src/app/settings/page.tsx:1119:              {form.paymentStartPolicy === "AFTER_N_DAYS" ? (
+apps/web/src/app/settings/page.tsx:1121:                  label="days before payment starts"
+apps/web/src/app/settings/page.tsx:1122:                  value={form.paymentStartDelayDays}
+apps/web/src/app/settings/page.tsx:1124:                    updateForm("paymentStartDelayDays", value)
+apps/web/src/app/settings/page.tsx:1143:                  Allow agents to pick a later payment start date
+apps/web/src/app/settings/page.tsx:1187:                value={`${form.termValue || "—"} ${termLabel(form.termUnit)} · ${frequencyLabel(form.repaymentFrequency)}`}
+apps/web/src/app/settings/page.tsx:1190:                label="Payment start"
+apps/web/src/app/settings/page.tsx:1191:                value={paymentStartLabel({
+apps/web/src/app/settings/page.tsx:1192:                  paymentStartPolicy: form.paymentStartPolicy,
+apps/web/src/app/settings/page.tsx:1193:                  paymentStartDelayDays: Number(
+apps/web/src/app/settings/page.tsx:1194:                    form.paymentStartDelayDays || "1",
+apps/web/src/app/owner/settings/page.tsx:201:      const response = await fetch(`${apiBaseUrl}/notifications/push/test`, {
+apps/web/src/app/owner/settings/page.tsx:393:                      title="Repayments"
+apps/web/src/app/owner/settings/page.tsx:394:                      text="Track repayments coming in."
+apps/web/src/app/owner/payments/page.tsx:7:/** Payments is Collections — keep one nav destination. */
+apps/web/src/app/owner/payments/page.tsx:8:export default function OwnerPaymentsRedirectPage() {
+apps/web/src/app/owner/owner-common.tsx:89:  paymentStartDate: string | null;
+apps/web/src/app/owner/owner-common.tsx:158:export type OwnerRepayment = {
+apps/web/src/app/owner/owner-common.tsx:443:  const response = await fetch(`${apiBaseUrl}${path}`, {
+apps/web/src/app/owner/owner-notifications.ts:64:  const response = await fetch(`${apiBaseUrl}${path}`, {
+apps/web/src/app/owner/owner-notifications.ts:175:          title: "Branch subscription",
+apps/web/src/app/owner/owner-notifications.ts:177:          href: "/owner/subscription",
+apps/web/src/app/owner/owner-header.tsx:16:import { BranchSubscriptionMenu } from "../../components/app/branch-subscription-menu";
+apps/web/src/app/owner/owner-header.tsx:54:      ? "/subscription?tab=sms"
+apps/web/src/app/owner/owner-header.tsx:55:      : "/owner/subscription?tab=sms";
+apps/web/src/app/owner/owner-header.tsx:86:          <BranchSubscriptionMenu manageHref="/subscription" />
+apps/web/src/app/owner/subscription/page.tsx:3:import { SubscriptionWorkspace } from "../../../components/app/subscription-workspace";
+apps/web/src/app/owner/subscription/page.tsx:5:export default function OwnerSubscriptionPage() {
+apps/web/src/app/owner/subscription/page.tsx:6:  return <SubscriptionWorkspace mode="owner" />;
+apps/web/src/app/owner/branches/page.tsx:45:  repaymentBandLabel,
+apps/web/src/app/owner/branches/page.tsx:57:  OwnerRepayment,
+apps/web/src/app/owner/branches/page.tsx:96:  const [repayments, setRepayments] = useState<OwnerRepayment[]>([]);
+apps/web/src/app/owner/branches/page.tsx:132:        repaymentPayload,
+apps/web/src/app/owner/branches/page.tsx:142:        ownerFetch<{ repayments?: OwnerRepayment[] }>(
+apps/web/src/app/owner/branches/page.tsx:144:          "/collections/repayments?filter=all",
+apps/web/src/app/owner/branches/page.tsx:159:      setRepayments(repaymentPayload.repayments ?? []);
+apps/web/src/app/owner/branches/page.tsx:257:        repayments,
+apps/web/src/app/owner/branches/page.tsx:260:    [branches, dailyStatuses, loans, repayments],
+apps/web/src/app/owner/branches/page.tsx:339:      const response = await fetch(`${apiBaseUrl}/branches`, {
+apps/web/src/app/owner/branches/page.tsx:488:                    ? "Branches with repayment, overdue, or daily-close issues"
+apps/web/src/app/owner/branches/page.tsx:588:                <Tooltip label="Share of expected repayments received in the last 7 days. Exact rate is in the panel.">
+apps/web/src/app/owner/branches/page.tsx:589:                  <span className="cursor-help text-center">Repayment %</span>
+apps/web/src/app/owner/branches/page.tsx:591:                <Tooltip label="Borrowers missing 2 or more repayment days.">
+apps/web/src/app/owner/branches/page.tsx:623:                      ? "Repayment, overdue, and daily close look clear."
+apps/web/src/app/owner/branches/page.tsx:954:        <BranchField label="Repayment">
+apps/web/src/app/owner/branches/page.tsx:956:            {repaymentBandLabel(
+apps/web/src/app/owner/branches/page.tsx:1583:      const response = await fetch(
+apps/web/src/app/owner/branches/page.tsx:2016:              Repayments · 7 days
+apps/web/src/app/owner/branches/page.tsx:2089:                No expected repayments in this window.
+apps/web/src/app/owner/branch-analytics.ts:5:  OwnerRepayment,
+apps/web/src/app/owner/branch-analytics.ts:73:const LOAN_STATUSES_EXPECTING_REPAYMENT = new Set([
+apps/web/src/app/owner/branch-analytics.ts:91:  repayments,
+apps/web/src/app/owner/branch-analytics.ts:98:  repayments: OwnerRepayment[];
+apps/web/src/app/owner/branch-analytics.ts:109:    repayments,
+apps/web/src/app/owner/branch-analytics.ts:115:  for (const repayment of repayments) {
+apps/web/src/app/owner/branch-analytics.ts:116:    if (repayment.amount <= 0) continue;
+apps/web/src/app/owner/branch-analytics.ts:117:    const loan = loanById.get(repayment.loanId);
+apps/web/src/app/owner/branch-analytics.ts:119:    const key = `${loan.branchId}:${dateKey(new Date(repayment.recordedAt))}`;
+apps/web/src/app/owner/branch-analytics.ts:121:    collected.add(repayment.loanId);
+apps/web/src/app/owner/branch-analytics.ts:129:        expectsRepaymentOnDate(loan, date),
+apps/web/src/app/owner/branch-analytics.ts:211:  if (lower.includes("repayment rate") || lower.includes("collection rate")) {
+apps/web/src/app/owner/branch-analytics.ts:212:    return { kind: "collection", title: "Repayments" };
+apps/web/src/app/owner/branch-analytics.ts:234:  "Repayment % is collected vs expected over the last 7 days — 70% or less needs a look, under 50% is critical. Overdue is borrowers missing 2+ days. Daily close is yesterday’s reconciliation and report.";
+apps/web/src/app/owner/branch-analytics.ts:236:export function repaymentBandLabel(averageRate: number | null) {
+apps/web/src/app/owner/branch-analytics.ts:257:    return "No expected repayments in the last 7 days.";
+apps/web/src/app/owner/branch-analytics.ts:260:    return "Repayment rate is less than 50% over the last 7 days.";
+apps/web/src/app/owner/branch-analytics.ts:263:    return "Repayment rate is 70% or less over the last 7 days.";
+apps/web/src/app/owner/branch-analytics.ts:265:  return "Repayment rate is above 70% over the last 7 days.";
+apps/web/src/app/owner/branch-analytics.ts:310:  repayments,
+apps/web/src/app/owner/branch-analytics.ts:315:  repayments: OwnerRepayment[];
+apps/web/src/app/owner/branch-analytics.ts:321:  for (const repayment of repayments) {
+apps/web/src/app/owner/branch-analytics.ts:322:    const paidAt = parseOptionalDate(repayment.recordedAt);
+apps/web/src/app/owner/branch-analytics.ts:323:    if (!paidAt || paidAt > todayEnd || repayment.amount <= 0) continue;
+apps/web/src/app/owner/branch-analytics.ts:325:      repayment.loanId,
+apps/web/src/app/owner/branch-analytics.ts:326:      (paidByLoan.get(repayment.loanId) ?? 0) + repayment.amount,
+apps/web/src/app/owner/branch-analytics.ts:398:  if (!loanExpectsRepayment(loan)) return null;
+apps/web/src/app/owner/branch-analytics.ts:402:    loan.paymentStartDate ?? loan.disbursedAt ?? loan.createdAt,
+apps/web/src/app/owner/branch-analytics.ts:406:  const expectedDays = expectedRepaymentDays(loan, startAt, today);
+apps/web/src/app/owner/branch-analytics.ts:432:function expectedRepaymentDays(loan: OwnerLoan, startAt: Date, today: Date) {
+apps/web/src/app/owner/branch-analytics.ts:502:function expectsRepaymentOnDate(loan: OwnerLoan, date: Date) {
+apps/web/src/app/owner/branch-analytics.ts:506:    loan.paymentStartDate ?? loan.disbursedAt ?? loan.createdAt,
+apps/web/src/app/owner/branch-analytics.ts:512:  if (!LOAN_STATUSES_EXPECTING_REPAYMENT.has(status) && status !== "CLOSED") {
+apps/web/src/app/owner/branch-analytics.ts:530:function loanExpectsRepayment(loan: OwnerLoan) {
+apps/web/src/app/owner/branch-analytics.ts:532:  return LOAN_STATUSES_EXPECTING_REPAYMENT.has(status) && loan.balance > 0;
+apps/web/src/app/owner/risk/page.tsx:145:      const response = await fetch(
+apps/web/src/app/owner/risk/page.tsx:188:      const response = await fetch(
+apps/web/src/app/owner/risk/page.tsx:581:      const response = await fetch(`${apiBaseUrl}/borrower-lists`, {
+apps/web/src/app/operations/page.tsx:67:  subscriptionStatus: string | null;
+apps/web/src/app/operations/page.tsx:117:  repaymentsByProduct?: Array<{
+apps/web/src/app/operations/page.tsx:408:      "This branch is paused. Renew on Subscription to continue."
+apps/web/src/app/operations/page.tsx:482:        const response = await fetch(
+apps/web/src/app/operations/page.tsx:519:      const response = await fetch(`${apiBaseUrl}/branches`, {
+apps/web/src/app/operations/page.tsx:549:        const response = await fetch(
+apps/web/src/app/operations/page.tsx:772:      const response = await fetch(`${apiBaseUrl}/operations/top-ups`, {
+apps/web/src/app/operations/page.tsx:838:      const response = await fetch(path, {
+apps/web/src/app/operations/page.tsx:888:      const response = await fetch(`${apiBaseUrl}/operations/expenses`, {
+apps/web/src/app/operations/page.tsx:929:      const response = await fetch(`${apiBaseUrl}/operations/agent-returns`, {
+apps/web/src/app/operations/page.tsx:986:      const startResponse = await fetch(
+apps/web/src/app/operations/page.tsx:999:      const countResponse = await fetch(
+apps/web/src/app/operations/page.tsx:1015:      const response = await fetch(
+apps/web/src/app/operations/page.tsx:1060:      const response = await fetch(
+apps/web/src/app/operations/page.tsx:1105:      const response = await fetch(
+apps/web/src/app/operations/page.tsx:1249:        "Repayments",
+apps/web/src/app/operations/page.tsx:1569:                  canRecordPayment={canClose}
+apps/web/src/app/operations/page.tsx:2088:          label="Repayments"
+apps/web/src/app/operations/page.tsx:2096:          tooltip="Repayments received today, with loans issued and expenses recorded."
+apps/web/src/app/operations/page.tsx:2425:            label="Repayments"
+apps/web/src/app/operations/page.tsx:2931:              <th className="w-[15%] px-2 py-1 text-right">Repayments</th>
+apps/web/src/app/operations/page.tsx:4824:            <span className="text-right">Repayments</span>
+apps/web/src/app/operations/page.tsx:5420:      section: "Repayments",
+apps/web/src/app/operations/page.tsx:5421:      description: "Repayments received",
+apps/web/src/app/operations/page.tsx:5426:      note: "Repayments recorded",
+apps/web/src/app/subscription/page.tsx:3:import { SubscriptionWorkspace } from "../../components/app/subscription-workspace";
+apps/web/src/app/subscription/page.tsx:5:export default function ManagerSubscriptionPage() {
+apps/web/src/app/subscription/page.tsx:6:  return <SubscriptionWorkspace mode="manager" />;
+apps/web/src/app/branches/page.tsx:163:        const response = await fetch(`${apiBaseUrl}/branches`, {
+apps/web/src/app/branches/page.tsx:308:      const response = await fetch(`${apiBaseUrl}/branches`, {
+apps/web/src/app/branches/page.tsx:366:        const refreshed = await fetch(`${apiBaseUrl}/branches`, {
+apps/web/src/app/branches/page.tsx:405:      const response = await fetch(
+apps/web/src/app/(auth)/auth/oauth/callback/page.tsx:57:        const response = await fetch(`${apiBaseUrl}/auth/oauth/exchange`, {
+apps/web/src/app/(auth)/auth/oauth/callback/page.tsx:87:            const billingRes = await fetch(`${apiBaseUrl}/billing/my-branch`, {
+apps/web/src/app/(auth)/auth/oauth/callback/page.tsx:100:              fallback = "/subscription";
+apps/web/src/app/(auth)/register/page.tsx:233:        const response = await fetch(`${apiBaseUrl}/auth/oauth/exchange`, {
+apps/web/src/app/(auth)/register/page.tsx:361:      const response = await fetch(
+apps/web/src/app/(auth)/register/page.tsx:421:      const response = await fetch(`${apiBaseUrl}/auth/workspace/register`, {
+apps/web/src/app/(auth)/register/page.tsx:471:      const response = await fetch(`${apiBaseUrl}/auth/workspace/verify-email`, {
+apps/web/src/app/(auth)/register/page.tsx:526:      const response = await fetch(
+apps/web/src/app/(auth)/staff-invitations/accept/page.tsx:109:      const response = await fetch(
+apps/web/src/app/(auth)/staff-invitations/accept/page.tsx:188:      const response = await fetch(
+apps/web/src/app/(auth)/login/page.tsx:108:      const response = await fetch(`${apiBaseUrl}/auth/login`, {
+apps/web/src/app/(auth)/login/page.tsx:143:      // After grace, locked managers only have the Subscription module.
+apps/web/src/app/(auth)/login/page.tsx:146:          const billingRes = await fetch(`${apiBaseUrl}/billing/my-branch`, {
+apps/web/src/app/(auth)/login/page.tsx:159:            fallback = "/subscription";
+apps/web/src/app/(auth)/login/page.tsx:267:                "Password reset is managed by your institution admin. Contact support if you need help.",
+apps/web/src/app/onboarding/page.tsx:72:      void fetch(`${apiBaseUrl}/branches`, {
+apps/web/src/app/onboarding/page.tsx:97:      const response = await fetch(
+apps/web/src/app/blacklist-watchlist/page.tsx:102:      const response = await fetch(`${apiBaseUrl}/borrower-lists`, {
+apps/web/src/app/blacklist-watchlist/page.tsx:125:      const response = await fetch(`${apiBaseUrl}/customers`, {
+apps/web/src/app/blacklist-watchlist/page.tsx:250:      const response = await fetch(`${apiBaseUrl}/borrower-lists`, {
+apps/web/src/app/blacklist-watchlist/page.tsx:287:      const response = await fetch(`${apiBaseUrl}/borrower-lists/${entry.id}`, {
+apps/web/src/app/blacklist-watchlist/page.tsx:318:      const response = await fetch(`${apiBaseUrl}/borrower-lists/${entry.id}`, {

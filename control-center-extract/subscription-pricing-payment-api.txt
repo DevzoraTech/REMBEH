@@ -1,0 +1,757 @@
+services/api/src/modules/control-center/dto/control-center-pricing.dto.ts:14:export class ControlCenterPricingAmountDto {
+services/api/src/modules/control-center/dto/control-center-pricing.dto.ts:26:export class ControlCenterSavePricingDto {
+services/api/src/modules/control-center/dto/control-center-pricing.dto.ts:29:  @Type(() => ControlCenterPricingAmountDto)
+services/api/src/modules/control-center/dto/control-center-pricing.dto.ts:30:  prices!: ControlCenterPricingAmountDto[];
+services/api/src/modules/control-center/control-center.service.ts:30:import { ControlCenterSavePricingDto } from './dto/control-center-pricing.dto';
+services/api/src/modules/control-center/control-center.service.ts:42:    code: 'subscription_offer_email',
+services/api/src/modules/control-center/control-center.service.ts:43:    name: 'Subscription price offer',
+services/api/src/modules/control-center/control-center.service.ts:45:    subject: 'Your REMBEH subscription offer',
+services/api/src/modules/control-center/control-center.service.ts:46:    body: 'Hello {{name}},\n\nWe have prepared a custom REMBEH subscription offer for {{organization}}. Reply to this email or contact the ANTIKRA team to activate it.\n\nRegards,\nANTIKRA',
+services/api/src/modules/control-center/control-center.service.ts:52:    subject: 'REMBEH subscription renewal reminder',
+services/api/src/modules/control-center/control-center.service.ts:53:    body: 'Hello {{name}},\n\nYour REMBEH subscription for {{organization}} is due for renewal soon. Please complete payment to avoid service interruption.\n\nRegards,\nANTIKRA',
+services/api/src/modules/control-center/control-center.service.ts:63:    code: 'subscription_locked_sms',
+services/api/src/modules/control-center/control-center.service.ts:67:    body: 'REMBEH notice: {{branch}} subscription needs attention. Renew to restore full access. ANTIKRA support is available.',
+services/api/src/modules/control-center/control-center.service.ts:70:    code: 'pricing_update_email',
+services/api/src/modules/control-center/control-center.service.ts:71:    name: 'Pricing update',
+services/api/src/modules/control-center/control-center.service.ts:73:    subject: 'REMBEH pricing update for {{organization}}',
+services/api/src/modules/control-center/control-center.service.ts:74:    body: 'Hello {{name}},\n\nWe have updated REMBEH subscription pricing for {{organization}}. Branch-specific pricing still applies where it has been agreed.\n\nOpen your subscription page to view the latest amount before making a payment.\n\nRegards,\nREMBEH Billing',
+services/api/src/modules/control-center/control-center.service.ts:81:    body: 'Hello {{name}},\n\nThis is an important REMBEH update for {{branch}} under {{organization}}.\n\n{{branch}} teams should review the app for the latest operational and subscription information.\n\nRegards,\nREMBEH Operations',
+services/api/src/modules/control-center/control-center.service.ts:95:    body: 'REMBEH manager notice: Review {{branch}} subscriptions, daily operations, and staff access when online. Contact ANTIKRA for support.',
+services/api/src/modules/control-center/control-center.service.ts:268:      completedPayments,
+services/api/src/modules/control-center/control-center.service.ts:270:      recentPayments,
+services/api/src/modules/control-center/control-center.service.ts:278:      this.prisma.branchSubscription.count({ where: { status: 'ACTIVE' } }),
+services/api/src/modules/control-center/control-center.service.ts:279:      this.prisma.branchSubscription.count({ where: { status: 'LOCKED' } }),
+services/api/src/modules/control-center/control-center.service.ts:280:      this.prisma.subscriptionPayment.aggregate({
+services/api/src/modules/control-center/control-center.service.ts:285:      this.prisma.subscriptionPriceOverride.count({
+services/api/src/modules/control-center/control-center.service.ts:291:      this.prisma.subscriptionPayment.findMany({
+services/api/src/modules/control-center/control-center.service.ts:316:        completedRevenue: this.decimal(completedPayments._sum.amount),
+services/api/src/modules/control-center/control-center.service.ts:317:        completedPayments: completedPayments._count._all,
+services/api/src/modules/control-center/control-center.service.ts:318:        activePricingOverrides: activeOverrides,
+services/api/src/modules/control-center/control-center.service.ts:320:      recentPayments: recentPayments.map((payment) => ({
+services/api/src/modules/control-center/control-center.service.ts:321:        id: payment.id,
+services/api/src/modules/control-center/control-center.service.ts:322:        organizationName: payment.tenant.name,
+services/api/src/modules/control-center/control-center.service.ts:323:        branchName: payment.branch.name,
+services/api/src/modules/control-center/control-center.service.ts:324:        amount: this.decimal(payment.amount),
+services/api/src/modules/control-center/control-center.service.ts:325:        currency: payment.currency,
+services/api/src/modules/control-center/control-center.service.ts:326:        status: payment.status,
+services/api/src/modules/control-center/control-center.service.ts:327:        planCode: payment.plan.code,
+services/api/src/modules/control-center/control-center.service.ts:328:        createdAt: payment.createdAt.toISOString(),
+services/api/src/modules/control-center/control-center.service.ts:329:        paidAt: payment.paidAt?.toISOString() ?? null,
+services/api/src/modules/control-center/control-center.service.ts:349:            subscription: { include: { plan: true } },
+services/api/src/modules/control-center/control-center.service.ts:358:        subscriptionPriceOverrides: {
+services/api/src/modules/control-center/control-center.service.ts:370:            subscriptionPayments: true,
+services/api/src/modules/control-center/control-center.service.ts:382:        (branch) => branch.subscription?.status === 'ACTIVE',
+services/api/src/modules/control-center/control-center.service.ts:384:      const hasCustomPricing = tenant.subscriptionPriceOverrides.length > 0;
+services/api/src/modules/control-center/control-center.service.ts:397:        pricingType: hasCustomPricing ? 'CUSTOM' : 'DEFAULT',
+services/api/src/modules/control-center/control-center.service.ts:406:        customPricing: rows.filter((row) => row.pricingType === 'CUSTOM')
+services/api/src/modules/control-center/control-center.service.ts:408:        defaultPricing: rows.filter((row) => row.pricingType === 'DEFAULT')
+services/api/src/modules/control-center/control-center.service.ts:439:            subscription: { include: { plan: true } },
+services/api/src/modules/control-center/control-center.service.ts:460:    const [repaymentGroups, paymentGroups, latestActivity] = await Promise.all([
+services/api/src/modules/control-center/control-center.service.ts:461:      this.prisma.repayment.groupBy({
+services/api/src/modules/control-center/control-center.service.ts:467:      this.prisma.subscriptionPayment.groupBy({
+services/api/src/modules/control-center/control-center.service.ts:481:    const repaymentsByBranch = new Map(
+services/api/src/modules/control-center/control-center.service.ts:482:      repaymentGroups.map((row) => [row.branchId, row]),
+services/api/src/modules/control-center/control-center.service.ts:484:    const paymentsByBranch = new Map(
+services/api/src/modules/control-center/control-center.service.ts:485:      paymentGroups.map((row) => [row.branchId, row]),
+services/api/src/modules/control-center/control-center.service.ts:512:            (branch) => branch.subscription?.status === 'ACTIVE',
+services/api/src/modules/control-center/control-center.service.ts:515:            (branch) => branch.subscription?.status === 'LOCKED',
+services/api/src/modules/control-center/control-center.service.ts:521:        const repayment = repaymentsByBranch.get(branch.id);
+services/api/src/modules/control-center/control-center.service.ts:522:        const payment = paymentsByBranch.get(branch.id);
+services/api/src/modules/control-center/control-center.service.ts:533:          status: branch.subscription?.status ?? 'TRIAL',
+services/api/src/modules/control-center/control-center.service.ts:534:          planCode: branch.subscription?.plan.code ?? null,
+services/api/src/modules/control-center/control-center.service.ts:536:            branch.subscription?.currentPeriodEnd?.toISOString() ?? null,
+services/api/src/modules/control-center/control-center.service.ts:540:          repaymentsCollected: this.decimal(repayment?._sum.amount),
+services/api/src/modules/control-center/control-center.service.ts:541:          repaymentCount: repayment?._count._all ?? 0,
+services/api/src/modules/control-center/control-center.service.ts:542:          subscriptionRevenue: this.decimal(payment?._sum.amount),
+services/api/src/modules/control-center/control-center.service.ts:543:          subscriptionPayments: payment?._count._all ?? 0,
+services/api/src/modules/control-center/control-center.service.ts:557:  async getPricing(tenantId: string) {
+services/api/src/modules/control-center/control-center.service.ts:561:      this.prisma.subscriptionPlan.findMany({
+services/api/src/modules/control-center/control-center.service.ts:570:      this.prisma.subscriptionPriceOverride.findMany({
+services/api/src/modules/control-center/control-center.service.ts:609:  async saveOrganizationPricing(
+services/api/src/modules/control-center/control-center.service.ts:612:    dto: ControlCenterSavePricingDto,
+services/api/src/modules/control-center/control-center.service.ts:614:    return this.savePricing(admin, tenantId, null, dto);
+services/api/src/modules/control-center/control-center.service.ts:617:  async saveBranchPricing(
+services/api/src/modules/control-center/control-center.service.ts:621:    dto: ControlCenterSavePricingDto,
+services/api/src/modules/control-center/control-center.service.ts:624:    return this.savePricing(admin, tenantId, branchId, dto);
+services/api/src/modules/control-center/control-center.service.ts:627:  async pricingHistory(tenantId: string) {
+services/api/src/modules/control-center/control-center.service.ts:630:      this.prisma.subscriptionPlan.findMany({ where: { isActive: true } }),
+services/api/src/modules/control-center/control-center.service.ts:631:      this.prisma.subscriptionPriceOverride.findMany({
+services/api/src/modules/control-center/control-center.service.ts:866:  private async savePricing(
+services/api/src/modules/control-center/control-center.service.ts:870:    dto: ControlCenterSavePricingDto,
+services/api/src/modules/control-center/control-center.service.ts:874:      throw new BadRequestException('Add at least one pricing amount.');
+services/api/src/modules/control-center/control-center.service.ts:879:    const plans = await this.prisma.subscriptionPlan.findMany({
+services/api/src/modules/control-center/control-center.service.ts:883:      throw new BadRequestException('Choose valid active subscription plans.');
+services/api/src/modules/control-center/control-center.service.ts:898:    const previousAmounts = await this.resolveCurrentPricingAmounts(
+services/api/src/modules/control-center/control-center.service.ts:914:        } satisfies Prisma.SubscriptionPriceOverrideWhereInput;
+services/api/src/modules/control-center/control-center.service.ts:917:          await tx.subscriptionPriceOverride.updateMany({
+services/api/src/modules/control-center/control-center.service.ts:922:          await tx.subscriptionPriceOverride.updateMany({
+services/api/src/modules/control-center/control-center.service.ts:929:          await tx.subscriptionPriceOverride.updateMany({
+services/api/src/modules/control-center/control-center.service.ts:943:          await tx.subscriptionPriceOverride.create({
+services/api/src/modules/control-center/control-center.service.ts:962:            ? 'control_center.pricing.branch_updated'
+services/api/src/modules/control-center/control-center.service.ts:963:            : 'control_center.pricing.organization_updated',
+services/api/src/modules/control-center/control-center.service.ts:982:    const notification = await this.notifyPricingChange({
+services/api/src/modules/control-center/control-center.service.ts:1005:  private async resolveCurrentPricingAmounts(
+services/api/src/modules/control-center/control-center.service.ts:1015:    const overrides = await this.prisma.subscriptionPriceOverride.findMany({
+services/api/src/modules/control-center/control-center.service.ts:1051:  private async notifyPricingChange(input: {
+services/api/src/modules/control-center/control-center.service.ts:1084:      this.pricingNotificationRecipients(input.tenantId, input.branchId),
+services/api/src/modules/control-center/control-center.service.ts:1113:        await this.notificationsService.sendSubscriptionPricingChangedEmail({
+services/api/src/modules/control-center/control-center.service.ts:1127:        'control_center.pricing.notification_sent',
+services/api/src/modules/control-center/control-center.service.ts:1146:          : 'Pricing notification could not be sent.';
+services/api/src/modules/control-center/control-center.service.ts:1147:      this.logger.warn(`Pricing notification failed: ${message}`);
+services/api/src/modules/control-center/control-center.service.ts:1150:        'control_center.pricing.notification_failed',
+services/api/src/modules/control-center/control-center.service.ts:1167:  private async pricingNotificationRecipients(
+services/api/src/modules/control-center/control-center.service.ts:1356:      haystack.includes('pricing') ||
+services/api/src/modules/control-center/control-center.service.ts:1357:      haystack.includes('subscription') ||
+services/api/src/modules/control-center/control-center.service.ts:1358:      haystack.includes('payment') ||
+services/api/src/modules/control-center/control-center.controller.ts:20:import { ControlCenterSavePricingDto } from './dto/control-center-pricing.dto';
+services/api/src/modules/control-center/control-center.controller.ts:66:  @Get('clients/:tenantId/pricing')
+services/api/src/modules/control-center/control-center.controller.ts:68:  pricing(@Param('tenantId') tenantId: string) {
+services/api/src/modules/control-center/control-center.controller.ts:69:    return this.controlCenterService.getPricing(tenantId);
+services/api/src/modules/control-center/control-center.controller.ts:72:  @Post('clients/:tenantId/pricing')
+services/api/src/modules/control-center/control-center.controller.ts:74:  saveOrganizationPricing(
+services/api/src/modules/control-center/control-center.controller.ts:77:    @Body() body: ControlCenterSavePricingDto,
+services/api/src/modules/control-center/control-center.controller.ts:79:    return this.controlCenterService.saveOrganizationPricing(
+services/api/src/modules/control-center/control-center.controller.ts:86:  @Post('clients/:tenantId/branches/:branchId/pricing')
+services/api/src/modules/control-center/control-center.controller.ts:88:  saveBranchPricing(
+services/api/src/modules/control-center/control-center.controller.ts:92:    @Body() body: ControlCenterSavePricingDto,
+services/api/src/modules/control-center/control-center.controller.ts:94:    return this.controlCenterService.saveBranchPricing(
+services/api/src/modules/control-center/control-center.controller.ts:102:  @Get('clients/:tenantId/pricing-history')
+services/api/src/modules/control-center/control-center.controller.ts:104:  pricingHistory(@Param('tenantId') tenantId: string) {
+services/api/src/modules/control-center/control-center.controller.ts:105:    return this.controlCenterService.pricingHistory(tenantId);
+services/api/src/modules/billing/dto/submit-manual-merchant-payment.dto.ts:3:export enum ManualMerchantPaymentProvider {
+services/api/src/modules/billing/dto/submit-manual-merchant-payment.dto.ts:8:export class SubmitManualMerchantPaymentDto {
+services/api/src/modules/billing/dto/submit-manual-merchant-payment.dto.ts:15:  /** SMS bundle id when the manual payment is for SMS credits. */
+services/api/src/modules/billing/dto/submit-manual-merchant-payment.dto.ts:21:  @IsEnum(ManualMerchantPaymentProvider)
+services/api/src/modules/billing/dto/submit-manual-merchant-payment.dto.ts:22:  provider!: ManualMerchantPaymentProvider;
+services/api/src/modules/billing/billing.contracts.ts:15:  pricingSource?: 'DEFAULT_PLAN' | 'ORGANIZATION_OVERRIDE' | 'BRANCH_OVERRIDE';
+services/api/src/modules/billing/billing.contracts.ts:16:  priceOverrideId?: string | null;
+services/api/src/modules/billing/billing.contracts.ts:59:export type ManualMerchantPaymentResponseContract = {
+services/api/src/modules/billing/billing.contracts.ts:60:  payment: SubscriptionPaymentRowContract;
+services/api/src/modules/billing/billing.contracts.ts:80:export type SubscriptionPaymentRowContract = {
+services/api/src/modules/billing/billing.contracts.ts:85:  /** subscription = Pro plan; sms = prepaid SMS top-up */
+services/api/src/modules/billing/billing.contracts.ts:86:  kind: 'subscription' | 'sms';
+services/api/src/modules/billing/billing.contracts.ts:100:  paymentMethod: string;
+services/api/src/modules/billing/billing.controller.ts:21:import { SubmitManualMerchantPaymentDto } from './dto/submit-manual-merchant-payment.dto';
+services/api/src/modules/billing/billing.controller.ts:41:  /** Payment / subscription history for the caller's scope. */
+services/api/src/modules/billing/billing.controller.ts:42:  @Get('payments')
+services/api/src/modules/billing/billing.controller.ts:44:  listPayments(@CurrentUser() user: AuthenticatedUser) {
+services/api/src/modules/billing/billing.controller.ts:45:    return this.billingService.listPayments(user);
+services/api/src/modules/billing/billing.controller.ts:59:  /** Owner may submit any branch payment; manager may submit their own branch. */
+services/api/src/modules/billing/billing.controller.ts:60:  @Post('branches/:branchId/manual-payment')
+services/api/src/modules/billing/billing.controller.ts:62:  submitManualMerchantPayment(
+services/api/src/modules/billing/billing.controller.ts:65:    @Body() body: SubmitManualMerchantPaymentDto,
+services/api/src/modules/billing/billing.controller.ts:67:    return this.billingService.submitManualMerchantPayment(
+services/api/src/modules/billing/billing.controller.ts:74:  /** Owner may submit any branch SMS payment; manager may submit their own branch. */
+services/api/src/modules/billing/billing.controller.ts:75:  @Post('branches/:branchId/manual-sms-payment')
+services/api/src/modules/billing/billing.controller.ts:77:  submitManualSmsMerchantPayment(
+services/api/src/modules/billing/billing.controller.ts:80:    @Body() body: SubmitManualMerchantPaymentDto,
+services/api/src/modules/billing/billing.controller.ts:82:    return this.billingService.submitManualSmsMerchantPayment(
+services/api/src/modules/billing/billing.controller.ts:89:  /** Explicitly cancel a pending merchant payment request before retrying. */
+services/api/src/modules/billing/billing.controller.ts:90:  @Post('payments/:paymentId/cancel')
+services/api/src/modules/billing/billing.controller.ts:92:  cancelManualMerchantPayment(
+services/api/src/modules/billing/billing.controller.ts:94:    @Param('paymentId', ParseUUIDPipe) paymentId: string,
+services/api/src/modules/billing/billing.controller.ts:96:    return this.billingService.cancelManualMerchantPayment(user, paymentId);
+services/api/src/modules/billing/billing.controller.ts:109:    return this.billingService.handleResendPaymentWebhook(payload, {
+services/api/src/modules/billing/billing.service.ts:18:  BranchSubscriptionStatus,
+services/api/src/modules/billing/billing.service.ts:22:  SubscriptionPaymentStatus,
+services/api/src/modules/billing/billing.service.ts:35:  ManualMerchantPaymentResponseContract,
+services/api/src/modules/billing/billing.service.ts:36:  SubscriptionPaymentRowContract,
+services/api/src/modules/billing/billing.service.ts:58:  ManualMerchantPaymentProvider,
+services/api/src/modules/billing/billing.service.ts:59:  SubmitManualMerchantPaymentDto,
+services/api/src/modules/billing/billing.service.ts:60:} from './dto/submit-manual-merchant-payment.dto';
+services/api/src/modules/billing/billing.service.ts:64:const SUBSCRIPTION_EXPIRY_REMINDER_DAYS = new Set([7, 2]);
+services/api/src/modules/billing/billing.service.ts:66:const SUBSCRIPTION_PAYMENT_BRANCH_SELECT = {
+services/api/src/modules/billing/billing.service.ts:68:  subscription: {
+services/api/src/modules/billing/billing.service.ts:77:const SUBSCRIPTION_PAYMENT_ROW_INCLUDE = {
+services/api/src/modules/billing/billing.service.ts:78:  branch: { select: SUBSCRIPTION_PAYMENT_BRANCH_SELECT },
+services/api/src/modules/billing/billing.service.ts:80:} satisfies Prisma.SubscriptionPaymentInclude;
+services/api/src/modules/billing/billing.service.ts:82:const SUBSCRIPTION_PAYMENT_TENANT_INCLUDE = {
+services/api/src/modules/billing/billing.service.ts:83:  ...SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
+services/api/src/modules/billing/billing.service.ts:85:} satisfies Prisma.SubscriptionPaymentInclude;
+services/api/src/modules/billing/billing.service.ts:87:type SubscriptionPaymentWithBranchPlan = Prisma.SubscriptionPaymentGetPayload<{
+services/api/src/modules/billing/billing.service.ts:88:  include: typeof SUBSCRIPTION_PAYMENT_ROW_INCLUDE;
+services/api/src/modules/billing/billing.service.ts:91:type SubscriptionPaymentWithBranchPlanTenant =
+services/api/src/modules/billing/billing.service.ts:92:  Prisma.SubscriptionPaymentGetPayload<{
+services/api/src/modules/billing/billing.service.ts:93:    include: typeof SUBSCRIPTION_PAYMENT_TENANT_INCLUDE;
+services/api/src/modules/billing/billing.service.ts:109:type ManualPaymentSummaryItem = {
+services/api/src/modules/billing/billing.service.ts:114:  paymentMethod: string;
+services/api/src/modules/billing/billing.service.ts:119:type ManualPendingPayment =
+services/api/src/modules/billing/billing.service.ts:121:      kind: 'subscription';
+services/api/src/modules/billing/billing.service.ts:123:      payment: SubscriptionPaymentWithBranchPlanTenant;
+services/api/src/modules/billing/billing.service.ts:148:type SubscriptionOwnerReminderKind =
+services/api/src/modules/billing/billing.service.ts:151:type PaymentReplyCommand =
+services/api/src/modules/billing/billing.service.ts:155:const DEFAULT_PAYMENT_VERIFICATION_EMAILS = [
+services/api/src/modules/billing/billing.service.ts:277:    await this.syncTenantSubscriptions(user.tenantId);
+services/api/src/modules/billing/billing.service.ts:278:    let sub = await this.prisma.branchSubscription.findUnique({
+services/api/src/modules/billing/billing.service.ts:283:      await this.provisionBranchSubscription({
+services/api/src/modules/billing/billing.service.ts:287:      sub = await this.prisma.branchSubscription.findUnique({
+services/api/src/modules/billing/billing.service.ts:294:    const locked = sub?.status === BranchSubscriptionStatus.LOCKED;
+services/api/src/modules/billing/billing.service.ts:330:        ? 'This branch is paused. Renew on Subscription to continue.'
+services/api/src/modules/billing/billing.service.ts:331:        : sub?.status === BranchSubscriptionStatus.GRACE
+services/api/src/modules/billing/billing.service.ts:332:          ? 'Your subscription has expired. Renew now to keep this branch open.'
+services/api/src/modules/billing/billing.service.ts:337:  async listPayments(
+services/api/src/modules/billing/billing.service.ts:339:  ): Promise<{ payments: SubscriptionPaymentRowContract[] }> {
+services/api/src/modules/billing/billing.service.ts:343:        'You can only view payments for your branch.',
+services/api/src/modules/billing/billing.service.ts:351:    const [subscriptionRows, smsPurchaseRows, smsLegacyRows] =
+services/api/src/modules/billing/billing.service.ts:353:        this.prisma.subscriptionPayment.findMany({
+services/api/src/modules/billing/billing.service.ts:357:          include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
+services/api/src/modules/billing/billing.service.ts:367:        this.prisma.smsCreditPayment.findMany({
+services/api/src/modules/billing/billing.service.ts:377:    const latestPaidSubscriptionByBranch = new Map<
+services/api/src/modules/billing/billing.service.ts:381:    for (const row of subscriptionRows) {
+services/api/src/modules/billing/billing.service.ts:382:      if (row.status !== SubscriptionPaymentStatus.COMPLETED) continue;
+services/api/src/modules/billing/billing.service.ts:384:      const existing = latestPaidSubscriptionByBranch.get(row.branchId);
+services/api/src/modules/billing/billing.service.ts:386:        latestPaidSubscriptionByBranch.set(row.branchId, {
+services/api/src/modules/billing/billing.service.ts:393:    const subscriptionPayments: SubscriptionPaymentRowContract[] =
+services/api/src/modules/billing/billing.service.ts:394:      subscriptionRows.map((row) => {
+services/api/src/modules/billing/billing.service.ts:395:        const priorPaid = subscriptionRows.some(
+services/api/src/modules/billing/billing.service.ts:399:            other.status === SubscriptionPaymentStatus.COMPLETED &&
+services/api/src/modules/billing/billing.service.ts:402:        return this.toSubscriptionPaymentRow(row, {
+services/api/src/modules/billing/billing.service.ts:404:          useBranchSubscriptionPeriod:
+services/api/src/modules/billing/billing.service.ts:405:            latestPaidSubscriptionByBranch.get(row.branchId)?.id === row.id,
+services/api/src/modules/billing/billing.service.ts:409:    const smsPurchasePayments: SubscriptionPaymentRowContract[] =
+services/api/src/modules/billing/billing.service.ts:410:      smsPurchaseRows.map((row) => this.toSmsPurchasePaymentRow(row));
+services/api/src/modules/billing/billing.service.ts:412:    const smsLegacyPayments: SubscriptionPaymentRowContract[] =
+services/api/src/modules/billing/billing.service.ts:414:        const paid = row.status === SubscriptionPaymentStatus.COMPLETED;
+services/api/src/modules/billing/billing.service.ts:415:        const failed = row.status === SubscriptionPaymentStatus.FAILED;
+services/api/src/modules/billing/billing.service.ts:430:          paymentMethod: isWelcome
+services/api/src/modules/billing/billing.service.ts:432:            : this.paymentMethodFromPayload(row.rawPayload),
+services/api/src/modules/billing/billing.service.ts:441:    const payments = [
+services/api/src/modules/billing/billing.service.ts:442:      ...subscriptionPayments,
+services/api/src/modules/billing/billing.service.ts:443:      ...smsPurchasePayments,
+services/api/src/modules/billing/billing.service.ts:444:      ...smsLegacyPayments,
+services/api/src/modules/billing/billing.service.ts:447:    return { payments: payments.slice(0, 100) };
+services/api/src/modules/billing/billing.service.ts:481:      const existing = await this.prisma.subscriptionPlan.findUnique({
+services/api/src/modules/billing/billing.service.ts:493:            await this.prisma.subscriptionPlan.update({
+services/api/src/modules/billing/billing.service.ts:511:        await this.prisma.subscriptionPlan.create({
+services/api/src/modules/billing/billing.service.ts:539:    const plan = await this.prisma.subscriptionPlan.findUnique({
+services/api/src/modules/billing/billing.service.ts:576:      pricingSource: price?.source ?? 'DEFAULT_PLAN',
+services/api/src/modules/billing/billing.service.ts:577:      priceOverrideId: price?.overrideId ?? null,
+services/api/src/modules/billing/billing.service.ts:581:  async provisionBranchSubscription(input: {
+services/api/src/modules/billing/billing.service.ts:587:    const existing = await this.prisma.branchSubscription.findUnique({
+services/api/src/modules/billing/billing.service.ts:596:      return this.prisma.branchSubscription.create({
+services/api/src/modules/billing/billing.service.ts:601:          status: BranchSubscriptionStatus.TRIAL,
+services/api/src/modules/billing/billing.service.ts:611:    return this.prisma.branchSubscription.create({
+services/api/src/modules/billing/billing.service.ts:616:        status: BranchSubscriptionStatus.GRACE,
+services/api/src/modules/billing/billing.service.ts:638:    await this.syncTenantSubscriptions(user.tenantId);
+services/api/src/modules/billing/billing.service.ts:647:      include: { subscription: true },
+services/api/src/modules/billing/billing.service.ts:651:      if (!branch.subscription) {
+services/api/src/modules/billing/billing.service.ts:652:        await this.provisionBranchSubscription({
+services/api/src/modules/billing/billing.service.ts:663:        subscription: true,
+services/api/src/modules/billing/billing.service.ts:686:        const sub = branch.subscription!;
+services/api/src/modules/billing/billing.service.ts:734:        row.status === BranchSubscriptionStatus.GRACE ||
+services/api/src/modules/billing/billing.service.ts:735:        row.status === BranchSubscriptionStatus.LOCKED ||
+services/api/src/modules/billing/billing.service.ts:736:        row.status === BranchSubscriptionStatus.PAST_DUE ||
+services/api/src/modules/billing/billing.service.ts:737:        row.status === BranchSubscriptionStatus.ACTIVE ||
+services/api/src/modules/billing/billing.service.ts:738:        row.status === BranchSubscriptionStatus.TRIAL
+services/api/src/modules/billing/billing.service.ts:780:        'Payments are unavailable right now. Please try again later.',
+services/api/src/modules/billing/billing.service.ts:786:    await this.syncTenantSubscriptions(user.tenantId);
+services/api/src/modules/billing/billing.service.ts:790:      include: { subscription: true },
+services/api/src/modules/billing/billing.service.ts:796:    if (!branch.subscription) {
+services/api/src/modules/billing/billing.service.ts:797:      await this.provisionBranchSubscription({
+services/api/src/modules/billing/billing.service.ts:815:        'Payments are unavailable right now. Please try again later.',
+services/api/src/modules/billing/billing.service.ts:825:    const payment = await this.prisma.subscriptionPayment.create({
+services/api/src/modules/billing/billing.service.ts:833:        status: SubscriptionPaymentStatus.PENDING,
+services/api/src/modules/billing/billing.service.ts:856:        cancellationUrl: `${webAppUrl}/subscription`,
+services/api/src/modules/billing/billing.service.ts:870:          : 'Payment could not be started.';
+services/api/src/modules/billing/billing.service.ts:872:      await this.prisma.subscriptionPayment.update({
+services/api/src/modules/billing/billing.service.ts:873:        where: { id: payment.id },
+services/api/src/modules/billing/billing.service.ts:874:        data: { status: SubscriptionPaymentStatus.FAILED },
+services/api/src/modules/billing/billing.service.ts:880:      await this.prisma.subscriptionPayment.update({
+services/api/src/modules/billing/billing.service.ts:881:        where: { id: payment.id },
+services/api/src/modules/billing/billing.service.ts:882:        data: { status: SubscriptionPaymentStatus.FAILED },
+services/api/src/modules/billing/billing.service.ts:885:        'Payments are unavailable right now. Please try again later.',
+services/api/src/modules/billing/billing.service.ts:889:    await this.prisma.subscriptionPayment.update({
+services/api/src/modules/billing/billing.service.ts:890:      where: { id: payment.id },
+services/api/src/modules/billing/billing.service.ts:904:  async submitManualMerchantPayment(
+services/api/src/modules/billing/billing.service.ts:907:    dto: SubmitManualMerchantPaymentDto,
+services/api/src/modules/billing/billing.service.ts:908:  ): Promise<ManualMerchantPaymentResponseContract> {
+services/api/src/modules/billing/billing.service.ts:922:      throw new BadRequestException('Enter the payment transaction ID.');
+services/api/src/modules/billing/billing.service.ts:943:    await this.syncTenantSubscriptions(user.tenantId);
+services/api/src/modules/billing/billing.service.ts:947:      include: { subscription: true },
+services/api/src/modules/billing/billing.service.ts:953:    if (!branch.subscription) {
+services/api/src/modules/billing/billing.service.ts:954:      await this.provisionBranchSubscription({
+services/api/src/modules/billing/billing.service.ts:964:    const existing = await this.prisma.subscriptionPayment.findUnique({
+services/api/src/modules/billing/billing.service.ts:974:    const pendingRequest = await this.prisma.subscriptionPayment.findFirst({
+services/api/src/modules/billing/billing.service.ts:979:        status: SubscriptionPaymentStatus.PENDING,
+services/api/src/modules/billing/billing.service.ts:989:        'A payment request for this purchase is already pending. Cancel it before submitting another transaction ID.',
+services/api/src/modules/billing/billing.service.ts:996:      payment_method: providerDetails.historyLabel,
+services/api/src/modules/billing/billing.service.ts:1012:      const payment = await this.prisma.subscriptionPayment.create({
+services/api/src/modules/billing/billing.service.ts:1020:          status: SubscriptionPaymentStatus.PENDING,
+services/api/src/modules/billing/billing.service.ts:1027:        include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
+services/api/src/modules/billing/billing.service.ts:1030:      const alertedPayment = await this.sendManualPaymentVerificationAlert(
+services/api/src/modules/billing/billing.service.ts:1031:        payment,
+services/api/src/modules/billing/billing.service.ts:1034:          paymentMethod: providerDetails.historyLabel,
+services/api/src/modules/billing/billing.service.ts:1040:      const responsePayment = alertedPayment ?? payment;
+services/api/src/modules/billing/billing.service.ts:1041:      this.emitSubscriptionPaymentUpdate(responsePayment);
+services/api/src/modules/billing/billing.service.ts:1044:        payment: this.toSubscriptionPaymentRow(responsePayment),
+services/api/src/modules/billing/billing.service.ts:1046:          'Payment submitted for verification. We will activate your subscription after confirmation.',
+services/api/src/modules/billing/billing.service.ts:1058:  async submitManualSmsMerchantPayment(
+services/api/src/modules/billing/billing.service.ts:1061:    dto: SubmitManualMerchantPaymentDto,
+services/api/src/modules/billing/billing.service.ts:1062:  ): Promise<ManualMerchantPaymentResponseContract> {
+services/api/src/modules/billing/billing.service.ts:1081:      throw new BadRequestException('Enter the payment transaction ID.');
+services/api/src/modules/billing/billing.service.ts:1154:            SmsPurchaseStatus.PAYMENT_PENDING,
+services/api/src/modules/billing/billing.service.ts:1155:            SmsPurchaseStatus.AWAITING_PAYMENT,
+services/api/src/modules/billing/billing.service.ts:1167:        'A payment request for this purchase is already pending. Cancel it before submitting another transaction ID.',
+services/api/src/modules/billing/billing.service.ts:1175:      payment_method: providerDetails.historyLabel,
+services/api/src/modules/billing/billing.service.ts:1201:          status: SmsPurchaseStatus.AWAITING_PAYMENT,
+services/api/src/modules/billing/billing.service.ts:1210:      const alertedPurchase = await this.sendManualSmsPaymentVerificationAlert(
+services/api/src/modules/billing/billing.service.ts:1214:          paymentMethod: providerDetails.historyLabel,
+services/api/src/modules/billing/billing.service.ts:1221:      this.emitSmsPurchasePaymentUpdate(responsePurchase);
+services/api/src/modules/billing/billing.service.ts:1224:        payment: this.toSmsPurchasePaymentRow(responsePurchase),
+services/api/src/modules/billing/billing.service.ts:1226:          'Payment submitted for verification. We will credit your SMS wallet after confirmation.',
+services/api/src/modules/billing/billing.service.ts:1238:  async cancelManualMerchantPayment(
+services/api/src/modules/billing/billing.service.ts:1240:    paymentId: string,
+services/api/src/modules/billing/billing.service.ts:1241:  ): Promise<ManualMerchantPaymentResponseContract> {
+services/api/src/modules/billing/billing.service.ts:1243:    const payment = await this.prisma.subscriptionPayment.findFirst({
+services/api/src/modules/billing/billing.service.ts:1244:      where: { id: paymentId, tenantId: user.tenantId },
+services/api/src/modules/billing/billing.service.ts:1245:      include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
+services/api/src/modules/billing/billing.service.ts:1248:    if (!payment) {
+services/api/src/modules/billing/billing.service.ts:1249:      return this.cancelManualSmsMerchantPayment(user, paymentId);
+services/api/src/modules/billing/billing.service.ts:1251:    if (!canManageAll && user.branchId !== payment.branchId) {
+services/api/src/modules/billing/billing.service.ts:1253:        'You can only cancel payments for your own branch.',
+services/api/src/modules/billing/billing.service.ts:1256:    if (payment.status !== SubscriptionPaymentStatus.PENDING) {
+services/api/src/modules/billing/billing.service.ts:1258:        'Only pending payment requests can be cancelled.',
+services/api/src/modules/billing/billing.service.ts:1261:    if (!this.isManualMerchantPayload(payment.rawPayload)) {
+services/api/src/modules/billing/billing.service.ts:1263:        'Only merchant payment requests can be cancelled.',
+services/api/src/modules/billing/billing.service.ts:1268:      ...(this.payloadObject(payment.rawPayload) ?? {}),
+services/api/src/modules/billing/billing.service.ts:1273:    const updated = await this.prisma.subscriptionPayment.update({
+services/api/src/modules/billing/billing.service.ts:1274:      where: { id: payment.id },
+services/api/src/modules/billing/billing.service.ts:1276:        status: SubscriptionPaymentStatus.CANCELLED,
+services/api/src/modules/billing/billing.service.ts:1279:      include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
+services/api/src/modules/billing/billing.service.ts:1282:    this.emitSubscriptionPaymentUpdate(updated);
+services/api/src/modules/billing/billing.service.ts:1285:      payment: this.toSubscriptionPaymentRow(updated),
+services/api/src/modules/billing/billing.service.ts:1287:        'Payment request cancelled. You can submit a new transaction ID.',
+services/api/src/modules/billing/billing.service.ts:1291:  private async cancelManualSmsMerchantPayment(
+services/api/src/modules/billing/billing.service.ts:1293:    paymentId: string,
+services/api/src/modules/billing/billing.service.ts:1294:  ): Promise<ManualMerchantPaymentResponseContract> {
+services/api/src/modules/billing/billing.service.ts:1297:      where: { id: paymentId, tenantId: user.tenantId },
+services/api/src/modules/billing/billing.service.ts:1302:      throw new NotFoundException('Payment request not found.');
+services/api/src/modules/billing/billing.service.ts:1306:        'You can only cancel payments for your own branch.',
+services/api/src/modules/billing/billing.service.ts:1311:        'Only pending payment requests can be cancelled.',
+services/api/src/modules/billing/billing.service.ts:1316:        'Only merchant payment requests can be cancelled.',
+services/api/src/modules/billing/billing.service.ts:1335:    this.emitSmsPurchasePaymentUpdate(updated);
+services/api/src/modules/billing/billing.service.ts:1338:      payment: this.toSmsPurchasePaymentRow(updated),
+services/api/src/modules/billing/billing.service.ts:1340:        'Payment request cancelled. You can submit a new transaction ID.',
+services/api/src/modules/billing/billing.service.ts:1344:  async handleResendPaymentWebhook(
+services/api/src/modules/billing/billing.service.ts:1355:      this.logger.warn('Resend payment webhook ignored: missing email_id.');
+services/api/src/modules/billing/billing.service.ts:1358:    this.logger.log(`Resend payment webhook received email=${emailId}`);
+services/api/src/modules/billing/billing.service.ts:1364:        `Resend payment webhook ignored: received email ${emailId} could not be fetched.`,
+services/api/src/modules/billing/billing.service.ts:1370:    if (!fromEmail || !this.paymentReplyAllowedEmails().has(fromEmail)) {
+services/api/src/modules/billing/billing.service.ts:1372:        `Ignored payment verification reply from untrusted sender: ${received.from}`,
+services/api/src/modules/billing/billing.service.ts:1377:    const command = this.parsePaymentVerificationReply(
+services/api/src/modules/billing/billing.service.ts:1382:        `Resend payment webhook ignored: no verification command found in email=${emailId} from=${fromEmail}.`,
+services/api/src/modules/billing/billing.service.ts:1388:      const paymentId = this.extractPaymentIdFromEmail({
+services/api/src/modules/billing/billing.service.ts:1395:      if (!paymentId) {
+services/api/src/modules/billing/billing.service.ts:1396:        return { ok: true, ignored: true, reason: 'payment_id_not_found' };
+services/api/src/modules/billing/billing.service.ts:1399:      const payment = await this.prisma.subscriptionPayment.findUnique({
+services/api/src/modules/billing/billing.service.ts:1400:        where: { id: paymentId },
+services/api/src/modules/billing/billing.service.ts:1401:        include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
+services/api/src/modules/billing/billing.service.ts:1403:      if (payment) {
+services/api/src/modules/billing/billing.service.ts:1404:        if (!this.isManualMerchantPayload(payment.rawPayload)) {
+services/api/src/modules/billing/billing.service.ts:1405:          return { ok: true, ignored: true, reason: 'payment_not_found' };
+services/api/src/modules/billing/billing.service.ts:1407:        if (payment.status === SubscriptionPaymentStatus.COMPLETED) {
+services/api/src/modules/billing/billing.service.ts:1410:        if (payment.status !== SubscriptionPaymentStatus.PENDING) {
+services/api/src/modules/billing/billing.service.ts:1411:          return { ok: true, ignored: true, reason: 'payment_not_pending' };
+services/api/src/modules/billing/billing.service.ts:1414:        const updated = await this.failManualMerchantPayment(payment, {
+services/api/src/modules/billing/billing.service.ts:1415:          reason: command.reason || 'Payment could not be verified.',
+services/api/src/modules/billing/billing.service.ts:1421:          `Manual merchant payment ${updated.id} failed from Resend reply email=${emailId} by=${fromEmail}`,
+services/api/src/modules/billing/billing.service.ts:1425:          paymentId,
+services/api/src/modules/billing/billing.service.ts:1432:        where: { id: paymentId },
+services/api/src/modules/billing/billing.service.ts:1436:        return { ok: true, ignored: true, reason: 'payment_not_found' };
+services/api/src/modules/billing/billing.service.ts:1442:        return { ok: true, ignored: true, reason: 'payment_not_pending' };
+services/api/src/modules/billing/billing.service.ts:1445:      const updated = await this.failManualSmsMerchantPayment(purchase, {
+services/api/src/modules/billing/billing.service.ts:1446:        reason: command.reason || 'Payment could not be verified.',
+services/api/src/modules/billing/billing.service.ts:1452:        `Manual SMS merchant payment ${updated.id} failed from Resend reply email=${emailId} by=${fromEmail}`,
+services/api/src/modules/billing/billing.service.ts:1456:        paymentId,
+services/api/src/modules/billing/billing.service.ts:1462:    const result = await this.confirmManualMerchantPaymentsFromReply({
+services/api/src/modules/billing/billing.service.ts:1468:      `Resend payment reply email=${emailId} by=${fromEmail} replied=${result.repliedCount ?? 0} matched=${result.matchedCount ?? 0} remaining=${result.remainingCount ?? 0}`,
+services/api/src/modules/billing/billing.service.ts:1473:  private async confirmManualMerchantPaymentsFromReply(input: {
+services/api/src/modules/billing/billing.service.ts:1485:    const [pendingPayments, pendingSmsPurchases] = await Promise.all([
+services/api/src/modules/billing/billing.service.ts:1486:      this.prisma.subscriptionPayment.findMany({
+services/api/src/modules/billing/billing.service.ts:1487:        where: { status: SubscriptionPaymentStatus.PENDING },
+services/api/src/modules/billing/billing.service.ts:1488:        include: SUBSCRIPTION_PAYMENT_TENANT_INCLUDE,
+services/api/src/modules/billing/billing.service.ts:1495:              SmsPurchaseStatus.PAYMENT_PENDING,
+services/api/src/modules/billing/billing.service.ts:1496:              SmsPurchaseStatus.AWAITING_PAYMENT,
+services/api/src/modules/billing/billing.service.ts:1508:    const manualPending: ManualPendingPayment[] = [
+services/api/src/modules/billing/billing.service.ts:1509:      ...pendingPayments
+services/api/src/modules/billing/billing.service.ts:1510:        .filter((payment) => this.isManualMerchantPayload(payment.rawPayload))
+services/api/src/modules/billing/billing.service.ts:1511:        .map((payment) => ({
+services/api/src/modules/billing/billing.service.ts:1512:          kind: 'subscription' as const,
+services/api/src/modules/billing/billing.service.ts:1513:          id: payment.id,
+services/api/src/modules/billing/billing.service.ts:1514:          payment,
+services/api/src/modules/billing/billing.service.ts:1525:    const pendingByTransactionId = new Map<string, ManualPendingPayment[]>();
+services/api/src/modules/billing/billing.service.ts:1528:        item.kind === 'subscription'
+services/api/src/modules/billing/billing.service.ts:1529:          ? item.payment.rawPayload
+services/api/src/modules/billing/billing.service.ts:1541:      item: ManualPendingPayment;
+services/api/src/modules/billing/billing.service.ts:1544:    const matchedPaymentIds = new Set<string>();
+services/api/src/modules/billing/billing.service.ts:1561:      if (!matchedPaymentIds.has(item.id)) {
+services/api/src/modules/billing/billing.service.ts:1563:        matchedPaymentIds.add(item.id);
+services/api/src/modules/billing/billing.service.ts:1568:      if (item.item.kind === 'subscription') {
+services/api/src/modules/billing/billing.service.ts:1569:        await this.completeManualMerchantPayment(item.item.payment, {
+services/api/src/modules/billing/billing.service.ts:1575:        await this.completeManualSmsMerchantPayment(item.item.purchase, {
+services/api/src/modules/billing/billing.service.ts:1584:      (item) => !matchedPaymentIds.has(item.id),
+services/api/src/modules/billing/billing.service.ts:1586:    await this.sendManualPaymentVerificationSummary({
+services/api/src/modules/billing/billing.service.ts:1588:        this.toManualPaymentSummaryItem(item.item),
+services/api/src/modules/billing/billing.service.ts:1590:      remaining: remaining.map((item) => this.toManualPaymentSummaryItem(item)),
+services/api/src/modules/billing/billing.service.ts:1604:      matchedPaymentIds: matched.map((item) => item.item.id),
+services/api/src/modules/billing/billing.service.ts:1623:    await this.smsCreditsService.finalizeIfSmsPayment(trackingId);
+services/api/src/modules/billing/billing.service.ts:1624:    await this.finalizePesapalPayment(trackingId);
+services/api/src/modules/billing/billing.service.ts:1642:        await this.smsCreditsService.finalizeIfSmsPayment(trackingId);
+services/api/src/modules/billing/billing.service.ts:1647:        await this.finalizePesapalPayment(trackingId);
+services/api/src/modules/billing/billing.service.ts:1655:      return `${webAppUrl}/subscription?${params.toString()}`;
+services/api/src/modules/billing/billing.service.ts:1658:    const payment = trackingId
+services/api/src/modules/billing/billing.service.ts:1659:      ? await this.prisma.subscriptionPayment.findFirst({
+services/api/src/modules/billing/billing.service.ts:1665:    if (payment) {
+services/api/src/modules/billing/billing.service.ts:1666:      if (payment.status === SubscriptionPaymentStatus.COMPLETED) {
+services/api/src/modules/billing/billing.service.ts:1667:        params.set('paymentResult', 'success');
+services/api/src/modules/billing/billing.service.ts:1669:        payment.status === SubscriptionPaymentStatus.FAILED ||
+services/api/src/modules/billing/billing.service.ts:1670:        payment.status === SubscriptionPaymentStatus.REVERSED
+services/api/src/modules/billing/billing.service.ts:1672:        params.set('paymentResult', 'failed');
+services/api/src/modules/billing/billing.service.ts:1674:      params.set('payment', payment.id);
+services/api/src/modules/billing/billing.service.ts:1675:      params.set('branch', payment.branchId);
+services/api/src/modules/billing/billing.service.ts:1677:    return `${webAppUrl}/subscription?${params.toString()}`;
+services/api/src/modules/billing/billing.service.ts:1680:  async assertBranchSubscriptionActive(tenantId: string, branchId: string) {
+services/api/src/modules/billing/billing.service.ts:1682:    await this.syncTenantSubscriptions(tenantId);
+services/api/src/modules/billing/billing.service.ts:1683:    let sub = await this.prisma.branchSubscription.findUnique({
+services/api/src/modules/billing/billing.service.ts:1687:      sub = await this.provisionBranchSubscription({ tenantId, branchId });
+services/api/src/modules/billing/billing.service.ts:1690:    if (sub.status === BranchSubscriptionStatus.LOCKED) {
+services/api/src/modules/billing/billing.service.ts:1692:        'This branch is paused. Renew on Subscription to continue.',
+services/api/src/modules/billing/billing.service.ts:1693:        HttpStatus.PAYMENT_REQUIRED,
+services/api/src/modules/billing/billing.service.ts:1700:  isBranchMutationsAllowed(status: BranchSubscriptionStatus) {
+services/api/src/modules/billing/billing.service.ts:1701:    return status !== BranchSubscriptionStatus.LOCKED;
+services/api/src/modules/billing/billing.service.ts:1705:  async reconcileSubscriptionsCron() {
+services/api/src/modules/billing/billing.service.ts:1711:        await this.syncTenantSubscriptions(row.tenantId);
+services/api/src/modules/billing/billing.service.ts:1715:        'Subscription reconcile failed',
+services/api/src/modules/billing/billing.service.ts:1721:  async syncTenantSubscriptions(tenantId: string) {
+services/api/src/modules/billing/billing.service.ts:1728:      include: { subscription: true },
+services/api/src/modules/billing/billing.service.ts:1732:      let sub = branch.subscription;
+services/api/src/modules/billing/billing.service.ts:1734:        sub = await this.provisionBranchSubscription({
+services/api/src/modules/billing/billing.service.ts:1743:        if (sub.status === BranchSubscriptionStatus.TRIAL) {
+services/api/src/modules/billing/billing.service.ts:1744:          sub = await this.prisma.branchSubscription.update({
+services/api/src/modules/billing/billing.service.ts:1747:              status: BranchSubscriptionStatus.TRIAL,
+services/api/src/modules/billing/billing.service.ts:1756:          if (SUBSCRIPTION_EXPIRY_REMINDER_DAYS.has(trialDaysRemaining)) {
+services/api/src/modules/billing/billing.service.ts:1757:            await this.maybeNotifyBranchSubscriptionReminder({
+services/api/src/modules/billing/billing.service.ts:1761:              subscriptionId: sub.id,
+services/api/src/modules/billing/billing.service.ts:1770:          sub.status === BranchSubscriptionStatus.ACTIVE &&
+services/api/src/modules/billing/billing.service.ts:1775:          if (SUBSCRIPTION_EXPIRY_REMINDER_DAYS.has(daysRemaining)) {
+services/api/src/modules/billing/billing.service.ts:1776:            await this.maybeNotifyBranchSubscriptionReminder({
+services/api/src/modules/billing/billing.service.ts:1780:              subscriptionId: sub.id,
+services/api/src/modules/billing/billing.service.ts:1793:      if (sub.status === BranchSubscriptionStatus.TRIAL) {
+services/api/src/modules/billing/billing.service.ts:1797:        await this.prisma.branchSubscription.update({
+services/api/src/modules/billing/billing.service.ts:1800:            status: BranchSubscriptionStatus.GRACE,
+services/api/src/modules/billing/billing.service.ts:1806:        void this.notifyOwnersBranchNeedsSubscription({
+services/api/src/modules/billing/billing.service.ts:1818:        sub.status === BranchSubscriptionStatus.ACTIVE &&
+services/api/src/modules/billing/billing.service.ts:1825:        await this.prisma.branchSubscription.update({
+services/api/src/modules/billing/billing.service.ts:1828:            status: BranchSubscriptionStatus.GRACE,
+services/api/src/modules/billing/billing.service.ts:1833:        void this.notifyOwnersBranchNeedsSubscription({
+services/api/src/modules/billing/billing.service.ts:1845:        sub.status === BranchSubscriptionStatus.ACTIVE &&
+services/api/src/modules/billing/billing.service.ts:1850:        if (SUBSCRIPTION_EXPIRY_REMINDER_DAYS.has(daysRemaining)) {
+services/api/src/modules/billing/billing.service.ts:1851:          await this.maybeNotifyBranchSubscriptionReminder({
+services/api/src/modules/billing/billing.service.ts:1855:            subscriptionId: sub.id,
+services/api/src/modules/billing/billing.service.ts:1866:        sub.status === BranchSubscriptionStatus.GRACE &&
+services/api/src/modules/billing/billing.service.ts:1870:        await this.maybeNotifyBranchSubscriptionReminder({
+services/api/src/modules/billing/billing.service.ts:1874:          subscriptionId: sub.id,
+services/api/src/modules/billing/billing.service.ts:1884:        sub.status === BranchSubscriptionStatus.GRACE &&
+services/api/src/modules/billing/billing.service.ts:1888:        await this.prisma.branchSubscription.update({
+services/api/src/modules/billing/billing.service.ts:1891:            status: BranchSubscriptionStatus.LOCKED,
+services/api/src/modules/billing/billing.service.ts:1896:        void this.notifyOwnersBranchNeedsSubscription({
+services/api/src/modules/billing/billing.service.ts:1907:  private async finalizePesapalPayment(orderTrackingId: string) {
+services/api/src/modules/billing/billing.service.ts:1909:    const payment = await this.prisma.subscriptionPayment.findFirst({
+services/api/src/modules/billing/billing.service.ts:1919:    if (!payment) {
+services/api/src/modules/billing/billing.service.ts:1923:    const description = (status.payment_status_description || '').toLowerCase();
+services/api/src/modules/billing/billing.service.ts:1927:        status.payment_status_code ??
+services/api/src/modules/billing/billing.service.ts:1933:      await this.prisma.subscriptionPayment.update({
+services/api/src/modules/billing/billing.service.ts:1934:        where: { id: payment.id },
+services/api/src/modules/billing/billing.service.ts:1943:              ? SubscriptionPaymentStatus.FAILED
+services/api/src/modules/billing/billing.service.ts:1945:                ? SubscriptionPaymentStatus.REVERSED
+services/api/src/modules/billing/billing.service.ts:1946:                : SubscriptionPaymentStatus.PENDING,
+services/api/src/modules/billing/billing.service.ts:1952:    if (payment.status === SubscriptionPaymentStatus.COMPLETED) {
+services/api/src/modules/billing/billing.service.ts:1956:    const priorCompleted = await this.prisma.subscriptionPayment.count({
+services/api/src/modules/billing/billing.service.ts:1958:        branchId: payment.branchId,
+services/api/src/modules/billing/billing.service.ts:1959:        status: SubscriptionPaymentStatus.COMPLETED,
+services/api/src/modules/billing/billing.service.ts:1960:        id: { not: payment.id },
+services/api/src/modules/billing/billing.service.ts:1966:    const sub = await this.prisma.branchSubscription.findUnique({
+services/api/src/modules/billing/billing.service.ts:1967:      where: { branchId: payment.branchId },
+services/api/src/modules/billing/billing.service.ts:1969:    const paidPlan = await this.prisma.subscriptionPlan.findUnique({
+services/api/src/modules/billing/billing.service.ts:1970:      where: { id: payment.planId },
+services/api/src/modules/billing/billing.service.ts:1974:      await this.resolveSubscriptionActivationPeriod({
+services/api/src/modules/billing/billing.service.ts:1975:        tenantId: payment.tenantId,
+services/api/src/modules/billing/billing.service.ts:1982:      subscription_active_from: periodStart.toISOString(),
+services/api/src/modules/billing/billing.service.ts:1983:      subscription_active_until: periodEnd.toISOString(),
+services/api/src/modules/billing/billing.service.ts:1987:      await tx.subscriptionPayment.update({
+services/api/src/modules/billing/billing.service.ts:1988:        where: { id: payment.id },
+services/api/src/modules/billing/billing.service.ts:1990:          status: SubscriptionPaymentStatus.COMPLETED,
+services/api/src/modules/billing/billing.service.ts:1997:      await tx.branchSubscription.update({
+services/api/src/modules/billing/billing.service.ts:1998:        where: { branchId: payment.branchId },
+services/api/src/modules/billing/billing.service.ts:2000:          status: BranchSubscriptionStatus.ACTIVE,
+services/api/src/modules/billing/billing.service.ts:2005:          planId: payment.planId,
+services/api/src/modules/billing/billing.service.ts:2011:      `Branch ${payment.branchId} subscription activated until ${periodEnd.toISOString()}`,
+services/api/src/modules/billing/billing.service.ts:2017:          tenantId: payment.tenantId,
+services/api/src/modules/billing/billing.service.ts:2018:          branchId: payment.branchId,
+services/api/src/modules/billing/billing.service.ts:2022:            `Branch ${payment.branchId} received ${welcome.credits} Pro welcome SMS credits`,
+services/api/src/modules/billing/billing.service.ts:2027:          `Failed to grant Pro welcome SMS credits for branch ${payment.branchId}`,
+services/api/src/modules/billing/billing.service.ts:2045:  private async maybeNotifyBranchSubscriptionReminder(input: {
+services/api/src/modules/billing/billing.service.ts:2049:    subscriptionId: string;
+services/api/src/modules/billing/billing.service.ts:2052:    kind: SubscriptionOwnerReminderKind;
+services/api/src/modules/billing/billing.service.ts:2061:    await this.prisma.branchSubscription.update({
+services/api/src/modules/billing/billing.service.ts:2062:      where: { id: input.subscriptionId },
+services/api/src/modules/billing/billing.service.ts:2066:    void this.notifyOwnersBranchNeedsSubscription({
+services/api/src/modules/billing/billing.service.ts:2079:      status: BranchSubscriptionStatus;
+services/api/src/modules/billing/billing.service.ts:2086:    if (sub.status === BranchSubscriptionStatus.GRACE) {
+services/api/src/modules/billing/billing.service.ts:2095:    if (sub.status === BranchSubscriptionStatus.LOCKED) {
+services/api/src/modules/billing/billing.service.ts:2098:    if (sub.status === BranchSubscriptionStatus.TRIAL && sub.currentPeriodEnd) {
+services/api/src/modules/billing/billing.service.ts:2109:      sub.status === BranchSubscriptionStatus.ACTIVE &&
+services/api/src/modules/billing/billing.service.ts:2117:          ? `${branchName} subscription expires today.`
+services/api/src/modules/billing/billing.service.ts:2118:          : `${branchName} subscription expires in ${days} day${
+services/api/src/modules/billing/billing.service.ts:2126:  private async sendManualPaymentVerificationAlert(
+services/api/src/modules/billing/billing.service.ts:2127:    payment: SubscriptionPaymentWithBranchPlan,
+services/api/src/modules/billing/billing.service.ts:2130:      paymentMethod: string;
+services/api/src/modules/billing/billing.service.ts:2135:  ): Promise<SubscriptionPaymentWithBranchPlan | null> {
+services/api/src/modules/billing/billing.service.ts:2136:    const recipients = this.paymentVerificationEmails();
+services/api/src/modules/billing/billing.service.ts:2137:    const replyTo = this.paymentVerificationReplyTo();
+services/api/src/modules/billing/billing.service.ts:2138:    const months = monthsForInterval(payment.plan.interval);
+services/api/src/modules/billing/billing.service.ts:2140:      where: { id: payment.tenantId },
+services/api/src/modules/billing/billing.service.ts:2144:      .sendSubscriptionPaymentVerificationAlertEmail({
+services/api/src/modules/billing/billing.service.ts:2147:        paymentId: payment.id,
+services/api/src/modules/billing/billing.service.ts:2149:        branchName: payment.branch.name,
+services/api/src/modules/billing/billing.service.ts:2152:            ? 'Monthly Subscription'
+services/api/src/modules/billing/billing.service.ts:2153:            : `${months}-Month Subscription`,
+services/api/src/modules/billing/billing.service.ts:2154:        amountLabel: `UGX ${Number(payment.amount).toLocaleString('en-UG')}`,
+services/api/src/modules/billing/billing.service.ts:2155:        paymentMethod: input.paymentMethod,
+services/api/src/modules/billing/billing.service.ts:2160:        submittedAt: this.formatPaymentEmailDate(payment.createdAt),
+services/api/src/modules/billing/billing.service.ts:2164:        this.logger.warn(`Payment verification alert failed: ${detail}`);
+services/api/src/modules/billing/billing.service.ts:2169:      ...(this.payloadObject(payment.rawPayload) ?? {}),
+services/api/src/modules/billing/billing.service.ts:2177:    return this.prisma.subscriptionPayment.update({
+services/api/src/modules/billing/billing.service.ts:2178:      where: { id: payment.id },
+services/api/src/modules/billing/billing.service.ts:2180:      include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
+services/api/src/modules/billing/billing.service.ts:2184:  private async sendManualSmsPaymentVerificationAlert(
+services/api/src/modules/billing/billing.service.ts:2188:      paymentMethod: string;
+services/api/src/modules/billing/billing.service.ts:2194:    const recipients = this.paymentVerificationEmails();
+services/api/src/modules/billing/billing.service.ts:2195:    const replyTo = this.paymentVerificationReplyTo();
+services/api/src/modules/billing/billing.service.ts:2201:      .sendSubscriptionPaymentVerificationAlertEmail({
+services/api/src/modules/billing/billing.service.ts:2204:        paymentId: purchase.id,
+services/api/src/modules/billing/billing.service.ts:2211:        paymentMethod: input.paymentMethod,
+services/api/src/modules/billing/billing.service.ts:2216:        submittedAt: this.formatPaymentEmailDate(purchase.createdAt),
+services/api/src/modules/billing/billing.service.ts:2218:          'Before confirming SMS credits, make sure the Pahappa credit is enough to run this customer SMS subscription.',
+services/api/src/modules/billing/billing.service.ts:2222:        this.logger.warn(`SMS payment verification alert failed: ${detail}`);
+services/api/src/modules/billing/billing.service.ts:2242:  private async sendManualPaymentVerificationSummary(input: {
+services/api/src/modules/billing/billing.service.ts:2243:    confirmed: ManualPaymentSummaryItem[];
+services/api/src/modules/billing/billing.service.ts:2244:    remaining: ManualPaymentSummaryItem[];
+services/api/src/modules/billing/billing.service.ts:2249:    const recipients = this.paymentVerificationEmails();
+services/api/src/modules/billing/billing.service.ts:2250:    const replyTo = this.paymentVerificationReplyTo();
+services/api/src/modules/billing/billing.service.ts:2253:      .sendSubscriptionPaymentVerificationSummaryEmail({
+services/api/src/modules/billing/billing.service.ts:2265:          `Payment verification summary email failed: ${detail}`,
+services/api/src/modules/billing/billing.service.ts:2270:  private toManualPaymentSummaryItem(
+services/api/src/modules/billing/billing.service.ts:2271:    item: ManualPendingPayment,
+services/api/src/modules/billing/billing.service.ts:2272:  ): ManualPaymentSummaryItem {
+services/api/src/modules/billing/billing.service.ts:2280:        paymentMethod:
+services/api/src/modules/billing/billing.service.ts:2281:          this.payloadString(purchase.rawPayload, ['payment_method']) ||
+services/api/src/modules/billing/billing.service.ts:2282:          this.paymentMethodFromPayload(purchase.rawPayload) ||
+services/api/src/modules/billing/billing.service.ts:2283:          'Merchant payment',
+services/api/src/modules/billing/billing.service.ts:2291:    const payment = item.payment;
+services/api/src/modules/billing/billing.service.ts:2292:    const months = monthsForInterval(payment.plan.interval);
+services/api/src/modules/billing/billing.service.ts:2294:      organizationName: payment.tenant.name,
+services/api/src/modules/billing/billing.service.ts:2295:      branchName: payment.branch.name,
+services/api/src/modules/billing/billing.service.ts:2297:        months === 1 ? 'Monthly Subscription' : `${months}-Month Subscription`,
+services/api/src/modules/billing/billing.service.ts:2298:      amountLabel: `UGX ${Number(payment.amount).toLocaleString('en-UG')}`,
+services/api/src/modules/billing/billing.service.ts:2299:      paymentMethod:
+services/api/src/modules/billing/billing.service.ts:2300:        this.payloadString(payment.rawPayload, ['payment_method']) ||
+services/api/src/modules/billing/billing.service.ts:2301:        this.paymentMethodFromPayload(payment.rawPayload) ||
+services/api/src/modules/billing/billing.service.ts:2302:        'Merchant payment',
+services/api/src/modules/billing/billing.service.ts:2304:        this.payloadString(payment.rawPayload, ['merchant_code']) || '-',
+services/api/src/modules/billing/billing.service.ts:2306:        this.submittedManualTransactionId(payment.rawPayload) || '-',
+services/api/src/modules/billing/billing.service.ts:2310:  private emitSubscriptionPaymentUpdate(
+services/api/src/modules/billing/billing.service.ts:2311:    payment: SubscriptionPaymentWithBranchPlan,
+services/api/src/modules/billing/billing.service.ts:2314:      this.realtime.broadcastSubscriptionPayment(
+services/api/src/modules/billing/billing.service.ts:2315:        REALTIME_EVENTS.subscriptionPaymentUpdated,
+services/api/src/modules/billing/billing.service.ts:2317:          paymentId: payment.id,
+services/api/src/modules/billing/billing.service.ts:2318:          tenantId: payment.tenantId,
+services/api/src/modules/billing/billing.service.ts:2319:          branchId: payment.branchId,
+services/api/src/modules/billing/billing.service.ts:2320:          status: payment.status,
+services/api/src/modules/billing/billing.service.ts:2321:          payment: this.toSubscriptionPaymentRow(payment, {
+services/api/src/modules/billing/billing.service.ts:2322:            useBranchSubscriptionPeriod:
+services/api/src/modules/billing/billing.service.ts:2323:              payment.status === SubscriptionPaymentStatus.COMPLETED,
+services/api/src/modules/billing/billing.service.ts:2329:        `Subscription payment realtime emit failed for ${payment.id}: ${
+services/api/src/modules/billing/billing.service.ts:2336:  private emitSmsPurchasePaymentUpdate(purchase: SmsPurchaseWithBranch) {
+services/api/src/modules/billing/billing.service.ts:2338:      this.realtime.broadcastSubscriptionPayment(
+services/api/src/modules/billing/billing.service.ts:2339:        REALTIME_EVENTS.subscriptionPaymentUpdated,
+services/api/src/modules/billing/billing.service.ts:2341:          paymentId: purchase.id,
+services/api/src/modules/billing/billing.service.ts:2345:          payment: this.toSmsPurchasePaymentRow(purchase),
+services/api/src/modules/billing/billing.service.ts:2350:        `SMS payment realtime emit failed for ${purchase.id}: ${
+services/api/src/modules/billing/billing.service.ts:2385:  private async resolveSubscriptionActivationPeriod(input: {
+services/api/src/modules/billing/billing.service.ts:2388:      status: BranchSubscriptionStatus;
+services/api/src/modules/billing/billing.service.ts:2405:      input.sub?.status === BranchSubscriptionStatus.TRIAL &&
+services/api/src/modules/billing/billing.service.ts:2423:  private async completeManualMerchantPayment(
+services/api/src/modules/billing/billing.service.ts:2424:    payment: SubscriptionPaymentWithBranchPlan,
+services/api/src/modules/billing/billing.service.ts:2431:    const priorCompleted = await this.prisma.subscriptionPayment.count({
+services/api/src/modules/billing/billing.service.ts:2433:        branchId: payment.branchId,
+services/api/src/modules/billing/billing.service.ts:2434:        status: SubscriptionPaymentStatus.COMPLETED,
+services/api/src/modules/billing/billing.service.ts:2435:        id: { not: payment.id },
+services/api/src/modules/billing/billing.service.ts:2440:    const sub = await this.prisma.branchSubscription.findUnique({
+services/api/src/modules/billing/billing.service.ts:2441:      where: { branchId: payment.branchId },
+services/api/src/modules/billing/billing.service.ts:2443:    const months = monthsForInterval(payment.plan.interval);
+services/api/src/modules/billing/billing.service.ts:2445:      await this.resolveSubscriptionActivationPeriod({
+services/api/src/modules/billing/billing.service.ts:2446:        tenantId: payment.tenantId,
+services/api/src/modules/billing/billing.service.ts:2452:      ...(this.payloadObject(payment.rawPayload) ?? {}),
+services/api/src/modules/billing/billing.service.ts:2458:      subscription_active_from: periodStart.toISOString(),
+services/api/src/modules/billing/billing.service.ts:2459:      subscription_active_until: periodEnd.toISOString(),
+services/api/src/modules/billing/billing.service.ts:2463:      await tx.subscriptionPayment.update({
+services/api/src/modules/billing/billing.service.ts:2464:        where: { id: payment.id },
+services/api/src/modules/billing/billing.service.ts:2466:          status: SubscriptionPaymentStatus.COMPLETED,
+services/api/src/modules/billing/billing.service.ts:2472:      await tx.branchSubscription.update({
+services/api/src/modules/billing/billing.service.ts:2473:        where: { branchId: payment.branchId },
+services/api/src/modules/billing/billing.service.ts:2475:          status: BranchSubscriptionStatus.ACTIVE,
+services/api/src/modules/billing/billing.service.ts:2480:          planId: payment.planId,
+services/api/src/modules/billing/billing.service.ts:2486:      `Manual merchant payment ${payment.id} activated branch ${payment.branchId} until ${periodEnd.toISOString()}`,
+services/api/src/modules/billing/billing.service.ts:2492:          tenantId: payment.tenantId,
+services/api/src/modules/billing/billing.service.ts:2493:          branchId: payment.branchId,
+services/api/src/modules/billing/billing.service.ts:2497:          `Failed to grant Pro welcome SMS credits for branch ${payment.branchId}`,
+services/api/src/modules/billing/billing.service.ts:2503:    const updated = await this.prisma.subscriptionPayment.findUniqueOrThrow({
+services/api/src/modules/billing/billing.service.ts:2504:      where: { id: payment.id },
+services/api/src/modules/billing/billing.service.ts:2505:      include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
+services/api/src/modules/billing/billing.service.ts:2507:    this.emitSubscriptionPaymentUpdate(updated);
+services/api/src/modules/billing/billing.service.ts:2511:  private async failManualMerchantPayment(
+services/api/src/modules/billing/billing.service.ts:2512:    payment: SubscriptionPaymentWithBranchPlan,
+services/api/src/modules/billing/billing.service.ts:2521:      ...(this.payloadObject(payment.rawPayload) ?? {}),
+services/api/src/modules/billing/billing.service.ts:2529:    const updated = await this.prisma.subscriptionPayment.update({
+services/api/src/modules/billing/billing.service.ts:2530:      where: { id: payment.id },
+services/api/src/modules/billing/billing.service.ts:2532:        status: SubscriptionPaymentStatus.FAILED,
+services/api/src/modules/billing/billing.service.ts:2535:      include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
+services/api/src/modules/billing/billing.service.ts:2537:    this.emitSubscriptionPaymentUpdate(updated);
+services/api/src/modules/billing/billing.service.ts:2541:  private async completeManualSmsMerchantPayment(
+services/api/src/modules/billing/billing.service.ts:2564:    this.emitSmsPurchasePaymentUpdate(updated);
+services/api/src/modules/billing/billing.service.ts:2566:      `Manual SMS merchant payment ${purchase.id} credited ${purchase.smsUnitsExpected} SMS for branch ${purchase.branchId}`,
+services/api/src/modules/billing/billing.service.ts:2571:  private async failManualSmsMerchantPayment(
+services/api/src/modules/billing/billing.service.ts:2592:        status: SmsPurchaseStatus.PAYMENT_FAILED,
+services/api/src/modules/billing/billing.service.ts:2597:    this.emitSmsPurchasePaymentUpdate(updated);
+services/api/src/modules/billing/billing.service.ts:2601:  private parsePaymentVerificationReply(
+services/api/src/modules/billing/billing.service.ts:2603:  ): PaymentReplyCommand | null {
+services/api/src/modules/billing/billing.service.ts:2677:        /a new payment has been submitted for verification in rembeh\./i.test(
+services/api/src/modules/billing/billing.service.ts:2683:      if (/rembeh payment verification needed/i.test(trimmed)) break;
+services/api/src/modules/billing/billing.service.ts:2684:      if (/^payment request:\s*rembeh-pay:/i.test(trimmed)) break;
+services/api/src/modules/billing/billing.service.ts:2690:  private extractPaymentIdFromEmail(input: {
+services/api/src/modules/billing/billing.service.ts:2725:  private toSubscriptionPaymentRow(
+services/api/src/modules/billing/billing.service.ts:2726:    row: SubscriptionPaymentWithBranchPlan,
+services/api/src/modules/billing/billing.service.ts:2727:    options?: { priorPaid?: boolean; useBranchSubscriptionPeriod?: boolean },
+services/api/src/modules/billing/billing.service.ts:2728:  ): SubscriptionPaymentRowContract {
+services/api/src/modules/billing/billing.service.ts:2729:    const paid = row.status === SubscriptionPaymentStatus.COMPLETED;
+services/api/src/modules/billing/billing.service.ts:2730:    const pending = row.status === SubscriptionPaymentStatus.PENDING;
+services/api/src/modules/billing/billing.service.ts:2731:    const cancelled = row.status === SubscriptionPaymentStatus.CANCELLED;
+services/api/src/modules/billing/billing.service.ts:2733:      row.status === SubscriptionPaymentStatus.FAILED ||
+services/api/src/modules/billing/billing.service.ts:2734:      row.status === SubscriptionPaymentStatus.REVERSED;
+services/api/src/modules/billing/billing.service.ts:2736:      'subscription_active_from',
+services/api/src/modules/billing/billing.service.ts:2742:    const branchPeriodStart = options?.useBranchSubscriptionPeriod
+services/api/src/modules/billing/billing.service.ts:2743:      ? (row.branch.subscription?.currentPeriodStart ?? null)
+services/api/src/modules/billing/billing.service.ts:2759:      'subscription_active_until',
+services/api/src/modules/billing/billing.service.ts:2772:      options?.useBranchSubscriptionPeriod &&
+services/api/src/modules/billing/billing.service.ts:2773:      row.branch.subscription?.currentPeriodEnd
+services/api/src/modules/billing/billing.service.ts:2774:        ? row.branch.subscription.currentPeriodEnd.toISOString()
+services/api/src/modules/billing/billing.service.ts:2789:      kind: 'subscription',
+services/api/src/modules/billing/billing.service.ts:2793:          : 'Pro subscription'
+services/api/src/modules/billing/billing.service.ts:2794:        : 'Pro subscription',
+services/api/src/modules/billing/billing.service.ts:2821:      paymentMethod: this.paymentMethodFromPayload(row.rawPayload),
+services/api/src/modules/billing/billing.service.ts:2837:  private toSmsPurchasePaymentRow(
+services/api/src/modules/billing/billing.service.ts:2839:  ): SubscriptionPaymentRowContract {
+services/api/src/modules/billing/billing.service.ts:2844:      row.status === SmsPurchaseStatus.PAYMENT_FAILED ||
+services/api/src/modules/billing/billing.service.ts:2845:      row.status === SmsPurchaseStatus.PAYMENT_MISMATCH ||
+services/api/src/modules/billing/billing.service.ts:2879:      paymentMethod: this.paymentMethodFromPayload(row.rawPayload),
+services/api/src/modules/billing/billing.service.ts:2922:    provider: ManualMerchantPaymentProvider,
+services/api/src/modules/billing/billing.service.ts:2930:      provider === ManualMerchantPaymentProvider.MTN_MOMO ? 'mtn' : 'airtel';
+services/api/src/modules/billing/billing.service.ts:2935:    provider: ManualMerchantPaymentProvider,
+services/api/src/modules/billing/billing.service.ts:2943:      provider === ManualMerchantPaymentProvider.MTN_MOMO ? 'mtn' : 'airtel';
+services/api/src/modules/billing/billing.service.ts:2949:      SmsPurchaseStatus.PAYMENT_PENDING,
+services/api/src/modules/billing/billing.service.ts:2950:      SmsPurchaseStatus.AWAITING_PAYMENT,
+services/api/src/modules/billing/billing.service.ts:2951:      SmsPurchaseStatus.PAYMENT_CONFIRMED,
+services/api/src/modules/billing/billing.service.ts:2957:  private manualMerchantDetails(provider: ManualMerchantPaymentProvider) {
+services/api/src/modules/billing/billing.service.ts:2958:    if (provider === ManualMerchantPaymentProvider.MTN_MOMO) {
+services/api/src/modules/billing/billing.service.ts:2970:    if (provider === ManualMerchantPaymentProvider.AIRTEL_MONEY) {
+services/api/src/modules/billing/billing.service.ts:2983:    throw new BadRequestException('Choose a payment method.');
+services/api/src/modules/billing/billing.service.ts:3005:  private paymentVerificationEmails() {
+services/api/src/modules/billing/billing.service.ts:3007:      .get<string>('PAYMENT_VERIFICATION_EMAILS')
+services/api/src/modules/billing/billing.service.ts:3013:      : DEFAULT_PAYMENT_VERIFICATION_EMAILS;
+services/api/src/modules/billing/billing.service.ts:3016:  private paymentVerificationReplyTo() {
+services/api/src/modules/billing/billing.service.ts:3018:      this.configService.get<string>('PAYMENT_VERIFICATION_REPLY_TO')?.trim() ||
+services/api/src/modules/billing/billing.service.ts:3025:  private paymentReplyAllowedEmails() {
+services/api/src/modules/billing/billing.service.ts:3027:      .get<string>('PAYMENT_VERIFICATION_ALLOWED_REPLY_EMAILS')
+services/api/src/modules/billing/billing.service.ts:3034:        : this.paymentVerificationEmails();
+services/api/src/modules/billing/billing.service.ts:3052:  private formatPaymentEmailDate(value: Date) {
+services/api/src/modules/billing/billing.service.ts:3055:        .get<string>('PAYMENT_VERIFICATION_TIME_ZONE')
+services/api/src/modules/billing/billing.service.ts:3080:  private paymentMethodFromPayload(raw: Prisma.JsonValue | null): string {
+services/api/src/modules/billing/billing.service.ts:3083:      // No provider payload yet (checkout created, payment not finished).
+services/api/src/modules/billing/billing.service.ts:3087:      if (record.provider === ManualMerchantPaymentProvider.MTN_MOMO) {
+services/api/src/modules/billing/billing.service.ts:3090:      if (record.provider === ManualMerchantPaymentProvider.AIRTEL_MONEY) {
+services/api/src/modules/billing/billing.service.ts:3095:      record.payment_method,
+services/api/src/modules/billing/billing.service.ts:3096:      record.payment_method_type,
+services/api/src/modules/billing/billing.service.ts:3097:      record.PaymentMethod,
+services/api/src/modules/billing/billing.service.ts:3098:      record.payment_account,
+services/api/src/modules/billing/billing.service.ts:3140:  private async notifyOwnersBranchNeedsSubscription(input: {
+services/api/src/modules/billing/billing.service.ts:3144:    kind: SubscriptionOwnerReminderKind;
+services/api/src/modules/billing/billing.service.ts:3196:                ? `${input.branchName} subscription expires today`
+services/api/src/modules/billing/billing.service.ts:3197:                : `${input.branchName} subscription expires in ${dayLabel}`;
+services/api/src/modules/billing/billing.service.ts:3200:          ? `${input.branchName} did not renew in time and is now paused. Open Subscription to restore access.`
+services/api/src/modules/billing/billing.service.ts:3202:            ? `${input.branchName} subscription has expired. You have ${graceWindowLabel} to renew${graceEndLabel} before access is paused.`
+services/api/src/modules/billing/billing.service.ts:3207:              : `${input.branchName} subscription expires ${
+services/api/src/modules/billing/billing.service.ts:3212:        // Subscription reminders stay automated across SMS, email, and push.
+services/api/src/modules/billing/billing.service.ts:3220:          await this.notificationsService.sendSubscriptionReminderEmail({
+services/api/src/modules/billing/billing.service.ts:3234:          href: '/owner/subscription',
+services/api/src/modules/billing/billing.service.ts:3260:        'This payment couldn’t be completed. Please try again later.',
+services/api/src/modules/billing/billing.service.ts:3264:      'We couldn’t start payment. Please try again.',
+services/api/src/modules/billing/billing.service.ts:3271:        'Only the account owner can manage all branch subscriptions.',
+services/api/src/modules/billing/billing.service.ts:3287:    const overrides = await this.prisma.subscriptionPriceOverride.findMany({
+services/api/src/modules/billing/billing.permissions.ts:7:/** Legacy + monthly Pro plan code (kept for existing branch subscriptions). */
+services/api/src/modules/billing/pesapal.client.ts:36:  payment_status_description?: string;
+services/api/src/modules/billing/pesapal.client.ts:37:  payment_status_code?: number | string;
+services/api/src/modules/billing/pesapal.client.ts:43:  payment_method?: string;
+services/api/src/modules/billing/pesapal.client.ts:107:      throw new Error('Payment auth failed.');
+services/api/src/modules/billing/pesapal.client.ts:125:      throw new Error('Payment notification URL is missing.');
+services/api/src/modules/billing/pesapal.client.ts:185:      throw new Error('Could not register payment notifications.');
+services/api/src/modules/billing/pesapal.client.ts:260:          'Payment could not be started.',
+services/api/src/modules/billing/pesapal.client.ts:288:      throw new Error('Could not verify payment status.');
+services/api/src/modules/payments/dto/initialize-flutterwave-payment.dto.ts:11:export class InitializeFlutterwavePaymentDto {
+services/api/src/modules/payments/dto/initialize-flutterwave-payment.dto.ts:55:  paymentOptions?: string;
+services/api/src/modules/payments/dto/verify-flutterwave-payment.dto.ts:3:export class VerifyFlutterwavePaymentDto {
+services/api/src/modules/payments/flutterwave.service.ts:11:  PaymentGatewayIntentStatus,
+services/api/src/modules/payments/flutterwave.service.ts:12:  PaymentGatewayProvider,
+services/api/src/modules/payments/flutterwave.service.ts:17:import type { InitializeFlutterwavePaymentDto } from './dto/initialize-flutterwave-payment.dto';
+services/api/src/modules/payments/flutterwave.service.ts:25:type FlutterwavePaymentData = {
+services/api/src/modules/payments/flutterwave.service.ts:70:  async initializePayment(
+services/api/src/modules/payments/flutterwave.service.ts:72:    dto: InitializeFlutterwavePaymentDto,
+services/api/src/modules/payments/flutterwave.service.ts:97:    const intent = await this.prisma.paymentGatewayIntent.create({
+services/api/src/modules/payments/flutterwave.service.ts:100:        provider: PaymentGatewayProvider.FLUTTERWAVE,
+services/api/src/modules/payments/flutterwave.service.ts:104:        status: PaymentGatewayIntentStatus.PENDING,
+services/api/src/modules/payments/flutterwave.service.ts:123:      payment_options: dto.paymentOptions?.trim() || 'card,mobilemoneyuganda,ussd',
+services/api/src/modules/payments/flutterwave.service.ts:125:        email: dto.customerEmail?.trim() || `payments+${user.tenantId.slice(0, 8)}@rembeh.local`,
+services/api/src/modules/payments/flutterwave.service.ts:130:        title: dto.title?.trim() || 'REMBEH Payment',
+services/api/src/modules/payments/flutterwave.service.ts:141:    const response = await this.flwRequest<FlutterwavePaymentData>(
+services/api/src/modules/payments/flutterwave.service.ts:143:      '/payments',
+services/api/src/modules/payments/flutterwave.service.ts:149:      await this.prisma.paymentGatewayIntent.update({
+services/api/src/modules/payments/flutterwave.service.ts:152:          status: PaymentGatewayIntentStatus.FAILED,
+services/api/src/modules/payments/flutterwave.service.ts:157:        response.message || 'Could not initialize Flutterwave payment.',
+services/api/src/modules/payments/flutterwave.service.ts:161:    const updated = await this.prisma.paymentGatewayIntent.update({
+services/api/src/modules/payments/flutterwave.service.ts:163:      data: { paymentLink: link },
+services/api/src/modules/payments/flutterwave.service.ts:171:      paymentLink: link,
+services/api/src/modules/payments/flutterwave.service.ts:190:    const intent = await this.prisma.paymentGatewayIntent.findFirst({
+services/api/src/modules/payments/flutterwave.service.ts:194:      throw new BadRequestException('Payment intent not found.');
+services/api/src/modules/payments/flutterwave.service.ts:218:    const intent = await this.prisma.paymentGatewayIntent.findUnique({
+services/api/src/modules/payments/flutterwave.service.ts:228:    await this.prisma.paymentGatewayIntent.update({
+services/api/src/modules/payments/flutterwave.service.ts:265:      throw new BadRequestException('Verified payment missing tx_ref.');
+services/api/src/modules/payments/flutterwave.service.ts:268:    const intent = await this.prisma.paymentGatewayIntent.findFirst({
+services/api/src/modules/payments/flutterwave.service.ts:272:      throw new BadRequestException('Payment intent not found for tx_ref.');
+services/api/src/modules/payments/flutterwave.service.ts:285:    let nextStatus: PaymentGatewayIntentStatus = PaymentGatewayIntentStatus.FAILED;
+services/api/src/modules/payments/flutterwave.service.ts:289:      nextStatus = PaymentGatewayIntentStatus.SUCCESSFUL;
+services/api/src/modules/payments/flutterwave.service.ts:291:      nextStatus = PaymentGatewayIntentStatus.FAILED;
+services/api/src/modules/payments/flutterwave.service.ts:297:      nextStatus = PaymentGatewayIntentStatus.CANCELLED;
+services/api/src/modules/payments/flutterwave.service.ts:298:      failureReason = 'Payment cancelled.';
+services/api/src/modules/payments/flutterwave.service.ts:300:      failureReason = `Payment status: ${remoteStatus || 'unknown'}`;
+services/api/src/modules/payments/flutterwave.service.ts:303:    const updated = await this.prisma.paymentGatewayIntent.update({
+services/api/src/modules/payments/flutterwave.controller.ts:16:import { InitializeFlutterwavePaymentDto } from './dto/initialize-flutterwave-payment.dto';
+services/api/src/modules/payments/flutterwave.controller.ts:17:import { VerifyFlutterwavePaymentDto } from './dto/verify-flutterwave-payment.dto';
+services/api/src/modules/payments/flutterwave.controller.ts:19:import { PAYMENT_PERMISSIONS } from './payments.permissions';
+services/api/src/modules/payments/flutterwave.controller.ts:21:@Controller('payments/flutterwave')
+services/api/src/modules/payments/flutterwave.controller.ts:34:  @RequirePermissions(PAYMENT_PERMISSIONS.create)
+services/api/src/modules/payments/flutterwave.controller.ts:37:    @Body() body: InitializeFlutterwavePaymentDto,
+services/api/src/modules/payments/flutterwave.controller.ts:39:    return this.flutterwaveService.initializePayment(user, body);
+services/api/src/modules/payments/flutterwave.controller.ts:44:  @RequirePermissions(PAYMENT_PERMISSIONS.read)
+services/api/src/modules/payments/flutterwave.controller.ts:47:    @Body() body: VerifyFlutterwavePaymentDto,
+services/api/src/modules/payments/payments.module.ts:13:export class PaymentsModule {}
+services/api/src/modules/payments/payments.permissions.ts:1:export const PAYMENT_PERMISSIONS = {

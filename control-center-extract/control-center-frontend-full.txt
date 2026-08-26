@@ -1,0 +1,4068 @@
+
+================================================================================
+FILE: apps/web/src/components/control-center/client-detail-section.tsx
+================================================================================
+"use client";
+
+import {
+  ArrowLeft,
+  Building2,
+  CalendarDays,
+  ChevronRight,
+  CircleDollarSign,
+  MapPin,
+  Phone,
+  Tags,
+  Users,
+} from "lucide-react";
+import type { ControlCenterBranch, ControlCenterClientDetail } from "./types";
+import {
+  EmptyState,
+  IconBadge,
+  Panel,
+  SectionTitle,
+  StatusPill,
+} from "./control-center-primitives";
+import {
+  ccDate,
+  ccDateTime,
+  ccMoney,
+  ccNumber,
+  compactAction,
+} from "./formatters";
+
+export function ControlCenterClientDetailSection({
+  detail,
+  loading,
+  onBack,
+  onManagePricing,
+  onPricingHistory,
+}: {
+  detail: ControlCenterClientDetail | null;
+  loading: boolean;
+  onBack: () => void;
+  onManagePricing: () => void;
+  onPricingHistory: () => void;
+}) {
+  if (loading || !detail) {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={onBack}
+          className="mb-4 inline-flex items-center gap-2 text-sm font-black text-[var(--midnight-navy)]"
+        >
+          <ArrowLeft className="size-4" />
+          Back to clients
+        </button>
+        <Panel className="p-8">
+          <div className="h-5 w-48 animate-pulse rounded bg-slate-100" />
+          <div className="mt-6 grid gap-4 xl:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, index) => (
+              <div
+                key={index}
+                className="h-40 animate-pulse rounded-xl bg-slate-100"
+              />
+            ))}
+          </div>
+        </Panel>
+      </>
+    );
+  }
+
+  const branchCounts = summarizeBranches(detail.branches);
+  const client = detail.client;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onBack}
+        className="mb-4 inline-flex items-center gap-2 text-sm font-black text-[var(--midnight-navy)]"
+      >
+        <ArrowLeft className="size-4" />
+        Back to clients
+      </button>
+
+      <SectionTitle
+        title={client.name}
+        subtitle={`Client since ${ccDate(client.createdAt)} - Client ID: ${client.id.slice(0, 8)}`}
+        action={
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onPricingHistory}
+              className="btn btn-ghost h-10 normal-case"
+            >
+              Pricing history
+            </button>
+            <button
+              type="button"
+              onClick={onManagePricing}
+              className="btn btn-primary h-10 normal-case"
+            >
+              Manage pricing
+            </button>
+          </div>
+        }
+      />
+
+      <div className="grid gap-4 xl:grid-cols-[1fr_1fr_1.2fr_1fr]">
+        <Panel className="p-5">
+          <IconBadge icon={Building2} />
+          <h2 className="mt-4 text-sm font-black">Organization information</h2>
+          <DetailLine label="Owner / Contact" value={client.owner?.name} />
+          <DetailLine label="Email" value={client.owner?.email} />
+          <DetailLine label="Phone" value={client.owner?.phone} />
+          <DetailLine label="Country" value={client.country} />
+          <DetailLine label="Currency" value={client.currency} />
+        </Panel>
+
+        <Panel className="p-5">
+          <h2 className="text-sm font-black">Organization summary</h2>
+          <MetricLine
+            icon={Building2}
+            label="Total branches"
+            value={client.summary.totalBranches}
+          />
+          <MetricLine
+            icon={Tags}
+            label="Active branches"
+            value={client.summary.activeBranches}
+          />
+          <MetricLine
+            icon={MapPin}
+            label="Suspended branches"
+            value={client.summary.suspendedBranches}
+          />
+          <MetricLine
+            icon={Users}
+            label="Total users"
+            value={client.summary.totalUsers}
+          />
+          <div className="mt-4">
+            <StatusPill value={client.status} />
+          </div>
+        </Panel>
+
+        <Panel className="bg-[#f7fcf9] p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-black">Pricing status</h2>
+              <p className="mt-4 text-base font-black text-[var(--forest-emerald)]">
+                Client-level and branch pricing
+              </p>
+              <p className="mt-2 text-xs font-semibold leading-5 text-slate-600">
+                Branch-specific prices override organization prices. Current
+                active subscriptions keep their existing period amount until
+                renewal.
+              </p>
+            </div>
+            <StatusPill value="Custom controls" />
+          </div>
+          <button
+            type="button"
+            onClick={onManagePricing}
+            className="btn btn-ghost mt-5 h-10 w-full normal-case text-[var(--forest-emerald)]"
+          >
+            Manage pricing
+            <ChevronRight className="size-4" />
+          </button>
+        </Panel>
+
+        <Panel className="p-5">
+          <h2 className="text-sm font-black">Subscription overview</h2>
+          <div className="mt-5 flex items-center gap-5">
+            <div
+              className="size-24 rounded-full"
+              style={{
+                background: `conic-gradient(#0f8a6c 0 ${branchCounts.activeDeg}deg, #ef4444 ${branchCounts.activeDeg}deg ${branchCounts.expiredDeg}deg, #f59e0b ${branchCounts.expiredDeg}deg ${branchCounts.warningDeg}deg, #d1d5db ${branchCounts.warningDeg}deg 360deg)`,
+              }}
+            />
+            <div className="grid gap-2 text-xs font-bold">
+              <Legend
+                color="bg-emerald-600"
+                label="Active"
+                value={branchCounts.active}
+              />
+              <Legend
+                color="bg-red-500"
+                label="Locked / past due"
+                value={branchCounts.locked}
+              />
+              <Legend
+                color="bg-amber-500"
+                label="Trial / grace"
+                value={branchCounts.warning}
+              />
+              <Legend
+                color="bg-slate-300"
+                label="Other"
+                value={branchCounts.other}
+              />
+            </div>
+          </div>
+        </Panel>
+      </div>
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_320px]">
+        <Panel className="overflow-hidden">
+          <div className="flex items-center justify-between border-b border-[#e2e8f0] px-5 py-4">
+            <h2 className="font-black">Branches ({detail.branches.length})</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-[1080px] w-full text-left">
+              <thead className="bg-[#f2f6f8] text-xs font-black text-slate-600">
+                <tr>
+                  <th className="px-4 py-3">Branch name</th>
+                  <th className="px-4 py-3">Subscription</th>
+                  <th className="px-4 py-3">Performance</th>
+                  <th className="px-4 py-3">Users</th>
+                  <th className="px-4 py-3">Last used</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#edf2f7] text-sm">
+                {detail.branches.map((branch) => (
+                  <BranchRow
+                    key={branch.id}
+                    branch={branch}
+                    onManagePricing={onManagePricing}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+
+        <Panel className="overflow-hidden">
+          <div className="border-b border-[#e2e8f0] px-5 py-4">
+            <h2 className="font-black">Recent activity</h2>
+          </div>
+          {detail.recentActivity.length ? (
+            <div className="divide-y divide-[#edf2f7]">
+              {detail.recentActivity.map((activity) => (
+                <div key={activity.id} className="px-5 py-4">
+                  <p className="text-sm font-black">
+                    {compactAction(activity.action)}
+                  </p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    {activity.actorName} - {ccDateTime(activity.createdAt)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-5">
+              <EmptyState title="No recent branch activity" />
+            </div>
+          )}
+        </Panel>
+      </div>
+    </>
+  );
+}
+
+function DetailLine({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | null | undefined;
+}) {
+  return (
+    <div className="mt-3">
+      <p className="text-[11px] font-semibold text-slate-500">{label}</p>
+      <p className="mt-0.5 text-sm font-black text-[var(--midnight-navy)]">
+        {value || "-"}
+      </p>
+    </div>
+  );
+}
+
+function MetricLine({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Building2;
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className="mt-4 flex items-center justify-between gap-4">
+      <span className="flex items-center gap-3 text-xs font-bold text-slate-600">
+        <Icon className="size-4" />
+        {label}
+      </span>
+      <span className="text-sm font-black">{ccNumber(value)}</span>
+    </div>
+  );
+}
+
+function BranchRow({
+  branch,
+  onManagePricing,
+}: {
+  branch: ControlCenterBranch;
+  onManagePricing: () => void;
+}) {
+  return (
+    <tr>
+      <td className="px-4 py-4">
+        <div className="flex items-center gap-3">
+          <span className="grid size-10 place-items-center rounded-lg bg-blue-50 text-blue-700">
+            <Building2 className="size-5" />
+          </span>
+          <span>
+            <span className="block font-black">{branch.name}</span>
+            <span className="mt-1 flex items-center gap-2 text-xs font-semibold text-slate-500">
+              <MapPin className="size-3" />
+              {branch.address || "-"}
+            </span>
+            {branch.phone ? (
+              <span className="mt-1 flex items-center gap-2 text-xs font-semibold text-slate-500">
+                <Phone className="size-3" />
+                {branch.phone}
+              </span>
+            ) : null}
+          </span>
+        </div>
+      </td>
+      <td className="px-4 py-4">
+        <StatusPill value={branch.status} />
+        <p className="mt-2 text-xs font-semibold text-slate-500">
+          {branch.currentPeriodEnd
+            ? `Renews ${ccDate(branch.currentPeriodEnd)}`
+            : "No renewal date"}
+        </p>
+      </td>
+      <td className="px-4 py-4">
+        <p className="font-black text-[var(--forest-emerald)]">
+          {ccMoney(branch.repaymentsCollected)}
+        </p>
+        <p className="mt-1 text-xs font-semibold text-slate-500">
+          {ccNumber(branch.repaymentCount)} repayments -{" "}
+          {ccNumber(branch.loans)} loans
+        </p>
+      </td>
+      <td className="px-4 py-4 font-black">{ccNumber(branch.users)}</td>
+      <td className="px-4 py-4">
+        <p className="font-semibold">
+          {branch.lastUsedAt ? ccDateTime(branch.lastUsedAt) : "Not used yet"}
+        </p>
+      </td>
+      <td className="px-4 py-4">
+        <StatusPill value={branch.status} />
+      </td>
+      <td className="px-4 py-4 text-right">
+        <button
+          type="button"
+          onClick={onManagePricing}
+          className="btn btn-ghost h-8 normal-case"
+        >
+          Price branch
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+function Legend({
+  color,
+  label,
+  value,
+}: {
+  color: string;
+  label: string;
+  value: number;
+}) {
+  return (
+    <span className="flex items-center gap-2">
+      <span className={`size-2 rounded-full ${color}`} />
+      {label}
+      <span className="ml-auto font-black">{value}</span>
+    </span>
+  );
+}
+
+function summarizeBranches(branches: ControlCenterBranch[]) {
+  const total = Math.max(1, branches.length);
+  const active = branches.filter((branch) => branch.status === "ACTIVE").length;
+  const locked = branches.filter((branch) =>
+    ["LOCKED", "PAST_DUE"].includes(branch.status),
+  ).length;
+  const warning = branches.filter((branch) =>
+    ["TRIAL", "GRACE"].includes(branch.status),
+  ).length;
+  const other = Math.max(0, branches.length - active - locked - warning);
+  const activeDeg = (active / total) * 360;
+  const expiredDeg = activeDeg + (locked / total) * 360;
+  const warningDeg = expiredDeg + (warning / total) * 360;
+
+  return { active, locked, warning, other, activeDeg, expiredDeg, warningDeg };
+}
+
+================================================================================
+FILE: apps/web/src/components/control-center/clients-section.tsx
+================================================================================
+"use client";
+
+import {
+  Building2,
+  CircleDollarSign,
+  Plus,
+  ShieldCheck,
+  Users,
+} from "lucide-react";
+import { useMemo, useState } from "react";
+import { PaginationControls, paginateItems } from "../app/pagination";
+import type {
+  ControlCenterClient,
+  ControlCenterClientsResponse,
+} from "./types";
+import {
+  InlineSearch,
+  Panel,
+  SectionTitle,
+  SelectControl,
+  StatCard,
+  StatusPill,
+} from "./control-center-primitives";
+import { ccDate, ccNumber } from "./formatters";
+
+export function ControlCenterClientsSection({
+  data,
+  onOpenClient,
+  onOpenPricing,
+}: {
+  data: ControlCenterClientsResponse | null;
+  onOpenClient: (tenantId: string) => void;
+  onOpenPricing: (tenantId: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [pricingType, setPricingType] = useState("ALL");
+  const [status, setStatus] = useState("ALL");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  const stats = data?.stats;
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return (data?.clients ?? []).filter((client) => {
+      const matchesSearch =
+        !needle ||
+        [
+          client.name,
+          client.ownerName,
+          client.email,
+          client.phone,
+          client.status,
+        ].some((value) => (value ?? "").toLowerCase().includes(needle));
+      const matchesPricing =
+        pricingType === "ALL" || client.pricingType === pricingType;
+      const matchesStatus = status === "ALL" || client.status === status;
+      return matchesSearch && matchesPricing && matchesStatus;
+    });
+  }, [data?.clients, pricingType, query, status]);
+  const pageRows = paginateItems(filtered, page, pageSize);
+
+  return (
+    <>
+      <SectionTitle
+        title="Clients"
+        subtitle="Manage organizations, branches, subscription pricing, and performance."
+        action={
+          <button
+            type="button"
+            className="btn btn-primary h-10 normal-case"
+            onClick={() => onOpenPricing(filtered[0]?.id ?? "")}
+            disabled={!filtered.length}
+          >
+            <Plus className="size-4" />
+            Pricing action
+          </button>
+        }
+      />
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          icon={Users}
+          title="Total clients"
+          value={ccNumber(stats?.totalClients)}
+          subtitle="All registered organizations"
+        />
+        <StatCard
+          icon={CircleDollarSign}
+          title="Custom pricing"
+          value={ccNumber(stats?.customPricing)}
+          subtitle="Clients with custom pricing"
+          tone="blue"
+        />
+        <StatCard
+          icon={Building2}
+          title="Default pricing"
+          value={ccNumber(stats?.defaultPricing)}
+          subtitle="Using standard pricing"
+          tone="gold"
+        />
+        <StatCard
+          icon={ShieldCheck}
+          title="Active clients"
+          value={ccNumber(stats?.activeClients)}
+          subtitle="Currently active"
+          tone="purple"
+        />
+      </div>
+
+      <Panel className="mt-5 overflow-hidden">
+        <div className="flex flex-wrap items-center gap-3 border-b border-[#e2e8f0] p-4">
+          <InlineSearch
+            value={query}
+            onChange={(value) => {
+              setQuery(value);
+              setPage(1);
+            }}
+            placeholder="Search by organization, owner or email..."
+            className="max-w-lg"
+          />
+          <SelectControl
+            value={pricingType}
+            onChange={(value) => {
+              setPricingType(value);
+              setPage(1);
+            }}
+            ariaLabel="Pricing type"
+            options={[
+              { value: "ALL", label: "All pricing" },
+              { value: "CUSTOM", label: "Custom pricing" },
+              { value: "DEFAULT", label: "Default pricing" },
+            ]}
+          />
+          <SelectControl
+            value={status}
+            onChange={(value) => {
+              setStatus(value);
+              setPage(1);
+            }}
+            ariaLabel="Client status"
+            options={[
+              { value: "ALL", label: "All statuses" },
+              { value: "ACTIVE", label: "Active" },
+              { value: "SUSPENDED", label: "Suspended" },
+              { value: "PENDING_VERIFICATION", label: "Pending verification" },
+              { value: "ARCHIVED", label: "Archived" },
+            ]}
+          />
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-[1000px] w-full text-left">
+            <thead className="bg-[#f2f6f8] text-xs font-black text-slate-600">
+              <tr>
+                <th className="px-4 py-3">Organization</th>
+                <th className="px-4 py-3">Owner / Contact</th>
+                <th className="px-4 py-3">Branches</th>
+                <th className="px-4 py-3">Users</th>
+                <th className="px-4 py-3">Pricing</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Date onboarded</th>
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#edf2f7] text-sm">
+              {pageRows.items.map((client) => (
+                <ClientRow
+                  key={client.id}
+                  client={client}
+                  onOpenClient={onOpenClient}
+                  onOpenPricing={onOpenPricing}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <PaginationControls
+          page={pageRows.currentPage}
+          pageSize={pageRows.pageSize}
+          total={filtered.length}
+          itemLabel="clients"
+          onPageChange={setPage}
+          onPageSizeChange={(value) => {
+            setPageSize(value);
+            setPage(1);
+          }}
+        />
+      </Panel>
+    </>
+  );
+}
+
+function ClientRow({
+  client,
+  onOpenClient,
+  onOpenPricing,
+}: {
+  client: ControlCenterClient;
+  onOpenClient: (tenantId: string) => void;
+  onOpenPricing: (tenantId: string) => void;
+}) {
+  return (
+    <tr>
+      <td className="px-4 py-4">
+        <div className="flex items-center gap-3">
+          <span className="grid size-10 place-items-center rounded-lg bg-emerald-50 text-[var(--forest-emerald)]">
+            <Building2 className="size-5" />
+          </span>
+          <span className="min-w-0">
+            <span className="block truncate font-black">{client.name}</span>
+            <span className="mt-1 block truncate text-xs font-semibold text-slate-500">
+              {client.email ?? client.phone ?? "No primary contact"}
+            </span>
+          </span>
+        </div>
+      </td>
+      <td className="px-4 py-4">
+        <p className="font-bold">{client.ownerName ?? "-"}</p>
+        <p className="mt-1 text-xs font-semibold text-slate-500">
+          {client.phone ?? client.email ?? "-"}
+        </p>
+      </td>
+      <td className="px-4 py-4">
+        <p className="font-black">{ccNumber(client.branchCount)}</p>
+        <p className="text-xs font-semibold text-slate-500">
+          {ccNumber(client.activeBranchCount)} active
+        </p>
+      </td>
+      <td className="px-4 py-4 font-bold">{ccNumber(client.userCount)}</td>
+      <td className="px-4 py-4">
+        <StatusPill
+          value={
+            client.pricingType === "CUSTOM"
+              ? "Custom pricing"
+              : "Default pricing"
+          }
+          tone={client.pricingType === "CUSTOM" ? "green" : "blue"}
+        />
+      </td>
+      <td className="px-4 py-4">
+        <StatusPill value={client.status} />
+      </td>
+      <td className="px-4 py-4 font-semibold">{ccDate(client.createdAt)}</td>
+      <td className="px-4 py-4">
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => onOpenClient(client.id)}
+            className="btn btn-ghost h-8 normal-case"
+          >
+            View details
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenPricing(client.id)}
+            className="btn btn-primary h-8 normal-case"
+          >
+            Pricing
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+================================================================================
+FILE: apps/web/src/components/control-center/control-center-primitives.tsx
+================================================================================
+"use client";
+
+import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
+import { titleText } from "./formatters";
+
+export function SectionTitle({
+  title,
+  subtitle,
+  action,
+}: {
+  title: string;
+  subtitle?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+      <div>
+        <h1 className="text-2xl font-black tracking-normal text-[var(--midnight-navy)]">
+          {title}
+        </h1>
+        {subtitle ? (
+          <p className="mt-1 text-sm font-medium leading-5 text-slate-500">
+            {subtitle}
+          </p>
+        ) : null}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+export function Panel({
+  children,
+  className = "",
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={`rounded-xl border border-[#e2e8f0] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.045)] ${className}`}
+    >
+      {children}
+    </section>
+  );
+}
+
+export function StatCard({
+  title,
+  value,
+  subtitle,
+  icon: Icon,
+  tone = "green",
+}: {
+  title: string;
+  value: string;
+  subtitle?: string;
+  icon: LucideIcon;
+  tone?: "green" | "blue" | "gold" | "purple" | "red";
+}) {
+  return (
+    <Panel className="p-5">
+      <div className="flex items-center gap-4">
+        <IconBadge icon={Icon} tone={tone} />
+        <div className="min-w-0">
+          <p className="text-sm font-black text-[var(--midnight-navy)]">
+            {title}
+          </p>
+          <p className="mt-1 text-2xl font-black text-[var(--midnight-navy)]">
+            {value}
+          </p>
+          {subtitle ? (
+            <p className="mt-1 text-xs font-semibold text-slate-500">
+              {subtitle}
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+export function IconBadge({
+  icon: Icon,
+  tone = "green",
+  className = "",
+}: {
+  icon: LucideIcon;
+  tone?: "green" | "blue" | "gold" | "purple" | "red" | "slate";
+  className?: string;
+}) {
+  const toneClass =
+    tone === "blue"
+      ? "bg-blue-50 text-blue-700"
+      : tone === "gold"
+        ? "bg-amber-50 text-amber-700"
+        : tone === "purple"
+          ? "bg-violet-50 text-violet-700"
+          : tone === "red"
+            ? "bg-red-50 text-red-700"
+            : tone === "slate"
+              ? "bg-slate-100 text-slate-700"
+              : "bg-emerald-50 text-[var(--forest-emerald)]";
+
+  return (
+    <span
+      className={`grid size-12 shrink-0 place-items-center rounded-xl ${toneClass} ${className}`}
+    >
+      <Icon className="size-5" />
+    </span>
+  );
+}
+
+export function StatusPill({
+  value,
+  tone,
+}: {
+  value: string;
+  tone?: "green" | "blue" | "gold" | "red" | "slate";
+}) {
+  const normalized = value.toUpperCase();
+  const resolved =
+    tone ??
+    (["ACTIVE", "COMPLETED", "SENT"].includes(normalized)
+      ? "green"
+      : ["TRIAL", "GRACE", "PENDING"].includes(normalized)
+        ? "blue"
+        : ["PAST_DUE", "LOCKED", "SUSPENDED", "FAILED"].includes(normalized)
+          ? "red"
+          : ["CUSTOM", "DEFAULT"].includes(normalized)
+            ? "green"
+            : "slate");
+  const toneClass =
+    resolved === "blue"
+      ? "bg-blue-50 text-blue-700"
+      : resolved === "gold"
+        ? "bg-amber-50 text-amber-700"
+        : resolved === "red"
+          ? "bg-red-50 text-red-700"
+          : resolved === "slate"
+            ? "bg-slate-100 text-slate-700"
+            : "bg-emerald-50 text-[var(--forest-emerald)]";
+
+  return (
+    <span
+      className={`inline-flex h-6 items-center rounded-md px-2 text-[11px] font-black ${toneClass}`}
+    >
+      {titleText(value)}
+    </span>
+  );
+}
+
+export function InlineSearch({
+  value,
+  onChange,
+  placeholder,
+  className = "",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  className?: string;
+}) {
+  return (
+    <input
+      type="search"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+      className={`h-10 min-w-[220px] flex-1 rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm font-semibold text-[var(--midnight-navy)] outline-none placeholder:text-slate-400 focus:border-[var(--forest-emerald)] focus:shadow-[0_0_0_3px_rgba(15,138,108,0.11)] ${className}`}
+    />
+  );
+}
+
+export function SelectControl({
+  value,
+  onChange,
+  options,
+  ariaLabel,
+  className = "",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+  ariaLabel: string;
+  className?: string;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      aria-label={ariaLabel}
+      className={`h-10 rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm font-bold text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] ${className}`}
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+export function EmptyState({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle?: string;
+}) {
+  return (
+    <div className="rounded-xl border border-dashed border-[#cbd5e1] bg-slate-50 px-4 py-8 text-center">
+      <p className="text-sm font-black text-[var(--midnight-navy)]">{title}</p>
+      {subtitle ? (
+        <p className="mx-auto mt-1 max-w-md text-xs font-semibold leading-5 text-slate-500">
+          {subtitle}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+================================================================================
+FILE: apps/web/src/components/control-center/control-center-shell.tsx
+================================================================================
+"use client";
+
+import {
+  BarChart3,
+  Bell,
+  Building2,
+  CreditCard,
+  FileText,
+  LayoutDashboard,
+  LogOut,
+  Mail,
+  Menu,
+  Settings,
+  ShieldCheck,
+  Tag,
+  Users,
+} from "lucide-react";
+import { useRouter } from "next/navigation";
+import type { ReactNode } from "react";
+import { useState } from "react";
+import type { ControlCenterAdmin } from "../../lib/control-center-session";
+import { clearControlCenterAuth } from "../../lib/control-center-session";
+
+export type ControlCenterSection =
+  | "dashboard"
+  | "clients"
+  | "subscriptions"
+  | "payments"
+  | "pricing"
+  | "reports"
+  | "users"
+  | "messaging"
+  | "audit"
+  | "settings";
+
+const nav = [
+  { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { id: "clients", label: "Clients", icon: Users },
+  { id: "subscriptions", label: "Subscriptions", icon: Building2 },
+  { id: "payments", label: "Payments", icon: CreditCard },
+  { id: "pricing", label: "Pricing", icon: Tag },
+  { id: "reports", label: "Reports", icon: BarChart3 },
+  { id: "users", label: "Users", icon: Users },
+  { id: "messaging", label: "Messaging", icon: Mail },
+  { id: "audit", label: "Audit Logs", icon: FileText },
+  { id: "settings", label: "Settings", icon: Settings },
+] satisfies Array<{
+  id: ControlCenterSection;
+  label: string;
+  icon: typeof LayoutDashboard;
+}>;
+
+export function ControlCenterShell({
+  admin,
+  active,
+  onSectionChange,
+  children,
+}: {
+  admin: ControlCenterAdmin;
+  active: ControlCenterSection;
+  onSectionChange: (section: ControlCenterSection) => void;
+  children: ReactNode;
+}) {
+  const router = useRouter();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const now = new Date();
+  const dateLabel = now.toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  const timeLabel = now.toLocaleTimeString("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+  function logout() {
+    clearControlCenterAuth();
+    router.replace("/control-center/login");
+  }
+
+  return (
+    <main className="min-h-screen bg-[#f7f9fb] text-[var(--midnight-navy)]">
+      <aside className="fixed left-0 top-0 z-20 hidden h-screen w-[224px] border-r border-[#e2e8f0] bg-white xl:block">
+        <div className="flex h-full flex-col">
+          <div className="flex h-[70px] items-center gap-3 border-b border-[#edf1f5] px-6">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-[var(--forest-emerald)] text-lg font-black text-white">
+              R
+            </div>
+            <div>
+              <div className="text-xl font-black leading-none">Rembeh</div>
+              <div className="mt-1 text-xs font-semibold text-slate-500">
+                Control Center
+              </div>
+            </div>
+          </div>
+
+          <nav className="flex-1 space-y-1 px-3 py-8">
+            {nav.map((item) => {
+              const selected = item.id === active;
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onSectionChange(item.id)}
+                  className={`flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-bold transition ${
+                    selected
+                      ? "bg-[#edf8f1] text-[var(--forest-emerald)] shadow-[inset_3px_0_0_var(--forest-emerald)]"
+                      : "text-slate-700 hover:bg-slate-50"
+                  }`}
+                >
+                  <Icon className="size-4" />
+                  <span className="font-bold">{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          <div className="border-t border-[#edf1f5] p-4">
+            <div className="mb-4 flex items-center gap-3 rounded-xl border border-[#e2e8f0] bg-white p-3">
+              <div className="grid size-9 place-items-center rounded-full bg-[#eaf5ed] text-sm font-black text-[var(--forest-emerald)]">
+                {initials(admin.displayName)}
+              </div>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-black">
+                  {admin.displayName}
+                </div>
+                <div className="truncate text-xs font-semibold text-slate-500">
+                  Super Admin
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={logout}
+              className="flex h-10 items-center gap-3 px-2 text-sm font-bold text-slate-600 hover:text-[var(--coral-red)]"
+            >
+              <LogOut className="size-4" />
+              Log out
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <section className="xl:pl-[224px]">
+        <header className="sticky top-0 z-10 flex h-[70px] items-center justify-between border-b border-[#e2e8f0] bg-white px-5 xl:px-8">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen((current) => !current)}
+              className="grid size-9 place-items-center border border-[#e2e8f0] bg-white text-slate-600 xl:hidden"
+              aria-label="Open menu"
+            >
+              <Menu className="size-5" />
+            </button>
+            <ShieldCheck className="hidden size-5 text-[var(--forest-emerald)] xl:block" />
+          </div>
+          <div className="flex items-center gap-5">
+            <div className="relative">
+              <Bell className="size-5 text-slate-700" />
+              <span className="absolute -right-1.5 -top-2 grid size-4 place-items-center rounded-full bg-red-500 text-[10px] font-black text-white">
+                3
+              </span>
+            </div>
+            <div className="text-right text-xs font-bold text-slate-700">
+              <div>{dateLabel}</div>
+              <div className="mt-0.5 text-slate-500">{timeLabel}</div>
+            </div>
+          </div>
+        </header>
+
+        <div className="px-5 py-6 xl:px-8">{children}</div>
+      </section>
+
+      {mobileMenuOpen ? (
+        <div className="fixed inset-0 z-30 bg-slate-950/35 xl:hidden">
+          <div className="h-full w-[280px] bg-white shadow-2xl">
+            <div className="flex h-[70px] items-center justify-between border-b border-[#edf1f5] px-5">
+              <div className="flex items-center gap-3">
+                <div className="flex size-10 items-center justify-center rounded-xl bg-[var(--forest-emerald)] text-lg font-black text-white">
+                  R
+                </div>
+                <div>
+                  <div className="text-xl font-black leading-none">Rembeh</div>
+                  <div className="mt-1 text-xs font-semibold text-slate-500">
+                    Control Center
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="grid size-9 place-items-center border border-[#e2e8f0] text-slate-600"
+                onClick={() => setMobileMenuOpen(false)}
+                aria-label="Close menu"
+              >
+                <Menu className="size-5" />
+              </button>
+            </div>
+            <nav className="space-y-1 px-3 py-5">
+              {nav.map((item) => {
+                const selected = item.id === active;
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      onSectionChange(item.id);
+                      setMobileMenuOpen(false);
+                    }}
+                    className={`flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-bold transition ${
+                      selected
+                        ? "bg-[#edf8f1] text-[var(--forest-emerald)]"
+                        : "text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    <Icon className="size-4" />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+        </div>
+      ) : null}
+    </main>
+  );
+}
+
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "A";
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return `${parts[0]![0]}${parts[parts.length - 1]![0]}`.toUpperCase();
+}
+
+================================================================================
+FILE: apps/web/src/components/control-center/control-center-workspace.tsx
+================================================================================
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AppBootSkeleton } from "../app/skeleton";
+import { controlCenterFetch } from "../../lib/control-center-api";
+import {
+  clearControlCenterAuth,
+  isControlCenterSessionValid,
+  readControlCenterAuth,
+  type ControlCenterAdmin,
+  type ControlCenterSession,
+} from "../../lib/control-center-session";
+import { ControlCenterClientDetailSection } from "./client-detail-section";
+import { ControlCenterClientsSection } from "./clients-section";
+import {
+  ControlCenterSection,
+  ControlCenterShell,
+} from "./control-center-shell";
+import { ControlCenterDashboardSection } from "./dashboard-section";
+import { ControlCenterMessagingSection } from "./messaging-section";
+import { ControlCenterPricingHistorySection } from "./pricing-history-section";
+import { ControlCenterPricingSection } from "./pricing-section";
+import {
+  AuditSection,
+  PaymentsSection,
+  ReportsSection,
+  SettingsSection,
+  SubscriptionsSection,
+} from "./support-sections";
+import { ControlCenterUsersSection } from "./users-section";
+import type {
+  ControlCenterClient,
+  ControlCenterClientDetail,
+  ControlCenterClientsResponse,
+  ControlCenterDashboard,
+  ControlCenterPricing,
+  ControlCenterPricingHistory,
+  ControlCenterTemplate,
+  ControlCenterUser,
+} from "./types";
+
+type ClientMode = "LIST" | "DETAIL" | "PRICING" | "HISTORY";
+
+export function ControlCenterWorkspace() {
+  const router = useRouter();
+  const [session, setSession] = useState<ControlCenterSession | null>(null);
+  const [admin, setAdmin] = useState<ControlCenterAdmin | null>(null);
+  const [ready, setReady] = useState(false);
+  const [active, setActive] = useState<ControlCenterSection>("dashboard");
+  const [clientMode, setClientMode] = useState<ClientMode>("LIST");
+  const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
+  const [dashboard, setDashboard] = useState<ControlCenterDashboard | null>(
+    null,
+  );
+  const [clients, setClients] = useState<ControlCenterClientsResponse | null>(
+    null,
+  );
+  const [users, setUsers] = useState<ControlCenterUser[]>([]);
+  const [templates, setTemplates] = useState<ControlCenterTemplate[]>([]);
+  const [clientDetail, setClientDetail] =
+    useState<ControlCenterClientDetail | null>(null);
+  const [pricing, setPricing] = useState<ControlCenterPricing | null>(null);
+  const [pricingHistory, setPricingHistory] =
+    useState<ControlCenterPricingHistory | null>(null);
+  const [loadingClient, setLoadingClient] = useState(false);
+  const [loadingPricing, setLoadingPricing] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [savingPricing, setSavingPricing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const selectedClient = useMemo(
+    () =>
+      clients?.clients.find((client) => client.id === selectedClientId) ?? null,
+    [clients?.clients, selectedClientId],
+  );
+
+  const loadCore = useCallback(async (activeSession: ControlCenterSession) => {
+    const [dashboardData, clientsData, usersData, templatesData] =
+      await Promise.all([
+        controlCenterFetch<ControlCenterDashboard>("/dashboard", activeSession),
+        controlCenterFetch<ControlCenterClientsResponse>(
+          "/clients",
+          activeSession,
+        ),
+        controlCenterFetch<{ users: ControlCenterUser[] }>(
+          "/users",
+          activeSession,
+        ),
+        controlCenterFetch<{ templates: ControlCenterTemplate[] }>(
+          "/message-templates",
+          activeSession,
+        ),
+      ]);
+    setDashboard(dashboardData);
+    setClients(clientsData);
+    setUsers(usersData.users);
+    setTemplates(templatesData.templates);
+  }, []);
+
+  useEffect(() => {
+    const boot = window.setTimeout(() => {
+      void (async () => {
+        const auth = readControlCenterAuth();
+        if (
+          !auth.session ||
+          !auth.admin ||
+          !isControlCenterSessionValid(auth.session)
+        ) {
+          clearControlCenterAuth();
+          router.replace("/control-center/login");
+          return;
+        }
+        try {
+          await controlCenterFetch("/me", auth.session);
+          setSession(auth.session);
+          setAdmin(auth.admin);
+          await loadCore(auth.session);
+          setReady(true);
+        } catch (caughtError) {
+          clearControlCenterAuth();
+          setError(
+            caughtError instanceof Error
+              ? caughtError.message
+              : "Control center session failed.",
+          );
+          router.replace("/control-center/login");
+        }
+      })();
+    }, 0);
+    return () => window.clearTimeout(boot);
+  }, [loadCore, router]);
+
+  const loadClient = useCallback(
+    async (tenantId: string, activeSession = session) => {
+      if (!activeSession) return;
+      setLoadingClient(true);
+      setError(null);
+      try {
+        const detail = await controlCenterFetch<ControlCenterClientDetail>(
+          `/clients/${tenantId}`,
+          activeSession,
+        );
+        setClientDetail(detail);
+      } catch (caughtError) {
+        setError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Could not load client details.",
+        );
+      } finally {
+        setLoadingClient(false);
+      }
+    },
+    [session],
+  );
+
+  const loadPricing = useCallback(
+    async (tenantId: string, activeSession = session) => {
+      if (!activeSession) return;
+      setLoadingPricing(true);
+      setError(null);
+      try {
+        const data = await controlCenterFetch<ControlCenterPricing>(
+          `/clients/${tenantId}/pricing`,
+          activeSession,
+        );
+        setPricing(data);
+      } catch (caughtError) {
+        setError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Could not load pricing.",
+        );
+      } finally {
+        setLoadingPricing(false);
+      }
+    },
+    [session],
+  );
+
+  const loadHistory = useCallback(
+    async (tenantId: string, activeSession = session) => {
+      if (!activeSession) return;
+      setLoadingHistory(true);
+      setError(null);
+      try {
+        const data = await controlCenterFetch<ControlCenterPricingHistory>(
+          `/clients/${tenantId}/pricing-history`,
+          activeSession,
+        );
+        setPricingHistory(data);
+      } catch (caughtError) {
+        setError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Could not load pricing history.",
+        );
+      } finally {
+        setLoadingHistory(false);
+      }
+    },
+    [session],
+  );
+
+  function openClient(tenantId: string) {
+    if (!tenantId) return;
+    setSelectedClientId(tenantId);
+    setClientMode("DETAIL");
+    setActive("clients");
+    void loadClient(tenantId);
+  }
+
+  function openPricing(tenantId: string) {
+    if (!tenantId) return;
+    setSelectedClientId(tenantId);
+    setClientMode("PRICING");
+    setActive("clients");
+    void Promise.all([loadClient(tenantId), loadPricing(tenantId)]);
+  }
+
+  function openHistory(tenantId = selectedClientId ?? "") {
+    if (!tenantId) return;
+    setSelectedClientId(tenantId);
+    setClientMode("HISTORY");
+    setActive("clients");
+    void loadHistory(tenantId);
+  }
+
+  async function refreshAfterPricing() {
+    if (!session) return;
+    await Promise.all([
+      loadCore(session),
+      selectedClientId ? loadPricing(selectedClientId, session) : undefined,
+      selectedClientId ? loadHistory(selectedClientId, session) : undefined,
+      selectedClientId ? loadClient(selectedClientId, session) : undefined,
+    ]);
+  }
+
+  async function refreshUsers() {
+    if (!session) return;
+    const usersData = await controlCenterFetch<{ users: ControlCenterUser[] }>(
+      "/users",
+      session,
+    );
+    setUsers(usersData.users);
+  }
+
+  function changeSection(section: ControlCenterSection) {
+    setActive(section);
+    if (section !== "clients") {
+      setClientMode("LIST");
+    }
+  }
+
+  if (!ready || !session || !admin) {
+    return <AppBootSkeleton />;
+  }
+
+  return (
+    <ControlCenterShell
+      admin={admin}
+      active={active}
+      onSectionChange={changeSection}
+    >
+      {error ? (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+          {error}
+        </div>
+      ) : null}
+
+      {renderSection({
+        active,
+        clientMode,
+        dashboard,
+        clients,
+        users,
+        templates,
+        session,
+        selectedClient,
+        clientDetail,
+        pricing,
+        pricingHistory,
+        loadingClient,
+        loadingPricing,
+        loadingHistory,
+        savingPricing,
+        openClient,
+        openPricing,
+        openHistory,
+        setClientMode,
+        setSavingPricing,
+        refreshAfterPricing,
+        refreshUsers,
+        setActive,
+      })}
+    </ControlCenterShell>
+  );
+}
+
+function renderSection(input: {
+  active: ControlCenterSection;
+  clientMode: ClientMode;
+  dashboard: ControlCenterDashboard | null;
+  clients: ControlCenterClientsResponse | null;
+  users: ControlCenterUser[];
+  templates: ControlCenterTemplate[];
+  session: ControlCenterSession;
+  selectedClient: ControlCenterClient | null;
+  clientDetail: ControlCenterClientDetail | null;
+  pricing: ControlCenterPricing | null;
+  pricingHistory: ControlCenterPricingHistory | null;
+  loadingClient: boolean;
+  loadingPricing: boolean;
+  loadingHistory: boolean;
+  savingPricing: boolean;
+  openClient: (tenantId: string) => void;
+  openPricing: (tenantId: string) => void;
+  openHistory: (tenantId?: string) => void;
+  setClientMode: (mode: ClientMode) => void;
+  setSavingPricing: (saving: boolean) => void;
+  refreshAfterPricing: () => Promise<void>;
+  refreshUsers: () => Promise<void>;
+  setActive: (section: ControlCenterSection) => void;
+}) {
+  const clientRows = input.clients?.clients ?? [];
+
+  if (input.active === "dashboard") {
+    return (
+      <ControlCenterDashboardSection
+        dashboard={input.dashboard}
+        clients={clientRows}
+        onOpenClient={input.openClient}
+        onOpenUsers={() => input.setActive("users")}
+        onOpenPricing={() => input.setActive("pricing")}
+      />
+    );
+  }
+
+  if (input.active === "clients") {
+    if (input.clientMode === "DETAIL") {
+      return (
+        <ControlCenterClientDetailSection
+          detail={input.clientDetail}
+          loading={input.loadingClient}
+          onBack={() => input.setClientMode("LIST")}
+          onManagePricing={() => {
+            if (input.selectedClient)
+              input.openPricing(input.selectedClient.id);
+          }}
+          onPricingHistory={() => input.openHistory()}
+        />
+      );
+    }
+    if (input.clientMode === "PRICING") {
+      return (
+        <ControlCenterPricingSection
+          session={input.session}
+          client={input.selectedClient}
+          pricing={input.pricing}
+          loading={input.loadingPricing}
+          saving={input.savingPricing}
+          onBack={() => input.setClientMode("DETAIL")}
+          onHistory={() => input.openHistory()}
+          onSaved={input.refreshAfterPricing}
+          onSaveStateChange={input.setSavingPricing}
+        />
+      );
+    }
+    if (input.clientMode === "HISTORY") {
+      return (
+        <ControlCenterPricingHistorySection
+          client={input.selectedClient}
+          history={input.pricingHistory}
+          loading={input.loadingHistory}
+          onBack={() => input.setClientMode("PRICING")}
+        />
+      );
+    }
+    return (
+      <ControlCenterClientsSection
+        data={input.clients}
+        onOpenClient={input.openClient}
+        onOpenPricing={input.openPricing}
+      />
+    );
+  }
+
+  if (input.active === "pricing") {
+    return (
+      <ControlCenterClientsSection
+        data={input.clients}
+        onOpenClient={input.openClient}
+        onOpenPricing={input.openPricing}
+      />
+    );
+  }
+
+  if (input.active === "users") {
+    return (
+      <ControlCenterUsersSection
+        session={input.session}
+        users={input.users}
+        onUpdated={input.refreshUsers}
+      />
+    );
+  }
+
+  if (input.active === "messaging") {
+    return (
+      <ControlCenterMessagingSection
+        session={input.session}
+        clients={clientRows}
+        users={input.users}
+        templates={input.templates}
+      />
+    );
+  }
+
+  if (input.active === "subscriptions") {
+    return (
+      <SubscriptionsSection
+        clients={clientRows}
+        dashboard={input.dashboard}
+        onOpenClient={input.openClient}
+      />
+    );
+  }
+
+  if (input.active === "payments") {
+    return <PaymentsSection dashboard={input.dashboard} />;
+  }
+
+  if (input.active === "reports") {
+    return <ReportsSection dashboard={input.dashboard} clients={clientRows} />;
+  }
+
+  if (input.active === "audit") {
+    return <AuditSection dashboard={input.dashboard} />;
+  }
+
+  return <SettingsSection templates={input.templates} />;
+}
+
+================================================================================
+FILE: apps/web/src/components/control-center/dashboard-section.tsx
+================================================================================
+"use client";
+
+import {
+  Activity,
+  Building2,
+  CreditCard,
+  Landmark,
+  Lock,
+  Tags,
+  Users,
+} from "lucide-react";
+import type { ControlCenterClient, ControlCenterDashboard } from "./types";
+import {
+  EmptyState,
+  Panel,
+  SectionTitle,
+  StatCard,
+  StatusPill,
+} from "./control-center-primitives";
+import { ccDateTime, ccMoney, ccNumber, compactAction } from "./formatters";
+
+export function ControlCenterDashboardSection({
+  dashboard,
+  clients,
+  onOpenClient,
+  onOpenUsers,
+  onOpenPricing,
+}: {
+  dashboard: ControlCenterDashboard | null;
+  clients: ControlCenterClient[];
+  onOpenClient: (tenantId: string) => void;
+  onOpenUsers: () => void;
+  onOpenPricing: () => void;
+}) {
+  const stats = dashboard?.stats ?? {};
+  const topClients = [...clients]
+    .sort((a, b) => b.activeBranchCount - a.activeBranchCount)
+    .slice(0, 5);
+
+  return (
+    <>
+      <SectionTitle
+        title="Dashboard"
+        subtitle="Control live client organizations, pricing, users, subscriptions, and messaging from one place."
+      />
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          icon={Building2}
+          title="Total clients"
+          value={ccNumber(stats.totalClients)}
+          subtitle={`${ccNumber(stats.activeClients)} active organizations`}
+        />
+        <StatCard
+          icon={Landmark}
+          title="Branches"
+          value={ccNumber(stats.totalBranches)}
+          subtitle={`${ccNumber(stats.activeBranches)} active subscriptions`}
+          tone="blue"
+        />
+        <StatCard
+          icon={Tags}
+          title="Custom pricing"
+          value={ccNumber(stats.activePricingOverrides)}
+          subtitle="Active org and branch overrides"
+          tone="gold"
+        />
+        <StatCard
+          icon={CreditCard}
+          title="Collected revenue"
+          value={ccMoney(stats.completedRevenue)}
+          subtitle={`${ccNumber(stats.completedPayments)} completed payments`}
+          tone="purple"
+        />
+      </div>
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.5fr)_minmax(360px,0.9fr)]">
+        <Panel className="overflow-hidden">
+          <div className="flex items-center justify-between border-b border-[#e2e8f0] px-5 py-4">
+            <div>
+              <h2 className="font-black text-[var(--midnight-navy)]">
+                Client organizations
+              </h2>
+              <p className="mt-1 text-xs font-semibold text-slate-500">
+                Highest branch coverage first.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onOpenPricing}
+              className="btn btn-ghost h-9 normal-case"
+            >
+              Manage pricing
+            </button>
+          </div>
+          {topClients.length ? (
+            <div className="divide-y divide-[#edf2f7]">
+              {topClients.map((client) => (
+                <button
+                  key={client.id}
+                  type="button"
+                  onClick={() => onOpenClient(client.id)}
+                  className="grid w-full grid-cols-[minmax(0,1.4fr)_110px_110px_90px] items-center gap-4 px-5 py-4 text-left hover:bg-[#f5faf7]"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-black text-[var(--midnight-navy)]">
+                      {client.name}
+                    </span>
+                    <span className="mt-1 block truncate text-xs font-semibold text-slate-500">
+                      {client.ownerName ?? client.email ?? "No owner recorded"}
+                    </span>
+                  </span>
+                  <span className="text-sm font-black">
+                    {ccNumber(client.branchCount)}
+                    <span className="ml-1 text-xs font-semibold text-slate-500">
+                      branches
+                    </span>
+                  </span>
+                  <StatusPill
+                    value={
+                      client.pricingType === "CUSTOM"
+                        ? "Custom pricing"
+                        : "Default pricing"
+                    }
+                    tone={client.pricingType === "CUSTOM" ? "green" : "blue"}
+                  />
+                  <StatusPill value={client.status} />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="p-5">
+              <EmptyState title="No client organizations yet" />
+            </div>
+          )}
+        </Panel>
+
+        <div className="space-y-5">
+          <Panel className="p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-black">System attention</h2>
+                <p className="mt-1 text-xs font-semibold text-slate-500">
+                  Live counts from subscriptions and users.
+                </p>
+              </div>
+              <Activity className="size-5 text-[var(--forest-emerald)]" />
+            </div>
+            <div className="mt-4 grid gap-3">
+              <button
+                type="button"
+                onClick={onOpenUsers}
+                className="flex items-center justify-between rounded-lg border border-[#e2e8f0] bg-white px-3 py-3 text-left hover:bg-slate-50"
+              >
+                <span className="flex items-center gap-3">
+                  <Users className="size-4 text-blue-700" />
+                  <span className="text-sm font-bold">App users</span>
+                </span>
+                <span className="text-sm font-black">
+                  {ccNumber(stats.totalUsers)}
+                </span>
+              </button>
+              <div className="flex items-center justify-between rounded-lg border border-red-100 bg-red-50 px-3 py-3">
+                <span className="flex items-center gap-3">
+                  <Lock className="size-4 text-red-700" />
+                  <span className="text-sm font-bold text-red-800">
+                    Locked branches
+                  </span>
+                </span>
+                <span className="text-sm font-black text-red-800">
+                  {ccNumber(stats.lockedBranches)}
+                </span>
+              </div>
+            </div>
+          </Panel>
+
+          <Panel className="overflow-hidden">
+            <div className="border-b border-[#e2e8f0] px-5 py-4">
+              <h2 className="font-black">Recent control activity</h2>
+            </div>
+            {dashboard?.recentActivity.length ? (
+              <div className="divide-y divide-[#edf2f7]">
+                {dashboard.recentActivity.map((activity) => (
+                  <div key={activity.id} className="px-5 py-3">
+                    <p className="text-sm font-black">
+                      {compactAction(activity.action)}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      {activity.adminName} - {ccDateTime(activity.createdAt)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-5">
+                <EmptyState title="No control-center changes yet" />
+              </div>
+            )}
+          </Panel>
+        </div>
+      </div>
+    </>
+  );
+}
+
+================================================================================
+FILE: apps/web/src/components/control-center/formatters.ts
+================================================================================
+export function ccMoney(value: number | null | undefined, currency = "UGX") {
+  return `${currency} ${ccAmount(value)}`;
+}
+
+export function ccAmount(value: number | null | undefined) {
+  return Math.round(value ?? 0).toLocaleString("en-UG");
+}
+
+export function ccNumber(value: number | null | undefined) {
+  return Math.round(value ?? 0).toLocaleString("en-UG");
+}
+
+export function ccDate(value: string | null | undefined) {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(parsed);
+}
+
+export function ccDateTime(value: string | null | undefined) {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(parsed);
+}
+
+export function ccDateInputValue(value = new Date()) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+export function titleText(value: string | null | undefined) {
+  const text = value?.replace(/_/g, " ").trim();
+  if (!text) return "-";
+  return text
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+export function initials(name: string | null | undefined) {
+  const parts = (name ?? "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "R";
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return `${parts[0]![0]}${parts[parts.length - 1]![0]}`.toUpperCase();
+}
+
+export function compactAction(value: string) {
+  return titleText(value.replace(/^control_center\./, "").replace(/\./g, " "));
+}
+
+================================================================================
+FILE: apps/web/src/components/control-center/messaging-section.tsx
+================================================================================
+"use client";
+
+import { Mail, MessageSquareText, Send, UsersRound } from "lucide-react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { ControlCenterSession } from "../../lib/control-center-session";
+import { controlCenterFetch } from "../../lib/control-center-api";
+import type {
+  ControlCenterBranch,
+  ControlCenterClient,
+  ControlCenterClientDetail,
+  ControlCenterTemplate,
+  ControlCenterUser,
+} from "./types";
+import {
+  EmptyState,
+  Panel,
+  SectionTitle,
+  SelectControl,
+  StatCard,
+  StatusPill,
+} from "./control-center-primitives";
+import { ccNumber } from "./formatters";
+
+type SendResult = {
+  sent: number;
+  failed: number;
+  skipped: number;
+  logs: Array<{
+    id: string;
+    recipient: string;
+    status: string;
+    error: string | null;
+  }>;
+};
+
+const ROLE_CATEGORIES = [
+  { value: "ALL", label: "All roles", roleNames: [] },
+  { value: "OWNER", label: "Owners", roleNames: ["Account Owner"] },
+  { value: "MANAGER", label: "Managers", roleNames: ["Manager"] },
+  { value: "CASHIER", label: "Cashiers", roleNames: ["Cashier"] },
+  {
+    value: "FIELD_OFFICER",
+    label: "Field officers",
+    roleNames: ["Field Officer"],
+  },
+] as const;
+
+type RecipientMode = "AUDIENCE" | "SELECTED_USERS" | "DIRECT";
+
+export function ControlCenterMessagingSection({
+  session,
+  clients,
+  users,
+  templates,
+}: {
+  session: ControlCenterSession;
+  clients: ControlCenterClient[];
+  users: ControlCenterUser[];
+  templates: ControlCenterTemplate[];
+}) {
+  const [channel, setChannel] = useState<"EMAIL" | "SMS">("EMAIL");
+  const [recipientMode, setRecipientMode] = useState<RecipientMode>("AUDIENCE");
+  const [tenantId, setTenantId] = useState("");
+  const [branchId, setBranchId] = useState("");
+  const [audience, setAudience] = useState("TENANT_USERS");
+  const [roleCategory, setRoleCategory] = useState("ALL");
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [templateCode, setTemplateCode] = useState("");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [recipients, setRecipients] = useState("");
+  const [branchOptions, setBranchOptions] = useState<ControlCenterBranch[]>([]);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<SendResult | null>(null);
+
+  const channelTemplates = useMemo(
+    () => templates.filter((template) => template.channel === channel),
+    [channel, templates],
+  );
+  const selectedRoleCategory = ROLE_CATEGORIES.find(
+    (category) => category.value === roleCategory,
+  );
+  const selectableUsers = useMemo(
+    () =>
+      users.filter((user) => {
+        if (tenantId && user.tenant.id !== tenantId) return false;
+        if (branchId && user.branch?.id !== branchId) return false;
+        if (
+          roleCategory !== "ALL" &&
+          !userMatchesRoleCategory(user, roleCategory)
+        ) {
+          return false;
+        }
+        if (channel === "EMAIL") return Boolean(user.email);
+        return Boolean(user.phone);
+      }),
+    [branchId, channel, roleCategory, tenantId, users],
+  );
+  const selectedUsers = useMemo(() => {
+    const selected = new Set(selectedUserIds);
+    return selectableUsers.filter((user) => selected.has(user.id));
+  }, [selectableUsers, selectedUserIds]);
+
+  useEffect(() => {
+    const selected = channelTemplates.find(
+      (template) => template.code === templateCode,
+    );
+    if (!selected) return;
+    setSubject(selected.subject ?? "");
+    setBody(selected.body);
+  }, [channelTemplates, templateCode]);
+
+  useEffect(() => {
+    if (!tenantId) {
+      setBranchOptions([]);
+      setBranchId("");
+      return;
+    }
+    let cancelled = false;
+    void controlCenterFetch<ControlCenterClientDetail>(
+      `/clients/${tenantId}`,
+      session,
+    )
+      .then((detail) => {
+        if (cancelled) return;
+        setBranchOptions(detail.branches);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setBranchOptions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, tenantId]);
+
+  useEffect(() => {
+    setSelectedUserIds((current) =>
+      current.filter((id) => selectableUsers.some((user) => user.id === id)),
+    );
+  }, [selectableUsers]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSending(true);
+    setError(null);
+    setResult(null);
+    try {
+      const directRecipients = recipients
+        .split(/[,\n]/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+      const directMode = recipientMode === "DIRECT";
+      const selectedMode = recipientMode === "SELECTED_USERS";
+      const payload = {
+        channel,
+        templateCode: templateCode || undefined,
+        tenantId: directMode ? undefined : tenantId || undefined,
+        branchId: directMode || !branchId ? undefined : branchId,
+        audience: directMode
+          ? undefined
+          : selectedMode
+            ? "SELECTED_USERS"
+            : audience,
+        userIds: selectedMode
+          ? selectedUsers.map((user) => user.id)
+          : undefined,
+        roleNames:
+          !directMode && selectedRoleCategory?.roleNames.length
+            ? selectedRoleCategory.roleNames
+            : undefined,
+        subject: channel === "EMAIL" ? subject : undefined,
+        body,
+        recipients:
+          directMode && directRecipients.length ? directRecipients : undefined,
+      };
+      const response = await controlCenterFetch<SendResult>(
+        "/messages/send",
+        session,
+        {
+          method: "POST",
+          body: JSON.stringify(payload),
+        },
+      );
+      setResult(response);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Could not send message.",
+      );
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <>
+      <SectionTitle
+        title="Messaging"
+        subtitle="Send email or SMS campaigns to direct recipients, client owners, branch users, or whole organizations."
+      />
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          icon={Mail}
+          title="Email templates"
+          value={ccNumber(
+            templates.filter((item) => item.channel === "EMAIL").length,
+          )}
+          subtitle="Ready to send"
+        />
+        <StatCard
+          icon={MessageSquareText}
+          title="SMS templates"
+          value={ccNumber(
+            templates.filter((item) => item.channel === "SMS").length,
+          )}
+          subtitle="Short message templates"
+          tone="blue"
+        />
+        <StatCard
+          icon={UsersRound}
+          title="Clients"
+          value={ccNumber(clients.length)}
+          subtitle="Selectable audiences"
+          tone="gold"
+        />
+        <StatCard
+          icon={Send}
+          title="Last result"
+          value={ccNumber(result?.sent)}
+          subtitle={
+            result
+              ? `${result.failed} failed, ${result.skipped} skipped`
+              : "No send yet"
+          }
+          tone="purple"
+        />
+      </div>
+
+      <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.3fr)_360px]">
+        <Panel className="p-5">
+          <form className="space-y-4" onSubmit={submit}>
+            <div className="grid gap-4 md:grid-cols-3">
+              <label className="block">
+                <span className="mb-2 block text-xs font-black">Channel</span>
+                <SelectControl
+                  value={channel}
+                  onChange={(value) => {
+                    setChannel(value as "EMAIL" | "SMS");
+                    setTemplateCode("");
+                    setSubject("");
+                    setBody("");
+                  }}
+                  ariaLabel="Channel"
+                  className="w-full"
+                  options={[
+                    { value: "EMAIL", label: "Email" },
+                    { value: "SMS", label: "SMS" },
+                  ]}
+                />
+              </label>
+              <label className="block md:col-span-2">
+                <span className="mb-2 block text-xs font-black">Template</span>
+                <SelectControl
+                  value={templateCode}
+                  onChange={setTemplateCode}
+                  ariaLabel="Template"
+                  className="w-full"
+                  options={[
+                    { value: "", label: "Custom message" },
+                    ...channelTemplates.map((template) => ({
+                      value: template.code,
+                      label: template.name,
+                    })),
+                  ]}
+                />
+              </label>
+            </div>
+
+            <div
+              className={`grid gap-4 ${
+                recipientMode === "DIRECT" ? "md:grid-cols-3" : "md:grid-cols-5"
+              }`}
+            >
+              <label className="block">
+                <span className="mb-2 block text-xs font-black">Source</span>
+                <SelectControl
+                  value={recipientMode}
+                  onChange={(value) => setRecipientMode(value as RecipientMode)}
+                  ariaLabel="Recipient source"
+                  className="w-full"
+                  options={[
+                    { value: "AUDIENCE", label: "Client audience" },
+                    { value: "SELECTED_USERS", label: "Selected users" },
+                    { value: "DIRECT", label: "Direct contacts" },
+                  ]}
+                />
+              </label>
+              {recipientMode !== "DIRECT" ? (
+                <>
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-black">
+                      Client
+                    </span>
+                    <SelectControl
+                      value={tenantId}
+                      onChange={(value) => {
+                        setTenantId(value);
+                        setBranchId("");
+                      }}
+                      ariaLabel="Client organization"
+                      className="w-full"
+                      options={[
+                        { value: "", label: "All clients" },
+                        ...clients.map((client) => ({
+                          value: client.id,
+                          label: client.name,
+                        })),
+                      ]}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-black">
+                      Audience
+                    </span>
+                    <SelectControl
+                      value={audience}
+                      onChange={setAudience}
+                      ariaLabel="Audience"
+                      className="w-full"
+                      options={[
+                        { value: "TENANT_USERS", label: "All client users" },
+                        { value: "TENANT_OWNERS", label: "Client owners" },
+                        { value: "BRANCH_USERS", label: "Branch users" },
+                      ]}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-black">
+                      Branch
+                    </span>
+                    <SelectControl
+                      value={branchId}
+                      onChange={setBranchId}
+                      ariaLabel="Branch"
+                      className="w-full"
+                      options={[
+                        { value: "", label: "All branches" },
+                        ...branchOptions.map((branch) => ({
+                          value: branch.id,
+                          label: branch.name,
+                        })),
+                      ]}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-black">
+                      Category
+                    </span>
+                    <SelectControl
+                      value={roleCategory}
+                      onChange={setRoleCategory}
+                      ariaLabel="Role category"
+                      className="w-full"
+                      options={ROLE_CATEGORIES.map((category) => ({
+                        value: category.value,
+                        label: category.label,
+                      }))}
+                    />
+                  </label>
+                </>
+              ) : null}
+            </div>
+
+            {recipientMode === "DIRECT" ? (
+              <label className="block">
+                <span className="mb-2 block text-xs font-black">
+                  Direct recipients
+                </span>
+                <textarea
+                  value={recipients}
+                  onChange={(event) => setRecipients(event.target.value)}
+                  rows={3}
+                  placeholder={
+                    channel === "EMAIL"
+                      ? "name@example.com, another@example.com"
+                      : "+256700000000, +256701000000"
+                  }
+                  className="w-full resize-none rounded-lg border border-[#e2e8f0] bg-white px-3 py-2 text-sm font-semibold outline-none placeholder:text-slate-400 focus:border-[var(--forest-emerald)]"
+                />
+              </label>
+            ) : null}
+
+            {recipientMode === "SELECTED_USERS" ? (
+              <div className="rounded-xl border border-[#e2e8f0] bg-[#f8fbfa]">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e2e8f0] px-4 py-3">
+                  <div>
+                    <p className="text-sm font-black">Choose people</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      {selectedUsers.length} selected from{" "}
+                      {selectableUsers.length} matching users
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-ghost h-8 normal-case"
+                    onClick={() =>
+                      setSelectedUserIds(
+                        selectableUsers.length > 0 &&
+                          selectedUsers.length === selectableUsers.length
+                          ? []
+                          : selectableUsers.map((user) => user.id),
+                      )
+                    }
+                  >
+                    {selectableUsers.length > 0 &&
+                    selectedUsers.length === selectableUsers.length
+                      ? "Clear"
+                      : "Select all"}
+                  </button>
+                </div>
+                <div className="max-h-72 divide-y divide-[#edf2f7] overflow-y-auto">
+                  {selectableUsers.length ? (
+                    selectableUsers.map((user) => (
+                      <label
+                        key={user.id}
+                        className="flex cursor-pointer items-center gap-3 px-4 py-3 hover:bg-white"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedUserIds.includes(user.id)}
+                          onChange={(event) => {
+                            setSelectedUserIds((current) =>
+                              event.target.checked
+                                ? [...new Set([...current, user.id])]
+                                : current.filter((id) => id !== user.id),
+                            );
+                          }}
+                          className="size-4 accent-[var(--forest-emerald)]"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-black">
+                            {user.name}
+                          </span>
+                          <span className="mt-0.5 block truncate text-xs font-semibold text-slate-500">
+                            {channel === "EMAIL" ? user.email : user.phone} -{" "}
+                            {user.tenant.name}
+                            {user.branch ? ` / ${user.branch.name}` : ""}
+                          </span>
+                        </span>
+                        <StatusPill
+                          value={user.roles[0] ?? "User"}
+                          tone="slate"
+                        />
+                      </label>
+                    ))
+                  ) : (
+                    <div className="px-4 py-6">
+                      <EmptyState title="No users match these filters" />
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
+            {channel === "EMAIL" ? (
+              <label className="block">
+                <span className="mb-2 block text-xs font-black">Subject</span>
+                <input
+                  value={subject}
+                  onChange={(event) => setSubject(event.target.value)}
+                  required
+                  maxLength={200}
+                  className="h-10 w-full rounded-lg border border-[#e2e8f0] px-3 text-sm font-semibold outline-none focus:border-[var(--forest-emerald)]"
+                />
+              </label>
+            ) : null}
+
+            <label className="block">
+              <span className="mb-2 block text-xs font-black">Message</span>
+              <textarea
+                value={body}
+                onChange={(event) => setBody(event.target.value)}
+                rows={9}
+                required
+                minLength={2}
+                maxLength={1600}
+                className="w-full resize-none rounded-lg border border-[#e2e8f0] bg-white px-3 py-3 text-sm font-semibold leading-6 outline-none focus:border-[var(--forest-emerald)]"
+              />
+            </label>
+
+            {error ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+                {error}
+              </div>
+            ) : null}
+
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={sending}
+                className="btn btn-primary h-10 normal-case"
+              >
+                <Send className="size-4" />
+                {sending ? "Sending..." : `Send ${channel}`}
+              </button>
+            </div>
+          </form>
+        </Panel>
+
+        <Panel className="overflow-hidden">
+          <div className="border-b border-[#e2e8f0] px-5 py-4">
+            <h2 className="font-black">Send result</h2>
+          </div>
+          {result ? (
+            <div className="divide-y divide-[#edf2f7]">
+              <div className="grid grid-cols-3 gap-2 px-5 py-4 text-center">
+                <ResultMetric label="Sent" value={result.sent} tone="green" />
+                <ResultMetric label="Failed" value={result.failed} tone="red" />
+                <ResultMetric
+                  label="Skipped"
+                  value={result.skipped}
+                  tone="slate"
+                />
+              </div>
+              {result.logs.slice(0, 20).map((log) => (
+                <div key={log.id} className="px-5 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="truncate text-sm font-black">
+                      {log.recipient}
+                    </p>
+                    <StatusPill value={log.status} />
+                  </div>
+                  {log.error ? (
+                    <p className="mt-1 text-xs font-semibold text-red-700">
+                      {log.error}
+                    </p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-5">
+              <EmptyState
+                title="No message sent yet"
+                subtitle="Results and provider errors appear here after sending."
+              />
+            </div>
+          )}
+        </Panel>
+      </div>
+    </>
+  );
+}
+
+function ResultMetric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number;
+  tone: "green" | "red" | "slate";
+}) {
+  const toneClass =
+    tone === "green"
+      ? "text-[var(--forest-emerald)]"
+      : tone === "red"
+        ? "text-red-700"
+        : "text-slate-600";
+  return (
+    <div>
+      <p className={`text-xl font-black ${toneClass}`}>{ccNumber(value)}</p>
+      <p className="mt-1 text-xs font-bold text-slate-500">{label}</p>
+    </div>
+  );
+}
+
+function userMatchesRoleCategory(user: ControlCenterUser, category: string) {
+  const aliases: Record<string, string[]> = {
+    OWNER: ["Account Owner", "Owner"],
+    MANAGER: ["Manager", "Branch Manager"],
+    CASHIER: ["Cashier"],
+    FIELD_OFFICER: ["Field Officer", "Field Agent", "Agent", "Loan Officer"],
+  };
+  const accepted = aliases[category];
+  if (!accepted) return true;
+  return user.roles.some((role) => accepted.includes(role));
+}
+
+================================================================================
+FILE: apps/web/src/components/control-center/pricing-history-section.tsx
+================================================================================
+"use client";
+
+import { ArrowLeft, Download, History, Search } from "lucide-react";
+import { useMemo, useState } from "react";
+import type { ControlCenterClient, ControlCenterPricingHistory } from "./types";
+import {
+  EmptyState,
+  Panel,
+  SectionTitle,
+  SelectControl,
+  StatusPill,
+} from "./control-center-primitives";
+import { ccDate, ccDateTime, ccMoney } from "./formatters";
+
+export function ControlCenterPricingHistorySection({
+  client,
+  history,
+  loading,
+  onBack,
+}: {
+  client: ControlCenterClient | null;
+  history: ControlCenterPricingHistory | null;
+  loading: boolean;
+  onBack: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [scope, setScope] = useState("ALL");
+
+  const rows = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return (history?.history ?? []).filter((row) => {
+      const matchesScope = scope === "ALL" || row.scope === scope;
+      const matchesSearch =
+        !needle ||
+        [
+          row.reason,
+          row.changedBy,
+          row.planName,
+          row.planCode,
+          row.branch?.name,
+        ].some((value) => (value ?? "").toLowerCase().includes(needle));
+      return matchesScope && matchesSearch;
+    });
+  }, [history?.history, query, scope]);
+
+  function exportCsv() {
+    const header = [
+      "Date",
+      "Scope",
+      "Branch",
+      "Plan",
+      "Old amount",
+      "New amount",
+      "Currency",
+      "Effective from",
+      "Effective until",
+      "Changed by",
+      "Reason",
+    ];
+    const lines = rows.map((row) =>
+      [
+        row.createdAt,
+        row.scope,
+        row.branch?.name ?? "",
+        row.planName,
+        row.oldAmount,
+        row.newAmount,
+        row.currency,
+        row.effectiveFrom,
+        row.effectiveUntil ?? "",
+        row.changedBy,
+        row.reason,
+      ]
+        .map((value) => `"${String(value).replace(/"/g, '""')}"`)
+        .join(","),
+    );
+    const blob = new Blob([[header.join(","), ...lines].join("\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${client?.name ?? "client"}-pricing-history.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onBack}
+        className="mb-4 inline-flex items-center gap-2 text-sm font-black text-[var(--midnight-navy)]"
+      >
+        <ArrowLeft className="size-4" />
+        Back to pricing
+      </button>
+
+      <SectionTitle
+        title="Pricing History"
+        subtitle={
+          client
+            ? `View all pricing changes for ${client.name} and its branches.`
+            : "View pricing changes."
+        }
+        action={
+          <button
+            type="button"
+            onClick={exportCsv}
+            disabled={!rows.length}
+            className="btn btn-ghost h-10 normal-case"
+          >
+            <Download className="size-4" />
+            Export
+          </button>
+        }
+      />
+
+      <Panel className="mb-5 p-4">
+        <div className="flex items-center gap-3">
+          <span className="grid size-12 place-items-center rounded-xl bg-emerald-50 text-[var(--forest-emerald)]">
+            <History className="size-5" />
+          </span>
+          <div>
+            <p className="text-sm font-black">
+              {client?.name ?? "Client organization"}
+            </p>
+            <p className="mt-1 text-xs font-semibold text-slate-500">
+              {rows.length} pricing records
+            </p>
+          </div>
+          <div className="ml-auto">
+            <StatusPill value={client?.status ?? "Active"} />
+          </div>
+        </div>
+      </Panel>
+
+      <Panel className="overflow-hidden">
+        <div className="flex flex-wrap gap-3 border-b border-[#e2e8f0] p-4">
+          <label className="flex h-10 min-w-[260px] flex-1 items-center gap-2 rounded-lg border border-[#e2e8f0] bg-white px-3">
+            <Search className="size-4 text-slate-400" />
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search by admin, plan or reason..."
+              className="min-w-0 flex-1 text-sm font-semibold outline-none placeholder:text-slate-400"
+            />
+          </label>
+          <SelectControl
+            value={scope}
+            onChange={setScope}
+            ariaLabel="Scope"
+            options={[
+              { value: "ALL", label: "All scopes" },
+              { value: "ORGANIZATION", label: "Organization" },
+              { value: "BRANCH", label: "Branch override" },
+            ]}
+          />
+        </div>
+
+        {loading ? (
+          <div className="p-5">
+            <div className="h-56 animate-pulse rounded-xl bg-slate-100" />
+          </div>
+        ) : rows.length ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-[1100px] w-full text-left">
+              <thead className="bg-[#f2f6f8] text-xs font-black text-slate-600">
+                <tr>
+                  <th className="px-4 py-3">Date & time</th>
+                  <th className="px-4 py-3">Scope</th>
+                  <th className="px-4 py-3">Plan</th>
+                  <th className="px-4 py-3">Changed</th>
+                  <th className="px-4 py-3">Effective</th>
+                  <th className="px-4 py-3">Changed by</th>
+                  <th className="px-4 py-3">Reason</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#edf2f7] text-sm">
+                {rows.map((row) => (
+                  <tr key={row.id}>
+                    <td className="px-4 py-4 font-bold">
+                      {ccDateTime(row.createdAt)}
+                    </td>
+                    <td className="px-4 py-4">
+                      <StatusPill
+                        value={
+                          row.scope === "ORGANIZATION"
+                            ? "Organization"
+                            : "Branch override"
+                        }
+                        tone={row.scope === "ORGANIZATION" ? "green" : "blue"}
+                      />
+                      {row.branch ? (
+                        <p className="mt-1 text-xs font-semibold text-blue-700">
+                          {row.branch.name}
+                        </p>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="font-black">{row.planName}</p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">
+                        {row.interval.toLowerCase().replace(/_/g, " ")}
+                      </p>
+                    </td>
+                    <td className="px-4 py-4 font-black">
+                      {ccMoney(row.oldAmount, row.currency)}
+                      {" -> "}
+                      <span className="text-[var(--forest-emerald)]">
+                        {ccMoney(row.newAmount, row.currency)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="font-bold">{ccDate(row.effectiveFrom)}</p>
+                      <p className="mt-1 text-xs font-semibold text-slate-500">
+                        {row.effectiveUntil
+                          ? `Until ${ccDate(row.effectiveUntil)}`
+                          : "No expiry"}
+                      </p>
+                    </td>
+                    <td className="px-4 py-4 font-bold">{row.changedBy}</td>
+                    <td className="px-4 py-4 text-xs font-semibold leading-5 text-slate-600">
+                      {row.reason}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="p-5">
+            <EmptyState title="No pricing changes match the current filters" />
+          </div>
+        )}
+      </Panel>
+    </>
+  );
+}
+
+================================================================================
+FILE: apps/web/src/components/control-center/pricing-section.tsx
+================================================================================
+"use client";
+
+import {
+  ArrowLeft,
+  CalendarDays,
+  Check,
+  History,
+  Info,
+  Landmark,
+  RotateCcw,
+  Tags,
+} from "lucide-react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import type { ControlCenterSession } from "../../lib/control-center-session";
+import { controlCenterFetch } from "../../lib/control-center-api";
+import type {
+  ControlCenterClient,
+  ControlCenterPricing,
+  ControlCenterPriceRow,
+} from "./types";
+import {
+  EmptyState,
+  IconBadge,
+  Panel,
+  SectionTitle,
+  SelectControl,
+  StatusPill,
+} from "./control-center-primitives";
+import { ccDateInputValue, ccMoney } from "./formatters";
+
+type PricingScope = "ORGANIZATION" | "BRANCH";
+type PricingSaveResponse = {
+  notification?: {
+    recipients: number;
+    delivered: boolean;
+    error: string | null;
+  };
+};
+
+export function ControlCenterPricingSection({
+  session,
+  client,
+  pricing,
+  loading,
+  saving,
+  onBack,
+  onHistory,
+  onSaved,
+  onSaveStateChange,
+}: {
+  session: ControlCenterSession;
+  client: ControlCenterClient | null;
+  pricing: ControlCenterPricing | null;
+  loading: boolean;
+  saving: boolean;
+  onBack: () => void;
+  onHistory: () => void;
+  onSaved: () => Promise<void>;
+  onSaveStateChange: (saving: boolean) => void;
+}) {
+  const [scope, setScope] = useState<PricingScope>("ORGANIZATION");
+  const [branchId, setBranchId] = useState("");
+  const [amounts, setAmounts] = useState<Record<string, string>>({});
+  const [effectiveFrom, setEffectiveFrom] = useState(ccDateInputValue());
+  const [effectiveUntil, setEffectiveUntil] = useState("");
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const activeRows = useMemo(() => {
+    if (!pricing) return [];
+    if (scope === "ORGANIZATION") return pricing.organization;
+    const selected =
+      pricing.branchOverrides.find((row) => row.branch.id === branchId) ??
+      pricing.branchOverrides[0];
+    return selected?.prices ?? [];
+  }, [branchId, pricing, scope]);
+
+  useEffect(() => {
+    if (!pricing) return;
+    if (!branchId && pricing.branches[0]) {
+      setBranchId(pricing.branches[0].id);
+    }
+  }, [branchId, pricing]);
+
+  useEffect(() => {
+    const next: Record<string, string> = {};
+    for (const row of activeRows) {
+      next[row.plan.code] = String(row.effectiveAmount);
+    }
+    setAmounts(next);
+  }, [activeRows]);
+
+  if (!client) {
+    return (
+      <>
+        <SectionTitle
+          title="Pricing"
+          subtitle="Select a client organization before adjusting custom subscription prices."
+        />
+        <EmptyState
+          title="No client selected"
+          subtitle="Open the Clients section and choose Manage pricing for an organization."
+        />
+      </>
+    );
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!pricing) return;
+    setError(null);
+    setSuccess(null);
+    onSaveStateChange(true);
+    try {
+      const prices = pricing.plans.map((plan) => ({
+        planCode: plan.code,
+        amount: Number(amounts[plan.code] ?? plan.amount),
+      }));
+      const path =
+        scope === "ORGANIZATION"
+          ? `/clients/${client!.id}/pricing`
+          : `/clients/${client!.id}/branches/${branchId}/pricing`;
+      const response = await controlCenterFetch<PricingSaveResponse>(
+        path,
+        session,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            prices,
+            effectiveFrom: dateToIso(effectiveFrom),
+            effectiveUntil: effectiveUntil
+              ? dateToIso(effectiveUntil)
+              : undefined,
+            reason,
+          }),
+        },
+      );
+      const notificationCopy = response.notification
+        ? response.notification.delivered
+          ? ` ${response.notification.recipients} owner/manager email recipient(s) notified.`
+          : response.notification.error
+            ? ` Pricing saved, but email notification failed: ${response.notification.error}`
+            : " Pricing saved, but no owner/manager email recipients were found."
+        : "";
+      setSuccess(
+        `${
+          scope === "ORGANIZATION"
+            ? "Organization pricing saved."
+            : "Branch pricing saved."
+        }${notificationCopy}`,
+      );
+      await onSaved();
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Could not save pricing.",
+      );
+    } finally {
+      onSaveStateChange(false);
+    }
+  }
+
+  const selectedBranch = pricing?.branches.find(
+    (branch) => branch.id === branchId,
+  );
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onBack}
+        className="mb-4 inline-flex items-center gap-2 text-sm font-black text-[var(--midnight-navy)]"
+      >
+        <ArrowLeft className="size-4" />
+        Back to client details
+      </button>
+
+      <SectionTitle
+        title="Manage Pricing"
+        subtitle={`${client.name} - ${client.branchCount} branches`}
+        action={
+          <button
+            type="button"
+            onClick={onHistory}
+            className="btn btn-ghost h-10 normal-case"
+          >
+            <History className="size-4" />
+            Pricing history
+          </button>
+        }
+      />
+
+      {loading || !pricing ? (
+        <Panel className="p-8">
+          <div className="h-64 animate-pulse rounded-xl bg-slate-100" />
+        </Panel>
+      ) : (
+        <form className="space-y-5" onSubmit={submit}>
+          <Panel className="p-5">
+            <h2 className="text-sm font-black">Pricing scope</h2>
+            <p className="mt-1 text-xs font-semibold text-slate-500">
+              Choose how this pricing should apply.
+            </p>
+            <div className="mt-4 grid gap-4 xl:grid-cols-2">
+              <ScopeButton
+                selected={scope === "ORGANIZATION"}
+                title="Organization (all branches)"
+                subtitle="Applies to all branches except branch-specific overrides."
+                icon={Landmark}
+                onClick={() => setScope("ORGANIZATION")}
+              />
+              <ScopeButton
+                selected={scope === "BRANCH"}
+                title="Specific branch"
+                subtitle="Sets pricing for one branch and overrides organization pricing."
+                icon={Tags}
+                onClick={() => setScope("BRANCH")}
+              />
+            </div>
+          </Panel>
+
+          {scope === "BRANCH" ? (
+            <Panel className="grid gap-5 p-5 xl:grid-cols-[minmax(260px,380px)_minmax(0,1fr)]">
+              <div>
+                <label className="block">
+                  <span className="mb-2 block text-xs font-black text-[var(--midnight-navy)]">
+                    Branch
+                  </span>
+                  <SelectControl
+                    value={branchId}
+                    onChange={setBranchId}
+                    ariaLabel="Branch"
+                    className="w-full"
+                    options={pricing.branches.map((branch) => ({
+                      value: branch.id,
+                      label: `${branch.name} - ${branch.address}`,
+                    }))}
+                  />
+                </label>
+              </div>
+              <div className="flex items-start gap-3 rounded-lg bg-emerald-50 px-4 py-3 text-sm font-semibold leading-5 text-[var(--forest-emerald)]">
+                <Info className="mt-0.5 size-4 shrink-0" />
+                This pricing will override the organization price and apply only
+                to {selectedBranch?.name ?? "the selected branch"}.
+              </div>
+            </Panel>
+          ) : null}
+
+          <Panel className="overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e2e8f0] px-5 py-4">
+              <div>
+                <h2 className="font-black">
+                  {scope === "ORGANIZATION"
+                    ? "Custom organization pricing"
+                    : `Custom pricing for ${selectedBranch?.name ?? "branch"}`}
+                </h2>
+                <p className="mt-1 text-xs font-semibold text-slate-500">
+                  Prices saved for today apply to new checkout immediately.
+                  Future dates are scheduled and stay visible here.
+                </p>
+              </div>
+              <StatusPill
+                value={
+                  scope === "ORGANIZATION"
+                    ? `Applies to ${client.branchCount} branches`
+                    : "Overrides organization pricing"
+                }
+              />
+            </div>
+            <div className="overflow-x-auto">
+              <table className="min-w-[860px] w-full text-left">
+                <thead className="bg-[#f2f6f8] text-xs font-black text-slate-600">
+                  <tr>
+                    <th className="px-5 py-3">Subscription plan</th>
+                    {scope === "BRANCH" ? (
+                      <th className="px-5 py-3">Organization price</th>
+                    ) : null}
+                    <th className="px-5 py-3">Standard price</th>
+                    <th className="px-5 py-3">Custom price</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#edf2f7]">
+                  {activeRows.map((row) => (
+                    <PricingRow
+                      key={row.plan.code}
+                      row={row}
+                      amount={amounts[row.plan.code] ?? ""}
+                      scope={scope}
+                      onAmountChange={(value) =>
+                        setAmounts((current) => ({
+                          ...current,
+                          [row.plan.code]: value,
+                        }))
+                      }
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Panel>
+
+          <Panel className="p-5">
+            <div className="grid gap-4 xl:grid-cols-[240px_240px_minmax(0,1fr)]">
+              <label className="block">
+                <span className="mb-2 block text-xs font-black">
+                  Effective from
+                </span>
+                <span className="relative block">
+                  <CalendarDays className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="date"
+                    value={effectiveFrom}
+                    onChange={(event) => setEffectiveFrom(event.target.value)}
+                    required
+                    className="h-10 w-full rounded-lg border border-[#e2e8f0] bg-white pl-10 pr-3 text-sm font-bold outline-none focus:border-[var(--forest-emerald)]"
+                  />
+                </span>
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-xs font-black">
+                  Effective until
+                </span>
+                <input
+                  type="date"
+                  value={effectiveUntil}
+                  onChange={(event) => setEffectiveUntil(event.target.value)}
+                  className="h-10 w-full rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm font-bold outline-none focus:border-[var(--forest-emerald)]"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-2 block text-xs font-black">
+                  Reason for change
+                </span>
+                <input
+                  value={reason}
+                  onChange={(event) => setReason(event.target.value)}
+                  minLength={3}
+                  maxLength={500}
+                  required
+                  placeholder="Agreed pricing for client rollout"
+                  className="h-10 w-full rounded-lg border border-[#e2e8f0] bg-white px-3 text-sm font-semibold outline-none placeholder:text-slate-400 focus:border-[var(--forest-emerald)]"
+                />
+              </label>
+            </div>
+            {error ? (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+                {error}
+              </div>
+            ) : null}
+            {success ? (
+              <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-[var(--forest-emerald)]">
+                {success}
+              </div>
+            ) : null}
+          </Panel>
+
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                const reset: Record<string, string> = {};
+                for (const row of activeRows) {
+                  reset[row.plan.code] = String(row.effectiveAmount);
+                }
+                setAmounts(reset);
+                setReason("");
+              }}
+              className="btn btn-ghost h-10 normal-case"
+            >
+              <RotateCcw className="size-4" />
+              Reset
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="btn btn-primary h-10 normal-case"
+            >
+              <Check className="size-4" />
+              {saving
+                ? "Saving..."
+                : scope === "ORGANIZATION"
+                  ? "Save pricing"
+                  : "Save branch pricing"}
+            </button>
+          </div>
+        </form>
+      )}
+    </>
+  );
+}
+
+function ScopeButton({
+  selected,
+  title,
+  subtitle,
+  icon,
+  onClick,
+}: {
+  selected: boolean;
+  title: string;
+  subtitle: string;
+  icon: typeof Landmark;
+  onClick: () => void;
+}) {
+  const Icon = icon;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex items-start gap-4 rounded-xl border p-4 text-left transition ${
+        selected
+          ? "border-[var(--forest-emerald)] bg-[#f4fbf7] text-[var(--forest-emerald)]"
+          : "border-[#e2e8f0] bg-white text-[var(--midnight-navy)] hover:bg-slate-50"
+      }`}
+    >
+      <IconBadge icon={Icon} tone={selected ? "green" : "slate"} />
+      <span>
+        <span className="block text-sm font-black">{title}</span>
+        <span className="mt-1 block text-xs font-semibold leading-5 text-slate-600">
+          {subtitle}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function PricingRow({
+  row,
+  amount,
+  scope,
+  onAmountChange,
+}: {
+  row: ControlCenterPriceRow;
+  amount: string;
+  scope: PricingScope;
+  onAmountChange: (value: string) => void;
+}) {
+  return (
+    <tr>
+      <td className="px-5 py-4">
+        <div className="flex items-center gap-3">
+          <IconBadge icon={CalendarDays} tone="green" className="size-10" />
+          <span>
+            <span className="block text-sm font-black">{row.plan.name}</span>
+            <span className="mt-1 block text-xs font-semibold text-slate-500">
+              {row.plan.interval.toLowerCase().replace(/_/g, " ")}
+            </span>
+          </span>
+        </div>
+      </td>
+      {scope === "BRANCH" ? (
+        <td className="px-5 py-4 text-sm font-black">
+          {ccMoney(row.inheritedAmount ?? row.defaultAmount, row.plan.currency)}
+        </td>
+      ) : null}
+      <td className="px-5 py-4 text-sm font-black">
+        {ccMoney(row.defaultAmount, row.plan.currency)}
+      </td>
+      <td className="px-5 py-4">
+        <label className="flex h-10 max-w-[280px] overflow-hidden rounded-lg border border-[#e2e8f0] bg-white focus-within:border-[var(--forest-emerald)]">
+          <span className="grid w-16 place-items-center border-r border-[#e2e8f0] bg-slate-50 text-xs font-black text-slate-500">
+            {row.plan.currency}
+          </span>
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={amount}
+            onChange={(event) => onAmountChange(event.target.value)}
+            className="min-w-0 flex-1 px-3 text-sm font-black outline-none"
+          />
+        </label>
+        {row.override ? (
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+            <StatusPill
+              value={
+                row.override.status === "SCHEDULED"
+                  ? "Scheduled"
+                  : row.override.status === "EXPIRED"
+                    ? "Expired"
+                    : "Active"
+              }
+              tone={row.override.status === "SCHEDULED" ? "gold" : "green"}
+            />
+            <span>
+              From {ccDateInputToLabel(row.override.effectiveFrom)}
+              {row.override.effectiveUntil
+                ? ` until ${ccDateInputToLabel(row.override.effectiveUntil)}`
+                : ""}
+            </span>
+          </div>
+        ) : null}
+      </td>
+    </tr>
+  );
+}
+
+function dateToIso(value: string) {
+  return `${value}T00:00:00.000Z`;
+}
+
+function ccDateInputToLabel(value: string) {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+================================================================================
+FILE: apps/web/src/components/control-center/support-sections.tsx
+================================================================================
+"use client";
+
+import {
+  Activity,
+  Building2,
+  CreditCard,
+  FileText,
+  Gauge,
+  Settings,
+  Tags,
+} from "lucide-react";
+import type {
+  ControlCenterClient,
+  ControlCenterDashboard,
+  ControlCenterTemplate,
+} from "./types";
+import {
+  EmptyState,
+  Panel,
+  SectionTitle,
+  StatCard,
+  StatusPill,
+} from "./control-center-primitives";
+import { ccDateTime, ccMoney, ccNumber, compactAction } from "./formatters";
+
+export function SubscriptionsSection({
+  clients,
+  dashboard,
+  onOpenClient,
+}: {
+  clients: ControlCenterClient[];
+  dashboard: ControlCenterDashboard | null;
+  onOpenClient: (tenantId: string) => void;
+}) {
+  return (
+    <>
+      <SectionTitle
+        title="Subscriptions"
+        subtitle="Monitor subscription coverage and branches needing attention."
+      />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          icon={Building2}
+          title="Active branches"
+          value={ccNumber(dashboard?.stats.activeBranches)}
+          subtitle="Currently subscribed"
+        />
+        <StatCard
+          icon={Gauge}
+          title="Locked branches"
+          value={ccNumber(dashboard?.stats.lockedBranches)}
+          subtitle="Subscription blocked"
+          tone="red"
+        />
+        <StatCard
+          icon={CreditCard}
+          title="Subscription revenue"
+          value={ccMoney(dashboard?.stats.completedRevenue)}
+          subtitle="Completed payments"
+          tone="blue"
+        />
+        <StatCard
+          icon={Tags}
+          title="Pricing overrides"
+          value={ccNumber(dashboard?.stats.activePricingOverrides)}
+          subtitle="Active custom prices"
+          tone="gold"
+        />
+      </div>
+      <Panel className="mt-5 overflow-hidden">
+        <div className="divide-y divide-[#edf2f7]">
+          {clients.map((client) => (
+            <button
+              key={client.id}
+              type="button"
+              onClick={() => onOpenClient(client.id)}
+              className="grid w-full grid-cols-[minmax(0,1fr)_120px_140px_120px] items-center gap-4 px-5 py-4 text-left hover:bg-[#f5faf7]"
+            >
+              <span>
+                <span className="block font-black">{client.name}</span>
+                <span className="mt-1 text-xs font-semibold text-slate-500">
+                  {client.ownerName ?? client.email ?? "No owner recorded"}
+                </span>
+              </span>
+              <span className="font-black">
+                {ccNumber(client.activeBranchCount)} /{" "}
+                {ccNumber(client.branchCount)}
+              </span>
+              <StatusPill
+                value={
+                  client.pricingType === "CUSTOM"
+                    ? "Custom pricing"
+                    : "Default pricing"
+                }
+                tone={client.pricingType === "CUSTOM" ? "green" : "blue"}
+              />
+              <StatusPill value={client.status} />
+            </button>
+          ))}
+        </div>
+      </Panel>
+    </>
+  );
+}
+
+export function PaymentsSection({
+  dashboard,
+}: {
+  dashboard: ControlCenterDashboard | null;
+}) {
+  return (
+    <>
+      <SectionTitle
+        title="Payments"
+        subtitle="Recently created subscription payments and completed revenue."
+      />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <StatCard
+          icon={CreditCard}
+          title="Completed revenue"
+          value={ccMoney(dashboard?.stats.completedRevenue)}
+          subtitle={`${ccNumber(dashboard?.stats.completedPayments)} payments`}
+        />
+        <StatCard
+          icon={Building2}
+          title="Active clients"
+          value={ccNumber(dashboard?.stats.activeClients)}
+          subtitle="Organizations with access"
+          tone="blue"
+        />
+        <StatCard
+          icon={Gauge}
+          title="Locked branches"
+          value={ccNumber(dashboard?.stats.lockedBranches)}
+          subtitle="Need renewal or support"
+          tone="red"
+        />
+      </div>
+      <Panel className="mt-5 overflow-hidden">
+        {dashboard?.recentPayments.length ? (
+          <div className="overflow-x-auto">
+            <table className="min-w-[900px] w-full text-left">
+              <thead className="bg-[#f2f6f8] text-xs font-black text-slate-600">
+                <tr>
+                  <th className="px-4 py-3">Client</th>
+                  <th className="px-4 py-3">Branch</th>
+                  <th className="px-4 py-3">Plan</th>
+                  <th className="px-4 py-3">Amount</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Created</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#edf2f7] text-sm">
+                {dashboard.recentPayments.map((payment) => (
+                  <tr key={payment.id}>
+                    <td className="px-4 py-4 font-black">
+                      {payment.organizationName}
+                    </td>
+                    <td className="px-4 py-4 font-semibold">
+                      {payment.branchName}
+                    </td>
+                    <td className="px-4 py-4 font-semibold">
+                      {payment.planCode}
+                    </td>
+                    <td className="px-4 py-4 font-black">
+                      {ccMoney(payment.amount, payment.currency)}
+                    </td>
+                    <td className="px-4 py-4">
+                      <StatusPill value={payment.status} />
+                    </td>
+                    <td className="px-4 py-4 font-semibold">
+                      {ccDateTime(payment.createdAt)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="p-5">
+            <EmptyState title="No subscription payments found" />
+          </div>
+        )}
+      </Panel>
+    </>
+  );
+}
+
+export function ReportsSection({
+  dashboard,
+  clients,
+}: {
+  dashboard: ControlCenterDashboard | null;
+  clients: ControlCenterClient[];
+}) {
+  const totalLoans = clients.reduce((sum, client) => sum + client.loanCount, 0);
+  const totalCustomers = clients.reduce(
+    (sum, client) => sum + client.customerCount,
+    0,
+  );
+  return (
+    <>
+      <SectionTitle
+        title="Reports"
+        subtitle="High-level operating snapshot across client organizations."
+      />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          icon={Building2}
+          title="Organizations"
+          value={ccNumber(dashboard?.stats.totalClients)}
+          subtitle="Registered clients"
+        />
+        <StatCard
+          icon={Gauge}
+          title="Loans"
+          value={ccNumber(totalLoans)}
+          subtitle="Across all clients"
+          tone="blue"
+        />
+        <StatCard
+          icon={Activity}
+          title="Borrowers"
+          value={ccNumber(totalCustomers)}
+          subtitle="Tracked customers"
+          tone="gold"
+        />
+        <StatCard
+          icon={CreditCard}
+          title="Revenue"
+          value={ccMoney(dashboard?.stats.completedRevenue)}
+          subtitle="Subscription payments"
+          tone="purple"
+        />
+      </div>
+      <Panel className="mt-5 overflow-hidden">
+        <div className="divide-y divide-[#edf2f7]">
+          {clients.map((client) => (
+            <div
+              key={client.id}
+              className="grid grid-cols-[minmax(0,1fr)_110px_110px_110px_110px] items-center gap-4 px-5 py-4"
+            >
+              <div>
+                <p className="font-black">{client.name}</p>
+                <p className="mt-1 text-xs font-semibold text-slate-500">
+                  {client.ownerName ?? "-"}
+                </p>
+              </div>
+              <Metric label="Branches" value={client.branchCount} />
+              <Metric label="Users" value={client.userCount} />
+              <Metric label="Borrowers" value={client.customerCount} />
+              <Metric label="Loans" value={client.loanCount} />
+            </div>
+          ))}
+        </div>
+      </Panel>
+    </>
+  );
+}
+
+export function AuditSection({
+  dashboard,
+}: {
+  dashboard: ControlCenterDashboard | null;
+}) {
+  return (
+    <>
+      <SectionTitle
+        title="Audit Logs"
+        subtitle="Recent administrative actions performed from the control center."
+      />
+      <Panel className="overflow-hidden">
+        {dashboard?.recentActivity.length ? (
+          <div className="divide-y divide-[#edf2f7]">
+            {dashboard.recentActivity.map((activity) => (
+              <div
+                key={activity.id}
+                className="grid gap-3 px-5 py-4 md:grid-cols-[minmax(0,1fr)_180px_180px]"
+              >
+                <div>
+                  <p className="font-black">{compactAction(activity.action)}</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    {activity.entityType}
+                    {activity.entityId
+                      ? ` - ${activity.entityId.slice(0, 8)}`
+                      : ""}
+                  </p>
+                </div>
+                <p className="text-sm font-bold">{activity.adminName}</p>
+                <p className="text-sm font-semibold text-slate-500">
+                  {ccDateTime(activity.createdAt)}
+                </p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-5">
+            <EmptyState title="No audit entries yet" />
+          </div>
+        )}
+      </Panel>
+    </>
+  );
+}
+
+export function SettingsSection({
+  templates,
+}: {
+  templates: ControlCenterTemplate[];
+}) {
+  return (
+    <>
+      <SectionTitle
+        title="Settings"
+        subtitle="Control center guardrails and seeded communication templates."
+      />
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Panel className="p-5">
+          <Settings className="size-6 text-[var(--forest-emerald)]" />
+          <h2 className="mt-4 font-black">Admin access</h2>
+          <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+            Access is enforced by the API allow-list. Only approved ANTIKRA
+            control center emails can create a password or sign in.
+          </p>
+          <div className="mt-4 grid gap-2 text-sm font-black">
+            <StatusPill value="antikra.ug@gmail.com" tone="green" />
+            <StatusPill value="bonnefilleul@gmail.com" tone="green" />
+          </div>
+        </Panel>
+        <Panel className="overflow-hidden">
+          <div className="border-b border-[#e2e8f0] px-5 py-4">
+            <h2 className="font-black">Message templates</h2>
+          </div>
+          <div className="divide-y divide-[#edf2f7]">
+            {templates.map((template) => (
+              <div key={template.id} className="px-5 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-black">{template.name}</p>
+                  <StatusPill value={template.channel} tone="blue" />
+                </div>
+                <p className="mt-1 text-xs font-semibold text-slate-500">
+                  {template.subject ?? template.code}
+                </p>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+    </>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: number }) {
+  return (
+    <div>
+      <p className="text-sm font-black">{ccNumber(value)}</p>
+      <p className="mt-1 text-xs font-semibold text-slate-500">{label}</p>
+    </div>
+  );
+}
+
+================================================================================
+FILE: apps/web/src/components/control-center/types.ts
+================================================================================
+export type ControlCenterClient = {
+  id: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  ownerName: string | null;
+  branchCount: number;
+  activeBranchCount: number;
+  userCount: number;
+  customerCount: number;
+  loanCount: number;
+  pricingType: "CUSTOM" | "DEFAULT";
+  status: string;
+  createdAt: string;
+};
+
+export type ControlCenterClientsResponse = {
+  stats: {
+    totalClients: number;
+    customPricing: number;
+    defaultPricing: number;
+    activeClients: number;
+  };
+  clients: ControlCenterClient[];
+};
+
+export type ControlCenterDashboard = {
+  stats: Record<string, number>;
+  recentPayments: Array<{
+    id: string;
+    organizationName: string;
+    branchName: string;
+    amount: number;
+    currency: string;
+    status: string;
+    planCode: string;
+    createdAt: string;
+    paidAt: string | null;
+  }>;
+  recentActivity: Array<{
+    id: string;
+    action: string;
+    entityType: string;
+    entityId: string | null;
+    adminName: string;
+    createdAt: string;
+  }>;
+};
+
+export type ControlCenterClientDetail = {
+  client: {
+    id: string;
+    name: string;
+    registrationNumber: string | null;
+    country: string;
+    currency: string;
+    status: string;
+    createdAt: string;
+    owner: {
+      id: string;
+      name: string;
+      email: string;
+      phone: string | null;
+    } | null;
+    summary: {
+      totalBranches: number;
+      activeBranches: number;
+      suspendedBranches: number;
+      totalUsers: number;
+    };
+  };
+  branches: ControlCenterBranch[];
+  recentActivity: Array<{
+    id: string;
+    action: string;
+    entityType: string;
+    actorName: string;
+    createdAt: string;
+  }>;
+};
+
+export type ControlCenterBranch = {
+  id: string;
+  name: string;
+  address: string;
+  phone: string | null;
+  status: string;
+  planCode: string | null;
+  currentPeriodEnd: string | null;
+  users: number;
+  borrowers: number;
+  loans: number;
+  repaymentsCollected: number;
+  repaymentCount: number;
+  subscriptionRevenue: number;
+  subscriptionPayments: number;
+  lastUsedAt: string | null;
+};
+
+export type ControlCenterPricing = {
+  plans: ControlCenterPlan[];
+  branches: Array<{ id: string; name: string; address: string }>;
+  organization: ControlCenterPriceRow[];
+  branchOverrides: Array<{
+    branch: { id: string; name: string };
+    prices: ControlCenterPriceRow[];
+  }>;
+};
+
+export type ControlCenterPlan = {
+  id: string;
+  code: string;
+  name: string;
+  amount: number;
+  currency: string;
+  interval: string;
+};
+
+export type ControlCenterPriceRow = {
+  plan: ControlCenterPlan;
+  defaultAmount: number;
+  inheritedAmount: number | null;
+  effectiveAmount: number;
+  override: {
+    id: string;
+    amount: number;
+    currency: string;
+    reason: string;
+    effectiveFrom: string;
+    effectiveUntil: string | null;
+    changedBy: string;
+    status: "ACTIVE" | "SCHEDULED" | "EXPIRED";
+  } | null;
+};
+
+export type ControlCenterPricingHistory = {
+  history: Array<{
+    id: string;
+    scope: "ORGANIZATION" | "BRANCH";
+    branch: { id: string; name: string } | null;
+    planCode: string;
+    planName: string;
+    interval: string;
+    oldAmount: number;
+    newAmount: number;
+    currency: string;
+    effectiveFrom: string;
+    effectiveUntil: string | null;
+    revokedAt: string | null;
+    reason: string;
+    changedBy: string;
+    createdAt: string;
+  }>;
+};
+
+export type ControlCenterUser = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  publicId: string | null;
+  status: string;
+  tenant: { id: string; name: string; status: string };
+  branch: { id: string; name: string } | null;
+  roles: string[];
+  lastUsedAt: string | null;
+  lastUsedDevice: string | null;
+  lastUsedPlatform: string | null;
+  sessionActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ControlCenterTemplate = {
+  id: string;
+  code: string;
+  name: string;
+  channel: "EMAIL" | "SMS";
+  subject: string | null;
+  body: string;
+};
+
+================================================================================
+FILE: apps/web/src/components/control-center/users-section.tsx
+================================================================================
+"use client";
+
+import { ShieldCheck, UserCheck, UserMinus, UserX, Users } from "lucide-react";
+import { useMemo, useState } from "react";
+import type { ControlCenterSession } from "../../lib/control-center-session";
+import { controlCenterFetch } from "../../lib/control-center-api";
+import { PaginationControls, paginateItems } from "../app/pagination";
+import type { ControlCenterUser } from "./types";
+import {
+  InlineSearch,
+  Panel,
+  SectionTitle,
+  SelectControl,
+  StatCard,
+  StatusPill,
+} from "./control-center-primitives";
+import { ccDate, ccDateTime, ccNumber } from "./formatters";
+
+export function ControlCenterUsersSection({
+  session,
+  users,
+  onUpdated,
+}: {
+  session: ControlCenterSession;
+  users: ControlCenterUser[];
+  onUpdated: () => Promise<void>;
+}) {
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState("ALL");
+  const [role, setRole] = useState("ALL");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [busyUserId, setBusyUserId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const roles = useMemo(() => {
+    const values = new Set<string>();
+    for (const user of users) {
+      for (const item of user.roles) values.add(item);
+    }
+    return [...values].sort((a, b) => a.localeCompare(b));
+  }, [users]);
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return users.filter((user) => {
+      const matchesSearch =
+        !needle ||
+        [
+          user.name,
+          user.email,
+          user.phone,
+          user.publicId,
+          user.tenant.name,
+          user.branch?.name,
+          user.roles.join(" "),
+        ].some((value) => (value ?? "").toLowerCase().includes(needle));
+      const matchesStatus = status === "ALL" || user.status === status;
+      const matchesRole = role === "ALL" || user.roles.includes(role);
+      return matchesSearch && matchesStatus && matchesRole;
+    });
+  }, [query, role, status, users]);
+  const rows = paginateItems(filtered, page, pageSize);
+
+  async function updateStatus(user: ControlCenterUser, nextStatus: string) {
+    setError(null);
+    let reason: string | undefined;
+    if (nextStatus === "SUSPENDED") {
+      reason =
+        window.prompt(`Reason for suspending ${user.name}`)?.trim() ??
+        undefined;
+      if (!reason) return;
+    }
+    setBusyUserId(user.id);
+    try {
+      await controlCenterFetch(`/users/${user.id}/status`, session, {
+        method: "PATCH",
+        body: JSON.stringify({ status: nextStatus, reason }),
+      });
+      await onUpdated();
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Could not update user status.",
+      );
+    } finally {
+      setBusyUserId(null);
+    }
+  }
+
+  return (
+    <>
+      <SectionTitle
+        title="Users"
+        subtitle="View app users across all organizations and control their account access."
+      />
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard
+          icon={Users}
+          title="Total users"
+          value={ccNumber(users.length)}
+          subtitle="Across all organizations"
+        />
+        <StatCard
+          icon={UserCheck}
+          title="Active"
+          value={ccNumber(
+            users.filter((user) => user.status === "ACTIVE").length,
+          )}
+          subtitle="Can access the app"
+          tone="blue"
+        />
+        <StatCard
+          icon={UserX}
+          title="Suspended"
+          value={ccNumber(
+            users.filter((user) => user.status === "SUSPENDED").length,
+          )}
+          subtitle="Blocked by administrators"
+          tone="red"
+        />
+        <StatCard
+          icon={ShieldCheck}
+          title="Roles"
+          value={ccNumber(roles.length)}
+          subtitle="Distinct access roles"
+          tone="gold"
+        />
+      </div>
+
+      <Panel className="mt-5 overflow-hidden">
+        <div className="flex flex-wrap gap-3 border-b border-[#e2e8f0] p-4">
+          <InlineSearch
+            value={query}
+            onChange={(value) => {
+              setQuery(value);
+              setPage(1);
+            }}
+            placeholder="Search users, organizations, branches or roles..."
+            className="max-w-xl"
+          />
+          <SelectControl
+            value={status}
+            onChange={(value) => {
+              setStatus(value);
+              setPage(1);
+            }}
+            ariaLabel="User status"
+            options={[
+              { value: "ALL", label: "All statuses" },
+              { value: "ACTIVE", label: "Active" },
+              { value: "SUSPENDED", label: "Suspended" },
+              { value: "INACTIVE", label: "Inactive" },
+              { value: "INVITED", label: "Invited" },
+              { value: "PENDING_VERIFICATION", label: "Pending verification" },
+            ]}
+          />
+          <SelectControl
+            value={role}
+            onChange={(value) => {
+              setRole(value);
+              setPage(1);
+            }}
+            ariaLabel="Role"
+            options={[
+              { value: "ALL", label: "All roles" },
+              ...roles.map((item) => ({ value: item, label: item })),
+            ]}
+          />
+        </div>
+
+        {error ? (
+          <div className="border-b border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+            {error}
+          </div>
+        ) : null}
+
+        <div className="overflow-x-auto">
+          <table className="min-w-[1220px] w-full text-left">
+            <thead className="bg-[#f2f6f8] text-xs font-black text-slate-600">
+              <tr>
+                <th className="px-4 py-3">User</th>
+                <th className="px-4 py-3">Organization</th>
+                <th className="px-4 py-3">Branch</th>
+                <th className="px-4 py-3">Roles</th>
+                <th className="px-4 py-3">Last used</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Created</th>
+                <th className="px-4 py-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#edf2f7] text-sm">
+              {rows.items.map((user) => (
+                <tr key={user.id}>
+                  <td className="px-4 py-4">
+                    <p className="font-black">{user.name}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      {user.email}
+                    </p>
+                    {user.phone ? (
+                      <p className="mt-0.5 text-xs font-semibold text-slate-500">
+                        {user.phone}
+                      </p>
+                    ) : null}
+                  </td>
+                  <td className="px-4 py-4">
+                    <p className="font-bold">{user.tenant.name}</p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      {user.tenant.status}
+                    </p>
+                  </td>
+                  <td className="px-4 py-4 font-semibold">
+                    {user.branch?.name ?? "All branches"}
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="flex flex-wrap gap-1.5">
+                      {user.roles.map((item) => (
+                        <StatusPill key={item} value={item} tone="slate" />
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-4 py-4">
+                    <p className="font-semibold">
+                      {user.lastUsedAt
+                        ? ccDateTime(user.lastUsedAt)
+                        : "Not used yet"}
+                    </p>
+                    <p className="mt-1 text-xs font-semibold text-slate-500">
+                      {[
+                        user.lastUsedPlatform,
+                        user.lastUsedDevice,
+                        user.sessionActive ? "Active session" : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" - ") || "-"}
+                    </p>
+                  </td>
+                  <td className="px-4 py-4">
+                    <StatusPill value={user.status} />
+                  </td>
+                  <td className="px-4 py-4 font-semibold">
+                    {ccDate(user.createdAt)}
+                  </td>
+                  <td className="px-4 py-4">
+                    <div className="flex justify-end gap-2">
+                      {user.status !== "ACTIVE" ? (
+                        <button
+                          type="button"
+                          disabled={busyUserId === user.id}
+                          onClick={() => updateStatus(user, "ACTIVE")}
+                          className="btn btn-primary h-8 normal-case"
+                        >
+                          Activate
+                        </button>
+                      ) : null}
+                      {user.status !== "SUSPENDED" ? (
+                        <button
+                          type="button"
+                          disabled={busyUserId === user.id}
+                          onClick={() => updateStatus(user, "SUSPENDED")}
+                          className="btn btn-ghost h-8 normal-case text-red-700"
+                        >
+                          Suspend
+                        </button>
+                      ) : null}
+                      {user.status !== "INACTIVE" ? (
+                        <button
+                          type="button"
+                          disabled={busyUserId === user.id}
+                          onClick={() => updateStatus(user, "INACTIVE")}
+                          className="btn btn-ghost h-8 normal-case"
+                        >
+                          Inactivate
+                        </button>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <PaginationControls
+          page={rows.currentPage}
+          pageSize={rows.pageSize}
+          total={filtered.length}
+          itemLabel="users"
+          onPageChange={setPage}
+          onPageSizeChange={(value) => {
+            setPageSize(value);
+            setPage(1);
+          }}
+        />
+      </Panel>
+    </>
+  );
+}

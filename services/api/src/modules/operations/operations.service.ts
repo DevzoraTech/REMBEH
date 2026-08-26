@@ -3263,17 +3263,13 @@ export class OperationsService {
   }
 
   private assertCanTopUp(user: AuthenticatedUser) {
-    this.assertTenant(user);
-    this.assertCanOperateBranch(user);
+  this.assertTenant(user);
+  this.assertCanOperateBranch(user);
 
-    const allowed =
-      user.permissions.includes(OPERATIONS_PERMISSIONS.cashTopUp) ||
-      user.permissions.includes(OPERATIONS_PERMISSIONS.open);
-
-    if (!allowed) {
-      throw new ForbiddenException('Missing permission to add cash.');
-    }
+  if (!user.permissions.includes(OPERATIONS_PERMISSIONS.cashTopUp)) {
+    throw new ForbiddenException('Missing permission to add cash.');
   }
+}
 
   private assertCanCreateExpense(user: AuthenticatedUser) {
     this.assertTenant(user);
