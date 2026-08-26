@@ -46,12 +46,6 @@ if [[ ! -f "$APK" ]]; then
 fi
 
 cd "$ROOT"
-if [[ -f .env ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  . ./.env
-  set +a
-fi
 
 S3_KEY="releases/${APP_NAME}/${PLATFORM}/build-${BUILD}/rembeh-v${VERSION}.apk"
 HASH="$(shasum -a 256 "$APK" | awk '{print $1}')"
@@ -62,14 +56,33 @@ else
   CHANGELOG_JSON='[]'
 fi
 
-echo "==> Uploading $APK → s3://${S3_BUCKET:-rembeh-prod-bucket}/$S3_KEY"
+echo "==> Uploading $APK → S3 key $S3_KEY"
 APK_PATH="$APK" APK_HASH="$HASH" S3_KEY="$S3_KEY" APP_NAME="$APP_NAME" VERSION="$VERSION" BUILD="$BUILD" \
 node <<'NODE'
 const fs = require('fs');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { createHash } = require('crypto');
 
+function loadDotenv(path = '.env') {
+  if (!fs.existsSync(path)) return;
+  for (const rawLine of fs.readFileSync(path, 'utf8').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match || process.env[match[1]] !== undefined) continue;
+    let value = match[2].trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    process.env[match[1]] = value;
+  }
+}
+
 async function main() {
+  loadDotenv();
   const bucket = process.env.S3_BUCKET || 'rembeh-prod-bucket';
   const region = process.env.S3_REGION || 'eu-north-1';
   const endpoint = process.env.S3_ENDPOINT || undefined;
@@ -114,11 +127,31 @@ NODE
 echo "==> Registering release in Postgres via Prisma..."
 APK_PATH="$APK" APK_HASH="$HASH" S3_KEY="$S3_KEY" APP_NAME="$APP_NAME" VERSION="$VERSION" BUILD="$BUILD" MESSAGE="$MESSAGE" PLATFORM="$PLATFORM" FORCE_UPDATE="$FORCE_UPDATE" MIN_BUILD="$MIN_BUILD" CHANGELOG_JSON="$CHANGELOG_JSON" \
 node <<'NODE'
+const fs = require('fs');
 const { PrismaClient } = require('@prisma/client');
 const { PrismaPg } = require('@prisma/adapter-pg');
 const { Pool } = require('pg');
 
+function loadDotenv(path = '.env') {
+  if (!fs.existsSync(path)) return;
+  for (const rawLine of fs.readFileSync(path, 'utf8').split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+    const match = line.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match || process.env[match[1]] !== undefined) continue;
+    let value = match[2].trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    process.env[match[1]] = value;
+  }
+}
+
 async function main() {
+  loadDotenv();
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
   try {
