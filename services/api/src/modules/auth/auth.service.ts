@@ -85,6 +85,7 @@ const DEFAULT_ENABLED_MODULES = [
   'cashiers',
   'reports',
   'notifications',
+  'sync',
 ];
 
 const OWNER_RESTRICTED_OPERATION_PERMISSIONS = [
@@ -631,7 +632,9 @@ export class AuthService {
     try {
       if (input.error) {
         throw new BadRequestException(
-          input.errorDescription || input.error || 'OAuth authorization failed.',
+          input.errorDescription ||
+            input.error ||
+            'OAuth authorization failed.',
         );
       }
       if (!input.code?.trim() || !input.state?.trim()) {
@@ -777,7 +780,11 @@ export class AuthService {
     }
 
     const onboarding = ticket.payload as NormalizedOAuthProfile;
-    if (!onboarding?.provider || !onboarding.providerSubject || !onboarding.email) {
+    if (
+      !onboarding?.provider ||
+      !onboarding.providerSubject ||
+      !onboarding.email
+    ) {
       throw new UnauthorizedException('Invalid OAuth onboarding ticket.');
     }
 
@@ -1324,11 +1331,7 @@ export class AuthService {
       if (typeof response === 'string') {
         return response;
       }
-      if (
-        response &&
-        typeof response === 'object' &&
-        'message' in response
-      ) {
+      if (response && typeof response === 'object' && 'message' in response) {
         const message = (response as { message?: string | string[] }).message;
         if (Array.isArray(message)) {
           return message.join(' ');

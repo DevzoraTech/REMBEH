@@ -14,7 +14,7 @@ ec2_resolve_key() {
     chmod 600 "$_EC2_KEY_TMP"
     KEY="$_EC2_KEY_TMP"
   else
-    KEY="${EC2_KEY:-${ROOT:-}/services/rembeh-key-pair.pem}"
+    KEY="${EC2_KEY:-${ROOT:-}/services/rembeh-production-key.pem}"
     if [[ ! -f "$KEY" ]]; then
       echo "Missing SSH key. Set EC2_KEY (path) or EC2_SSH_KEY (PEM contents)." >&2
       exit 1

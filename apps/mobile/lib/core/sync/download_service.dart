@@ -6,6 +6,7 @@ import '../database/models/customer_local.dart';
 import '../database/models/loan_local.dart';
 import '../database/models/loan_product_local.dart';
 import '../../services/auth_service.dart';
+import 'sync_errors.dart';
 
 /// Service for downloading snapshot from server
 class DownloadService {
@@ -51,7 +52,11 @@ class DownloadService {
 
       if (response.statusCode != 200) {
         throw Exception(
-          'Failed to download snapshot: ${response.statusCode} ${response.body}',
+          syncHttpFailureMessage(
+            action: 'download latest offline data',
+            statusCode: response.statusCode,
+            responseBody: response.body,
+          ),
         );
       }
 
@@ -73,7 +78,7 @@ class DownloadService {
         isIncremental: snapshot.isIncremental,
       );
     } catch (e) {
-      return SnapshotResult(success: false, error: e.toString());
+      return SnapshotResult(success: false, error: cleanSyncException(e));
     }
   }
 

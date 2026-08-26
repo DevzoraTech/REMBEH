@@ -5,6 +5,7 @@ import '../database/repositories/pending_operations_repository.dart';
 import '../database/models/pending_operation.dart';
 import '../database/repositories/loan_applications_repository.dart';
 import '../../services/auth_service.dart';
+import 'sync_errors.dart';
 
 /// Service for uploading pending operations queue
 class UploadService {
@@ -69,7 +70,7 @@ class UploadService {
         conflicts: conflicts,
       );
     } catch (e) {
-      return UploadResult(success: false, error: e.toString());
+      return UploadResult(success: false, error: cleanSyncException(e));
     }
   }
 
@@ -111,7 +112,11 @@ class UploadService {
 
     if (response.statusCode != 200 && response.statusCode != 201) {
       throw Exception(
-        'Failed to upload operations: ${response.statusCode} ${response.body}',
+        syncHttpFailureMessage(
+          action: 'upload pending offline work',
+          statusCode: response.statusCode,
+          responseBody: response.body,
+        ),
       );
     }
 

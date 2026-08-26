@@ -12,7 +12,7 @@ class LocalDatabase {
   LocalDatabase._internal();
 
   /// Current database schema version
-  static const int _currentVersion = 1;
+  static const int _currentVersion = 2;
 
   /// Database file name
   static const String _databaseName = 'rembeh_local.db';
@@ -34,13 +34,14 @@ class LocalDatabase {
       version: _currentVersion,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
+      onOpen: (db) => _onCreate(db, _currentVersion),
     );
   }
 
   /// Create database schema
   Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
-      CREATE TABLE customers (
+      CREATE TABLE IF NOT EXISTS customers (
         id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL,
         branch_id TEXT NOT NULL,
@@ -60,7 +61,7 @@ class LocalDatabase {
     ''');
 
     await db.execute('''
-      CREATE TABLE loans (
+      CREATE TABLE IF NOT EXISTS loans (
         id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL,
         branch_id TEXT NOT NULL,
@@ -83,7 +84,7 @@ class LocalDatabase {
     ''');
 
     await db.execute('''
-      CREATE TABLE loan_products (
+      CREATE TABLE IF NOT EXISTS loan_products (
         id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL,
         name TEXT NOT NULL,
@@ -99,7 +100,7 @@ class LocalDatabase {
     ''');
 
     await db.execute('''
-      CREATE TABLE agents (
+      CREATE TABLE IF NOT EXISTS agents (
         id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL,
         branch_id TEXT NOT NULL,
@@ -115,7 +116,7 @@ class LocalDatabase {
     ''');
 
     await db.execute('''
-      CREATE TABLE branches (
+      CREATE TABLE IF NOT EXISTS branches (
         id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL,
         name TEXT NOT NULL,
@@ -127,7 +128,7 @@ class LocalDatabase {
     ''');
 
     await db.execute('''
-      CREATE TABLE loan_applications (
+      CREATE TABLE IF NOT EXISTS loan_applications (
         id TEXT,
         local_id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL,
@@ -154,7 +155,7 @@ class LocalDatabase {
     ''');
 
     await db.execute('''
-      CREATE TABLE loan_application_media (
+      CREATE TABLE IF NOT EXISTS loan_application_media (
         id TEXT,
         local_id TEXT PRIMARY KEY,
         loan_application_id TEXT,
@@ -172,7 +173,7 @@ class LocalDatabase {
     ''');
 
     await db.execute('''
-      CREATE TABLE collections (
+      CREATE TABLE IF NOT EXISTS collections (
         id TEXT,
         local_id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL,
@@ -193,7 +194,7 @@ class LocalDatabase {
     ''');
 
     await db.execute('''
-      CREATE TABLE payments (
+      CREATE TABLE IF NOT EXISTS payments (
         id TEXT,
         local_id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL,
@@ -213,7 +214,7 @@ class LocalDatabase {
     ''');
 
     await db.execute('''
-      CREATE TABLE agent_days (
+      CREATE TABLE IF NOT EXISTS agent_days (
         id TEXT,
         local_id TEXT PRIMARY KEY,
         tenant_id TEXT NOT NULL,
@@ -232,7 +233,7 @@ class LocalDatabase {
     ''');
 
     await db.execute('''
-      CREATE TABLE sync_metadata (
+      CREATE TABLE IF NOT EXISTS sync_metadata (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL,
         updated_at INTEGER NOT NULL
@@ -240,7 +241,7 @@ class LocalDatabase {
     ''');
 
     await db.execute('''
-      CREATE TABLE pending_operations (
+      CREATE TABLE IF NOT EXISTS pending_operations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         operation_type TEXT NOT NULL,
         local_entity_id TEXT NOT NULL,
@@ -253,7 +254,7 @@ class LocalDatabase {
     ''');
 
     await db.execute('''
-      CREATE TABLE sync_conflicts (
+      CREATE TABLE IF NOT EXISTS sync_conflicts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         operation_type TEXT NOT NULL,
         local_entity_id TEXT NOT NULL,
@@ -266,7 +267,7 @@ class LocalDatabase {
     ''');
 
     await db.execute('''
-      CREATE TABLE auth_cache (
+      CREATE TABLE IF NOT EXISTS auth_cache (
         email TEXT PRIMARY KEY,
         password_hash TEXT NOT NULL,
         user_id TEXT NOT NULL,
@@ -283,7 +284,7 @@ class LocalDatabase {
     ''');
 
     await db.execute('''
-      CREATE TABLE pending_media (
+      CREATE TABLE IF NOT EXISTS pending_media (
         media_id TEXT PRIMARY KEY,
         entity_type TEXT NOT NULL,
         entity_id TEXT NOT NULL,
@@ -309,52 +310,64 @@ class LocalDatabase {
   /// Create database indexes
   Future<void> _createIndexes(Database db) async {
     await db.execute(
-      'CREATE INDEX idx_customers_branch ON customers(branch_id, tenant_id)',
-    );
-    await db.execute('CREATE INDEX idx_customers_phone ON customers(phone)');
-    await db.execute('CREATE INDEX idx_customers_nin ON customers(nin)');
-
-    await db.execute('CREATE INDEX idx_loans_customer ON loans(customer_id)');
-    await db.execute('CREATE INDEX idx_loans_status ON loans(status)');
-    await db.execute('CREATE INDEX idx_loans_branch ON loans(branch_id)');
-
-    await db.execute(
-      'CREATE INDEX idx_loan_applications_status ON loan_applications(status)',
+      'CREATE INDEX IF NOT EXISTS idx_customers_branch ON customers(branch_id, tenant_id)',
     );
     await db.execute(
-      'CREATE INDEX idx_loan_applications_agent ON loan_applications(agent_id)',
+      'CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_customers_nin ON customers(nin)',
     );
 
     await db.execute(
-      'CREATE INDEX idx_collections_loan ON collections(loan_id)',
+      'CREATE INDEX IF NOT EXISTS idx_loans_customer ON loans(customer_id)',
     );
     await db.execute(
-      'CREATE INDEX idx_collections_status ON collections(status)',
+      'CREATE INDEX IF NOT EXISTS idx_loans_status ON loans(status)',
     );
     await db.execute(
-      'CREATE INDEX idx_collections_date ON collections(collection_date)',
+      'CREATE INDEX IF NOT EXISTS idx_loans_branch ON loans(branch_id)',
     );
 
-    await db.execute('CREATE INDEX idx_payments_loan ON payments(loan_id)');
-    await db.execute('CREATE INDEX idx_payments_status ON payments(status)');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_loan_applications_status ON loan_applications(status)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_loan_applications_agent ON loan_applications(agent_id)',
+    );
 
     await db.execute(
-      'CREATE INDEX idx_pending_operations_status ON pending_operations(status)',
+      'CREATE INDEX IF NOT EXISTS idx_collections_loan ON collections(loan_id)',
     );
     await db.execute(
-      'CREATE INDEX idx_media_upload_status ON loan_application_media(upload_status)',
+      'CREATE INDEX IF NOT EXISTS idx_collections_status ON collections(status)',
     );
     await db.execute(
-      'CREATE INDEX idx_pending_media_status ON pending_media(upload_status, entity_type, entity_id)',
+      'CREATE INDEX IF NOT EXISTS idx_collections_date ON collections(collection_date)',
+    );
+
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_payments_loan ON payments(loan_id)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_payments_status ON payments(status)',
+    );
+
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_pending_operations_status ON pending_operations(status)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_media_upload_status ON loan_application_media(upload_status)',
+    );
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_pending_media_status ON pending_media(upload_status, entity_type, entity_id)',
     );
   }
 
   /// Handle database schema upgrades
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
-    // Future schema migrations will be handled here
     if (oldVersion < 2) {
-      // Example: Add new column in version 2
-      // await db.execute('ALTER TABLE customers ADD COLUMN new_field TEXT');
+      await _onCreate(db, newVersion);
     }
   }
 

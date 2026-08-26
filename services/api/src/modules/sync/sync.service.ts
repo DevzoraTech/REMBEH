@@ -1,12 +1,14 @@
 import {
   Injectable,
   Logger,
+  OnModuleInit,
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { OperationDto } from './dto/upload-queue.dto';
+import { SYNC_PERMISSIONS } from './sync.permissions';
 
 export interface ProcessedOperation {
   localId: string;
@@ -28,10 +30,101 @@ export interface FailedOperation {
 }
 
 @Injectable()
-export class SyncService {
+export class SyncService implements OnModuleInit {
   private readonly logger = new Logger(SyncService.name);
 
   constructor(private readonly prisma: PrismaService) {}
+
+  async onModuleInit() {
+    try {
+      await this.ensureMobileSyncPermissions();
+    } catch (error) {
+      this.logger.warn(
+        `Sync permission bootstrap skipped: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+  }
+
+  private async ensureMobileSyncPermissions() {
+    const tenants = await this.prisma.tenant.findMany({
+      select: { id: true },
+    });
+
+    const syncPermissionDefinitions = [
+      {
+        key: SYNC_PERMISSIONS.download,
+        description: 'Sync: Download snapshot data for offline use',
+      },
+      {
+        key: SYNC_PERMISSIONS.upload,
+        description: 'Sync: Upload pending operations from offline queue',
+      },
+    ];
+
+    const mobileRoleNames = [
+      'Account Owner',
+      'Owner',
+      'Workspace Owner',
+      'Branch Manager',
+      'Manager',
+      'Supervisor',
+      'Cashier',
+      'Agent',
+      'Field Agent',
+      'Field Officer',
+      'Loan Officer',
+      'Recovery Officer',
+    ];
+
+    for (const tenant of tenants) {
+      const permissions = await Promise.all(
+        syncPermissionDefinitions.map((permission) =>
+          this.prisma.permission.upsert({
+            where: {
+              tenantId_key: {
+                tenantId: tenant.id,
+                key: permission.key,
+              },
+            },
+            create: {
+              tenantId: tenant.id,
+              key: permission.key,
+              moduleKey: 'sync',
+              description: permission.description,
+            },
+            update: {},
+            select: { id: true },
+          }),
+        ),
+      );
+
+      const roles = await this.prisma.role.findMany({
+        where: {
+          tenantId: tenant.id,
+          name: { in: mobileRoleNames },
+        },
+        select: { id: true },
+      });
+
+      for (const role of roles) {
+        for (const permission of permissions) {
+          await this.prisma.rolePermission.upsert({
+            where: {
+              roleId_permissionId: {
+                roleId: role.id,
+                permissionId: permission.id,
+              },
+            },
+            create: {
+              roleId: role.id,
+              permissionId: permission.id,
+            },
+            update: {},
+          });
+        }
+      }
+    }
+  }
 
   /**
    * Generate a mobile snapshot. Branch staff receive their branch; owners who
@@ -66,175 +159,169 @@ export class SyncService {
       : {};
 
     // Fetch all data scoped to tenant + branch
-    const [
-      customers,
-      loans,
-      loanProducts,
-      agents,
-      branches,
-      repayments,
-    ] = await Promise.all([
-      // Customers in this branch
-      this.prisma.customer.findMany({
-        where: {
-          tenantId,
-          ...branchWhere,
-          ...incrementalWhere,
-        },
-        select: {
-          id: true,
-          tenantId: true,
-          branchId: true,
-          nationalId: true,
-          fullName: true,
-          phone: true,
-          email: true,
-          verifiedAt: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-        orderBy: { updatedAt: 'desc' },
-      }),
+    const [customers, loans, loanProducts, agents, branches, repayments] =
+      await Promise.all([
+        // Customers in this branch
+        this.prisma.customer.findMany({
+          where: {
+            tenantId,
+            ...branchWhere,
+            ...incrementalWhere,
+          },
+          select: {
+            id: true,
+            tenantId: true,
+            branchId: true,
+            nationalId: true,
+            fullName: true,
+            phone: true,
+            email: true,
+            verifiedAt: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          orderBy: { updatedAt: 'desc' },
+        }),
 
-      // Active and overdue loans in this branch
-      this.prisma.loan.findMany({
-        where: {
-          tenantId,
-          ...branchWhere,
-          status: { in: ['CURRENT', 'IN_ARREARS', 'DISBURSED'] },
-          ...incrementalWhere,
-        },
-        select: {
-          id: true,
-          tenantId: true,
-          branchId: true,
-          customerId: true,
-          principal: true,
-          balance: true,
-          currency: true,
-          status: true,
-          disbursedAt: true,
-          paymentStartDate: true,
-          isFined: true,
-          finesTotal: true,
-          createdAt: true,
-          updatedAt: true,
-          application: {
-            select: {
-              loanProductTemplateId: true,
-              interestRatePercent: true,
-              durationDays: true,
+        // Active and overdue loans in this branch
+        this.prisma.loan.findMany({
+          where: {
+            tenantId,
+            ...branchWhere,
+            status: { in: ['CURRENT', 'IN_ARREARS', 'DISBURSED'] },
+            ...incrementalWhere,
+          },
+          select: {
+            id: true,
+            tenantId: true,
+            branchId: true,
+            customerId: true,
+            principal: true,
+            balance: true,
+            currency: true,
+            status: true,
+            disbursedAt: true,
+            paymentStartDate: true,
+            isFined: true,
+            finesTotal: true,
+            createdAt: true,
+            updatedAt: true,
+            application: {
+              select: {
+                loanProductTemplateId: true,
+                interestRatePercent: true,
+                durationDays: true,
+              },
             },
           },
-        },
-        orderBy: { updatedAt: 'desc' },
-      }),
+          orderBy: { updatedAt: 'desc' },
+        }),
 
-      // All active loan product templates (not branch-scoped)
-      this.prisma.loanProductTemplate.findMany({
-        where: {
-          tenantId,
-          isActive: true,
-          ...incrementalWhere,
-        },
-        select: {
-          id: true,
-          tenantId: true,
-          name: true,
-          interestRatePercent: true,
-          interestType: true,
-          termValue: true,
-          termUnit: true,
-          repaymentFrequency: true,
-          isActive: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      }),
+        // All active loan product templates (not branch-scoped)
+        this.prisma.loanProductTemplate.findMany({
+          where: {
+            tenantId,
+            isActive: true,
+            ...incrementalWhere,
+          },
+          select: {
+            id: true,
+            tenantId: true,
+            name: true,
+            interestRatePercent: true,
+            interestType: true,
+            termValue: true,
+            termUnit: true,
+            repaymentFrequency: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        }),
 
-      // Agents in this branch
-      this.prisma.user.findMany({
-        where: {
-          tenantId,
-          ...agentBranchWhere,
-          status: 'ACTIVE',
-          ...incrementalWhere,
-        },
-        select: {
-          id: true,
-          tenantId: true,
-          branchId: true,
-          displayName: true,
-          phone: true,
-          email: true,
-          createdAt: true,
-          updatedAt: true,
-          roles: {
-            select: {
-              role: {
-                select: {
-                  name: true,
+        // Agents in this branch
+        this.prisma.user.findMany({
+          where: {
+            tenantId,
+            ...agentBranchWhere,
+            status: 'ACTIVE',
+            ...incrementalWhere,
+          },
+          select: {
+            id: true,
+            tenantId: true,
+            branchId: true,
+            displayName: true,
+            phone: true,
+            email: true,
+            createdAt: true,
+            updatedAt: true,
+            roles: {
+              select: {
+                role: {
+                  select: {
+                    name: true,
+                  },
                 },
               },
             },
           },
-        },
-      }),
+        }),
 
-      // Branch info
-      this.prisma.branch.findMany({
-        where: {
-          tenantId,
-          ...branchInfoWhere,
-        },
-        select: {
-          id: true,
-          tenantId: true,
-          name: true,
-          address: true,
-          phone: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      }),
-
-      // Recent repayments/collections (last 30 days)
-      // Note: Mobile app splits these into 'collections' and 'payments' locally
-      this.prisma.repayment.findMany({
-        where: {
-          tenantId,
-          ...branchWhere,
-          paidAt: {
-            gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        // Branch info
+        this.prisma.branch.findMany({
+          where: {
+            tenantId,
+            ...branchInfoWhere,
           },
-          ...incrementalWhere,
-        },
-        select: {
-          id: true,
-          tenantId: true,
-          branchId: true,
-          recordedByUserId: true,
-          loanId: true,
-          amount: true,
-          principalAllocated: true,
-          interestAllocated: true,
-          feesAllocated: true,
-          method: true,
-          paidAt: true,
-          note: true,
-          receiptNumber: true,
-          createdAt: true,
-          updatedAt: true,
-          loan: {
-            select: {
-              customerId: true,
+          select: {
+            id: true,
+            tenantId: true,
+            name: true,
+            address: true,
+            phone: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        }),
+
+        // Recent repayments/collections (last 30 days)
+        // Note: Mobile app splits these into 'collections' and 'payments' locally
+        this.prisma.repayment.findMany({
+          where: {
+            tenantId,
+            ...branchWhere,
+            paidAt: {
+              gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+            },
+            ...incrementalWhere,
+          },
+          select: {
+            id: true,
+            tenantId: true,
+            branchId: true,
+            recordedByUserId: true,
+            loanId: true,
+            amount: true,
+            principalAllocated: true,
+            interestAllocated: true,
+            feesAllocated: true,
+            method: true,
+            paidAt: true,
+            note: true,
+            receiptNumber: true,
+            createdAt: true,
+            updatedAt: true,
+            loan: {
+              select: {
+                customerId: true,
+              },
             },
           },
-        },
-        orderBy: { paidAt: 'desc' },
-        take: 500,
-      }),
-    ]);
+          orderBy: { paidAt: 'desc' },
+          take: 500,
+        }),
+      ]);
 
     // Transform agents to include role
     const agentsFormatted = agents.map((agent) => ({
@@ -282,7 +369,11 @@ export class SyncService {
         repayments: repaymentsFormatted,
       },
       deletedIds: isIncremental
-        ? await this.getDeletedRecordsSince(tenantId, branchId ?? null, lastSyncDate!)
+        ? await this.getDeletedRecordsSince(
+            tenantId,
+            branchId ?? null,
+            lastSyncDate!,
+          )
         : {},
     };
 
@@ -362,7 +453,8 @@ export class SyncService {
           errors.push({
             localId: operation.localId,
             error: error instanceof Error ? error.name : 'UnknownError',
-            message: error instanceof Error ? error.message : 'Unknown error occurred',
+            message:
+              error instanceof Error ? error.message : 'Unknown error occurred',
           });
         }
       }
@@ -378,7 +470,9 @@ export class SyncService {
   /**
    * Check if operation with localId was already processed
    */
-  private async checkDuplicateOperation(localId: string): Promise<{ id: string } | null> {
+  private async checkDuplicateOperation(
+    localId: string,
+  ): Promise<{ id: string } | null> {
     // Check loan applications
     const loanApp = await this.prisma.loanApplication.findFirst({
       where: { localId },
@@ -427,7 +521,9 @@ export class SyncService {
         );
 
       default:
-        throw new BadRequestException(`Unknown operation type: ${operation.type}`);
+        throw new BadRequestException(
+          `Unknown operation type: ${operation.type}`,
+        );
     }
   }
 
@@ -461,7 +557,9 @@ export class SyncService {
         });
 
         if (pendingApp) {
-          throw new ConflictException('Customer already has a pending loan application');
+          throw new ConflictException(
+            'Customer already has a pending loan application',
+          );
         }
       }
     }
@@ -518,7 +616,9 @@ export class SyncService {
         interestAllocated,
         feesAllocated,
         method: payload.paymentMethod || payload.method || 'CASH',
-        paidAt: new Date(payload.collectionDate || payload.paymentDate || payload.paidAt),
+        paidAt: new Date(
+          payload.collectionDate || payload.paymentDate || payload.paidAt,
+        ),
         note: payload.notes || payload.note,
         receiptNumber: payload.receiptNumber || payload.referenceNumber,
       },

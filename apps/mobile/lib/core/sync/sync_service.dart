@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'connectivity_monitor.dart';
 import 'download_service.dart';
+import 'sync_errors.dart';
 import 'upload_service.dart';
 import '../database/local_database.dart';
 import '../database/repositories/pending_operations_repository.dart';
@@ -133,10 +134,10 @@ class SyncService {
       _statusController.add(
         SyncStatus.syncing('Downloading latest data...', progress: 0.5),
       );
-      final lastSyncAt = await _db.getLastSyncTimestamp();
-      final downloadResult = await _downloadService.downloadSnapshot(
-        lastSyncAt: lastSyncAt,
-      );
+      // Always request a complete snapshot on reconnect/manual sync. The local
+      // import swaps synced rows inside one SQLite transaction, so stale data is
+      // not dropped unless the full server copy has already been received.
+      final downloadResult = await _downloadService.downloadSnapshot();
       if (!downloadResult.success) {
         throw SyncException(
           downloadResult.error ?? 'Could not download latest data.',
@@ -166,8 +167,9 @@ class SyncService {
         conflicts: uploadResult.conflicts,
       );
     } catch (e) {
-      _statusController.add(SyncStatus.error(e.toString()));
-      return SyncResult(success: false, error: e.toString());
+      final message = cleanSyncException(e);
+      _statusController.add(SyncStatus.error(message));
+      return SyncResult(success: false, error: message);
     } finally {
       _isSyncing = false;
     }
@@ -194,10 +196,7 @@ class SyncService {
 
     _statusController.add(SyncStatus.syncing('Downloading latest data...'));
 
-    final lastSyncAt = await _db.getLastSyncTimestamp();
-    final result = await _downloadService.downloadSnapshot(
-      lastSyncAt: lastSyncAt,
-    );
+    final result = await _downloadService.downloadSnapshot();
 
     await _emitCurrentStatus();
     return result;

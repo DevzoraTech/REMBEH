@@ -49,6 +49,7 @@ import {
 } from './branches.repository';
 import { BRANCH_PERMISSIONS } from './branches.permissions';
 import { BillingService } from '../billing/billing.service';
+import { SYNC_PERMISSION_LIST } from '../sync/sync.permissions';
 import { AcceptBranchStaffInvitationDto } from './dto/accept-branch-staff-invitation.dto';
 import { CreateBranchDto } from './dto/create-branch.dto';
 import { InviteBranchStaffDto } from './dto/invite-branch-staff.dto';
@@ -58,6 +59,7 @@ const STAFF_INVITATION_TTL_DAYS = 7;
 
 const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
   'Branch Manager': [
+    ...SYNC_PERMISSION_LIST,
     'branch.read',
     'branch.staff.read',
     'branch.staff.invite',
@@ -84,6 +86,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'report.read',
   ],
   Supervisor: [
+    ...SYNC_PERMISSION_LIST,
     'branch.read',
     'branch.staff.read',
     'customer.create',
@@ -96,6 +99,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'operation.read',
   ],
   'Loan Officer': [
+    ...SYNC_PERMISSION_LIST,
     'branch.read',
     'customer.create',
     'customer.read',
@@ -106,6 +110,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'collection.read',
   ],
   Agent: [
+    ...SYNC_PERMISSION_LIST,
     'branch.read',
     'customer.create',
     'customer.read',
@@ -115,6 +120,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'collection.read',
   ],
   'Field Officer': [
+    ...SYNC_PERMISSION_LIST,
     'branch.read',
     'customer.create',
     'customer.read',
@@ -124,6 +130,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'collection.read',
   ],
   Cashier: [
+    ...SYNC_PERMISSION_LIST,
     'branch.read',
     'customer.create',
     'customer.read',
@@ -145,6 +152,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'operation.report.review',
   ],
   'Recovery Officer': [
+    ...SYNC_PERMISSION_LIST,
     'branch.read',
     'customer.read',
     'loan.read',

@@ -2,6 +2,7 @@ import { BRANCH_EVENTS } from '../branches/branches.events';
 import { BRANCH_PERMISSION_LIST } from '../branches/branches.permissions';
 import { OPERATIONS_EVENTS } from '../operations/operations.events';
 import { OPERATIONS_PERMISSION_LIST } from '../operations/operations.permissions';
+import { SYNC_PERMISSION_LIST } from '../sync/sync.permissions';
 
 export type RembehModuleCategory =
   'core' | 'lending' | 'finance' | 'communication' | 'ai' | 'enterprise';
@@ -195,6 +196,16 @@ export const REMBEH_MODULES: RembehModuleDefinition[] = [
       },
     ],
     events: ['notification.queued', 'notification.sent', 'notification.failed'],
+  },
+  {
+    key: 'sync',
+    name: 'Offline Sync',
+    category: 'core',
+    description:
+      'Mobile snapshot download and pending operation upload for offline-first field work.',
+    permissions: SYNC_PERMISSION_LIST,
+    menu: [],
+    events: ['sync.snapshot_downloaded', 'sync.queue_uploaded'],
   },
   {
     key: 'ai',

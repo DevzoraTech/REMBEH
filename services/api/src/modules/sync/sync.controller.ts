@@ -7,6 +7,7 @@ import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { SyncService } from './sync.service';
 import { GetSnapshotDto } from './dto/get-snapshot.dto';
 import { UploadQueueDto } from './dto/upload-queue.dto';
+import { SYNC_PERMISSIONS } from './sync.permissions';
 
 @Controller('sync')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -14,7 +15,7 @@ export class SyncController {
   constructor(private readonly syncService: SyncService) {}
 
   @Get('snapshot')
-  @RequirePermissions('sync.download')
+  @RequirePermissions(SYNC_PERMISSIONS.download)
   async getSnapshot(
     @CurrentUser() user: AuthenticatedUser,
     @Query() dto: GetSnapshotDto,
@@ -23,7 +24,7 @@ export class SyncController {
   }
 
   @Post('upload-queue')
-  @RequirePermissions('sync.upload')
+  @RequirePermissions(SYNC_PERMISSIONS.upload)
   async uploadQueue(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: UploadQueueDto,

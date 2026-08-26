@@ -7,12 +7,12 @@ The API on EC2 should use the **instance IAM role**. No `S3_ACCESS_KEY` / `S3_SE
 1. IAM → Roles → **Create role**
 2. Trusted entity: **AWS service** → **EC2**
 3. Attach a custom policy (use `ec2-api-iam-policy.json`; change bucket name if needed)
-4. Role name: `rembeh-ec2-api`
+4. Role name: `rembeh-production-ec2-role`
 
 ## 2. Attach to the instance
 
-1. EC2 → instance `13.63.130.241` → **Actions** → **Security** → **Modify IAM role**
-2. Select `rembeh-ec2-api` → Update
+1. EC2 → instance `16.28.132.165` → **Actions** → **Security** → **Modify IAM role**
+2. Select `rembeh-production-ec2-role` → Update
 
 ## 3. Production `.env` on the server
 
@@ -20,7 +20,7 @@ The API on EC2 should use the **instance IAM role**. No `S3_ACCESS_KEY` / `S3_SE
 S3_ENDPOINT=
 S3_PUBLIC_ENDPOINT=
 S3_BUCKET=rembeh-prod-bucket
-S3_REGION=eu-north-1
+S3_REGION=af-south-1
 # leave empty — SDK uses the instance role
 S3_ACCESS_KEY=
 S3_SECRET_KEY=
