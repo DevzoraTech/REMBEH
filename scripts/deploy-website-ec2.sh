@@ -14,7 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/ec2-ssh.sh"
 
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-HOST="${EC2_HOST:-16.28.132.165}"
+HOST="${EC2_HOST:-15.240.28.47}"
 USER_NAME="${EC2_USER:-ubuntu}"
 REMOTE_DIR="${EC2_REMOTE_DIR:-/home/ubuntu/rembeh}"
 REPO_URL="${REPO_URL:-https://github.com/DevzoraTech/REMBEH.git}"
@@ -96,7 +96,7 @@ if [[ "${1:-}" == "on-server" ]]; then
   REMOTE_DIR="${EC2_REMOTE_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
   GET_DOMAIN="${GET_DOMAIN:-get.rembeh.antikra.com}"
   WWW_ROOT="${WWW_ROOT:-/var/www/rembeh-get}"
-  HOST="${EC2_HOST:-16.28.132.165}"
+  HOST="${EC2_HOST:-15.240.28.47}"
   deploy_website_on_server
   exit 0
 fi

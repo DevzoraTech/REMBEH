@@ -11,10 +11,8 @@ const DEFAULT_CORS_ORIGINS = [
   'https://rembeh.antikra.com',
   'http://get.rembeh.antikra.com',
   'https://get.rembeh.antikra.com',
-  'http://16.28.132.165',
-  'https://16.28.132.165',
-  'http://13.63.130.241',
-  'https://13.63.130.241',
+  'http://15.240.28.47',
+  'https://15.240.28.47',
 ];
 
 function resolveCorsOrigin():

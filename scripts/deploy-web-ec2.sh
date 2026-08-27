@@ -7,7 +7,7 @@
 #
 # Public URLs:
 #   https://rembeh.antikra.com/
-#   http://16.28.132.165/  (HTTP only; domain redirects to HTTPS)
+#   http://15.240.28.47/  (HTTP only; domain redirects to HTTPS)
 # API: NEXT_PUBLIC_API_URL=https://rembeh-api.antikra.com/api/v1
 set -euo pipefail
 
@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/lib/ec2-ssh.sh"
 
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-HOST="${EC2_HOST:-16.28.132.165}"
+HOST="${EC2_HOST:-15.240.28.47}"
 USER_NAME="${EC2_USER:-ubuntu}"
 REMOTE_DIR="${EC2_REMOTE_DIR:-/home/ubuntu/rembeh}"
 REPO_URL="${REPO_URL:-https://github.com/DevzoraTech/REMBEH.git}"

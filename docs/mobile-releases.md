@@ -85,7 +85,7 @@ Spaceship → A record:
 
 | Host | Type | Value |
 |------|------|-------|
-| `get.rembeh.antikra.com` | A | `16.28.132.165` |
+| `get.rembeh.antikra.com` | A | `15.240.28.47` |
 
 Then on EC2:
 

@@ -11,7 +11,7 @@ The API on EC2 should use the **instance IAM role**. No `S3_ACCESS_KEY` / `S3_SE
 
 ## 2. Attach to the instance
 
-1. EC2 → instance `16.28.132.165` → **Actions** → **Security** → **Modify IAM role**
+1. EC2 → instance `15.240.28.47` → **Actions** → **Security** → **Modify IAM role**
 2. Select `rembeh-production-ec2-role` → Update
 
 ## 3. Production `.env` on the server

@@ -8,7 +8,7 @@
 #   ./scripts/build-forced-mobile-release.sh --changelog "Works better offline,Syncs latest records faster"
 #
 # Defaults target the new production host:
-#   EC2_HOST=16.28.132.165
+#   EC2_HOST=15.240.28.47
 #   EC2_USER=ubuntu
 #   EC2_REMOTE_DIR=/home/ubuntu/rembeh
 set -Eeuo pipefail
@@ -19,7 +19,7 @@ MOBILE_DIR="$ROOT/apps/mobile"
 PROD_DEFINES="$MOBILE_DIR/dart_defines.prod.json"
 APK_PATH="$MOBILE_DIR/build/app/outputs/flutter-apk/app-release.apk"
 
-HOST="${EC2_HOST:-16.28.132.165}"
+HOST="${EC2_HOST:-15.240.28.47}"
 USER_NAME="${EC2_USER:-ubuntu}"
 REMOTE_DIR="${EC2_REMOTE_DIR:-/home/ubuntu/rembeh}"
 REPO_URL="${REPO_URL:-git@github.com:Tukivu-Systems/rembeh.git}"
