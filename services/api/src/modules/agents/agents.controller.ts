@@ -32,8 +32,9 @@ export class AgentsController {
     @CurrentUser() user: AuthenticatedUser,
     @Query('q') search?: string,
     @Query('date') date?: string,
+    @Query('purpose') purpose?: string,
   ) {
-    return this.agentsService.listAgents(user, search, date);
+    return this.agentsService.listAgents(user, search, date, purpose);
   }
 
   @Get('floats')

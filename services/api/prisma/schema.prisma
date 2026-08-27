@@ -164,6 +164,11 @@ enum LoanInterestType {
   COMPOUND
 }
 
+enum LoanProcessingFeeType {
+  PERCENTAGE
+  FIXED
+}
+
 enum LoanTermUnit {
   DAYS
   WEEKS
@@ -528,29 +533,31 @@ model TenantSmsNotificationSettings {
 }
 
 model LoanProductTemplate {
-  id                    String                 @id @default(uuid()) @db.Uuid
-  tenantId              String                 @map("tenant_id") @db.Uuid
-  branchId              String?                @map("branch_id") @db.Uuid
-  name                  String
-  description           String?
-  interestRatePercent   Decimal                @map("interest_rate_percent") @db.Decimal(8, 4)
-  interestType          LoanInterestType       @default(FLAT) @map("interest_type")
-  termValue             Int                    @map("term_value")
-  termUnit              LoanTermUnit           @map("term_unit")
-  repaymentFrequency    LoanRepaymentFrequency @map("repayment_frequency")
-  processingFeePercent  Decimal                @map("processing_fee_percent") @db.Decimal(8, 4)
-  penaltyRatePercent    Decimal                @map("penalty_rate_percent") @db.Decimal(8, 4)
-  finePeriodDays        Int                    @default(10) @map("fine_period_days")
-  paymentStartPolicy    PaymentStartPolicyType @default(NEXT_DAY) @map("payment_start_policy")
-  paymentStartDelayDays Int?                   @map("payment_start_delay_days")
-  allowAgentDatePick    Boolean                @default(false) @map("allow_agent_date_pick")
-  minLoanAmount         Decimal?               @map("min_loan_amount") @db.Decimal(18, 2)
-  maxLoanAmount         Decimal?               @map("max_loan_amount") @db.Decimal(18, 2)
-  notes                 String?
-  isActive              Boolean                @default(true) @map("is_active")
-  sortOrder             Int                    @default(0) @map("sort_order")
-  createdAt             DateTime               @default(now()) @map("created_at")
-  updatedAt             DateTime               @updatedAt @map("updated_at")
+  id                       String                 @id @default(uuid()) @db.Uuid
+  tenantId                 String                 @map("tenant_id") @db.Uuid
+  branchId                 String?                @map("branch_id") @db.Uuid
+  name                     String
+  description              String?
+  interestRatePercent      Decimal                @map("interest_rate_percent") @db.Decimal(8, 4)
+  interestType             LoanInterestType       @default(FLAT) @map("interest_type")
+  termValue                Int                    @map("term_value")
+  termUnit                 LoanTermUnit           @map("term_unit")
+  repaymentFrequency       LoanRepaymentFrequency @map("repayment_frequency")
+  processingFeeType        LoanProcessingFeeType  @default(PERCENTAGE) @map("processing_fee_type")
+  processingFeePercent     Decimal                @map("processing_fee_percent") @db.Decimal(8, 4)
+  processingFeeFixedAmount Decimal?               @map("processing_fee_fixed_amount") @db.Decimal(18, 2)
+  penaltyRatePercent       Decimal                @map("penalty_rate_percent") @db.Decimal(8, 4)
+  finePeriodDays           Int                    @default(10) @map("fine_period_days")
+  paymentStartPolicy       PaymentStartPolicyType @default(NEXT_DAY) @map("payment_start_policy")
+  paymentStartDelayDays    Int?                   @map("payment_start_delay_days")
+  allowAgentDatePick       Boolean                @default(false) @map("allow_agent_date_pick")
+  minLoanAmount            Decimal?               @map("min_loan_amount") @db.Decimal(18, 2)
+  maxLoanAmount            Decimal?               @map("max_loan_amount") @db.Decimal(18, 2)
+  notes                    String?
+  isActive                 Boolean                @default(true) @map("is_active")
+  sortOrder                Int                    @default(0) @map("sort_order")
+  createdAt                DateTime               @default(now()) @map("created_at")
+  updatedAt                DateTime               @updatedAt @map("updated_at")
 
   tenant       Tenant            @relation(fields: [tenantId], references: [id])
   branch       Branch?           @relation(fields: [branchId], references: [id])
@@ -1276,52 +1283,54 @@ model PaymentGatewayIntent {
 }
 
 model LoanApplication {
-  id                    String                  @id @default(uuid()) @db.Uuid
-  localId               String?                 @unique @map("local_id")
-  tenantId              String                  @map("tenant_id") @db.Uuid
-  branchId              String                  @map("branch_id") @db.Uuid
-  officerUserId         String                  @map("officer_user_id") @db.Uuid
-  customerId            String?                 @map("customer_id") @db.Uuid
-  loanId                String?                 @unique @map("loan_id") @db.Uuid
-  status                LoanApplicationStatus   @default(DRAFT)
-  surname               String?
-  givenNames            String?                 @map("given_names")
-  phone                 String?
-  nationalId            String?                 @map("national_id")
-  gender                ApplicantGender?
-  dateOfBirth           DateTime?               @map("date_of_birth") @db.Date
-  district              String?
-  subCounty             String?                 @map("sub_county")
-  parish                String?
-  village               String?
-  principalAmount       Decimal?                @map("principal_amount") @db.Decimal(18, 2)
-  interestRatePercent   Decimal?                @map("interest_rate_percent") @db.Decimal(8, 4)
-  durationDays          Int?                    @map("duration_days")
-  processingFee         Decimal?                @map("processing_fee") @db.Decimal(18, 2)
-  loanProductTemplateId String?                 @map("loan_product_template_id") @db.Uuid
-  templateName          String?                 @map("template_name")
-  interestType          LoanInterestType?       @map("interest_type")
-  termValue             Int?                    @map("term_value")
-  termUnit              LoanTermUnit?           @map("term_unit")
-  repaymentFrequency    LoanRepaymentFrequency? @map("repayment_frequency")
-  processingFeePercent  Decimal?                @map("processing_fee_percent") @db.Decimal(8, 4)
-  penaltyRatePercent    Decimal?                @map("penalty_rate_percent") @db.Decimal(8, 4)
-  finePeriodDays        Int?                    @map("fine_period_days")
-  paymentStartPolicy    PaymentStartPolicyType? @map("payment_start_policy")
-  paymentStartDelayDays Int?                    @map("payment_start_delay_days")
-  allowAgentDatePick    Boolean?                @map("allow_agent_date_pick")
-  loanPurpose           String?                 @map("loan_purpose")
-  collateralType        String?                 @map("collateral_type")
-  smileJobId            String?                 @map("smile_job_id")
-  smileResult           Json?                   @map("smile_result")
-  verificationCode      String?                 @map("verification_code")
-  verifiedAt            DateTime?               @map("verified_at")
-  termsConfirmedAt      DateTime?               @map("terms_confirmed_at")
-  paymentStartDate      DateTime?               @map("payment_start_date")
-  submittedAt           DateTime?               @map("submitted_at")
-  syncedAt              DateTime?               @map("synced_at")
-  createdAt             DateTime                @default(now()) @map("created_at")
-  updatedAt             DateTime                @updatedAt @map("updated_at")
+  id                       String                  @id @default(uuid()) @db.Uuid
+  localId                  String?                 @unique @map("local_id")
+  tenantId                 String                  @map("tenant_id") @db.Uuid
+  branchId                 String                  @map("branch_id") @db.Uuid
+  officerUserId            String                  @map("officer_user_id") @db.Uuid
+  customerId               String?                 @map("customer_id") @db.Uuid
+  loanId                   String?                 @unique @map("loan_id") @db.Uuid
+  status                   LoanApplicationStatus   @default(DRAFT)
+  surname                  String?
+  givenNames               String?                 @map("given_names")
+  phone                    String?
+  nationalId               String?                 @map("national_id")
+  gender                   ApplicantGender?
+  dateOfBirth              DateTime?               @map("date_of_birth") @db.Date
+  district                 String?
+  subCounty                String?                 @map("sub_county")
+  parish                   String?
+  village                  String?
+  principalAmount          Decimal?                @map("principal_amount") @db.Decimal(18, 2)
+  interestRatePercent      Decimal?                @map("interest_rate_percent") @db.Decimal(8, 4)
+  durationDays             Int?                    @map("duration_days")
+  processingFee            Decimal?                @map("processing_fee") @db.Decimal(18, 2)
+  loanProductTemplateId    String?                 @map("loan_product_template_id") @db.Uuid
+  templateName             String?                 @map("template_name")
+  interestType             LoanInterestType?       @map("interest_type")
+  termValue                Int?                    @map("term_value")
+  termUnit                 LoanTermUnit?           @map("term_unit")
+  repaymentFrequency       LoanRepaymentFrequency? @map("repayment_frequency")
+  processingFeeType        LoanProcessingFeeType?  @map("processing_fee_type")
+  processingFeePercent     Decimal?                @map("processing_fee_percent") @db.Decimal(8, 4)
+  processingFeeFixedAmount Decimal?                @map("processing_fee_fixed_amount") @db.Decimal(18, 2)
+  penaltyRatePercent       Decimal?                @map("penalty_rate_percent") @db.Decimal(8, 4)
+  finePeriodDays           Int?                    @map("fine_period_days")
+  paymentStartPolicy       PaymentStartPolicyType? @map("payment_start_policy")
+  paymentStartDelayDays    Int?                    @map("payment_start_delay_days")
+  allowAgentDatePick       Boolean?                @map("allow_agent_date_pick")
+  loanPurpose              String?                 @map("loan_purpose")
+  collateralType           String?                 @map("collateral_type")
+  smileJobId               String?                 @map("smile_job_id")
+  smileResult              Json?                   @map("smile_result")
+  verificationCode         String?                 @map("verification_code")
+  verifiedAt               DateTime?               @map("verified_at")
+  termsConfirmedAt         DateTime?               @map("terms_confirmed_at")
+  paymentStartDate         DateTime?               @map("payment_start_date")
+  submittedAt              DateTime?               @map("submitted_at")
+  syncedAt                 DateTime?               @map("synced_at")
+  createdAt                DateTime                @default(now()) @map("created_at")
+  updatedAt                DateTime                @updatedAt @map("updated_at")
 
   tenant              Tenant                     @relation(fields: [tenantId], references: [id])
   branch              Branch                     @relation(fields: [branchId], references: [id])

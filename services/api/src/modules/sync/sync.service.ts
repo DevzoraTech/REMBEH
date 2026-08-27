@@ -5,8 +5,13 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
+import {
+  computeProcessingFeeAmount,
+  termToDurationDays,
+} from '../loan-products/loan-term';
 import { OperationDto } from './dto/upload-queue.dto';
 import { SYNC_PERMISSIONS } from './sync.permissions';
 
@@ -233,6 +238,17 @@ export class SyncService implements OnModuleInit {
             termValue: true,
             termUnit: true,
             repaymentFrequency: true,
+            processingFeeType: true,
+            processingFeePercent: true,
+            processingFeeFixedAmount: true,
+            penaltyRatePercent: true,
+            finePeriodDays: true,
+            paymentStartPolicy: true,
+            paymentStartDelayDays: true,
+            allowAgentDatePick: true,
+            minLoanAmount: true,
+            maxLoanAmount: true,
+            description: true,
             isActive: true,
             createdAt: true,
             updatedAt: true,
@@ -537,6 +553,59 @@ export class SyncService implements OnModuleInit {
     localId: string,
     payload: any,
   ) {
+    const principalAmount = this.parseMoney(
+      payload.principalAmount ?? payload.requestedAmount,
+    );
+    const loanProductTemplateId = String(
+      payload.loanProductTemplateId ?? payload.loanProductId ?? '',
+    ).trim();
+
+    if (!Number.isFinite(principalAmount) || principalAmount <= 0) {
+      throw new BadRequestException('Loan principal amount is required.');
+    }
+
+    if (!loanProductTemplateId) {
+      throw new BadRequestException('Loan product is required.');
+    }
+
+    const template = await this.prisma.loanProductTemplate.findFirst({
+      where: {
+        id: loanProductTemplateId,
+        tenantId,
+        isActive: true,
+        OR: [{ branchId: null }, { branchId }],
+      },
+    });
+
+    if (!template) {
+      throw new BadRequestException(
+        'Loan product is no longer available for this branch.',
+      );
+    }
+
+    const providedProcessingFee =
+      payload.processingFee == null
+        ? null
+        : this.parseMoney(payload.processingFee);
+    if (
+      providedProcessingFee != null &&
+      (!Number.isFinite(providedProcessingFee) || providedProcessingFee < 0)
+    ) {
+      throw new BadRequestException('Processing fee cannot be negative.');
+    }
+
+    const processingFee =
+      providedProcessingFee ??
+      computeProcessingFeeAmount({
+        principalAmount,
+        processingFeeType: template.processingFeeType,
+        processingFeePercent: Number(template.processingFeePercent.toString()),
+        processingFeeFixedAmount:
+          template.processingFeeFixedAmount != null
+            ? Number(template.processingFeeFixedAmount.toString())
+            : null,
+      });
+
     // Check for duplicate NIN if provided
     if (payload.applicantNin) {
       const existingCustomer = await this.prisma.customer.findFirst({
@@ -577,13 +646,49 @@ export class SyncService implements OnModuleInit {
         givenNames: payload.applicantFirstName,
         phone: payload.applicantPhone,
         village: payload.applicantVillage,
-        principalAmount: payload.requestedAmount,
-        loanProductTemplateId: payload.loanProductId,
+        principalAmount: new Prisma.Decimal(principalAmount.toFixed(2)),
+        loanProductTemplateId: template.id,
+        templateName: template.name,
+        interestType: template.interestType,
+        termValue: template.termValue,
+        termUnit: template.termUnit,
+        repaymentFrequency: template.repaymentFrequency,
+        interestRatePercent: template.interestRatePercent,
+        durationDays: termToDurationDays(template.termValue, template.termUnit),
+        processingFee: new Prisma.Decimal(processingFee.toFixed(2)),
+        processingFeeType: template.processingFeeType,
+        processingFeePercent: template.processingFeePercent,
+        processingFeeFixedAmount: template.processingFeeFixedAmount,
+        penaltyRatePercent: template.penaltyRatePercent,
+        finePeriodDays: template.finePeriodDays,
+        paymentStartPolicy: template.paymentStartPolicy,
+        paymentStartDelayDays: template.paymentStartDelayDays,
+        allowAgentDatePick: template.allowAgentDatePick,
+        collateralType: payload.businessDescription,
+        ...(payload.guarantorName || payload.guarantorPhone
+          ? {
+              guarantor: {
+                create: {
+                  fullName: payload.guarantorName ?? null,
+                  phone: payload.guarantorPhone ?? null,
+                },
+              },
+            }
+          : {}),
         submittedAt: new Date(),
       },
     });
 
     return { id: application.id };
+  }
+
+  private parseMoney(value: unknown): number {
+    if (typeof value === 'number') return value;
+    return Number(
+      String(value ?? '')
+        .replace(/,/g, '')
+        .trim(),
+    );
   }
 
   /**

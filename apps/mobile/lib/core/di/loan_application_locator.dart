@@ -150,17 +150,24 @@ class LoanApplicationLocator {
       id: product.id,
       name: product.name,
       interestRatePercent: product.interestRate,
-      interestType: 'FLAT',
-      termValue: durationDays,
-      termUnit: 'DAYS',
-      durationDays: durationDays,
-      repaymentFrequency: 'DAILY',
-      processingFeePercent: 0,
-      penaltyRatePercent: 0,
-      finePeriodDays: 10,
-      paymentStartPolicy: 'NEXT_DAY',
+      interestType: product.interestType,
+      termValue: product.termValue > 0 ? product.termValue : durationDays,
+      termUnit: product.termUnit,
+      durationDays: product.durationDays > 0
+          ? product.durationDays
+          : durationDays,
+      repaymentFrequency: product.repaymentFrequency,
+      processingFeeType: product.processingFeeType,
+      processingFeePercent: product.processingFeePercent,
+      processingFeeFixedAmount: product.processingFeeFixedAmount,
+      penaltyRatePercent: product.penaltyRatePercent,
+      finePeriodDays: product.finePeriodDays,
+      paymentStartPolicy: product.paymentStartPolicy,
+      paymentStartDelayDays: product.paymentStartDelayDays,
+      allowAgentDatePick: product.allowAgentDatePick,
       minLoanAmount: product.minAmount > 0 ? product.minAmount : null,
       maxLoanAmount: product.maxAmount > 0 ? product.maxAmount : null,
+      description: product.description,
     );
   }
 }
@@ -175,7 +182,9 @@ class LoanProductTemplateOption {
     required this.termUnit,
     required this.durationDays,
     required this.repaymentFrequency,
+    required this.processingFeeType,
     required this.processingFeePercent,
+    required this.processingFeeFixedAmount,
     required this.penaltyRatePercent,
     required this.finePeriodDays,
     required this.paymentStartPolicy,
@@ -194,7 +203,9 @@ class LoanProductTemplateOption {
   final String termUnit;
   final int durationDays;
   final String repaymentFrequency;
+  final String processingFeeType;
   final double processingFeePercent;
+  final double? processingFeeFixedAmount;
   final double penaltyRatePercent;
   final int finePeriodDays;
   final String paymentStartPolicy;
@@ -255,6 +266,25 @@ class LoanProductTemplateOption {
     }
   }
 
+  double processingFeeForPrincipal(double principal) {
+    if (processingFeeType.toUpperCase() == 'FIXED') {
+      final fixed = processingFeeFixedAmount ?? 0;
+      return fixed < 0 ? 0 : fixed;
+    }
+    if (principal <= 0 || processingFeePercent <= 0) return 0;
+    return (principal * (processingFeePercent / 100) * 100).round() / 100;
+  }
+
+  String get processingFeeLabel {
+    if (processingFeeType.toUpperCase() == 'FIXED') {
+      final fixed = processingFeeFixedAmount ?? 0;
+      return 'UGX ${fixed.toStringAsFixed(0)} fixed';
+    }
+    final decimals =
+        processingFeePercent.truncateToDouble() == processingFeePercent ? 0 : 2;
+    return '${processingFeePercent.toStringAsFixed(decimals)}%';
+  }
+
   /// Provisional payment start date from today (agent preview before submit).
   DateTime computePaymentStartDate([DateTime? anchor]) {
     final start = DateTime(
@@ -283,8 +313,11 @@ class LoanProductTemplateOption {
       termUnit: json['termUnit'] as String? ?? 'DAYS',
       durationDays: (json['durationDays'] as num?)?.toInt() ?? 0,
       repaymentFrequency: json['repaymentFrequency'] as String? ?? 'DAILY',
+      processingFeeType: json['processingFeeType'] as String? ?? 'PERCENTAGE',
       processingFeePercent:
           (json['processingFeePercent'] as num?)?.toDouble() ?? 0,
+      processingFeeFixedAmount: (json['processingFeeFixedAmount'] as num?)
+          ?.toDouble(),
       penaltyRatePercent: (json['penaltyRatePercent'] as num?)?.toDouble() ?? 0,
       finePeriodDays: (json['finePeriodDays'] as num?)?.toInt() ?? 10,
       paymentStartPolicy: json['paymentStartPolicy'] as String? ?? 'NEXT_DAY',

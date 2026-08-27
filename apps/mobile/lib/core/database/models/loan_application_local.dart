@@ -13,6 +13,7 @@ class LoanApplicationLocal {
   final String applicantPhone;
   final String? applicantVillage;
   final double requestedAmount;
+  final double processingFee;
   final String loanProductId;
   final String? guarantorName;
   final String? guarantorPhone;
@@ -36,6 +37,7 @@ class LoanApplicationLocal {
     required this.applicantPhone,
     this.applicantVillage,
     required this.requestedAmount,
+    required this.processingFee,
     required this.loanProductId,
     this.guarantorName,
     this.guarantorPhone,
@@ -73,7 +75,8 @@ class LoanApplicationLocal {
       applicantLastName: map['applicant_last_name'] as String,
       applicantPhone: map['applicant_phone'] as String,
       applicantVillage: map['applicant_village'] as String?,
-      requestedAmount: map['requested_amount'] as double,
+      requestedAmount: _double(map['requested_amount']),
+      processingFee: _double(map['processing_fee']),
       loanProductId: map['loan_product_id'] as String,
       guarantorName: map['guarantor_name'] as String?,
       guarantorPhone: map['guarantor_phone'] as String?,
@@ -105,6 +108,7 @@ class LoanApplicationLocal {
       'applicant_phone': applicantPhone,
       'applicant_village': applicantVillage,
       'requested_amount': requestedAmount,
+      'processing_fee': processingFee,
       'loan_product_id': loanProductId,
       'guarantor_name': guarantorName,
       'guarantor_phone': guarantorPhone,
@@ -137,6 +141,7 @@ class LoanApplicationLocal {
       applicantPhone: applicantPhone,
       applicantVillage: applicantVillage,
       requestedAmount: requestedAmount,
+      processingFee: processingFee,
       loanProductId: loanProductId,
       guarantorName: guarantorName,
       guarantorPhone: guarantorPhone,
@@ -147,4 +152,9 @@ class LoanApplicationLocal {
       syncedAt: syncedAt ?? this.syncedAt,
     );
   }
+}
+
+double _double(Object? value) {
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString() ?? '') ?? 0;
 }

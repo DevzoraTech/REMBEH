@@ -12,7 +12,7 @@ class LocalDatabase {
   LocalDatabase._internal();
 
   /// Current database schema version
-  static const int _currentVersion = 2;
+  static const int _currentVersion = 4;
 
   /// Database file name
   static const String _databaseName = 'rembeh_local.db';
@@ -34,7 +34,11 @@ class LocalDatabase {
       version: _currentVersion,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
-      onOpen: (db) => _onCreate(db, _currentVersion),
+      onOpen: (db) async {
+        await _onCreate(db, _currentVersion);
+        await _ensureLoanProductColumns(db);
+        await _ensureLoanApplicationColumns(db);
+      },
     );
   }
 
@@ -91,8 +95,22 @@ class LocalDatabase {
         min_amount REAL NOT NULL,
         max_amount REAL NOT NULL,
         interest_rate REAL NOT NULL,
+        interest_type TEXT DEFAULT 'FLAT',
         min_term INTEGER NOT NULL,
         max_term INTEGER NOT NULL,
+        term_value INTEGER DEFAULT 30,
+        term_unit TEXT DEFAULT 'DAYS',
+        duration_days INTEGER DEFAULT 30,
+        repayment_frequency TEXT DEFAULT 'DAILY',
+        processing_fee_type TEXT DEFAULT 'PERCENTAGE',
+        processing_fee_percent REAL DEFAULT 0,
+        processing_fee_fixed_amount REAL,
+        penalty_rate_percent REAL DEFAULT 0,
+        fine_period_days INTEGER DEFAULT 10,
+        payment_start_policy TEXT DEFAULT 'NEXT_DAY',
+        payment_start_delay_days INTEGER,
+        allow_agent_date_pick INTEGER DEFAULT 0,
+        description TEXT,
         is_active INTEGER DEFAULT 1,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
@@ -142,6 +160,7 @@ class LocalDatabase {
         applicant_phone TEXT NOT NULL,
         applicant_village TEXT,
         requested_amount REAL NOT NULL,
+        processing_fee REAL DEFAULT 0,
         loan_product_id TEXT NOT NULL,
         guarantor_name TEXT,
         guarantor_phone TEXT,
@@ -369,6 +388,73 @@ class LocalDatabase {
     if (oldVersion < 2) {
       await _onCreate(db, newVersion);
     }
+    if (oldVersion < 3) {
+      await _ensureLoanProductColumns(db);
+    }
+    if (oldVersion < 4) {
+      await _ensureLoanApplicationColumns(db);
+    }
+  }
+
+  Future<void> _ensureLoanProductColumns(Database db) async {
+    final columns = await db.rawQuery("PRAGMA table_info('loan_products')");
+    final existing = columns.map((column) => column['name'] as String).toSet();
+
+    Future<void> addColumn(String name, String definition) async {
+      if (existing.contains(name)) return;
+      await db.execute('ALTER TABLE loan_products ADD COLUMN $definition');
+    }
+
+    await addColumn('interest_type', "interest_type TEXT DEFAULT 'FLAT'");
+    await addColumn('term_value', 'term_value INTEGER DEFAULT 30');
+    await addColumn('term_unit', "term_unit TEXT DEFAULT 'DAYS'");
+    await addColumn('duration_days', 'duration_days INTEGER DEFAULT 30');
+    await addColumn(
+      'repayment_frequency',
+      "repayment_frequency TEXT DEFAULT 'DAILY'",
+    );
+    await addColumn(
+      'processing_fee_type',
+      "processing_fee_type TEXT DEFAULT 'PERCENTAGE'",
+    );
+    await addColumn(
+      'processing_fee_percent',
+      'processing_fee_percent REAL DEFAULT 0',
+    );
+    await addColumn(
+      'processing_fee_fixed_amount',
+      'processing_fee_fixed_amount REAL',
+    );
+    await addColumn(
+      'penalty_rate_percent',
+      'penalty_rate_percent REAL DEFAULT 0',
+    );
+    await addColumn('fine_period_days', 'fine_period_days INTEGER DEFAULT 10');
+    await addColumn(
+      'payment_start_policy',
+      "payment_start_policy TEXT DEFAULT 'NEXT_DAY'",
+    );
+    await addColumn(
+      'payment_start_delay_days',
+      'payment_start_delay_days INTEGER',
+    );
+    await addColumn(
+      'allow_agent_date_pick',
+      'allow_agent_date_pick INTEGER DEFAULT 0',
+    );
+    await addColumn('description', 'description TEXT');
+  }
+
+  Future<void> _ensureLoanApplicationColumns(Database db) async {
+    final columns = await db.rawQuery("PRAGMA table_info('loan_applications')");
+    final existing = columns.map((column) => column['name'] as String).toSet();
+
+    Future<void> addColumn(String name, String definition) async {
+      if (existing.contains(name)) return;
+      await db.execute('ALTER TABLE loan_applications ADD COLUMN $definition');
+    }
+
+    await addColumn('processing_fee', 'processing_fee REAL DEFAULT 0');
   }
 
   /// Get sync metadata value

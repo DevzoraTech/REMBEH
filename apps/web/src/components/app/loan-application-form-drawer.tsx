@@ -83,7 +83,9 @@ type LoanTemplate = {
   termValue: number;
   termUnit: "DAYS" | "WEEKS" | "MONTHS" | "YEARS";
   repaymentFrequency: string;
+  processingFeeType?: "PERCENTAGE" | "FIXED";
   processingFeePercent: number;
+  processingFeeFixedAmount?: number | null;
   minLoanAmount: number | null;
   maxLoanAmount: number | null;
   isActive: boolean;
@@ -1290,6 +1292,10 @@ function moneyInput(value: string) {
 
 function feeForPrincipal(principal: string, template: LoanTemplate) {
   const amount = Number(principal);
+  if (template.processingFeeType === "FIXED") {
+    const fixed = Number(template.processingFeeFixedAmount ?? 0);
+    return Number.isFinite(fixed) ? String(Math.max(0, Math.round(fixed))) : "";
+  }
   if (!Number.isFinite(amount) || amount <= 0) return "";
   return String(Math.round(amount * (template.processingFeePercent / 100)));
 }

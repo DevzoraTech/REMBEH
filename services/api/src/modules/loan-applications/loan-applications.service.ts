@@ -324,6 +324,27 @@ export class LoanApplicationsService {
     const templateSnapshot = dto.loanProductTemplateId
       ? await this.buildTemplateSnapshot(user, dto)
       : null;
+    const existingProcessingFeeType =
+      existing.processingFeeType ??
+      (existing.processingFeePercent != null ? 'PERCENTAGE' : null);
+    const existingTemplateSnapshot =
+      !templateSnapshot &&
+      dto.principalAmount !== undefined &&
+      existing.loanProductTemplateId &&
+      existingProcessingFeeType
+        ? {
+            processingFeeType: existingProcessingFeeType,
+            processingFeePercent:
+              existing.processingFeePercent != null
+                ? Number(existing.processingFeePercent.toString())
+                : 0,
+            processingFeeFixedAmount:
+              existing.processingFeeFixedAmount != null
+                ? Number(existing.processingFeeFixedAmount.toString())
+                : null,
+          }
+        : null;
+    const feeSnapshot = templateSnapshot ?? existingTemplateSnapshot;
 
     const principalForFee =
       dto.principalAmount ??
@@ -333,13 +354,15 @@ export class LoanApplicationsService {
 
     let processingFeeFromTemplate: number | undefined;
     if (
-      templateSnapshot &&
+      feeSnapshot &&
       principalForFee != null &&
       dto.processingFee === undefined
     ) {
       processingFeeFromTemplate = computeProcessingFeeAmount({
         principalAmount: principalForFee,
-        processingFeePercent: templateSnapshot.processingFeePercent,
+        processingFeeType: feeSnapshot.processingFeeType,
+        processingFeePercent: feeSnapshot.processingFeePercent,
+        processingFeeFixedAmount: feeSnapshot.processingFeeFixedAmount,
       });
     }
 
@@ -379,9 +402,16 @@ export class LoanApplicationsService {
             termValue: templateSnapshot.termValue,
             termUnit: templateSnapshot.termUnit,
             repaymentFrequency: templateSnapshot.repaymentFrequency,
+            processingFeeType: templateSnapshot.processingFeeType,
             processingFeePercent: new Prisma.Decimal(
               templateSnapshot.processingFeePercent,
             ),
+            processingFeeFixedAmount:
+              templateSnapshot.processingFeeFixedAmount != null
+                ? new Prisma.Decimal(
+                    templateSnapshot.processingFeeFixedAmount.toFixed(2),
+                  )
+                : null,
             penaltyRatePercent: new Prisma.Decimal(
               templateSnapshot.penaltyRatePercent,
             ),
@@ -406,7 +436,9 @@ export class LoanApplicationsService {
             processingFee:
               dto.processingFee !== undefined
                 ? new Prisma.Decimal(dto.processingFee)
-                : undefined,
+                : processingFeeFromTemplate !== undefined
+                  ? new Prisma.Decimal(processingFeeFromTemplate.toFixed(2))
+                  : undefined,
           }),
       loanPurpose:
         dto.loanPurpose !== undefined
@@ -1340,10 +1372,9 @@ export class LoanApplicationsService {
       where: { id: application.branchId },
       select: { name: true },
     });
-    const supportPhone =
-      await this.smsNotificationSettings.resolveSupportPhone(
-        application.branchId,
-      );
+    const supportPhone = await this.smsNotificationSettings.resolveSupportPhone(
+      application.branchId,
+    );
     const body = buildLoanRecordedSms({
       fullName: this.clientName(application),
       principal: Number.isFinite(amount) ? amount : 0,
@@ -1478,8 +1509,14 @@ export class LoanApplicationsService {
       termValue: application.termValue,
       termUnit: application.termUnit,
       repaymentFrequency: application.repaymentFrequency,
+      processingFeeType:
+        application.processingFeeType ??
+        (application.processingFeePercent != null ? 'PERCENTAGE' : null),
       processingFeePercent: this.decimalToNumber(
         application.processingFeePercent,
+      ),
+      processingFeeFixedAmount: this.decimalToNumber(
+        application.processingFeeFixedAmount,
       ),
       penaltyRatePercent: this.decimalToNumber(application.penaltyRatePercent),
       finePeriodDays: application.finePeriodDays,
@@ -1621,7 +1658,12 @@ export class LoanApplicationsService {
       termUnit: template.termUnit,
       repaymentFrequency: template.repaymentFrequency,
       interestRatePercent: Number(template.interestRatePercent.toString()),
+      processingFeeType: template.processingFeeType,
       processingFeePercent: Number(template.processingFeePercent.toString()),
+      processingFeeFixedAmount:
+        template.processingFeeFixedAmount != null
+          ? Number(template.processingFeeFixedAmount.toString())
+          : null,
       penaltyRatePercent: Number(template.penaltyRatePercent.toString()),
       finePeriodDays: template.finePeriodDays,
       paymentStartPolicy: template.paymentStartPolicy,

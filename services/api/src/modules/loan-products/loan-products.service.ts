@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import {
   LoanInterestType,
+  LoanProcessingFeeType,
   LoanRepaymentFrequency,
   LoanTermUnit,
   PaymentStartPolicyType,
@@ -103,6 +104,13 @@ export class LoanProductsService {
     this.requireManage(user);
     this.assertTemplateAmounts(dto.minLoanAmount, dto.maxLoanAmount);
     this.assertPaymentStart(dto.paymentStartPolicy, dto.paymentStartDelayDays);
+    const processingFeeType =
+      dto.processingFeeType ?? LoanProcessingFeeType.PERCENTAGE;
+    this.assertProcessingFeeConfig({
+      processingFeeType,
+      processingFeePercent: dto.processingFeePercent,
+      processingFeeFixedAmount: dto.processingFeeFixedAmount,
+    });
     const branchId = this.resolveWriteBranchId(user, dto.branchId);
     const paymentStartPolicy = dto.paymentStartPolicy ?? 'NEXT_DAY';
 
@@ -116,7 +124,12 @@ export class LoanProductsService {
       termValue: dto.termValue,
       termUnit: dto.termUnit,
       repaymentFrequency: dto.repaymentFrequency,
-      processingFeePercent: new Prisma.Decimal(dto.processingFeePercent),
+      processingFeeType,
+      processingFeePercent: new Prisma.Decimal(dto.processingFeePercent ?? 0),
+      processingFeeFixedAmount:
+        processingFeeType === LoanProcessingFeeType.FIXED
+          ? new Prisma.Decimal((dto.processingFeeFixedAmount ?? 0).toFixed(2))
+          : null,
       penaltyRatePercent: new Prisma.Decimal(dto.penaltyRatePercent),
       finePeriodDays: dto.finePeriodDays ?? 10,
       paymentStartPolicy,
@@ -179,6 +192,25 @@ export class LoanProductsService {
         ? dto.paymentStartDelayDays
         : existing.paymentStartDelayDays;
     this.assertPaymentStart(nextPaymentStartType, nextPaymentStartAfterDays);
+    const nextProcessingFeeType =
+      dto.processingFeeType !== undefined
+        ? dto.processingFeeType
+        : existing.processingFeeType;
+    const nextProcessingFeePercent =
+      dto.processingFeePercent !== undefined
+        ? dto.processingFeePercent
+        : Number(existing.processingFeePercent.toString());
+    const nextProcessingFeeFixedAmount =
+      dto.processingFeeFixedAmount !== undefined
+        ? dto.processingFeeFixedAmount
+        : existing.processingFeeFixedAmount != null
+          ? Number(existing.processingFeeFixedAmount.toString())
+          : null;
+    this.assertProcessingFeeConfig({
+      processingFeeType: nextProcessingFeeType,
+      processingFeePercent: nextProcessingFeePercent,
+      processingFeeFixedAmount: nextProcessingFeeFixedAmount,
+    });
 
     const updated = await this.repository.updateTemplate(id, {
       ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
@@ -198,9 +230,23 @@ export class LoanProductsService {
       ...(dto.repaymentFrequency !== undefined
         ? { repaymentFrequency: dto.repaymentFrequency }
         : {}),
+      ...(dto.processingFeeType !== undefined
+        ? { processingFeeType: dto.processingFeeType }
+        : {}),
       ...(dto.processingFeePercent !== undefined
         ? {
             processingFeePercent: new Prisma.Decimal(dto.processingFeePercent),
+          }
+        : {}),
+      ...(dto.processingFeeType !== undefined ||
+      dto.processingFeeFixedAmount !== undefined
+        ? {
+            processingFeeFixedAmount:
+              nextProcessingFeeType === LoanProcessingFeeType.FIXED
+                ? new Prisma.Decimal(
+                    (nextProcessingFeeFixedAmount ?? 0).toFixed(2),
+                  )
+                : null,
           }
         : {}),
       ...(dto.penaltyRatePercent !== undefined
@@ -285,7 +331,9 @@ export class LoanProductsService {
       termValue: existing.termValue,
       termUnit: existing.termUnit,
       repaymentFrequency: existing.repaymentFrequency,
+      processingFeeType: existing.processingFeeType,
       processingFeePercent: existing.processingFeePercent,
+      processingFeeFixedAmount: existing.processingFeeFixedAmount,
       penaltyRatePercent: existing.penaltyRatePercent,
       finePeriodDays: existing.finePeriodDays,
       paymentStartPolicy: existing.paymentStartPolicy,
@@ -351,6 +399,37 @@ export class LoanProductsService {
     ) {
       throw new BadRequestException(
         'paymentStartDelayDays is required when paymentStartPolicy is AFTER_N_DAYS.',
+      );
+    }
+  }
+
+  private assertProcessingFeeConfig(input: {
+    processingFeeType: LoanProcessingFeeType;
+    processingFeePercent?: number | null;
+    processingFeeFixedAmount?: number | null;
+  }) {
+    if (input.processingFeeType === LoanProcessingFeeType.FIXED) {
+      if (input.processingFeeFixedAmount == null) {
+        throw new BadRequestException(
+          'processingFeeFixedAmount is required when processingFeeType is FIXED.',
+        );
+      }
+      if (input.processingFeeFixedAmount < 0) {
+        throw new BadRequestException(
+          'processingFeeFixedAmount cannot be negative.',
+        );
+      }
+      return;
+    }
+
+    if (input.processingFeePercent == null) {
+      throw new BadRequestException(
+        'processingFeePercent is required when processingFeeType is PERCENTAGE.',
+      );
+    }
+    if (input.processingFeePercent < 0 || input.processingFeePercent > 100) {
+      throw new BadRequestException(
+        'processingFeePercent must be between 0 and 100.',
       );
     }
   }
@@ -634,7 +713,9 @@ export class LoanProductsService {
     termValue: number;
     termUnit: LoanTermUnit;
     repaymentFrequency: LoanRepaymentFrequency;
+    processingFeeType: LoanProcessingFeeType;
     processingFeePercent: Prisma.Decimal;
+    processingFeeFixedAmount: Prisma.Decimal | null;
     penaltyRatePercent: Prisma.Decimal;
     finePeriodDays: number;
     paymentStartPolicy: PaymentStartPolicyType;
@@ -660,7 +741,12 @@ export class LoanProductsService {
       termUnit: row.termUnit,
       durationDays: termToDurationDays(row.termValue, row.termUnit),
       repaymentFrequency: row.repaymentFrequency,
+      processingFeeType: row.processingFeeType,
       processingFeePercent: Number(row.processingFeePercent.toString()),
+      processingFeeFixedAmount:
+        row.processingFeeFixedAmount != null
+          ? Number(row.processingFeeFixedAmount.toString())
+          : null,
       penaltyRatePercent: Number(row.penaltyRatePercent.toString()),
       finePeriodDays: row.finePeriodDays,
       paymentStartPolicy: row.paymentStartPolicy,

@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -9,10 +10,12 @@ import {
   MarketingCampaignPlacement,
   MarketingCampaignStatus,
   Prisma,
+  UserStatus,
 } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { PrismaService } from '../../database/prisma.service';
+import { FcmPushService } from '../notifications/fcm-push.service';
 import { ObjectStorageService } from '../storage/object-storage.service';
 import type { ControlCenterAdminContext } from '../control-center/control-center-admin';
 import {
@@ -37,9 +40,12 @@ type CampaignWithRelations = Prisma.MarketingCampaignGetPayload<{
 
 @Injectable()
 export class MarketingService {
+  private readonly logger = new Logger(MarketingService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly objectStorage: ObjectStorageService,
+    private readonly fcmPushService: FcmPushService,
   ) {}
 
   async listControlCenterCampaigns(): Promise<MarketingCampaignListContract> {
@@ -93,6 +99,10 @@ export class MarketingService {
       status: campaign.status,
     });
 
+    if (campaign.status === MarketingCampaignStatus.ACTIVE) {
+      this.queueCampaignNotification(campaign);
+    }
+
     return { campaign: await this.toCampaignContract(campaign) };
   }
 
@@ -123,6 +133,13 @@ export class MarketingService {
       title: campaign.title,
     });
 
+    if (
+      existing.status !== MarketingCampaignStatus.ACTIVE &&
+      campaign.status === MarketingCampaignStatus.ACTIVE
+    ) {
+      this.queueCampaignNotification(campaign);
+    }
+
     return { campaign: await this.toCampaignContract(campaign) };
   }
 
@@ -150,6 +167,13 @@ export class MarketingService {
       oldStatus: existing.status,
       newStatus: campaign.status,
     });
+
+    if (
+      existing.status !== MarketingCampaignStatus.ACTIVE &&
+      campaign.status === MarketingCampaignStatus.ACTIVE
+    ) {
+      this.queueCampaignNotification(campaign);
+    }
 
     return { campaign: await this.toCampaignContract(campaign) };
   }
@@ -563,6 +587,106 @@ export class MarketingService {
       createdAt: campaign.createdAt.toISOString(),
       updatedAt: campaign.updatedAt.toISOString(),
     };
+  }
+
+  private queueCampaignNotification(campaign: CampaignWithRelations) {
+    void this.sendCampaignNotification(campaign).catch((error) => {
+      this.logger.warn(
+        `Campaign notification failed for ${campaign.id}: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    });
+  }
+
+  private async sendCampaignNotification(campaign: CampaignWithRelations) {
+    if (!this.campaignIsLiveNow(campaign)) {
+      return;
+    }
+
+    const users = await this.findCampaignNotificationUsers(campaign);
+    let success = 0;
+
+    for (const user of users) {
+      const result = await this.fcmPushService.sendToUser(user.tenantId, user.id, {
+        title: campaign.title,
+        body: campaign.body,
+        href: campaign.ctaUrl ?? '/owner',
+        data: {
+          type: 'marketing_campaign',
+          campaignId: campaign.id,
+          placement: campaign.placement,
+          ...(campaign.ctaUrl ? { ctaUrl: campaign.ctaUrl } : {}),
+        },
+      });
+      success += result.success;
+    }
+
+    this.logger.log(
+      `Campaign notification ${campaign.id}: targeted ${users.length} users, delivered ${success} token(s).`,
+    );
+  }
+
+  private campaignIsLiveNow(campaign: CampaignWithRelations) {
+    const now = new Date();
+    return (
+      campaign.status === MarketingCampaignStatus.ACTIVE &&
+      campaign.placement === MarketingCampaignPlacement.MOBILE_HEADER &&
+      campaign.startsAt <= now &&
+      (!campaign.endsAt || campaign.endsAt >= now)
+    );
+  }
+
+  private findCampaignNotificationUsers(campaign: CampaignWithRelations) {
+    const roleNames =
+      campaign.audience === MarketingCampaignAudience.TENANT_OWNERS
+        ? ['Account Owner', 'Owner', 'Workspace Owner']
+        : campaign.roleNames;
+
+    const scopedWhere: Prisma.UserWhereInput = {
+      status: UserStatus.ACTIVE,
+      ...(campaign.tenantId ? { tenantId: campaign.tenantId } : {}),
+      ...(campaign.branchId ? { branchId: campaign.branchId } : {}),
+    };
+
+    let where: Prisma.UserWhereInput;
+    switch (campaign.audience) {
+      case MarketingCampaignAudience.ALL_USERS:
+        where = { status: UserStatus.ACTIVE };
+        break;
+      case MarketingCampaignAudience.TENANT_USERS:
+      case MarketingCampaignAudience.BRANCH_USERS:
+        where = scopedWhere;
+        break;
+      case MarketingCampaignAudience.TENANT_OWNERS:
+      case MarketingCampaignAudience.ROLE_USERS:
+        where = {
+          ...scopedWhere,
+          roles: {
+            some: {
+              role: {
+                name: { in: roleNames },
+              },
+            },
+          },
+        };
+        break;
+      case MarketingCampaignAudience.SELECTED_USERS:
+        where = {
+          ...scopedWhere,
+          id: { in: campaign.userIds },
+        };
+        break;
+      default:
+        where = scopedWhere;
+    }
+
+    return this.prisma.user.findMany({
+      where,
+      select: { id: true, tenantId: true },
+      orderBy: { createdAt: 'asc' },
+      take: 1000,
+    });
   }
 
   private async resolveMediaUrl(campaign: CampaignWithRelations) {

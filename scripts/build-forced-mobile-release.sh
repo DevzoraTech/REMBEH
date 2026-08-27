@@ -218,46 +218,127 @@ publish_release() {
   local remote_apk="/tmp/rembeh-mobile-${version}-${build}.apk"
 
   echo "==> Syncing register script to EC2..."
-  ec2_scp "$ROOT/scripts/register-mobile-apk-on-ec2.sh" "$USER_NAME@$HOST:/tmp/register-mobile-apk-on-ec2.sh" >/dev/null
+
+  ec2_scp \
+    "$ROOT/scripts/register-mobile-apk-on-ec2.sh" \
+    "$USER_NAME@$HOST:/tmp/register-mobile-apk-on-ec2.sh" \
+    >/dev/null
+
   ec2_ssh "$USER_NAME@$HOST" bash -s -- "$REMOTE_DIR" <<'REMOTE'
 set -euo pipefail
+
 REMOTE_DIR="$1"
+
 mkdir -p "$REMOTE_DIR/scripts"
-install -m 755 /tmp/register-mobile-apk-on-ec2.sh "$REMOTE_DIR/scripts/register-mobile-apk-on-ec2.sh"
+
+install \
+  -m 755 \
+  /tmp/register-mobile-apk-on-ec2.sh \
+  "$REMOTE_DIR/scripts/register-mobile-apk-on-ec2.sh"
 REMOTE
 
   echo "==> Uploading APK to EC2..."
-  ec2_scp "$APK_PATH" "$USER_NAME@$HOST:$remote_apk" >/dev/null
+
+  ec2_scp \
+    "$APK_PATH" \
+    "$USER_NAME@$HOST:$remote_apk" \
+    >/dev/null
 
   echo "==> Registering forced update and uploading to production S3..."
-  local force_arg=()
+
+  #
+  # SSH remote commands do not preserve ordinary shell argument boundaries
+  # for values containing spaces.
+  #
+  # Encode user-facing text before transport so MESSAGE and CHANGELOG arrive
+  # on EC2 as exactly one argument each.
+  #
+  local message_b64
+  local changelog_b64
+
+  message_b64="$(
+    printf '%s' "$MESSAGE" |
+      base64 |
+      tr -d '\n'
+  )"
+
+  changelog_b64="$(
+    printf '%s' "$CHANGELOG_CSV" |
+      base64 |
+      tr -d '\n'
+  )"
+
+  local force_value="false"
+
   if [[ "$FORCE_UPDATE" == "true" ]]; then
-    force_arg=(--force)
+    force_value="true"
   fi
-  ec2_ssh "$USER_NAME@$HOST" bash -s -- "$REMOTE_DIR" "$remote_apk" "$version" "$build" "$MESSAGE" "$CHANGELOG_CSV" "$min_build" "${force_arg[@]}" <<'REMOTE'
+
+  ec2_ssh \
+    "$USER_NAME@$HOST" \
+    bash -s -- \
+    "$REMOTE_DIR" \
+    "$remote_apk" \
+    "$version" \
+    "$build" \
+    "$message_b64" \
+    "$changelog_b64" \
+    "$min_build" \
+    "$force_value" <<'REMOTE'
 set -euo pipefail
+
 REMOTE_DIR="$1"
 REMOTE_APK="$2"
 VERSION="$3"
 BUILD="$4"
-MESSAGE="$5"
-CHANGELOG="$6"
+MESSAGE_B64="$5"
+CHANGELOG_B64="$6"
 MIN_BUILD="$7"
-shift 7
+FORCE_UPDATE="$8"
+
+MESSAGE="$(
+  printf '%s' "$MESSAGE_B64" |
+    base64 --decode
+)"
+
+CHANGELOG="$(
+  printf '%s' "$CHANGELOG_B64" |
+    base64 --decode
+)"
+
 cd "$REMOTE_DIR"
+
+register_args=(
+  --apk "$REMOTE_APK"
+  --version "$VERSION"
+  --build "$BUILD"
+  --message "$MESSAGE"
+  --changelog "$CHANGELOG"
+  --min-build "$MIN_BUILD"
+)
+
+if [[ "$FORCE_UPDATE" == "true" ]]; then
+  register_args+=(--force)
+fi
+
 ./scripts/register-mobile-apk-on-ec2.sh \
-  --apk "$REMOTE_APK" \
-  --version "$VERSION" \
-  --build "$BUILD" \
-  --message "$MESSAGE" \
-  --changelog "$CHANGELOG" \
-  --min-build "$MIN_BUILD" \
-  "$@"
+  "${register_args[@]}"
 REMOTE
 
   echo "==> Verifying update endpoint..."
-  local current_build=$((build > 1 ? build - 1 : 0))
-  curl -fsS "$API_URL/app/check-update?appName=$APP_NAME&platform=$PLATFORM&currentBuild=$current_build" >/dev/null
+
+    local current_build
+
+  if (( build > 1 )); then
+    current_build=$((build - 1))
+  else
+    current_build=0
+  fi
+
+  curl -fsS \
+    "$API_URL/app/check-update?appName=$APP_NAME&platform=$PLATFORM&currentBuild=$current_build" \
+    >/dev/null
+
   echo "Release ready: version ${version}+${build}"
 }
 

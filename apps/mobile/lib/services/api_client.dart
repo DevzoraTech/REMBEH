@@ -360,7 +360,10 @@ class ApiClient {
     String? date,
   }) async {
     final uri = Uri.parse('$rembehApiBaseUrl/agents').replace(
-      queryParameters: date == null || date.isEmpty ? null : {'date': date},
+      queryParameters: {
+        if (date != null && date.isNotEmpty) 'date': date,
+        'purpose': 'float',
+      },
     );
     final response = await http.get(uri, headers: _authHeaders(session));
     final body = _decode(response);

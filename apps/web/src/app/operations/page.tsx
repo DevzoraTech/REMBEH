@@ -480,7 +480,9 @@ export default function OperationsPage() {
       setLoadingAgents(true);
       try {
         const response = await fetch(
-          `${apiBaseUrl}/agents?date=${encodeURIComponent(selectedDate)}`,
+          `${apiBaseUrl}/agents?date=${encodeURIComponent(
+            selectedDate,
+          )}&purpose=float`,
           {
             headers: {
               Authorization: `${activeSession.tokenType} ${activeSession.accessToken}`,
@@ -4288,7 +4290,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
     },
     "issue-float": {
       title: "Issue float",
-      subtitle: "Assign float to a field officer for the field day.",
+      subtitle: "Assign float to responsible staff for the field day.",
       cta: "Issue float",
       icon: <UserRoundPlus className="size-5" />,
       stats: (operation: DailyOperation) => [
@@ -4304,7 +4306,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
     },
     "add-float": {
       title: "Add more float",
-      subtitle: "Add float to a field officer who already has float today.",
+      subtitle: "Add float to responsible staff who already have float today.",
       cta: "Add float",
       icon: <CircleDollarSign className="size-5" />,
       stats: (operation: DailyOperation) => [
@@ -4667,7 +4669,9 @@ function FloatPanelForm({
         <DrawerAlert tone="amber">{emptyMessage}</DrawerAlert>
       ) : (
         <div className="space-y-2">
-          <p className="text-[11px] font-semibold text-slate-600">Agent</p>
+          <p className="text-[11px] font-semibold text-slate-600">
+            Responsible staff
+          </p>
           {options.map((option) => {
             const selected = form.agentId === option.id;
             return (

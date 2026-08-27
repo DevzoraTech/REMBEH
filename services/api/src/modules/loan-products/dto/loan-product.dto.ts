@@ -1,5 +1,6 @@
 import {
   LoanInterestType,
+  LoanProcessingFeeType,
   LoanRepaymentFrequency,
   LoanTermUnit,
   PaymentStartPolicyType,
@@ -182,10 +183,20 @@ export class CreateLoanProductTemplateDto {
   @IsEnum(LoanRepaymentFrequency)
   repaymentFrequency!: LoanRepaymentFrequency;
 
+  @IsOptional()
+  @IsEnum(LoanProcessingFeeType)
+  processingFeeType?: LoanProcessingFeeType;
+
+  @IsOptional()
   @IsNumber({ maxDecimalPlaces: 4 })
   @Min(0)
   @Max(100)
-  processingFeePercent!: number;
+  processingFeePercent?: number;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  processingFeeFixedAmount?: number;
 
   /** Penalty % of original principal per fine period after maturity. */
   @IsNumber({ maxDecimalPlaces: 4 })
@@ -281,10 +292,19 @@ export class UpdateLoanProductTemplateDto {
   repaymentFrequency?: LoanRepaymentFrequency;
 
   @IsOptional()
+  @IsEnum(LoanProcessingFeeType)
+  processingFeeType?: LoanProcessingFeeType;
+
+  @IsOptional()
   @IsNumber({ maxDecimalPlaces: 4 })
   @Min(0)
   @Max(100)
   processingFeePercent?: number;
+
+  @IsOptional()
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  processingFeeFixedAmount?: number | null;
 
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 4 })

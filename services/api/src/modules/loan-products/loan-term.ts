@@ -57,10 +57,19 @@ export function computePenaltyFineAmount(input: {
 
 export function computeProcessingFeeAmount(input: {
   principalAmount: number;
-  processingFeePercent: number;
+  processingFeeType?: 'PERCENTAGE' | 'FIXED' | string | null;
+  processingFeePercent?: number | null;
+  processingFeeFixedAmount?: number | null;
 }): number {
+  const type = String(input.processingFeeType ?? 'PERCENTAGE').toUpperCase();
+  if (type === 'FIXED') {
+    const amount = Number(input.processingFeeFixedAmount);
+    if (!Number.isFinite(amount) || amount < 0) return 0;
+    return Math.round(amount * 100) / 100;
+  }
+
   const principal = Number(input.principalAmount);
-  const rate = Number(input.processingFeePercent);
+  const rate = Number(input.processingFeePercent ?? 0);
   if (!Number.isFinite(principal) || principal <= 0) return 0;
   if (!Number.isFinite(rate) || rate < 0) return 0;
   return Math.round(principal * (rate / 100) * 100) / 100;

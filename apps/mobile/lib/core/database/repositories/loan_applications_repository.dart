@@ -115,6 +115,7 @@ class LoanApplicationsRepository {
       'applicantPhone': application.applicantPhone,
       'applicantVillage': application.applicantVillage,
       'requestedAmount': application.requestedAmount,
+      'processingFee': application.processingFee,
       'loanProductId': application.loanProductId,
       'guarantorName': application.guarantorName,
       'guarantorPhone': application.guarantorPhone,
@@ -122,18 +123,14 @@ class LoanApplicationsRepository {
       'businessDescription': application.businessDescription,
     });
 
-    await database.insert(
-      'pending_operations',
-      {
-        'operation_type': OperationType.loanApplicationCreate,
-        'local_entity_id': application.localId,
-        'payload': payload,
-        'created_at': DateTime.now().millisecondsSinceEpoch,
-        'retry_count': 0,
-        'status': OperationStatus.pending,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await database.insert('pending_operations', {
+      'operation_type': OperationType.loanApplicationCreate,
+      'local_entity_id': application.localId,
+      'payload': payload,
+      'created_at': DateTime.now().millisecondsSinceEpoch,
+      'retry_count': 0,
+      'status': OperationStatus.pending,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   /// Mark loan application as synced with server ID

@@ -60,7 +60,9 @@ export type LoanProductTemplateContract = {
   /** Derived duration in days for schedules / fines. */
   durationDays: number;
   repaymentFrequency: 'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | 'LUMP_SUM';
+  processingFeeType: 'PERCENTAGE' | 'FIXED';
   processingFeePercent: number;
+  processingFeeFixedAmount: number | null;
   /** Fine = this % of original principal each finePeriodDays after maturity. */
   penaltyRatePercent: number;
   finePeriodDays: number;
@@ -101,6 +103,6 @@ export type LoanPricingBreakdownContract = {
    * REDUCING_BALANCE / COMPOUND use the same interim until amortization.
    */
   interestAmount: number;
-  /** principal + interestAmount + processingFee */
+  /** principal + interestAmount. Processing fee is separate fee income. */
   totalRepayable: number;
 };

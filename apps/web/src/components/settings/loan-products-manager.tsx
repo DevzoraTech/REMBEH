@@ -16,11 +16,7 @@ import {
 } from "../app/pagination";
 import { RowActions } from "../app/row-actions";
 import { TableSkeleton } from "../app/skeleton";
-import {
-  FormError,
-  SelectField,
-  TextField,
-} from "../auth/form-controls";
+import { FormError, SelectField, TextField } from "../auth/form-controls";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import type { RembehSession } from "../../lib/auth-session";
 import { SettingsModal } from "./settings-modal";
@@ -35,7 +31,9 @@ export type LoanTemplate = {
   termUnit: "DAYS" | "WEEKS" | "MONTHS" | "YEARS";
   durationDays: number;
   repaymentFrequency: "DAILY" | "WEEKLY" | "BIWEEKLY" | "MONTHLY" | "LUMP_SUM";
+  processingFeeType: "PERCENTAGE" | "FIXED";
   processingFeePercent: number;
+  processingFeeFixedAmount: number | null;
   penaltyRatePercent: number;
   finePeriodDays: number;
   paymentStartPolicy: "SAME_DAY" | "NEXT_DAY" | "AFTER_N_DAYS";
@@ -56,7 +54,9 @@ type TemplateForm = {
   termValue: string;
   termUnit: "DAYS" | "WEEKS" | "MONTHS";
   repaymentFrequency: "DAILY" | "WEEKLY" | "BIWEEKLY" | "MONTHLY" | "LUMP_SUM";
+  processingFeeType: "PERCENTAGE" | "FIXED";
   processingFeePercent: string;
+  processingFeeFixedAmount: string;
   penaltyRatePercent: string;
   finePeriodDays: string;
   paymentStartPolicy: "SAME_DAY" | "NEXT_DAY" | "AFTER_N_DAYS";
@@ -68,12 +68,7 @@ type TemplateForm = {
 };
 
 type WizardStepId =
-  | "basics"
-  | "interest"
-  | "term"
-  | "payment-start"
-  | "fines"
-  | "review";
+  "basics" | "interest" | "term" | "payment-start" | "fines" | "review";
 
 const WIZARD_STEPS: { id: WizardStepId; label: string; short: string }[] = [
   { id: "basics", label: "Basics", short: "Name" },
@@ -92,7 +87,9 @@ const emptyForm = (): TemplateForm => ({
   termValue: "",
   termUnit: "DAYS",
   repaymentFrequency: "DAILY",
+  processingFeeType: "PERCENTAGE",
   processingFeePercent: "",
+  processingFeeFixedAmount: "",
   penaltyRatePercent: "",
   finePeriodDays: "10",
   paymentStartPolicy: "NEXT_DAY",
@@ -116,7 +113,12 @@ function formFromTemplate(template: LoanTemplate): TemplateForm {
     termValue: String(template.termValue),
     termUnit,
     repaymentFrequency: template.repaymentFrequency,
+    processingFeeType: template.processingFeeType ?? "PERCENTAGE",
     processingFeePercent: String(template.processingFeePercent),
+    processingFeeFixedAmount:
+      template.processingFeeFixedAmount != null
+        ? String(template.processingFeeFixedAmount)
+        : "",
     penaltyRatePercent: String(template.penaltyRatePercent),
     finePeriodDays: String(template.finePeriodDays),
     paymentStartPolicy: template.paymentStartPolicy ?? "NEXT_DAY",
@@ -180,6 +182,18 @@ function interestTypeLabel(value: LoanTemplate["interestType"]) {
     case "COMPOUND":
       return "Compound";
   }
+}
+
+function processingFeeLabel(
+  template: Pick<
+    LoanTemplate,
+    "processingFeeType" | "processingFeePercent" | "processingFeeFixedAmount"
+  >,
+) {
+  if (template.processingFeeType === "FIXED") {
+    return `UGX ${Math.round(template.processingFeeFixedAmount ?? 0).toLocaleString()} fixed`;
+  }
+  return `${template.processingFeePercent}%`;
 }
 
 export function LoanProductsManager({
@@ -287,7 +301,15 @@ export function LoanProductsManager({
       termValue: Number(form.termValue),
       termUnit: form.termUnit,
       repaymentFrequency: form.repaymentFrequency,
-      processingFeePercent: Number(form.processingFeePercent),
+      processingFeeType: form.processingFeeType,
+      processingFeePercent:
+        form.processingFeeType === "PERCENTAGE"
+          ? Number(form.processingFeePercent)
+          : 0,
+      processingFeeFixedAmount:
+        form.processingFeeType === "FIXED"
+          ? Number(form.processingFeeFixedAmount)
+          : undefined,
       penaltyRatePercent: Number(form.penaltyRatePercent),
       finePeriodDays: Number(form.finePeriodDays || "10"),
       paymentStartPolicy: form.paymentStartPolicy,
@@ -326,10 +348,18 @@ export function LoanProductsManager({
           return "Enter an interest rate.";
         }
         if (
-          form.processingFeePercent === "" ||
-          Number.isNaN(Number(form.processingFeePercent))
+          form.processingFeeType === "PERCENTAGE" &&
+          (form.processingFeePercent === "" ||
+            Number.isNaN(Number(form.processingFeePercent)))
         ) {
           return "Enter a processing fee percent.";
+        }
+        if (
+          form.processingFeeType === "FIXED" &&
+          (form.processingFeeFixedAmount === "" ||
+            Number.isNaN(Number(form.processingFeeFixedAmount)))
+        ) {
+          return "Enter a fixed processing fee amount.";
         }
         return null;
       case "term":
@@ -640,7 +670,7 @@ export function LoanProductsManager({
                       {template.name}
                     </p>
                     <p className="mt-0.5 line-clamp-2 text-[10px] text-slate-500">
-                      Fee {template.processingFeePercent}% · Penalty{" "}
+                      Fee {processingFeeLabel(template)} · Penalty{" "}
                       {template.penaltyRatePercent}% / {template.finePeriodDays}
                       d · Start {paymentStartLabel(template)}
                     </p>
@@ -757,7 +787,9 @@ export function LoanProductsManager({
                   className="inline-flex h-10 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-5 text-xs font-semibold text-white shadow-[0_12px_24px_rgba(15,143,104,0.28)] transition hover:brightness-105 disabled:opacity-60"
                   disabled={saving}
                 >
-                  {saving ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                  {saving ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : null}
                   {editingId ? "Save changes" : "Create loan type"}
                 </button>
               )}
@@ -832,7 +864,9 @@ export function LoanProductsManager({
                   <textarea
                     className="min-h-14 w-full rounded-xl border border-[#e6ebf0] bg-[#f8faf9] px-3 py-2 text-sm text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] focus:bg-white"
                     value={form.notes}
-                    onChange={(event) => updateForm("notes", event.target.value)}
+                    onChange={(event) =>
+                      updateForm("notes", event.target.value)
+                    }
                     placeholder="Internal notes"
                   />
                 </label>
@@ -866,16 +900,46 @@ export function LoanProductsManager({
                   required
                   compact
                 />
-                <TextField
-                  label="Processing fee (%)"
-                  value={form.processingFeePercent}
+                <SelectField
+                  label="Processing fee type"
+                  value={form.processingFeeType}
                   onChange={(value) =>
-                    updateForm("processingFeePercent", value)
+                    updateForm(
+                      "processingFeeType",
+                      value as TemplateForm["processingFeeType"],
+                    )
                   }
-                  placeholder="2"
+                  options={[
+                    { value: "PERCENTAGE", label: "Percentage" },
+                    { value: "FIXED", label: "Fixed amount" },
+                  ]}
                   required
                   compact
                 />
+                {form.processingFeeType === "PERCENTAGE" ? (
+                  <TextField
+                    label="Processing fee (%)"
+                    value={form.processingFeePercent}
+                    onChange={(value) =>
+                      updateForm("processingFeePercent", value)
+                    }
+                    placeholder="2"
+                    required
+                    compact
+                  />
+                ) : null}
+                {form.processingFeeType === "FIXED" ? (
+                  <TextField
+                    label="Fixed processing fee (UGX)"
+                    value={form.processingFeeFixedAmount}
+                    onChange={(value) =>
+                      updateForm("processingFeeFixedAmount", value)
+                    }
+                    placeholder="5000"
+                    required
+                    compact
+                  />
+                ) : null}
               </div>
             ) : null}
 
@@ -1013,7 +1077,11 @@ export function LoanProductsManager({
                 />
                 <ReviewLine
                   label="Processing fee"
-                  value={`${form.processingFeePercent || "—"}%`}
+                  value={
+                    form.processingFeeType === "FIXED"
+                      ? `UGX ${form.processingFeeFixedAmount || "—"} fixed`
+                      : `${form.processingFeePercent || "—"}%`
+                  }
                 />
                 <ReviewLine
                   label="Term"

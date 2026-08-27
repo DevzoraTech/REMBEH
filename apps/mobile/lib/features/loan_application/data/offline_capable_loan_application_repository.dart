@@ -232,6 +232,7 @@ class OfflineCapableLoanApplicationRepository
     }
 
     final principal = _double(draft.data['principalAmount']);
+    final processingFee = _double(draft.data['processingFee']) ?? 0;
     final productId = _string(draft.data['loanProductTemplateId']);
     final phone = _string(draft.data['phone']);
     final givenNames = _string(draft.data['givenNames']);
@@ -264,6 +265,7 @@ class OfflineCapableLoanApplicationRepository
         applicantPhone: phone,
         applicantVillage: _string(draft.data['village']),
         requestedAmount: principal,
+        processingFee: processingFee,
         loanProductId: productId,
         guarantorName: _string(guarantorMap['fullName']),
         guarantorPhone: _string(guarantorMap['phone']),

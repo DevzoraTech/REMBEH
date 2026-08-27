@@ -100,10 +100,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
 
   void _applyTemplate(LoanProductTemplateOption template) {
     final principal = double.tryParse(_principal.text.replaceAll(',', '')) ?? 0;
-    final fee = principal > 0
-        ? (principal * (template.processingFeePercent / 100) * 100).round() /
-              100
-        : 0.0;
+    final fee = template.processingFeeForPrincipal(principal);
     final paymentStart = template.computePaymentStartDate();
     setState(() {
       _draft
@@ -112,11 +109,9 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         ..interestRate = '${template.interestRatePercent}%'
         ..loanDurationDays = template.termLabel
         ..repaymentFrequencyLabel = template.repaymentLabel
-        ..processingFee = fee > 0 ? fee.toStringAsFixed(0) : ''
+        ..processingFee = fee.toStringAsFixed(0)
         ..paymentStartDate = paymentStart;
-      if (fee > 0) {
-        _processingFee.text = fee.toStringAsFixed(0);
-      }
+      _processingFee.text = fee.toStringAsFixed(0);
     });
   }
 
@@ -125,8 +120,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     if (template == null) return;
     final principal = double.tryParse(_principal.text.replaceAll(',', '')) ?? 0;
     if (principal <= 0) return;
-    final fee =
-        (principal * (template.processingFeePercent / 100) * 100).round() / 100;
+    final fee = template.processingFeeForPrincipal(principal);
     _processingFee.text = fee.toStringAsFixed(0);
     _draft.processingFee = _processingFee.text;
   }
@@ -474,11 +468,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   Map<String, double>? _pricingPreview() {
     final principal = double.tryParse(_principal.text.replaceAll(',', '')) ?? 0;
     final template = _selectedTemplate();
-    final fee = double.tryParse(_processingFee.text.replaceAll(',', '')) ?? 0;
     if (template == null || principal <= 0) return null;
     final interest =
         (principal * (template.interestRatePercent / 100) * 100).round() / 100;
-    final total = ((principal + interest + fee) * 100).round() / 100;
+    final total = ((principal + interest) * 100).round() / 100;
     return {'interest': interest, 'total': total};
   }
 
@@ -1260,7 +1253,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
               ),
               const SizedBox(height: 4),
               Text(
-                'Processing fee: ${selected.processingFeePercent}%',
+                'Processing fee: ${selected.processingFeeLabel}',
                 style: const TextStyle(color: midnightNavy, fontSize: 13),
               ),
               const SizedBox(height: 4),

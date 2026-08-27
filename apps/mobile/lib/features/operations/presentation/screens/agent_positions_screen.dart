@@ -216,7 +216,7 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
     if (!_dayIsOpen) {
       setState(() {
         _error =
-            'Float cannot be changed after field officer balancing has been locked.';
+            'Float cannot be changed after staff balancing has been locked.';
       });
 
       return;
@@ -240,7 +240,7 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
         backgroundColor: Colors.transparent,
         builder: (_) {
           return _AllocateFloatSheet(
-            agentName: _string(agent['name']) ?? 'Field Officer',
+            agentName: _string(agent['name']) ?? 'Staff member',
             addMore: addMore,
             amountController: amount,
             notesController: notes,
@@ -2427,8 +2427,8 @@ class _NoFloatCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             dayOpen
-                ? 'This field officer has not received float for this business day.'
-                : 'This field officer did not receive float for this business day.',
+                ? 'This staff member has not received float for this business day.'
+                : 'This staff member did not receive float for this business day.',
             textAlign: TextAlign.center,
             style: const TextStyle(color: slateText, fontSize: 10, height: 1.4),
           ),

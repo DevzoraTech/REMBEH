@@ -32,8 +32,20 @@ describe('loan-term helpers', () => {
     expect(
       computeProcessingFeeAmount({
         principalAmount: 200_000,
+        processingFeeType: 'PERCENTAGE',
         processingFeePercent: 2.5,
       }),
     ).toBe(5000);
+  });
+
+  it('uses fixed processing fee amount when configured', () => {
+    expect(
+      computeProcessingFeeAmount({
+        principalAmount: 200_000,
+        processingFeeType: 'FIXED',
+        processingFeePercent: 10,
+        processingFeeFixedAmount: 7500,
+      }),
+    ).toBe(7500);
   });
 });

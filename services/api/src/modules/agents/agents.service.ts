@@ -48,12 +48,15 @@ export class AgentsService {
     user: AuthenticatedUser,
     search?: string,
     date?: string,
+    purpose?: string,
   ): Promise<AgentsListResponse> {
     this.assertCanRead(user);
     const scope = this.scope(user);
+    const includeFloatRecipients = purpose === 'float';
     const agents = await this.repository.listAgents({
       ...scope,
       search,
+      includeFloatRecipients,
     });
 
     const { dayStart, dayEnd, floatDate } = this.parseDayBounds(date);
@@ -255,9 +258,10 @@ export class AgentsService {
     const agent = await this.repository.findAgentById({
       ...scope,
       agentId,
+      includeFloatRecipients: true,
     });
     if (!agent) {
-      throw new NotFoundException('Agent not found.');
+      throw new NotFoundException('Staff member not found.');
     }
 
     const [sessions, allSessions, audits] = await Promise.all([
@@ -617,9 +621,10 @@ export class AgentsService {
     const agent = await this.repository.findAgentById({
       ...scope,
       agentId,
+      includeFloatRecipients: true,
     });
     if (!agent) {
-      throw new NotFoundException('Agent not found.');
+      throw new NotFoundException('Staff member not found.');
     }
     if (!user.permissions.includes('operation.float.manage')) {
       throw new ForbiddenException('Missing permission to assign float.');
@@ -654,7 +659,7 @@ export class AgentsService {
       .catch((error: unknown) => {
         if (isPrismaUniqueConstraintError(error)) {
           throw new BadRequestException(
-            'This agent already has float for this day.',
+            'This staff member already has float for this day.',
           );
         }
         throw error;
@@ -719,9 +724,10 @@ export class AgentsService {
     const agent = await this.repository.findAgentById({
       ...scope,
       agentId,
+      includeFloatRecipients: true,
     });
     if (!agent) {
-      throw new NotFoundException('Agent not found.');
+      throw new NotFoundException('Staff member not found.');
     }
     if (!user.permissions.includes('operation.float.manage')) {
       throw new ForbiddenException('Missing permission to assign float.');
