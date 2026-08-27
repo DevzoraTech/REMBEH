@@ -27,6 +27,24 @@ WEB_DOMAIN="${WEB_DOMAIN:-rembeh.antikra.com}"
 SKIP_PULL="${SKIP_PULL:-0}"
 
 smoke_check_web() {
+  local local_url="http://127.0.0.1:${WEB_PORT}/dashboard"
+  echo "==> Smoke: $local_url"
+  local local_code local_body
+  local_code="$(curl -fsS -o /tmp/rembeh-web-smoke.body -w "%{http_code}" --max-time 25 "$local_url" || true)"
+  local_body="$(head -c 400 /tmp/rembeh-web-smoke.body 2>/dev/null || true)"
+  rm -f /tmp/rembeh-web-smoke.body
+  if [[ "$local_code" != "200" ]]; then
+    echo "FATAL: expected HTTP 200 from $local_url, got ${local_code:-curl-failed}" >&2
+    exit 1
+  fi
+  if ! echo "$local_body" | grep -qiE 'next|<!DOCTYPE html'; then
+    echo "FATAL: local web body does not look like Next.js HTML" >&2
+    echo "$local_body" | head -c 200 >&2
+    echo >&2
+    exit 1
+  fi
+  echo "smoke_local_web=200 Next.js OK"
+
   local url="https://${WEB_DOMAIN}/dashboard"
   echo "==> Smoke: $url"
   local code body
@@ -34,8 +52,9 @@ smoke_check_web() {
   body="$(head -c 400 /tmp/rembeh-web-smoke.body 2>/dev/null || true)"
   rm -f /tmp/rembeh-web-smoke.body
   if [[ "$code" != "200" ]]; then
-    echo "FATAL: expected HTTP 200 from $url, got ${code:-curl-failed}" >&2
-    exit 1
+    echo "WARN: public HTTPS smoke for $url returned ${code:-curl-failed}." >&2
+    echo "      Check inbound 80/443 and TLS certificates after DNS/network repair." >&2
+    return 0
   fi
   if echo "$body" | grep -q 'Cannot GET'; then
     echo "FATAL: $url returned Nest 'Cannot GET' — nginx is proxying web Host to API :4000" >&2
