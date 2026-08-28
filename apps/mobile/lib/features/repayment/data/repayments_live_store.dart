@@ -38,6 +38,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
   bool _listening = false;
   String? _tenantId;
   String? _recentKey;
+  RembehSession? _session;
 
   HomeSummary get summary => _summary;
   List<FieldRepayment> get repayments => List.unmodifiable(_repayments);
@@ -51,6 +52,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
     }
     _tenantId = session.tenantId;
     _recentKey = _recentPrefsKey(session.tenantId);
+    _session = session;
     await _loadRecentIds();
     await _hydrateOfflineIndex(session);
     await refresh();
@@ -101,6 +103,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
     _listening = false;
     _tenantId = null;
     _recentKey = null;
+    _session = null;
     RealtimeClient.instance.off('payment.made', _onPaymentRealtime);
     notifyListeners();
   }
@@ -193,6 +196,48 @@ class RepaymentsLiveStore extends ChangeNotifier {
     }
   }
 
+  Future<ClientLoanDetail> correctLoan({
+    required String loanId,
+    required Map<String, dynamic> values,
+  }) async {
+    final network = NetworkStatusStore.instance;
+    if (network.isOffline && !await network.checkNow()) {
+      throw ApiException(
+        'Connect to the internet before correcting legacy records.',
+      );
+    }
+
+    final detail = await _locator.repository.correctLoan(
+      loanId: loanId,
+      values: values,
+    );
+    _detailCache[loanId] = detail;
+    await refreshOfflineIndexForCurrentSession();
+    await refresh();
+    notifyListeners();
+    return detail;
+  }
+
+  Future<void> deleteLoan({
+    required String loanId,
+    required String reason,
+  }) async {
+    final network = NetworkStatusStore.instance;
+    if (network.isOffline && !await network.checkNow()) {
+      throw ApiException(
+        'Connect to the internet before deleting legacy records.',
+      );
+    }
+
+    await _locator.repository.deleteLoan(loanId: loanId, reason: reason);
+    _detailCache.remove(loanId);
+    _recentLoanIds.remove(loanId);
+    await _saveRecentIds();
+    await refreshOfflineIndexForCurrentSession();
+    await refresh();
+    notifyListeners();
+  }
+
   Future<List<ClientLoanDetail>> searchClients(String query) async {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return const [];
@@ -231,6 +276,12 @@ class RepaymentsLiveStore extends ChangeNotifier {
     }
   }
 
+  Future<void> refreshOfflineIndexForCurrentSession() async {
+    final session = _session;
+    if (session == null) return;
+    await refreshOfflineIndex(session);
+  }
+
   List<ClientLoanDetail> _searchOffline(String q) {
     final digits = q.replaceAll(RegExp(r'[^0-9+]'), '');
     final matches = _detailCache.values.where((client) {
@@ -258,6 +309,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
       customerId: json['customerId'] as String? ?? '',
       fullName: json['fullName'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
+      nationalId: json['nationalId'] as String?,
+      customerEmail: json['customerEmail'] as String?,
       registeredBy: json['registeredBy'] as String? ?? '',
       agentPhotoUrl: null,
       outstanding: _asInt(json['outstanding']),
@@ -273,6 +326,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
       nextDueIsToday: json['nextDueIsToday'] as bool? ?? false,
       paidAmount: _asInt(json['paidAmount']),
       loanAmount: _asInt(json['loanAmount']),
+      principalAmount: _asInt(json['loanAmount']),
+      openingBalance: _asInt(json['outstanding']),
       interestRatePercent: _asInt(json['interestRatePercent']),
       loanStartDate:
           DateTime.tryParse(json['loanStartDate'] as String? ?? '') ??
@@ -280,11 +335,19 @@ class RepaymentsLiveStore extends ChangeNotifier {
       maturityDate:
           DateTime.tryParse(json['maturityDate'] as String? ?? '') ??
           DateTime.now(),
-      paymentStartDate: null,
+      paymentStartDate: DateTime.tryParse(
+        json['paymentStartDate'] as String? ?? '',
+      ),
+      status: json['status'] as String? ?? 'CURRENT',
       isFined: json['isFined'] as bool? ?? false,
       finesTotal: _asInt(json['finesTotal']),
       paymentHistory: const [],
       fineHistory: const [],
+      correctionAccess: ClientLoanCorrectionAccess.fromJson(
+        json['correctionAccess'] is Map<String, dynamic>
+            ? json['correctionAccess'] as Map<String, dynamic>
+            : null,
+      ),
     );
   }
 
@@ -382,6 +445,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
       customerId: cached.customerId,
       fullName: cached.fullName,
       phone: cached.phone,
+      nationalId: cached.nationalId,
+      customerEmail: cached.customerEmail,
       registeredBy: cached.registeredBy,
       agentPhotoUrl: cached.agentPhotoUrl,
       outstanding: nextOutstanding,
@@ -397,10 +462,13 @@ class RepaymentsLiveStore extends ChangeNotifier {
       nextDueIsToday: cached.nextDueIsToday,
       paidAmount: cached.paidAmount + amount,
       loanAmount: cached.loanAmount,
+      principalAmount: cached.principalAmount,
+      openingBalance: cached.openingBalance,
       interestRatePercent: cached.interestRatePercent,
       loanStartDate: cached.loanStartDate,
       maturityDate: cached.maturityDate,
       paymentStartDate: cached.paymentStartDate,
+      status: cached.status,
       isFined: cached.isFined,
       finesTotal: cached.finesTotal,
       paymentHistory: [
@@ -415,6 +483,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
         ...cached.paymentHistory,
       ],
       fineHistory: cached.fineHistory,
+      correctionAccess: cached.correctionAccess,
     );
     _detailCache[loanId] = detail;
     final repayment = FieldRepayment(
@@ -486,6 +555,13 @@ class RepaymentsLiveStore extends ChangeNotifier {
     if (_recentLoanIds.length > 12) {
       _recentLoanIds.removeRange(12, _recentLoanIds.length);
     }
+    final key = _recentKey;
+    if (key == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(key, _recentLoanIds);
+  }
+
+  Future<void> _saveRecentIds() async {
     final key = _recentKey;
     if (key == null) return;
     final prefs = await SharedPreferences.getInstance();

@@ -67,13 +67,8 @@ export type LoanWithCollections = Prisma.LoanGetPayload<{
  *
  * Never silently allow an unscoped tenant query.
  */
-export function requireTenantId(
-  tenantId: string | null | undefined,
-): string {
-  if (
-    typeof tenantId !== 'string' ||
-    !tenantId.trim()
-  ) {
+export function requireTenantId(tenantId: string | null | undefined): string {
+  if (typeof tenantId !== 'string' || !tenantId.trim()) {
     throw new BadRequestException(
       'tenantId is required for tenant-scoped queries.',
     );
@@ -88,31 +83,21 @@ export function requireTenantId(
 
 @Injectable()
 export class CollectionsRepository {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   // ===========================================================================
   // SCOPE
   // ===========================================================================
 
-  branchScope(
-    user: {
-      tenantId: string;
-      branchId: string | null;
-    },
-  ) {
-    const tenantId = requireTenantId(
-      user.tenantId,
-    );
+  branchScope(user: { tenantId: string; branchId: string | null }) {
+    const tenantId = requireTenantId(user.tenantId);
 
     return {
       tenantId,
 
       ...(user.branchId
         ? {
-            branchId:
-              user.branchId,
+            branchId: user.branchId,
           }
         : {}),
     };
@@ -122,21 +107,13 @@ export class CollectionsRepository {
   // ACTIVE LOANS
   // ===========================================================================
 
-  listActiveLoans(
-    input: {
-      tenantId: string;
-      branchId: string | null;
-    },
-  ) {
+  listActiveLoans(input: { tenantId: string; branchId: string | null }) {
     return this.prisma.loan.findMany({
       where: {
-        ...this.branchScope(
-          input,
-        ),
+        ...this.branchScope(input),
 
         status: {
-          in:
-            activeLoanStatuses,
+          in: activeLoanStatuses,
         },
 
         balance: {
@@ -144,12 +121,10 @@ export class CollectionsRepository {
         },
       },
 
-      include:
-        loanWithRelations,
+      include: loanWithRelations,
 
       orderBy: {
-        updatedAt:
-          'desc',
+        updatedAt: 'desc',
       },
     });
   }
@@ -176,22 +151,17 @@ export class CollectionsRepository {
    * Processing fee is separate business income and must not be treated
    * as borrower debt.
    */
-  listActiveLoansForOffline(
-    input: {
-      tenantId: string;
-      branchId: string | null;
-      take?: number;
-    },
-  ) {
+  listActiveLoansForOffline(input: {
+    tenantId: string;
+    branchId: string | null;
+    take?: number;
+  }) {
     return this.prisma.loan.findMany({
       where: {
-        ...this.branchScope(
-          input,
-        ),
+        ...this.branchScope(input),
 
         status: {
-          in:
-            activeLoanStatuses,
+          in: activeLoanStatuses,
         },
 
         balance: {
@@ -201,10 +171,13 @@ export class CollectionsRepository {
 
       select: {
         id: true,
+        tenantId: true,
+        branchId: true,
         customerId: true,
 
         principal: true,
         balance: true,
+        status: true,
 
         disbursedAt: true,
         paymentStartDate: true,
@@ -219,6 +192,7 @@ export class CollectionsRepository {
             fullName: true,
             phone: true,
             nationalId: true,
+            email: true,
           },
         },
 
@@ -227,14 +201,11 @@ export class CollectionsRepository {
             phone: true,
             nationalId: true,
 
-            principalAmount:
-              true,
+            principalAmount: true,
 
-            interestRatePercent:
-              true,
+            interestRatePercent: true,
 
-            durationDays:
-              true,
+            durationDays: true,
 
             /*
              * This is required so the schedule engine can distinguish:
@@ -247,8 +218,7 @@ export class CollectionsRepository {
              *
              * Do not infer every loan as DAILY.
              */
-            repaymentFrequency:
-              true,
+            repaymentFrequency: true,
 
             /*
              * Separate fee information.
@@ -256,8 +226,7 @@ export class CollectionsRepository {
              * The collections service may display/report it, but it must
              * not form part of borrower principal + interest debt.
              */
-            processingFee:
-              true,
+            processingFee: true,
 
             /*
              * First contractual repayment date.
@@ -265,16 +234,13 @@ export class CollectionsRepository {
              * NEXT_DAY / AFTER_N_DAYS must therefore survive into
              * the mobile offline snapshot.
              */
-            paymentStartDate:
-              true,
+            paymentStartDate: true,
 
             officer: {
               select: {
-                displayName:
-                  true,
+                displayName: true,
 
-                publicId:
-                  true,
+                publicId: true,
               },
             },
           },
@@ -285,26 +251,20 @@ export class CollectionsRepository {
             /*
              * Contractual loan opening debt snapshot.
              */
-            openingBalance:
-              true,
+            openingBalance: true,
 
-            finesTotal:
-              true,
+            finesTotal: true,
 
-            isFined:
-              true,
+            isFined: true,
           },
         },
       },
 
       orderBy: {
-        updatedAt:
-          'desc',
+        updatedAt: 'desc',
       },
 
-      take:
-        input.take ??
-        1500,
+      take: input.take ?? 1500,
     });
   }
 
@@ -312,43 +272,30 @@ export class CollectionsRepository {
   // SEARCH
   // ===========================================================================
 
-  async searchLoans(
-    input: {
-      tenantId: string;
-      branchId: string | null;
-      query: string;
-      take?: number;
-    },
-  ) {
-    const tenantId =
-      requireTenantId(
-        input.tenantId,
-      );
+  async searchLoans(input: {
+    tenantId: string;
+    branchId: string | null;
+    query: string;
+    take?: number;
+  }) {
+    const tenantId = requireTenantId(input.tenantId);
 
-    const q =
-      input.query.trim();
+    const q = input.query.trim();
 
-    const take =
-      input.take ??
-      40;
+    const take = input.take ?? 40;
 
     const scope = {
       ...this.branchScope({
         tenantId,
-        branchId:
-          input.branchId,
+        branchId: input.branchId,
       }),
 
       status: {
-        in:
-          activeLoanStatuses,
+        in: activeLoanStatuses,
       },
     };
 
-    const variants =
-      phoneSearchVariants(
-        q,
-      );
+    const variants = phoneSearchVariants(q);
 
     /*
      * Nested relation clauses also include tenantId.
@@ -356,213 +303,160 @@ export class CollectionsRepository {
      * This prevents an OR expression from accidentally widening
      * the query outside the authenticated tenant.
      */
-    const phoneOr:
-      Prisma.LoanWhereInput[] =
-      variants.flatMap(
-        (
-          variant,
-        ) => [
-          {
-            customer: {
-              tenantId,
+    const phoneOr: Prisma.LoanWhereInput[] = variants.flatMap((variant) => [
+      {
+        customer: {
+          tenantId,
 
-              phone: {
-                contains:
-                  variant,
-              },
-            },
-          },
-
-          {
-            application: {
-              tenantId,
-
-              phone: {
-                contains:
-                  variant,
-              },
-            },
-          },
-        ],
-      );
-
-    const nameOr:
-      Prisma.LoanWhereInput[] =
-      [
-        {
-          customer: {
-            tenantId,
-
-            fullName: {
-              contains: q,
-              mode:
-                'insensitive',
-            },
+          phone: {
+            contains: variant,
           },
         },
+      },
 
-        {
-          customer: {
-            tenantId,
+      {
+        application: {
+          tenantId,
 
-            nationalId: {
-              contains: q,
-              mode:
-                'insensitive',
-            },
+          phone: {
+            contains: variant,
           },
         },
+      },
+    ]);
 
-        {
-          application: {
-            tenantId,
+    const nameOr: Prisma.LoanWhereInput[] = [
+      {
+        customer: {
+          tenantId,
 
-            surname: {
-              contains: q,
-              mode:
-                'insensitive',
-            },
+          fullName: {
+            contains: q,
+            mode: 'insensitive',
           },
         },
+      },
 
-        {
-          application: {
-            tenantId,
+      {
+        customer: {
+          tenantId,
 
-            givenNames: {
-              contains: q,
-              mode:
-                'insensitive',
-            },
+          nationalId: {
+            contains: q,
+            mode: 'insensitive',
           },
         },
+      },
 
-        {
-          application: {
-            tenantId,
+      {
+        application: {
+          tenantId,
 
-            nationalId: {
-              contains: q,
-              mode:
-                'insensitive',
-            },
+          surname: {
+            contains: q,
+            mode: 'insensitive',
           },
         },
-      ];
+      },
+
+      {
+        application: {
+          tenantId,
+
+          givenNames: {
+            contains: q,
+            mode: 'insensitive',
+          },
+        },
+      },
+
+      {
+        application: {
+          tenantId,
+
+          nationalId: {
+            contains: q,
+            mode: 'insensitive',
+          },
+        },
+      },
+    ];
 
     // -------------------------------------------------------------------------
     // PHONE-FIRST SEARCH
     // -------------------------------------------------------------------------
 
-    if (
-      looksLikePhoneQuery(
-        q,
-      ) &&
-      phoneOr.length >
-        0
-    ) {
-      const phoneHits =
-        await this.prisma.loan.findMany({
-          where: {
-            ...scope,
+    if (looksLikePhoneQuery(q) && phoneOr.length > 0) {
+      const phoneHits = await this.prisma.loan.findMany({
+        where: {
+          ...scope,
 
-            OR:
-              phoneOr,
-          },
+          OR: phoneOr,
+        },
 
-          include:
-            loanWithRelations,
+        include: loanWithRelations,
 
-          take,
+        take,
 
-          orderBy: {
-            updatedAt:
-              'desc',
-          },
-        });
+        orderBy: {
+          updatedAt: 'desc',
+        },
+      });
 
-      if (
-        phoneHits.length >=
-        take
-      ) {
+      if (phoneHits.length >= take) {
         return phoneHits;
       }
 
-      const excludeIds =
-        phoneHits.map(
-          (
-            loan,
-          ) =>
-            loan.id,
-        );
+      const excludeIds = phoneHits.map((loan) => loan.id);
 
-      const nameHits =
-        await this.prisma.loan.findMany({
-          where: {
-            ...scope,
+      const nameHits = await this.prisma.loan.findMany({
+        where: {
+          ...scope,
 
-            OR:
-              nameOr,
+          OR: nameOr,
 
-            ...(excludeIds.length
-              ? {
-                  id: {
-                    notIn:
-                      excludeIds,
-                  },
-                }
-              : {}),
-          },
+          ...(excludeIds.length
+            ? {
+                id: {
+                  notIn: excludeIds,
+                },
+              }
+            : {}),
+        },
 
-          include:
-            loanWithRelations,
+        include: loanWithRelations,
 
-          take:
-            take -
-            phoneHits.length,
+        take: take - phoneHits.length,
 
-          orderBy: {
-            updatedAt:
-              'desc',
-          },
-        });
+        orderBy: {
+          updatedAt: 'desc',
+        },
+      });
 
-      return [
-        ...phoneHits,
-        ...nameHits,
-      ];
+      return [...phoneHits, ...nameHits];
     }
 
     // -------------------------------------------------------------------------
     // MIXED SEARCH
     // -------------------------------------------------------------------------
 
-    const rows =
-      await this.prisma.loan.findMany({
-        where: {
-          ...scope,
+    const rows = await this.prisma.loan.findMany({
+      where: {
+        ...scope,
 
-          OR: [
-            ...phoneOr,
-            ...nameOr,
-          ],
-        },
+        OR: [...phoneOr, ...nameOr],
+      },
 
-        include:
-          loanWithRelations,
+      include: loanWithRelations,
 
-        take,
+      take,
 
-        orderBy: {
-          updatedAt:
-            'desc',
-        },
-      });
+      orderBy: {
+        updatedAt: 'desc',
+      },
+    });
 
-    if (
-      variants.length ===
-      0
-    ) {
+    if (variants.length === 0) {
       return rows;
     }
 
@@ -570,65 +464,22 @@ export class CollectionsRepository {
      * Keep phone matches above textual-name matches when the
      * mixed query returns both.
      */
-    return [
-      ...rows,
-    ].sort(
-      (
-        a,
-        b,
-      ) => {
-        const aPhone =
-          this.matchesPhone(
-            a,
-            variants,
-          )
-            ? 0
-            : 1;
+    return [...rows].sort((a, b) => {
+      const aPhone = this.matchesPhone(a, variants) ? 0 : 1;
 
-        const bPhone =
-          this.matchesPhone(
-            b,
-            variants,
-          )
-            ? 0
-            : 1;
+      const bPhone = this.matchesPhone(b, variants) ? 0 : 1;
 
-        return (
-          aPhone -
-          bPhone
-        );
-      },
-    );
+      return aPhone - bPhone;
+    });
   }
 
-  private matchesPhone(
-    loan:
-      LoanWithCollections,
-    variants:
-      string[],
-  ): boolean {
-    const phones = [
-      loan.customer.phone,
-
-      loan.application
-        ?.phone ??
-        '',
-    ].filter(
+  private matchesPhone(loan: LoanWithCollections, variants: string[]): boolean {
+    const phones = [loan.customer.phone, loan.application?.phone ?? ''].filter(
       Boolean,
     );
 
-    return variants.some(
-      (
-        variant,
-      ) =>
-        phones.some(
-          (
-            phone,
-          ) =>
-            phone.includes(
-              variant,
-            ),
-        ),
+    return variants.some((variant) =>
+      phones.some((phone) => phone.includes(variant)),
     );
   }
 
@@ -636,25 +487,19 @@ export class CollectionsRepository {
   // LOAN LOOKUP
   // ===========================================================================
 
-  findLoanById(
-    input: {
-      tenantId: string;
-      branchId: string | null;
-      loanId: string;
-    },
-  ) {
+  findLoanById(input: {
+    tenantId: string;
+    branchId: string | null;
+    loanId: string;
+  }) {
     return this.prisma.loan.findFirst({
       where: {
-        id:
-          input.loanId,
+        id: input.loanId,
 
-        ...this.branchScope(
-          input,
-        ),
+        ...this.branchScope(input),
       },
 
-      include:
-        loanWithRelations,
+      include: loanWithRelations,
     });
   }
 
@@ -662,36 +507,29 @@ export class CollectionsRepository {
   // REPAYMENT LISTS
   // ===========================================================================
 
-  listRepayments(
-    input: {
-      tenantId: string;
-      branchId: string | null;
-      from?: Date;
-      to?: Date;
-      take?: number;
-    },
-  ) {
+  listRepayments(input: {
+    tenantId: string;
+    branchId: string | null;
+    from?: Date;
+    to?: Date;
+    take?: number;
+  }) {
     return this.prisma.repayment.findMany({
       where: {
-        ...this.branchScope(
-          input,
-        ),
+        ...this.branchScope(input),
 
-        ...(input.from ||
-        input.to
+        ...(input.from || input.to
           ? {
               paidAt: {
                 ...(input.from
                   ? {
-                      gte:
-                        input.from,
+                      gte: input.from,
                     }
                   : {}),
 
                 ...(input.to
                   ? {
-                      lte:
-                        input.to,
+                      lte: input.to,
                     }
                   : {}),
               },
@@ -700,143 +538,110 @@ export class CollectionsRepository {
       },
 
       include: {
-        recordedBy:
-          true,
+        recordedBy: true,
 
         loan: {
-          include:
-            loanWithRelations,
+          include: loanWithRelations,
         },
       },
 
       orderBy: {
-        paidAt:
-          'desc',
+        paidAt: 'desc',
       },
 
-      take:
-        input.take ??
-        200,
+      take: input.take ?? 200,
     });
   }
 
-  sumRepaymentsToday(
-    input: {
-      tenantId: string;
-      branchId: string | null;
-      dayStart: Date;
-      dayEnd: Date;
-    },
-  ) {
+  sumRepaymentsToday(input: {
+    tenantId: string;
+    branchId: string | null;
+    dayStart: Date;
+    dayEnd: Date;
+  }) {
     return this.prisma.repayment.aggregate({
       where: {
-        ...this.branchScope(
-          input,
-        ),
+        ...this.branchScope(input),
 
         paidAt: {
-          gte:
-            input.dayStart,
+          gte: input.dayStart,
 
-          lte:
-            input.dayEnd,
+          lte: input.dayEnd,
         },
       },
 
       _sum: {
-        amount:
-          true,
+        amount: true,
       },
 
       _count: {
-        _all:
-          true,
+        _all: true,
       },
     });
   }
 
-  findRepaymentById(
-    input: {
-      tenantId: string;
-      branchId: string | null;
-      repaymentId: string;
-    },
-  ) {
+  findRepaymentById(input: {
+    tenantId: string;
+    branchId: string | null;
+    repaymentId: string;
+  }) {
     return this.prisma.repayment.findFirst({
       where: {
-        id:
-          input.repaymentId,
+        id: input.repaymentId,
 
-        ...this.branchScope(
-          input,
-        ),
+        ...this.branchScope(input),
       },
 
       include: {
-        recordedBy:
-          true,
+        recordedBy: true,
 
-        branch:
-          true,
+        branch: true,
 
         loan: {
-          include:
-            loanWithRelations,
+          include: loanWithRelations,
         },
 
-        tenant:
-          true,
+        tenant: true,
       },
     });
   }
 
-  listRepaymentsForDay(
-    input: {
-      tenantId: string;
-      branchId: string | null;
-      dayStart: Date;
-      dayEnd: Date;
-      recordedByUserId?: string;
-    },
-  ) {
+  listRepaymentsForDay(input: {
+    tenantId: string;
+    branchId: string | null;
+    dayStart: Date;
+    dayEnd: Date;
+    recordedByUserId?: string;
+  }) {
     return this.prisma.repayment.findMany({
       where: {
-        ...this.branchScope(
-          input,
-        ),
+        ...this.branchScope(input),
 
         paidAt: {
-          gte:
-            input.dayStart,
+          gte: input.dayStart,
 
-          lte:
-            input.dayEnd,
+          lte: input.dayEnd,
         },
 
-        ...(input
-          .recordedByUserId
+        ...(input.recordedByUserId
           ? {
-              recordedByUserId:
-                input.recordedByUserId,
+              recordedByUserId: input.recordedByUserId,
             }
           : {}),
       },
 
       include: {
-        recordedBy:
-          true,
+        recordedBy: true,
 
         loan: {
           include: {
-            customer:
-              true,
+            customer: true,
           },
         },
       },
 
       orderBy: {
-        paidAt:
-          'desc',
+        paidAt: 'desc',
       },
     });
   }
@@ -845,55 +650,42 @@ export class CollectionsRepository {
   // APPLICATIONS FOR DAY
   // ===========================================================================
 
-  listApplicationsSubmittedForDay(
-    input: {
-      tenantId: string;
-      branchId: string | null;
-      dayStart: Date;
-      dayEnd: Date;
-      officerUserId?: string;
-    },
-  ) {
+  listApplicationsSubmittedForDay(input: {
+    tenantId: string;
+    branchId: string | null;
+    dayStart: Date;
+    dayEnd: Date;
+    officerUserId?: string;
+  }) {
     return this.prisma.loanApplication.findMany({
       where: {
-        ...this.branchScope(
-          input,
-        ),
+        ...this.branchScope(input),
 
-        status:
-          LoanApplicationStatus.SUBMITTED,
+        status: LoanApplicationStatus.SUBMITTED,
 
         submittedAt: {
-          gte:
-            input.dayStart,
+          gte: input.dayStart,
 
-          lte:
-            input.dayEnd,
+          lte: input.dayEnd,
         },
 
-        ...(input
-          .officerUserId
+        ...(input.officerUserId
           ? {
-              officerUserId:
-                input.officerUserId,
+              officerUserId: input.officerUserId,
             }
           : {}),
       },
 
       include: {
-        officer:
-          true,
+        officer: true,
 
-        branch:
-          true,
+        branch: true,
 
-        customer:
-          true,
+        customer: true,
       },
 
       orderBy: {
-        submittedAt:
-          'desc',
+        submittedAt: 'desc',
       },
     });
   }
@@ -902,30 +694,22 @@ export class CollectionsRepository {
   // FIELD STAFF
   // ===========================================================================
 
-  listFieldAgents(
-    input: {
-      tenantId: string;
-      branchId: string | null;
-    },
-  ) {
-    const fieldRoles =
-      [
-        'Agent',
-        'Loan Officer',
-        'Supervisor',
-        'Recovery Officer',
-        'Branch Manager',
-      ];
+  listFieldAgents(input: { tenantId: string; branchId: string | null }) {
+    const fieldRoles = [
+      'Agent',
+      'Loan Officer',
+      'Supervisor',
+      'Recovery Officer',
+      'Branch Manager',
+    ];
 
     return this.prisma.user.findMany({
       where: {
-        tenantId:
-          input.tenantId,
+        tenantId: input.tenantId,
 
         ...(input.branchId
           ? {
-              branchId:
-                input.branchId,
+              branchId: input.branchId,
             }
           : {}),
 
@@ -941,8 +725,7 @@ export class CollectionsRepository {
           some: {
             role: {
               name: {
-                in:
-                  fieldRoles,
+                in: fieldRoles,
               },
             },
           },
@@ -952,41 +735,33 @@ export class CollectionsRepository {
       include: {
         roles: {
           include: {
-            role:
-              true,
+            role: true,
           },
         },
 
-        branch:
-          true,
+        branch: true,
       },
 
       orderBy: {
-        displayName:
-          'asc',
+        displayName: 'asc',
       },
     });
   }
 
-  findFieldAgentById(
-    input: {
-      tenantId: string;
-      branchId: string | null;
-      agentId: string;
-    },
-  ) {
+  findFieldAgentById(input: {
+    tenantId: string;
+    branchId: string | null;
+    agentId: string;
+  }) {
     return this.prisma.user.findFirst({
       where: {
-        id:
-          input.agentId,
+        id: input.agentId,
 
-        tenantId:
-          input.tenantId,
+        tenantId: input.tenantId,
 
         ...(input.branchId
           ? {
-              branchId:
-                input.branchId,
+              branchId: input.branchId,
             }
           : {}),
       },
@@ -994,13 +769,11 @@ export class CollectionsRepository {
       include: {
         roles: {
           include: {
-            role:
-              true,
+            role: true,
           },
         },
 
-        branch:
-          true,
+        branch: true,
       },
     });
   }
@@ -1009,190 +782,141 @@ export class CollectionsRepository {
   // RECORD REPAYMENT
   // ===========================================================================
 
-  recordRepayment(
-    input: {
-      tenantId: string;
-      branchId: string;
-      loanId: string;
-      recordedByUserId: string;
+  recordRepayment(input: {
+    tenantId: string;
+    branchId: string;
+    loanId: string;
+    recordedByUserId: string;
 
-      amount:
-        Prisma.Decimal;
+    amount: Prisma.Decimal;
 
-      principalAllocated:
-        Prisma.Decimal;
+    principalAllocated: Prisma.Decimal;
 
-      interestAllocated:
-        Prisma.Decimal;
+    interestAllocated: Prisma.Decimal;
 
-      /**
-       * Fine / penalty allocation only.
+    /**
+     * Fine / penalty allocation only.
+     *
+     * Processing fee must never be allocated through borrower
+     * loan repayments.
+     */
+    feesAllocated: Prisma.Decimal;
+
+    method: RepaymentMethod;
+
+    paidAt: Date;
+
+    note: string | null;
+
+    receiptNumber: string;
+
+    nextBalance: Prisma.Decimal;
+
+    nextStatus: LoanStatus;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const repayment = await tx.repayment.create({
+        data: {
+          tenantId: input.tenantId,
+
+          branchId: input.branchId,
+
+          loanId: input.loanId,
+
+          recordedByUserId: input.recordedByUserId,
+
+          amount: input.amount,
+
+          principalAllocated: input.principalAllocated,
+
+          interestAllocated: input.interestAllocated,
+
+          /*
+           * Fine / penalty amount only.
+           *
+           * Never processing fee.
+           */
+          feesAllocated: input.feesAllocated,
+
+          method: input.method,
+
+          paidAt: input.paidAt,
+
+          note: input.note,
+
+          receiptNumber: input.receiptNumber,
+        },
+
+        include: {
+          recordedBy: true,
+
+          loan: {
+            include: loanWithRelations,
+          },
+        },
+      });
+
+      await tx.loan.update({
+        where: {
+          id: input.loanId,
+        },
+
+        data: {
+          balance: input.nextBalance,
+
+          status: input.nextStatus,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+
+          actorUserId: input.recordedByUserId,
+
+          action: 'collection.create',
+
+          entityType: 'repayment',
+
+          entityId: repayment.id,
+
+          newValue: {
+            loanId: input.loanId,
+
+            amount: input.amount.toString(),
+
+            principalAllocated: input.principalAllocated.toString(),
+
+            interestAllocated: input.interestAllocated.toString(),
+
+            feesAllocated: input.feesAllocated.toString(),
+
+            balance: input.nextBalance.toString(),
+
+            status: input.nextStatus,
+          },
+        },
+      });
+
+      /*
+       * Reload after updating the balance/status.
        *
-       * Processing fee must never be allocated through borrower
-       * loan repayments.
+       * The repayment object above was created before the loan update,
+       * so this final query guarantees callers receive the authoritative
+       * post-repayment loan state.
        */
-      feesAllocated:
-        Prisma.Decimal;
+      const loan = await tx.loan.findUniqueOrThrow({
+        where: {
+          id: input.loanId,
+        },
 
-      method:
-        RepaymentMethod;
+        include: loanWithRelations,
+      });
 
-      paidAt:
-        Date;
-
-      note:
-        string | null;
-
-      receiptNumber:
-        string;
-
-      nextBalance:
-        Prisma.Decimal;
-
-      nextStatus:
-        LoanStatus;
-    },
-  ) {
-    return this.prisma.$transaction(
-      async (
-        tx,
-      ) => {
-        const repayment =
-          await tx.repayment.create({
-            data: {
-              tenantId:
-                input.tenantId,
-
-              branchId:
-                input.branchId,
-
-              loanId:
-                input.loanId,
-
-              recordedByUserId:
-                input.recordedByUserId,
-
-              amount:
-                input.amount,
-
-              principalAllocated:
-                input.principalAllocated,
-
-              interestAllocated:
-                input.interestAllocated,
-
-              /*
-               * Fine / penalty amount only.
-               *
-               * Never processing fee.
-               */
-              feesAllocated:
-                input.feesAllocated,
-
-              method:
-                input.method,
-
-              paidAt:
-                input.paidAt,
-
-              note:
-                input.note,
-
-              receiptNumber:
-                input.receiptNumber,
-            },
-
-            include: {
-              recordedBy:
-                true,
-
-              loan: {
-                include:
-                  loanWithRelations,
-              },
-            },
-          });
-
-        await tx.loan.update({
-          where: {
-            id:
-              input.loanId,
-          },
-
-          data: {
-            balance:
-              input.nextBalance,
-
-            status:
-              input.nextStatus,
-          },
-        });
-
-        await tx.auditLog.create({
-          data: {
-            tenantId:
-              input.tenantId,
-
-            actorUserId:
-              input.recordedByUserId,
-
-            action:
-              'collection.create',
-
-            entityType:
-              'repayment',
-
-            entityId:
-              repayment.id,
-
-            newValue: {
-              loanId:
-                input.loanId,
-
-              amount:
-                input.amount.toString(),
-
-              principalAllocated:
-                input.principalAllocated.toString(),
-
-              interestAllocated:
-                input.interestAllocated.toString(),
-
-              feesAllocated:
-                input.feesAllocated.toString(),
-
-              balance:
-                input.nextBalance.toString(),
-
-              status:
-                input.nextStatus,
-            },
-          },
-        });
-
-        /*
-         * Reload after updating the balance/status.
-         *
-         * The repayment object above was created before the loan update,
-         * so this final query guarantees callers receive the authoritative
-         * post-repayment loan state.
-         */
-        const loan =
-          await tx.loan.findUniqueOrThrow({
-            where: {
-              id:
-                input.loanId,
-            },
-
-            include:
-              loanWithRelations,
-          });
-
-        return {
-          repayment,
-          loan,
-        };
-      },
-    );
+      return {
+        repayment,
+        loan,
+      };
+    });
   }
 }

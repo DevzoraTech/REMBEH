@@ -14,6 +14,20 @@ export type ControlCenterClient = {
   createdAt: string;
 };
 
+export type ControlCenterFeatureAccess = {
+  enabled: boolean;
+  source: "ORGANIZATION" | "BRANCH" | null;
+  hasOwnSetting: boolean;
+  ownEnabled: boolean | null;
+  reason: string | null;
+  organizationEnabled: boolean | null;
+  updatedAt: string | null;
+  updatedBy: {
+    name: string;
+    email: string;
+  } | null;
+};
+
 export type ControlCenterClientsResponse = {
   stats: {
     totalClients: number;
@@ -354,6 +368,7 @@ export type ControlCenterClientDetail = {
       suspendedBranches: number;
       totalUsers: number;
     };
+    dataCorrectionAccess: ControlCenterFeatureAccess;
   };
   branches: ControlCenterBranch[];
   recentActivity: Array<{
@@ -381,6 +396,7 @@ export type ControlCenterBranch = {
   subscriptionRevenue: number;
   subscriptionPayments: number;
   lastUsedAt: string | null;
+  dataCorrectionAccess: ControlCenterFeatureAccess | null;
 };
 
 export type ControlCenterPricing = {

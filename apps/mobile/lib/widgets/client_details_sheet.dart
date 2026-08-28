@@ -7,6 +7,7 @@ import '../models/client_detail.dart';
 import '../theme.dart';
 import '../utils/date_groups.dart';
 import '../utils/money.dart';
+import 'legacy_loan_correction_sheet.dart';
 import 'record_repayment_sheet.dart';
 
 Future<void> showClientDetailsSheet(
@@ -46,6 +47,21 @@ Future<void> showClientDetailsSheet(
 
     if (action == 'record_repayment' && context.mounted) {
       await showRecordRepaymentSheet(context, detail: detail);
+    } else if (action == 'correct_legacy' && context.mounted) {
+      final corrected = await showLegacyLoanCorrectionSheet(
+        context,
+        detail: detail,
+      );
+      if (corrected && context.mounted) {
+        await showClientDetailsSheet(
+          context,
+          id: detail.loanId,
+          phone: detail.phone,
+          fullName: detail.fullName,
+        );
+      }
+    } else if (action == 'delete_legacy' && context.mounted) {
+      await showLegacyLoanDeleteSheet(context, detail: detail);
     }
   } catch (_) {
     if (!context.mounted) return;
@@ -465,6 +481,10 @@ class ClientDetailsSheet extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (detail.correctionAccess.enabled) ...[
+                  const SizedBox(height: 14),
+                  _CorrectionAccessCard(detail: detail),
+                ],
                 if (detail.fineHistory.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   const Align(
@@ -679,6 +699,120 @@ class ClientDetailsSheet extends StatelessWidget {
     if (days <= 0) return 'today';
     if (days == 1) return '1 day ago';
     return '$days days ago';
+  }
+}
+
+class _CorrectionAccessCard extends StatelessWidget {
+  const _CorrectionAccessCard({required this.detail});
+
+  final ClientDetail detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final access = detail.correctionAccess;
+    final source = access.source == 'BRANCH'
+        ? 'Branch enabled'
+        : access.source == 'ORGANIZATION'
+        ? 'Organization enabled'
+        : 'Admin enabled';
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        border: Border.all(color: const Color(0xFFE8C46A)),
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: rembehBorderRadius(rembehRadiusSm),
+                ),
+                child: const Icon(
+                  Icons.admin_panel_settings_outlined,
+                  color: warmGold,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Strict correction mode',
+                      style: const TextStyle(
+                        color: midnightNavy,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$source. Every correction is saved to audit logs.',
+                      style: const TextStyle(
+                        color: slateText,
+                        fontSize: 12,
+                        height: 1.35,
+                      ),
+                    ),
+                    if (access.reason != null && access.reason!.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          access.reason!,
+                          style: const TextStyle(
+                            color: midnightNavy,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).pop('correct_legacy'),
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Correct record'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: forestEmerald,
+                    side: const BorderSide(color: forestEmerald),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).pop('delete_legacy'),
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Delete'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: const Color(0xFFE11D48),
+                    side: const BorderSide(color: Color(0xFFE11D48)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 

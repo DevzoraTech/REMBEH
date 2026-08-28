@@ -389,6 +389,11 @@ enum MarketingCampaignMediaType {
   VIDEO
 }
 
+enum ControlledFeatureScope {
+  TENANT
+  BRANCH
+}
+
 model Tenant {
   id                 String       @id @default(uuid()) @db.Uuid
   name               String
@@ -454,6 +459,7 @@ model Tenant {
   subscriptionPriceOverrides SubscriptionPriceOverride[]
   controlCenterMessageLogs   ControlCenterMessageLog[]
   marketingCampaigns         MarketingCampaign[]
+  controlledFeatureAccess    ControlledFeatureAccess[]
 
   @@map("tenants")
 }
@@ -508,6 +514,7 @@ model Branch {
   subscriptionPriceOverrides SubscriptionPriceOverride[]
   controlCenterMessageLogs   ControlCenterMessageLog[]
   marketingCampaigns         MarketingCampaign[]
+  controlledFeatureAccess    ControlledFeatureAccess[]
 
   @@unique([tenantId, name])
   @@index([tenantId, name])
@@ -1448,6 +1455,7 @@ model ControlCenterAdmin {
   messageLogs        ControlCenterMessageLog[]
   auditLogs          ControlCenterAuditLog[]
   marketingCampaigns MarketingCampaign[]
+  controlledFeatures ControlledFeatureAccess[]
 
   @@map("control_center_admins")
 }
@@ -1549,6 +1557,29 @@ model MarketingCampaign {
   @@index([tenantId, branchId, status])
   @@index([createdByAdminId, createdAt])
   @@map("marketing_campaigns")
+}
+
+model ControlledFeatureAccess {
+  id               String                 @id @default(uuid()) @db.Uuid
+  featureKey       String                 @map("feature_key")
+  scope            ControlledFeatureScope
+  scopeId          String                 @map("scope_id") @db.Uuid
+  tenantId         String                 @map("tenant_id") @db.Uuid
+  branchId         String?                @map("branch_id") @db.Uuid
+  enabled          Boolean                @default(false)
+  reason           String?
+  updatedByAdminId String?                @map("updated_by_admin_id") @db.Uuid
+  createdAt        DateTime               @default(now()) @map("created_at")
+  updatedAt        DateTime               @updatedAt @map("updated_at")
+
+  tenant    Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch    Branch?             @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  updatedBy ControlCenterAdmin? @relation(fields: [updatedByAdminId], references: [id], onDelete: SetNull)
+
+  @@unique([featureKey, scope, scopeId])
+  @@index([tenantId, featureKey, enabled])
+  @@index([branchId, featureKey])
+  @@map("controlled_feature_access")
 }
 
 model ControlCenterAuditLog {

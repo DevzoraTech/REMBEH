@@ -29,6 +29,24 @@ class GetLoanDetailUseCase {
       _repository.getLoanDetail(loanId);
 }
 
+class CorrectLoanUseCase {
+  CorrectLoanUseCase(this._repository);
+  final RepaymentRepository _repository;
+
+  Future<ClientLoanDetail> call({
+    required String loanId,
+    required Map<String, dynamic> values,
+  }) => _repository.correctLoan(loanId: loanId, values: values);
+}
+
+class DeleteLoanUseCase {
+  DeleteLoanUseCase(this._repository);
+  final RepaymentRepository _repository;
+
+  Future<void> call({required String loanId, required String reason}) =>
+      _repository.deleteLoan(loanId: loanId, reason: reason);
+}
+
 class RecordRepaymentUseCase {
   RecordRepaymentUseCase(this._repository);
   final RepaymentRepository _repository;
@@ -38,12 +56,11 @@ class RecordRepaymentUseCase {
     String? note,
     String method = 'CASH',
     DateTime? paidAt,
-  }) =>
-      _repository.recordRepayment(
-        loanId: loanId,
-        amount: amount,
-        note: note,
-        method: method,
-        paidAt: paidAt,
-      );
+  }) => _repository.recordRepayment(
+    loanId: loanId,
+    amount: amount,
+    note: note,
+    method: method,
+    paidAt: paidAt,
+  );
 }

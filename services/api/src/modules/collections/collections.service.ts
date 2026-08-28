@@ -1,11 +1,13 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
+  ControlledFeatureScope,
   LoanStatus,
   Prisma,
   RepaymentMethod,
@@ -16,6 +18,11 @@ import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { PrismaService } from '../../database/prisma.service';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import { BillingService } from '../billing/billing.service';
+import {
+  isInternationalPhoneNumber,
+  normalizeEmailAddress,
+  normalizeInternationalPhoneNumber,
+} from '../../common/security/identity-normalization';
 import {
   computeLoanPricing,
   resolveBaseRepayable,
@@ -51,12 +58,17 @@ import {
 } from './collections.repository';
 import { RecordRepaymentDto } from './dto/record-repayment.dto';
 import {
+  LegacyLoanCorrectionDto,
+  LegacyLoanDeleteDto,
+} from './dto/legacy-loan-correction.dto';
+import {
   BulkRepaymentSmsDto,
   SendRepaymentSmsDto,
 } from './dto/repayment-sms.dto';
 
 const PAYMENT_CONFIRMATION_PURPOSE = 'payment_confirmation';
 const PAYMENT_CONFIRMATION_TRIGGER = 'repayment_recorded';
+const LEGACY_DATA_CORRECTION_FEATURE = 'legacy_data_corrections';
 
 const ACCEPTED_SMS_STATUSES = new Set<SmsMessageStatus>([
   SmsMessageStatus.PROVIDER_ACCEPTED,
@@ -108,11 +120,7 @@ export class CollectionsService {
 
     const now = new Date();
 
-    const dayStart = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      now.getDate(),
-    );
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
     const dayEnd = new Date(dayStart);
     dayEnd.setDate(dayEnd.getDate() + 1);
@@ -134,8 +142,7 @@ export class CollectionsService {
 
     const clientsDueToday = dueCandidates
       .filter(
-        (item): item is DueClientContract =>
-          item != null && item.amountDue > 0,
+        (item): item is DueClientContract => item != null && item.amountDue > 0,
       )
       .sort(
         (a, b) =>
@@ -145,17 +152,13 @@ export class CollectionsService {
 
     return {
       summary: {
-        amountCollectedToday:
-          this.decimalToNumber(todayAgg._sum.amount) ?? 0,
+        amountCollectedToday: this.decimalToNumber(todayAgg._sum.amount) ?? 0,
 
-        repaymentsTodayCount:
-          todayAgg._count._all,
+        repaymentsTodayCount: todayAgg._count._all,
 
-        dueTodayCount:
-          clientsDueToday.length,
+        dueTodayCount: clientsDueToday.length,
 
-        pendingSyncCount:
-          0,
+        pendingSyncCount: 0,
 
         clientsDueToday,
       },
@@ -165,12 +168,10 @@ export class CollectionsService {
   async listDueToday(
     user: AuthenticatedUser,
   ): Promise<{ clients: DueClientContract[] }> {
-    const { summary } =
-      await this.getSummary(user);
+    const { summary } = await this.getSummary(user);
 
     return {
-      clients:
-        summary.clientsDueToday,
+      clients: summary.clientsDueToday,
     };
   }
 
@@ -180,142 +181,83 @@ export class CollectionsService {
   ): Promise<{ repayments: RepaymentListItemContract[] }> {
     this.assertBranchAccess(user);
 
-    const scope =
-      this.scope(user);
+    const scope = this.scope(user);
 
-    const range =
-      this.filterToRange(filter);
+    const range = this.filterToRange(filter);
 
-    const rows =
-      await this.repository.listRepayments({
-        ...scope,
-        from: range?.from,
-        to: range?.to,
-      });
+    const rows = await this.repository.listRepayments({
+      ...scope,
+      from: range?.from,
+      to: range?.to,
+    });
 
-    const smsByRepayment =
-      await this.summarizeRepaymentSms(
-        user.tenantId!,
-        rows.map(
-          (row) => row.id,
-        ),
-      );
+    const smsByRepayment = await this.summarizeRepaymentSms(
+      user.tenantId!,
+      rows.map((row) => row.id),
+    );
 
-    const repayments =
-      await Promise.all(
-        rows.map(async (row) => {
-          const loan =
-            row.loan;
+    const repayments = await Promise.all(
+      rows.map(async (row) => {
+        const loan = row.loan;
 
-          const detail =
-            await this.buildDetail(
-              loan,
-            );
+        const detail = await this.buildDetail(loan);
 
-          const agentPhotoStorageKey =
-            row.recordedBy
-              .profilePhotoStorageKey ??
-            null;
+        const agentPhotoStorageKey =
+          row.recordedBy.profilePhotoStorageKey ?? null;
 
-          return {
-            id:
-              row.id,
+        return {
+          id: row.id,
 
-            loanId:
-              row.loanId,
+          loanId: row.loanId,
 
-            customerId:
-              loan.customerId,
+          customerId: loan.customerId,
 
-            clientName:
-              loan.customer
-                .fullName,
+          clientName: loan.customer.fullName,
 
-            phone:
-              loan.customer.phone,
+          phone: loan.customer.phone,
 
-            amount:
-              this.decimalToNumber(
-                row.amount,
-              ) ?? 0,
+          amount: this.decimalToNumber(row.amount) ?? 0,
 
-            amountPaid:
-              detail.paidAmount,
+          amountPaid: detail.paidAmount,
 
-            loanAmount:
-              detail.loanAmount,
+          loanAmount: detail.loanAmount,
 
-            recordedAt:
-              row.paidAt.toISOString(),
+          recordedAt: row.paidAt.toISOString(),
 
-            synced:
-              true,
+          synced: true,
 
-            dueToday:
-              detail.nextDueIsToday,
+          dueToday: detail.nextDueIsToday,
 
-            note:
-              row.note,
+          note: row.note,
 
-            method:
-              row.method,
+          method: row.method,
 
-            recordedByName:
-              row.recordedBy
-                .displayName,
+          recordedByName: row.recordedBy.displayName,
 
-            recordedByPublicId:
-              row.recordedBy
-                .publicId ??
-              null,
+          recordedByPublicId: row.recordedBy.publicId ?? null,
 
-            agentPhotoUrl:
-              await this.presignPhotoUrl(
-                agentPhotoStorageKey,
-              ),
+          agentPhotoUrl: await this.presignPhotoUrl(agentPhotoStorageKey),
 
-            agentPhotoStorageKey,
+          agentPhotoStorageKey,
 
-            sms:
-              smsByRepayment.get(
-                row.id,
-              ) ??
-              this.emptyRepaymentSmsStatus(),
-          } satisfies RepaymentListItemContract;
-        }),
-      );
+          sms: smsByRepayment.get(row.id) ?? this.emptyRepaymentSmsStatus(),
+        } satisfies RepaymentListItemContract;
+      }),
+    );
 
-    if (
-      filter ===
-      'dueToday'
-    ) {
+    if (filter === 'dueToday') {
       return {
-        repayments:
-          repayments.filter(
-            (item) =>
-              item.dueToday,
-          ),
+        repayments: repayments.filter((item) => item.dueToday),
       };
     }
 
-    if (
-      filter ===
-      'collectedToday'
-    ) {
-      const now =
-        new Date();
+    if (filter === 'collectedToday') {
+      const now = new Date();
 
       return {
-        repayments:
-          repayments.filter(
-            (item) =>
-              this.sameDay(
-                new Date(
-                  item.recordedAt,
-                ),
-                now,
-              ),
-          ),
+        repayments: repayments.filter((item) =>
+          this.sameDay(new Date(item.recordedAt), now),
+        ),
       };
     }
 
@@ -331,13 +273,10 @@ export class CollectionsService {
     this.assertBranchAccess(user);
 
     if (!user.tenantId?.trim()) {
-      throw new ForbiddenException(
-        'Tenant scope is required.',
-      );
+      throw new ForbiddenException('Tenant scope is required.');
     }
 
-    const q =
-      query.trim();
+    const q = query.trim();
 
     if (q.length < 1) {
       return {
@@ -345,33 +284,26 @@ export class CollectionsService {
       };
     }
 
-    const scope =
-      this.scope(user);
+    const scope = this.scope(user);
 
-    const loans =
-      await this.repository.searchLoans({
-        ...scope,
-        query: q,
-      });
+    const loans = await this.repository.searchLoans({
+      ...scope,
+      query: q,
+    });
 
     /*
      * Preserve repository phone-first ranking.
      */
-    const clients =
-      await Promise.all(
-        loans.map((loan) =>
-          this.buildDetail(loan),
-        ),
-      );
+    const clients = await Promise.all(
+      loans.map((loan) => this.buildDetail(loan)),
+    );
 
     return {
       clients,
     };
   }
 
-  async offlineSnapshot(
-    user: AuthenticatedUser,
-  ): Promise<{
+  async offlineSnapshot(user: AuthenticatedUser): Promise<{
     cachedAt: string;
 
     clients: Array<{
@@ -404,87 +336,46 @@ export class CollectionsService {
       maturityDate: string | null;
     }>;
   }> {
-    this.assertBranchAccess(
-      user,
-    );
+    this.assertBranchAccess(user);
 
-    if (
-      !user.tenantId?.trim()
-    ) {
-      throw new ForbiddenException(
-        'Tenant scope is required.',
-      );
+    if (!user.tenantId?.trim()) {
+      throw new ForbiddenException('Tenant scope is required.');
     }
 
-    const scope =
-      this.scope(user);
+    const scope = this.scope(user);
 
-    const loans =
-      await this.repository
-        .listActiveLoansForOffline(
-          scope,
-        );
+    const loans = await this.repository.listActiveLoansForOffline(scope);
 
-    const clients =
-      loans.map((loan) => {
+    const clients = await Promise.all(
+      loans.map(async (loan) => {
         // =====================================================================
         // BASE LOAN VALUES
         // =====================================================================
 
         const principal =
-          this.decimalToNumber(
-            loan.application
-              ?.principalAmount,
-          ) ??
-          this.decimalToNumber(
-            loan.principal,
-          ) ??
+          this.decimalToNumber(loan.application?.principalAmount) ??
+          this.decimalToNumber(loan.principal) ??
           0;
 
-        const balance =
-          this.decimalToNumber(
-            loan.balance,
-          ) ??
-          0;
+        const balance = this.decimalToNumber(loan.balance) ?? 0;
 
         const interestRatePercent =
-          this.decimalToNumber(
-            loan.application
-              ?.interestRatePercent,
-          ) ??
-          0;
+          this.decimalToNumber(loan.application?.interestRatePercent) ?? 0;
 
         const processingFee =
-          this.decimalToNumber(
-            loan.application
-              ?.processingFee,
-          ) ??
-          0;
+          this.decimalToNumber(loan.application?.processingFee) ?? 0;
 
         const finesTotal =
-          this.decimalToNumber(
-            loan.finesTotal,
-          ) ??
-          this.decimalToNumber(
-            loan.wallet
-              ?.finesTotal,
-          ) ??
+          this.decimalToNumber(loan.finesTotal) ??
+          this.decimalToNumber(loan.wallet?.finesTotal) ??
           0;
 
-        const durationDays =
-          loan.application
-            ?.durationDays ??
-          1;
+        const durationDays = loan.application?.durationDays ?? 1;
 
-        const periodDays =
-          durationDays > 0
-            ? durationDays
-            : 1;
+        const periodDays = durationDays > 0 ? durationDays : 1;
 
         const repaymentFrequency =
-          loan.application
-            ?.repaymentFrequency ??
-          'DAILY';
+          loan.application?.repaymentFrequency ?? 'DAILY';
 
         // =====================================================================
         // CONTRACTUAL REPAYMENT START
@@ -497,8 +388,7 @@ export class CollectionsService {
          */
         const repaymentStartDate =
           loan.paymentStartDate ??
-          loan.application
-            ?.paymentStartDate ??
+          loan.application?.paymentStartDate ??
           loan.disbursedAt ??
           loan.createdAt;
 
@@ -513,42 +403,35 @@ export class CollectionsService {
          *
          * principal + contractual interest.
          */
-        const pricing =
-          computeLoanPricing({
-            principalAmount:
-              principal,
+        const pricing = computeLoanPricing({
+          principalAmount: principal,
 
-            interestRatePercent,
+          interestRatePercent,
 
-            durationDays:
-              periodDays,
+          durationDays: periodDays,
 
-            processingFee,
-          });
+          processingFee,
+        });
 
         // =====================================================================
         // CONTRACTUAL OPENING DEBT
         // =====================================================================
 
-        const openingBalance =
-          this.decimalToNumber(
-            loan.wallet
-              ?.openingBalance,
-          );
+        const openingBalance = this.decimalToNumber(
+          loan.wallet?.openingBalance,
+        );
 
-        const baseRepayable =
-          resolveBaseRepayable({
-            openingBalance,
+        const baseRepayable = resolveBaseRepayable({
+          openingBalance,
 
-            pricedTotal:
-              pricing.totalRepayable,
+          pricedTotal: pricing.totalRepayable,
 
-            principal,
+          principal,
 
-            balance,
+          balance,
 
-            finesTotal,
-          });
+          finesTotal,
+        });
 
         /*
          * Offline snapshot does not load repayment rows.
@@ -556,124 +439,97 @@ export class CollectionsService {
          * Current balance may include fines, so remove that effect
          * when deriving contractual paid amount.
          */
-        const contractualPaid =
-          this.roundMoney(
-            Math.max(
-              0,
+        const contractualPaid = this.roundMoney(
+          Math.max(
+            0,
 
-              baseRepayable +
-                finesTotal -
-                balance,
-            ),
-          );
+            baseRepayable + finesTotal - balance,
+          ),
+        );
 
         // =====================================================================
         // SCHEDULE
         // =====================================================================
 
-        const schedule =
-          computeCollectionSchedule({
-            principalAmount:
-              principal,
+        const schedule = computeCollectionSchedule({
+          principalAmount: principal,
 
-            interestRatePercent,
+          interestRatePercent,
 
-            durationDays:
-              periodDays,
+          durationDays: periodDays,
 
-            repaymentFrequency,
+          repaymentFrequency,
 
-            processingFee,
+          processingFee,
 
-            balance,
+          balance,
 
-            recordedPaidAmount:
-              contractualPaid,
+          recordedPaidAmount: contractualPaid,
 
-            /*
-             * principal + interest only.
-             */
-            totalRepayableOverride:
-              baseRepayable,
+          /*
+           * principal + interest only.
+           */
+          totalRepayableOverride: baseRepayable,
 
-            /*
-             * First contractual repayment date.
-             */
-            startDate:
-              repaymentStartDate,
-          });
+          /*
+           * First contractual repayment date.
+           */
+          startDate: repaymentStartDate,
+        });
+
+        const correctionAccess = await this.resolveLegacyCorrectionAccess(
+          loan.tenantId,
+          loan.branchId,
+        );
 
         // =====================================================================
         // OUTPUT
         // =====================================================================
 
         return {
-          loanId:
-            loan.id,
+          loanId: loan.id,
 
-          customerId:
-            loan.customerId,
+          customerId: loan.customerId,
 
-          fullName:
-            loan.customer
-              .fullName,
+          fullName: loan.customer.fullName,
 
-          phone:
-            loan.customer
-              .phone,
+          phone: loan.customer.phone,
 
-          nationalId:
-            loan.customer
-              .nationalId ??
-            null,
+          nationalId: loan.customer.nationalId ?? null,
 
-          outstanding:
-            schedule.outstanding,
+          customerEmail: loan.customer.email ?? null,
+
+          outstanding: schedule.outstanding,
 
           /*
            * Borrower's current obligation.
            *
            * Processing fee excluded.
            */
-          loanAmount:
-            this.roundMoney(
-              baseRepayable +
-                finesTotal,
-            ),
+          loanAmount: this.roundMoney(baseRepayable + finesTotal),
+
+          principalAmount: principal,
+
+          openingBalance: openingBalance ?? null,
 
           registeredBy:
-            loan.application
-              ?.officer
-              ?.displayName ??
-            'Branch officer',
+            loan.application?.officer?.displayName ?? 'Branch officer',
 
-          expectedToday:
-            schedule.expectedToday,
+          expectedToday: schedule.expectedToday,
 
-          paidAmount:
-            schedule.paidAmount,
+          paidAmount: schedule.paidAmount,
 
-          isFined:
-            loan.isFined ||
-            (
-              loan.wallet
-                ?.isFined ??
-              false
-            ),
+          isFined: loan.isFined || (loan.wallet?.isFined ?? false),
 
           finesTotal,
 
-          nextDueLabel:
-            schedule.nextDueLabel,
+          nextDueLabel: schedule.nextDueLabel,
 
-          nextDueIsToday:
-            schedule.nextDueIsToday,
+          nextDueIsToday: schedule.nextDueIsToday,
 
-          daysLeft:
-            schedule.daysLeft,
+          daysLeft: schedule.daysLeft,
 
-          loanPeriodDays:
-            schedule.loanPeriodDays,
+          loanPeriodDays: schedule.loanPeriodDays,
 
           interestRatePercent,
 
@@ -682,18 +538,21 @@ export class CollectionsService {
            *
            * Represents first repayment date.
            */
-          loanStartDate:
-            schedule.loanStartDate,
+          loanStartDate: schedule.loanStartDate,
 
-          maturityDate:
-            schedule.maturityDate,
+          paymentStartDate: repaymentStartDate.toISOString(),
+
+          maturityDate: schedule.maturityDate,
+
+          status: loan.status,
+
+          correctionAccess,
         };
-      });
+      }),
+    );
 
     return {
-      cachedAt:
-        new Date()
-          .toISOString(),
+      cachedAt: new Date().toISOString(),
 
       clients,
     };
@@ -703,27 +562,323 @@ export class CollectionsService {
     user: AuthenticatedUser,
     loanId: string,
   ): Promise<{ detail: ClientLoanDetailContract }> {
-    this.assertBranchAccess(
-      user,
-    );
+    this.assertBranchAccess(user);
 
-    const loan =
-      await this.repository.findLoanById({
-        ...this.scope(user),
-        loanId,
-      });
+    const loan = await this.repository.findLoanById({
+      ...this.scope(user),
+      loanId,
+    });
 
     if (!loan) {
-      throw new NotFoundException(
-        'Loan not found.',
-      );
+      throw new NotFoundException('Loan not found.');
     }
 
     return {
-      detail:
-        await this.buildDetail(
-          loan,
-        ),
+      detail: await this.buildDetail(loan),
+    };
+  }
+
+  async correctLegacyLoan(
+    user: AuthenticatedUser,
+    loanId: string,
+    dto: LegacyLoanCorrectionDto,
+  ): Promise<{ detail: ClientLoanDetailContract }> {
+    this.assertBranchAccess(user);
+
+    const loan = await this.repository.findLoanById({
+      ...this.scope(user),
+      loanId,
+    });
+
+    if (!loan) {
+      throw new NotFoundException('Loan not found.');
+    }
+
+    const access = await this.resolveLegacyCorrectionAccess(
+      loan.tenantId,
+      loan.branchId,
+    );
+
+    if (!access.enabled) {
+      throw new ForbiddenException(
+        'Legacy data correction is not enabled for this branch.',
+      );
+    }
+
+    const cleanReason = dto.reason.trim();
+    const customerUpdate: Prisma.CustomerUpdateInput = {};
+    const loanUpdate: Prisma.LoanUpdateInput = {};
+
+    if (dto.customerFullName !== undefined) {
+      const fullName = dto.customerFullName.trim();
+      if (fullName.length < 2) {
+        throw new BadRequestException('Customer name is too short.');
+      }
+      customerUpdate.fullName = fullName;
+    }
+
+    let nextPhone: string | undefined;
+    if (dto.phone !== undefined) {
+      nextPhone = this.normalizeCorrectionPhone(dto.phone);
+      customerUpdate.phone = nextPhone;
+    }
+
+    if (dto.nationalId !== undefined) {
+      customerUpdate.nationalId = this.cleanOptionalText(dto.nationalId);
+    }
+
+    if (dto.email !== undefined) {
+      customerUpdate.email = dto.email
+        ? normalizeEmailAddress(dto.email)
+        : null;
+    }
+
+    if (dto.principalAmount !== undefined) {
+      loanUpdate.principal = new Prisma.Decimal(
+        this.roundMoney(dto.principalAmount).toFixed(2),
+      );
+    }
+
+    const currentBalance = this.decimalToNumber(loan.balance) ?? 0;
+    const nextBalance =
+      dto.outstandingBalance !== undefined
+        ? this.roundMoney(dto.outstandingBalance)
+        : currentBalance;
+
+    if (dto.outstandingBalance !== undefined) {
+      loanUpdate.balance = new Prisma.Decimal(nextBalance.toFixed(2));
+    }
+
+    const nextStatus = dto.status ?? loan.status;
+    if (
+      nextBalance > 0 &&
+      (nextStatus === LoanStatus.CLOSED ||
+        nextStatus === LoanStatus.WRITTEN_OFF)
+    ) {
+      throw new BadRequestException(
+        'Set outstanding balance to zero before closing or writing off this loan.',
+      );
+    }
+    loanUpdate.status = nextStatus;
+
+    const loanStartDate = this.parseCorrectionDate(
+      dto.loanStartDate,
+      'loanStartDate',
+    );
+    if (loanStartDate) {
+      loanUpdate.disbursedAt = loanStartDate;
+      loanUpdate.approvedAt = loan.approvedAt ?? loanStartDate;
+    }
+
+    const paymentStartDate = this.parseCorrectionDate(
+      dto.paymentStartDate,
+      'paymentStartDate',
+    );
+    if (paymentStartDate) {
+      loanUpdate.paymentStartDate = paymentStartDate;
+    }
+
+    const hasLoanChange =
+      Object.keys(loanUpdate).some((key) => key !== 'status') ||
+      nextStatus !== loan.status;
+
+    if (Object.keys(customerUpdate).length === 0 && !hasLoanChange) {
+      throw new BadRequestException('No correction changes were provided.');
+    }
+
+    const oldValue = this.legacyLoanAuditValue(loan);
+    const newValue = this.legacyLoanCorrectionAuditValue({
+      reason: cleanReason,
+      customer: {
+        ...(dto.customerFullName !== undefined
+          ? { fullName: customerUpdate.fullName as string }
+          : {}),
+        ...(nextPhone !== undefined ? { phone: nextPhone } : {}),
+        ...(dto.nationalId !== undefined
+          ? { nationalId: this.cleanOptionalText(dto.nationalId) }
+          : {}),
+        ...(dto.email !== undefined
+          ? { email: dto.email ? normalizeEmailAddress(dto.email) : null }
+          : {}),
+      },
+      loan: {
+        ...(dto.principalAmount !== undefined
+          ? { principal: this.roundMoney(dto.principalAmount) }
+          : {}),
+        ...(dto.outstandingBalance !== undefined
+          ? { balance: nextBalance }
+          : {}),
+        status: nextStatus,
+        ...(loanStartDate
+          ? { approvedAt: (loan.approvedAt ?? loanStartDate).toISOString() }
+          : {}),
+        ...(loanStartDate ? { disbursedAt: loanStartDate.toISOString() } : {}),
+        ...(paymentStartDate
+          ? { paymentStartDate: paymentStartDate.toISOString() }
+          : {}),
+      },
+      access,
+    });
+
+    await this.prisma.$transaction(async (tx) => {
+      if (nextPhone && nextPhone !== loan.customer.phone) {
+        const duplicate = await tx.customer.findFirst({
+          where: {
+            tenantId: loan.tenantId,
+            phone: nextPhone,
+            id: { not: loan.customerId },
+          },
+          select: { id: true },
+        });
+
+        if (duplicate) {
+          throw new ConflictException(
+            'Another customer in this organization already uses this phone.',
+          );
+        }
+      }
+
+      if (Object.keys(customerUpdate).length > 0) {
+        await tx.customer.update({
+          where: { id: loan.customerId },
+          data: customerUpdate,
+        });
+      }
+
+      await tx.loan.update({
+        where: { id: loan.id },
+        data: loanUpdate,
+      });
+
+      if (
+        dto.outstandingBalance !== undefined &&
+        loan.repayments.length === 0
+      ) {
+        if (loan.wallet) {
+          await tx.clientWallet.update({
+            where: { loanId: loan.id },
+            data: {
+              openingBalance: new Prisma.Decimal(nextBalance.toFixed(2)),
+            },
+          });
+        } else {
+          await tx.clientWallet.create({
+            data: {
+              tenantId: loan.tenantId,
+              branchId: loan.branchId,
+              customerId: loan.customerId,
+              loanId: loan.id,
+              currency: loan.currency,
+              openingBalance: new Prisma.Decimal(nextBalance.toFixed(2)),
+            },
+          });
+        }
+      }
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: loan.tenantId,
+          actorUserId: user.userId,
+          action: 'legacy.loan.corrected',
+          entityType: 'Loan',
+          entityId: loan.id,
+          oldValue,
+          newValue,
+        },
+      });
+    });
+
+    const updated = await this.repository.findLoanById({
+      ...this.scope(user),
+      loanId,
+    });
+
+    if (!updated) {
+      throw new NotFoundException('Corrected loan could not be loaded.');
+    }
+
+    return {
+      detail: await this.buildDetail(updated),
+    };
+  }
+
+  async deleteLegacyLoan(
+    user: AuthenticatedUser,
+    loanId: string,
+    dto: LegacyLoanDeleteDto,
+  ) {
+    this.assertBranchAccess(user);
+
+    const loan = await this.repository.findLoanById({
+      ...this.scope(user),
+      loanId,
+    });
+
+    if (!loan) {
+      throw new NotFoundException('Loan not found.');
+    }
+
+    const access = await this.resolveLegacyCorrectionAccess(
+      loan.tenantId,
+      loan.branchId,
+    );
+
+    if (!access.enabled) {
+      throw new ForbiddenException(
+        'Legacy data correction is not enabled for this branch.',
+      );
+    }
+
+    if (loan.repayments.length > 0) {
+      throw new BadRequestException(
+        'This loan already has repayments. Correct its status or balance instead of deleting it.',
+      );
+    }
+
+    const oldValue = this.legacyLoanAuditValue(loan);
+    const cleanReason = dto.reason.trim();
+
+    let customerDeleted = false;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.clientWallet.deleteMany({ where: { loanId: loan.id } });
+      await tx.loanFine.deleteMany({ where: { loanId: loan.id } });
+      await tx.loan.delete({ where: { id: loan.id } });
+
+      const otherLoans = await tx.loan.count({
+        where: {
+          tenantId: loan.tenantId,
+          customerId: loan.customerId,
+        },
+      });
+
+      if (otherLoans === 0) {
+        await tx.customer.delete({ where: { id: loan.customerId } });
+        customerDeleted = true;
+      }
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: loan.tenantId,
+          actorUserId: user.userId,
+          action: 'legacy.loan.deleted',
+          entityType: 'Loan',
+          entityId: loan.id,
+          oldValue,
+          newValue: {
+            reason: cleanReason,
+            customerDeleted: otherLoans === 0,
+            access,
+          },
+        },
+      });
+    });
+
+    return {
+      deleted: true,
+      loanId: loan.id,
+      customerId: loan.customerId,
+      customerDeleted,
     };
   }
 
@@ -731,135 +886,80 @@ export class CollectionsService {
     user: AuthenticatedUser,
     repaymentId: string,
   ): Promise<{ repayment: RepaymentDetailContract }> {
-    this.assertBranchAccess(
-      user,
-    );
+    this.assertBranchAccess(user);
 
-    const row =
-      await this.repository.findRepaymentById({
-        ...this.scope(user),
-        repaymentId,
-      });
+    const row = await this.repository.findRepaymentById({
+      ...this.scope(user),
+      repaymentId,
+    });
 
     if (!row) {
-      throw new NotFoundException(
-        'Payment not found.',
-      );
+      throw new NotFoundException('Payment not found.');
     }
 
-    const loan =
-      row.loan;
+    const loan = row.loan;
 
-    const detail =
-      await this.buildDetail(
-        loan,
-      );
+    const detail = await this.buildDetail(loan);
 
-    const agentPhotoStorageKey =
-      row.recordedBy
-        .profilePhotoStorageKey ??
-      null;
+    const agentPhotoStorageKey = row.recordedBy.profilePhotoStorageKey ?? null;
 
-    const smsByRepayment =
-      await this.summarizeRepaymentSms(
-        user.tenantId!,
-        [
-          row.id,
-        ],
-      );
+    const smsByRepayment = await this.summarizeRepaymentSms(user.tenantId!, [
+      row.id,
+    ]);
 
     return {
       repayment: {
-        id:
-          row.id,
+        id: row.id,
 
-        loanId:
-          row.loanId,
+        loanId: row.loanId,
 
-        customerId:
-          loan.customerId,
+        customerId: loan.customerId,
 
-        clientName:
-          loan.customer
-            .fullName,
+        clientName: loan.customer.fullName,
 
-        phone:
-          loan.customer
-            .phone,
+        phone: loan.customer.phone,
 
-        amount:
-          this.decimalToNumber(
-            row.amount,
-          ) ?? 0,
+        amount: this.decimalToNumber(row.amount) ?? 0,
 
-        amountPaid:
-          detail.paidAmount,
+        amountPaid: detail.paidAmount,
 
-        loanAmount:
-          detail.loanAmount,
+        loanAmount: detail.loanAmount,
 
-        recordedAt:
-          row.paidAt
-            .toISOString(),
+        recordedAt: row.paidAt.toISOString(),
 
-        synced:
-          true,
+        synced: true,
 
-        dueToday:
-          detail.nextDueIsToday,
+        dueToday: detail.nextDueIsToday,
 
-        note:
-          row.note,
+        note: row.note,
 
-        method:
-          row.method,
+        method: row.method,
 
-        recordedByName:
-          row.recordedBy
-            .displayName,
+        recordedByName: row.recordedBy.displayName,
 
-        recordedByPublicId:
-          row.recordedBy
-            .publicId ??
-          null,
+        recordedByPublicId: row.recordedBy.publicId ?? null,
 
-        agentPhotoUrl:
-          await this.presignPhotoUrl(
-            agentPhotoStorageKey,
-          ),
+        agentPhotoUrl: await this.presignPhotoUrl(agentPhotoStorageKey),
 
         agentPhotoStorageKey,
 
-        sms:
-          smsByRepayment.get(
-            row.id,
-          ) ??
-          this.emptyRepaymentSmsStatus(),
+        sms: smsByRepayment.get(row.id) ?? this.emptyRepaymentSmsStatus(),
 
-        companyName:
-          row.tenant.name,
+        companyName: row.tenant.name,
 
-        branchName:
-          row.branch?.name ??
-          null,
+        branchName: row.branch?.name ?? null,
 
-        branchId:
-          row.branchId,
+        branchId: row.branchId,
 
-        currency:
-          loan.currency,
+        currency: loan.currency,
 
-        loanOutstanding:
-          detail.outstanding,
+        loanOutstanding: detail.outstanding,
 
-        loanStatus:
-          detail.status,
+        loanStatus: detail.status,
 
-        isFined:
-          detail.isFined,
+        isFined: detail.isFined,
 
-        finesTotal:
-          detail.finesTotal,
+        finesTotal: detail.finesTotal,
       },
     };
   }
@@ -868,387 +968,230 @@ export class CollectionsService {
     user: AuthenticatedUser,
     date?: string,
   ): Promise<{ summary: DailyCollectionsSummaryContract }> {
-    this.assertBranchAccess(
-      user,
+    this.assertBranchAccess(user);
+
+    const scope = this.scope(user);
+
+    const { dayStart, dayEnd, dateLabel } = this.parseDayBounds(date);
+
+    const [agents, applications, repayments] = await Promise.all([
+      this.repository.listFieldAgents(scope),
+
+      this.repository.listApplicationsSubmittedForDay({
+        ...scope,
+        dayStart,
+        dayEnd,
+      }),
+
+      this.repository.listRepaymentsForDay({
+        ...scope,
+        dayStart,
+        dayEnd,
+      }),
+    ]);
+
+    const agentMap = new Map<
+      string,
+      {
+        agentId: string;
+        agentName: string;
+        agentPublicId: string | null;
+        photoKey: string | null;
+        roleName: string | null;
+        branchId: string | null;
+        branchName: string | null;
+        applicationsCount: number;
+        principalLent: number;
+        paymentsCount: number;
+        amountCollected: number;
+      }
+    >();
+
+    for (const agent of agents) {
+      agentMap.set(agent.id, {
+        agentId: agent.id,
+
+        agentName: agent.displayName,
+
+        agentPublicId: agent.publicId ?? null,
+
+        photoKey: agent.profilePhotoStorageKey ?? null,
+
+        roleName: agent.roles[0]?.role.name ?? null,
+
+        branchId: agent.branchId,
+
+        branchName: agent.branch?.name ?? null,
+
+        applicationsCount: 0,
+
+        principalLent: 0,
+
+        paymentsCount: 0,
+
+        amountCollected: 0,
+      });
+    }
+
+    for (const app of applications) {
+      const existing = agentMap.get(app.officerUserId);
+
+      const principal = this.decimalToNumber(app.principalAmount) ?? 0;
+
+      if (existing) {
+        existing.applicationsCount += 1;
+
+        existing.principalLent = this.roundMoney(
+          existing.principalLent + principal,
+        );
+      } else {
+        agentMap.set(app.officerUserId, {
+          agentId: app.officerUserId,
+
+          agentName: app.officer.displayName,
+
+          agentPublicId: app.officer.publicId ?? null,
+
+          photoKey: app.officer.profilePhotoStorageKey ?? null,
+
+          roleName: null,
+
+          branchId: app.branchId,
+
+          branchName: app.branch?.name ?? null,
+
+          applicationsCount: 1,
+
+          principalLent: principal,
+
+          paymentsCount: 0,
+
+          amountCollected: 0,
+        });
+      }
+    }
+
+    for (const payment of repayments) {
+      const amount = this.decimalToNumber(payment.amount) ?? 0;
+
+      const existing = agentMap.get(payment.recordedByUserId);
+
+      if (existing) {
+        existing.paymentsCount += 1;
+
+        existing.amountCollected = this.roundMoney(
+          existing.amountCollected + amount,
+        );
+      } else {
+        agentMap.set(payment.recordedByUserId, {
+          agentId: payment.recordedByUserId,
+
+          agentName: payment.recordedBy.displayName,
+
+          agentPublicId: payment.recordedBy.publicId ?? null,
+
+          photoKey: payment.recordedBy.profilePhotoStorageKey ?? null,
+
+          roleName: null,
+
+          branchId: payment.branchId,
+
+          branchName: null,
+
+          applicationsCount: 0,
+
+          principalLent: 0,
+
+          paymentsCount: 1,
+
+          amountCollected: amount,
+        });
+      }
+    }
+
+    const summaries = await Promise.all(
+      [...agentMap.values()].map(async (row) => {
+        const agentPhotoUrl = await this.presignPhotoUrl(row.photoKey);
+
+        return {
+          agentId: row.agentId,
+
+          agentName: row.agentName,
+
+          agentPublicId: row.agentPublicId,
+
+          agentPhotoUrl,
+
+          roleName: row.roleName,
+
+          branchId: row.branchId,
+
+          branchName: row.branchName,
+
+          applicationsCount: row.applicationsCount,
+
+          principalLent: row.principalLent,
+
+          paymentsCount: row.paymentsCount,
+
+          amountCollected: row.amountCollected,
+
+          netCash: this.roundMoney(row.amountCollected - row.principalLent),
+        } satisfies DailyAgentSummaryContract;
+      }),
     );
 
-    const scope =
-      this.scope(user);
+    summaries.sort((a, b) => {
+      const activity =
+        b.paymentsCount +
+        b.applicationsCount -
+        (a.paymentsCount + a.applicationsCount);
 
-    const {
-      dayStart,
-      dayEnd,
-      dateLabel,
-    } =
-      this.parseDayBounds(
-        date,
-      );
-
-    const [
-      agents,
-      applications,
-      repayments,
-    ] =
-      await Promise.all([
-        this.repository
-          .listFieldAgents(
-            scope,
-          ),
-
-        this.repository
-          .listApplicationsSubmittedForDay({
-            ...scope,
-            dayStart,
-            dayEnd,
-          }),
-
-        this.repository
-          .listRepaymentsForDay({
-            ...scope,
-            dayStart,
-            dayEnd,
-          }),
-      ]);
-
-    const agentMap =
-      new Map<
-        string,
-        {
-          agentId: string;
-          agentName: string;
-          agentPublicId: string | null;
-          photoKey: string | null;
-          roleName: string | null;
-          branchId: string | null;
-          branchName: string | null;
-          applicationsCount: number;
-          principalLent: number;
-          paymentsCount: number;
-          amountCollected: number;
-        }
-      >();
-
-    for (
-      const agent of
-      agents
-    ) {
-      agentMap.set(
-        agent.id,
-        {
-          agentId:
-            agent.id,
-
-          agentName:
-            agent.displayName,
-
-          agentPublicId:
-            agent.publicId ??
-            null,
-
-          photoKey:
-            agent.profilePhotoStorageKey ??
-            null,
-
-          roleName:
-            agent.roles[0]
-              ?.role.name ??
-            null,
-
-          branchId:
-            agent.branchId,
-
-          branchName:
-            agent.branch?.name ??
-            null,
-
-          applicationsCount:
-            0,
-
-          principalLent:
-            0,
-
-          paymentsCount:
-            0,
-
-          amountCollected:
-            0,
-        },
-      );
-    }
-
-    for (
-      const app of
-      applications
-    ) {
-      const existing =
-        agentMap.get(
-          app.officerUserId,
-        );
-
-      const principal =
-        this.decimalToNumber(
-          app.principalAmount,
-        ) ?? 0;
-
-      if (existing) {
-        existing.applicationsCount +=
-          1;
-
-        existing.principalLent =
-          this.roundMoney(
-            existing.principalLent +
-              principal,
-          );
-      } else {
-        agentMap.set(
-          app.officerUserId,
-          {
-            agentId:
-              app.officerUserId,
-
-            agentName:
-              app.officer
-                .displayName,
-
-            agentPublicId:
-              app.officer
-                .publicId ??
-              null,
-
-            photoKey:
-              app.officer
-                .profilePhotoStorageKey ??
-              null,
-
-            roleName:
-              null,
-
-            branchId:
-              app.branchId,
-
-            branchName:
-              app.branch?.name ??
-              null,
-
-            applicationsCount:
-              1,
-
-            principalLent:
-              principal,
-
-            paymentsCount:
-              0,
-
-            amountCollected:
-              0,
-          },
-        );
+      if (activity !== 0) {
+        return activity;
       }
-    }
 
-    for (
-      const payment of
-      repayments
-    ) {
-      const amount =
-        this.decimalToNumber(
-          payment.amount,
-        ) ?? 0;
+      return a.agentName.localeCompare(b.agentName);
+    });
 
-      const existing =
-        agentMap.get(
-          payment.recordedByUserId,
-        );
+    const totals = summaries.reduce(
+      (acc, row) => ({
+        applicationsCount: acc.applicationsCount + row.applicationsCount,
 
-      if (existing) {
-        existing.paymentsCount +=
-          1;
+        principalLent: this.roundMoney(acc.principalLent + row.principalLent),
 
-        existing.amountCollected =
-          this.roundMoney(
-            existing.amountCollected +
-              amount,
-          );
-      } else {
-        agentMap.set(
-          payment.recordedByUserId,
-          {
-            agentId:
-              payment.recordedByUserId,
+        paymentsCount: acc.paymentsCount + row.paymentsCount,
 
-            agentName:
-              payment.recordedBy
-                .displayName,
-
-            agentPublicId:
-              payment.recordedBy
-                .publicId ??
-              null,
-
-            photoKey:
-              payment.recordedBy
-                .profilePhotoStorageKey ??
-              null,
-
-            roleName:
-              null,
-
-            branchId:
-              payment.branchId,
-
-            branchName:
-              null,
-
-            applicationsCount:
-              0,
-
-            principalLent:
-              0,
-
-            paymentsCount:
-              1,
-
-            amountCollected:
-              amount,
-          },
-        );
-      }
-    }
-
-    const summaries =
-      await Promise.all(
-        [
-          ...agentMap.values(),
-        ].map(
-          async (row) => {
-            const agentPhotoUrl =
-              await this.presignPhotoUrl(
-                row.photoKey,
-              );
-
-            return {
-              agentId:
-                row.agentId,
-
-              agentName:
-                row.agentName,
-
-              agentPublicId:
-                row.agentPublicId,
-
-              agentPhotoUrl,
-
-              roleName:
-                row.roleName,
-
-              branchId:
-                row.branchId,
-
-              branchName:
-                row.branchName,
-
-              applicationsCount:
-                row.applicationsCount,
-
-              principalLent:
-                row.principalLent,
-
-              paymentsCount:
-                row.paymentsCount,
-
-              amountCollected:
-                row.amountCollected,
-
-              netCash:
-                this.roundMoney(
-                  row.amountCollected -
-                    row.principalLent,
-                ),
-            } satisfies DailyAgentSummaryContract;
-          },
+        amountCollected: this.roundMoney(
+          acc.amountCollected + row.amountCollected,
         ),
-      );
 
-    summaries.sort(
-      (a, b) => {
-        const activity =
-          b.paymentsCount +
-          b.applicationsCount -
-          (
-            a.paymentsCount +
-            a.applicationsCount
-          );
+        netCash: 0,
+      }),
+      {
+        applicationsCount: 0,
 
-        if (activity !== 0) {
-          return activity;
-        }
+        principalLent: 0,
 
-        return a.agentName.localeCompare(
-          b.agentName,
-        );
+        paymentsCount: 0,
+
+        amountCollected: 0,
+
+        netCash: 0,
       },
     );
 
-    const totals =
-      summaries.reduce(
-        (acc, row) => ({
-          applicationsCount:
-            acc.applicationsCount +
-            row.applicationsCount,
-
-          principalLent:
-            this.roundMoney(
-              acc.principalLent +
-                row.principalLent,
-            ),
-
-          paymentsCount:
-            acc.paymentsCount +
-            row.paymentsCount,
-
-          amountCollected:
-            this.roundMoney(
-              acc.amountCollected +
-                row.amountCollected,
-            ),
-
-          netCash:
-            0,
-        }),
-        {
-          applicationsCount:
-            0,
-
-          principalLent:
-            0,
-
-          paymentsCount:
-            0,
-
-          amountCollected:
-            0,
-
-          netCash:
-            0,
-        },
-      );
-
-    totals.netCash =
-      this.roundMoney(
-        totals.amountCollected -
-          totals.principalLent,
-      );
+    totals.netCash = this.roundMoney(
+      totals.amountCollected - totals.principalLent,
+    );
 
     return {
       summary: {
-        date:
-          dateLabel,
+        date: dateLabel,
 
-        timezoneNote:
-          'Day bounds use the API server local calendar.',
+        timezoneNote: 'Day bounds use the API server local calendar.',
 
-        agents:
-          summaries,
+        agents: summaries,
 
         totals,
       },
@@ -1260,238 +1203,132 @@ export class CollectionsService {
     agentId: string,
     date?: string,
   ): Promise<{ detail: DailyAgentDetailContract }> {
-    this.assertBranchAccess(
-      user,
-    );
+    this.assertBranchAccess(user);
 
-    const scope =
-      this.scope(user);
+    const scope = this.scope(user);
 
-    const {
-      dayStart,
-      dayEnd,
-      dateLabel,
-    } =
-      this.parseDayBounds(
-        date,
-      );
+    const { dayStart, dayEnd, dateLabel } = this.parseDayBounds(date);
 
-    const agent =
-      await this.repository.findFieldAgentById({
-        ...scope,
-        agentId,
-      });
+    const agent = await this.repository.findFieldAgentById({
+      ...scope,
+      agentId,
+    });
 
     if (!agent) {
-      throw new NotFoundException(
-        'Agent not found.',
-      );
+      throw new NotFoundException('Agent not found.');
     }
 
-    const [
-      applications,
-      repayments,
-    ] =
-      await Promise.all([
-        this.repository
-          .listApplicationsSubmittedForDay({
-            ...scope,
-            dayStart,
-            dayEnd,
-            officerUserId:
-              agentId,
-          }),
+    const [applications, repayments] = await Promise.all([
+      this.repository.listApplicationsSubmittedForDay({
+        ...scope,
+        dayStart,
+        dayEnd,
+        officerUserId: agentId,
+      }),
 
-        this.repository
-          .listRepaymentsForDay({
-            ...scope,
-            dayStart,
-            dayEnd,
-            recordedByUserId:
-              agentId,
-          }),
-      ]);
+      this.repository.listRepaymentsForDay({
+        ...scope,
+        dayStart,
+        dayEnd,
+        recordedByUserId: agentId,
+      }),
+    ]);
 
-    const smsByRepayment =
-      await this.summarizeRepaymentSms(
-        user.tenantId!,
-        repayments.map(
-          (row) => row.id,
-        ),
-      );
+    const smsByRepayment = await this.summarizeRepaymentSms(
+      user.tenantId!,
+      repayments.map((row) => row.id),
+    );
 
-    const principalLent =
-      this.roundMoney(
-        applications.reduce(
-          (sum, app) =>
-            sum +
-            (
-              this.decimalToNumber(
-                app.principalAmount,
-              ) ??
-              0
-            ),
-          0,
-        ),
-      );
+    const principalLent = this.roundMoney(
+      applications.reduce(
+        (sum, app) => sum + (this.decimalToNumber(app.principalAmount) ?? 0),
+        0,
+      ),
+    );
 
-    const amountCollected =
-      this.roundMoney(
-        repayments.reduce(
-          (sum, row) =>
-            sum +
-            (
-              this.decimalToNumber(
-                row.amount,
-              ) ??
-              0
-            ),
-          0,
-        ),
-      );
+    const amountCollected = this.roundMoney(
+      repayments.reduce(
+        (sum, row) => sum + (this.decimalToNumber(row.amount) ?? 0),
+        0,
+      ),
+    );
 
     const summary: DailyAgentSummaryContract = {
-      agentId:
-        agent.id,
+      agentId: agent.id,
 
-      agentName:
-        agent.displayName,
+      agentName: agent.displayName,
 
-      agentPublicId:
-        agent.publicId ??
-        null,
+      agentPublicId: agent.publicId ?? null,
 
-      agentPhotoUrl:
-        await this.presignPhotoUrl(
-          agent.profilePhotoStorageKey ??
-            null,
-        ),
+      agentPhotoUrl: await this.presignPhotoUrl(
+        agent.profilePhotoStorageKey ?? null,
+      ),
 
-      roleName:
-        agent.roles[0]
-          ?.role.name ??
-        null,
+      roleName: agent.roles[0]?.role.name ?? null,
 
-      branchId:
-        agent.branchId,
+      branchId: agent.branchId,
 
-      branchName:
-        agent.branch?.name ??
-        null,
+      branchName: agent.branch?.name ?? null,
 
-      applicationsCount:
-        applications.length,
+      applicationsCount: applications.length,
 
       principalLent,
 
-      paymentsCount:
-        repayments.length,
+      paymentsCount: repayments.length,
 
       amountCollected,
 
-      netCash:
-        this.roundMoney(
-          amountCollected -
-            principalLent,
-        ),
+      netCash: this.roundMoney(amountCollected - principalLent),
     };
 
     return {
       detail: {
-        date:
-          dateLabel,
+        date: dateLabel,
 
-        agent:
-          summary,
+        agent: summary,
 
-        applications:
-          applications.map(
-            (app) => ({
-              id:
-                app.id,
+        applications: applications.map((app) => ({
+          id: app.id,
 
-              customerId:
-                app.customerId ??
-                app.customer?.id ??
-                null,
+          customerId: app.customerId ?? app.customer?.id ?? null,
 
-              clientName:
-                app.customer
-                  ?.fullName ||
-                [
-                  app.surname,
-                  app.givenNames,
-                ]
-                  .filter(Boolean)
-                  .join(' ') ||
-                'Client',
+          clientName:
+            app.customer?.fullName ||
+            [app.surname, app.givenNames].filter(Boolean).join(' ') ||
+            'Client',
 
-              phone:
-                app.phone,
+          phone: app.phone,
 
-              principalAmount:
-                this.decimalToNumber(
-                  app.principalAmount,
-                ) ?? 0,
+          principalAmount: this.decimalToNumber(app.principalAmount) ?? 0,
 
-              status:
-                app.status,
+          status: app.status,
 
-              submittedAt:
-                (
-                  app.submittedAt ??
-                  app.createdAt
-                ).toISOString(),
+          submittedAt: (app.submittedAt ?? app.createdAt).toISOString(),
 
-              loanId:
-                app.loanId,
-            }),
-          ),
+          loanId: app.loanId,
+        })),
 
-        payments:
-          repayments.map(
-            (row) => ({
-              id:
-                row.id,
+        payments: repayments.map((row) => ({
+          id: row.id,
 
-              loanId:
-                row.loanId,
+          loanId: row.loanId,
 
-              customerId:
-                row.loan
-                  .customer.id,
+          customerId: row.loan.customer.id,
 
-              clientName:
-                row.loan
-                  .customer
-                  .fullName,
+          clientName: row.loan.customer.fullName,
 
-              phone:
-                row.loan
-                  .customer.phone,
+          phone: row.loan.customer.phone,
 
-              amount:
-                this.decimalToNumber(
-                  row.amount,
-                ) ?? 0,
+          amount: this.decimalToNumber(row.amount) ?? 0,
 
-              method:
-                row.method,
+          method: row.method,
 
-              note:
-                row.note,
+          note: row.note,
 
-              paidAt:
-                row.paidAt
-                  .toISOString(),
+          paidAt: row.paidAt.toISOString(),
 
-              sms:
-                smsByRepayment.get(
-                  row.id,
-                ) ??
-                this.emptyRepaymentSmsStatus(),
-            }),
-          ),
+          sms: smsByRepayment.get(row.id) ?? this.emptyRepaymentSmsStatus(),
+        })),
       },
     };
   }
@@ -1500,9 +1337,7 @@ export class CollectionsService {
     user: AuthenticatedUser,
     dto: RecordRepaymentDto,
   ): Promise<RecordRepaymentResponseContract> {
-    this.assertBranchAccess(
-      user,
-    );
+    this.assertBranchAccess(user);
 
     if (!user.branchId) {
       throw new ForbiddenException(
@@ -1510,101 +1345,56 @@ export class CollectionsService {
       );
     }
 
-    await this.billingService
-      .assertBranchSubscriptionActive(
-        user.tenantId,
-        user.branchId,
-      );
+    await this.billingService.assertBranchSubscriptionActive(
+      user.tenantId,
+      user.branchId,
+    );
 
-    const loan =
-      await this.repository.findLoanById({
-        ...this.scope(user),
-        loanId:
-          dto.loanId,
-      });
+    const loan = await this.repository.findLoanById({
+      ...this.scope(user),
+      loanId: dto.loanId,
+    });
 
     if (!loan) {
-      throw new NotFoundException(
-        'Loan not found.',
-      );
+      throw new NotFoundException('Loan not found.');
     }
 
-    if (
-      !activeLoanStatuses.includes(
-        loan.status,
-      )
-    ) {
-      throw new BadRequestException(
-        'This loan cannot accept repayments.',
-      );
+    if (!activeLoanStatuses.includes(loan.status)) {
+      throw new BadRequestException('This loan cannot accept repayments.');
     }
 
-    const amount =
-      this.roundMoney(
-        dto.amount,
-      );
+    const amount = this.roundMoney(dto.amount);
 
-    const balance =
-      this.decimalToNumber(
-        loan.balance,
-      ) ?? 0;
+    const balance = this.decimalToNumber(loan.balance) ?? 0;
 
     if (amount <= 0) {
-      throw new BadRequestException(
-        'Amount must be greater than zero.',
-      );
+      throw new BadRequestException('Amount must be greater than zero.');
     }
 
-    if (
-      amount >
-      balance + 0.001
-    ) {
+    if (amount > balance + 0.001) {
       throw new BadRequestException(
         `Amount exceeds outstanding balance of ${balance}.`,
       );
     }
 
-    const pricing =
-      this.loanPricing(
-        loan,
-      );
+    const pricing = this.loanPricing(loan);
 
-    const totals =
-      loan.repayments.reduce(
-        (acc, item) => ({
-          fees:
-            acc.fees +
-            (
-              this.decimalToNumber(
-                item.feesAllocated,
-              ) ??
-              0
-            ),
+    const totals = loan.repayments.reduce(
+      (acc, item) => ({
+        fees: acc.fees + (this.decimalToNumber(item.feesAllocated) ?? 0),
 
-          interest:
-            acc.interest +
-            (
-              this.decimalToNumber(
-                item.interestAllocated,
-              ) ??
-              0
-            ),
+        interest:
+          acc.interest + (this.decimalToNumber(item.interestAllocated) ?? 0),
 
-          principal:
-            acc.principal +
-            (
-              this.decimalToNumber(
-                item.principalAllocated,
-              ) ??
-              0
-            ),
-        }),
-        {
-          fees: 0,
-          interest: 0,
-          principal: 0,
-        },
-      );
+        principal:
+          acc.principal + (this.decimalToNumber(item.principalAllocated) ?? 0),
+      }),
+      {
+        fees: 0,
+        interest: 0,
+        principal: 0,
+      },
+    );
 
     /*
      * Processing fee is NOT a repayment bucket.
@@ -1612,300 +1402,173 @@ export class CollectionsService {
      * feesAllocated represents loan fines / penalties only.
      */
     const finesTotal =
-      this.decimalToNumber(
-        loan.finesTotal,
-      ) ??
-      this.decimalToNumber(
-        loan.wallet?.finesTotal,
-      ) ??
+      this.decimalToNumber(loan.finesTotal) ??
+      this.decimalToNumber(loan.wallet?.finesTotal) ??
       0;
 
-    const allocation =
-      allocateRepayment({
-        amount,
+    const allocation = allocateRepayment({
+      amount,
 
-        remainingFees:
-          Math.max(
-            0,
-            finesTotal -
-              totals.fees,
-          ),
+      remainingFees: Math.max(0, finesTotal - totals.fees),
 
-        remainingInterest:
-          Math.max(
-            0,
-            pricing.interestAmount -
-              totals.interest,
-          ),
+      remainingInterest: Math.max(0, pricing.interestAmount - totals.interest),
 
-        remainingPrincipal:
-          Math.max(
-            0,
-            pricing.principalAmount -
-              totals.principal,
-          ),
-      });
+      remainingPrincipal: Math.max(
+        0,
+        pricing.principalAmount - totals.principal,
+      ),
+    });
 
-    const nextBalance =
-      this.roundMoney(
-        Math.max(
-          0,
-          balance -
-            amount,
-        ),
-      );
+    const nextBalance = this.roundMoney(Math.max(0, balance - amount));
 
     const nextStatus =
       nextBalance <= 0
         ? LoanStatus.CLOSED
-        : loan.status ===
-              LoanStatus.SUBMITTED ||
-            loan.status ===
-              LoanStatus.APPROVED
+        : loan.status === LoanStatus.SUBMITTED ||
+            loan.status === LoanStatus.APPROVED
           ? LoanStatus.CURRENT
           : loan.status;
 
-    const paidAt =
-      dto.paidAt
-        ? new Date(
-            dto.paidAt,
-          )
-        : new Date();
+    const paidAt = dto.paidAt ? new Date(dto.paidAt) : new Date();
 
-    if (
-      Number.isNaN(
-        paidAt.getTime(),
-      )
-    ) {
-      throw new BadRequestException(
-        'Invalid paidAt timestamp.',
-      );
+    if (Number.isNaN(paidAt.getTime())) {
+      throw new BadRequestException('Invalid paidAt timestamp.');
     }
 
-    const {
-      repayment,
-      loan: updatedLoan,
-    } =
+    const { repayment, loan: updatedLoan } =
       await this.repository.recordRepayment({
-        tenantId:
-          user.tenantId,
+        tenantId: user.tenantId,
 
-        branchId:
-          loan.branchId,
+        branchId: loan.branchId,
 
-        loanId:
-          loan.id,
+        loanId: loan.id,
 
-        recordedByUserId:
-          user.userId,
+        recordedByUserId: user.userId,
 
-        amount:
-          new Prisma.Decimal(
-            amount.toFixed(2),
-          ),
+        amount: new Prisma.Decimal(amount.toFixed(2)),
 
-        principalAllocated:
-          new Prisma.Decimal(
-            allocation
-              .principalAllocated
-              .toFixed(2),
-          ),
+        principalAllocated: new Prisma.Decimal(
+          allocation.principalAllocated.toFixed(2),
+        ),
 
-        interestAllocated:
-          new Prisma.Decimal(
-            allocation
-              .interestAllocated
-              .toFixed(2),
-          ),
+        interestAllocated: new Prisma.Decimal(
+          allocation.interestAllocated.toFixed(2),
+        ),
 
-        feesAllocated:
-          new Prisma.Decimal(
-            allocation
-              .feesAllocated
-              .toFixed(2),
-          ),
+        feesAllocated: new Prisma.Decimal(allocation.feesAllocated.toFixed(2)),
 
-        method:
-          dto.method ??
-          RepaymentMethod.CASH,
+        method: dto.method ?? RepaymentMethod.CASH,
 
         paidAt,
 
-        note:
-          dto.note?.trim() ||
-          null,
+        note: dto.note?.trim() || null,
 
-        receiptNumber:
-          `RCP-${Date.now()
-            .toString(36)
-            .toUpperCase()}`,
+        receiptNumber: `RCP-${Date.now().toString(36).toUpperCase()}`,
 
-        nextBalance:
-          new Prisma.Decimal(
-            nextBalance.toFixed(
-              2,
-            ),
-          ),
+        nextBalance: new Prisma.Decimal(nextBalance.toFixed(2)),
 
         nextStatus,
       });
 
-    const detail =
-      await this.buildDetail(
-        updatedLoan,
-      );
+    const detail = await this.buildDetail(updatedLoan);
 
     const agentPhotoStorageKey =
-      repayment.recordedBy
-        .profilePhotoStorageKey ??
-      null;
+      repayment.recordedBy.profilePhotoStorageKey ?? null;
 
     const item: RepaymentListItemContract = {
-      id:
-        repayment.id,
+      id: repayment.id,
 
-      loanId:
-        repayment.loanId,
+      loanId: repayment.loanId,
 
-      customerId:
-        updatedLoan.customerId,
+      customerId: updatedLoan.customerId,
 
-      clientName:
-        updatedLoan.customer
-          .fullName,
+      clientName: updatedLoan.customer.fullName,
 
-      phone:
-        updatedLoan.customer
-          .phone,
+      phone: updatedLoan.customer.phone,
 
       amount,
 
-      amountPaid:
-        detail.paidAmount,
+      amountPaid: detail.paidAmount,
 
-      loanAmount:
-        detail.loanAmount,
+      loanAmount: detail.loanAmount,
 
-      recordedAt:
-        repayment.paidAt
-          .toISOString(),
+      recordedAt: repayment.paidAt.toISOString(),
 
-      synced:
-        true,
+      synced: true,
 
-      dueToday:
-        detail.nextDueIsToday,
+      dueToday: detail.nextDueIsToday,
 
-      note:
-        repayment.note,
+      note: repayment.note,
 
-      method:
-        repayment.method,
+      method: repayment.method,
 
-      recordedByName:
-        repayment.recordedBy
-          .displayName,
+      recordedByName: repayment.recordedBy.displayName,
 
-      recordedByPublicId:
-        repayment.recordedBy
-          .publicId ??
-        null,
+      recordedByPublicId: repayment.recordedBy.publicId ?? null,
 
-      agentPhotoUrl:
-        await this.presignPhotoUrl(
-          agentPhotoStorageKey,
-        ),
+      agentPhotoUrl: await this.presignPhotoUrl(agentPhotoStorageKey),
 
       agentPhotoStorageKey,
 
-      sms:
-        this.emptyRepaymentSmsStatus(),
+      sms: this.emptyRepaymentSmsStatus(),
     };
 
-    this.realtime.broadcastPayment(
-      REALTIME_EVENTS.paymentMade,
-      {
-        repaymentId:
-          item.id,
+    this.realtime.broadcastPayment(REALTIME_EVENTS.paymentMade, {
+      repaymentId: item.id,
 
-        loanId:
-          item.loanId,
+      loanId: item.loanId,
 
-        customerId:
-          item.customerId,
+      customerId: item.customerId,
 
-        tenantId:
-          user.tenantId,
+      tenantId: user.tenantId,
 
-        branchId:
-          loan.branchId,
+      branchId: loan.branchId,
 
-        clientName:
-          item.clientName,
+      clientName: item.clientName,
 
-        phone:
-          item.phone,
+      phone: item.phone,
 
-        amount:
-          item.amount,
+      amount: item.amount,
 
-        amountPaid:
-          item.amountPaid,
+      amountPaid: item.amountPaid,
 
-        loanAmount:
-          item.loanAmount,
+      loanAmount: item.loanAmount,
 
-        outstanding:
-          detail.outstanding,
+      outstanding: detail.outstanding,
 
-        recordedAt:
-          item.recordedAt,
+      recordedAt: item.recordedAt,
 
-        method:
-          item.method,
+      method: item.method,
 
-        note:
-          item.note,
+      note: item.note,
 
-        synced:
-          true,
+      synced: true,
 
-        recordedByUserId:
-          user.userId,
+      recordedByUserId: user.userId,
 
-        recordedByName:
-          item.recordedByName,
+      recordedByName: item.recordedByName,
 
-        agentPhotoUrl:
-          item.agentPhotoUrl,
-      },
-    );
+      agentPhotoUrl: item.agentPhotoUrl,
+    });
 
     void this.sendPaymentConfirmationSms({
-      tenantId:
-        user.tenantId!,
+      tenantId: user.tenantId!,
 
-      branchId:
-        loan.branchId,
+      branchId: loan.branchId,
 
-      repaymentId:
-        item.id,
+      repaymentId: item.id,
 
-      phone:
-        item.phone,
+      phone: item.phone,
 
-      fullName:
-        item.clientName,
+      fullName: item.clientName,
 
       amount,
 
-      balance:
-        detail.outstanding,
+      balance: detail.outstanding,
     });
 
     return {
-      repayment:
-        item,
+      repayment: item,
 
       detail,
     };
@@ -1917,21 +1580,15 @@ export class CollectionsService {
     dto: SendRepaymentSmsDto,
     requestIdempotencyKey?: string,
   ): Promise<{ result: RepaymentSmsSendResultContract }> {
-    this.assertBranchAccess(
-      user,
-    );
+    this.assertBranchAccess(user);
 
     return {
-      result:
-        await this.sendRepaymentSmsForId({
-          user,
-          repaymentId,
-          resend:
-            Boolean(
-              dto.resend,
-            ),
-          requestIdempotencyKey,
-        }),
+      result: await this.sendRepaymentSmsForId({
+        user,
+        repaymentId,
+        resend: Boolean(dto.resend),
+        requestIdempotencyKey,
+      }),
     };
   }
 
@@ -1940,35 +1597,17 @@ export class CollectionsService {
     dto: BulkRepaymentSmsDto,
     requestIdempotencyKey?: string,
   ): Promise<RepaymentBulkSmsResultContract> {
-    this.assertBranchAccess(
-      user,
+    this.assertBranchAccess(user);
+
+    const uniqueIds = [...new Set(dto.repaymentIds.map((id) => id.trim()))];
+
+    const bulkKey = this.safeIdempotencyPart(
+      requestIdempotencyKey || `bulk_${randomUUID()}`,
     );
 
-    const uniqueIds = [
-      ...new Set(
-        dto.repaymentIds.map(
-          (id) =>
-            id.trim(),
-        ),
-      ),
-    ];
+    const results: RepaymentSmsSendResultContract[] = [];
 
-    const bulkKey =
-      this.safeIdempotencyPart(
-        requestIdempotencyKey ||
-          `bulk_${randomUUID()}`,
-      );
-
-    const results: RepaymentSmsSendResultContract[] =
-      [];
-
-    for (
-      const [
-        index,
-        repaymentId,
-      ] of
-      uniqueIds.entries()
-    ) {
+    for (const [index, repaymentId] of uniqueIds.entries()) {
       try {
         results.push(
           await this.sendRepaymentSmsForId({
@@ -1976,93 +1615,57 @@ export class CollectionsService {
 
             repaymentId,
 
-            resend:
-              Boolean(
-                dto.resendFailed,
-              ),
+            resend: Boolean(dto.resendFailed),
 
-            requestIdempotencyKey:
-              `${bulkKey}_${index}`,
+            requestIdempotencyKey: `${bulkKey}_${index}`,
           }),
         );
       } catch (error) {
         results.push({
           repaymentId,
 
-          clientName:
-            'Unknown repayment',
+          clientName: 'Unknown repayment',
 
-          phone:
-            null,
+          phone: null,
 
           sms: {
-            status:
-              'failed',
+            status: 'failed',
 
-            messageId:
-              null,
+            messageId: null,
 
-            lastSentAt:
-              null,
+            lastSentAt: null,
 
             lastFailureReason:
-              error instanceof Error
-                ? error.message
-                : 'send_failed',
+              error instanceof Error ? error.message : 'send_failed',
 
-            canRetry:
-              false,
+            canRetry: false,
           },
 
-          sent:
-            false,
+          sent: false,
 
-          alreadySent:
-            false,
+          alreadySent: false,
 
-          skipped:
-            false,
+          skipped: false,
 
-          reason:
-            error instanceof Error
-              ? error.message
-              : 'send_failed',
+          reason: error instanceof Error ? error.message : 'send_failed',
         });
       }
     }
 
-    const failures =
-      results.filter(
-        (result) =>
-          !result.sent &&
-          !result.alreadySent &&
-          !result.skipped,
-      );
+    const failures = results.filter(
+      (result) => !result.sent && !result.alreadySent && !result.skipped,
+    );
 
     return {
-      totalCount:
-        results.length,
+      totalCount: results.length,
 
-      sentCount:
-        results.filter(
-          (result) =>
-            result.sent,
-        ).length,
+      sentCount: results.filter((result) => result.sent).length,
 
-      alreadySentCount:
-        results.filter(
-          (result) =>
-            result.alreadySent,
-        ).length,
+      alreadySentCount: results.filter((result) => result.alreadySent).length,
 
-      skippedCount:
-        results.filter(
-          (result) =>
-            result.skipped,
-        ).length,
+      skippedCount: results.filter((result) => result.skipped).length,
 
-      failedCount:
-        failures.length,
+      failedCount: failures.length,
 
       results,
 
@@ -2070,361 +1673,232 @@ export class CollectionsService {
     };
   }
 
-  private async sendPaymentConfirmationSms(
-    input: {
-      tenantId: string;
-      branchId: string;
-      repaymentId: string;
-      phone: string;
-      fullName: string;
-      amount: number;
-      balance: number;
-    },
-  ) {
+  private async sendPaymentConfirmationSms(input: {
+    tenantId: string;
+    branchId: string;
+    repaymentId: string;
+    phone: string;
+    fullName: string;
+    amount: number;
+    balance: number;
+  }) {
     try {
-      const result =
-        await this.dispatchPaymentConfirmationSms({
-          tenantId:
-            input.tenantId,
+      const result = await this.dispatchPaymentConfirmationSms({
+        tenantId: input.tenantId,
 
-          branchId:
-            input.branchId,
+        branchId: input.branchId,
 
-          repaymentId:
-            input.repaymentId,
+        repaymentId: input.repaymentId,
 
-          phone:
-            input.phone,
+        phone: input.phone,
 
-          fullName:
-            input.fullName,
+        fullName: input.fullName,
 
-          amount:
-            input.amount,
+        amount: input.amount,
 
-          balance:
-            input.balance,
+        balance: input.balance,
 
-          idempotencyKey:
-            `payment_confirmation_${input.repaymentId}`,
-        });
+        idempotencyKey: `payment_confirmation_${input.repaymentId}`,
+      });
 
       if (!result.sent) {
         this.logger.log(
           `Payment confirmation SMS skipped for ${input.repaymentId}: ${
-            result.reason ??
-            'skipped'
+            result.reason ?? 'skipped'
           }`,
         );
       }
     } catch (error) {
       this.logger.warn(
         `Payment confirmation SMS failed for ${input.repaymentId}: ${
-          error instanceof Error
-            ? error.message
-            : String(
-                error,
-              )
+          error instanceof Error ? error.message : String(error)
         }`,
       );
     }
   }
 
-  private async sendRepaymentSmsForId(
-    input: {
-      user: AuthenticatedUser;
-      repaymentId: string;
-      resend: boolean;
-      requestIdempotencyKey?: string;
-    },
-  ): Promise<RepaymentSmsSendResultContract> {
-    const row =
-      await this.repository.findRepaymentById({
-        ...this.scope(
-          input.user,
-        ),
+  private async sendRepaymentSmsForId(input: {
+    user: AuthenticatedUser;
+    repaymentId: string;
+    resend: boolean;
+    requestIdempotencyKey?: string;
+  }): Promise<RepaymentSmsSendResultContract> {
+    const row = await this.repository.findRepaymentById({
+      ...this.scope(input.user),
 
-        repaymentId:
-          input.repaymentId,
-      });
+      repaymentId: input.repaymentId,
+    });
 
     if (!row) {
-      throw new NotFoundException(
-        'Payment not found.',
-      );
+      throw new NotFoundException('Payment not found.');
     }
 
     const existingSms =
       (
-        await this.summarizeRepaymentSms(
-          input.user
-            .tenantId!,
-          [
-            input.repaymentId,
-          ],
-        )
-      ).get(
-        input.repaymentId,
-      ) ??
-      this.emptyRepaymentSmsStatus();
+        await this.summarizeRepaymentSms(input.user.tenantId!, [
+          input.repaymentId,
+        ])
+      ).get(input.repaymentId) ?? this.emptyRepaymentSmsStatus();
 
-    if (
-      existingSms.status ===
-      'sent'
-    ) {
+    if (existingSms.status === 'sent') {
       return {
-        repaymentId:
-          row.id,
+        repaymentId: row.id,
 
-        clientName:
-          row.loan.customer
-            .fullName,
+        clientName: row.loan.customer.fullName,
 
-        phone:
-          row.loan.customer
-            .phone,
+        phone: row.loan.customer.phone,
 
-        sms:
-          existingSms,
+        sms: existingSms,
 
-        sent:
-          false,
+        sent: false,
 
-        alreadySent:
-          true,
+        alreadySent: true,
 
-        skipped:
-          true,
+        skipped: true,
 
-        reason:
-          'already_sent',
+        reason: 'already_sent',
       };
     }
 
-    if (
-      existingSms.status ===
-      'sending'
-    ) {
+    if (existingSms.status === 'sending') {
       return {
-        repaymentId:
-          row.id,
+        repaymentId: row.id,
 
-        clientName:
-          row.loan.customer
-            .fullName,
+        clientName: row.loan.customer.fullName,
 
-        phone:
-          row.loan.customer
-            .phone,
+        phone: row.loan.customer.phone,
 
-        sms:
-          existingSms,
+        sms: existingSms,
 
-        sent:
-          false,
+        sent: false,
 
-        alreadySent:
-          false,
+        alreadySent: false,
 
-        skipped:
-          true,
+        skipped: true,
 
-        reason:
-          'already_sending',
+        reason: 'already_sending',
       };
     }
 
-    const detail =
-      await this.buildDetail(
-        row.loan,
-      );
+    const detail = await this.buildDetail(row.loan);
 
     const retrying =
-      input.resend ||
-      (
-        existingSms.status ===
-          'failed' &&
-        existingSms.canRetry
-      );
+      input.resend || (existingSms.status === 'failed' && existingSms.canRetry);
 
-    const idempotencyKey =
-      retrying
-        ? [
-            PAYMENT_CONFIRMATION_PURPOSE,
-            row.id,
-            'retry',
-            this.safeIdempotencyPart(
-              input.requestIdempotencyKey ||
-                randomUUID(),
-            ),
-          ].join('_')
-        : `${PAYMENT_CONFIRMATION_PURPOSE}_${row.id}`;
-
-    const result =
-      await this.dispatchPaymentConfirmationSms({
-        tenantId:
-          row.tenantId,
-
-        branchId:
-          row.branchId,
-
-        repaymentId:
+    const idempotencyKey = retrying
+      ? [
+          PAYMENT_CONFIRMATION_PURPOSE,
           row.id,
+          'retry',
+          this.safeIdempotencyPart(input.requestIdempotencyKey || randomUUID()),
+        ].join('_')
+      : `${PAYMENT_CONFIRMATION_PURPOSE}_${row.id}`;
 
-        phone:
-          row.loan.customer
-            .phone,
+    const result = await this.dispatchPaymentConfirmationSms({
+      tenantId: row.tenantId,
 
-        fullName:
-          row.loan.customer
-            .fullName,
+      branchId: row.branchId,
 
-        amount:
-          this.decimalToNumber(
-            row.amount,
-          ) ?? 0,
+      repaymentId: row.id,
 
-        balance:
-          detail.outstanding,
+      phone: row.loan.customer.phone,
 
-        idempotencyKey,
+      fullName: row.loan.customer.fullName,
 
-        parentMessageId:
-          retrying &&
-          existingSms.messageId
-            ? existingSms.messageId
-            : undefined,
+      amount: this.decimalToNumber(row.amount) ?? 0,
 
-        requestedByUserId:
-          input.user.userId,
-      });
+      balance: detail.outstanding,
+
+      idempotencyKey,
+
+      parentMessageId:
+        retrying && existingSms.messageId ? existingSms.messageId : undefined,
+
+      requestedByUserId: input.user.userId,
+    });
 
     const nextSms =
-      (
-        await this.summarizeRepaymentSms(
-          row.tenantId,
-          [
-            row.id,
-          ],
-        )
-      ).get(
-        row.id,
-      ) ??
-      this.failedRepaymentSmsStatus(
-        result.reason ??
-          'send_failed',
-      );
+      (await this.summarizeRepaymentSms(row.tenantId, [row.id])).get(row.id) ??
+      this.failedRepaymentSmsStatus(result.reason ?? 'send_failed');
 
     return {
-      repaymentId:
-        row.id,
+      repaymentId: row.id,
 
-      clientName:
-        row.loan.customer
-          .fullName,
+      clientName: row.loan.customer.fullName,
 
-      phone:
-        row.loan.customer
-          .phone,
+      phone: row.loan.customer.phone,
 
-      sms:
-        nextSms,
+      sms: nextSms,
 
-      sent:
-        result.sent,
+      sent: result.sent,
 
-      alreadySent:
-        false,
+      alreadySent: false,
 
-      skipped:
-        result.reason ===
-        'sms_setting_disabled',
+      skipped: result.reason === 'sms_setting_disabled',
 
-      reason:
-        result.reason ??
-        null,
+      reason: result.reason ?? null,
     };
   }
 
-  private async dispatchPaymentConfirmationSms(
-    input: {
-      tenantId: string;
-      branchId: string;
-      repaymentId: string;
-      phone: string;
-      fullName: string;
-      amount: number;
-      balance: number;
-      idempotencyKey: string;
-      parentMessageId?: string;
-      requestedByUserId?: string;
-    },
-  ) {
-    const allowed =
-      await this.smsNotificationSettings.isKindEnabled(
-        input.tenantId,
-        'payment_confirmation',
-      );
+  private async dispatchPaymentConfirmationSms(input: {
+    tenantId: string;
+    branchId: string;
+    repaymentId: string;
+    phone: string;
+    fullName: string;
+    amount: number;
+    balance: number;
+    idempotencyKey: string;
+    parentMessageId?: string;
+    requestedByUserId?: string;
+  }) {
+    const allowed = await this.smsNotificationSettings.isKindEnabled(
+      input.tenantId,
+      'payment_confirmation',
+    );
 
     if (!allowed) {
       return {
-        sent:
-          false,
+        sent: false,
 
-        reason:
-          'sms_setting_disabled',
+        reason: 'sms_setting_disabled',
       };
     }
 
-    const supportPhone =
-      await this.smsNotificationSettings.resolveSupportPhone(
-        input.branchId,
-      );
+    const supportPhone = await this.smsNotificationSettings.resolveSupportPhone(
+      input.branchId,
+    );
 
-    const body =
-      buildPaymentConfirmationSms({
-        fullName:
-          input.fullName,
+    const body = buildPaymentConfirmationSms({
+      fullName: input.fullName,
 
-        amount:
-          input.amount,
+      amount: input.amount,
 
-        balance:
-          input.balance,
+      balance: input.balance,
 
-        supportPhone,
-      });
+      supportPhone,
+    });
 
     return this.smsCreditsService.sendBranchSms({
-      tenantId:
-        input.tenantId,
+      tenantId: input.tenantId,
 
-      branchId:
-        input.branchId,
+      branchId: input.branchId,
 
-      destination:
-        input.phone?.trim() ??
-        '',
+      destination: input.phone?.trim() ?? '',
 
       body,
 
-      purpose:
-        PAYMENT_CONFIRMATION_PURPOSE,
+      purpose: PAYMENT_CONFIRMATION_PURPOSE,
 
-      triggerSource:
-        PAYMENT_CONFIRMATION_TRIGGER,
+      triggerSource: PAYMENT_CONFIRMATION_TRIGGER,
 
-      triggerReferenceId:
-        input.repaymentId,
+      triggerReferenceId: input.repaymentId,
 
-      requestedByUserId:
-        input.requestedByUserId,
+      requestedByUserId: input.requestedByUserId,
 
-      idempotencyKey:
-        input.idempotencyKey,
+      idempotencyKey: input.idempotencyKey,
 
-      parentMessageId:
-        input.parentMessageId,
+      parentMessageId: input.parentMessageId,
     });
   }
 
@@ -2432,112 +1906,63 @@ export class CollectionsService {
     tenantId: string,
     repaymentIds: string[],
   ): Promise<Map<string, RepaymentSmsStatusContract>> {
-    const uniqueIds = [
-      ...new Set(
-        repaymentIds.filter(
-          Boolean,
-        ),
-      ),
-    ];
+    const uniqueIds = [...new Set(repaymentIds.filter(Boolean))];
 
-    const statusByRepayment =
-      new Map<
-        string,
-        RepaymentSmsStatusContract
-      >();
+    const statusByRepayment = new Map<string, RepaymentSmsStatusContract>();
 
-    if (
-      uniqueIds.length ===
-      0
-    ) {
+    if (uniqueIds.length === 0) {
       return statusByRepayment;
     }
 
-    const messages =
-      await this.prisma.smsMessage.findMany({
-        where: {
-          tenantId,
+    const messages = await this.prisma.smsMessage.findMany({
+      where: {
+        tenantId,
 
-          messageType:
-            PAYMENT_CONFIRMATION_PURPOSE,
+        messageType: PAYMENT_CONFIRMATION_PURPOSE,
 
-          triggerReferenceId: {
-            in:
-              uniqueIds,
-          },
+        triggerReferenceId: {
+          in: uniqueIds,
         },
+      },
 
-        orderBy: {
-          createdAt:
-            'desc',
-        },
+      orderBy: {
+        createdAt: 'desc',
+      },
 
-        select: {
-          id:
-            true,
+      select: {
+        id: true,
 
-          triggerReferenceId:
-            true,
+        triggerReferenceId: true,
 
-          status:
-            true,
+        status: true,
 
-          failureReason:
-            true,
+        failureReason: true,
 
-          sentAt:
-            true,
+        sentAt: true,
 
-          createdAt:
-            true,
-        },
-      });
+        createdAt: true,
+      },
+    });
 
-    const grouped =
-      new Map<
-        string,
-        RepaymentSmsMessageRecord[]
-      >();
+    const grouped = new Map<string, RepaymentSmsMessageRecord[]>();
 
-    for (
-      const message of
-      messages
-    ) {
-      if (
-        !message.triggerReferenceId
-      ) {
+    for (const message of messages) {
+      if (!message.triggerReferenceId) {
         continue;
       }
 
-      const list =
-        grouped.get(
-          message.triggerReferenceId,
-        ) ??
-        [];
+      const list = grouped.get(message.triggerReferenceId) ?? [];
 
-      list.push(
-        message,
-      );
+      list.push(message);
 
-      grouped.set(
-        message.triggerReferenceId,
-        list,
-      );
+      grouped.set(message.triggerReferenceId, list);
     }
 
-    for (
-      const repaymentId of
-      uniqueIds
-    ) {
+    for (const repaymentId of uniqueIds) {
       statusByRepayment.set(
         repaymentId,
 
-        this.repaymentSmsStatusFromMessages(
-          grouped.get(
-            repaymentId,
-          ) ??
-            [],
-        ),
+        this.repaymentSmsStatusFromMessages(grouped.get(repaymentId) ?? []),
       );
     }
 
@@ -2547,89 +1972,57 @@ export class CollectionsService {
   private repaymentSmsStatusFromMessages(
     messages: RepaymentSmsMessageRecord[],
   ): RepaymentSmsStatusContract {
-    const sent =
-      messages.find(
-        (message) =>
-          ACCEPTED_SMS_STATUSES.has(
-            message.status,
-          ),
-      );
+    const sent = messages.find((message) =>
+      ACCEPTED_SMS_STATUSES.has(message.status),
+    );
 
     if (sent) {
       return {
-        status:
-          'sent',
+        status: 'sent',
 
-        messageId:
-          sent.id,
+        messageId: sent.id,
 
-        lastSentAt:
-          (
-            sent.sentAt ??
-            sent.createdAt
-          ).toISOString(),
+        lastSentAt: (sent.sentAt ?? sent.createdAt).toISOString(),
 
-        lastFailureReason:
-          null,
+        lastFailureReason: null,
 
-        canRetry:
-          false,
+        canRetry: false,
       };
     }
 
-    const active =
-      messages.find(
-        (message) =>
-          ACTIVE_SMS_STATUSES.has(
-            message.status,
-          ),
-      );
+    const active = messages.find((message) =>
+      ACTIVE_SMS_STATUSES.has(message.status),
+    );
 
     if (active) {
       return {
-        status:
-          'sending',
+        status: 'sending',
 
-        messageId:
-          active.id,
+        messageId: active.id,
 
-        lastSentAt:
-          null,
+        lastSentAt: null,
 
-        lastFailureReason:
-          null,
+        lastFailureReason: null,
 
-        canRetry:
-          false,
+        canRetry: false,
       };
     }
 
-    const failed =
-      messages[0];
+    const failed = messages[0];
 
     if (failed) {
-      const reason =
-        failed.failureReason ??
-        failed.status
-          .toLowerCase();
+      const reason = failed.failureReason ?? failed.status.toLowerCase();
 
       return {
-        status:
-          'failed',
+        status: 'failed',
 
-        messageId:
-          failed.id,
+        messageId: failed.id,
 
-        lastSentAt:
-          null,
+        lastSentAt: null,
 
-        lastFailureReason:
-          reason,
+        lastFailureReason: reason,
 
-        canRetry:
-          this.canRetryPaymentConfirmationSms(
-            failed,
-          ),
+        canRetry: this.canRetryPaymentConfirmationSms(failed),
       };
     }
 
@@ -2638,42 +2031,29 @@ export class CollectionsService {
 
   private emptyRepaymentSmsStatus(): RepaymentSmsStatusContract {
     return {
-      status:
-        'not_sent',
+      status: 'not_sent',
 
-      messageId:
-        null,
+      messageId: null,
 
-      lastSentAt:
-        null,
+      lastSentAt: null,
 
-      lastFailureReason:
-        null,
+      lastFailureReason: null,
 
-      canRetry:
-        false,
+      canRetry: false,
     };
   }
 
-  private failedRepaymentSmsStatus(
-    reason: string,
-  ): RepaymentSmsStatusContract {
+  private failedRepaymentSmsStatus(reason: string): RepaymentSmsStatusContract {
     return {
-      status:
-        'failed',
+      status: 'failed',
 
-      messageId:
-        null,
+      messageId: null,
 
-      lastSentAt:
-        null,
+      lastSentAt: null,
 
-      lastFailureReason:
-        reason,
+      lastFailureReason: reason,
 
-      canRetry:
-        reason !==
-        'sms_setting_disabled',
+      canRetry: reason !== 'sms_setting_disabled',
     };
   }
 
@@ -2681,49 +2061,27 @@ export class CollectionsService {
     message: RepaymentSmsMessageRecord,
   ): boolean {
     if (
-      message.failureReason ===
-        'invalid_phone' ||
-      message.failureReason ===
-        'no_phone'
+      message.failureReason === 'invalid_phone' ||
+      message.failureReason === 'no_phone'
     ) {
       return false;
     }
 
-    return RETRYABLE_PAYMENT_SMS_STATUSES.has(
-      message.status,
-    );
+    return RETRYABLE_PAYMENT_SMS_STATUSES.has(message.status);
   }
 
-  private safeIdempotencyPart(
-    value: string,
-  ): string {
-    const safe =
-      value
-        .trim()
-        .replace(
-          /[^a-zA-Z0-9_-]/g,
-          '_',
-        )
-        .slice(
-          0,
-          80,
-        );
+  private safeIdempotencyPart(value: string): string {
+    const safe = value
+      .trim()
+      .replace(/[^a-zA-Z0-9_-]/g, '_')
+      .slice(0, 80);
 
-    return (
-      safe ||
-      randomUUID()
-    );
+    return safe || randomUUID();
   }
 
-  private scope(
-    user: AuthenticatedUser,
-  ) {
-    if (
-      !user.tenantId?.trim()
-    ) {
-      throw new ForbiddenException(
-        'Tenant scope is required.',
-      );
+  private scope(user: AuthenticatedUser) {
+    if (!user.tenantId?.trim()) {
+      throw new ForbiddenException('Tenant scope is required.');
     }
 
     /*
@@ -2731,55 +2089,159 @@ export class CollectionsService {
      *
      * Branch managers and agents stay branch scoped.
      */
-    const canAllBranches =
-      user.permissions.includes(
-        BRANCH_PERMISSIONS.create,
-      );
+    const canAllBranches = user.permissions.includes(BRANCH_PERMISSIONS.create);
 
     return {
-      tenantId:
-        user.tenantId,
+      tenantId: user.tenantId,
 
-      branchId:
-        canAllBranches
-          ? null
-          : user.branchId,
+      branchId: canAllBranches ? null : user.branchId,
     };
   }
 
-  private assertBranchAccess(
-    user: AuthenticatedUser,
-  ) {
-    if (
-      !user.tenantId?.trim()
-    ) {
-      throw new ForbiddenException(
-        'Tenant scope is required.',
+  private assertBranchAccess(user: AuthenticatedUser) {
+    if (!user.tenantId?.trim()) {
+      throw new ForbiddenException('Tenant scope is required.');
+    }
+
+    const canAllBranches = user.permissions.includes(BRANCH_PERMISSIONS.create);
+
+    if (!canAllBranches && !user.branchId) {
+      throw new ForbiddenException('Branch scope is required.');
+    }
+  }
+
+  private async resolveLegacyCorrectionAccess(
+    tenantId: string,
+    branchId: string,
+  ): Promise<{
+    enabled: boolean;
+    source: 'ORGANIZATION' | 'BRANCH' | null;
+    reason: string | null;
+  }> {
+    const rows = await this.prisma.controlledFeatureAccess.findMany({
+      where: {
+        featureKey: LEGACY_DATA_CORRECTION_FEATURE,
+        OR: [
+          {
+            scope: ControlledFeatureScope.BRANCH,
+            scopeId: branchId,
+          },
+          {
+            scope: ControlledFeatureScope.TENANT,
+            scopeId: tenantId,
+          },
+        ],
+      },
+      orderBy: {
+        updatedAt: 'desc',
+      },
+    });
+
+    const branchRow =
+      rows.find((row) => row.scope === ControlledFeatureScope.BRANCH) ?? null;
+    const tenantRow =
+      rows.find((row) => row.scope === ControlledFeatureScope.TENANT) ?? null;
+    const effective = branchRow ?? tenantRow;
+
+    return {
+      enabled: effective?.enabled ?? false,
+      source:
+        effective?.scope === ControlledFeatureScope.BRANCH
+          ? 'BRANCH'
+          : effective?.scope === ControlledFeatureScope.TENANT
+            ? 'ORGANIZATION'
+            : null,
+      reason: effective?.reason ?? null,
+    };
+  }
+
+  private normalizeCorrectionPhone(value: string) {
+    const normalized = normalizeInternationalPhoneNumber(value);
+    if (normalized.startsWith('legacy-') || normalized.includes('-legacy-')) {
+      return normalized;
+    }
+
+    if (!isInternationalPhoneNumber(normalized)) {
+      throw new BadRequestException(
+        'Phone must be a valid international number, for example +256700000000.',
       );
     }
 
-    const canAllBranches =
-      user.permissions.includes(
-        BRANCH_PERMISSIONS.create,
-      );
+    return normalized;
+  }
 
-    if (
-      !canAllBranches &&
-      !user.branchId
-    ) {
-      throw new ForbiddenException(
-        'Branch scope is required.',
-      );
+  private parseCorrectionDate(value: string | undefined, field: string) {
+    if (value === undefined) {
+      return null;
     }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException(`${field} must be a valid date.`);
+    }
+
+    return parsed;
+  }
+
+  private cleanOptionalText(value: string | null | undefined) {
+    const clean = value?.trim() ?? '';
+    return clean.length > 0 ? clean : null;
+  }
+
+  private legacyLoanAuditValue(loan: LoanWithCollections) {
+    return {
+      loanId: loan.id,
+      customerId: loan.customerId,
+      branchId: loan.branchId,
+      customer: {
+        fullName: loan.customer.fullName,
+        phone: loan.customer.phone,
+        nationalId: loan.customer.nationalId,
+        email: loan.customer.email,
+      },
+      loan: {
+        principal: this.decimalToNumber(loan.principal) ?? 0,
+        balance: this.decimalToNumber(loan.balance) ?? 0,
+        openingBalance:
+          this.decimalToNumber(loan.wallet?.openingBalance) ?? null,
+        status: loan.status,
+        approvedAt: loan.approvedAt?.toISOString() ?? null,
+        disbursedAt: loan.disbursedAt?.toISOString() ?? null,
+        paymentStartDate: loan.paymentStartDate?.toISOString() ?? null,
+        repaymentCount: loan.repayments.length,
+      },
+    } satisfies Prisma.InputJsonObject;
+  }
+
+  private legacyLoanCorrectionAuditValue(input: {
+    reason: string;
+    customer: {
+      fullName?: string;
+      phone?: string;
+      nationalId?: string | null;
+      email?: string | null;
+    };
+    loan: {
+      principal?: number;
+      balance?: number;
+      status: LoanStatus;
+      approvedAt?: string;
+      disbursedAt?: string;
+      paymentStartDate?: string;
+    };
+    access: {
+      enabled: boolean;
+      source: 'ORGANIZATION' | 'BRANCH' | null;
+      reason: string | null;
+    };
+  }) {
+    return input as Prisma.InputJsonObject;
   }
 
   private async buildDetail(
     loan: LoanWithCollections,
   ): Promise<ClientLoanDetailContract> {
-    const pricing =
-      this.loanPricing(
-        loan,
-      );
+    const pricing = this.loanPricing(loan);
 
     /*
      * Stored paymentStartDate is the first contractual repayment date.
@@ -2788,11 +2250,9 @@ export class CollectionsService {
      */
     const startDate =
       loan.paymentStartDate ??
-      loan.application
-        ?.paymentStartDate ??
+      loan.application?.paymentStartDate ??
       loan.disbursedAt ??
-      loan.application
-        ?.submittedAt ??
+      loan.application?.submittedAt ??
       loan.createdAt;
 
     if (!startDate) {
@@ -2801,320 +2261,181 @@ export class CollectionsService {
       );
     }
 
-    const repayments =
-      (
-        loan.repayments ??
-        []
-      ).filter(
-        (row) =>
-          row.paidAt instanceof
-            Date &&
-          !Number.isNaN(
-            row.paidAt.getTime(),
-          ),
-      );
+    const repayments = (loan.repayments ?? []).filter(
+      (row) =>
+        row.paidAt instanceof Date && !Number.isNaN(row.paidAt.getTime()),
+    );
 
     /*
      * Actual repayments are the source of truth.
      *
      * Do not infer repayments from processing fees or pricing differences.
      */
-    const recordedPaidAmount =
-      this.roundMoney(
-        repayments.reduce(
-          (sum, row) =>
-            sum +
-            (
-              this.decimalToNumber(
-                row.amount,
-              ) ??
-              0
-            ),
-          0,
-        ),
-      );
+    const recordedPaidAmount = this.roundMoney(
+      repayments.reduce(
+        (sum, row) => sum + (this.decimalToNumber(row.amount) ?? 0),
+        0,
+      ),
+    );
 
-    const openingBalance =
-      this.decimalToNumber(
-        loan.wallet
-          ?.openingBalance,
-      );
+    const openingBalance = this.decimalToNumber(loan.wallet?.openingBalance);
 
-    const balance =
-      this.decimalToNumber(
-        loan.balance,
-      ) ?? 0;
+    const balance = this.decimalToNumber(loan.balance) ?? 0;
 
     const finesTotal =
-      this.decimalToNumber(
-        loan.finesTotal,
-      ) ??
-      this.decimalToNumber(
-        loan.wallet
-          ?.finesTotal,
-      ) ??
+      this.decimalToNumber(loan.finesTotal) ??
+      this.decimalToNumber(loan.wallet?.finesTotal) ??
       0;
 
-    const baseRepayable =
-      resolveBaseRepayable({
-        openingBalance,
+    const baseRepayable = resolveBaseRepayable({
+      openingBalance,
 
-        pricedTotal:
-          pricing.totalRepayable,
+      pricedTotal: pricing.totalRepayable,
 
-        principal:
-          pricing.principalAmount,
+      principal: pricing.principalAmount,
 
-        paidAmount:
-          recordedPaidAmount,
+      paidAmount: recordedPaidAmount,
 
-        balance,
+      balance,
 
-        finesTotal,
-      });
+      finesTotal,
+    });
 
-    const schedule =
-      computeCollectionSchedule({
-        principalAmount:
-          pricing.principalAmount,
+    const schedule = computeCollectionSchedule({
+      principalAmount: pricing.principalAmount,
 
-        interestRatePercent:
-          pricing.interestRatePercent,
+      interestRatePercent: pricing.interestRatePercent,
 
-        durationDays:
-          pricing.durationDays,
+      durationDays: pricing.durationDays,
 
-        repaymentFrequency:
-          loan.application
-            ?.repaymentFrequency ??
-          'DAILY',
+      repaymentFrequency: loan.application?.repaymentFrequency ?? 'DAILY',
 
-        processingFee:
-          pricing.processingFee,
+      processingFee: pricing.processingFee,
 
-        balance,
+      balance,
 
-        recordedPaidAmount,
+      recordedPaidAmount,
 
-        totalRepayableOverride:
-          baseRepayable,
+      totalRepayableOverride: baseRepayable,
 
-        startDate,
-      });
+      startDate,
+    });
 
-    const last =
-      repayments[0] ??
-      null;
+    const last = repayments[0] ?? null;
 
-    const officer =
-      loan.application
-        ?.officer;
+    const officer = loan.application?.officer;
 
-    const agentPhotoStorageKey =
-      officer
-        ?.profilePhotoStorageKey ??
-      null;
+    const agentPhotoStorageKey = officer?.profilePhotoStorageKey ?? null;
 
-    const lastPaymentKey =
-      last
-        ?.recordedBy
-        ?.profilePhotoStorageKey ??
-      null;
+    const lastPaymentKey = last?.recordedBy?.profilePhotoStorageKey ?? null;
 
-    const [
-      agentPhotoUrl,
-      lastPaymentByPhotoUrl,
-      ...historyPhotos
-    ] =
+    const [agentPhotoUrl, lastPaymentByPhotoUrl, ...historyPhotos] =
       await Promise.all([
-        this.presignPhotoUrl(
-          agentPhotoStorageKey,
-        ),
+        this.presignPhotoUrl(agentPhotoStorageKey),
 
-        this.presignPhotoUrl(
-          lastPaymentKey,
-        ),
+        this.presignPhotoUrl(lastPaymentKey),
 
-        ...repayments.map(
-          (row) =>
-            this.presignPhotoUrl(
-              row.recordedBy
-                ?.profilePhotoStorageKey ??
-                null,
-            ),
+        ...repayments.map((row) =>
+          this.presignPhotoUrl(row.recordedBy?.profilePhotoStorageKey ?? null),
         ),
       ]);
 
-    const paymentHistory =
-      repayments.map(
-        (
-          row,
-          index,
-        ) => ({
-          id:
-            row.id,
+    const paymentHistory = repayments.map((row, index) => ({
+      id: row.id,
 
-          amount:
-            this.decimalToNumber(
-              row.amount,
-            ) ?? 0,
+      amount: this.decimalToNumber(row.amount) ?? 0,
 
-          method:
-            row.method,
+      method: row.method,
 
-          paidAt:
-            row.paidAt
-              .toISOString(),
+      paidAt: row.paidAt.toISOString(),
 
-          recordedByName:
-            row.recordedBy
-              ?.displayName ??
-            'Agent',
+      recordedByName: row.recordedBy?.displayName ?? 'Agent',
 
-          recordedByPublicId:
-            row.recordedBy
-              ?.publicId ??
-            null,
+      recordedByPublicId: row.recordedBy?.publicId ?? null,
 
-          agentPhotoUrl:
-            historyPhotos[
-              index
-            ] ??
-            null,
+      agentPhotoUrl: historyPhotos[index] ?? null,
 
-          note:
-            row.note,
-        }),
-      );
+      note: row.note,
+    }));
 
-    const isFined =
-      loan.isFined ||
-      (
-        loan.wallet
-          ?.isFined ??
-        false
-      );
+    const isFined = loan.isFined || (loan.wallet?.isFined ?? false);
 
-    const fineHistory =
-      (
-        loan.fines ??
-        []
-      ).map(
-        (row) => ({
-          id:
-            row.id,
+    const fineHistory = (loan.fines ?? []).map((row) => ({
+      id: row.id,
 
-          periodIndex:
-            row.periodIndex,
+      periodIndex: row.periodIndex,
 
-          amount:
-            this.decimalToNumber(
-              row.amount,
-            ) ?? 0,
+      amount: this.decimalToNumber(row.amount) ?? 0,
 
-          dueAt:
-            row.dueAt
-              .toISOString(),
+      dueAt: row.dueAt.toISOString(),
 
-          appliedAt:
-            row.appliedAt
-              .toISOString(),
-        }),
-      );
+      appliedAt: row.appliedAt.toISOString(),
+    }));
 
     /*
      * Once genuinely overdue or fined, entire outstanding obligation
      * can be surfaced as due.
      */
     const expectedToday =
-      schedule.nextDueLabel ===
-        'Overdue' ||
-      finesTotal > 0
+      schedule.nextDueLabel === 'Overdue' || finesTotal > 0
         ? schedule.outstanding
         : schedule.expectedToday;
 
+    const correctionAccess = await this.resolveLegacyCorrectionAccess(
+      loan.tenantId,
+      loan.branchId,
+    );
+
     return {
-      id:
-        loan.id,
+      id: loan.id,
 
-      loanId:
-        loan.id,
+      loanId: loan.id,
 
-      walletId:
-        loan.wallet?.id ??
-        null,
+      walletId: loan.wallet?.id ?? null,
 
-      customerId:
-        loan.customerId,
+      customerId: loan.customerId,
 
-      fullName:
-        loan.customer
-          .fullName,
+      fullName: loan.customer.fullName,
 
-      phone:
-        loan.customer
-          .phone,
+      phone: loan.customer.phone,
 
-      registeredBy:
-        officer?.displayName ??
-        'Branch officer',
+      nationalId: loan.customer.nationalId,
 
-      registeredByPublicId:
-        officer?.publicId ??
-        null,
+      customerEmail: loan.customer.email,
+
+      registeredBy: officer?.displayName ?? 'Branch officer',
+
+      registeredByPublicId: officer?.publicId ?? null,
 
       agentPhotoUrl,
 
       agentPhotoStorageKey,
 
-      outstanding:
-        schedule.outstanding,
+      outstanding: schedule.outstanding,
 
-      lastPaymentAmount:
-        last
-          ? (
-              this.decimalToNumber(
-                last.amount,
-              ) ??
-              0
-            )
-          : 0,
+      lastPaymentAmount: last ? (this.decimalToNumber(last.amount) ?? 0) : 0,
 
-      lastPaymentAt:
-        last?.paidAt
-          .toISOString() ??
-        null,
+      lastPaymentAt: last?.paidAt.toISOString() ?? null,
 
-      lastPaymentBy:
-        last
-          ?.recordedBy
-          ?.displayName ??
-        null,
+      lastPaymentBy: last?.recordedBy?.displayName ?? null,
 
       lastPaymentByPhotoUrl,
 
       expectedToday,
 
-      carriedForward:
-        schedule.carriedForward,
+      carriedForward: schedule.carriedForward,
 
-      dailyInstalment:
-        schedule.dailyInstalment,
+      dailyInstalment: schedule.dailyInstalment,
 
-      loanPeriodDays:
-        schedule.loanPeriodDays,
+      loanPeriodDays: schedule.loanPeriodDays,
 
-      daysLeft:
-        schedule.daysLeft,
+      daysLeft: schedule.daysLeft,
 
-      nextDueLabel:
-        schedule.nextDueLabel,
+      nextDueLabel: schedule.nextDueLabel,
 
-      nextDueIsToday:
-        schedule.nextDueIsToday,
+      nextDueIsToday: schedule.nextDueIsToday,
 
-      paidAmount:
-        schedule.paidAmount,
+      paidAmount: schedule.paidAmount,
 
       /*
        * Borrower obligation:
@@ -3123,38 +2444,30 @@ export class CollectionsService {
        *
        * Processing fee excluded.
        */
-      loanAmount:
-        this.roundMoney(
-          baseRepayable +
-            finesTotal,
-        ),
+      loanAmount: this.roundMoney(baseRepayable + finesTotal),
 
-      interestRatePercent:
-        pricing.interestRatePercent,
+      principalAmount: pricing.principalAmount,
 
-      interestAmount:
-        schedule.interestAmount,
+      openingBalance: openingBalance ?? null,
 
-      processingFee:
-        schedule.processingFee,
+      interestRatePercent: pricing.interestRatePercent,
+
+      interestAmount: schedule.interestAmount,
+
+      processingFee: schedule.processingFee,
 
       /*
        * Compatibility API field.
        *
        * Represents first repayment date.
        */
-      loanStartDate:
-        schedule.loanStartDate,
+      loanStartDate: schedule.loanStartDate,
 
-      paymentStartDate:
-        startDate
-          .toISOString(),
+      paymentStartDate: startDate.toISOString(),
 
-      maturityDate:
-        schedule.maturityDate,
+      maturityDate: schedule.maturityDate,
 
-      status:
-        loan.status,
+      status: loan.status,
 
       isFined,
 
@@ -3163,6 +2476,8 @@ export class CollectionsService {
       paymentHistory,
 
       fineHistory,
+
+      correctionAccess,
     };
   }
 
@@ -3170,103 +2485,60 @@ export class CollectionsService {
     loan: LoanWithCollections,
     asOf: Date,
   ): Promise<DueClientContract | null> {
-    const detail =
-      await this.buildDetail(
-        loan,
-      );
+    const detail = await this.buildDetail(loan);
 
-    if (
-      detail.outstanding <=
-      0
-    ) {
+    if (detail.outstanding <= 0) {
       return null;
     }
 
-    const last =
-      loan.repayments[0];
+    const last = loan.repayments[0];
 
     return {
-      id:
-        loan.id,
+      id: loan.id,
 
-      loanId:
-        loan.id,
+      loanId: loan.id,
 
-      customerId:
-        loan.customerId,
+      customerId: loan.customerId,
 
-      fullName:
-        detail.fullName,
+      fullName: detail.fullName,
 
-      phone:
-        detail.phone,
+      phone: detail.phone,
 
-      amountPaid:
-        detail.paidAmount,
+      amountPaid: detail.paidAmount,
 
-      loanAmount:
-        detail.loanAmount,
+      loanAmount: detail.loanAmount,
 
-      amountDue:
-        detail.expectedToday,
+      amountDue: detail.expectedToday,
 
-      lastActivityAt:
-        (
-          last?.paidAt ??
-          loan.updatedAt ??
-          asOf
-        ).toISOString(),
+      lastActivityAt: (last?.paidAt ?? loan.updatedAt ?? asOf).toISOString(),
 
-      synced:
-        true,
+      synced: true,
     };
   }
 
-  private loanPricing(
-    loan: LoanWithCollections,
-  ) {
-    const app =
-      loan.application;
+  private loanPricing(loan: LoanWithCollections) {
+    const app = loan.application;
 
     const principal =
-      this.decimalToNumber(
-        app?.principalAmount,
-      ) ??
-      this.decimalToNumber(
-        loan.principal,
-      ) ??
+      this.decimalToNumber(app?.principalAmount) ??
+      this.decimalToNumber(loan.principal) ??
       0;
 
-    const rate =
-      this.decimalToNumber(
-        app?.interestRatePercent,
-      ) ??
-      0;
+    const rate = this.decimalToNumber(app?.interestRatePercent) ?? 0;
 
-    const days =
-      app?.durationDays ??
-      0;
+    const days = app?.durationDays ?? 0;
 
-    const fee =
-      this.decimalToNumber(
-        app?.processingFee,
-      ) ??
-      0;
+    const fee = this.decimalToNumber(app?.processingFee) ?? 0;
 
-    const computed =
-      computeLoanPricing({
-        principalAmount:
-          principal,
+    const computed = computeLoanPricing({
+      principalAmount: principal,
 
-        interestRatePercent:
-          rate,
+      interestRatePercent: rate,
 
-        durationDays:
-          days,
+      durationDays: days,
 
-        processingFee:
-          fee,
-      });
+      processingFee: fee,
+    });
 
     /*
      * Wallet openingBalance represents contractual borrower debt:
@@ -3275,53 +2547,34 @@ export class CollectionsService {
      *
      * Processing fee is separate income.
      */
-    const opening =
-      this.decimalToNumber(
-        loan.wallet
-          ?.openingBalance,
-      );
+    const opening = this.decimalToNumber(loan.wallet?.openingBalance);
 
-    if (
-      opening ==
-      null
-    ) {
+    if (opening == null) {
       return computed;
     }
 
-    const interestAmount =
-      this.roundMoney(
-        Math.max(
-          0,
-          opening -
-            computed.principalAmount,
-        ),
-      );
+    const interestAmount = this.roundMoney(
+      Math.max(0, opening - computed.principalAmount),
+    );
 
     return {
       ...computed,
 
       interestAmount,
 
-      totalRepayable:
-        opening,
+      totalRepayable: opening,
     };
   }
 
-  private async presignPhotoUrl(
-    storageKey:
-      | string
-      | null
-      | undefined,
-  ) {
+  private async presignPhotoUrl(storageKey: string | null | undefined) {
     if (!storageKey) {
       return null;
     }
 
     try {
-      const signed =
-        await this.objectStorage.presignGet({
-          storageKey,
-        });
+      const signed = await this.objectStorage.presignGet({
+        storageKey,
+      });
 
       return signed.downloadUrl;
     } catch {
@@ -3329,109 +2582,46 @@ export class CollectionsService {
     }
   }
 
-  private parseDayBounds(
-    date?: string,
-  ): {
+  private parseDayBounds(date?: string): {
     dayStart: Date;
     dayEnd: Date;
     dateLabel: string;
   } {
-    const trimmed =
-      date?.trim();
+    const trimmed = date?.trim();
 
     let year: number;
     let month: number;
     let day: number;
 
-    if (
-      trimmed &&
-      /^\d{4}-\d{2}-\d{2}$/.test(
-        trimmed,
-      )
-    ) {
-      const [
-        y,
-        m,
-        d,
-      ] =
-        trimmed
-          .split('-')
-          .map(
-            (part) =>
-              Number(
-                part,
-              ),
-          );
+    if (trimmed && /^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+      const [y, m, d] = trimmed.split('-').map((part) => Number(part));
 
       year = y;
       month = m;
       day = d;
     } else if (trimmed) {
-      throw new BadRequestException(
-        'date must be YYYY-MM-DD.',
-      );
+      throw new BadRequestException('date must be YYYY-MM-DD.');
     } else {
-      const now =
-        new Date();
+      const now = new Date();
 
-      year =
-        now.getFullYear();
+      year = now.getFullYear();
 
-      month =
-        now.getMonth() +
-        1;
+      month = now.getMonth() + 1;
 
-      day =
-        now.getDate();
+      day = now.getDate();
     }
 
-    const dayStart =
-      new Date(
-        year,
-        month - 1,
-        day,
-        0,
-        0,
-        0,
-        0,
-      );
+    const dayStart = new Date(year, month - 1, day, 0, 0, 0, 0);
 
-    const dayEnd =
-      new Date(
-        year,
-        month - 1,
-        day,
-        23,
-        59,
-        59,
-        999,
-      );
+    const dayEnd = new Date(year, month - 1, day, 23, 59, 59, 999);
 
-    if (
-      Number.isNaN(
-        dayStart.getTime(),
-      ) ||
-      Number.isNaN(
-        dayEnd.getTime(),
-      )
-    ) {
-      throw new BadRequestException(
-        'Invalid date.',
-      );
+    if (Number.isNaN(dayStart.getTime()) || Number.isNaN(dayEnd.getTime())) {
+      throw new BadRequestException('Invalid date.');
     }
 
-    const dateLabel =
-      `${year}-${String(
-        month,
-      ).padStart(
-        2,
-        '0',
-      )}-${String(
-        day,
-      ).padStart(
-        2,
-        '0',
-      )}`;
+    const dateLabel = `${year}-${String(month).padStart(2, '0')}-${String(
+      day,
+    ).padStart(2, '0')}`;
 
     return {
       dayStart,
@@ -3440,67 +2630,35 @@ export class CollectionsService {
     };
   }
 
-  private filterToRange(
-    filter?: string,
-  ) {
-    if (
-      !filter ||
-      filter ===
-        'all' ||
-      filter ===
-        'dueToday'
-    ) {
+  private filterToRange(filter?: string) {
+    if (!filter || filter === 'all' || filter === 'dueToday') {
       return null;
     }
 
-    const now =
-      new Date();
+    const now = new Date();
 
-    const startOfToday =
-      new Date(
-        now.getFullYear(),
-        now.getMonth(),
-        now.getDate(),
-      );
+    const startOfToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
 
-    if (
-      filter ===
-        'collectedToday' ||
-      filter ===
-        'today'
-    ) {
+    if (filter === 'collectedToday' || filter === 'today') {
       return {
-        from:
-          startOfToday,
+        from: startOfToday,
 
-        to:
-          now,
+        to: now,
       };
     }
 
-    if (
-      filter ===
-      'yesterday'
-    ) {
-      const from =
-        new Date(
-          startOfToday,
-        );
+    if (filter === 'yesterday') {
+      const from = new Date(startOfToday);
 
-      from.setDate(
-        from.getDate() -
-          1,
-      );
+      from.setDate(from.getDate() - 1);
 
-      const to =
-        new Date(
-          startOfToday,
-        );
+      const to = new Date(startOfToday);
 
-      to.setMilliseconds(
-        to.getMilliseconds() -
-          1,
-      );
+      to.setMilliseconds(to.getMilliseconds() - 1);
 
       return {
         from,
@@ -3508,108 +2666,54 @@ export class CollectionsService {
       };
     }
 
-    if (
-      filter ===
-      'thisWeek'
-    ) {
-      const from =
-        new Date(
-          startOfToday,
-        );
+    if (filter === 'thisWeek') {
+      const from = new Date(startOfToday);
 
       from.setDate(
-        from.getDate() -
-          (
-            now.getDay() ===
-            0
-              ? 6
-              : now.getDay() -
-                1
-          ),
+        from.getDate() - (now.getDay() === 0 ? 6 : now.getDay() - 1),
       );
 
       return {
         from,
 
-        to:
-          now,
+        to: now,
       };
     }
 
-    if (
-      filter ===
-      'thisMonth'
-    ) {
-      const from =
-        new Date(
-          now.getFullYear(),
-          now.getMonth(),
-          1,
-        );
+    if (filter === 'thisMonth') {
+      const from = new Date(now.getFullYear(), now.getMonth(), 1);
 
       return {
         from,
 
-        to:
-          now,
+        to: now,
       };
     }
 
     return null;
   }
 
-  private sameDay(
-    a: Date,
-    b: Date,
-  ) {
+  private sameDay(a: Date, b: Date) {
     return (
-      a.getFullYear() ===
-        b.getFullYear() &&
-      a.getMonth() ===
-        b.getMonth() &&
-      a.getDate() ===
-        b.getDate()
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate()
     );
   }
 
-  private decimalToNumber(
-    value:
-      | Prisma.Decimal
-      | number
-      | null
-      | undefined,
-  ) {
-    if (
-      value ==
-      null
-    ) {
+  private decimalToNumber(value: Prisma.Decimal | number | null | undefined) {
+    if (value == null) {
       return null;
     }
 
-    if (
-      typeof value ===
-      'number'
-    ) {
+    if (typeof value === 'number') {
       return value;
     }
 
-    return Number(
-      value.toString(),
-    );
+    return Number(value.toString());
   }
 
-  private roundMoney(
-    value: number,
-  ) {
-    return (
-      Math.round(
-        (
-          value +
-          Number.EPSILON
-        ) *
-          100,
-      ) /
-      100
-    );
+  private roundMoney(value: number) {
+    return Math.round((value + Number.EPSILON) * 100) / 100;
   }
 }

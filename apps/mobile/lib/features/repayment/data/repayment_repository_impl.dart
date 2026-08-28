@@ -73,8 +73,27 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
   }
 
   @override
+  Future<ClientLoanDetail> correctLoan({
+    required String loanId,
+    required Map<String, dynamic> values,
+  }) async {
+    final payload = await _api.correctLoan(loanId: loanId, values: values);
+    return _detail(
+      Map<String, dynamic>.from(payload['detail'] as Map? ?? const {}),
+    );
+  }
+
+  @override
+  Future<void> deleteLoan({
+    required String loanId,
+    required String reason,
+  }) async {
+    await _api.deleteLoan(loanId: loanId, reason: reason);
+  }
+
+  @override
   Future<({FieldRepayment repayment, ClientLoanDetail detail})>
-      recordRepayment({
+  recordRepayment({
     required String loanId,
     required int amount,
     String? note,
@@ -108,7 +127,7 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
       amountDue: _money(json['amountDue']),
       lastActivityAt:
           DateTime.tryParse(json['lastActivityAt'] as String? ?? '') ??
-              DateTime.now(),
+          DateTime.now(),
       synced: json['synced'] as bool? ?? true,
     );
   }
@@ -124,7 +143,7 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
       loanAmount: _money(json['loanAmount']),
       recordedAt:
           DateTime.tryParse(json['recordedAt'] as String? ?? '') ??
-              DateTime.now(),
+          DateTime.now(),
       synced: json['synced'] as bool? ?? true,
       dueToday: json['dueToday'] as bool? ?? false,
     );
@@ -137,12 +156,13 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
       customerId: json['customerId'] as String? ?? '',
       fullName: json['fullName'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
+      nationalId: json['nationalId'] as String?,
+      customerEmail: json['customerEmail'] as String?,
       registeredBy: json['registeredBy'] as String? ?? '',
       agentPhotoUrl: json['agentPhotoUrl'] as String?,
       outstanding: _money(json['outstanding']),
       lastPaymentAmount: _money(json['lastPaymentAmount']),
-      lastPaymentAt:
-          DateTime.tryParse(json['lastPaymentAt'] as String? ?? ''),
+      lastPaymentAt: DateTime.tryParse(json['lastPaymentAt'] as String? ?? ''),
       lastPaymentBy: json['lastPaymentBy'] as String?,
       expectedToday: _money(json['expectedToday']),
       carriedForward: _money(json['carriedForward']),
@@ -153,48 +173,64 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
       nextDueIsToday: json['nextDueIsToday'] as bool? ?? false,
       paidAmount: _money(json['paidAmount']),
       loanAmount: _money(json['loanAmount']),
+      principalAmount: _money(json['principalAmount']),
+      openingBalance: json['openingBalance'] == null
+          ? null
+          : _money(json['openingBalance']),
       interestRatePercent: _int(json['interestRatePercent']),
       loanStartDate:
           DateTime.tryParse(json['loanStartDate'] as String? ?? '') ??
-              DateTime.now(),
+          DateTime.now(),
       maturityDate:
           DateTime.tryParse(json['maturityDate'] as String? ?? '') ??
-              DateTime.now(),
-      paymentStartDate:
-          DateTime.tryParse(json['paymentStartDate'] as String? ?? ''),
+          DateTime.now(),
+      paymentStartDate: DateTime.tryParse(
+        json['paymentStartDate'] as String? ?? '',
+      ),
+      status: json['status'] as String? ?? '',
       isFined: json['isFined'] as bool? ?? false,
       finesTotal: _money(json['finesTotal']),
-      paymentHistory: ((json['paymentHistory'] as List?) ?? const [])
-          .whereType<Map>()
-          .map(
-            (row) => PaymentHistoryItem(
-              id: row['id'] as String? ?? '',
-              amount: _money(row['amount']),
-              method: row['method'] as String? ?? 'CASH',
-              paidAt: DateTime.tryParse(row['paidAt'] as String? ?? '') ??
-                  DateTime.now(),
-              recordedByName: row['recordedByName'] as String? ?? '',
-              agentPhotoUrl: row['agentPhotoUrl'] as String?,
-              note: row['note'] as String?,
-            ),
-          )
-          .toList()
-        ..sort((a, b) => b.paidAt.compareTo(a.paidAt)),
-      fineHistory: ((json['fineHistory'] as List?) ?? const [])
-          .whereType<Map>()
-          .map(
-            (row) => FineHistoryItem(
-              id: row['id'] as String? ?? '',
-              periodIndex: _int(row['periodIndex']),
-              amount: _money(row['amount']),
-              dueAt: DateTime.tryParse(row['dueAt'] as String? ?? '') ??
-                  DateTime.now(),
-              appliedAt: DateTime.tryParse(row['appliedAt'] as String? ?? '') ??
-                  DateTime.now(),
-            ),
-          )
-          .toList()
-        ..sort((a, b) => b.periodIndex.compareTo(a.periodIndex)),
+      paymentHistory:
+          ((json['paymentHistory'] as List?) ?? const [])
+              .whereType<Map>()
+              .map(
+                (row) => PaymentHistoryItem(
+                  id: row['id'] as String? ?? '',
+                  amount: _money(row['amount']),
+                  method: row['method'] as String? ?? 'CASH',
+                  paidAt:
+                      DateTime.tryParse(row['paidAt'] as String? ?? '') ??
+                      DateTime.now(),
+                  recordedByName: row['recordedByName'] as String? ?? '',
+                  agentPhotoUrl: row['agentPhotoUrl'] as String?,
+                  note: row['note'] as String?,
+                ),
+              )
+              .toList()
+            ..sort((a, b) => b.paidAt.compareTo(a.paidAt)),
+      fineHistory:
+          ((json['fineHistory'] as List?) ?? const [])
+              .whereType<Map>()
+              .map(
+                (row) => FineHistoryItem(
+                  id: row['id'] as String? ?? '',
+                  periodIndex: _int(row['periodIndex']),
+                  amount: _money(row['amount']),
+                  dueAt:
+                      DateTime.tryParse(row['dueAt'] as String? ?? '') ??
+                      DateTime.now(),
+                  appliedAt:
+                      DateTime.tryParse(row['appliedAt'] as String? ?? '') ??
+                      DateTime.now(),
+                ),
+              )
+              .toList()
+            ..sort((a, b) => b.periodIndex.compareTo(a.periodIndex)),
+      correctionAccess: ClientLoanCorrectionAccess.fromJson(
+        json['correctionAccess'] is Map<String, dynamic>
+            ? json['correctionAccess'] as Map<String, dynamic>
+            : null,
+      ),
     );
   }
 
@@ -219,6 +255,8 @@ ClientDetail toUiClientDetail(ClientLoanDetail detail) {
     customerId: detail.customerId,
     fullName: detail.fullName,
     phone: detail.phone,
+    nationalId: detail.nationalId,
+    customerEmail: detail.customerEmail,
     registeredBy: detail.registeredBy,
     agentPhotoUrl: detail.agentPhotoUrl,
     outstanding: detail.outstanding,
@@ -234,10 +272,13 @@ ClientDetail toUiClientDetail(ClientLoanDetail detail) {
     nextDueIsToday: detail.nextDueIsToday,
     paidAmount: detail.paidAmount,
     loanAmount: detail.loanAmount,
+    principalAmount: detail.principalAmount,
+    openingBalance: detail.openingBalance,
     interestRatePercent: detail.interestRatePercent.toDouble(),
     loanStartDate: detail.loanStartDate,
     maturityDate: detail.maturityDate,
     paymentStartDate: detail.paymentStartDate,
+    status: detail.status,
     isFined: detail.isFined,
     finesTotal: detail.finesTotal,
     paymentHistory: detail.paymentHistory
@@ -264,5 +305,10 @@ ClientDetail toUiClientDetail(ClientLoanDetail detail) {
           ),
         )
         .toList(),
+    correctionAccess: ClientCorrectionAccess(
+      enabled: detail.correctionAccess.enabled,
+      source: detail.correctionAccess.source,
+      reason: detail.correctionAccess.reason,
+    ),
   );
 }

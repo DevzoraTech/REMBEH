@@ -14,6 +14,7 @@ import {
   ControlCenterMessageChannel,
   ControlCenterMessageStatus,
   BranchSubscriptionStatus,
+  ControlledFeatureScope,
   Prisma,
   SubscriptionPaymentStatus,
   UserStatus,
@@ -33,6 +34,7 @@ import {
   ControlCenterSetupDto,
 } from './dto/control-center-auth.dto';
 import { ControlCenterMessageQueryDto } from './dto/control-center-message-query.dto';
+import { ControlCenterFeatureAccessDto } from './dto/control-center-feature-access.dto';
 import { ControlCenterSendMessageDto } from './dto/control-center-message.dto';
 import { ControlCenterSavePricingDto } from './dto/control-center-pricing.dto';
 import { ControlCenterUpdateUserStatusDto } from './dto/control-center-users.dto';
@@ -44,6 +46,8 @@ const DEFAULT_ALLOWED_EMAILS = [
   'antikra.ug@gmail.com',
   'bonnefilleul@gmail.com',
 ];
+
+const LEGACY_DATA_CORRECTION_FEATURE = 'legacy_data_corrections';
 
 type ControlCenterTokenPayload = {
   typ: 'control-center';
@@ -2067,7 +2071,12 @@ export class ControlCenterService implements OnModuleInit {
       throw new NotFoundException('Client organization not found.');
     }
 
-    const [repaymentGroups, paymentGroups, latestActivity] = await Promise.all([
+    const [
+      repaymentGroups,
+      paymentGroups,
+      latestActivity,
+      dataCorrectionAccess,
+    ] = await Promise.all([
       this.prisma.repayment.groupBy({
         by: ['branchId'],
         where: { tenantId },
@@ -2086,6 +2095,7 @@ export class ControlCenterService implements OnModuleInit {
         orderBy: { createdAt: 'desc' },
         include: { actor: { select: { displayName: true, email: true } } },
       }),
+      this.buildDataCorrectionAccess(tenantId, tenant.branches),
     ]);
 
     const repaymentsByBranch = new Map(
@@ -2126,10 +2136,15 @@ export class ControlCenterService implements OnModuleInit {
           ).length,
           totalUsers: tenant.users.length,
         },
+        dataCorrectionAccess: dataCorrectionAccess.organization,
       },
       branches: tenant.branches.map((branch) => {
         const repayment = repaymentsByBranch.get(branch.id);
         const payment = paymentsByBranch.get(branch.id);
+        const branchCorrectionAccess =
+          dataCorrectionAccess.branches.find(
+            (item) => item.branch.id === branch.id,
+          )?.access ?? null;
         const lastUsedAt = this.latestDate(
           branch.users.flatMap((user) =>
             user.authSessions.map((session) => session.lastSeenAt),
@@ -2152,6 +2167,7 @@ export class ControlCenterService implements OnModuleInit {
           subscriptionRevenue: this.decimal(payment?._sum.amount),
           subscriptionPayments: payment?._count._all ?? 0,
           lastUsedAt: lastUsedAt?.toISOString() ?? null,
+          dataCorrectionAccess: branchCorrectionAccess,
         };
       }),
       recentActivity: latestActivity.map((row) => ({
@@ -2162,6 +2178,128 @@ export class ControlCenterService implements OnModuleInit {
         createdAt: row.createdAt.toISOString(),
       })),
     };
+  }
+
+  async getDataCorrectionAccess(tenantId: string) {
+    await this.assertTenant(tenantId);
+
+    const branches = await this.prisma.branch.findMany({
+      where: { tenantId },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+
+    return this.buildDataCorrectionAccess(tenantId, branches);
+  }
+
+  async updateOrganizationDataCorrectionAccess(
+    admin: ControlCenterAdminContext,
+    tenantId: string,
+    dto: ControlCenterFeatureAccessDto,
+  ) {
+    await this.assertTenant(tenantId);
+
+    const oldValue = await this.prisma.controlledFeatureAccess.findUnique({
+      where: {
+        featureKey_scope_scopeId: {
+          featureKey: LEGACY_DATA_CORRECTION_FEATURE,
+          scope: ControlledFeatureScope.TENANT,
+          scopeId: tenantId,
+        },
+      },
+    });
+
+    const saved = await this.prisma.controlledFeatureAccess.upsert({
+      where: {
+        featureKey_scope_scopeId: {
+          featureKey: LEGACY_DATA_CORRECTION_FEATURE,
+          scope: ControlledFeatureScope.TENANT,
+          scopeId: tenantId,
+        },
+      },
+      update: {
+        enabled: dto.enabled,
+        reason: this.cleanOptionalText(dto.reason),
+        updatedByAdminId: admin.adminId,
+      },
+      create: {
+        featureKey: LEGACY_DATA_CORRECTION_FEATURE,
+        scope: ControlledFeatureScope.TENANT,
+        scopeId: tenantId,
+        tenantId,
+        enabled: dto.enabled,
+        reason: this.cleanOptionalText(dto.reason),
+        updatedByAdminId: admin.adminId,
+      },
+    });
+
+    await this.audit(
+      admin.adminId,
+      'control_center.feature.legacy_data_corrections.updated',
+      'ControlledFeatureAccess',
+      saved.id,
+      this.featureAccessAuditValue(oldValue),
+      this.featureAccessAuditValue(saved),
+    );
+
+    return this.getDataCorrectionAccess(tenantId);
+  }
+
+  async updateBranchDataCorrectionAccess(
+    admin: ControlCenterAdminContext,
+    tenantId: string,
+    branchId: string,
+    dto: ControlCenterFeatureAccessDto,
+  ) {
+    await this.assertBranch(tenantId, branchId);
+
+    const oldValue = await this.prisma.controlledFeatureAccess.findUnique({
+      where: {
+        featureKey_scope_scopeId: {
+          featureKey: LEGACY_DATA_CORRECTION_FEATURE,
+          scope: ControlledFeatureScope.BRANCH,
+          scopeId: branchId,
+        },
+      },
+    });
+
+    const saved = await this.prisma.controlledFeatureAccess.upsert({
+      where: {
+        featureKey_scope_scopeId: {
+          featureKey: LEGACY_DATA_CORRECTION_FEATURE,
+          scope: ControlledFeatureScope.BRANCH,
+          scopeId: branchId,
+        },
+      },
+      update: {
+        enabled: dto.enabled,
+        tenantId,
+        branchId,
+        reason: this.cleanOptionalText(dto.reason),
+        updatedByAdminId: admin.adminId,
+      },
+      create: {
+        featureKey: LEGACY_DATA_CORRECTION_FEATURE,
+        scope: ControlledFeatureScope.BRANCH,
+        scopeId: branchId,
+        tenantId,
+        branchId,
+        enabled: dto.enabled,
+        reason: this.cleanOptionalText(dto.reason),
+        updatedByAdminId: admin.adminId,
+      },
+    });
+
+    await this.audit(
+      admin.adminId,
+      'control_center.feature.legacy_data_corrections.updated',
+      'ControlledFeatureAccess',
+      saved.id,
+      this.featureAccessAuditValue(oldValue),
+      this.featureAccessAuditValue(saved),
+    );
+
+    return this.getDataCorrectionAccess(tenantId);
   }
 
   async getPricing(tenantId: string) {
@@ -3453,6 +3591,130 @@ export class ControlCenterService implements OnModuleInit {
     }
   }
 
+  private async buildDataCorrectionAccess(
+    tenantId: string,
+    branches: Array<{ id: string; name: string }>,
+  ) {
+    const accessRows = await this.prisma.controlledFeatureAccess.findMany({
+      where: {
+        tenantId,
+        featureKey: LEGACY_DATA_CORRECTION_FEATURE,
+      },
+      include: {
+        updatedBy: {
+          select: {
+            displayName: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    const organizationRow =
+      accessRows.find((row) => row.scope === ControlledFeatureScope.TENANT) ??
+      null;
+
+    const branchRows = new Map(
+      accessRows
+        .filter((row) => row.scope === ControlledFeatureScope.BRANCH)
+        .map((row) => [row.scopeId, row]),
+    );
+
+    const organization = this.toFeatureAccessContract(
+      organizationRow,
+      organizationRow,
+      null,
+    );
+
+    return {
+      featureKey: LEGACY_DATA_CORRECTION_FEATURE,
+      organization,
+      branches: branches.map((branch) => {
+        const branchRow = branchRows.get(branch.id) ?? null;
+        return {
+          branch,
+          access: this.toFeatureAccessContract(
+            branchRow,
+            branchRow ?? organizationRow,
+            organizationRow,
+          ),
+        };
+      }),
+    };
+  }
+
+  private toFeatureAccessContract(
+    ownRow: Prisma.ControlledFeatureAccessGetPayload<{
+      include: {
+        updatedBy: { select: { displayName: true; email: true } };
+      };
+    }> | null,
+    effectiveRow: Prisma.ControlledFeatureAccessGetPayload<{
+      include: {
+        updatedBy: { select: { displayName: true; email: true } };
+      };
+    }> | null,
+    organizationRow: Prisma.ControlledFeatureAccessGetPayload<{
+      include: {
+        updatedBy: { select: { displayName: true; email: true } };
+      };
+    }> | null,
+  ) {
+    return {
+      enabled: effectiveRow?.enabled ?? false,
+      source:
+        effectiveRow?.scope === ControlledFeatureScope.BRANCH
+          ? 'BRANCH'
+          : effectiveRow?.scope === ControlledFeatureScope.TENANT
+            ? 'ORGANIZATION'
+            : null,
+      hasOwnSetting: ownRow != null,
+      ownEnabled: ownRow?.enabled ?? null,
+      reason: effectiveRow?.reason ?? null,
+      organizationEnabled: organizationRow?.enabled ?? null,
+      updatedAt: effectiveRow?.updatedAt.toISOString() ?? null,
+      updatedBy: effectiveRow?.updatedBy
+        ? {
+            name:
+              effectiveRow.updatedBy.displayName ||
+              effectiveRow.updatedBy.email,
+            email: effectiveRow.updatedBy.email,
+          }
+        : null,
+    };
+  }
+
+  private featureAccessAuditValue(
+    row: {
+      featureKey: string;
+      scope: ControlledFeatureScope;
+      scopeId: string;
+      tenantId: string;
+      branchId: string | null;
+      enabled: boolean;
+      reason: string | null;
+    } | null,
+  ): Prisma.InputJsonValue | null {
+    if (!row) {
+      return null;
+    }
+
+    return {
+      featureKey: row.featureKey,
+      scope: row.scope,
+      scopeId: row.scopeId,
+      tenantId: row.tenantId,
+      branchId: row.branchId,
+      enabled: row.enabled,
+      reason: row.reason,
+    };
+  }
+
+  private cleanOptionalText(value: string | null | undefined) {
+    const clean = value?.trim() ?? '';
+    return clean.length > 0 ? clean : null;
+  }
+
   private async assertBranch(tenantId: string, branchId: string) {
     const branch = await this.prisma.branch.findFirst({
       where: { id: branchId, tenantId },
@@ -3863,6 +4125,7 @@ export class ControlCenterService implements OnModuleInit {
   private controlCenterAuditCategory(action: string) {
     if (
       action.startsWith('control_center.user.') ||
+      action.startsWith('control_center.feature.') ||
       action === 'control_center.admin.setup'
     ) {
       return 'SECURITY';

@@ -16,6 +16,7 @@ import { ControlCenterMessageQueryDto } from './dto/control-center-message-query
 import { ControlCenterAuthGuard } from './control-center-auth.guard';
 import { ControlCenterService } from './control-center.service';
 import { CurrentControlCenterAdmin } from './current-control-center-admin.decorator';
+import { ControlCenterFeatureAccessDto } from './dto/control-center-feature-access.dto';
 import {
   ControlCenterLoginDto,
   ControlCenterSetupDto,
@@ -148,6 +149,42 @@ export class ControlCenterController {
   @UseGuards(ControlCenterAuthGuard)
   pricing(@Param('tenantId') tenantId: string) {
     return this.controlCenterService.getPricing(tenantId);
+  }
+
+  @Get('clients/:tenantId/data-correction-access')
+  @UseGuards(ControlCenterAuthGuard)
+  dataCorrectionAccess(@Param('tenantId') tenantId: string) {
+    return this.controlCenterService.getDataCorrectionAccess(tenantId);
+  }
+
+  @Patch('clients/:tenantId/data-correction-access')
+  @UseGuards(ControlCenterAuthGuard)
+  updateOrganizationDataCorrectionAccess(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Param('tenantId') tenantId: string,
+    @Body() body: ControlCenterFeatureAccessDto,
+  ) {
+    return this.controlCenterService.updateOrganizationDataCorrectionAccess(
+      admin,
+      tenantId,
+      body,
+    );
+  }
+
+  @Patch('clients/:tenantId/branches/:branchId/data-correction-access')
+  @UseGuards(ControlCenterAuthGuard)
+  updateBranchDataCorrectionAccess(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Param('tenantId') tenantId: string,
+    @Param('branchId') branchId: string,
+    @Body() body: ControlCenterFeatureAccessDto,
+  ) {
+    return this.controlCenterService.updateBranchDataCorrectionAccess(
+      admin,
+      tenantId,
+      branchId,
+      body,
+    );
   }
 
   @Post('clients/:tenantId/pricing')

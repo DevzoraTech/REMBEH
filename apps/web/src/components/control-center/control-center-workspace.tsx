@@ -378,6 +378,48 @@ export function ControlCenterWorkspace() {
     await Promise.all(tasks);
   }
 
+  async function setDataCorrectionAccess(input: {
+    tenantId: string;
+    branchId?: string;
+    enabled: boolean;
+    reason: string;
+  }) {
+    if (!session) {
+      return;
+    }
+
+    setError(null);
+
+    try {
+      await controlCenterFetch(
+        input.branchId
+          ? `/clients/${input.tenantId}/branches/${input.branchId}/data-correction-access`
+          : `/clients/${input.tenantId}/data-correction-access`,
+        session,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            enabled: input.enabled,
+            reason: input.reason,
+          }),
+        },
+      );
+
+      await Promise.all([
+        loadClient(input.tenantId, session),
+        loadCore(session),
+      ]);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Could not update data correction access.",
+      );
+
+      throw caughtError;
+    }
+  }
+
   async function refreshUsers() {
     if (!session) {
       return;
@@ -449,6 +491,7 @@ export function ControlCenterWorkspace() {
         setSavingPricing,
 
         refreshAfterPricing,
+        setDataCorrectionAccess,
         refreshUsers,
 
         setActive: changeSection,
@@ -506,6 +549,13 @@ function renderSection(input: {
 
   refreshAfterPricing: () => Promise<void>;
 
+  setDataCorrectionAccess: (input: {
+    tenantId: string;
+    branchId?: string;
+    enabled: boolean;
+    reason: string;
+  }) => Promise<void>;
+
   refreshUsers: () => Promise<void>;
 
   setActive: (section: ControlCenterSection) => void;
@@ -540,6 +590,7 @@ function renderSection(input: {
               }
             }}
             onPricingHistory={() => input.openHistory()}
+            onSetDataCorrectionAccess={input.setDataCorrectionAccess}
           />
         );
       }
@@ -547,6 +598,7 @@ function renderSection(input: {
       return (
         <ControlCenterBranchDetailSection
           branch={input.selectedBranch}
+          tenantId={input.clientDetail.client.id}
           organizationName={input.clientDetail.client.name}
           currency={input.clientDetail.client.currency}
           onBack={() => {
@@ -564,6 +616,7 @@ function renderSection(input: {
               input.openPricing(input.selectedClient.id);
             }
           }}
+          onSetDataCorrectionAccess={input.setDataCorrectionAccess}
         />
       );
     }
@@ -581,6 +634,7 @@ function renderSection(input: {
             }
           }}
           onPricingHistory={() => input.openHistory()}
+          onSetDataCorrectionAccess={input.setDataCorrectionAccess}
         />
       );
     }

@@ -41,6 +41,8 @@ class ClientLoanDetail {
     required this.customerId,
     required this.fullName,
     required this.phone,
+    required this.nationalId,
+    required this.customerEmail,
     required this.registeredBy,
     required this.outstanding,
     required this.lastPaymentAmount,
@@ -55,15 +57,19 @@ class ClientLoanDetail {
     required this.nextDueIsToday,
     required this.paidAmount,
     required this.loanAmount,
+    required this.principalAmount,
+    required this.openingBalance,
     required this.interestRatePercent,
     required this.loanStartDate,
     required this.maturityDate,
     this.paymentStartDate,
     this.agentPhotoUrl,
+    this.status = '',
     this.isFined = false,
     this.finesTotal = 0,
     this.paymentHistory = const [],
     this.fineHistory = const [],
+    this.correctionAccess = const ClientLoanCorrectionAccess(),
   });
 
   final String id;
@@ -71,6 +77,8 @@ class ClientLoanDetail {
   final String customerId;
   final String fullName;
   final String phone;
+  final String? nationalId;
+  final String? customerEmail;
   final String registeredBy;
   final String? agentPhotoUrl;
   final int outstanding;
@@ -86,14 +94,18 @@ class ClientLoanDetail {
   final bool nextDueIsToday;
   final int paidAmount;
   final int loanAmount;
+  final int principalAmount;
+  final int? openingBalance;
   final int interestRatePercent;
   final DateTime loanStartDate;
   final DateTime maturityDate;
   final DateTime? paymentStartDate;
+  final String status;
   final bool isFined;
   final int finesTotal;
   final List<PaymentHistoryItem> paymentHistory;
   final List<FineHistoryItem> fineHistory;
+  final ClientLoanCorrectionAccess correctionAccess;
 
   String get initials {
     final parts = fullName
@@ -116,4 +128,25 @@ class ClientLoanDetail {
   }
 
   int get progressPercent => (progressRatio * 100).round();
+}
+
+class ClientLoanCorrectionAccess {
+  const ClientLoanCorrectionAccess({
+    this.enabled = false,
+    this.source,
+    this.reason,
+  });
+
+  final bool enabled;
+  final String? source;
+  final String? reason;
+
+  factory ClientLoanCorrectionAccess.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const ClientLoanCorrectionAccess();
+    return ClientLoanCorrectionAccess(
+      enabled: json['enabled'] as bool? ?? false,
+      source: json['source'] as String?,
+      reason: json['reason'] as String?,
+    );
+  }
 }

@@ -5,6 +5,7 @@ import {
   Headers,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   UseGuards,
@@ -17,6 +18,10 @@ import { PermissionsGuard } from '../../common/auth/permissions.guard';
 import { COLLECTION_PERMISSIONS } from './collections.permissions';
 import { CollectionsService } from './collections.service';
 import { RecordRepaymentDto } from './dto/record-repayment.dto';
+import {
+  LegacyLoanCorrectionDto,
+  LegacyLoanDeleteDto,
+} from './dto/legacy-loan-correction.dto';
 import {
   BulkRepaymentSmsDto,
   SendRepaymentSmsDto,
@@ -129,6 +134,26 @@ export class CollectionsController {
     @Param('loanId', ParseUUIDPipe) loanId: string,
   ) {
     return this.collectionsService.getLoanDetail(user, loanId);
+  }
+
+  @Patch('loans/:loanId/legacy-correction')
+  @RequirePermissions('loan.update')
+  correctLegacyLoan(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('loanId', ParseUUIDPipe) loanId: string,
+    @Body() dto: LegacyLoanCorrectionDto,
+  ) {
+    return this.collectionsService.correctLegacyLoan(user, loanId, dto);
+  }
+
+  @Post('loans/:loanId/legacy-correction/delete')
+  @RequirePermissions('loan.update')
+  deleteLegacyLoan(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('loanId', ParseUUIDPipe) loanId: string,
+    @Body() dto: LegacyLoanDeleteDto,
+  ) {
+    return this.collectionsService.deleteLegacyLoan(user, loanId, dto);
   }
 
   /** Alias: wallet view is the loan detail surface for field agents. */

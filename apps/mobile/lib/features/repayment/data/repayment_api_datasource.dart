@@ -68,6 +68,36 @@ class RepaymentApiDatasource {
     return _decodeOk(response);
   }
 
+  Future<Map<String, dynamic>> correctLoan({
+    required String loanId,
+    required Map<String, dynamic> values,
+  }) async {
+    final session = await _requireSession();
+    final response = await http.patch(
+      Uri.parse(
+        '$rembehApiBaseUrl/collections/loans/$loanId/legacy-correction',
+      ),
+      headers: {..._headers(session), 'Content-Type': 'application/json'},
+      body: jsonEncode(values),
+    );
+    return _decodeOk(response);
+  }
+
+  Future<Map<String, dynamic>> deleteLoan({
+    required String loanId,
+    required String reason,
+  }) async {
+    final session = await _requireSession();
+    final response = await http.post(
+      Uri.parse(
+        '$rembehApiBaseUrl/collections/loans/$loanId/legacy-correction/delete',
+      ),
+      headers: {..._headers(session), 'Content-Type': 'application/json'},
+      body: jsonEncode({'reason': reason}),
+    );
+    return _decodeOk(response);
+  }
+
   Future<Map<String, dynamic>> recordRepayment({
     required String loanId,
     required int amount,

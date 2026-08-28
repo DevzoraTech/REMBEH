@@ -41,6 +41,8 @@ class ClientDetail {
     required this.customerId,
     required this.fullName,
     required this.phone,
+    required this.nationalId,
+    required this.customerEmail,
     required this.registeredBy,
     required this.outstanding,
     required this.lastPaymentAmount,
@@ -55,6 +57,8 @@ class ClientDetail {
     required this.nextDueIsToday,
     required this.paidAmount,
     required this.loanAmount,
+    required this.principalAmount,
+    required this.openingBalance,
     required this.interestRatePercent,
     required this.loanStartDate,
     required this.maturityDate,
@@ -67,6 +71,7 @@ class ClientDetail {
     this.finesTotal = 0,
     this.paymentHistory = const [],
     this.fineHistory = const [],
+    this.correctionAccess = const ClientCorrectionAccess(),
   });
 
   final String id;
@@ -74,6 +79,8 @@ class ClientDetail {
   final String customerId;
   final String fullName;
   final String phone;
+  final String? nationalId;
+  final String? customerEmail;
   final String registeredBy;
   final String? agentPhotoUrl;
   final int outstanding;
@@ -89,6 +96,8 @@ class ClientDetail {
   final bool nextDueIsToday;
   final int paidAmount;
   final int loanAmount;
+  final int principalAmount;
+  final int? openingBalance;
   final double interestRatePercent;
   final DateTime loanStartDate;
   final DateTime maturityDate;
@@ -100,6 +109,7 @@ class ClientDetail {
   final int finesTotal;
   final List<ClientPaymentHistoryItem> paymentHistory;
   final List<ClientFineHistoryItem> fineHistory;
+  final ClientCorrectionAccess correctionAccess;
 
   String get initials {
     final parts = fullName
@@ -135,6 +145,8 @@ class ClientDetail {
       customerId: json['customerId'] as String? ?? '',
       fullName: json['fullName'] as String? ?? '',
       phone: json['phone'] as String? ?? '',
+      nationalId: json['nationalId'] as String?,
+      customerEmail: json['customerEmail'] as String?,
       registeredBy: json['registeredBy'] as String? ?? '',
       agentPhotoUrl: json['agentPhotoUrl'] as String?,
       outstanding: ((json['outstanding'] as num?) ?? 0).round(),
@@ -152,6 +164,10 @@ class ClientDetail {
       nextDueIsToday: json['nextDueIsToday'] as bool? ?? false,
       paidAmount: ((json['paidAmount'] as num?) ?? 0).round(),
       loanAmount: ((json['loanAmount'] as num?) ?? 0).round(),
+      principalAmount: ((json['principalAmount'] as num?) ?? 0).round(),
+      openingBalance: json['openingBalance'] == null
+          ? null
+          : ((json['openingBalance'] as num?) ?? 0).round(),
       interestRatePercent:
           (json['interestRatePercent'] as num?)?.toDouble() ?? 0,
       loanStartDate: parseDate(json['loanStartDate'] as String?),
@@ -164,37 +180,68 @@ class ClientDetail {
       status: json['status'] as String? ?? '',
       isFined: json['isFined'] as bool? ?? false,
       finesTotal: ((json['finesTotal'] as num?) ?? 0).round(),
-      paymentHistory: ((json['paymentHistory'] as List?) ?? const [])
-          .whereType<Map>()
-          .map(
-            (row) => ClientPaymentHistoryItem(
-              id: row['id'] as String? ?? '',
-              amount: ((row['amount'] as num?) ?? 0).round(),
-              method: row['method'] as String? ?? 'CASH',
-              paidAt: DateTime.tryParse(row['paidAt'] as String? ?? '') ??
-                  DateTime.now(),
-              recordedByName: row['recordedByName'] as String? ?? '',
-              agentPhotoUrl: row['agentPhotoUrl'] as String?,
-              note: row['note'] as String?,
-            ),
-          )
-          .toList()
-        ..sort((a, b) => b.paidAt.compareTo(a.paidAt)),
-      fineHistory: ((json['fineHistory'] as List?) ?? const [])
-          .whereType<Map>()
-          .map(
-            (row) => ClientFineHistoryItem(
-              id: row['id'] as String? ?? '',
-              periodIndex: ((row['periodIndex'] as num?) ?? 0).round(),
-              amount: ((row['amount'] as num?) ?? 0).round(),
-              dueAt: DateTime.tryParse(row['dueAt'] as String? ?? '') ??
-                  DateTime.now(),
-              appliedAt: DateTime.tryParse(row['appliedAt'] as String? ?? '') ??
-                  DateTime.now(),
-            ),
-          )
-          .toList()
-        ..sort((a, b) => b.periodIndex.compareTo(a.periodIndex)),
+      paymentHistory:
+          ((json['paymentHistory'] as List?) ?? const [])
+              .whereType<Map>()
+              .map(
+                (row) => ClientPaymentHistoryItem(
+                  id: row['id'] as String? ?? '',
+                  amount: ((row['amount'] as num?) ?? 0).round(),
+                  method: row['method'] as String? ?? 'CASH',
+                  paidAt:
+                      DateTime.tryParse(row['paidAt'] as String? ?? '') ??
+                      DateTime.now(),
+                  recordedByName: row['recordedByName'] as String? ?? '',
+                  agentPhotoUrl: row['agentPhotoUrl'] as String?,
+                  note: row['note'] as String?,
+                ),
+              )
+              .toList()
+            ..sort((a, b) => b.paidAt.compareTo(a.paidAt)),
+      fineHistory:
+          ((json['fineHistory'] as List?) ?? const [])
+              .whereType<Map>()
+              .map(
+                (row) => ClientFineHistoryItem(
+                  id: row['id'] as String? ?? '',
+                  periodIndex: ((row['periodIndex'] as num?) ?? 0).round(),
+                  amount: ((row['amount'] as num?) ?? 0).round(),
+                  dueAt:
+                      DateTime.tryParse(row['dueAt'] as String? ?? '') ??
+                      DateTime.now(),
+                  appliedAt:
+                      DateTime.tryParse(row['appliedAt'] as String? ?? '') ??
+                      DateTime.now(),
+                ),
+              )
+              .toList()
+            ..sort((a, b) => b.periodIndex.compareTo(a.periodIndex)),
+      correctionAccess: ClientCorrectionAccess.fromJson(
+        json['correctionAccess'] is Map<String, dynamic>
+            ? json['correctionAccess'] as Map<String, dynamic>
+            : null,
+      ),
+    );
+  }
+}
+
+class ClientCorrectionAccess {
+  const ClientCorrectionAccess({
+    this.enabled = false,
+    this.source,
+    this.reason,
+  });
+
+  final bool enabled;
+  final String? source;
+  final String? reason;
+
+  factory ClientCorrectionAccess.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const ClientCorrectionAccess();
+    return ClientCorrectionAccess(
+      enabled: json['enabled'] as bool? ?? false,
+      source: json['source'] as String?,
+      reason: json['reason'] as String?,
     );
   }
 }

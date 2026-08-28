@@ -100,6 +100,8 @@ export type ClientLoanDetailContract = {
   customerId: string;
   fullName: string;
   phone: string;
+  nationalId: string | null;
+  customerEmail: string | null;
   registeredBy: string;
   registeredByPublicId: string | null;
   /** Presigned GET for the registering agent's profile selfie. */
@@ -120,6 +122,10 @@ export type ClientLoanDetailContract = {
   paidAmount: number;
   /** Original total repayable + applied fines. */
   loanAmount: number;
+  /** Raw recorded principal, excluding processing fee. */
+  principalAmount: number;
+  /** Wallet opening borrower obligation; relevant for legacy imports. */
+  openingBalance: number | null;
   interestRatePercent: number;
   interestAmount: number;
   processingFee: number;
@@ -136,6 +142,11 @@ export type ClientLoanDetailContract = {
   paymentHistory: PaymentHistoryItemContract[];
   /** Newest-first overdue fine history. */
   fineHistory: FineHistoryItemContract[];
+  correctionAccess: {
+    enabled: boolean;
+    source: 'ORGANIZATION' | 'BRANCH' | null;
+    reason: string | null;
+  };
 };
 
 export type RecordRepaymentResponseContract = {

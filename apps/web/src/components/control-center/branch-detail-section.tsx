@@ -8,27 +8,36 @@ import {
   CreditCard,
   FileText,
   Landmark,
+  LockKeyhole,
   MapPin,
   Phone,
+  ShieldAlert,
   Tag,
+  UnlockKeyhole,
   Users,
   WalletCards,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { useState } from "react";
 
-import type {
-  ControlCenterBranch,
-} from "./types";
+import type { ControlCenterBranch, ControlCenterFeatureAccess } from "./types";
 
-import {
-  ccDate,
-  ccDateTime,
-  ccMoney,
-  ccNumber,
-} from "./formatters";
+import { ccDate, ccDateTime, ccMoney, ccNumber } from "./formatters";
+
+const emptyFeatureAccess: ControlCenterFeatureAccess = {
+  enabled: false,
+  source: null,
+  hasOwnSetting: false,
+  ownEnabled: null,
+  reason: null,
+  organizationEnabled: null,
+  updatedAt: null,
+  updatedBy: null,
+};
 
 export function ControlCenterBranchDetailSection({
   branch,
+  tenantId,
   organizationName,
   currency,
   onBack,
@@ -36,8 +45,10 @@ export function ControlCenterBranchDetailSection({
   onManagePricing,
   onOpenSubscription,
   onOpenPayments,
+  onSetDataCorrectionAccess,
 }: {
   branch: ControlCenterBranch;
+  tenantId: string;
   organizationName: string;
   currency: string;
   onBack: () => void;
@@ -45,8 +56,41 @@ export function ControlCenterBranchDetailSection({
   onManagePricing: () => void;
   onOpenSubscription?: () => void;
   onOpenPayments?: () => void;
+  onSetDataCorrectionAccess?: (input: {
+    tenantId: string;
+    branchId?: string;
+    enabled: boolean;
+    reason: string;
+  }) => Promise<void>;
 }) {
   const lifecycle = getSubscriptionLifecycle(branch);
+  const [reason, setReason] = useState("Approved legacy data cleanup window.");
+  const [savingCorrectionAccess, setSavingCorrectionAccess] = useState(false);
+  const correctionAccess = branch.dataCorrectionAccess ?? emptyFeatureAccess;
+
+  async function updateCorrectionAccess(enabled: boolean) {
+    if (!onSetDataCorrectionAccess || savingCorrectionAccess) {
+      return;
+    }
+
+    const cleanReason = reason.trim();
+    if (cleanReason.length < 6) {
+      return;
+    }
+
+    setSavingCorrectionAccess(true);
+
+    try {
+      await onSetDataCorrectionAccess({
+        tenantId,
+        branchId: branch.id,
+        enabled,
+        reason: cleanReason,
+      });
+    } finally {
+      setSavingCorrectionAccess(false);
+    }
+  }
 
   return (
     <div className="mx-auto w-full max-w-[1500px]">
@@ -64,10 +108,7 @@ export function ControlCenterBranchDetailSection({
       <div className="flex flex-wrap items-start justify-between gap-5">
         <div className="flex min-w-0 items-start gap-3">
           <div className="grid size-11 shrink-0 place-items-center rounded-[10px] bg-[#eaf6ee] text-[#198b55]">
-            <Landmark
-              className="size-5"
-              strokeWidth={1.9}
-            />
+            <Landmark className="size-5" strokeWidth={1.9} />
           </div>
 
           <div className="min-w-0">
@@ -147,23 +188,15 @@ export function ControlCenterBranchDetailSection({
         <MetricCard
           icon={WalletCards}
           label="Repayments collected"
-          value={ccMoney(
-            branch.repaymentsCollected,
-            currency,
-          )}
-          secondary={`${ccNumber(
-            branch.repaymentCount,
-          )} repayments`}
+          value={ccMoney(branch.repaymentsCollected, currency)}
+          secondary={`${ccNumber(branch.repaymentCount)} repayments`}
           tone="slate"
         />
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <InfoPanel title="Branch information">
-          <InfoRow
-            label="Branch"
-            value={branch.name}
-          />
+          <InfoRow label="Branch" value={branch.name} />
 
           <InfoRow
             label="Organization"
@@ -178,15 +211,9 @@ export function ControlCenterBranchDetailSection({
             }
           />
 
-          <InfoRow
-            label="Address"
-            value={branch.address || "Not available"}
-          />
+          <InfoRow label="Address" value={branch.address || "Not available"} />
 
-          <InfoRow
-            label="Phone"
-            value={branch.phone ?? "Not available"}
-          />
+          <InfoRow label="Phone" value={branch.phone ?? "Not available"} />
 
           <InfoRow
             label="Status"
@@ -220,17 +247,10 @@ export function ControlCenterBranchDetailSection({
         >
           <InfoRow
             label="Lifecycle"
-            value={
-              <SubscriptionBadge
-                value={lifecycle.status}
-              />
-            }
+            value={<SubscriptionBadge value={lifecycle.status} />}
           />
 
-          <InfoRow
-            label="Plan"
-            value={formatPlan(branch.planCode)}
-          />
+          <InfoRow label="Plan" value={formatPlan(branch.planCode)} />
 
           <InfoRow
             label="Period end"
@@ -241,24 +261,16 @@ export function ControlCenterBranchDetailSection({
             }
           />
 
-          <InfoRow
-            label="Time remaining"
-            value={lifecycle.label}
-          />
+          <InfoRow label="Time remaining" value={lifecycle.label} />
 
           <InfoRow
             label="Subscription payments"
-            value={ccNumber(
-              branch.subscriptionPayments,
-            )}
+            value={ccNumber(branch.subscriptionPayments)}
           />
 
           <InfoRow
             label="Subscription revenue"
-            value={ccMoney(
-              branch.subscriptionRevenue,
-              currency,
-            )}
+            value={ccMoney(branch.subscriptionRevenue, currency)}
           />
         </InfoPanel>
       </div>
@@ -277,27 +289,87 @@ export function ControlCenterBranchDetailSection({
             </button>
           }
         >
-          <InfoRow
-            label="Current plan"
-            value={formatPlan(branch.planCode)}
-          />
+          <InfoRow label="Current plan" value={formatPlan(branch.planCode)} />
 
-          <InfoRow
-            label="Currency"
-            value={currency}
-          />
+          <InfoRow label="Currency" value={currency} />
 
-          <InfoRow
-            label="Pricing source"
-            value="Open pricing workspace"
-          />
+          <InfoRow label="Pricing source" value="Open pricing workspace" />
 
-          <InfoRow
-            label="Effective price"
-            value="Not available"
-          />
+          <InfoRow label="Effective price" value="Not available" />
         </InfoPanel>
 
+        <InfoPanel title="Strict data controls">
+          <div className="flex items-start gap-3 rounded-[8px] border border-[#efd49a] bg-[#fffaf0] p-3">
+            <div className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-white text-[#c47a14]">
+              <ShieldAlert className="size-4" />
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[10.5px] font-semibold text-[#17233c]">
+                  Legacy correction access
+                </p>
+
+                <FeatureAccessBadge
+                  enabled={correctionAccess.enabled}
+                  label={
+                    correctionAccess.enabled
+                      ? correctionAccess.source === "ORGANIZATION"
+                        ? "Inherited from organization"
+                        : "Enabled for branch"
+                      : "Disabled"
+                  }
+                />
+              </div>
+
+              <p className="mt-1 text-[9.5px] leading-4 text-[#6b5a31]">
+                Allows the mobile app to correct or delete seeded records for
+                this branch. Every change is audited.
+              </p>
+            </div>
+          </div>
+
+          <textarea
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            rows={3}
+            className="w-full resize-none rounded-md border border-[#dfe5eb] px-3 py-2 text-[10px] font-medium text-[#17233c] outline-none focus:border-[#188653]"
+          />
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={
+                !onSetDataCorrectionAccess ||
+                savingCorrectionAccess ||
+                correctionAccess.enabled
+              }
+              onClick={() => void updateCorrectionAccess(true)}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[#188653] px-3 text-[9.5px] font-semibold text-white disabled:cursor-not-allowed disabled:bg-[#aab6c2]"
+            >
+              <UnlockKeyhole className="size-3.5" />
+              Enable branch
+            </button>
+
+            <button
+              type="button"
+              disabled={
+                !onSetDataCorrectionAccess ||
+                savingCorrectionAccess ||
+                (!correctionAccess.enabled &&
+                  correctionAccess.source !== "BRANCH")
+              }
+              onClick={() => void updateCorrectionAccess(false)}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[#d9b96d] bg-white px-3 text-[9.5px] font-semibold text-[#8b5a12] disabled:cursor-not-allowed disabled:text-[#9aa4b3]"
+            >
+              <LockKeyhole className="size-3.5" />
+              Disable branch
+            </button>
+          </div>
+        </InfoPanel>
+      </div>
+
+      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <InfoPanel
           title="Payment activity"
           action={
@@ -315,17 +387,12 @@ export function ControlCenterBranchDetailSection({
         >
           <InfoRow
             label="Subscription payments"
-            value={ccNumber(
-              branch.subscriptionPayments,
-            )}
+            value={ccNumber(branch.subscriptionPayments)}
           />
 
           <InfoRow
             label="Subscription revenue"
-            value={ccMoney(
-              branch.subscriptionRevenue,
-              currency,
-            )}
+            value={ccMoney(branch.subscriptionRevenue, currency)}
           />
 
           <InfoRow
@@ -335,10 +402,7 @@ export function ControlCenterBranchDetailSection({
 
           <InfoRow
             label="Repayments collected"
-            value={ccMoney(
-              branch.repaymentsCollected,
-              currency,
-            )}
+            value={ccMoney(branch.repaymentsCollected, currency)}
           />
         </InfoPanel>
       </div>
@@ -355,9 +419,9 @@ export function ControlCenterBranchDetailSection({
             </p>
 
             <p className="mt-1 text-[9.5px] leading-4 text-[#69768e]">
-              Administrative history, subscription changes,
-              payments and access events will live here once
-              branch-level audit records are exposed by the API.
+              Administrative history, subscription changes, payments and access
+              events will live here once branch-level audit records are exposed
+              by the API.
             </p>
           </div>
         </div>
@@ -378,32 +442,20 @@ function InfoPanel({
   return (
     <section className="rounded-[10px] border border-[#dfe5eb] bg-white">
       <div className="flex min-h-[46px] items-center justify-between gap-4 border-b border-[#edf1f4] px-4 py-3">
-        <p className="text-[11px] font-semibold text-[#17233c]">
-          {title}
-        </p>
+        <p className="text-[11px] font-semibold text-[#17233c]">{title}</p>
 
         {action}
       </div>
 
-      <div className="space-y-3 px-4 py-4">
-        {children}
-      </div>
+      <div className="space-y-3 px-4 py-4">{children}</div>
     </section>
   );
 }
 
-function InfoRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
+function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4">
-      <span className="text-[9.5px] font-normal text-[#718099]">
-        {label}
-      </span>
+      <span className="text-[9.5px] font-normal text-[#718099]">{label}</span>
 
       <span className="max-w-[65%] text-right text-[10.5px] font-semibold text-[#26344d]">
         {value}
@@ -427,15 +479,10 @@ function MetricCard({
 }) {
   return (
     <section className="flex min-h-[100px] items-center gap-3 rounded-[10px] border border-[#dfe5eb] bg-white px-4">
-      <SmallIcon
-        icon={icon}
-        tone={tone}
-      />
+      <SmallIcon icon={icon} tone={tone} />
 
       <div className="min-w-0">
-        <p className="text-[9.5px] font-semibold text-[#62718a]">
-          {label}
-        </p>
+        <p className="text-[9.5px] font-semibold text-[#62718a]">{label}</p>
 
         <p className="mt-1 truncate text-[20px] font-bold tracking-[-0.02em] text-[#14213a]">
           {value}
@@ -449,33 +496,17 @@ function MetricCard({
   );
 }
 
-function StatusBadge({
-  value,
-}: {
-  value: string;
-}) {
-  const normalized = value
-    .toUpperCase()
-    .replace(/\s+/g, "_");
+function StatusBadge({ value }: { value: string }) {
+  const normalized = value.toUpperCase().replace(/\s+/g, "_");
 
-  let styles =
-    "bg-[#eef2f6] text-[#59677d]";
+  let styles = "bg-[#eef2f6] text-[#59677d]";
 
   if (normalized === "ACTIVE") {
-    styles =
-      "bg-[#eaf6ee] text-[#1b804e]";
-  } else if (
-    normalized === "PENDING_VERIFICATION"
-  ) {
-    styles =
-      "bg-[#fff3df] text-[#ba6a12]";
-  } else if (
-    ["LOCKED", "SUSPENDED", "BLOCKED"].includes(
-      normalized,
-    )
-  ) {
-    styles =
-      "bg-[#fff0f0] text-[#c94040]";
+    styles = "bg-[#eaf6ee] text-[#1b804e]";
+  } else if (normalized === "PENDING_VERIFICATION") {
+    styles = "bg-[#fff3df] text-[#ba6a12]";
+  } else if (["LOCKED", "SUSPENDED", "BLOCKED"].includes(normalized)) {
+    styles = "bg-[#fff0f0] text-[#c94040]";
   }
 
   return (
@@ -490,12 +521,7 @@ function StatusBadge({
 function SubscriptionBadge({
   value,
 }: {
-  value:
-    | "ACTIVE"
-    | "EXPIRING"
-    | "EXPIRED"
-    | "LOCKED"
-    | "NO_SUBSCRIPTION";
+  value: "ACTIVE" | "EXPIRING" | "EXPIRED" | "LOCKED" | "NO_SUBSCRIPTION";
 }) {
   const styles =
     value === "ACTIVE"
@@ -523,19 +549,27 @@ function SubscriptionBadge({
   );
 }
 
-type IconTone =
-  | "green"
-  | "blue"
-  | "amber"
-  | "slate";
-
-function SmallIcon({
-  icon: Icon,
-  tone,
+function FeatureAccessBadge({
+  enabled,
+  label,
 }: {
-  icon: LucideIcon;
-  tone: IconTone;
+  enabled: boolean;
+  label: string;
 }) {
+  return (
+    <span
+      className={`inline-flex min-h-[21px] items-center rounded-[5px] px-2 text-[9px] font-semibold ${
+        enabled ? "bg-[#e8f7ee] text-[#168650]" : "bg-[#eef2f6] text-[#59677d]"
+      }`}
+    >
+      {label}
+    </span>
+  );
+}
+
+type IconTone = "green" | "blue" | "amber" | "slate";
+
+function SmallIcon({ icon: Icon, tone }: { icon: LucideIcon; tone: IconTone }) {
   const styles =
     tone === "blue"
       ? "bg-[#edf4ff] text-[#276de9]"
@@ -549,43 +583,29 @@ function SmallIcon({
     <span
       className={`grid size-[35px] shrink-0 place-items-center rounded-[8px] ${styles}`}
     >
-      <Icon
-        className="size-[16px]"
-        strokeWidth={1.9}
-      />
+      <Icon className="size-[16px]" strokeWidth={1.9} />
     </span>
   );
 }
 
-function getSubscriptionLifecycle(
-  branch: ControlCenterBranch,
-) {
+function getSubscriptionLifecycle(branch: ControlCenterBranch) {
   const status = branch.status.toUpperCase();
 
-  if (
-    ["LOCKED", "SUSPENDED", "BLOCKED"].includes(
-      status,
-    )
-  ) {
+  if (["LOCKED", "SUSPENDED", "BLOCKED"].includes(status)) {
     return {
       status: "LOCKED" as const,
       label: "Access locked",
     };
   }
 
-  if (
-    !branch.planCode ||
-    !branch.currentPeriodEnd
-  ) {
+  if (!branch.planCode || !branch.currentPeriodEnd) {
     return {
       status: "NO_SUBSCRIPTION" as const,
       label: "No active period",
     };
   }
 
-  const days = daysUntil(
-    branch.currentPeriodEnd,
-  );
+  const days = daysUntil(branch.currentPeriodEnd);
 
   if (days < 0) {
     return {
@@ -602,9 +622,7 @@ function getSubscriptionLifecycle(
       label:
         days === 0
           ? "Expires today"
-          : `${days} ${
-              days === 1 ? "day" : "days"
-            } remaining`,
+          : `${days} ${days === 1 ? "day" : "days"} remaining`,
     };
   }
 
@@ -614,9 +632,7 @@ function getSubscriptionLifecycle(
   };
 }
 
-function daysUntil(
-  value: string,
-) {
+function daysUntil(value: string) {
   const target = new Date(value);
 
   if (Number.isNaN(target.getTime())) {
@@ -625,11 +641,7 @@ function daysUntil(
 
   const now = new Date();
 
-  const today = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate(),
-  );
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
   const end = new Date(
     target.getFullYear(),
@@ -637,58 +649,36 @@ function daysUntil(
     target.getDate(),
   );
 
-  return Math.ceil(
-    (end.getTime() - today.getTime()) /
-      86_400_000,
-  );
+  return Math.ceil((end.getTime() - today.getTime()) / 86_400_000);
 }
 
-function formatPlan(
-  value: string | null,
-) {
+function formatPlan(value: string | null) {
   if (!value) {
     return "No plan";
   }
 
   const normalized = value.toUpperCase();
 
-  if (
-    normalized.includes("6M") ||
-    normalized.includes("6_MONTH")
-  ) {
+  if (normalized.includes("6M") || normalized.includes("6_MONTH")) {
     return "6 Months";
   }
 
-  if (
-    normalized.includes("3M") ||
-    normalized.includes("3_MONTH")
-  ) {
+  if (normalized.includes("3M") || normalized.includes("3_MONTH")) {
     return "3 Months";
   }
 
-  if (
-    normalized.includes("MONTH") ||
-    normalized === "PRO"
-  ) {
+  if (normalized.includes("MONTH") || normalized === "PRO") {
     return "Monthly";
   }
 
-  return value
-    .replace(/^PRO_?/i, "")
-    .replace(/_/g, " ");
+  return value.replace(/^PRO_?/i, "").replace(/_/g, " ");
 }
 
-function labelFromValue(
-  value: string,
-) {
+function labelFromValue(value: string) {
   return value
     .replace(/_/g, " ")
     .trim()
     .split(/\s+/)
-    .map(
-      (word) =>
-        word.charAt(0).toUpperCase() +
-        word.slice(1).toLowerCase(),
-    )
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(" ");
 }

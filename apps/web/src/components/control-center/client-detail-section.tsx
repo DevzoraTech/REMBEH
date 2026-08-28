@@ -8,8 +8,11 @@ import {
   CreditCard,
   FileText,
   Landmark,
+  LockKeyhole,
   MapPin,
+  ShieldAlert,
   Tag,
+  UnlockKeyhole,
   UserRound,
   Users,
   WalletCards,
@@ -20,14 +23,10 @@ import { useState } from "react";
 import type {
   ControlCenterBranch,
   ControlCenterClientDetail,
+  ControlCenterFeatureAccess,
 } from "./types";
 
-import {
-  ccDate,
-  ccDateTime,
-  ccNumber,
-  compactAction,
-} from "./formatters";
+import { ccDate, ccDateTime, ccNumber, compactAction } from "./formatters";
 
 type ClientTab =
   | "OVERVIEW"
@@ -38,6 +37,17 @@ type ClientTab =
   | "USERS"
   | "ACTIVITY";
 
+const emptyFeatureAccess: ControlCenterFeatureAccess = {
+  enabled: false,
+  source: null,
+  hasOwnSetting: false,
+  ownEnabled: null,
+  reason: null,
+  organizationEnabled: null,
+  updatedAt: null,
+  updatedBy: null,
+};
+
 export function ControlCenterClientDetailSection({
   detail,
   loading,
@@ -45,6 +55,7 @@ export function ControlCenterClientDetailSection({
   onOpenBranch,
   onManagePricing,
   onPricingHistory,
+  onSetDataCorrectionAccess,
 }: {
   detail: ControlCenterClientDetail | null;
   loading: boolean;
@@ -52,6 +63,12 @@ export function ControlCenterClientDetailSection({
   onOpenBranch: (branchId: string) => void;
   onManagePricing: () => void;
   onPricingHistory: () => void;
+  onSetDataCorrectionAccess: (input: {
+    tenantId: string;
+    branchId?: string;
+    enabled: boolean;
+    reason: string;
+  }) => Promise<void>;
 }) {
   const [tab, setTab] = useState<ClientTab>("OVERVIEW");
 
@@ -101,17 +118,10 @@ export function ControlCenterClientDetailSection({
         </button>
       </div>
 
-      <ClientHeader
-        detail={detail}
-        onManagePricing={onManagePricing}
-      />
+      <ClientHeader detail={detail} onManagePricing={onManagePricing} />
 
       <section className="mt-4 overflow-hidden rounded-[10px] border border-[#dfe5eb] bg-white">
-        <ClientTabs
-          active={tab}
-          onChange={setTab}
-          detail={detail}
-        />
+        <ClientTabs active={tab} onChange={setTab} detail={detail} />
 
         {tab === "OVERVIEW" ? (
           <OverviewTab
@@ -121,12 +131,10 @@ export function ControlCenterClientDetailSection({
             onOpenBranches={() => setTab("BRANCHES")}
             onOpenBranch={onOpenBranch}
             onOpenActivity={() => setTab("ACTIVITY")}
+            onSetDataCorrectionAccess={onSetDataCorrectionAccess}
           />
         ) : tab === "BRANCHES" ? (
-          <BranchesTab
-            branches={detail.branches}
-            onOpenBranch={onOpenBranch}
-          />
+          <BranchesTab branches={detail.branches} onOpenBranch={onOpenBranch} />
         ) : tab === "SUBSCRIPTIONS" ? (
           <ClientModulePlaceholder
             icon={CreditCard}
@@ -152,9 +160,7 @@ export function ControlCenterClientDetailSection({
             description="Users belonging to this organization will be grouped here by branch and role."
           />
         ) : (
-          <ActivityTab
-            activities={detail.recentActivity}
-          />
+          <ActivityTab activities={detail.recentActivity} />
         )}
       </section>
     </div>
@@ -174,10 +180,7 @@ function ClientHeader({
     <div className="flex flex-wrap items-start justify-between gap-5">
       <div className="flex min-w-0 items-start gap-3">
         <div className="grid size-11 shrink-0 place-items-center rounded-[10px] bg-[#eaf6ee] text-[#198b55]">
-          <Landmark
-            className="size-5"
-            strokeWidth={1.9}
-          />
+          <Landmark className="size-5" strokeWidth={1.9} />
         </div>
 
         <div className="min-w-0">
@@ -190,19 +193,13 @@ function ClientHeader({
           </div>
 
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] font-normal text-[#6a7890]">
-            <span>
-              Client since {ccDate(client.createdAt)}
-            </span>
+            <span>Client since {ccDate(client.createdAt)}</span>
 
-            <span className="text-[#c8cfd7]">
-              •
-            </span>
+            <span className="text-[#c8cfd7]">•</span>
 
             <span>{client.country}</span>
 
-            <span className="text-[#c8cfd7]">
-              •
-            </span>
+            <span className="text-[#c8cfd7]">•</span>
 
             <span>{client.currency}</span>
           </div>
@@ -315,6 +312,7 @@ function OverviewTab({
   onOpenBranches,
   onOpenBranch,
   onOpenActivity,
+  onSetDataCorrectionAccess,
 }: {
   detail: ControlCenterClientDetail;
   onManagePricing: () => void;
@@ -322,6 +320,12 @@ function OverviewTab({
   onOpenBranches: () => void;
   onOpenBranch: (branchId: string) => void;
   onOpenActivity: () => void;
+  onSetDataCorrectionAccess: (input: {
+    tenantId: string;
+    branchId?: string;
+    enabled: boolean;
+    reason: string;
+  }) => Promise<void>;
 }) {
   const client = detail.client;
 
@@ -341,11 +345,8 @@ function OverviewTab({
       Boolean(branch.currentPeriodEnd),
   ).length;
 
-  const lockedBranches = detail.branches.filter(
-    (branch) =>
-      ["LOCKED", "SUSPENDED", "BLOCKED"].includes(
-        branch.status.toUpperCase(),
-      ),
+  const lockedBranches = detail.branches.filter((branch) =>
+    ["LOCKED", "SUSPENDED", "BLOCKED"].includes(branch.status.toUpperCase()),
   ).length;
 
   return (
@@ -355,9 +356,7 @@ function OverviewTab({
           icon={Building2}
           label="Branches"
           value={ccNumber(client.summary.totalBranches)}
-          secondary={`${ccNumber(
-            client.summary.activeBranches,
-          )} active`}
+          secondary={`${ccNumber(client.summary.activeBranches)} active`}
           tone="green"
         />
 
@@ -390,55 +389,32 @@ function OverviewTab({
         <InfoPanel title="Organization information">
           <InfoRow
             label="Owner"
-            value={
-              client.owner?.name ??
-              "No owner assigned"
-            }
+            value={client.owner?.name ?? "No owner assigned"}
           />
 
           <InfoRow
             label="Email"
-            value={
-              client.owner?.email ??
-              "Not available"
-            }
+            value={client.owner?.email ?? "Not available"}
           />
 
           <InfoRow
             label="Phone"
-            value={
-              client.owner?.phone ??
-              "Not available"
-            }
+            value={client.owner?.phone ?? "Not available"}
           />
 
           <InfoRow
             label="Registration number"
-            value={
-              client.registrationNumber ??
-              "Not available"
-            }
+            value={client.registrationNumber ?? "Not available"}
           />
 
-          <InfoRow
-            label="Country"
-            value={client.country}
-          />
+          <InfoRow label="Country" value={client.country} />
 
-          <InfoRow
-            label="Currency"
-            value={client.currency}
-          />
+          <InfoRow label="Currency" value={client.currency} />
         </InfoPanel>
 
         <InfoPanel
           title="Subscription health"
-          action={
-            <TextAction
-              label="View branches"
-              onClick={onOpenBranches}
-            />
-          }
+          action={<TextAction label="View branches" onClick={onOpenBranches} />}
         >
           <HealthRow
             label="Active subscriptions"
@@ -454,17 +430,13 @@ function OverviewTab({
 
           <HealthRow
             label="Suspended branches"
-            value={
-              client.summary.suspendedBranches
-            }
+            value={client.summary.suspendedBranches}
             tone="amber"
           />
 
           <HealthRow
             label="Total branches"
-            value={
-              client.summary.totalBranches
-            }
+            value={client.summary.totalBranches}
             tone="slate"
           />
         </InfoPanel>
@@ -474,16 +446,10 @@ function OverviewTab({
         <InfoPanel
           title="Commercial relationship"
           action={
-            <TextAction
-              label="Manage pricing"
-              onClick={onManagePricing}
-            />
+            <TextAction label="Manage pricing" onClick={onManagePricing} />
           }
         >
-          <InfoRow
-            label="Pricing"
-            value="Organization and branch pricing"
-          />
+          <InfoRow label="Pricing" value="Organization and branch pricing" />
 
           <InfoRow
             label="Pricing history"
@@ -498,15 +464,19 @@ function OverviewTab({
             }
           />
 
-          <InfoRow
-            label="Currency"
-            value={client.currency}
-          />
+          <InfoRow label="Currency" value={client.currency} />
         </InfoPanel>
 
         <RecentActivityPreview
           activities={detail.recentActivity}
           onOpenActivity={onOpenActivity}
+        />
+      </div>
+
+      <div className="mt-4">
+        <DataCorrectionAccessPanel
+          detail={detail}
+          onSetAccess={onSetDataCorrectionAccess}
         />
       </div>
 
@@ -543,33 +513,19 @@ function BranchesTab({
       <table className="w-full min-w-[1050px] table-fixed text-left">
         <thead>
           <tr className="bg-[#fcfdfe] text-[9.5px] font-semibold text-[#56647d]">
-            <th className="w-[28%] px-4 py-2.5">
-              Branch
-            </th>
+            <th className="w-[28%] px-4 py-2.5">Branch</th>
 
-            <th className="w-[11%] px-3 py-2.5">
-              Users
-            </th>
+            <th className="w-[11%] px-3 py-2.5">Users</th>
 
-            <th className="w-[12%] px-3 py-2.5">
-              Borrowers
-            </th>
+            <th className="w-[12%] px-3 py-2.5">Borrowers</th>
 
-            <th className="w-[11%] px-3 py-2.5">
-              Loans
-            </th>
+            <th className="w-[11%] px-3 py-2.5">Loans</th>
 
-            <th className="w-[16%] px-3 py-2.5">
-              Subscription
-            </th>
+            <th className="w-[16%] px-3 py-2.5">Subscription</th>
 
-            <th className="w-[14%] px-3 py-2.5">
-              Last used
-            </th>
+            <th className="w-[14%] px-3 py-2.5">Last used</th>
 
-            <th className="w-[8%] px-3 py-2.5">
-              Status
-            </th>
+            <th className="w-[8%] px-3 py-2.5">Status</th>
           </tr>
         </thead>
 
@@ -621,16 +577,12 @@ function BranchesTab({
 
               <td className="px-3 py-2.5">
                 <p className="text-[10px] font-semibold text-[#26344d]">
-                  {branch.planCode
-                    ? formatPlan(branch.planCode)
-                    : "No plan"}
+                  {branch.planCode ? formatPlan(branch.planCode) : "No plan"}
                 </p>
 
                 <p className="mt-1 text-[9px] font-normal text-[#6b7890]">
                   {branch.currentPeriodEnd
-                    ? `Ends ${ccDate(
-                        branch.currentPeriodEnd,
-                      )}`
+                    ? `Ends ${ccDate(branch.currentPeriodEnd)}`
                     : "No active period"}
                 </p>
               </td>
@@ -644,9 +596,7 @@ function BranchesTab({
               </td>
 
               <td className="px-3 py-2.5">
-                <ClientStatusBadge
-                  value={branch.status}
-                />
+                <ClientStatusBadge value={branch.status} />
               </td>
             </tr>
           ))}
@@ -670,8 +620,8 @@ function PricingTab({
       <div className="grid gap-4 xl:grid-cols-2">
         <InfoPanel title="Pricing management">
           <p className="text-[10px] leading-5 text-[#68758d]">
-            Organization-level and branch-level negotiated pricing
-            is managed from the dedicated pricing workspace.
+            Organization-level and branch-level negotiated pricing is managed
+            from the dedicated pricing workspace.
           </p>
 
           <div className="mt-4 flex flex-wrap gap-2">
@@ -696,21 +646,13 @@ function PricingTab({
         </InfoPanel>
 
         <InfoPanel title="Organization">
-          <InfoRow
-            label="Client"
-            value={detail.client.name}
-          />
+          <InfoRow label="Client" value={detail.client.name} />
 
-          <InfoRow
-            label="Currency"
-            value={detail.client.currency}
-          />
+          <InfoRow label="Currency" value={detail.client.currency} />
 
           <InfoRow
             label="Branches"
-            value={ccNumber(
-              detail.client.summary.totalBranches,
-            )}
+            value={ccNumber(detail.client.summary.totalBranches)}
           />
         </InfoPanel>
       </div>
@@ -791,19 +733,13 @@ function RecentActivityPreview({
           </p>
         </div>
 
-        <TextAction
-          label="View all"
-          onClick={onOpenActivity}
-        />
+        <TextAction label="View all" onClick={onOpenActivity} />
       </div>
 
       {activities.length ? (
         <div className="divide-y divide-[#edf1f4]">
           {activities.slice(0, 4).map((activity) => (
-            <div
-              key={activity.id}
-              className="flex items-start gap-3 px-4 py-3"
-            >
+            <div key={activity.id} className="flex items-start gap-3 px-4 py-3">
               <span className="mt-1 size-[6px] shrink-0 rounded-full bg-[#219163]" />
 
               <div className="min-w-0">
@@ -812,8 +748,7 @@ function RecentActivityPreview({
                 </p>
 
                 <p className="mt-1 text-[9px] font-normal text-[#718099]">
-                  {activity.actorName} ·{" "}
-                  {ccDateTime(activity.createdAt)}
+                  {activity.actorName} · {ccDateTime(activity.createdAt)}
                 </p>
               </div>
             </div>
@@ -825,6 +760,207 @@ function RecentActivityPreview({
         </div>
       )}
     </section>
+  );
+}
+
+function DataCorrectionAccessPanel({
+  detail,
+  onSetAccess,
+}: {
+  detail: ControlCenterClientDetail;
+  onSetAccess: (input: {
+    tenantId: string;
+    branchId?: string;
+    enabled: boolean;
+    reason: string;
+  }) => Promise<void>;
+}) {
+  const [reason, setReason] = useState("Approved legacy data cleanup window.");
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const client = detail.client;
+  const organizationAccess = client.dataCorrectionAccess ?? emptyFeatureAccess;
+
+  async function apply(input: { branchId?: string; enabled: boolean }) {
+    const cleanReason = reason.trim();
+    if (cleanReason.length < 6) {
+      return;
+    }
+
+    const busy = input.branchId ?? "organization";
+    setBusyKey(busy);
+
+    try {
+      await onSetAccess({
+        tenantId: client.id,
+        branchId: input.branchId,
+        enabled: input.enabled,
+        reason: cleanReason,
+      });
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  return (
+    <section className="overflow-hidden rounded-[10px] border border-[#f0d48d] bg-[#fffaf0]">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#f3dfaa] px-4 py-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-white text-[#c47a14] shadow-sm">
+            <ShieldAlert className="size-4" />
+          </div>
+
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold text-[#17233c]">
+              Strict data controls
+            </p>
+
+            <p className="mt-1 max-w-[720px] text-[9.5px] leading-4 text-[#6b5a31]">
+              Enables temporary edit and delete tools for correcting seeded
+              legacy loan records in the app. Keep it off unless a cleanup
+              session is active.
+            </p>
+          </div>
+        </div>
+
+        <FeatureAccessBadge
+          enabled={organizationAccess.enabled}
+          label={
+            organizationAccess.enabled
+              ? "Organization enabled"
+              : "Organization disabled"
+          }
+        />
+      </div>
+
+      <div className="grid gap-4 p-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <div className="rounded-[8px] border border-[#ecd391] bg-white p-3">
+          <label
+            htmlFor="data-correction-reason"
+            className="text-[9.5px] font-semibold text-[#5f4d22]"
+          >
+            Audit reason
+          </label>
+
+          <textarea
+            id="data-correction-reason"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            rows={3}
+            className="mt-2 w-full resize-none rounded-md border border-[#dfe5eb] px-3 py-2 text-[10px] font-medium text-[#17233c] outline-none transition focus:border-[#188653]"
+          />
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={busyKey !== null || organizationAccess.enabled}
+              onClick={() => void apply({ enabled: true })}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[#188653] px-3 text-[9.5px] font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-[#aab6c2]"
+            >
+              <UnlockKeyhole className="size-3.5" />
+              Enable organization
+            </button>
+
+            <button
+              type="button"
+              disabled={busyKey !== null || !organizationAccess.enabled}
+              onClick={() => void apply({ enabled: false })}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[#d9b96d] bg-white px-3 text-[9.5px] font-semibold text-[#8b5a12] transition disabled:cursor-not-allowed disabled:text-[#9aa4b3]"
+            >
+              <LockKeyhole className="size-3.5" />
+              Disable organization
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-[8px] border border-[#ecd391] bg-white">
+          <div className="grid grid-cols-[minmax(0,1fr)_150px_170px] gap-3 border-b border-[#edf1f4] px-3 py-2 text-[9px] font-semibold text-[#6a7890]">
+            <span>Branch</span>
+            <span>Access</span>
+            <span className="text-right">Action</span>
+          </div>
+
+          <div className="divide-y divide-[#edf1f4]">
+            {detail.branches.map((branch) => {
+              const access = branch.dataCorrectionAccess ?? emptyFeatureAccess;
+              const enabled = access?.enabled ?? false;
+              const source = access?.source;
+              const label =
+                source === "BRANCH"
+                  ? "Branch setting"
+                  : source === "ORGANIZATION"
+                    ? "Inherited"
+                    : "Off";
+              const busy = busyKey === branch.id;
+
+              return (
+                <div
+                  key={branch.id}
+                  className="grid grid-cols-[minmax(0,1fr)_150px_170px] items-center gap-3 px-3 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-[10px] font-semibold text-[#17233c]">
+                      {branch.name}
+                    </p>
+
+                    <p className="mt-0.5 truncate text-[9px] text-[#718099]">
+                      {access?.reason || "No active cleanup note"}
+                    </p>
+                  </div>
+
+                  <div>
+                    <FeatureAccessBadge enabled={enabled} label={label} />
+                  </div>
+
+                  <div className="flex justify-end gap-1.5">
+                    <button
+                      type="button"
+                      disabled={busyKey !== null || enabled}
+                      onClick={() =>
+                        void apply({ branchId: branch.id, enabled: true })
+                      }
+                      className="inline-flex h-7 items-center rounded-md border border-[#cfe8d7] bg-[#f4fbf6] px-2.5 text-[9px] font-semibold text-[#188653] disabled:cursor-not-allowed disabled:text-[#9aa4b3]"
+                    >
+                      Enable
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={
+                        busyKey !== null || (!enabled && source !== "BRANCH")
+                      }
+                      onClick={() =>
+                        void apply({ branchId: branch.id, enabled: false })
+                      }
+                      className="inline-flex h-7 items-center rounded-md border border-[#ead2aa] bg-white px-2.5 text-[9px] font-semibold text-[#a05a16] disabled:cursor-not-allowed disabled:text-[#9aa4b3]"
+                    >
+                      {busy ? "Saving" : "Disable"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FeatureAccessBadge({
+  enabled,
+  label,
+}: {
+  enabled: boolean;
+  label: string;
+}) {
+  return (
+    <span
+      className={`inline-flex h-6 items-center rounded-full px-2.5 text-[9px] font-semibold ${
+        enabled ? "bg-[#e8f7ee] text-[#168650]" : "bg-[#f1f3f6] text-[#69768e]"
+      }`}
+    >
+      {label}
+    </span>
   );
 }
 
@@ -841,19 +977,14 @@ function BranchPreview({
     <section className="overflow-hidden rounded-[10px] border border-[#dfe5eb] bg-white">
       <div className="flex items-center justify-between border-b border-[#edf1f4] px-4 py-3">
         <div>
-          <p className="text-[11px] font-semibold text-[#17233c]">
-            Branches
-          </p>
+          <p className="text-[11px] font-semibold text-[#17233c]">Branches</p>
 
           <p className="mt-0.5 text-[9px] font-normal text-[#718099]">
             Quick view of organization branches.
           </p>
         </div>
 
-        <TextAction
-          label="View all branches"
-          onClick={onOpenBranches}
-        />
+        <TextAction label="View all branches" onClick={onOpenBranches} />
       </div>
 
       {branches.length ? (
@@ -876,9 +1007,7 @@ function BranchPreview({
               </div>
 
               <div className="flex items-center gap-3">
-                <ClientStatusBadge
-                  value={branch.status}
-                />
+                <ClientStatusBadge value={branch.status} />
 
                 <ArrowRight className="size-3.5 text-[#8a95a6] transition group-hover:translate-x-0.5 group-hover:text-[#168650]" />
               </div>
@@ -906,32 +1035,20 @@ function InfoPanel({
   return (
     <section className="rounded-[10px] border border-[#dfe5eb] bg-white">
       <div className="flex items-center justify-between border-b border-[#edf1f4] px-4 py-3">
-        <p className="text-[11px] font-semibold text-[#17233c]">
-          {title}
-        </p>
+        <p className="text-[11px] font-semibold text-[#17233c]">{title}</p>
 
         {action}
       </div>
 
-      <div className="space-y-3 px-4 py-4">
-        {children}
-      </div>
+      <div className="space-y-3 px-4 py-4">{children}</div>
     </section>
   );
 }
 
-function InfoRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
+function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-4">
-      <span className="text-[9.5px] font-normal text-[#718099]">
-        {label}
-      </span>
+      <span className="text-[9.5px] font-normal text-[#718099]">{label}</span>
 
       <span className="max-w-[65%] text-right text-[10.5px] font-semibold text-[#26344d]">
         {value}
@@ -947,11 +1064,7 @@ function HealthRow({
 }: {
   label: string;
   value: number;
-  tone:
-    | "green"
-    | "red"
-    | "amber"
-    | "slate";
+  tone: "green" | "red" | "amber" | "slate";
 }) {
   const dotClass =
     tone === "green"
@@ -965,9 +1078,7 @@ function HealthRow({
   return (
     <div className="flex items-center justify-between gap-4">
       <span className="flex items-center gap-2 text-[9.5px] font-normal text-[#718099]">
-        <span
-          className={`size-1.5 rounded-full ${dotClass}`}
-        />
+        <span className={`size-1.5 rounded-full ${dotClass}`} />
         {label}
       </span>
 
@@ -993,19 +1104,12 @@ function SummaryMetric({
 }) {
   return (
     <section className="flex min-h-[100px] items-center gap-3 rounded-[10px] border border-[#dfe5eb] bg-white px-4">
-      <SmallIcon
-        icon={icon}
-        tone={tone}
-      />
+      <SmallIcon icon={icon} tone={tone} />
 
       <div>
-        <p className="text-[9.5px] font-semibold text-[#62718a]">
-          {label}
-        </p>
+        <p className="text-[9.5px] font-semibold text-[#62718a]">{label}</p>
 
-        <p className="mt-1 text-[20px] font-bold text-[#14213a]">
-          {value}
-        </p>
+        <p className="mt-1 text-[20px] font-bold text-[#14213a]">{value}</p>
 
         <p className="mt-1 text-[9px] font-normal text-[#718099]">
           {secondary}
@@ -1050,9 +1154,7 @@ function ClientModulePlaceholder({
           <Icon className="size-5" />
         </div>
 
-        <p className="mt-3 text-[12px] font-semibold text-[#17233c]">
-          {title}
-        </p>
+        <p className="mt-3 text-[12px] font-semibold text-[#17233c]">{title}</p>
 
         <p className="mx-auto mt-1 max-w-md text-[10px] font-normal leading-5 text-[#6b7890]">
           {description}
@@ -1062,35 +1164,17 @@ function ClientModulePlaceholder({
   );
 }
 
-function ClientStatusBadge({
-  value,
-}: {
-  value: string;
-}) {
-  const normalized = value
-    .toUpperCase()
-    .replace(/\s+/g, "_");
+function ClientStatusBadge({ value }: { value: string }) {
+  const normalized = value.toUpperCase().replace(/\s+/g, "_");
 
-  let styles =
-    "bg-[#eef2f6] text-[#59677d]";
+  let styles = "bg-[#eef2f6] text-[#59677d]";
 
   if (normalized === "ACTIVE") {
-    styles =
-      "bg-[#eaf6ee] text-[#1b804e]";
-  } else if (
-    normalized === "PENDING_VERIFICATION"
-  ) {
-    styles =
-      "bg-[#fff3df] text-[#ba6a12]";
-  } else if (
-    [
-      "SUSPENDED",
-      "LOCKED",
-      "BLOCKED",
-    ].includes(normalized)
-  ) {
-    styles =
-      "bg-[#fff0f0] text-[#c94040]";
+    styles = "bg-[#eaf6ee] text-[#1b804e]";
+  } else if (normalized === "PENDING_VERIFICATION") {
+    styles = "bg-[#fff3df] text-[#ba6a12]";
+  } else if (["SUSPENDED", "LOCKED", "BLOCKED"].includes(normalized)) {
+    styles = "bg-[#fff0f0] text-[#c94040]";
   }
 
   return (
@@ -1102,19 +1186,9 @@ function ClientStatusBadge({
   );
 }
 
-type IconTone =
-  | "green"
-  | "blue"
-  | "amber"
-  | "slate";
+type IconTone = "green" | "blue" | "amber" | "slate";
 
-function SmallIcon({
-  icon: Icon,
-  tone,
-}: {
-  icon: LucideIcon;
-  tone: IconTone;
-}) {
+function SmallIcon({ icon: Icon, tone }: { icon: LucideIcon; tone: IconTone }) {
   const styles =
     tone === "blue"
       ? "bg-[#edf4ff] text-[#276de9]"
@@ -1128,10 +1202,7 @@ function SmallIcon({
     <span
       className={`grid size-[35px] shrink-0 place-items-center rounded-[8px] ${styles}`}
     >
-      <Icon
-        className="size-[16px]"
-        strokeWidth={1.9}
-      />
+      <Icon className="size-[16px]" strokeWidth={1.9} />
     </span>
   );
 }
@@ -1154,59 +1225,36 @@ function ClientWorkspaceSkeleton() {
 
       <div className="grid gap-4 border border-t-0 border-[#e7ebef] bg-white p-4 sm:grid-cols-2 xl:grid-cols-4">
         {Array.from({ length: 4 }).map((_, index) => (
-          <div
-            key={index}
-            className="h-[100px] rounded-[10px] bg-slate-100"
-          />
+          <div key={index} className="h-[100px] rounded-[10px] bg-slate-100" />
         ))}
       </div>
     </div>
   );
 }
 
-function formatPlan(
-  value: string,
-) {
-  const normalized =
-    value.toUpperCase();
+function formatPlan(value: string) {
+  const normalized = value.toUpperCase();
 
-  if (
-    normalized.includes("6M") ||
-    normalized.includes("6_MONTH")
-  ) {
+  if (normalized.includes("6M") || normalized.includes("6_MONTH")) {
     return "6 Months";
   }
 
-  if (
-    normalized.includes("3M") ||
-    normalized.includes("3_MONTH")
-  ) {
+  if (normalized.includes("3M") || normalized.includes("3_MONTH")) {
     return "3 Months";
   }
 
-  if (
-    normalized.includes("MONTH") ||
-    normalized === "PRO"
-  ) {
+  if (normalized.includes("MONTH") || normalized === "PRO") {
     return "Monthly";
   }
 
-  return value
-    .replace(/^PRO_?/i, "")
-    .replace(/_/g, " ");
+  return value.replace(/^PRO_?/i, "").replace(/_/g, " ");
 }
 
-function labelFromValue(
-  value: string,
-) {
+function labelFromValue(value: string) {
   return value
     .replace(/_/g, " ")
     .trim()
     .split(/\s+/)
-    .map(
-      (word) =>
-        word.charAt(0).toUpperCase() +
-        word.slice(1).toLowerCase(),
-    )
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(" ");
 }

@@ -1,0 +1,689 @@
+import 'package:flutter/material.dart';
+
+import '../features/repayment/data/repayments_live_store.dart';
+import '../models/client_detail.dart';
+import '../theme.dart';
+import '../utils/friendly_errors.dart';
+import '../utils/money.dart';
+
+Future<bool> showLegacyLoanCorrectionSheet(
+  BuildContext context, {
+  required ClientDetail detail,
+}) async {
+  final result = await showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: RoundedRectangleBorder(borderRadius: rembehSheetRadius()),
+    builder: (context) => LegacyLoanCorrectionSheet(detail: detail),
+  );
+  return result ?? false;
+}
+
+Future<bool> showLegacyLoanDeleteSheet(
+  BuildContext context, {
+  required ClientDetail detail,
+}) async {
+  final result = await showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    shape: RoundedRectangleBorder(borderRadius: rembehSheetRadius()),
+    builder: (context) => LegacyLoanDeleteSheet(detail: detail),
+  );
+  return result ?? false;
+}
+
+class LegacyLoanCorrectionSheet extends StatefulWidget {
+  const LegacyLoanCorrectionSheet({super.key, required this.detail});
+
+  final ClientDetail detail;
+
+  @override
+  State<LegacyLoanCorrectionSheet> createState() =>
+      _LegacyLoanCorrectionSheetState();
+}
+
+class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
+  late final TextEditingController _name;
+  late final TextEditingController _phone;
+  late final TextEditingController _nin;
+  late final TextEditingController _email;
+  late final TextEditingController _principal;
+  late final TextEditingController _outstanding;
+  late final TextEditingController _reason;
+  final _formKey = GlobalKey<FormState>();
+  bool _saving = false;
+  late String _status;
+  late DateTime _loanStartDate;
+  DateTime? _paymentStartDate;
+
+  static const _statuses = <(String, String)>[
+    ('CURRENT', 'Current'),
+    ('IN_ARREARS', 'In arrears'),
+    ('RESTRUCTURED', 'Restructured'),
+    ('WRITTEN_OFF', 'Written off'),
+    ('CLOSED', 'Closed'),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    final detail = widget.detail;
+    _name = TextEditingController(text: detail.fullName);
+    _phone = TextEditingController(text: detail.phone);
+    _nin = TextEditingController(text: detail.nationalId ?? '');
+    _email = TextEditingController(text: detail.customerEmail ?? '');
+    _principal = TextEditingController(text: '${detail.principalAmount}');
+    _outstanding = TextEditingController(text: '${detail.outstanding}');
+    _reason = TextEditingController();
+    _principal.addListener(_onAmountChanged);
+    _outstanding.addListener(_onAmountChanged);
+    _status = _statuses.any((item) => item.$1 == detail.status)
+        ? detail.status
+        : 'CURRENT';
+    _loanStartDate = detail.loanStartDate;
+    _paymentStartDate = detail.paymentStartDate;
+  }
+
+  @override
+  void dispose() {
+    _principal.removeListener(_onAmountChanged);
+    _outstanding.removeListener(_onAmountChanged);
+    _name.dispose();
+    _phone.dispose();
+    _nin.dispose();
+    _email.dispose();
+    _principal.dispose();
+    _outstanding.dispose();
+    _reason.dispose();
+    super.dispose();
+  }
+
+  void _onAmountChanged() {
+    if (mounted) setState(() {});
+  }
+
+  int _moneyValue(TextEditingController controller) =>
+      int.tryParse(controller.text.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+
+  int _moneyFromText(String? value) =>
+      int.tryParse((value ?? '').replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+
+  Future<void> _pickDate({
+    required DateTime initial,
+    required ValueChanged<DateTime> onPicked,
+  }) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+    if (picked == null) return;
+    onPicked(DateTime(picked.year, picked.month, picked.day));
+  }
+
+  Future<void> _save() async {
+    if (_saving || !_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
+    try {
+      await RepaymentsLiveStore.instance.correctLoan(
+        loanId: widget.detail.loanId,
+        values: {
+          'customerFullName': _name.text.trim(),
+          'phone': _phone.text.trim(),
+          'nationalId': _emptyToNull(_nin.text),
+          'email': _emptyToNull(_email.text),
+          'principalAmount': _moneyValue(_principal),
+          'outstandingBalance': _moneyValue(_outstanding),
+          'loanStartDate': _loanStartDate.toUtc().toIso8601String(),
+          if (_paymentStartDate != null)
+            'paymentStartDate': _paymentStartDate!.toUtc().toIso8601String(),
+          'status': _status,
+          'reason': _reason.text.trim(),
+        },
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Record corrected and audit saved.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  String? _emptyToNull(String value) {
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(child: Container(width: 40, height: 4, color: line)),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Correct record',
+                        style: TextStyle(
+                          color: midnightNavy,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 20,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: _saving ? null : () => Navigator.pop(context),
+                      icon: const Icon(Icons.close, color: slateText),
+                    ),
+                  ],
+                ),
+                _AccessNotice(access: widget.detail.correctionAccess),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _name,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(labelText: 'Client name'),
+                  validator: (value) =>
+                      (value ?? '').trim().isEmpty ? 'Enter a name.' : null,
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _phone,
+                  keyboardType: TextInputType.phone,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(labelText: 'Phone'),
+                  validator: (value) =>
+                      (value ?? '').trim().isEmpty ? 'Enter a phone.' : null,
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _nin,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(labelText: 'NIN'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _email,
+                        keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(labelText: 'Email'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _principal,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Principal amount',
+                          prefixText: 'UGX ',
+                        ),
+                        validator: _positiveMoneyValidator,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _outstanding,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Outstanding',
+                          prefixText: 'UGX ',
+                        ),
+                        validator: _nonNegativeMoneyValidator,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                DropdownButtonFormField<String>(
+                  initialValue: _status,
+                  decoration: const InputDecoration(labelText: 'Loan status'),
+                  items: [
+                    for (final item in _statuses)
+                      DropdownMenuItem(value: item.$1, child: Text(item.$2)),
+                  ],
+                  onChanged: _saving
+                      ? null
+                      : (value) {
+                          if (value == null) return;
+                          setState(() => _status = value);
+                        },
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _DateField(
+                        label: 'Loan start date',
+                        value: _loanStartDate,
+                        onTap: _saving
+                            ? null
+                            : () => _pickDate(
+                                initial: _loanStartDate,
+                                onPicked: (value) =>
+                                    setState(() => _loanStartDate = value),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _DateField(
+                        label: 'Repayments start',
+                        value: _paymentStartDate,
+                        placeholder: 'Not set',
+                        onTap: _saving
+                            ? null
+                            : () => _pickDate(
+                                initial: _paymentStartDate ?? _loanStartDate,
+                                onPicked: (value) =>
+                                    setState(() => _paymentStartDate = value),
+                              ),
+                        onClear: _paymentStartDate == null || _saving
+                            ? null
+                            : () => setState(() => _paymentStartDate = null),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: _reason,
+                  minLines: 3,
+                  maxLines: 4,
+                  decoration: const InputDecoration(
+                    labelText: 'Reason for correction',
+                    hintText: 'Example: corrected balance from legacy file',
+                  ),
+                  validator: (value) => (value ?? '').trim().length < 8
+                      ? 'Add a clear audit reason.'
+                      : null,
+                ),
+                const SizedBox(height: 12),
+                _BalancePreview(
+                  principal: _moneyValue(_principal),
+                  outstanding: _moneyValue(_outstanding),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: _saving ? null : _save,
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.verified_outlined),
+                  label: Text(_saving ? 'Saving...' : 'Save correction'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String? _positiveMoneyValidator(String? value) {
+    if (_moneyFromText(value) <= 0) {
+      return 'Enter an amount.';
+    }
+    return null;
+  }
+
+  String? _nonNegativeMoneyValidator(String? value) {
+    if ((value ?? '').trim().isEmpty) return 'Enter an amount.';
+    if (_moneyFromText(value) < 0) return 'Enter a valid amount.';
+    return null;
+  }
+}
+
+class LegacyLoanDeleteSheet extends StatefulWidget {
+  const LegacyLoanDeleteSheet({super.key, required this.detail});
+
+  final ClientDetail detail;
+
+  @override
+  State<LegacyLoanDeleteSheet> createState() => _LegacyLoanDeleteSheetState();
+}
+
+class _LegacyLoanDeleteSheetState extends State<LegacyLoanDeleteSheet> {
+  final _reason = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  Future<void> _delete() async {
+    if (_saving) return;
+    final reason = _reason.text.trim();
+    if (reason.length < 8) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add a clear audit reason first.')),
+      );
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await RepaymentsLiveStore.instance.deleteLoan(
+        loanId: widget.detail.loanId,
+        reason: reason,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Seeded loan record deleted.')),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(child: Container(width: 40, height: 4, color: line)),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Delete seeded record',
+                      style: TextStyle(
+                        color: midnightNavy,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 20,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: _saving ? null : () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: slateText),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF1F2),
+                  border: Border.all(color: const Color(0xFFF0B3BA)),
+                  borderRadius: rembehBorderRadius(rembehRadiusMd),
+                ),
+                child: Text(
+                  '${widget.detail.fullName}\n${formatMoney(widget.detail.outstanding)} outstanding',
+                  style: const TextStyle(
+                    color: Color(0xFF9F1239),
+                    fontWeight: FontWeight.w800,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Only delete records that were imported incorrectly. Any loan with repayments will be refused by the server.',
+                style: TextStyle(color: slateText, height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _reason,
+                minLines: 3,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'Reason for deletion',
+                  hintText: 'Example: duplicate legacy import row',
+                ),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _saving ? null : _delete,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFE11D48),
+                ),
+                icon: _saving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.delete_outline),
+                label: Text(_saving ? 'Deleting...' : 'Delete record'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AccessNotice extends StatelessWidget {
+  const _AccessNotice({required this.access});
+
+  final ClientCorrectionAccess access;
+
+  @override
+  Widget build(BuildContext context) {
+    final source = access.source == 'BRANCH'
+        ? 'branch'
+        : access.source == 'ORGANIZATION'
+        ? 'organization'
+        : 'admin';
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        border: Border.all(color: const Color(0xFFF1D48B)),
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.admin_panel_settings_outlined, color: warmGold),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Correction access is enabled by $source control. Every save is audited.${access.reason == null || access.reason!.isEmpty ? '' : '\n${access.reason}'}',
+              style: const TextStyle(color: midnightNavy, height: 1.35),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BalancePreview extends StatelessWidget {
+  const _BalancePreview({required this.principal, required this.outstanding});
+
+  final int principal;
+  final int outstanding;
+
+  @override
+  Widget build(BuildContext context) {
+    final paid = principal - outstanding;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: sage,
+        border: Border.all(color: line),
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _MiniValue(
+              label: 'Principal',
+              value: formatMoney(principal),
+              color: midnightNavy,
+            ),
+          ),
+          Expanded(
+            child: _MiniValue(
+              label: 'Paid so far',
+              value: formatMoney(paid < 0 ? 0 : paid),
+              color: forestEmerald,
+            ),
+          ),
+          Expanded(
+            child: _MiniValue(
+              label: 'Outstanding',
+              value: formatMoney(outstanding),
+              color: warmGold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniValue extends StatelessWidget {
+  const _MiniValue({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: slateText,
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.w800,
+            fontSize: 12,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DateField extends StatelessWidget {
+  const _DateField({
+    required this.label,
+    required this.value,
+    required this.onTap,
+    this.placeholder = '',
+    this.onClear,
+  });
+
+  final String label;
+  final DateTime? value;
+  final String placeholder;
+  final VoidCallback? onTap;
+  final VoidCallback? onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          suffixIcon: onClear == null
+              ? const Icon(Icons.calendar_today_outlined, size: 18)
+              : IconButton(
+                  onPressed: onClear,
+                  icon: const Icon(Icons.close, size: 18),
+                ),
+        ),
+        child: Text(
+          value == null ? placeholder : _shortDate(value!),
+          style: const TextStyle(
+            color: midnightNavy,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _shortDate(DateTime value) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${value.day} ${months[value.month - 1]} ${value.year}';
+  }
+}

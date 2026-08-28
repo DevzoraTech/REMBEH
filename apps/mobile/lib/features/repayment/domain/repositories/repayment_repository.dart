@@ -12,7 +12,15 @@ abstract class RepaymentRepository {
 
   Future<ClientLoanDetail> getLoanDetail(String loanId);
 
-  Future<({FieldRepayment repayment, ClientLoanDetail detail})> recordRepayment({
+  Future<ClientLoanDetail> correctLoan({
+    required String loanId,
+    required Map<String, dynamic> values,
+  });
+
+  Future<void> deleteLoan({required String loanId, required String reason});
+
+  Future<({FieldRepayment repayment, ClientLoanDetail detail})>
+  recordRepayment({
     required String loanId,
     required int amount,
     String? note,
