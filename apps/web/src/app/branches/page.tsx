@@ -827,7 +827,7 @@ function StatusBadge({
       icon: CheckCircle2,
     },
     INVITE_PENDING: {
-      label: "invite pending",
+      label: "pending",
       short: "pending",
       className: "border-amber-300 bg-amber-50 text-amber-900",
       icon: Clock3,
@@ -845,8 +845,8 @@ function StatusBadge({
       icon: Clock3,
     },
     PENDING_VERIFICATION: {
-      label: "pending verification",
-      short: "verify",
+      label: "pending",
+      short: "pending",
       className: "border-amber-300 bg-amber-50 text-amber-900",
       icon: Clock3,
     },

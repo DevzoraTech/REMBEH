@@ -2583,7 +2583,7 @@ class _StatusChip extends StatelessWidget {
       case 'PENDING_VERIFICATION':
         foreground = _blue;
         background = const Color(0xFFEFF4FF);
-        label = 'Invited';
+        label = 'Pending';
 
       default:
         foreground = const Color(0xFFB26A00);

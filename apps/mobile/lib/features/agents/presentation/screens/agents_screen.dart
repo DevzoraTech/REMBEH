@@ -801,7 +801,7 @@ class _StatusBadge extends StatelessWidget {
       case 'PENDING_VERIFICATION':
         foreground = const Color(0xFF175CD3);
         background = const Color(0xFFEFF4FF);
-        label = 'Invited';
+        label = 'Pending';
         break;
 
       default:

@@ -1,10 +1,17 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../features/repayment/data/repayments_live_store.dart';
+import '../features/repayment/domain/entities/client_loan_detail.dart'
+    as repayment;
 import '../models/client_detail.dart';
+import '../shared/camera_capture/camera_capture.dart';
 import '../theme.dart';
 import '../utils/friendly_errors.dart';
 import '../utils/money.dart';
+import 'legacy_loan_media_section.dart';
 
 Future<bool> showLegacyLoanCorrectionSheet(
   BuildContext context, {
@@ -57,6 +64,8 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
   late String _status;
   late DateTime _loanStartDate;
   DateTime? _paymentStartDate;
+  late List<ClientLoanMediaItem> _media;
+  String? _uploadingMediaType;
 
   static const _statuses = <(String, String)>[
     ('CURRENT', 'Current'),
@@ -64,6 +73,45 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
     ('RESTRUCTURED', 'Restructured'),
     ('WRITTEN_OFF', 'Written off'),
     ('CLOSED', 'Closed'),
+  ];
+
+  static const _mediaSlots = <CorrectionMediaSlot>[
+    CorrectionMediaSlot(
+      type: 'PASSPORT',
+      label: 'Client photo',
+      description: 'Passport or clear client photo',
+      icon: Icons.person_outline,
+    ),
+    CorrectionMediaSlot(
+      type: 'NIN_FRONT',
+      label: 'NIN front',
+      description: 'Front side of national ID',
+      icon: Icons.badge_outlined,
+    ),
+    CorrectionMediaSlot(
+      type: 'NIN_BACK',
+      label: 'NIN back',
+      description: 'Back side of national ID',
+      icon: Icons.badge,
+    ),
+    CorrectionMediaSlot(
+      type: 'COLLATERAL_DOC',
+      label: 'Collateral document',
+      description: 'Collateral photo or document',
+      icon: Icons.inventory_2_outlined,
+    ),
+    CorrectionMediaSlot(
+      type: 'SUPPORTING_DOC',
+      label: 'Supporting document',
+      description: 'Any extra loan support file',
+      icon: Icons.description_outlined,
+    ),
+    CorrectionMediaSlot(
+      type: 'OTHER_DOC',
+      label: 'Other document',
+      description: 'Any other useful record file',
+      icon: Icons.folder_open_outlined,
+    ),
   ];
 
   @override
@@ -84,6 +132,7 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
         : 'CURRENT';
     _loanStartDate = detail.loanStartDate;
     _paymentStartDate = detail.paymentStartDate;
+    _media = List<ClientLoanMediaItem>.of(detail.media);
   }
 
   @override
@@ -122,6 +171,136 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
     );
     if (picked == null) return;
     onPicked(DateTime(picked.year, picked.month, picked.day));
+  }
+
+  Future<void> _handleMediaAction(
+    CorrectionMediaSlot slot,
+    CorrectionMediaAction action,
+  ) async {
+    if (_uploadingMediaType != null) return;
+
+    switch (action) {
+      case CorrectionMediaAction.open:
+        await _openMedia(slot.type);
+        return;
+      case CorrectionMediaAction.camera:
+        final captured = await captureImageWithPermission(context);
+        if (captured == null) return;
+        await _uploadMedia(slot, captured);
+        return;
+      case CorrectionMediaAction.gallery:
+        final captured = await captureImageWithPermission(
+          context,
+          source: ImageSource.gallery,
+        );
+        if (captured == null) return;
+        await _uploadMedia(slot, captured);
+        return;
+      case CorrectionMediaAction.file:
+        await _pickFile(slot);
+        return;
+    }
+  }
+
+  Future<void> _pickFile(CorrectionMediaSlot slot) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['jpg', 'jpeg', 'png', 'webp', 'pdf'],
+      withData: true,
+    );
+    final file = result?.files.single;
+    final bytes = file?.bytes;
+    if (file == null || bytes == null) return;
+
+    await _uploadMedia(
+      slot,
+      CapturedMedia(
+        bytes: bytes,
+        mimeType: _mimeFromFileName(file.name),
+        fileName: file.name,
+      ),
+    );
+  }
+
+  Future<void> _uploadMedia(
+    CorrectionMediaSlot slot,
+    CapturedMedia media,
+  ) async {
+    setState(() => _uploadingMediaType = slot.type);
+    try {
+      final detail = await RepaymentsLiveStore.instance.uploadCorrectionMedia(
+        loanId: widget.detail.loanId,
+        mediaType: slot.type,
+        bytes: media.bytes,
+        mimeType: media.mimeType,
+        fileName: media.fileName,
+      );
+      if (!mounted) return;
+      setState(() {
+        _media = _toUiMedia(detail.media);
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('${slot.label} updated.')));
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
+    } finally {
+      if (mounted) setState(() => _uploadingMediaType = null);
+    }
+  }
+
+  Future<void> _openMedia(String mediaType) async {
+    ClientLoanMediaItem? current;
+    for (final item in _media) {
+      if (item.mediaType == mediaType) {
+        current = item;
+        break;
+      }
+    }
+    final url = current?.url;
+    final uri = url == null ? null : Uri.tryParse(url);
+    if (uri == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('This attachment is not available.')),
+      );
+      return;
+    }
+
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open this attachment.')),
+      );
+    }
+  }
+
+  String _mimeFromFileName(String fileName) {
+    final lower = fileName.toLowerCase();
+    if (lower.endsWith('.png')) return 'image/png';
+    if (lower.endsWith('.webp')) return 'image/webp';
+    if (lower.endsWith('.pdf')) return 'application/pdf';
+    return 'image/jpeg';
+  }
+
+  List<ClientLoanMediaItem> _toUiMedia(
+    List<repayment.ClientLoanMediaItem> media,
+  ) {
+    return media
+        .map(
+          (item) => ClientLoanMediaItem(
+            id: item.id,
+            mediaType: item.mediaType,
+            fileName: item.fileName,
+            mimeType: item.mimeType,
+            byteSize: item.byteSize,
+            url: item.url,
+            createdAt: item.createdAt,
+          ),
+        )
+        .toList();
   }
 
   Future<void> _save() async {
@@ -333,6 +512,13 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
                 _BalancePreview(
                   principal: _moneyValue(_principal),
                   outstanding: _moneyValue(_outstanding),
+                ),
+                const SizedBox(height: 12),
+                LegacyLoanMediaSection(
+                  slots: _mediaSlots,
+                  media: _media,
+                  uploadingMediaType: _uploadingMediaType,
+                  onAction: _handleMediaAction,
                 ),
                 const SizedBox(height: 16),
                 ElevatedButton.icon(

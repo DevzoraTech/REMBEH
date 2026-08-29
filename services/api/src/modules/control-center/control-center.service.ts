@@ -2033,6 +2033,7 @@ export class ControlCenterService implements OnModuleInit {
       include: {
         users: {
           include: {
+            branch: { select: { id: true, name: true } },
             roles: { include: { role: true } },
             authSessions: {
               take: 1,
@@ -2074,6 +2075,7 @@ export class ControlCenterService implements OnModuleInit {
     const [
       repaymentGroups,
       paymentGroups,
+      subscriptionPayments,
       latestActivity,
       dataCorrectionAccess,
     ] = await Promise.all([
@@ -2088,6 +2090,15 @@ export class ControlCenterService implements OnModuleInit {
         where: { tenantId, status: 'COMPLETED' },
         _sum: { amount: true },
         _count: { _all: true },
+      }),
+      this.prisma.subscriptionPayment.findMany({
+        where: { tenantId },
+        take: 100,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          branch: { select: { id: true, name: true } },
+          plan: true,
+        },
       }),
       this.prisma.auditLog.findMany({
         where: { tenantId },
@@ -2168,6 +2179,64 @@ export class ControlCenterService implements OnModuleInit {
           subscriptionPayments: payment?._count._all ?? 0,
           lastUsedAt: lastUsedAt?.toISOString() ?? null,
           dataCorrectionAccess: branchCorrectionAccess,
+        };
+      }),
+      subscriptions: tenant.branches.map((branch) => ({
+        id: branch.subscription?.id ?? branch.id,
+        branchId: branch.id,
+        branchName: branch.name,
+        planCode: branch.subscription?.plan.code ?? null,
+        planName: branch.subscription?.plan.name ?? null,
+        amount: this.decimal(branch.subscription?.plan.amount),
+        currency: branch.subscription?.plan.currency ?? tenant.currency,
+        status: branch.subscription?.status ?? 'NO_SUBSCRIPTION',
+        currentPeriodStart:
+          branch.subscription?.currentPeriodStart?.toISOString() ?? null,
+        currentPeriodEnd:
+          branch.subscription?.currentPeriodEnd?.toISOString() ?? null,
+        graceEndsAt: branch.subscription?.graceEndsAt?.toISOString() ?? null,
+        lockedAt: branch.subscription?.lockedAt?.toISOString() ?? null,
+        lastReminderAt:
+          branch.subscription?.lastReminderAt?.toISOString() ?? null,
+      })),
+      payments: subscriptionPayments.map((payment) => ({
+        id: payment.id,
+        branch: {
+          id: payment.branch.id,
+          name: payment.branch.name,
+        },
+        planCode: payment.plan.code,
+        planName: payment.plan.name,
+        amount: this.decimal(payment.amount),
+        currency: payment.currency,
+        status: payment.status,
+        merchantReference: payment.merchantReference,
+        orderTrackingId: payment.orderTrackingId,
+        paidAt: payment.paidAt?.toISOString() ?? null,
+        createdAt: payment.createdAt.toISOString(),
+      })),
+      users: tenant.users.map((user) => {
+        const session = user.authSessions[0] ?? null;
+        return {
+          id: user.id,
+          name: user.displayName,
+          email: user.email,
+          phone: user.phone,
+          publicId: user.publicId,
+          status: user.status,
+          branch: user.branch
+            ? {
+                id: user.branch.id,
+                name: user.branch.name,
+              }
+            : null,
+          roles: user.roles.map((role) => role.role.name),
+          lastUsedAt: session?.lastSeenAt.toISOString() ?? null,
+          lastUsedDevice: session?.deviceName ?? null,
+          lastUsedPlatform: session?.platform ?? null,
+          sessionActive: Boolean(session && !session.revokedAt),
+          createdAt: user.createdAt.toISOString(),
+          updatedAt: user.updatedAt.toISOString(),
         };
       }),
       recentActivity: latestActivity.map((row) => ({

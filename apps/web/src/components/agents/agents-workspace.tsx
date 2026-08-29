@@ -940,16 +940,33 @@ function AgentAvatar({
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const active = status === "ACTIVE";
+  const normalized = status.toUpperCase();
+  const pending =
+    normalized === "INVITED" ||
+    normalized === "INVITE_PENDING" ||
+    normalized === "PENDING_VERIFICATION";
+  const active = normalized === "ACTIVE";
+  const suspended = normalized === "SUSPENDED";
+  const label = active
+    ? "Active"
+    : pending
+      ? "Pending"
+      : suspended
+        ? "Suspended"
+        : "Inactive";
+  const styles = active
+    ? "bg-emerald-50 text-[var(--forest-emerald)]"
+    : pending
+      ? "bg-amber-50 text-amber-700"
+      : suspended
+        ? "bg-red-50 text-red-700"
+        : "bg-slate-100 text-slate-600";
+
   return (
     <span
-      className={`inline-flex h-6 items-center rounded-full px-2.5 text-[11px] font-semibold ${
-        active
-          ? "bg-emerald-50 text-[var(--forest-emerald)]"
-          : "bg-red-50 text-red-700"
-      }`}
+      className={`inline-flex h-6 items-center rounded-full px-2.5 text-[11px] font-semibold ${styles}`}
     >
-      {active ? "Active" : "Suspended"}
+      {label}
     </span>
   );
 }

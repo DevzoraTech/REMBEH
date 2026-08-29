@@ -1,5 +1,6 @@
 import '../../../../models/field_records.dart';
 import '../entities/client_loan_detail.dart';
+import 'dart:typed_data';
 
 abstract class RepaymentRepository {
   Future<HomeSummary> getSummary();
@@ -18,6 +19,14 @@ abstract class RepaymentRepository {
   });
 
   Future<void> deleteLoan({required String loanId, required String reason});
+
+  Future<ClientLoanDetail> uploadCorrectionMedia({
+    required String loanId,
+    required String mediaType,
+    required Uint8List bytes,
+    required String mimeType,
+    String? fileName,
+  });
 
   Future<({FieldRepayment repayment, ClientLoanDetail detail})>
   recordRepayment({

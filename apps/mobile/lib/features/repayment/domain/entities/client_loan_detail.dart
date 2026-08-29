@@ -34,6 +34,26 @@ class FineHistoryItem {
   final DateTime appliedAt;
 }
 
+class ClientLoanMediaItem {
+  const ClientLoanMediaItem({
+    required this.id,
+    required this.mediaType,
+    required this.mimeType,
+    required this.byteSize,
+    required this.createdAt,
+    this.fileName,
+    this.url,
+  });
+
+  final String id;
+  final String mediaType;
+  final String mimeType;
+  final int byteSize;
+  final DateTime createdAt;
+  final String? fileName;
+  final String? url;
+}
+
 class ClientLoanDetail {
   const ClientLoanDetail({
     required this.id,
@@ -69,6 +89,7 @@ class ClientLoanDetail {
     this.finesTotal = 0,
     this.paymentHistory = const [],
     this.fineHistory = const [],
+    this.media = const [],
     this.correctionAccess = const ClientLoanCorrectionAccess(),
   });
 
@@ -105,6 +126,7 @@ class ClientLoanDetail {
   final int finesTotal;
   final List<PaymentHistoryItem> paymentHistory;
   final List<FineHistoryItem> fineHistory;
+  final List<ClientLoanMediaItem> media;
   final ClientLoanCorrectionAccess correctionAccess;
 
   String get initials {

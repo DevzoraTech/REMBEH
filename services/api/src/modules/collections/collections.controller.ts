@@ -23,6 +23,10 @@ import {
   LegacyLoanDeleteDto,
 } from './dto/legacy-loan-correction.dto';
 import {
+  LegacyLoanMediaConfirmDto,
+  LegacyLoanMediaPresignDto,
+} from './dto/legacy-loan-media.dto';
+import {
   BulkRepaymentSmsDto,
   SendRepaymentSmsDto,
 } from './dto/repayment-sms.dto';
@@ -137,7 +141,7 @@ export class CollectionsController {
   }
 
   @Patch('loans/:loanId/legacy-correction')
-  @RequirePermissions('loan.update')
+  @RequirePermissions(COLLECTION_PERMISSIONS.create)
   correctLegacyLoan(
     @CurrentUser() user: AuthenticatedUser,
     @Param('loanId', ParseUUIDPipe) loanId: string,
@@ -147,13 +151,41 @@ export class CollectionsController {
   }
 
   @Post('loans/:loanId/legacy-correction/delete')
-  @RequirePermissions('loan.update')
+  @RequirePermissions(COLLECTION_PERMISSIONS.create)
   deleteLegacyLoan(
     @CurrentUser() user: AuthenticatedUser,
     @Param('loanId', ParseUUIDPipe) loanId: string,
     @Body() dto: LegacyLoanDeleteDto,
   ) {
     return this.collectionsService.deleteLegacyLoan(user, loanId, dto);
+  }
+
+  @Post('loans/:loanId/legacy-correction/media/presign')
+  @RequirePermissions(COLLECTION_PERMISSIONS.create)
+  presignLegacyLoanCorrectionMedia(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('loanId', ParseUUIDPipe) loanId: string,
+    @Body() dto: LegacyLoanMediaPresignDto,
+  ) {
+    return this.collectionsService.presignLegacyLoanCorrectionMedia(
+      user,
+      loanId,
+      dto,
+    );
+  }
+
+  @Post('loans/:loanId/legacy-correction/media/confirm')
+  @RequirePermissions(COLLECTION_PERMISSIONS.create)
+  confirmLegacyLoanCorrectionMedia(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('loanId', ParseUUIDPipe) loanId: string,
+    @Body() dto: LegacyLoanMediaConfirmDto,
+  ) {
+    return this.collectionsService.confirmLegacyLoanCorrectionMedia(
+      user,
+      loanId,
+      dto,
+    );
   }
 
   /** Alias: wallet view is the loan detail surface for field agents. */

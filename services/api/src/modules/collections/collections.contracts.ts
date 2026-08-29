@@ -92,6 +92,16 @@ export type FineHistoryItemContract = {
   appliedAt: string;
 };
 
+export type ClientLoanMediaContract = {
+  id: string;
+  mediaType: string;
+  fileName: string | null;
+  mimeType: string;
+  byteSize: number;
+  url: string | null;
+  createdAt: string;
+};
+
 export type ClientLoanDetailContract = {
   id: string;
   loanId: string;
@@ -142,11 +152,20 @@ export type ClientLoanDetailContract = {
   paymentHistory: PaymentHistoryItemContract[];
   /** Newest-first overdue fine history. */
   fineHistory: FineHistoryItemContract[];
+  /** Existing images/documents attached to the backing application. */
+  media: ClientLoanMediaContract[];
   correctionAccess: {
     enabled: boolean;
     source: 'ORGANIZATION' | 'BRANCH' | null;
     reason: string | null;
   };
+};
+
+export type LegacyLoanCorrectionMediaPresignResponseContract = {
+  uploadUrl: string;
+  storageKey: string;
+  expiresInSeconds: number;
+  mediaType: string;
 };
 
 export type RecordRepaymentResponseContract = {

@@ -34,6 +34,11 @@ const loanWithRelations = {
   application: {
     include: {
       officer: true,
+      media: {
+        orderBy: {
+          createdAt: 'desc' as const,
+        },
+      },
     },
   },
 

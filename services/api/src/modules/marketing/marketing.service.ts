@@ -134,8 +134,9 @@ export class MarketingService {
     });
 
     if (
-      existing.status !== MarketingCampaignStatus.ACTIVE &&
-      campaign.status === MarketingCampaignStatus.ACTIVE
+      (existing.status !== MarketingCampaignStatus.ACTIVE &&
+        campaign.status === MarketingCampaignStatus.ACTIVE) ||
+      this.shouldNotifyCampaignUpdate(existing, campaign)
     ) {
       this.queueCampaignNotification(campaign);
     }
@@ -637,6 +638,37 @@ export class MarketingService {
     );
   }
 
+  private shouldNotifyCampaignUpdate(
+    before: CampaignWithRelations,
+    after: CampaignWithRelations,
+  ) {
+    if (!this.campaignIsLiveNow(after)) {
+      return false;
+    }
+    if (before.status !== MarketingCampaignStatus.ACTIVE) {
+      return false;
+    }
+
+    const changed =
+      before.title !== after.title ||
+      before.body !== after.body ||
+      before.ctaLabel !== after.ctaLabel ||
+      before.ctaUrl !== after.ctaUrl ||
+      before.mediaUrl !== after.mediaUrl ||
+      before.mediaStorageKey !== after.mediaStorageKey ||
+      before.mediaType !== after.mediaType ||
+      before.audience !== after.audience ||
+      before.tenantId !== after.tenantId ||
+      before.branchId !== after.branchId ||
+      before.priority !== after.priority ||
+      before.startsAt.getTime() !== after.startsAt.getTime() ||
+      (before.endsAt?.getTime() ?? 0) !== (after.endsAt?.getTime() ?? 0) ||
+      !this.sameStringSet(before.roleNames, after.roleNames) ||
+      !this.sameStringSet(before.userIds, after.userIds);
+
+    return changed;
+  }
+
   private findCampaignNotificationUsers(campaign: CampaignWithRelations) {
     const roleNames =
       campaign.audience === MarketingCampaignAudience.TENANT_OWNERS
@@ -749,6 +781,12 @@ export class MarketingService {
           .filter((item) => item.length > 0),
       ),
     ];
+  }
+
+  private sameStringSet(left: string[], right: string[]) {
+    if (left.length !== right.length) return false;
+    const values = new Set(left);
+    return right.every((item) => values.has(item));
   }
 
   private async audit(

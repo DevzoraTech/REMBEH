@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -238,6 +240,32 @@ class RepaymentsLiveStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<ClientLoanDetail> uploadCorrectionMedia({
+    required String loanId,
+    required String mediaType,
+    required Uint8List bytes,
+    required String mimeType,
+    String? fileName,
+  }) async {
+    final network = NetworkStatusStore.instance;
+    if (network.isOffline && !await network.checkNow()) {
+      throw ApiException(
+        'Connect to the internet before updating record images.',
+      );
+    }
+
+    final detail = await _locator.repository.uploadCorrectionMedia(
+      loanId: loanId,
+      mediaType: mediaType,
+      bytes: bytes,
+      mimeType: mimeType,
+      fileName: fileName,
+    );
+    _detailCache[loanId] = detail;
+    notifyListeners();
+    return detail;
+  }
+
   Future<List<ClientLoanDetail>> searchClients(String query) async {
     final q = query.trim().toLowerCase();
     if (q.isEmpty) return const [];
@@ -343,6 +371,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
       finesTotal: _asInt(json['finesTotal']),
       paymentHistory: const [],
       fineHistory: const [],
+      media: const [],
       correctionAccess: ClientLoanCorrectionAccess.fromJson(
         json['correctionAccess'] is Map<String, dynamic>
             ? json['correctionAccess'] as Map<String, dynamic>
@@ -483,6 +512,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
         ...cached.paymentHistory,
       ],
       fineHistory: cached.fineHistory,
+      media: cached.media,
       correctionAccess: cached.correctionAccess,
     );
     _detailCache[loanId] = detail;

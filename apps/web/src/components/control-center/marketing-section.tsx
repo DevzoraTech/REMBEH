@@ -76,6 +76,43 @@ type PresignResponse = {
 
 const ROLE_OPTIONS = ["Account Owner", "Manager", "Cashier", "Field Officer"];
 
+const MARKETING_TEMPLATES = [
+  {
+    label: "Subscription reminder",
+    title: "Subscription renewal reminder",
+    body: "Your branch subscription is nearing renewal. Renew early to keep REMBEH running without interruption.",
+    ctaLabel: "Renew now",
+    priority: 80,
+  },
+  {
+    label: "New feature",
+    title: "New REMBEH feature available",
+    body: "A new workflow is now available in your app. Open this update to see what changed and how it helps your team.",
+    ctaLabel: "See update",
+    priority: 55,
+  },
+  {
+    label: "Training",
+    title: "Team training notice",
+    body: "A REMBEH training session is available for your team. Share this with the right staff and confirm attendance.",
+    ctaLabel: "Confirm",
+    priority: 45,
+  },
+  {
+    label: "Critical notice",
+    title: "Important REMBEH notice",
+    body: "Please review this update before continuing daily operations. It may affect how your branch records work today.",
+    ctaLabel: "Read notice",
+    priority: 95,
+  },
+] satisfies Array<{
+  label: string;
+  title: string;
+  body: string;
+  ctaLabel: string;
+  priority: number;
+}>;
+
 const AUDIENCE_OPTIONS: Array<{
   value: ControlCenterMarketingCampaignAudience;
   label: string;
@@ -174,6 +211,44 @@ export function ControlCenterMarketingSection({
       return true;
     });
   }, [form.audience, form.branchId, form.roleNames, form.tenantId, users]);
+
+  const audienceReach = useMemo(() => {
+    if (form.audience === "SELECTED_USERS") return form.userIds.length;
+
+    return users.filter((user) => {
+      if (form.audience !== "ALL_USERS" && !form.tenantId) return false;
+      if (form.tenantId && user.tenant.id !== form.tenantId) return false;
+      if (form.branchId && user.branch?.id !== form.branchId) return false;
+      if (
+        form.audience === "BRANCH_USERS" &&
+        (!form.branchId || user.branch?.id !== form.branchId)
+      ) {
+        return false;
+      }
+      if (
+        form.audience === "TENANT_OWNERS" &&
+        !user.roles.some((role) =>
+          ["Account Owner", "Owner"].includes(role),
+        )
+      ) {
+        return false;
+      }
+      if (
+        form.audience === "ROLE_USERS" &&
+        !form.roleNames.some((role) => user.roles.includes(role))
+      ) {
+        return false;
+      }
+      return true;
+    }).length;
+  }, [
+    form.audience,
+    form.branchId,
+    form.roleNames,
+    form.tenantId,
+    form.userIds.length,
+    users,
+  ]);
 
   const loadCampaigns = useCallback(async () => {
     setLoading(true);
@@ -412,6 +487,17 @@ export function ControlCenterMarketingSection({
     );
   }
 
+  function applyTemplate(template: (typeof MARKETING_TEMPLATES)[number]) {
+    setForm((current) => ({
+      ...current,
+      title: template.title,
+      body: template.body,
+      ctaLabel: template.ctaLabel,
+      priority: String(template.priority),
+      status: current.status === "ARCHIVED" ? "DRAFT" : current.status,
+    }));
+  }
+
   return (
     <div className="space-y-5">
       <SectionTitle
@@ -497,6 +583,24 @@ export function ControlCenterMarketingSection({
                   <X className="size-4" />
                 </button>
               ) : null}
+            </div>
+
+            <div>
+              <span className="text-xs font-bold text-slate-600">
+                Quick templates
+              </span>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {MARKETING_TEMPLATES.map((template) => (
+                  <button
+                    key={template.label}
+                    type="button"
+                    onClick={() => applyTemplate(template)}
+                    className="inline-flex h-8 items-center rounded-lg border border-[#dde4eb] bg-white px-3 text-xs font-bold text-[#12213f] transition hover:border-red-200 hover:bg-red-50 hover:text-red-700"
+                  >
+                    {template.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <label className="block">
@@ -590,6 +694,28 @@ export function ControlCenterMarketingSection({
                 />
               </label>
             </div>
+
+            <label className="block">
+              <span className="text-xs font-bold text-slate-600">
+                Media type
+              </span>
+              <SelectControl
+                value={form.mediaType}
+                onChange={(value) =>
+                  updateForm(
+                    "mediaType",
+                    value as ControlCenterMarketingCampaignMediaType,
+                  )
+                }
+                ariaLabel="Media type"
+                className="mt-1 w-full"
+                options={[
+                  { value: "NONE", label: "Text only" },
+                  { value: "IMAGE", label: "Image" },
+                  { value: "VIDEO", label: "Video" },
+                ]}
+              />
+            </label>
           </div>
 
           <div className="space-y-4">
@@ -627,6 +753,22 @@ export function ControlCenterMarketingSection({
                   options={STATUS_OPTIONS}
                 />
               </label>
+            </div>
+
+            <div className="rounded-lg border border-red-100 bg-red-50 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-black text-red-800">
+                    Estimated reach
+                  </p>
+                  <p className="mt-1 text-xs font-semibold text-red-600">
+                    Based on current users and selected filters.
+                  </p>
+                </div>
+                <p className="text-2xl font-black text-red-700">
+                  {ccNumber(audienceReach)}
+                </p>
+              </div>
             </div>
 
             {form.audience !== "ALL_USERS" ? (
@@ -775,11 +917,19 @@ export function ControlCenterMarketingSection({
               />
             </label>
 
-            <div className="rounded-lg border border-[#e6ebf0] bg-[#f8faf9] p-3">
+            <div className="rounded-lg border border-red-200 bg-white p-3 shadow-[0_14px_30px_rgba(220,38,38,0.09)]">
+              <div className="mb-3 flex items-center justify-between gap-3 rounded-md bg-red-600 px-3 py-2 text-white">
+                <span className="text-[11px] font-black uppercase tracking-[0.08em]">
+                  Mobile header preview
+                </span>
+                <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-black">
+                  Priority {form.priority || 0}
+                </span>
+              </div>
               <div className="flex items-start gap-3">
                 <IconBadge
                   icon={form.mediaType === "VIDEO" ? Video : ImagePlus}
-                  tone={form.mediaType === "NONE" ? "slate" : "green"}
+                  tone={form.mediaType === "NONE" ? "slate" : "gold"}
                   className="size-10"
                 />
                 <div className="min-w-0">
@@ -791,8 +941,15 @@ export function ControlCenterMarketingSection({
                       "Write a short, useful message that will sit below the branch header."}
                   </p>
                   {form.ctaLabel ? (
-                    <p className="mt-2 text-xs font-bold text-[var(--forest-emerald)]">
+                    <p className="mt-2 text-xs font-black text-red-700">
                       {form.ctaLabel}
+                    </p>
+                  ) : null}
+                  {mediaFile || form.mediaUrl || form.mediaStorageKey ? (
+                    <p className="mt-2 truncate text-[11px] font-semibold text-slate-400">
+                      {mediaFile?.name ||
+                        form.mediaUrl ||
+                        "Uploaded media attached"}
                     </p>
                   ) : null}
                 </div>

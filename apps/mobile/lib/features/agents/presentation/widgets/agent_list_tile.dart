@@ -139,7 +139,7 @@ class _StatusChip extends StatelessWidget {
         const Color(0xFFFEF3F2),
       ),
       'INVITED' => (
-        'Invited',
+        'Pending',
         const Color(0xFF175CD3),
         const Color(0xFFEFF4FF),
       ),

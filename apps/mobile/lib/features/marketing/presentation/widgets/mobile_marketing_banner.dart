@@ -42,120 +42,123 @@ class MobileMarketingBanner extends StatelessWidget {
             ),
           ],
         ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: Stack(
           children: [
-            Container(width: 5, color: accent),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(11),
-                child: Row(
-                  children: [
-                    if (hasMedia) ...[
-                      _MarketingMediaThumb(campaign: campaign, accent: accent),
-                      const SizedBox(width: 10),
-                    ] else ...[
-                      Container(
-                        width: 42,
-                        height: 42,
-                        decoration: const BoxDecoration(
-                          color: _campaignIconSurface,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          important
-                              ? Icons.notifications_active_outlined
-                              : Icons.campaign_outlined,
-                          color: accent,
-                          size: 21,
-                        ),
+            Positioned(
+              left: 0,
+              top: 0,
+              bottom: 0,
+              child: Container(width: 5, color: accent),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 11, 11, 11),
+              child: Row(
+                mainAxisSize: MainAxisSize.max,
+                children: [
+                  if (hasMedia) ...[
+                    _MarketingMediaThumb(campaign: campaign, accent: accent),
+                    const SizedBox(width: 10),
+                  ] else ...[
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: const BoxDecoration(
+                        color: _campaignIconSurface,
+                        shape: BoxShape.circle,
                       ),
-                      const SizedBox(width: 10),
-                    ],
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
+                      child: Icon(
+                        important
+                            ? Icons.notifications_active_outlined
+                            : Icons.campaign_outlined,
+                        color: accent,
+                        size: 21,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                  ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                                vertical: 3,
+                              ),
+                              decoration: BoxDecoration(
+                                color: accent,
+                                borderRadius: rembehBorderRadius(6),
+                              ),
+                              child: Text(
+                                title,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                campaign.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: _campaignDark,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          campaign.body,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _campaignDark,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            height: 1.25,
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Row(
                             children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 7,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: accent,
-                                  borderRadius: rembehBorderRadius(6),
-                                ),
+                              Expanded(
                                 child: Text(
-                                  title,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 9,
+                                  campaign.ctaLabel != null &&
+                                          campaign.ctaLabel!.trim().isNotEmpty
+                                      ? campaign.ctaLabel!
+                                      : 'Tap to read more',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: accent,
+                                    fontSize: 11,
                                     fontWeight: FontWeight.w900,
-                                    height: 1,
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  campaign.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: _campaignDark,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
+                              Icon(
+                                Icons.chevron_right,
+                                color: accent,
+                                size: 20,
                               ),
                             ],
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            campaign.body,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: _campaignDark,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              height: 1.25,
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    campaign.ctaLabel != null &&
-                                            campaign.ctaLabel!.trim().isNotEmpty
-                                        ? campaign.ctaLabel!
-                                        : 'Tap to read more',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: accent,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ),
-                                Icon(
-                                  Icons.chevron_right,
-                                  color: accent,
-                                  size: 20,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ],

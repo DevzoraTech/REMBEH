@@ -371,6 +371,50 @@ export type ControlCenterClientDetail = {
     dataCorrectionAccess: ControlCenterFeatureAccess;
   };
   branches: ControlCenterBranch[];
+  subscriptions: Array<{
+    id: string;
+    branchId: string;
+    branchName: string;
+    planCode: string | null;
+    planName: string | null;
+    amount: number;
+    currency: string;
+    status: string;
+    currentPeriodStart: string | null;
+    currentPeriodEnd: string | null;
+    graceEndsAt: string | null;
+    lockedAt: string | null;
+    lastReminderAt: string | null;
+  }>;
+  payments: Array<{
+    id: string;
+    branch: { id: string; name: string };
+    planCode: string;
+    planName: string;
+    amount: number;
+    currency: string;
+    status: string;
+    merchantReference: string;
+    orderTrackingId: string | null;
+    paidAt: string | null;
+    createdAt: string;
+  }>;
+  users: Array<{
+    id: string;
+    name: string;
+    email: string;
+    phone: string | null;
+    publicId: string | null;
+    status: string;
+    branch: { id: string; name: string } | null;
+    roles: string[];
+    lastUsedAt: string | null;
+    lastUsedDevice: string | null;
+    lastUsedPlatform: string | null;
+    sessionActive: boolean;
+    createdAt: string;
+    updatedAt: string;
+  }>;
   recentActivity: Array<{
     id: string;
     action: string;

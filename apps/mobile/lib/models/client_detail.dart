@@ -34,6 +34,26 @@ class ClientFineHistoryItem {
   final DateTime appliedAt;
 }
 
+class ClientLoanMediaItem {
+  const ClientLoanMediaItem({
+    required this.id,
+    required this.mediaType,
+    required this.mimeType,
+    required this.byteSize,
+    required this.createdAt,
+    this.fileName,
+    this.url,
+  });
+
+  final String id;
+  final String mediaType;
+  final String mimeType;
+  final int byteSize;
+  final DateTime createdAt;
+  final String? fileName;
+  final String? url;
+}
+
 class ClientDetail {
   const ClientDetail({
     required this.id,
@@ -71,6 +91,7 @@ class ClientDetail {
     this.finesTotal = 0,
     this.paymentHistory = const [],
     this.fineHistory = const [],
+    this.media = const [],
     this.correctionAccess = const ClientCorrectionAccess(),
   });
 
@@ -109,6 +130,7 @@ class ClientDetail {
   final int finesTotal;
   final List<ClientPaymentHistoryItem> paymentHistory;
   final List<ClientFineHistoryItem> fineHistory;
+  final List<ClientLoanMediaItem> media;
   final ClientCorrectionAccess correctionAccess;
 
   String get initials {
@@ -216,6 +238,24 @@ class ClientDetail {
               )
               .toList()
             ..sort((a, b) => b.periodIndex.compareTo(a.periodIndex)),
+      media:
+          ((json['media'] as List?) ?? const [])
+              .whereType<Map>()
+              .map(
+                (row) => ClientLoanMediaItem(
+                  id: row['id'] as String? ?? '',
+                  mediaType: row['mediaType'] as String? ?? '',
+                  fileName: row['fileName'] as String?,
+                  mimeType: row['mimeType'] as String? ?? '',
+                  byteSize: ((row['byteSize'] as num?) ?? 0).round(),
+                  url: row['url'] as String?,
+                  createdAt:
+                      DateTime.tryParse(row['createdAt'] as String? ?? '') ??
+                      DateTime.now(),
+                ),
+              )
+              .toList()
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt)),
       correctionAccess: ClientCorrectionAccess.fromJson(
         json['correctionAccess'] is Map<String, dynamic>
             ? json['correctionAccess'] as Map<String, dynamic>

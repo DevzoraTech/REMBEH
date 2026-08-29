@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -98,6 +99,61 @@ class RepaymentApiDatasource {
     return _decodeOk(response);
   }
 
+  Future<Map<String, dynamic>> uploadCorrectionMedia({
+    required String loanId,
+    required String mediaType,
+    required Uint8List bytes,
+    required String mimeType,
+    String? fileName,
+  }) async {
+    final session = await _requireSession();
+    final extension = fileName?.contains('.') == true
+        ? fileName!.split('.').last
+        : _extensionForMime(mimeType);
+
+    final presign = await http.post(
+      Uri.parse(
+        '$rembehApiBaseUrl/collections/loans/$loanId/legacy-correction/media/presign',
+      ),
+      headers: {..._headers(session), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'mediaType': mediaType,
+        'mimeType': mimeType,
+        if (fileName != null && fileName.trim().isNotEmpty)
+          'fileName': fileName.trim(),
+        'extension': ?extension,
+      }),
+    );
+    final presignPayload = _decodeOk(presign);
+    final uploadUrl = presignPayload['uploadUrl'] as String? ?? '';
+    final storageKey = presignPayload['storageKey'] as String? ?? '';
+
+    final upload = await http.put(
+      Uri.parse(uploadUrl),
+      headers: {'Content-Type': mimeType},
+      body: bytes,
+    );
+    if (upload.statusCode < 200 || upload.statusCode >= 300) {
+      throw ApiException('Media upload failed. Please try again.');
+    }
+
+    final confirm = await http.post(
+      Uri.parse(
+        '$rembehApiBaseUrl/collections/loans/$loanId/legacy-correction/media/confirm',
+      ),
+      headers: {..._headers(session), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'mediaType': mediaType,
+        'storageKey': storageKey,
+        'mimeType': mimeType,
+        'byteSize': bytes.length,
+        if (fileName != null && fileName.trim().isNotEmpty)
+          'fileName': fileName.trim(),
+      }),
+    );
+    return _decodeOk(confirm);
+  }
+
   Future<Map<String, dynamic>> recordRepayment({
     required String loanId,
     required int amount,
@@ -167,5 +223,20 @@ class RepaymentApiDatasource {
       );
     }
     return 'Request failed.';
+  }
+
+  String? _extensionForMime(String mimeType) {
+    switch (mimeType.toLowerCase()) {
+      case 'image/jpeg':
+      case 'image/jpg':
+        return 'jpg';
+      case 'image/png':
+        return 'png';
+      case 'image/webp':
+        return 'webp';
+      case 'application/pdf':
+        return 'pdf';
+    }
+    return null;
   }
 }

@@ -8,6 +8,8 @@ import {
 } from '@nestjs/common';
 import {
   ControlledFeatureScope,
+  LoanApplicationMediaType,
+  LoanApplicationStatus,
   LoanStatus,
   Prisma,
   RepaymentMethod,
@@ -44,6 +46,7 @@ import {
   DailyAgentSummaryContract,
   DailyCollectionsSummaryContract,
   DueClientContract,
+  LegacyLoanCorrectionMediaPresignResponseContract,
   RepaymentBulkSmsResultContract,
   RecordRepaymentResponseContract,
   RepaymentDetailContract,
@@ -62,6 +65,10 @@ import {
   LegacyLoanDeleteDto,
 } from './dto/legacy-loan-correction.dto';
 import {
+  LegacyLoanMediaConfirmDto,
+  LegacyLoanMediaPresignDto,
+} from './dto/legacy-loan-media.dto';
+import {
   BulkRepaymentSmsDto,
   SendRepaymentSmsDto,
 } from './dto/repayment-sms.dto';
@@ -69,6 +76,11 @@ import {
 const PAYMENT_CONFIRMATION_PURPOSE = 'payment_confirmation';
 const PAYMENT_CONFIRMATION_TRIGGER = 'repayment_recorded';
 const LEGACY_DATA_CORRECTION_FEATURE = 'legacy_data_corrections';
+const CORRECTION_SIGNATURE_MEDIA_TYPES = new Set<LoanApplicationMediaType>([
+  LoanApplicationMediaType.SIGNATURE_APPLICANT,
+  LoanApplicationMediaType.SIGNATURE_GUARANTOR,
+  LoanApplicationMediaType.SIGNATURE_OFFICER,
+]);
 
 const ACCEPTED_SMS_STATUSES = new Set<SmsMessageStatus>([
   SmsMessageStatus.PROVIDER_ACCEPTED,
@@ -879,6 +891,183 @@ export class CollectionsService {
       loanId: loan.id,
       customerId: loan.customerId,
       customerDeleted,
+    };
+  }
+
+  async presignLegacyLoanCorrectionMedia(
+    user: AuthenticatedUser,
+    loanId: string,
+    dto: LegacyLoanMediaPresignDto,
+  ): Promise<LegacyLoanCorrectionMediaPresignResponseContract> {
+    this.assertBranchAccess(user);
+
+    if (CORRECTION_SIGNATURE_MEDIA_TYPES.has(dto.mediaType)) {
+      throw new BadRequestException(
+        'Use the normal signing flow for electronic signatures.',
+      );
+    }
+
+    const loan = await this.repository.findLoanById({
+      ...this.scope(user),
+      loanId,
+    });
+
+    if (!loan) {
+      throw new NotFoundException('Loan not found.');
+    }
+
+    const access = await this.resolveLegacyCorrectionAccess(
+      loan.tenantId,
+      loan.branchId,
+    );
+
+    if (!access.enabled) {
+      throw new ForbiddenException(
+        'Legacy data correction is not enabled for this branch.',
+      );
+    }
+
+    const application = await this.ensureCorrectionApplication(user, loan);
+    const extension =
+      dto.extension ||
+      this.extensionFromMime(dto.mimeType) ||
+      this.extensionFromFileName(dto.fileName) ||
+      'bin';
+
+    const storageKey = this.objectStorage.buildObjectKey({
+      tenantId: loan.tenantId,
+      branchId: loan.branchId,
+      applicationId: application.id,
+      mediaType: dto.mediaType,
+      extension,
+    });
+
+    const presigned = await this.objectStorage.presignPut({
+      storageKey,
+      mimeType: dto.mimeType,
+    });
+
+    return {
+      ...presigned,
+      mediaType: dto.mediaType,
+    };
+  }
+
+  async confirmLegacyLoanCorrectionMedia(
+    user: AuthenticatedUser,
+    loanId: string,
+    dto: LegacyLoanMediaConfirmDto,
+  ): Promise<{ detail: ClientLoanDetailContract }> {
+    this.assertBranchAccess(user);
+
+    if (CORRECTION_SIGNATURE_MEDIA_TYPES.has(dto.mediaType)) {
+      throw new BadRequestException(
+        'Use the normal signing flow for electronic signatures.',
+      );
+    }
+
+    const loan = await this.repository.findLoanById({
+      ...this.scope(user),
+      loanId,
+    });
+
+    if (!loan) {
+      throw new NotFoundException('Loan not found.');
+    }
+
+    const access = await this.resolveLegacyCorrectionAccess(
+      loan.tenantId,
+      loan.branchId,
+    );
+
+    if (!access.enabled) {
+      throw new ForbiddenException(
+        'Legacy data correction is not enabled for this branch.',
+      );
+    }
+
+    const application = await this.ensureCorrectionApplication(user, loan);
+
+    if (!dto.storageKey.includes(application.id)) {
+      throw new BadRequestException(
+        'storageKey does not match this loan correction record.',
+      );
+    }
+
+    const previous = await this.prisma.loanApplicationMedia.findUnique({
+      where: {
+        loanApplicationId_type: {
+          loanApplicationId: application.id,
+          type: dto.mediaType,
+        },
+      },
+    });
+
+    const saved = await this.prisma.loanApplicationMedia.upsert({
+      where: {
+        loanApplicationId_type: {
+          loanApplicationId: application.id,
+          type: dto.mediaType,
+        },
+      },
+      update: {
+        storageKey: dto.storageKey,
+        mimeType: dto.mimeType,
+        byteSize: dto.byteSize,
+        checksum: dto.checksum,
+        fileName: dto.fileName,
+      },
+      create: {
+        loanApplicationId: application.id,
+        type: dto.mediaType,
+        storageKey: dto.storageKey,
+        mimeType: dto.mimeType,
+        byteSize: dto.byteSize,
+        checksum: dto.checksum,
+        fileName: dto.fileName,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: loan.tenantId,
+        actorUserId: user.userId,
+        action: 'legacy.loan.media_updated',
+        entityType: 'LoanApplicationMedia',
+        entityId: saved.id,
+        oldValue: previous
+          ? {
+              mediaType: previous.type,
+              storageKey: previous.storageKey,
+              fileName: previous.fileName,
+              mimeType: previous.mimeType,
+              byteSize: previous.byteSize,
+            }
+          : Prisma.JsonNull,
+        newValue: {
+          loanId: loan.id,
+          applicationId: application.id,
+          mediaType: saved.type,
+          storageKey: saved.storageKey,
+          fileName: saved.fileName,
+          mimeType: saved.mimeType,
+          byteSize: saved.byteSize,
+          access,
+        },
+      },
+    });
+
+    const updated = await this.repository.findLoanById({
+      ...this.scope(user),
+      loanId,
+    });
+
+    if (!updated) {
+      throw new NotFoundException('Corrected loan could not be loaded.');
+    }
+
+    return {
+      detail: await this.buildDetail(updated),
     };
   }
 
@@ -2188,6 +2377,75 @@ export class CollectionsService {
     return clean.length > 0 ? clean : null;
   }
 
+  private async ensureCorrectionApplication(
+    user: AuthenticatedUser,
+    loan: LoanWithCollections,
+  ) {
+    if (loan.application) {
+      return {
+        id: loan.application.id,
+        tenantId: loan.application.tenantId,
+        branchId: loan.application.branchId,
+      };
+    }
+
+    const name = this.splitCustomerName(loan.customer.fullName);
+    const created = await this.prisma.loanApplication.create({
+      data: {
+        tenantId: loan.tenantId,
+        branchId: loan.branchId,
+        officerUserId: user.userId,
+        customerId: loan.customerId,
+        loanId: loan.id,
+        status: LoanApplicationStatus.SUBMITTED,
+        surname: name.surname,
+        givenNames: name.givenNames,
+        phone: loan.customer.phone,
+        nationalId: loan.customer.nationalId,
+        principalAmount: loan.principal,
+        paymentStartDate: loan.paymentStartDate,
+        submittedAt: loan.disbursedAt ?? loan.createdAt,
+        syncedAt: new Date(),
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: loan.tenantId,
+        actorUserId: user.userId,
+        action: 'legacy.loan.application_created_for_media',
+        entityType: 'LoanApplication',
+        entityId: created.id,
+        oldValue: Prisma.JsonNull,
+        newValue: {
+          loanId: loan.id,
+          customerId: loan.customerId,
+          reason: 'Created backing application so legacy media can be stored.',
+        },
+      },
+    });
+
+    return {
+      id: created.id,
+      tenantId: created.tenantId,
+      branchId: created.branchId,
+    };
+  }
+
+  private splitCustomerName(fullName: string) {
+    const parts = fullName.trim().split(/\s+/).filter(Boolean);
+    if (parts.length <= 1) {
+      return {
+        surname: parts[0] ?? 'Customer',
+        givenNames: '',
+      };
+    }
+
+    const surname = parts[parts.length - 1] ?? 'Customer';
+    const givenNames = parts.slice(0, -1).join(' ');
+    return { surname, givenNames };
+  }
+
   private legacyLoanAuditValue(loan: LoanWithCollections) {
     return {
       loanId: loan.id,
@@ -2386,6 +2644,11 @@ export class CollectionsService {
       loan.branchId,
     );
 
+    const mediaRows = loan.application?.media ?? [];
+    const mediaUrls = await Promise.all(
+      mediaRows.map((row) => this.presignPhotoUrl(row.storageKey)),
+    );
+
     return {
       id: loan.id,
 
@@ -2476,6 +2739,16 @@ export class CollectionsService {
       paymentHistory,
 
       fineHistory,
+
+      media: mediaRows.map((row, index) => ({
+        id: row.id,
+        mediaType: row.type,
+        fileName: row.fileName,
+        mimeType: row.mimeType,
+        byteSize: row.byteSize,
+        url: mediaUrls[index] ?? null,
+        createdAt: row.createdAt.toISOString(),
+      })),
 
       correctionAccess,
     };
@@ -2580,6 +2853,22 @@ export class CollectionsService {
     } catch {
       return null;
     }
+  }
+
+  private extensionFromMime(mimeType: string) {
+    const map: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/jpg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+      'application/pdf': 'pdf',
+    };
+    return map[mimeType.toLowerCase()];
+  }
+
+  private extensionFromFileName(fileName?: string) {
+    if (!fileName?.includes('.')) return undefined;
+    return fileName.split('.').pop()?.toLowerCase();
   }
 
   private parseDayBounds(date?: string): {

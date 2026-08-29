@@ -26,7 +26,14 @@ import type {
   ControlCenterFeatureAccess,
 } from "./types";
 
-import { ccDate, ccDateTime, ccNumber, compactAction } from "./formatters";
+import {
+  ccDate,
+  ccDateTime,
+  ccMoney,
+  ccNumber,
+  compactAction,
+  initials,
+} from "./formatters";
 
 type ClientTab =
   | "OVERVIEW"
@@ -136,11 +143,7 @@ export function ControlCenterClientDetailSection({
         ) : tab === "BRANCHES" ? (
           <BranchesTab branches={detail.branches} onOpenBranch={onOpenBranch} />
         ) : tab === "SUBSCRIPTIONS" ? (
-          <ClientModulePlaceholder
-            icon={CreditCard}
-            title="Client subscriptions"
-            description="Subscription lifecycle records for this organization will live here."
-          />
+          <SubscriptionsTab subscriptions={detail.subscriptions} />
         ) : tab === "PRICING" ? (
           <PricingTab
             detail={detail}
@@ -148,17 +151,12 @@ export function ControlCenterClientDetailSection({
             onPricingHistory={onPricingHistory}
           />
         ) : tab === "PAYMENTS" ? (
-          <ClientModulePlaceholder
-            icon={WalletCards}
-            title="Client payments"
-            description="Subscription payments belonging only to this organization will live here."
+          <PaymentsTab
+            payments={detail.payments}
+            currency={detail.client.currency}
           />
         ) : tab === "USERS" ? (
-          <ClientModulePlaceholder
-            icon={Users}
-            title="Client users"
-            description="Users belonging to this organization will be grouped here by branch and role."
-          />
+          <UsersTab users={detail.users} />
         ) : (
           <ActivityTab activities={detail.recentActivity} />
         )}
@@ -244,6 +242,7 @@ function ClientTabs({
     {
       value: "SUBSCRIPTIONS",
       label: "Subscriptions",
+      count: detail.subscriptions.length,
     },
     {
       value: "PRICING",
@@ -252,6 +251,7 @@ function ClientTabs({
     {
       value: "PAYMENTS",
       label: "Payments",
+      count: detail.payments.length,
     },
     {
       value: "USERS",
@@ -597,6 +597,283 @@ function BranchesTab({
 
               <td className="px-3 py-2.5">
                 <ClientStatusBadge value={branch.status} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function SubscriptionsTab({
+  subscriptions,
+}: {
+  subscriptions: ControlCenterClientDetail["subscriptions"];
+}) {
+  if (!subscriptions.length) {
+    return (
+      <ClientModulePlaceholder
+        icon={CreditCard}
+        title="No subscriptions"
+        description="This client does not have branch subscription records yet."
+      />
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto border-t border-[#edf1f4]">
+      <table className="w-full min-w-[1020px] table-fixed text-left">
+        <thead>
+          <tr className="bg-[#fcfdfe] text-[9.5px] font-semibold text-[#56647d]">
+            <th className="w-[24%] px-4 py-2.5">Branch</th>
+            <th className="w-[18%] px-3 py-2.5">Plan</th>
+            <th className="w-[14%] px-3 py-2.5">Amount</th>
+            <th className="w-[14%] px-3 py-2.5">Status</th>
+            <th className="w-[18%] px-3 py-2.5">Current period</th>
+            <th className="w-[12%] px-3 py-2.5">Reminder</th>
+          </tr>
+        </thead>
+
+        <tbody className="divide-y divide-[#edf1f4]">
+          {subscriptions.map((subscription) => (
+            <tr key={subscription.id} className="h-[66px]">
+              <td className="px-4 py-2.5">
+                <p className="truncate text-[10.5px] font-semibold text-[#17233c]">
+                  {subscription.branchName}
+                </p>
+                <p className="mt-1 text-[9px] text-[#718099]">
+                  Branch subscription
+                </p>
+              </td>
+
+              <td className="px-3 py-2.5">
+                <p className="text-[10.5px] font-semibold text-[#26344d]">
+                  {subscription.planName ??
+                    (subscription.planCode
+                      ? formatPlan(subscription.planCode)
+                      : "No plan")}
+                </p>
+                <p className="mt-1 text-[9px] text-[#718099]">
+                  {subscription.planCode ?? "-"}
+                </p>
+              </td>
+
+              <td className="px-3 py-2.5 text-[10.5px] font-bold text-[#17233c]">
+                {subscription.amount > 0
+                  ? ccMoney(subscription.amount, subscription.currency)
+                  : "-"}
+              </td>
+
+              <td className="px-3 py-2.5">
+                <ClientStatusBadge value={subscription.status} />
+              </td>
+
+              <td className="px-3 py-2.5">
+                <p className="text-[9.5px] font-semibold text-[#26344d]">
+                  {ccDate(subscription.currentPeriodStart)}
+                </p>
+                <p className="mt-1 text-[9px] text-[#718099]">
+                  Ends {ccDate(subscription.currentPeriodEnd)}
+                </p>
+              </td>
+
+              <td className="px-3 py-2.5">
+                <p className="text-[9.5px] text-[#526078]">
+                  {subscription.lastReminderAt
+                    ? ccDate(subscription.lastReminderAt)
+                    : "Not sent"}
+                </p>
+                {subscription.lockedAt ? (
+                  <p className="mt-1 text-[9px] font-semibold text-[#c94040]">
+                    Locked {ccDate(subscription.lockedAt)}
+                  </p>
+                ) : null}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PaymentsTab({
+  payments,
+  currency,
+}: {
+  payments: ControlCenterClientDetail["payments"];
+  currency: string;
+}) {
+  if (!payments.length) {
+    return (
+      <ClientModulePlaceholder
+        icon={WalletCards}
+        title="No payments"
+        description="No subscription payments have been recorded for this client."
+      />
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto border-t border-[#edf1f4]">
+      <table className="w-full min-w-[1040px] table-fixed text-left">
+        <thead>
+          <tr className="bg-[#fcfdfe] text-[9.5px] font-semibold text-[#56647d]">
+            <th className="w-[22%] px-4 py-2.5">Branch</th>
+            <th className="w-[18%] px-3 py-2.5">Plan</th>
+            <th className="w-[15%] px-3 py-2.5">Amount</th>
+            <th className="w-[13%] px-3 py-2.5">Status</th>
+            <th className="w-[16%] px-3 py-2.5">Payment date</th>
+            <th className="w-[16%] px-3 py-2.5">Reference</th>
+          </tr>
+        </thead>
+
+        <tbody className="divide-y divide-[#edf1f4]">
+          {payments.map((payment) => (
+            <tr key={payment.id} className="h-[66px]">
+              <td className="px-4 py-2.5">
+                <p className="truncate text-[10.5px] font-semibold text-[#17233c]">
+                  {payment.branch.name}
+                </p>
+                <p className="mt-1 text-[9px] text-[#718099]">
+                  {payment.branch.id.slice(0, 8)}
+                </p>
+              </td>
+
+              <td className="px-3 py-2.5">
+                <p className="text-[10.5px] font-semibold text-[#26344d]">
+                  {payment.planName}
+                </p>
+                <p className="mt-1 text-[9px] text-[#718099]">
+                  {formatPlan(payment.planCode)}
+                </p>
+              </td>
+
+              <td className="px-3 py-2.5 text-[10.5px] font-bold text-[#168650]">
+                {ccMoney(payment.amount, payment.currency || currency)}
+              </td>
+
+              <td className="px-3 py-2.5">
+                <ClientStatusBadge value={payment.status} />
+              </td>
+
+              <td className="px-3 py-2.5">
+                <p className="text-[9.5px] font-semibold text-[#26344d]">
+                  {ccDateTime(payment.paidAt ?? payment.createdAt)}
+                </p>
+                <p className="mt-1 text-[9px] text-[#718099]">
+                  Created {ccDate(payment.createdAt)}
+                </p>
+              </td>
+
+              <td className="px-3 py-2.5">
+                <p className="truncate text-[9.5px] font-semibold text-[#26344d]">
+                  {payment.merchantReference}
+                </p>
+                <p className="mt-1 truncate text-[9px] text-[#718099]">
+                  {payment.orderTrackingId ?? "No tracking id"}
+                </p>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function UsersTab({
+  users,
+}: {
+  users: ControlCenterClientDetail["users"];
+}) {
+  if (!users.length) {
+    return (
+      <ClientModulePlaceholder
+        icon={Users}
+        title="No users"
+        description="No users have been created for this client yet."
+      />
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto border-t border-[#edf1f4]">
+      <table className="w-full min-w-[1120px] table-fixed text-left">
+        <thead>
+          <tr className="bg-[#fcfdfe] text-[9.5px] font-semibold text-[#56647d]">
+            <th className="w-[24%] px-4 py-2.5">User</th>
+            <th className="w-[22%] px-3 py-2.5">Contact</th>
+            <th className="w-[15%] px-3 py-2.5">Branch</th>
+            <th className="w-[15%] px-3 py-2.5">Roles</th>
+            <th className="w-[14%] px-3 py-2.5">Last used</th>
+            <th className="w-[10%] px-3 py-2.5">Status</th>
+          </tr>
+        </thead>
+
+        <tbody className="divide-y divide-[#edf1f4]">
+          {users.map((user) => (
+            <tr key={user.id} className="h-[70px]">
+              <td className="px-4 py-2.5">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="grid size-9 shrink-0 place-items-center rounded-full bg-[#eaf6ee] text-[10px] font-bold text-[#168650]">
+                    {initials(user.name)}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-[10.5px] font-semibold text-[#17233c]">
+                      {user.name}
+                    </p>
+                    <p className="mt-1 text-[9px] text-[#718099]">
+                      {user.publicId ?? user.id.slice(0, 8)}
+                    </p>
+                  </div>
+                </div>
+              </td>
+
+              <td className="px-3 py-2.5">
+                <p className="truncate text-[9.5px] font-semibold text-[#26344d]">
+                  {user.email}
+                </p>
+                <p className="mt-1 text-[9px] text-[#718099]">
+                  {user.phone ?? "No phone"}
+                </p>
+              </td>
+
+              <td className="px-3 py-2.5 text-[9.5px] font-semibold text-[#26344d]">
+                {user.branch?.name ?? "All branches"}
+              </td>
+
+              <td className="px-3 py-2.5">
+                <div className="flex flex-wrap gap-1.5">
+                  {user.roles.length ? (
+                    user.roles.slice(0, 3).map((role) => (
+                      <span
+                        key={role}
+                        className="rounded-full bg-[#f1f5f8] px-2 py-1 text-[8.5px] font-semibold text-[#526078]"
+                      >
+                        {role.replace(/\bAgent\b/g, "Field Officer")}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-[9px] text-[#718099]">
+                      No roles
+                    </span>
+                  )}
+                </div>
+              </td>
+
+              <td className="px-3 py-2.5">
+                <p className="text-[9.5px] font-semibold text-[#26344d]">
+                  {ccDateTime(user.lastUsedAt)}
+                </p>
+                <p className="mt-1 truncate text-[9px] text-[#718099]">
+                  {user.lastUsedDevice ?? user.lastUsedPlatform ?? "No device"}
+                </p>
+              </td>
+
+              <td className="px-3 py-2.5">
+                <ClientStatusBadge value={user.status} />
               </td>
             </tr>
           ))}

@@ -1,4 +1,6 @@
-import '../../../models/client_detail.dart';
+import 'dart:typed_data';
+
+import '../../../models/client_detail.dart' as ui;
 import '../../../models/field_records.dart';
 import '../domain/entities/client_loan_detail.dart';
 import '../domain/repositories/repayment_repository.dart';
@@ -89,6 +91,26 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
     required String reason,
   }) async {
     await _api.deleteLoan(loanId: loanId, reason: reason);
+  }
+
+  @override
+  Future<ClientLoanDetail> uploadCorrectionMedia({
+    required String loanId,
+    required String mediaType,
+    required Uint8List bytes,
+    required String mimeType,
+    String? fileName,
+  }) async {
+    final payload = await _api.uploadCorrectionMedia(
+      loanId: loanId,
+      mediaType: mediaType,
+      bytes: bytes,
+      mimeType: mimeType,
+      fileName: fileName,
+    );
+    return _detail(
+      Map<String, dynamic>.from(payload['detail'] as Map? ?? const {}),
+    );
   }
 
   @override
@@ -226,6 +248,24 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
               )
               .toList()
             ..sort((a, b) => b.periodIndex.compareTo(a.periodIndex)),
+      media:
+          ((json['media'] as List?) ?? const [])
+              .whereType<Map>()
+              .map(
+                (row) => ClientLoanMediaItem(
+                  id: row['id'] as String? ?? '',
+                  mediaType: row['mediaType'] as String? ?? '',
+                  fileName: row['fileName'] as String?,
+                  mimeType: row['mimeType'] as String? ?? '',
+                  byteSize: _int(row['byteSize']),
+                  url: row['url'] as String?,
+                  createdAt:
+                      DateTime.tryParse(row['createdAt'] as String? ?? '') ??
+                      DateTime.now(),
+                ),
+              )
+              .toList()
+            ..sort((a, b) => b.createdAt.compareTo(a.createdAt)),
       correctionAccess: ClientLoanCorrectionAccess.fromJson(
         json['correctionAccess'] is Map<String, dynamic>
             ? json['correctionAccess'] as Map<String, dynamic>
@@ -248,8 +288,8 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
 }
 
 /// Maps domain detail into the existing UI `ClientDetail` model.
-ClientDetail toUiClientDetail(ClientLoanDetail detail) {
-  return ClientDetail(
+ui.ClientDetail toUiClientDetail(ClientLoanDetail detail) {
+  return ui.ClientDetail(
     id: detail.loanId,
     loanId: detail.loanId,
     customerId: detail.customerId,
@@ -283,7 +323,7 @@ ClientDetail toUiClientDetail(ClientLoanDetail detail) {
     finesTotal: detail.finesTotal,
     paymentHistory: detail.paymentHistory
         .map(
-          (item) => ClientPaymentHistoryItem(
+          (item) => ui.ClientPaymentHistoryItem(
             id: item.id,
             amount: item.amount,
             method: item.method,
@@ -296,7 +336,7 @@ ClientDetail toUiClientDetail(ClientLoanDetail detail) {
         .toList(),
     fineHistory: detail.fineHistory
         .map(
-          (item) => ClientFineHistoryItem(
+          (item) => ui.ClientFineHistoryItem(
             id: item.id,
             periodIndex: item.periodIndex,
             amount: item.amount,
@@ -305,7 +345,20 @@ ClientDetail toUiClientDetail(ClientLoanDetail detail) {
           ),
         )
         .toList(),
-    correctionAccess: ClientCorrectionAccess(
+    media: detail.media
+        .map(
+          (item) => ui.ClientLoanMediaItem(
+            id: item.id,
+            mediaType: item.mediaType,
+            fileName: item.fileName,
+            mimeType: item.mimeType,
+            byteSize: item.byteSize,
+            url: item.url,
+            createdAt: item.createdAt,
+          ),
+        )
+        .toList(),
+    correctionAccess: ui.ClientCorrectionAccess(
       enabled: detail.correctionAccess.enabled,
       source: detail.correctionAccess.source,
       reason: detail.correctionAccess.reason,
