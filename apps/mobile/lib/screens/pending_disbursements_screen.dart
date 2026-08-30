@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../features/agent_day/data/agent_day_status_store.dart';
 import '../models/pending_disbursement.dart';
 import '../services/api_client.dart';
 import '../services/offline_cache_store.dart';
@@ -526,15 +527,29 @@ class _RecordDisbursementSheet extends StatefulWidget {
 }
 
 class _RecordDisbursementSheetState extends State<_RecordDisbursementSheet> {
+  final _dayStore = AgentDayStatusStore.instance;
   final _amount = TextEditingController();
   final _repaymentsUsed = TextEditingController();
   final _note = TextEditingController();
 
   bool _saving = false;
+  bool _repaymentsEdited = false;
   String? _error;
 
   @override
+  void initState() {
+    super.initState();
+    _dayStore.addListener(_onDayStatusChanged);
+    if (_dayStore.status == null) {
+      unawaited(_dayStore.start(widget.session));
+    } else {
+      unawaited(_dayStore.refresh());
+    }
+  }
+
+  @override
   void dispose() {
+    _dayStore.removeListener(_onDayStatusChanged);
     _amount.dispose();
     _repaymentsUsed.dispose();
     _note.dispose();
@@ -545,9 +560,86 @@ class _RecordDisbursementSheetState extends State<_RecordDisbursementSheet> {
 
   int get _repaymentValue => _parseMoney(_repaymentsUsed.text);
 
+  int? get _remainingAssignedFloat {
+    final status = _dayStore.status;
+    if (status == null) return null;
+    final remaining = status.float.unusedFloat;
+    return remaining < 0 ? 0 : remaining;
+  }
+
+  int get _collectedRepaymentsAvailable {
+    final status = _dayStore.status;
+    if (status == null) return 0;
+    final available = status.float.collectedRepaymentsAvailable;
+    return available < 0 ? 0 : available;
+  }
+
+  bool get _checkingCash => _dayStore.status == null && _dayStore.loading;
+
+  bool get _needsRepaymentFunding {
+    final remainingFloat = _remainingAssignedFloat;
+    return _amountValue > 0 &&
+        remainingFloat != null &&
+        _amountValue > remainingFloat;
+  }
+
+  bool get _showRepaymentFunding => _needsRepaymentFunding;
+
+  int get _recommendedRepaymentValue {
+    final remainingFloat = _remainingAssignedFloat;
+    if (remainingFloat == null || _amountValue <= remainingFloat) return 0;
+    final shortfall = _amountValue - remainingFloat;
+    final available = _collectedRepaymentsAvailable;
+    if (available <= 0) return 0;
+    return shortfall > available ? available : shortfall;
+  }
+
+  int get _assignedFloatValue {
+    final assigned = _amountValue - _repaymentValue;
+    return assigned <= 0 ? 0 : assigned;
+  }
+
+  void _onDayStatusChanged() {
+    if (!mounted) return;
+    _syncRepaymentFunding();
+    setState(() {});
+  }
+
+  void _onAmountChanged(String _) {
+    _syncRepaymentFunding();
+    setState(() {});
+  }
+
+  void _onRepaymentChanged(String _) {
+    setState(() {
+      _repaymentsEdited = true;
+    });
+  }
+
+  void _syncRepaymentFunding() {
+    if (!_needsRepaymentFunding) {
+      _repaymentsEdited = false;
+      _setRepaymentText(0);
+      return;
+    }
+    if (_repaymentsEdited) return;
+    _setRepaymentText(_recommendedRepaymentValue);
+  }
+
+  void _setRepaymentText(int value) {
+    final next = value <= 0 ? '' : value.toString();
+    if (_repaymentsUsed.text == next) return;
+    _repaymentsUsed.value = TextEditingValue(
+      text: next,
+      selection: TextSelection.collapsed(offset: next.length),
+    );
+  }
+
   Future<void> _save() async {
     final amount = _amountValue;
     final repaymentPortion = _repaymentValue;
+    final remainingFloat = _remainingAssignedFloat;
+    final assignedFloatPortion = amount - repaymentPortion;
 
     if (amount <= 0) {
       setState(() => _error = 'Enter the amount you are giving now.');
@@ -563,6 +655,22 @@ class _RecordDisbursementSheetState extends State<_RecordDisbursementSheet> {
     if (repaymentPortion < 0 || repaymentPortion > amount) {
       setState(
         () => _error = 'Repayments used must be part of the amount given now.',
+      );
+      return;
+    }
+    if (repaymentPortion > _collectedRepaymentsAvailable) {
+      setState(
+        () => _error =
+            'Collected repayments available: UGX ${formatMoney(_collectedRepaymentsAvailable)}.',
+      );
+      return;
+    }
+    if (remainingFloat != null && assignedFloatPortion > remainingFloat) {
+      final shortfall = assignedFloatPortion - remainingFloat;
+      setState(
+        () => _error = _collectedRepaymentsAvailable <= 0
+            ? 'Assigned float is not enough. No collected repayments are available for this disbursement.'
+            : 'Use at least UGX ${formatMoney(shortfall)} from collected repayments or reduce the amount.',
       );
       return;
     }
@@ -727,7 +835,7 @@ class _RecordDisbursementSheetState extends State<_RecordDisbursementSheet> {
                   filled: true,
                   fillColor: Colors.white,
                 ),
-                onChanged: (_) => setState(() {}),
+                onChanged: _onAmountChanged,
               ),
               const SizedBox(height: 8),
               Center(
@@ -736,32 +844,43 @@ class _RecordDisbursementSheetState extends State<_RecordDisbursementSheet> {
                   style: const TextStyle(color: slateText, fontSize: 12),
                 ),
               ),
-              const SizedBox(height: 16),
-              const Text(
-                'Use collected repayments (optional)',
-                style: TextStyle(
-                  color: midnightNavy,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 13,
+              const SizedBox(height: 12),
+              _FundingSummary(
+                amount: _amountValue,
+                remainingFloat: _remainingAssignedFloat,
+                assignedFloat: _assignedFloatValue,
+                repaymentsUsed: _repaymentValue,
+                repaymentsAvailable: _collectedRepaymentsAvailable,
+                checking: _checkingCash,
+              ),
+              if (_showRepaymentFunding) ...[
+                const SizedBox(height: 16),
+                const Text(
+                  'Use collected repayments',
+                  style: TextStyle(
+                    color: midnightNavy,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: _repaymentsUsed,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  prefixText: 'UGX  ',
-                  hintText: '0',
-                  filled: true,
-                  fillColor: Colors.white,
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _repaymentsUsed,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    prefixText: 'UGX  ',
+                    hintText: '0',
+                    filled: true,
+                    fillColor: Colors.white,
+                  ),
+                  onChanged: _onRepaymentChanged,
                 ),
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'The rest, UGX ${formatMoney((_amountValue - _repaymentValue).clamp(0, 1 << 31))}, will be treated as assigned float.',
-                style: const TextStyle(color: slateText, fontSize: 12),
-              ),
+                const SizedBox(height: 8),
+                Text(
+                  'Added from repayments: UGX ${formatMoney(_repaymentValue)}. The rest, UGX ${formatMoney(_assignedFloatValue)}, will be treated as assigned float.',
+                  style: const TextStyle(color: slateText, fontSize: 12),
+                ),
+              ],
               const SizedBox(height: 16),
               TextField(
                 controller: _note,
@@ -851,6 +970,137 @@ class _SheetAmount extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _FundingSummary extends StatelessWidget {
+  const _FundingSummary({
+    required this.amount,
+    required this.remainingFloat,
+    required this.assignedFloat,
+    required this.repaymentsUsed,
+    required this.repaymentsAvailable,
+    required this.checking,
+  });
+
+  final int amount;
+  final int? remainingFloat;
+  final int assignedFloat;
+  final int repaymentsUsed;
+  final int repaymentsAvailable;
+  final bool checking;
+
+  @override
+  Widget build(BuildContext context) {
+    if (amount <= 0) return const SizedBox.shrink();
+
+    if (checking || remainingFloat == null) {
+      return const _CashNotice(
+        icon: Icons.sync_rounded,
+        color: slateText,
+        background: sage,
+        borderColor: line,
+        text: "Checking today's assigned float before this is saved.",
+      );
+    }
+
+    final needsRepayments = amount > remainingFloat!;
+    if (!needsRepayments) {
+      final after = (remainingFloat! - amount).clamp(0, 1 << 31);
+      return _CashNotice(
+        icon: Icons.account_balance_wallet_outlined,
+        color: forestEmerald,
+        background: forestEmerald.withValues(alpha: 0.08),
+        borderColor: forestEmerald.withValues(alpha: 0.28),
+        text:
+            'This will use assigned float only. Float left after: UGX ${formatMoney(after)}.',
+      );
+    }
+
+    final shortfall = amount - remainingFloat!;
+    final hasRepayments = repaymentsAvailable > 0;
+    final covered = repaymentsUsed > 0;
+
+    return _CashNotice(
+      icon: hasRepayments
+          ? Icons.savings_outlined
+          : Icons.warning_amber_rounded,
+      color: const Color(0xFFE11D2E),
+      background: const Color(0xFFFFEAED),
+      borderColor: const Color(0xFFFFCAD1),
+      text: hasRepayments
+          ? 'Assigned float available: UGX ${formatMoney(remainingFloat!)}. Shortfall: UGX ${formatMoney(shortfall)}. ${covered ? 'Added from repayments: UGX ${formatMoney(repaymentsUsed)}.' : 'Add collected repayments to cover the shortfall.'} Available repayments: UGX ${formatMoney(repaymentsAvailable)}.'
+          : 'Assigned float available: UGX ${formatMoney(remainingFloat!)}. No collected repayments are available, so reduce the amount or get more float.',
+      footer: covered
+          ? 'Tracked split: UGX ${formatMoney(assignedFloat)} assigned float + UGX ${formatMoney(repaymentsUsed)} collected repayments.'
+          : null,
+    );
+  }
+}
+
+class _CashNotice extends StatelessWidget {
+  const _CashNotice({
+    required this.icon,
+    required this.color,
+    required this.background,
+    required this.borderColor,
+    required this.text,
+    this.footer,
+  });
+
+  final IconData icon;
+  final Color color;
+  final Color background;
+  final Color borderColor;
+  final String text;
+  final String? footer;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: background,
+        border: Border.all(color: borderColor),
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 18),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  text,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    height: 1.35,
+                  ),
+                ),
+                if (footer != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    footer!,
+                    style: const TextStyle(
+                      color: midnightNavy,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

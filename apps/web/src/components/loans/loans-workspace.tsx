@@ -73,6 +73,7 @@ import {
 import { resolveOperatorRole } from "../../lib/roles";
 
 export type LoansMode = "owner" | "manager";
+export type LoansWorkspaceView = "loans" | "pending-disbursements";
 
 type PortfolioFilter = "all" | "active" | "closed" | "overdue";
 
@@ -164,6 +165,8 @@ type DisbursementStaffOption = {
   status: string;
   roleName?: string | null;
   floatToday?: number | null;
+  remainingFloatToday?: number | null;
+  collectedRepaymentsAvailableToday?: number | null;
 };
 
 type AgentsResponse = {
@@ -231,10 +234,17 @@ function useLoansSession(mode: LoansMode): LoansSession {
   return state;
 }
 
-export function LoansWorkspace({ mode }: { mode: LoansMode }) {
+export function LoansWorkspace({
+  mode,
+  view = "loans",
+}: {
+  mode: LoansMode;
+  view?: LoansWorkspaceView;
+}) {
   const state = useLoansSession(mode);
   const router = useRouter();
   const isManager = mode === "manager";
+  const pendingOnly = view === "pending-disbursements";
   const [loans, setLoans] = useState<LoanRow[]>([]);
   const [borrowers, setBorrowers] = useState<BorrowerRow[]>([]);
   const [pendingDisbursements, setPendingDisbursements] = useState<
@@ -247,7 +257,6 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<PortfolioFilter>("all");
   const [pendingSearch, setPendingSearch] = useState("");
-  const [pendingPanelOpen, setPendingPanelOpen] = useState(false);
   const [advancedFilters, setAdvancedFilters] =
     useState<LoansAdvancedFilters>(EMPTY_LOANS_FILTERS);
   const [page, setPage] = useState(1);
@@ -292,6 +301,10 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
   );
   const [staffLoading, setStaffLoading] = useState(false);
   const currency = state.workspace?.currency ?? "UGX";
+  const loansHref = isManager ? "/loans" : "/owner/portfolio";
+  const pendingHref = isManager
+    ? "/loans/pending-disbursements"
+    : "/owner/portfolio/pending-disbursements";
   // Prefer mobile for new loans — web create flow is disabled.
   const canCreate = false;
   const canRecordRepayment = Boolean(
@@ -364,9 +377,6 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
       );
       setPendingDisbursements(fallbackPending);
       setPendingSummary(summarizePendingDisbursements(fallbackPending));
-      if (fallbackPending.length === 0) {
-        setPendingPanelOpen(false);
-      }
       setDetailLoan((current) => {
         if (!current) return null;
         return scoped.find((loan) => loan.id === current.id) ?? current;
@@ -382,39 +392,36 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
     }
   }, [isManager, state.branch?.id, state.branch?.name, state.session]);
 
-  const loadPendingDisbursements = useCallback(async (fallbackLoans?: LoanRow[]) => {
-    if (!state.session) return;
-    setPendingLoading(true);
-    const fallbackPending = pendingDisbursementsFromLoans(
-      fallbackLoans ?? loans,
-      isManager ? (state.branch?.name ?? null) : null,
-    );
-    try {
-      const payload = await ownerFetch<PendingDisbursementsResponse>(
-        state.session,
-        "/loans/pending-disbursements",
+  const loadPendingDisbursements = useCallback(
+    async (fallbackLoans: LoanRow[] = []) => {
+      if (!state.session) return;
+      setPendingLoading(true);
+      const fallbackPending = pendingDisbursementsFromLoans(
+        fallbackLoans,
+        isManager ? (state.branch?.name ?? null) : null,
       );
-      const rows = payload.pendingDisbursements ?? [];
-      const scoped =
-        isManager && state.branch?.id
-          ? rows.filter((row) => row.branchId === state.branch?.id)
-          : rows;
-      const visibleRows = scoped.length > 0 ? scoped : fallbackPending;
-      setPendingDisbursements(visibleRows);
-      setPendingSummary(summarizePendingDisbursements(visibleRows));
-      if (visibleRows.length === 0) {
-        setPendingPanelOpen(false);
+      try {
+        const payload = await ownerFetch<PendingDisbursementsResponse>(
+          state.session,
+          "/loans/pending-disbursements",
+        );
+        const rows = payload.pendingDisbursements ?? [];
+        const scoped =
+          isManager && state.branch?.id
+            ? rows.filter((row) => row.branchId === state.branch?.id)
+            : rows;
+        const visibleRows = scoped.length > 0 ? scoped : fallbackPending;
+        setPendingDisbursements(visibleRows);
+        setPendingSummary(summarizePendingDisbursements(visibleRows));
+      } catch {
+        setPendingDisbursements(fallbackPending);
+        setPendingSummary(summarizePendingDisbursements(fallbackPending));
+      } finally {
+        setPendingLoading(false);
       }
-    } catch {
-      setPendingDisbursements(fallbackPending);
-      setPendingSummary(summarizePendingDisbursements(fallbackPending));
-      if (fallbackPending.length === 0) {
-        setPendingPanelOpen(false);
-      }
-    } finally {
-      setPendingLoading(false);
-    }
-  }, [isManager, loans, state.branch?.id, state.branch?.name, state.session]);
+    },
+    [isManager, state.branch?.id, state.branch?.name, state.session],
+  );
 
   const loadDisbursementStaff = useCallback(async () => {
     if (!state.session || staffLoading) return;
@@ -981,6 +988,86 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
 
   if (!state.ready || !state.session) return <AppBootSkeleton />;
 
+  if (pendingOnly) {
+    return (
+      <AppShell
+        session={state.session}
+        workspace={state.workspace}
+        user={state.user}
+        branch={isManager ? state.branch : null}
+      >
+        <div className="mx-auto max-w-[1400px] space-y-5 animate-rise">
+          <OwnerHeader
+            eyebrow={isManager ? undefined : "All Branches"}
+            title="Pending Disbursements"
+            showReportsButton={false}
+            settingsHref={isManager ? "/settings" : "/owner/settings"}
+            notificationScope={mode}
+            actions={
+              <button
+                type="button"
+                onClick={() => void refreshLoansWorkspace()}
+                disabled={loading || pendingLoading}
+                aria-label="Refresh pending disbursements"
+                className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-50 disabled:opacity-60"
+              >
+                <RefreshCw
+                  className={`size-4 ${loading || pendingLoading ? "animate-spin" : ""}`}
+                />
+              </button>
+            }
+          />
+          <p className="-mt-2 text-sm font-medium text-slate-500">
+            Borrowers have not received their full loan amounts yet.
+          </p>
+
+          {error ? (
+            <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+              {error}
+            </p>
+          ) : null}
+          {notice ? (
+            <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-[var(--forest-emerald)]">
+              {notice}
+            </p>
+          ) : null}
+
+          <PendingDisbursementsPanel
+            rows={filteredPendingDisbursements}
+            totalCount={pendingDisbursements.length}
+            totalRemaining={pendingSummary.totalRemaining}
+            currency={currency}
+            search={pendingSearch}
+            onSearch={setPendingSearch}
+            loading={pendingLoading}
+            onClose={() => router.push(loansHref)}
+            onRecord={openRecordDisbursement}
+          />
+        </div>
+
+        <RecordDisbursementDrawer
+          row={recordDisbursementLoan}
+          currency={currency}
+          amount={disbursementAmount}
+          repaymentCash={disbursementRepaymentCash}
+          note={disbursementNote}
+          date={disbursementDate}
+          staffId={disbursementStaffId}
+          staffOptions={staffOptions}
+          staffLoading={staffLoading}
+          busy={disbursementBusy}
+          onAmountChange={setDisbursementAmount}
+          onRepaymentCashChange={setDisbursementRepaymentCash}
+          onNoteChange={setDisbursementNote}
+          onDateChange={setDisbursementDate}
+          onStaffChange={setDisbursementStaffId}
+          onClose={() => !disbursementBusy && setRecordDisbursementLoan(null)}
+          onSubmit={() => void recordPendingDisbursement()}
+        />
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell
       session={state.session}
@@ -1147,21 +1234,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
             count={pendingSummary.borrowersCount}
             totalRemaining={pendingSummary.totalRemaining}
             currency={currency}
-            onOpen={() => setPendingPanelOpen(true)}
-          />
-        ) : null}
-
-        {pendingPanelOpen ? (
-          <PendingDisbursementsPanel
-            rows={filteredPendingDisbursements}
-            totalCount={pendingDisbursements.length}
-            totalRemaining={pendingSummary.totalRemaining}
-            currency={currency}
-            search={pendingSearch}
-            onSearch={setPendingSearch}
-            loading={pendingLoading}
-            onClose={() => setPendingPanelOpen(false)}
-            onRecord={openRecordDisbursement}
+            onOpen={() => router.push(pendingHref)}
           />
         ) : null}
 
@@ -2457,11 +2530,45 @@ function RecordDisbursementDrawer({
   const amountValue = roundMoney(parseAmount(amount));
   const repaymentValue = roundMoney(parseAmount(repaymentCash));
   const assignedFloat = Math.max(0, amountValue - repaymentValue);
+  const selectedStaff =
+    staffOptions.find((staff) => staff.id === staffId) ?? null;
+  const detectedRemainingFloat =
+    optionalMoneyNumber(selectedStaff?.remainingFloatToday) ??
+    optionalMoneyNumber(selectedStaff?.floatToday);
+  const repaymentsAvailable =
+    optionalMoneyNumber(selectedStaff?.collectedRepaymentsAvailableToday) ?? 0;
+  const repaymentShortfall =
+    detectedRemainingFloat != null
+      ? Math.max(0, amountValue - detectedRemainingFloat)
+      : 0;
+  const needsRepaymentCash =
+    detectedRemainingFloat != null && repaymentShortfall > 0;
+  const showRepaymentCash = needsRepaymentCash || repaymentValue > 0;
+  const repaymentWithinAvailable = repaymentValue <= repaymentsAvailable;
+  const cashGapCovered = !needsRepaymentCash || repaymentValue >= repaymentShortfall;
   const canSubmit =
     !busy &&
     amountValue > 0 &&
     amountValue <= row.remainingAmount &&
-    repaymentValue <= amountValue;
+    repaymentValue <= amountValue &&
+    repaymentWithinAvailable &&
+    cashGapCovered;
+
+  function syncRepaymentCash(nextAmount: number, nextStaffId: string) {
+    const staff = staffOptions.find((option) => option.id === nextStaffId);
+    const remainingFloat =
+      optionalMoneyNumber(staff?.remainingFloatToday) ??
+      optionalMoneyNumber(staff?.floatToday);
+    if (remainingFloat == null || nextAmount <= remainingFloat) {
+      onRepaymentCashChange("");
+      return;
+    }
+    const available =
+      optionalMoneyNumber(staff?.collectedRepaymentsAvailableToday) ?? 0;
+    const shortfall = Math.max(0, nextAmount - remainingFloat);
+    const recommended = Math.min(shortfall, Math.max(0, available));
+    onRepaymentCashChange(recommended > 0 ? String(recommended) : "");
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-[rgba(8,15,31,0.36)] backdrop-blur-[2px]">
@@ -2533,7 +2640,11 @@ function RecordDisbursementDrawer({
               </span>
               <input
                 value={amount}
-                onChange={(event) => onAmountChange(event.target.value)}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  onAmountChange(next);
+                  syncRepaymentCash(roundMoney(parseAmount(next)), staffId);
+                }}
                 inputMode="numeric"
                 placeholder="Enter amount"
                 className="min-w-0 flex-1 px-3 text-sm font-semibold outline-none"
@@ -2545,27 +2656,66 @@ function RecordDisbursementDrawer({
             </span>
           </label>
 
-          <label className="block">
-            <span className="text-xs font-bold text-[#0b1220]">
-              Use collected repayments ({currency})
-            </span>
-            <div className="mt-1.5 flex h-10 overflow-hidden rounded-xl border border-[#e6ebf0] bg-white">
-              <span className="grid w-14 place-items-center border-r border-[#e6ebf0] text-xs font-black text-[#0b1220]">
-                {currency}
-              </span>
-              <input
-                value={repaymentCash}
-                onChange={(event) => onRepaymentCashChange(event.target.value)}
-                inputMode="numeric"
-                placeholder="Optional"
-                className="min-w-0 flex-1 px-3 text-sm font-semibold outline-none"
-                disabled={busy}
-              />
+          {amountValue > 0 ? (
+            <div
+              className={`rounded-xl border px-3 py-2.5 text-xs font-semibold leading-5 ${
+                needsRepaymentCash
+                  ? "border-red-100 bg-[#fff0f2] text-[#e11d2e]"
+                  : "border-emerald-100 bg-emerald-50 text-[#05603a]"
+              }`}
+            >
+              {staffLoading ? (
+                "Checking available staff cash..."
+              ) : detectedRemainingFloat == null ? (
+                "Select who is issuing the cash to check assigned float."
+              ) : needsRepaymentCash ? (
+                <>
+                  Assigned float available: {currency}{" "}
+                  {formatMoneyAmount(detectedRemainingFloat)}. Shortfall:{" "}
+                  {currency} {formatMoneyAmount(repaymentShortfall)}.
+                  {repaymentsAvailable > 0
+                    ? ` Available collected repayments: ${currency} ${formatMoneyAmount(repaymentsAvailable)}.`
+                    : " No collected repayments are available for this staff member."}
+                </>
+              ) : (
+                <>
+                  This uses assigned float only. Float left after: {currency}{" "}
+                  {formatMoneyAmount(
+                    Math.max(0, detectedRemainingFloat - amountValue),
+                  )}
+                  .
+                </>
+              )}
             </div>
-            <span className="mt-1.5 block text-xs font-semibold text-slate-500">
-              Assigned float used: {currency} {formatMoneyAmount(assignedFloat)}
-            </span>
-          </label>
+          ) : null}
+
+          {showRepaymentCash ? (
+            <label className="block">
+              <span className="text-xs font-bold text-[#0b1220]">
+                Use collected repayments ({currency})
+              </span>
+              <div className="mt-1.5 flex h-10 overflow-hidden rounded-xl border border-[#e6ebf0] bg-white">
+                <span className="grid w-14 place-items-center border-r border-[#e6ebf0] text-xs font-black text-[#0b1220]">
+                  {currency}
+                </span>
+                <input
+                  value={repaymentCash}
+                  onChange={(event) =>
+                    onRepaymentCashChange(event.target.value)
+                  }
+                  inputMode="numeric"
+                  placeholder="0"
+                  className="min-w-0 flex-1 px-3 text-sm font-semibold outline-none"
+                  disabled={busy}
+                />
+              </div>
+              <span className="mt-1.5 block text-xs font-semibold text-slate-500">
+                Added from repayments: {currency}{" "}
+                {formatMoneyAmount(repaymentValue)}. Assigned float used:{" "}
+                {currency} {formatMoneyAmount(assignedFloat)}.
+              </span>
+            </label>
+          ) : null}
 
           <label className="block">
             <span className="flex items-center gap-1.5 text-xs font-bold text-[#0b1220]">
@@ -2588,7 +2738,11 @@ function RecordDisbursementDrawer({
             </span>
             <select
               value={staffId}
-              onChange={(event) => onStaffChange(event.target.value)}
+              onChange={(event) => {
+                const nextStaffId = event.target.value;
+                onStaffChange(nextStaffId);
+                syncRepaymentCash(amountValue, nextStaffId);
+              }}
               disabled={busy || staffLoading}
               className="mt-1.5 h-10 w-full rounded-xl border border-[#e6ebf0] bg-white px-3 text-sm font-semibold outline-none"
             >

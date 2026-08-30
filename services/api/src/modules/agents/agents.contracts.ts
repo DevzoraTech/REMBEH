@@ -28,6 +28,8 @@ export type AgentListItemContract = {
   amountCollectedToday: number;
   amountDisbursedToday: number;
   floatToday: number | null;
+  remainingFloatToday: number | null;
+  collectedRepaymentsAvailableToday: number;
 };
 
 export type AgentsListResponse = {

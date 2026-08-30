@@ -110,12 +110,32 @@ export class AgentsService {
         const todayDisbursement = disbursementsToday.get(agent.id) ?? {
           count: 0,
           amount: 0,
+          assignedFloatAmount: 0,
+          collectedRepaymentsAmount: 0,
         };
         const lifeDisbursement = disbursementsLifetime.get(agent.id) ?? {
           count: 0,
           amount: 0,
+          assignedFloatAmount: 0,
+          collectedRepaymentsAmount: 0,
         };
         const lastActiveAt = lastActiveByAgent.get(agent.id) ?? null;
+        const floatToday = floatByAgent.get(agent.id) ?? null;
+        const remainingFloatToday =
+          floatToday == null
+            ? null
+            : Math.max(
+                0,
+                this.roundMoney(
+                  floatToday - todayDisbursement.assignedFloatAmount,
+                ),
+              );
+        const collectedRepaymentsAvailableToday = Math.max(
+          0,
+          this.roundMoney(
+            todayRepay.amount - todayDisbursement.collectedRepaymentsAmount,
+          ),
+        );
 
         return {
           id: agent.id,
@@ -138,7 +158,9 @@ export class AgentsService {
           amountDisbursedLifetime: lifeDisbursement.amount,
           amountCollectedToday: todayRepay.amount,
           amountDisbursedToday: todayDisbursement.amount,
-          floatToday: floatByAgent.get(agent.id) ?? null,
+          floatToday,
+          remainingFloatToday,
+          collectedRepaymentsAvailableToday,
         };
       }),
     );
@@ -854,7 +876,15 @@ export class AgentsService {
     to?: Date,
   ) {
     if (agentIds.length === 0) {
-      return new Map<string, { count: number; amount: number }>();
+      return new Map<
+        string,
+        {
+          count: number;
+          amount: number;
+          assignedFloatAmount: number;
+          collectedRepaymentsAmount: number;
+        }
+      >();
     }
 
     const rows = await this.prisma.repayment.groupBy({
@@ -871,7 +901,11 @@ export class AgentsService {
             }
           : {}),
       },
-      _sum: { amount: true },
+      _sum: {
+        amount: true,
+        assignedFloatAmount: true,
+        collectedRepaymentsAmount: true,
+      },
       _count: { _all: true },
     });
 
@@ -881,6 +915,10 @@ export class AgentsService {
         {
           count: row._count._all,
           amount: this.decimalToNumber(row._sum.amount) ?? 0,
+          assignedFloatAmount:
+            this.decimalToNumber(row._sum.assignedFloatAmount) ?? 0,
+          collectedRepaymentsAmount:
+            this.decimalToNumber(row._sum.collectedRepaymentsAmount) ?? 0,
         },
       ]),
     );

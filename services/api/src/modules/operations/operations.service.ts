@@ -354,15 +354,26 @@ export class OperationsService {
     const amountDisbursed = this.decimalToNumber(
       disbursementsAgg._sum.amount,
     );
+    const assignedFloatDisbursed = this.decimalToNumber(
+      disbursementsAgg._sum.assignedFloatAmount,
+    );
+    const collectedRepaymentsDisbursed = this.decimalToNumber(
+      disbursementsAgg._sum.collectedRepaymentsAmount,
+    );
 
     const processingFees = this.decimalToNumber(loansAgg._sum.processingFee);
 
     const amountCollected = this.decimalToNumber(collectionsAgg._sum.amount);
 
-    const unusedFloat = this.roundMoney(amountReceived - amountDisbursed);
+    const unusedFloat = this.roundMoney(
+      amountReceived - assignedFloatDisbursed,
+    );
+    const collectedRepaymentsAvailable = this.roundMoney(
+      amountCollected - collectedRepaymentsDisbursed,
+    );
 
     const expectedHandover = this.roundMoney(
-      unusedFloat + amountCollected + processingFees,
+      unusedFloat + collectedRepaymentsAvailable + processingFees,
     );
 
     const returnedAt = float?.returnedAt?.toISOString() ?? null;
@@ -377,6 +388,7 @@ export class OperationsService {
       amountDisbursed,
       processingFees,
       amountCollected,
+      collectedRepaymentsAvailable,
       unusedFloat,
       expectedHandover,
       amountReturned,
@@ -2509,6 +2521,7 @@ export class OperationsService {
       amountDisbursed: 0,
       processingFees: 0,
       amountCollected: 0,
+      collectedRepaymentsAvailable: 0,
       unusedFloat: 0,
       expectedHandover: 0,
       amountReturned: null,

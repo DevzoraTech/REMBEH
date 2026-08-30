@@ -416,6 +416,7 @@ export type AgentDailyFloatSummaryContract = {
   amountDisbursed: number;
   processingFees: number;
   amountCollected: number;
+  collectedRepaymentsAvailable: number;
   unusedFloat: number;
   expectedHandover: number;
 

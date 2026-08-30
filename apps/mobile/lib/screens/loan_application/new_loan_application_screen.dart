@@ -57,6 +57,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   UgandaLocationCatalog? _locationCatalog;
   bool _locationsLoading = true;
   String? _locationsError;
+  bool _repaymentsUsedEdited = false;
 
   @override
   void initState() {
@@ -77,6 +78,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
 
   void _onDayStatusChanged() {
     if (!mounted) return;
+    _syncRepaymentsUsedFromFloat();
     setState(() {});
   }
 
@@ -206,6 +208,49 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     return status.float.unusedFloat < 0 ? 0 : status.float.unusedFloat;
   }
 
+  int _collectedRepaymentsAvailableForLoan() {
+    final status = _dayStore.status;
+    if (status == null) return 0;
+    final available = status.float.collectedRepaymentsAvailable;
+    return available < 0 ? 0 : available;
+  }
+
+  bool _needsRepaymentFundingForLoan(double amountGivenNow) {
+    final remaining = _remainingFloatForLoan();
+    return amountGivenNow > 0 &&
+        remaining != null &&
+        amountGivenNow > remaining;
+  }
+
+  double _recommendedRepaymentsForLoan(double amountGivenNow) {
+    final remaining = _remainingFloatForLoan();
+    if (remaining == null || amountGivenNow <= remaining) return 0;
+    final shortfall = amountGivenNow - remaining;
+    final available = _collectedRepaymentsAvailableForLoan().toDouble();
+    if (available <= 0) return 0;
+    return shortfall > available ? available : shortfall;
+  }
+
+  void _syncRepaymentsUsedFromFloat() {
+    final amountGivenNow = _currentInitialDisbursementAmount();
+    if (!_needsRepaymentFundingForLoan(amountGivenNow)) {
+      _repaymentsUsedEdited = false;
+      _setRepaymentsUsedAmount(0);
+      return;
+    }
+    if (_repaymentsUsedEdited) return;
+    _setRepaymentsUsedAmount(_recommendedRepaymentsForLoan(amountGivenNow));
+  }
+
+  void _setRepaymentsUsedAmount(double value) {
+    final text = value <= 0 ? '' : value.toStringAsFixed(0);
+    if (_repaymentsUsed.text == text) return;
+    _repaymentsUsed.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
   String? _floatMessageForDisbursement({
     required double amountGivenNow,
     required double collectedRepaymentsAmount,
@@ -217,6 +262,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     }
     if (collectedRepaymentsAmount > amountGivenNow) {
       return 'Repayments used cannot exceed the amount given now.';
+    }
+    final collectedAvailable = _collectedRepaymentsAvailableForLoan();
+    if (collectedRepaymentsAmount > collectedAvailable) {
+      return 'Repayments available: UGX ${formatMoney(collectedAvailable)}.';
     }
     final assignedFloatNeeded = amountGivenNow - collectedRepaymentsAmount;
     if (assignedFloatNeeded <= 0) return null;
@@ -1326,6 +1375,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         : 'Allowed: ${selected.minLoanAmount?.toStringAsFixed(0) ?? '—'} – ${selected.maxLoanAmount?.toStringAsFixed(0) ?? '—'}';
     final principal = _currentPrincipalAmount();
     final remainingFloat = _remainingFloatForLoan();
+    final collectedRepaymentsAvailable = _collectedRepaymentsAvailableForLoan();
     final amountGivenNow = _currentInitialDisbursementAmount();
     final repaymentsUsed = _currentRepaymentsUsedAmount();
     final remainingToGive = _currentPendingDisbursementAmount();
@@ -1337,6 +1387,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       collectedRepaymentsAmount: repaymentsUsed,
     );
     final checkingFloat = remainingFloat == null && _dayStore.loading;
+    final needsRepaymentFunding = _needsRepaymentFundingForLoan(amountGivenNow);
 
     return [
       const Text(
@@ -1439,6 +1490,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
           if (!_draft.partialDisbursement) {
             _initialDisbursement.text = _principal.text;
           }
+          _syncRepaymentsUsedFromFloat();
           setState(() {});
         },
       ),
@@ -1458,6 +1510,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
               } else if (_initialDisbursement.text.trim().isEmpty) {
                 _initialDisbursement.clear();
               }
+              _syncRepaymentsUsedFromFloat();
             });
           },
           borderRadius: rembehBorderRadius(rembehRadiusMd),
@@ -1485,6 +1538,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
                       if (!_draft.partialDisbursement) {
                         _initialDisbursement.text = _principal.text;
                       }
+                      _syncRepaymentsUsedFromFloat();
                     });
                   },
                   activeColor: forestEmerald,
@@ -1531,7 +1585,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
           hint: 'Enter amount given now',
           icon: Icons.payments_outlined,
           keyboardType: TextInputType.number,
-          onChanged: (_) => setState(() {}),
+          onChanged: (_) {
+            _syncRepaymentsUsedFromFloat();
+            setState(() {});
+          },
         ),
         if (principal > 0 && amountGivenNow >= principal) ...[
           const SizedBox(height: 6),
@@ -1563,23 +1620,23 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
           ),
         ),
       ],
-      if (amountGivenNow > 0) ...[
+      if (needsRepaymentFunding) ...[
         const SizedBox(height: 12),
-        const LoanFieldLabel(
-          label: 'Use Collected Repayments',
-          required: false,
-        ),
+        const LoanFieldLabel(label: 'Use Collected Repayments', required: true),
         const SizedBox(height: 6),
         LoanTextField(
           controller: _repaymentsUsed,
-          hint: 'Optional amount from repayments',
+          hint: 'Amount added from repayments',
           icon: Icons.savings_outlined,
           keyboardType: TextInputType.number,
-          onChanged: (_) => setState(() {}),
+          onChanged: (_) {
+            _repaymentsUsedEdited = true;
+            setState(() {});
+          },
         ),
         const SizedBox(height: 6),
         Text(
-          'Assigned float needed: UGX ${formatMoney(assignedFloatNeeded)}',
+          'Added from repayments: UGX ${formatMoney(repaymentsUsed)}. Assigned float needed: UGX ${formatMoney(assignedFloatNeeded)}. Available repayments: UGX ${formatMoney(collectedRepaymentsAvailable)}.',
           style: const TextStyle(
             color: slateText,
             fontSize: 12,

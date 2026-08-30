@@ -66,6 +66,7 @@ class AgentDayFloatSummary {
     required this.amountDisbursed,
     required this.processingFees,
     required this.amountCollected,
+    required this.collectedRepaymentsAvailable,
     required this.unusedFloat,
     required this.expectedHandover,
     this.amountReturned,
@@ -76,6 +77,7 @@ class AgentDayFloatSummary {
   final int amountDisbursed;
   final int processingFees;
   final int amountCollected;
+  final int collectedRepaymentsAvailable;
   final int unusedFloat;
   final int expectedHandover;
   final int? amountReturned;
@@ -87,6 +89,9 @@ class AgentDayFloatSummary {
       amountDisbursed: _asMoney(json['amountDisbursed']),
       processingFees: _asMoney(json['processingFees']),
       amountCollected: _asMoney(json['amountCollected']),
+      collectedRepaymentsAvailable: json['collectedRepaymentsAvailable'] == null
+          ? _asMoney(json['amountCollected'])
+          : _asMoney(json['collectedRepaymentsAvailable']),
       unusedFloat: _asMoney(json['unusedFloat']),
       expectedHandover: _asMoney(json['expectedHandover']),
       amountReturned: json['amountReturned'] == null
