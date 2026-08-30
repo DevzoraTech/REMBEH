@@ -10,6 +10,15 @@ import {
 } from 'class-validator';
 
 export class RecordLoanDisbursementDto {
+  /**
+   * Accepted only for backwards compatibility with older mobile builds.
+   * The route parameter remains the authoritative loan id.
+   */
+  @IsOptional()
+  @IsString()
+  @Length(1, 120)
+  loanId?: string;
+
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)

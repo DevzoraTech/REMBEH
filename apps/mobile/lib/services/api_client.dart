@@ -214,7 +214,6 @@ class ApiClient {
         localId ??
         'mobile-disbursement-${DateTime.now().microsecondsSinceEpoch}';
     final body = {
-      'loanId': loanId,
       'amount': amount,
       'collectedRepaymentsAmount': collectedRepaymentsAmount,
       'localId': effectiveLocalId,
@@ -234,11 +233,12 @@ class ApiClient {
       rethrow;
     } catch (_) {
       NetworkStatusStore.instance.markOffline();
+      final offlinePayload = {'loanId': loanId, ...body};
       await PendingOperationsRepository().insert(
         PendingOperation(
           operationType: OperationType.loanDisbursementCreate,
           localEntityId: effectiveLocalId,
-          payload: jsonEncode(body),
+          payload: jsonEncode(offlinePayload),
           createdAt: DateTime.now(),
           status: OperationStatus.pending,
         ),

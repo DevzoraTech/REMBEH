@@ -145,6 +145,13 @@ export class LoansService {
     loanId: string,
     dto: RecordLoanDisbursementDto,
   ): Promise<RecordLoanDisbursementResponseContract> {
+    const bodyLoanId = dto.loanId?.trim();
+    if (bodyLoanId && bodyLoanId !== loanId) {
+      throw new BadRequestException(
+        'Disbursement loan does not match the selected loan.',
+      );
+    }
+
     if (!user.tenantId?.trim()) {
       throw new ForbiddenException('Account access is required.');
     }

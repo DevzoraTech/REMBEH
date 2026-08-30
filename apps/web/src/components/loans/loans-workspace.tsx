@@ -343,8 +343,8 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
     );
   }, [isManager, loans, router]);
 
-  const loadLoans = useCallback(async () => {
-    if (!state.session) return;
+  const loadLoans = useCallback(async (): Promise<LoanRow[]> => {
+    if (!state.session) return [];
     setLoading(true);
     setError(null);
     try {
@@ -358,22 +358,37 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
           ? next.filter((loan) => loan.branchId === state.branch?.id)
           : next;
       setLoans(scoped);
+      const fallbackPending = pendingDisbursementsFromLoans(
+        scoped,
+        isManager ? (state.branch?.name ?? null) : null,
+      );
+      setPendingDisbursements(fallbackPending);
+      setPendingSummary(summarizePendingDisbursements(fallbackPending));
+      if (fallbackPending.length === 0) {
+        setPendingPanelOpen(false);
+      }
       setDetailLoan((current) => {
         if (!current) return null;
         return scoped.find((loan) => loan.id === current.id) ?? current;
       });
+      return scoped;
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Could not load portfolio.",
       );
+      return [];
     } finally {
       setLoading(false);
     }
-  }, [isManager, state.branch?.id, state.session]);
+  }, [isManager, state.branch?.id, state.branch?.name, state.session]);
 
-  const loadPendingDisbursements = useCallback(async () => {
+  const loadPendingDisbursements = useCallback(async (fallbackLoans?: LoanRow[]) => {
     if (!state.session) return;
     setPendingLoading(true);
+    const fallbackPending = pendingDisbursementsFromLoans(
+      fallbackLoans ?? loans,
+      isManager ? (state.branch?.name ?? null) : null,
+    );
     try {
       const payload = await ownerFetch<PendingDisbursementsResponse>(
         state.session,
@@ -384,24 +399,22 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
         isManager && state.branch?.id
           ? rows.filter((row) => row.branchId === state.branch?.id)
           : rows;
-      setPendingDisbursements(scoped);
-      setPendingSummary({
-        borrowersCount: scoped.length,
-        totalRemaining:
-          scoped.length === rows.length
-            ? (payload.summary?.totalRemaining ?? 0)
-            : sumBy(scoped, (row) => row.remainingAmount),
-      });
-      if (scoped.length === 0) {
+      const visibleRows = scoped.length > 0 ? scoped : fallbackPending;
+      setPendingDisbursements(visibleRows);
+      setPendingSummary(summarizePendingDisbursements(visibleRows));
+      if (visibleRows.length === 0) {
         setPendingPanelOpen(false);
       }
     } catch {
-      setPendingDisbursements([]);
-      setPendingSummary({ borrowersCount: 0, totalRemaining: 0 });
+      setPendingDisbursements(fallbackPending);
+      setPendingSummary(summarizePendingDisbursements(fallbackPending));
+      if (fallbackPending.length === 0) {
+        setPendingPanelOpen(false);
+      }
     } finally {
       setPendingLoading(false);
     }
-  }, [isManager, state.branch?.id, state.session]);
+  }, [isManager, loans, state.branch?.id, state.branch?.name, state.session]);
 
   const loadDisbursementStaff = useCallback(async () => {
     if (!state.session || staffLoading) return;
@@ -603,7 +616,8 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
   ]);
 
   const refreshLoansWorkspace = useCallback(async () => {
-    await Promise.all([loadLoans(), loadPendingDisbursements()]);
+    const latestLoans = await loadLoans();
+    await loadPendingDisbursements(latestLoans);
   }, [loadLoans, loadPendingDisbursements]);
 
   function openRecordDisbursement(row: PendingDisbursementRow) {
@@ -1335,16 +1349,17 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                               agreementBusyId === loan.id ||
                               reminderBusyId === loan.id
                             }
-                            items={loanRowActions(
-                              loan,
-                              canRecordRepayment,
-                              canSendReminder,
-                              reminderBusyId === loan.id || reminderBatchActive,
-                              setDetailLoan,
-                              setRepaymentLoan,
-                              downloadLoanAgreement,
-                              (resend) => void sendLoanReminder(loan, resend),
-                            )}
+                              items={loanRowActions(
+                                loan,
+                                canRecordRepayment,
+                                canSendReminder,
+                                reminderBusyId === loan.id || reminderBatchActive,
+                                setDetailLoan,
+                                setRepaymentLoan,
+                                openRecordDisbursement,
+                                downloadLoanAgreement,
+                                (resend) => void sendLoanReminder(loan, resend),
+                              )}
                           />
                         </div>
                       </div>
@@ -1496,6 +1511,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                                   reminderBatchActive,
                                 setDetailLoan,
                                 setRepaymentLoan,
+                                openRecordDisbursement,
                                 downloadLoanAgreement,
                                 (resend) => void sendLoanReminder(loan, resend),
                               )}
@@ -2727,12 +2743,88 @@ function loanIssuedCash(loan: LoanRow) {
     return Math.max(0, loan.disbursedAmount);
   }
   if (
-    loan.status === "PARTIALLY_DISBURSED" &&
+    isPartiallyDisbursedStatus(loan.status) &&
     typeof loan.pendingDisbursementAmount === "number"
   ) {
     return Math.max(0, loan.principal - loan.pendingDisbursementAmount);
   }
   return Math.max(0, loan.principal);
+}
+
+function pendingDisbursementsFromLoans(
+  loans: LoanRow[],
+  branchName: string | null = null,
+) {
+  return loans
+    .map((loan) => pendingDisbursementFromLoan(loan, branchName))
+    .filter((row): row is PendingDisbursementRow => Boolean(row))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+function pendingDisbursementFromLoan(
+  loan: LoanRow,
+  branchName: string | null = null,
+): PendingDisbursementRow | null {
+  const agreedAmount = Math.max(0, moneyNumber(loan.principal));
+  if (agreedAmount <= 0) return null;
+
+  const explicitRemaining = optionalMoneyNumber(loan.pendingDisbursementAmount);
+  const explicitDisbursed = optionalMoneyNumber(loan.disbursedAmount);
+  const partialStatus = isPartiallyDisbursedStatus(loan.status);
+  const remainingAmount =
+    explicitRemaining != null
+      ? explicitRemaining
+      : explicitDisbursed != null
+        ? agreedAmount - explicitDisbursed
+        : partialStatus
+          ? agreedAmount
+          : 0;
+
+  if (!partialStatus && remainingAmount <= 0) return null;
+
+  const safeRemaining = Math.max(0, Math.min(agreedAmount, remainingAmount));
+  if (safeRemaining <= 0) return null;
+
+  const disbursedAmount =
+    explicitDisbursed != null
+      ? Math.max(0, explicitDisbursed)
+      : Math.max(0, agreedAmount - safeRemaining);
+  const disbursementCount =
+    typeof loan.disbursementCount === "number"
+      ? Math.max(0, Math.round(loan.disbursementCount))
+      : disbursedAmount > 0
+        ? 1
+        : 0;
+
+  return {
+    loanId: loan.id,
+    applicationId: loan.applicationId ?? null,
+    customerId: loan.customerId,
+    borrowerName: loan.borrowerName,
+    phone: loan.phone,
+    branchId: loan.branchId,
+    branchName,
+    agreedAmount,
+    disbursedAmount,
+    remainingAmount: safeRemaining,
+    percentDisbursed:
+      agreedAmount > 0 ? Math.round((disbursedAmount / agreedAmount) * 100) : 0,
+    disbursementCount,
+    lastDisbursementAt: loan.disbursedAt ?? null,
+    lastDisbursementAmount: disbursedAmount > 0 ? disbursedAmount : null,
+    issuedByName: loan.officerName,
+    issuedByPublicId: loan.officerPublicId ?? null,
+    status: loan.status,
+    createdAt: loan.createdAt,
+    disbursements: [],
+  };
+}
+
+function summarizePendingDisbursements(rows: PendingDisbursementRow[]) {
+  return {
+    borrowersCount: rows.length,
+    totalRemaining: sumBy(rows, (row) => row.remainingAmount),
+  };
 }
 
 function expectedInterestForLoan(loan: LoanRow) {
@@ -2766,7 +2858,7 @@ function resolveLoanDueState(loan: LoanRow): LoanDueState {
   ) {
     return "closed";
   }
-  if (loan.status === "PARTIALLY_DISBURSED") {
+  if (isPartiallyDisbursedStatus(loan.status)) {
     return "pending_disbursement";
   }
   const overdueDays = resolveOverdueDays(loan, new Date());
@@ -2804,15 +2896,17 @@ function loanRowActions(
   reminderLocked: boolean,
   setDetailLoan: (loan: LoanRow) => void,
   setRepaymentLoan: (loan: LoanRow) => void,
+  onRecordDisbursement: (row: PendingDisbursementRow) => void,
   downloadLoanAgreement: (applicationId: string, loanId: string) => void,
   onSendReminder: (resend: boolean) => void,
 ) {
   const reminder = loan.reminder;
+  const pendingRow = pendingDisbursementFromLoan(loan);
   const canRemindLoan =
     canSendReminder &&
     loan.balance > 0 &&
     loan.status !== "CLOSED" &&
-    loan.status !== "PARTIALLY_DISBURSED" &&
+    !isPartiallyDisbursedStatus(loan.status) &&
     Boolean(loan.phone?.trim());
   const alreadySent =
     reminder?.status === "sent" || Boolean(reminder?.canResend);
@@ -2829,13 +2923,21 @@ function loanRowActions(
         if (loan.applicationId) setDetailLoan(loan);
       },
     },
+    ...(pendingRow
+      ? [
+          {
+            label: "Complete disbursement",
+            onSelect: () => onRecordDisbursement(pendingRow),
+          },
+        ]
+      : []),
     {
       label: "Record repayment",
       disabled:
         !canRecordRepayment ||
         loan.balance <= 0 ||
         loan.status === "CLOSED" ||
-        loan.status === "PARTIALLY_DISBURSED",
+        isPartiallyDisbursedStatus(loan.status),
       onSelect: () => setRepaymentLoan(loan),
     },
     {
@@ -2849,7 +2951,8 @@ function loanRowActions(
     },
     {
       label: "Loan agreement",
-      disabled: !loan.applicationId || loan.status === "PARTIALLY_DISBURSED",
+      disabled:
+        !loan.applicationId || isPartiallyDisbursedStatus(loan.status),
       onSelect: () => {
         if (loan.applicationId) {
           void downloadLoanAgreement(loan.applicationId, loan.id);
@@ -2993,10 +3096,10 @@ function LoanStatusBadge({ dueState }: { dueState: LoanDueState }) {
 }
 
 function formatLoanStatus(status: string, overdueDays?: number) {
-  const normalized = status.toUpperCase();
+  const normalized = loanStatusKey(status);
   if (normalized === "CLOSED") return "Closed";
   if (normalized === "WRITTEN_OFF") return "Written Off";
-  if (normalized === "PARTIALLY_DISBURSED") return "Partially Disbursed";
+  if (isPartiallyDisbursedStatus(status)) return "Partially Disbursed";
   if (
     normalized === "IN_ARREARS" ||
     (typeof overdueDays === "number" && overdueDays >= 1)
@@ -3013,6 +3116,32 @@ function formatLoanStatus(status: string, overdueDays?: number) {
     return "Active";
   }
   return titleCase(status.replaceAll("_", " "));
+}
+
+function isPartiallyDisbursedStatus(status: string) {
+  const normalized = loanStatusKey(status);
+  return (
+    normalized === "PARTIALLY_DISBURSED" ||
+    normalized === "PARTIAL_DISBURSED" ||
+    normalized === "PARTIALLY_DISBURSE"
+  );
+}
+
+function loanStatusKey(status: string) {
+  return status
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function optionalMoneyNumber(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return moneyNumber(value);
+}
+
+function moneyNumber(value: number) {
+  return Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
 }
 
 /** Fallback when API overdueDays is missing (legacy payloads). */
