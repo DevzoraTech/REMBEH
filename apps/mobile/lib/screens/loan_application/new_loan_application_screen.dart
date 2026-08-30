@@ -5,6 +5,8 @@ import '../../core/di/loan_application_locator.dart';
 import '../../core/network/phone_normalize.dart';
 import '../../features/agent_day/data/agent_day_status_store.dart';
 import '../../features/loan_application/domain/failures.dart';
+import '../../features/locations/data/uganda_locations_repository.dart';
+import '../../features/locations/domain/uganda_location.dart';
 import '../../services/session_store.dart';
 import '../../shared/camera_capture/camera_capture.dart';
 import '../../shared/permissions/rembeh_permission_gate.dart';
@@ -31,6 +33,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
 
   final _locator = LoanApplicationLocator.instance;
   final _dayStore = AgentDayStatusStore.instance;
+  final _locationsRepository = UgandaLocationsRepository.instance;
   final _draft = LoanApplicationDraft();
   final _surname = TextEditingController();
   final _givenNames = TextEditingController();
@@ -51,6 +54,9 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   String? _bootError;
   List<LoanProductTemplateOption> _templates = const [];
   String? _productsError;
+  UgandaLocationCatalog? _locationCatalog;
+  bool _locationsLoading = true;
+  String? _locationsError;
 
   @override
   void initState() {
@@ -66,6 +72,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     }
     _bootstrapDraft();
     _loadLoanProducts();
+    _loadLocations();
   }
 
   void _onDayStatusChanged() {
@@ -89,6 +96,52 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         _productsError = 'Could not load loan products.';
       });
     }
+  }
+
+  Future<void> _loadLocations() async {
+    try {
+      final catalog = await _locationsRepository.load();
+      if (!mounted) return;
+      setState(() {
+        _locationCatalog = catalog;
+        _locationsLoading = false;
+        _locationsError = null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _locationsLoading = false;
+        _locationsError = 'Could not load Uganda locations.';
+      });
+    }
+  }
+
+  UgandaDistrict? _selectedDistrictLocation() {
+    return _locationCatalog?.district(_draft.district);
+  }
+
+  UgandaSubCounty? _selectedSubCountyLocation() {
+    return _selectedDistrictLocation()?.subCounty(_draft.subCounty);
+  }
+
+  UgandaParish? _selectedParishLocation() {
+    return _selectedSubCountyLocation()?.parish(_draft.parish);
+  }
+
+  List<String> _districtOptions() {
+    return _locationCatalog?.districtNames ?? const [];
+  }
+
+  List<String> _subCountyOptions() {
+    return _selectedDistrictLocation()?.subCountyNames ?? const [];
+  }
+
+  List<String> _parishOptions() {
+    return _selectedSubCountyLocation()?.parishNames ?? const [];
+  }
+
+  List<String> _villageOptions() {
+    return _selectedParishLocation()?.villages ?? const [];
   }
 
   LoanProductTemplateOption? _selectedTemplate() {
@@ -1136,44 +1189,75 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         const SizedBox(height: 6),
         LoanSelectField(
           value: _draft.district,
-          hint: 'Select district',
+          hint: _locationsLoading ? 'Loading districts...' : 'Select district',
           icon: Icons.location_on_outlined,
-          options: const ['Kampala', 'Wakiso', 'Mukono', 'Jinja'],
-          onChanged: (value) => setState(() => _draft.district = value),
+          options: _districtOptions(),
+          enabled: !_locationsLoading && _districtOptions().isNotEmpty,
+          onChanged: (value) => setState(() {
+            _draft
+              ..district = value
+              ..subCounty = null
+              ..parish = null
+              ..village = null;
+          }),
         ),
+        if (_locationsError != null)
+          LoanHint(text: _locationsError!, warning: true),
         const SizedBox(height: 12),
         const LoanFieldLabel(label: 'Sub-county'),
         const SizedBox(height: 6),
         LoanSelectField(
           value: _draft.subCounty,
-          hint: 'Select sub-county',
+          hint: _draft.district == null
+              ? 'Select district first'
+              : 'Select sub-county',
           icon: Icons.location_on_outlined,
-          options: const [
-            'Kawempe Division',
-            'Nakawa Division',
-            'Makindye Division',
-            'Central Division',
-          ],
-          onChanged: (value) => setState(() => _draft.subCounty = value),
+          options: _subCountyOptions(),
+          enabled:
+              !_locationsLoading &&
+              _draft.district != null &&
+              _subCountyOptions().isNotEmpty,
+          onChanged: (value) => setState(() {
+            _draft
+              ..subCounty = value
+              ..parish = null
+              ..village = null;
+          }),
         ),
         const SizedBox(height: 12),
         const LoanFieldLabel(label: 'Parish'),
         const SizedBox(height: 6),
         LoanSelectField(
           value: _draft.parish,
-          hint: 'Select parish',
+          hint: _draft.subCounty == null
+              ? 'Select sub-county first'
+              : 'Select parish',
           icon: Icons.location_on_outlined,
-          options: const ['Bwaise Parish', 'Nakawa', 'Ntinda', 'Kisaasi'],
-          onChanged: (value) => setState(() => _draft.parish = value),
+          options: _parishOptions(),
+          enabled:
+              !_locationsLoading &&
+              _draft.subCounty != null &&
+              _parishOptions().isNotEmpty,
+          onChanged: (value) => setState(() {
+            _draft
+              ..parish = value
+              ..village = null;
+          }),
         ),
         const SizedBox(height: 12),
         const LoanFieldLabel(label: 'Village / LC1 / Zone'),
         const SizedBox(height: 6),
         LoanSelectField(
           value: _draft.village,
-          hint: 'Select village / LC1 / zone',
+          hint: _draft.parish == null
+              ? 'Select parish first'
+              : 'Select village / LC1 / zone',
           icon: Icons.location_on_outlined,
-          options: const ['Bwaise I / LC1', 'Zone 3', 'LC1 Central', 'Zone A'],
+          options: _villageOptions(),
+          enabled:
+              !_locationsLoading &&
+              _draft.parish != null &&
+              _villageOptions().isNotEmpty,
           onChanged: (value) => setState(() => _draft.village = value),
         ),
       ],

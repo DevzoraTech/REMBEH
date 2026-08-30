@@ -91,6 +91,26 @@ type LoanTemplate = {
   isActive: boolean;
 };
 
+type UgandaParish = {
+  name: string;
+  villages: string[];
+};
+
+type UgandaSubCounty = {
+  name: string;
+  parishes: UgandaParish[];
+};
+
+type UgandaDistrict = {
+  name: string;
+  subCounties: UgandaSubCounty[];
+};
+
+type UgandaLocationCatalog = {
+  country: string;
+  districts: UgandaDistrict[];
+};
+
 type FormState = {
   surname: string;
   givenNames: string;
@@ -182,6 +202,10 @@ export function LoanApplicationFormDrawer({
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [locationCatalog, setLocationCatalog] =
+    useState<UgandaLocationCatalog | null>(null);
+  const [locationsLoading, setLocationsLoading] = useState(false);
+  const [locationsError, setLocationsError] = useState<string | null>(null);
 
   const authHeader = `${tokenType} ${accessToken}`;
 
@@ -275,6 +299,36 @@ export function LoanApplicationFormDrawer({
     return () => window.clearTimeout(boot);
   }, [applicationId, loadApplication]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setLocationsLoading(true);
+    setLocationsError(null);
+
+    fetch("/data/uganda_locations.json", { cache: "force-cache" })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("Could not load Uganda locations.");
+        }
+        return (await response.json()) as UgandaLocationCatalog;
+      })
+      .then((catalog) => {
+        if (cancelled) return;
+        setLocationCatalog(catalog);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLocationsError("Could not load Uganda locations.");
+      })
+      .finally(() => {
+        if (cancelled) return;
+        setLocationsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const selectedTemplate = useMemo(
     () =>
       templates.find(
@@ -297,10 +351,73 @@ export function LoanApplicationFormDrawer({
     return map;
   }, [detail?.signatures]);
 
+  const districtOptions = useMemo(
+    () => locationCatalog?.districts.map((district) => district.name) ?? [],
+    [locationCatalog],
+  );
+
+  const selectedDistrict = useMemo(
+    () => findLocationByName(locationCatalog?.districts ?? [], form.district),
+    [form.district, locationCatalog],
+  );
+
+  const subCountyOptions = useMemo(
+    () =>
+      selectedDistrict?.subCounties.map((subCounty) => subCounty.name) ?? [],
+    [selectedDistrict],
+  );
+
+  const selectedSubCounty = useMemo(
+    () => findLocationByName(selectedDistrict?.subCounties ?? [], form.subCounty),
+    [form.subCounty, selectedDistrict],
+  );
+
+  const parishOptions = useMemo(
+    () => selectedSubCounty?.parishes.map((parish) => parish.name) ?? [],
+    [selectedSubCounty],
+  );
+
+  const selectedParish = useMemo(
+    () => findLocationByName(selectedSubCounty?.parishes ?? [], form.parish),
+    [form.parish, selectedSubCounty],
+  );
+
+  const villageOptions = useMemo(
+    () => selectedParish?.villages ?? [],
+    [selectedParish],
+  );
+
   if (!applicationId) return null;
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function chooseDistrict(value: string) {
+    setForm((current) => ({
+      ...current,
+      district: value,
+      subCounty: "",
+      parish: "",
+      village: "",
+    }));
+  }
+
+  function chooseSubCounty(value: string) {
+    setForm((current) => ({
+      ...current,
+      subCounty: value,
+      parish: "",
+      village: "",
+    }));
+  }
+
+  function chooseParish(value: string) {
+    setForm((current) => ({
+      ...current,
+      parish: value,
+      village: "",
+    }));
   }
 
   function setPrincipal(value: string) {
@@ -868,27 +985,66 @@ export function LoanApplicationFormDrawer({
             {step === "location" ? (
               <Section title="location">
                 <div className="grid gap-3 md:grid-cols-2">
-                  <Field
+                  <LocationSelect
                     label="district"
                     value={form.district}
-                    onChange={(value) => setField("district", value)}
+                    options={districtOptions}
+                    placeholder={
+                      locationsLoading ? "Loading districts..." : "Select district"
+                    }
+                    disabled={locationsLoading || districtOptions.length === 0}
+                    onChange={chooseDistrict}
                   />
-                  <Field
+                  <LocationSelect
                     label="sub-county"
                     value={form.subCounty}
-                    onChange={(value) => setField("subCounty", value)}
+                    options={subCountyOptions}
+                    placeholder={
+                      form.district ? "Select sub-county" : "Select district first"
+                    }
+                    disabled={
+                      locationsLoading ||
+                      !form.district ||
+                      subCountyOptions.length === 0
+                    }
+                    onChange={chooseSubCounty}
                   />
-                  <Field
+                  <LocationSelect
                     label="parish"
                     value={form.parish}
-                    onChange={(value) => setField("parish", value)}
+                    options={parishOptions}
+                    placeholder={
+                      form.subCounty ? "Select parish" : "Select sub-county first"
+                    }
+                    disabled={
+                      locationsLoading ||
+                      !form.subCounty ||
+                      parishOptions.length === 0
+                    }
+                    onChange={chooseParish}
                   />
-                  <Field
+                  <LocationSelect
                     label="village"
                     value={form.village}
+                    options={villageOptions}
+                    placeholder={
+                      form.parish
+                        ? "Select village / LC1 / zone"
+                        : "Select parish first"
+                    }
+                    disabled={
+                      locationsLoading ||
+                      !form.parish ||
+                      villageOptions.length === 0
+                    }
                     onChange={(value) => setField("village", value)}
                   />
                 </div>
+                {locationsError ? (
+                  <p className="mt-3 border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                    {locationsError}
+                  </p>
+                ) : null}
               </Section>
             ) : null}
 
@@ -1048,6 +1204,43 @@ function Field({
         onChange={(event) => onChange(event.target.value)}
         className="h-10 border border-[var(--line)] bg-white px-3 text-sm font-normal text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)]"
       />
+    </label>
+  );
+}
+
+function LocationSelect({
+  label,
+  value,
+  options,
+  placeholder,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  placeholder: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  const selectOptions = includeCurrentOption(options, value);
+
+  return (
+    <label className="grid gap-1 text-xs font-semibold capitalize text-slate-600">
+      {label}
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
+        className="h-10 border border-[var(--line)] bg-white px-3 text-sm font-normal text-[var(--midnight-navy)] outline-none focus:border-[var(--forest-emerald)] disabled:bg-slate-50 disabled:text-slate-400"
+      >
+        <option value="">{placeholder}</option>
+        {selectOptions.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }
@@ -1310,6 +1503,30 @@ function displayLabel(value: string) {
     .replaceAll("_", " ")
     .toLowerCase()
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function findLocationByName<T extends { name: string }>(
+  items: T[],
+  name: string,
+) {
+  const key = normalizeLocationName(name);
+  if (!key) return null;
+  return (
+    items.find((item) => normalizeLocationName(item.name) === key) ?? null
+  );
+}
+
+function includeCurrentOption(options: string[], current: string) {
+  const value = current.trim();
+  if (!value) return options;
+  const exists = options.some(
+    (option) => normalizeLocationName(option) === normalizeLocationName(value),
+  );
+  return exists ? options : [value, ...options];
+}
+
+function normalizeLocationName(value: string) {
+  return value.trim().toLowerCase();
 }
 
 function defaultSignerName(role: string, form: FormState) {

@@ -103,9 +103,19 @@ class LoanSelectField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dropdownOptions = [...options];
+    final currentValue = value?.trim();
+    if (currentValue != null &&
+        currentValue.isNotEmpty &&
+        !dropdownOptions.contains(currentValue)) {
+      dropdownOptions.insert(0, currentValue);
+    }
+
     return DropdownButtonFormField<String>(
       key: ValueKey(value ?? hint),
-      initialValue: value,
+      initialValue: currentValue != null && currentValue.isNotEmpty
+          ? currentValue
+          : null,
       isExpanded: true,
       icon: const Icon(Icons.keyboard_arrow_down, color: slateText),
       decoration: InputDecoration(
@@ -114,7 +124,7 @@ class LoanSelectField extends StatelessWidget {
         filled: true,
         fillColor: Colors.white,
       ),
-      items: options
+      items: dropdownOptions
           .map((option) => DropdownMenuItem(value: option, child: Text(option)))
           .toList(),
       onChanged: enabled ? onChanged : null,
