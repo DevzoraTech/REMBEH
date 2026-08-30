@@ -12,6 +12,8 @@ import {
   LoanApplicationMediaType,
   LoanApplicationSignerRole,
   LoanApplicationStatus,
+  LoanDisbursementSource,
+  LoanStatus,
   Prisma,
 } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
@@ -51,6 +53,7 @@ import { buildSignedLoanAgreementPdf } from './loan-agreement-pdf.builder';
 import { MediaConfirmDto, MediaPresignDto } from './dto/media-presign.dto';
 import { CreateLoanApplicationFromCustomerDto } from './dto/create-from-customer.dto';
 import { SignatureConfirmDto, SignaturePresignDto } from './dto/signature.dto';
+import { SubmitLoanApplicationDto } from './dto/submit-loan-application.dto';
 import { UpdateLoanApplicationDto } from './dto/update-loan-application.dto';
 import { VerifyApplicantDto } from './dto/verify-applicant.dto';
 import { computeLoanPricing } from '../loan-products/loan-pricing';
@@ -835,6 +838,7 @@ export class LoanApplicationsService {
   async submit(
     user: AuthenticatedUser,
     id: string,
+    dto: SubmitLoanApplicationDto = {},
   ): Promise<LoanApplicationResponseContract> {
     const application = await this.requireWritableDraft(user, id);
     await this.billingService.assertBranchSubscriptionActive(
@@ -860,18 +864,25 @@ export class LoanApplicationsService {
       );
     }
     this.assertReadyForSubmit(application);
-    await this.assertAgentFloatCanCoverLoan(user, application);
+    const disbursementPlan = await this.resolveInitialDisbursementPlan(
+      user,
+      application,
+      dto,
+    );
 
     const goLiveAt = new Date();
-    const paymentStartDate = await this.loanProducts.resolvePaymentStartDate({
-      tenantId: user.tenantId,
-      branchId: application.branchId,
-      anchorDate: goLiveAt,
-      agentPickedDate: application.paymentStartDate,
-      paymentStartPolicy: application.paymentStartPolicy,
-      paymentStartDelayDays: application.paymentStartDelayDays,
-      allowAgentDatePick: application.allowAgentDatePick ?? false,
-    });
+    const fullyDisbursed = disbursementPlan.remainingAfterThis <= 0;
+    const paymentStartDate = fullyDisbursed
+      ? await this.loanProducts.resolvePaymentStartDate({
+          tenantId: user.tenantId,
+          branchId: application.branchId,
+          anchorDate: goLiveAt,
+          agentPickedDate: application.paymentStartDate,
+          paymentStartPolicy: application.paymentStartPolicy,
+          paymentStartDelayDays: application.paymentStartDelayDays,
+          allowAgentDatePick: application.allowAgentDatePick ?? false,
+        })
+      : null;
 
     const eventPayload = this.toEventPayload({
       ...application,
@@ -888,22 +899,32 @@ export class LoanApplicationsService {
       eventPayload,
       goLiveAt,
       paymentStartDate,
+      initialDisbursementAmount: disbursementPlan.amount,
+      assignedFloatAmount: disbursementPlan.assignedFloatAmount,
+      collectedRepaymentsAmount: disbursementPlan.collectedRepaymentsAmount,
+      disbursementSource: disbursementPlan.source,
+      loanStatus: fullyDisbursed
+        ? LoanStatus.CURRENT
+        : LoanStatus.PARTIALLY_DISBURSED,
+      disbursementNote: dto.disbursementNote?.trim() || null,
     });
 
-    // Generate + store the signed agreement on the day the loan is given.
-    // Later view/download always reuse this bucket object.
-    try {
-      const generated = await this.generateAndStoreSignedAgreement(submitted);
-      submitted = generated.application;
-      this.logger.log(
-        `Loan agreement stored for ${submitted.id} at ${submitted.signedAgreementKey} (v${submitted.signedAgreementVersion}).`,
-      );
-    } catch (error) {
-      this.logger.error(
-        `Loan ${submitted.id} was issued but agreement PDF failed to store. It will be generated on first view/download.`,
-        error instanceof Error ? error.stack : error,
-      );
-      // Loan is already live; do not roll back. First download backfills the PDF.
+    if (fullyDisbursed) {
+      // Generate + store the signed agreement on the day the loan is fully given.
+      // Later view/download always reuse this bucket object.
+      try {
+        const generated = await this.generateAndStoreSignedAgreement(submitted);
+        submitted = generated.application;
+        this.logger.log(
+          `Loan agreement stored for ${submitted.id} at ${submitted.signedAgreementKey} (v${submitted.signedAgreementVersion}).`,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Loan ${submitted.id} was issued but agreement PDF failed to store. It will be generated on first view/download.`,
+          error instanceof Error ? error.stack : error,
+        );
+        // Loan is already live; do not roll back. First download backfills the PDF.
+      }
     }
 
     this.realtimeGateway.broadcastLoanApplication(
@@ -975,6 +996,185 @@ export class LoanApplicationsService {
         `Application is incomplete. Missing: ${missing.join(', ')}.`,
       );
     }
+  }
+
+  private async resolveInitialDisbursementPlan(
+    user: AuthenticatedUser,
+    application: LoanApplicationRecord,
+    dto: SubmitLoanApplicationDto,
+  ) {
+    const principal = this.decimalToNumber(application.principalAmount) ?? 0;
+    if (principal <= 0) {
+      throw new BadRequestException('Enter a valid loan amount.');
+    }
+
+    const amount = this.roundMoney(dto.initialDisbursementAmount ?? principal);
+    const collectedRepaymentsAmount = this.roundMoney(
+      dto.collectedRepaymentsAmount ?? 0,
+    );
+    const assignedFloatAmount = this.roundMoney(
+      amount - collectedRepaymentsAmount,
+    );
+
+    if (amount <= 0) {
+      throw new BadRequestException('Enter the amount given to the borrower.');
+    }
+
+    if (amount > principal) {
+      throw new BadRequestException(
+        'Amount given now cannot exceed the agreed loan amount.',
+      );
+    }
+
+    if (collectedRepaymentsAmount < 0 || collectedRepaymentsAmount > amount) {
+      throw new BadRequestException(
+        'Repayments used must be part of the amount given now.',
+      );
+    }
+
+    await this.assertDisbursementCashAvailable({
+      user,
+      application,
+      assignedFloatAmount,
+      collectedRepaymentsAmount,
+    });
+
+    return {
+      amount,
+      assignedFloatAmount,
+      collectedRepaymentsAmount,
+      source: this.disbursementSource({
+        assignedFloatAmount,
+        collectedRepaymentsAmount,
+      }),
+      remainingAfterThis: this.roundMoney(principal - amount),
+    };
+  }
+
+  private async assertDisbursementCashAvailable(input: {
+    user: AuthenticatedUser;
+    application: LoanApplicationRecord;
+    assignedFloatAmount: number;
+    collectedRepaymentsAmount: number;
+  }) {
+    const { user, application } = input;
+
+    if (user.permissions.includes(OPERATIONS_PERMISSIONS.floatManage)) {
+      return;
+    }
+
+    await this.assertAgentDisbursementCashAvailable(input);
+  }
+
+  private async assertAgentDisbursementCashAvailable(input: {
+    user: AuthenticatedUser;
+    application: LoanApplicationRecord;
+    assignedFloatAmount: number;
+    collectedRepaymentsAmount: number;
+  }) {
+    const { user, application, assignedFloatAmount, collectedRepaymentsAmount } =
+      input;
+
+    const branchId = application.branchId;
+    if (!branchId) {
+      throw new BadRequestException('Branch access is required.');
+    }
+
+    const bounds = this.currentBusinessDayBounds();
+    const operation = await this.repository.findBranchOperationForDay({
+      tenantId: application.tenantId,
+      branchId,
+      operationDate: bounds.dateOnly,
+    });
+
+    if (!operation) {
+      throw new BadRequestException(
+        'Your branch day is not open. Ask your manager to open today first.',
+      );
+    }
+
+    if (operation.status !== BranchOperationStatus.OPEN) {
+      throw new BadRequestException(
+        'Your branch day is closed. New loans cannot be issued today.',
+      );
+    }
+
+    const float = await this.repository.findAgentFloatForDay({
+      tenantId: application.tenantId,
+      branchId,
+      agentId: user.userId,
+      floatDate: bounds.dateOnly,
+    });
+
+    if (!float && assignedFloatAmount > 0) {
+      throw new BadRequestException(
+        'You need float assigned before using branch float for a loan.',
+      );
+    }
+
+    if (float?.returnedAt || float?.amountReturned != null) {
+      throw new BadRequestException(
+        'Your float has already been handed over for today.',
+      );
+    }
+
+    const [disbursed, collections] = await Promise.all([
+      this.repository.sumDisbursementsForOfficer({
+        tenantId: application.tenantId,
+        branchId,
+        officerUserId: user.userId,
+        dayStart: bounds.dayStart,
+        dayEnd: bounds.dayEnd,
+      }),
+      this.repository.sumCollectionsForOfficer({
+        tenantId: application.tenantId,
+        branchId,
+        officerUserId: user.userId,
+        dayStart: bounds.dayStart,
+        dayEnd: bounds.dayEnd,
+      }),
+    ]);
+
+    const assignedFloat = this.decimalToNumber(float?.amountGiven) ?? 0;
+    const alreadyUsedFloat =
+      this.decimalToNumber(disbursed._sum.assignedFloatAmount) ?? 0;
+    const alreadyUsedCollections =
+      this.decimalToNumber(disbursed._sum.collectedRepaymentsAmount) ?? 0;
+    const amountCollected = this.decimalToNumber(collections._sum.amount) ?? 0;
+
+    const remainingFloat = this.roundMoney(assignedFloat - alreadyUsedFloat);
+    const collectedCashAvailable = this.roundMoney(
+      amountCollected - alreadyUsedCollections,
+    );
+
+    if (assignedFloatAmount > remainingFloat) {
+      throw new BadRequestException(
+        `Loan disbursement exceeds your remaining float. Available float: UGX ${this.formatMoney(
+          remainingFloat,
+        )}.`,
+      );
+    }
+
+    if (collectedRepaymentsAmount > collectedCashAvailable) {
+      throw new BadRequestException(
+        `Repayments used exceed collections still in your hands. Available collected cash: UGX ${this.formatMoney(
+          collectedCashAvailable,
+        )}.`,
+      );
+    }
+  }
+
+  private disbursementSource(input: {
+    assignedFloatAmount: number;
+    collectedRepaymentsAmount: number;
+  }) {
+    if (input.assignedFloatAmount > 0 && input.collectedRepaymentsAmount > 0) {
+      return LoanDisbursementSource.MIXED_CASH;
+    }
+    if (input.collectedRepaymentsAmount > 0) {
+      return LoanDisbursementSource.COLLECTED_REPAYMENTS;
+    }
+    return LoanDisbursementSource.ASSIGNED_FLOAT;
   }
 
   private async assertAgentFloatCanCoverLoan(
@@ -1252,9 +1452,12 @@ export class LoanApplicationsService {
   }
 
   private loanIssuedAt(application: LoanApplicationRecord) {
+    if (application.loan?.status === LoanStatus.PARTIALLY_DISBURSED) {
+      return null;
+    }
+
     return (
       application.loan?.disbursedAt ??
-      application.loan?.approvedAt ??
       application.submittedAt ??
       null
     );

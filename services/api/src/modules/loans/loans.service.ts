@@ -1,5 +1,15 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  BranchOperationStatus,
+  LoanDisbursementSource,
+  LoanStatus,
+  Prisma,
+} from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import { computeCollectionSchedule } from '../collections/collection-schedule';
@@ -11,17 +21,27 @@ import {
 } from '../loan-products/loan-pricing';
 import { LoanRemindersService } from './loan-reminders.service';
 import {
+  LoanDisbursementContract,
   LoanListItemContract,
   LoanListResponseContract,
+  PendingDisbursementContract,
+  PendingDisbursementListResponseContract,
+  RecordLoanDisbursementResponseContract,
 } from './loans.contracts';
+import { RecordLoanDisbursementDto } from './dto/record-loan-disbursement.dto';
 import { LoanListRecord, LoansRepository } from './loans.repository';
+import { LoanProductsService } from '../loan-products/loan-products.service';
+import { LOAN_PERMISSIONS } from './loans.permissions';
 
 @Injectable()
 export class LoansService {
+  private readonly businessUtcOffsetMinutes = 180;
+
   constructor(
     private readonly loansRepository: LoansRepository,
     private readonly loanApplicationsService: LoanApplicationsService,
     private readonly loanRemindersService: LoanRemindersService,
+    private readonly loanProductsService: LoanProductsService,
   ) {}
 
   async listLoans(user: AuthenticatedUser): Promise<LoanListResponseContract> {
@@ -75,6 +95,165 @@ export class LoansService {
     return this.loanApplicationsService.createDraftFromCustomer(user, dto);
   }
 
+  async listPendingDisbursements(
+    user: AuthenticatedUser,
+  ): Promise<PendingDisbursementListResponseContract> {
+    if (!user.tenantId?.trim()) {
+      throw new ForbiddenException('Account access is required.');
+    }
+
+    const canSeeAllBranches = user.permissions.includes(
+      BRANCH_PERMISSIONS.create,
+    );
+
+    if (!canSeeAllBranches && !user.branchId) {
+      return {
+        summary: {
+          borrowersCount: 0,
+          totalRemaining: 0,
+        },
+        pendingDisbursements: [],
+      };
+    }
+
+    const loans = await this.loansRepository.listPendingDisbursements({
+      tenantId: user.tenantId,
+      branchId: canSeeAllBranches ? null : user.branchId,
+      officerUserId: canSeeAllBranches ? null : user.userId,
+    });
+
+    const pendingDisbursements = loans
+      .map((loan) => this.toPendingContract(loan))
+      .filter((row) => row.remainingAmount > 0);
+
+    return {
+      summary: {
+        borrowersCount: pendingDisbursements.length,
+        totalRemaining: this.roundMoney(
+          pendingDisbursements.reduce(
+            (total, row) => total + row.remainingAmount,
+            0,
+          ),
+        ),
+      },
+      pendingDisbursements,
+    };
+  }
+
+  async recordDisbursement(
+    user: AuthenticatedUser,
+    loanId: string,
+    dto: RecordLoanDisbursementDto,
+  ): Promise<RecordLoanDisbursementResponseContract> {
+    if (!user.tenantId?.trim()) {
+      throw new ForbiddenException('Account access is required.');
+    }
+
+    const canSeeAllBranches = user.permissions.includes(
+      BRANCH_PERMISSIONS.create,
+    );
+
+    const loan = await this.loansRepository.findByIdForScope({
+      tenantId: user.tenantId,
+      loanId,
+      branchId: canSeeAllBranches ? null : user.branchId,
+    });
+
+    if (!loan) {
+      throw new NotFoundException('Loan was not found.');
+    }
+
+    if (loan.status !== LoanStatus.PARTIALLY_DISBURSED) {
+      throw new BadRequestException(
+        'This loan is not waiting for further disbursement.',
+      );
+    }
+
+    const issuedByUserId = dto.issuedByUserId?.trim() || user.userId;
+    const isRecordingForSelf = issuedByUserId === user.userId;
+    const canManageBranch = user.permissions.includes(LOAN_PERMISSIONS.update);
+
+    if (!isRecordingForSelf && !canManageBranch) {
+      throw new ForbiddenException(
+        'You cannot record a disbursement for another staff member.',
+      );
+    }
+
+    if (!canSeeAllBranches && loan.application?.officer.id !== user.userId) {
+      if (!canManageBranch) {
+        throw new ForbiddenException(
+          'You cannot complete another staff member’s disbursement.',
+        );
+      }
+    }
+
+    if (issuedByUserId !== user.userId) {
+      const staff = await this.loansRepository.findAssignableStaff({
+        tenantId: user.tenantId,
+        branchId: loan.branchId,
+        userId: issuedByUserId,
+      });
+      if (!staff) {
+        throw new BadRequestException(
+          'The selected staff member cannot issue cash for this branch.',
+        );
+      }
+    }
+
+    const disbursedAt = dto.disbursedAt
+      ? new Date(dto.disbursedAt)
+      : new Date();
+
+    if (Number.isNaN(disbursedAt.getTime())) {
+      throw new BadRequestException('Invalid disbursement date.');
+    }
+
+    const plan = await this.resolveDisbursementPlan({
+      user,
+      loan,
+      dto,
+      issuedByUserId,
+      disbursedAt,
+    });
+
+    const activateLoan = plan.remainingAfterThis <= 0;
+    const paymentStartDate = activateLoan
+      ? await this.loanProductsService.resolvePaymentStartDate({
+          tenantId: user.tenantId,
+          branchId: loan.branchId,
+          anchorDate: disbursedAt,
+          agentPickedDate: null,
+          paymentStartPolicy: loan.application?.paymentStartPolicy ?? null,
+          paymentStartDelayDays: loan.application?.paymentStartDelayDays ?? null,
+          allowAgentDatePick: false,
+        })
+      : null;
+
+    const saved = await this.loansRepository.recordDisbursement({
+      tenantId: user.tenantId,
+      branchId: loan.branchId,
+      loanId: loan.id,
+      recordedByUserId: issuedByUserId,
+      amount: plan.amount,
+      assignedFloatAmount: plan.assignedFloatAmount,
+      collectedRepaymentsAmount: plan.collectedRepaymentsAmount,
+      source: plan.source,
+      disbursedAt,
+      note: dto.note?.trim() || null,
+      localId: dto.localId?.trim() || null,
+      activateLoan,
+      paymentStartDate,
+    });
+
+    const pending = this.toPendingContract(saved.loan);
+
+    return {
+      pending: pending.remainingAmount > 0 ? pending : null,
+      loan: this.toContract(saved.loan),
+      disbursement: this.toDisbursementContract(saved.disbursement),
+    };
+  }
+
   private toContract(
     loan: LoanListRecord,
   ): Omit<LoanListItemContract, 'reminder'> {
@@ -97,6 +276,10 @@ export class LoansService {
     );
     const processingFee = this.roundMoney(
       this.decimalToNumber(loan.application?.processingFee) ?? 0,
+    );
+    const disbursedAmount = this.totalDisbursed(loan);
+    const pendingDisbursementAmount = this.roundMoney(
+      Math.max(0, principal - disbursedAmount),
     );
     const interestRatePercent =
       this.decimalToNumber(loan.application?.interestRatePercent) ?? 0;
@@ -146,6 +329,46 @@ export class LoansService {
       Math.max(0, baseRepayable - principal),
     );
 
+    if (loan.status === LoanStatus.PARTIALLY_DISBURSED) {
+      return {
+        id: loan.id,
+        applicationId: loan.application?.id ?? null,
+        customerId: loan.customerId,
+        borrowerName: loan.customer.fullName,
+        phone: loan.customer.phone,
+        nationalId: loan.customer.nationalId,
+        loanTypeName: this.loanTypeName(loan),
+        status: loan.status,
+        principal,
+        disbursedAmount,
+        pendingDisbursementAmount,
+        disbursementCount: loan.disbursements.length,
+        balance,
+        paidAmount,
+        openingBalance,
+        finesTotal,
+        totalRepayable,
+        expectedInterest,
+        processingFee,
+        installmentAmount: 0,
+        overdueDays: 0,
+        nextDueLabel: 'Pending disbursement',
+        nextDueIsToday: false,
+        nextDueDate: null,
+        currency: loan.currency,
+        officerName: loan.application?.officer.displayName ?? null,
+        officerPublicId: loan.application?.officer.publicId ?? null,
+        branchId: loan.branchId,
+        paymentStartDate: null,
+        durationDays,
+        repaymentFrequency: loan.application?.repaymentFrequency ?? 'DAILY',
+        dueDate: null,
+        createdAt: loan.createdAt.toISOString(),
+        disbursedAt: loan.disbursedAt?.toISOString() ?? null,
+        updatedAt: loan.updatedAt.toISOString(),
+      };
+    }
+
     const dueDate = new Date(schedule.maturityDate);
 
     const overdueDays = this.scheduleOverdueDays({
@@ -178,6 +401,9 @@ export class LoansService {
       loanTypeName: this.loanTypeName(loan),
       status: loan.status,
       principal,
+      disbursedAmount,
+      pendingDisbursementAmount,
+      disbursementCount: loan.disbursements.length,
       balance,
       paidAmount,
       openingBalance,
@@ -202,6 +428,269 @@ export class LoansService {
       disbursedAt: loan.disbursedAt?.toISOString() ?? null,
       updatedAt: loan.updatedAt.toISOString(),
     };
+  }
+
+  private toPendingContract(
+    loan: LoanListRecord,
+  ): PendingDisbursementContract {
+    const agreedAmount = this.decimalToNumber(loan.principal) ?? 0;
+    const disbursedAmount = this.totalDisbursed(loan);
+    const remainingAmount = this.roundMoney(
+      Math.max(0, agreedAmount - disbursedAmount),
+    );
+    const lastDisbursement = loan.disbursements.at(-1) ?? null;
+
+    return {
+      loanId: loan.id,
+      applicationId: loan.application?.id ?? null,
+      customerId: loan.customerId,
+      borrowerName: loan.customer.fullName,
+      phone: loan.customer.phone,
+      branchId: loan.branchId,
+      branchName: loan.branch?.name ?? null,
+      agreedAmount,
+      disbursedAmount,
+      remainingAmount,
+      percentDisbursed:
+        agreedAmount > 0
+          ? Math.min(100, Math.round((disbursedAmount / agreedAmount) * 100))
+          : 0,
+      disbursementCount: loan.disbursements.length,
+      lastDisbursementAt: lastDisbursement?.disbursedAt.toISOString() ?? null,
+      lastDisbursementAmount: lastDisbursement
+        ? (this.decimalToNumber(lastDisbursement.amount) ?? 0)
+        : null,
+      issuedByName: loan.application?.officer.displayName ?? null,
+      issuedByPublicId: loan.application?.officer.publicId ?? null,
+      status: loan.status,
+      createdAt: loan.createdAt.toISOString(),
+      disbursements: loan.disbursements.map((item) =>
+        this.toDisbursementContract(item),
+      ),
+    };
+  }
+
+  private toDisbursementContract(
+    disbursement: LoanListRecord['disbursements'][number],
+  ): LoanDisbursementContract {
+    return {
+      id: disbursement.id,
+      loanId: disbursement.loanId,
+      amount: this.decimalToNumber(disbursement.amount) ?? 0,
+      assignedFloatAmount:
+        this.decimalToNumber(disbursement.assignedFloatAmount) ?? 0,
+      collectedRepaymentsAmount:
+        this.decimalToNumber(disbursement.collectedRepaymentsAmount) ?? 0,
+      source: disbursement.source,
+      disbursedAt: disbursement.disbursedAt.toISOString(),
+      note: disbursement.note,
+      recordedByName: disbursement.recordedBy.displayName,
+      recordedByPublicId: disbursement.recordedBy.publicId ?? null,
+      createdAt: disbursement.createdAt.toISOString(),
+    };
+  }
+
+  private async resolveDisbursementPlan(input: {
+    user: AuthenticatedUser;
+    loan: LoanListRecord;
+    dto: RecordLoanDisbursementDto;
+    issuedByUserId: string;
+    disbursedAt: Date;
+  }) {
+    const agreedAmount = this.decimalToNumber(input.loan.principal) ?? 0;
+    const disbursedAmount = this.totalDisbursed(input.loan);
+    const remainingBefore = this.roundMoney(
+      Math.max(0, agreedAmount - disbursedAmount),
+    );
+    const amount = this.roundMoney(input.dto.amount);
+    const collectedRepaymentsAmount = this.roundMoney(
+      input.dto.collectedRepaymentsAmount ?? 0,
+    );
+    const assignedFloatAmount = this.roundMoney(
+      amount - collectedRepaymentsAmount,
+    );
+
+    if (amount <= 0) {
+      throw new BadRequestException('Enter the amount given to the borrower.');
+    }
+
+    if (amount > remainingBefore) {
+      throw new BadRequestException(
+        `Amount exceeds the remaining disbursement. Maximum: UGX ${this.formatMoney(
+          remainingBefore,
+        )}.`,
+      );
+    }
+
+    if (collectedRepaymentsAmount < 0 || collectedRepaymentsAmount > amount) {
+      throw new BadRequestException(
+        'Repayments used must be part of the amount given now.',
+      );
+    }
+
+    await this.assertDisbursementCashAvailable({
+      user: input.user,
+      loan: input.loan,
+      issuedByUserId: input.issuedByUserId,
+      assignedFloatAmount,
+      collectedRepaymentsAmount,
+      disbursedAt: input.disbursedAt,
+    });
+
+    return {
+      amount,
+      assignedFloatAmount,
+      collectedRepaymentsAmount,
+      source: this.disbursementSource({
+        assignedFloatAmount,
+        collectedRepaymentsAmount,
+      }),
+      remainingAfterThis: this.roundMoney(remainingBefore - amount),
+    };
+  }
+
+  private async assertDisbursementCashAvailable(input: {
+    user: AuthenticatedUser;
+    loan: LoanListRecord;
+    issuedByUserId: string;
+    assignedFloatAmount: number;
+    collectedRepaymentsAmount: number;
+    disbursedAt: Date;
+  }) {
+    const bounds = this.currentBusinessDayBounds(input.disbursedAt);
+    const operation = await this.loansRepository.findBranchOperationForDay({
+      tenantId: input.user.tenantId,
+      branchId: input.loan.branchId,
+      operationDate: bounds.dateOnly,
+    });
+
+    if (!operation) {
+      throw new BadRequestException(
+        'This branch day is not open. Open the day before recording a disbursement.',
+      );
+    }
+
+    if (operation.status !== BranchOperationStatus.OPEN) {
+      throw new BadRequestException(
+        'This branch day is closed. New disbursements cannot be recorded.',
+      );
+    }
+
+    const [float, disbursed, collections] = await Promise.all([
+      this.loansRepository.findFloatForRecorder({
+        tenantId: input.user.tenantId,
+        branchId: input.loan.branchId,
+        recordedByUserId: input.issuedByUserId,
+        floatDate: bounds.dateOnly,
+      }),
+      this.loansRepository.sumDisbursementsForRecorder({
+        tenantId: input.user.tenantId,
+        branchId: input.loan.branchId,
+        recordedByUserId: input.issuedByUserId,
+        dayStart: bounds.dayStart,
+        dayEnd: bounds.dayEnd,
+      }),
+      this.loansRepository.sumCollectionsForRecorder({
+        tenantId: input.user.tenantId,
+        branchId: input.loan.branchId,
+        recordedByUserId: input.issuedByUserId,
+        dayStart: bounds.dayStart,
+        dayEnd: bounds.dayEnd,
+      }),
+    ]);
+
+    if (!float && input.assignedFloatAmount > 0) {
+      throw new BadRequestException(
+        'This staff member needs assigned float before using branch float for disbursement.',
+      );
+    }
+
+    if (float?.returnedAt || float?.amountReturned != null) {
+      throw new BadRequestException(
+        'This staff member has already handed over today’s float.',
+      );
+    }
+
+    const assignedFloat = this.decimalToNumber(float?.amountGiven) ?? 0;
+    const returnedFloat = this.decimalToNumber(float?.amountReturned) ?? 0;
+    const alreadyUsedFloat =
+      this.decimalToNumber(disbursed._sum.assignedFloatAmount) ?? 0;
+    const alreadyUsedCollections =
+      this.decimalToNumber(disbursed._sum.collectedRepaymentsAmount) ?? 0;
+    const amountCollected = this.decimalToNumber(collections._sum.amount) ?? 0;
+
+    const remainingFloat = this.roundMoney(
+      assignedFloat - returnedFloat - alreadyUsedFloat,
+    );
+    const collectedCashAvailable = this.roundMoney(
+      amountCollected - alreadyUsedCollections,
+    );
+
+    if (input.assignedFloatAmount > remainingFloat) {
+      throw new BadRequestException(
+        `Disbursement exceeds the staff member’s remaining float. Available float: UGX ${this.formatMoney(
+          Math.max(0, remainingFloat),
+        )}.`,
+      );
+    }
+
+    if (input.collectedRepaymentsAmount > collectedCashAvailable) {
+      throw new BadRequestException(
+        `Repayments used exceed collections still with this staff member. Available collected cash: UGX ${this.formatMoney(
+          Math.max(0, collectedCashAvailable),
+        )}.`,
+      );
+    }
+  }
+
+  private disbursementSource(input: {
+    assignedFloatAmount: number;
+    collectedRepaymentsAmount: number;
+  }): LoanDisbursementSource {
+    if (input.assignedFloatAmount > 0 && input.collectedRepaymentsAmount > 0) {
+      return LoanDisbursementSource.MIXED_CASH;
+    }
+    if (input.collectedRepaymentsAmount > 0) {
+      return LoanDisbursementSource.COLLECTED_REPAYMENTS;
+    }
+    return LoanDisbursementSource.ASSIGNED_FLOAT;
+  }
+
+  private totalDisbursed(loan: LoanListRecord) {
+    return this.roundMoney(
+      loan.disbursements.reduce(
+        (total, item) => total + (this.decimalToNumber(item.amount) ?? 0),
+        0,
+      ),
+    );
+  }
+
+  private currentBusinessDayBounds(anchor: Date) {
+    const shifted = new Date(
+      anchor.getTime() + this.businessUtcOffsetMinutes * 60_000,
+    );
+    const dateOnly = new Date(
+      Date.UTC(
+        shifted.getUTCFullYear(),
+        shifted.getUTCMonth(),
+        shifted.getUTCDate(),
+      ),
+    );
+    const dayStart = new Date(
+      dateOnly.getTime() - this.businessUtcOffsetMinutes * 60_000,
+    );
+
+    return {
+      dateOnly,
+      dayStart,
+      dayEnd: new Date(dayStart.getTime() + 86_400_000 - 1),
+    };
+  }
+
+  private formatMoney(value: number) {
+    return new Intl.NumberFormat('en-UG', {
+      maximumFractionDigits: 0,
+    }).format(Math.max(0, Math.round(value)));
   }
 
   private loanTypeName(loan: LoanListRecord) {

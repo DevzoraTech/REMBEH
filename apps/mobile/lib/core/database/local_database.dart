@@ -36,6 +36,7 @@ class LocalDatabase {
       onUpgrade: _onUpgrade,
       onOpen: (db) async {
         await _onCreate(db, _currentVersion);
+        await _ensureLoanColumns(db);
         await _ensureLoanProductColumns(db);
         await _ensureLoanApplicationColumns(db);
       },
@@ -80,6 +81,9 @@ class LocalDatabase {
         maturity_date INTEGER,
         outstanding_balance REAL,
         total_paid REAL,
+        disbursed_amount REAL DEFAULT 0,
+        pending_disbursement_amount REAL DEFAULT 0,
+        disbursement_count INTEGER DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         FOREIGN KEY (customer_id) REFERENCES customers(id),
@@ -160,12 +164,15 @@ class LocalDatabase {
         applicant_phone TEXT NOT NULL,
         applicant_village TEXT,
         requested_amount REAL NOT NULL,
+        initial_disbursement_amount REAL,
+        collected_repayments_amount REAL DEFAULT 0,
         processing_fee REAL DEFAULT 0,
         loan_product_id TEXT NOT NULL,
         guarantor_name TEXT,
         guarantor_phone TEXT,
         guarantor_nin TEXT,
         business_description TEXT,
+        disbursement_note TEXT,
         created_at INTEGER NOT NULL,
         submitted_at INTEGER,
         synced_at INTEGER,
@@ -445,6 +452,26 @@ class LocalDatabase {
     await addColumn('description', 'description TEXT');
   }
 
+  Future<void> _ensureLoanColumns(Database db) async {
+    final columns = await db.rawQuery("PRAGMA table_info('loans')");
+    final existing = columns.map((column) => column['name'] as String).toSet();
+
+    Future<void> addColumn(String name, String definition) async {
+      if (existing.contains(name)) return;
+      await db.execute('ALTER TABLE loans ADD COLUMN $definition');
+    }
+
+    await addColumn('disbursed_amount', 'disbursed_amount REAL DEFAULT 0');
+    await addColumn(
+      'pending_disbursement_amount',
+      'pending_disbursement_amount REAL DEFAULT 0',
+    );
+    await addColumn(
+      'disbursement_count',
+      'disbursement_count INTEGER DEFAULT 0',
+    );
+  }
+
   Future<void> _ensureLoanApplicationColumns(Database db) async {
     final columns = await db.rawQuery("PRAGMA table_info('loan_applications')");
     final existing = columns.map((column) => column['name'] as String).toSet();
@@ -455,6 +482,15 @@ class LocalDatabase {
     }
 
     await addColumn('processing_fee', 'processing_fee REAL DEFAULT 0');
+    await addColumn(
+      'initial_disbursement_amount',
+      'initial_disbursement_amount REAL',
+    );
+    await addColumn(
+      'collected_repayments_amount',
+      'collected_repayments_amount REAL DEFAULT 0',
+    );
+    await addColumn('disbursement_note', 'disbursement_note TEXT');
   }
 
   /// Get sync metadata value

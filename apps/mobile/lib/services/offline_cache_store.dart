@@ -57,5 +57,7 @@ class OfflineCacheKeys {
       'loans_${tenantId}_$branchId';
   static String agentDay(String tenantId, String branchId) =>
       'agent_day_${tenantId}_$branchId';
+  static String pendingDisbursements(String tenantId, String branchId) =>
+      'pending_disbursements_${tenantId}_$branchId';
   static String pendingWrites(String tenantId) => 'pending_writes_$tenantId';
 }

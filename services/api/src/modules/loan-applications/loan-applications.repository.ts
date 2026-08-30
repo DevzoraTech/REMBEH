@@ -3,6 +3,7 @@ import {
   LoanApplicationMediaType,
   LoanApplicationSignerRole,
   LoanApplicationStatus,
+  LoanDisbursementSource,
   LoanStatus,
   Prisma,
 } from '@prisma/client';
@@ -37,6 +38,12 @@ export const loanApplicationInclude = {
       balance: true,
       approvedAt: true,
       disbursedAt: true,
+      disbursements: {
+        select: {
+          amount: true,
+          disbursedAt: true,
+        },
+      },
     },
   },
 } satisfies Prisma.LoanApplicationInclude;
@@ -329,6 +336,54 @@ export class LoanApplicationsRepository {
     });
   }
 
+  sumDisbursementsForOfficer(input: {
+    tenantId: string;
+    branchId: string;
+    officerUserId: string;
+    dayStart: Date;
+    dayEnd: Date;
+  }) {
+    return this.prisma.loanDisbursement.aggregate({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        recordedByUserId: input.officerUserId,
+        disbursedAt: {
+          gte: input.dayStart,
+          lte: input.dayEnd,
+        },
+      },
+      _sum: {
+        amount: true,
+        assignedFloatAmount: true,
+        collectedRepaymentsAmount: true,
+      },
+      _count: { _all: true },
+    });
+  }
+
+  sumCollectionsForOfficer(input: {
+    tenantId: string;
+    branchId: string;
+    officerUserId: string;
+    dayStart: Date;
+    dayEnd: Date;
+  }) {
+    return this.prisma.repayment.aggregate({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        recordedByUserId: input.officerUserId,
+        paidAt: {
+          gte: input.dayStart,
+          lte: input.dayEnd,
+        },
+      },
+      _sum: { amount: true },
+      _count: { _all: true },
+    });
+  }
+
   upsertGuarantor(input: {
     applicationId: string;
     fullName?: string | null;
@@ -451,7 +506,13 @@ export class LoanApplicationsRepository {
     currency: string;
     eventPayload: LoanApplicationEventPayload;
     goLiveAt: Date;
-    paymentStartDate: Date;
+    paymentStartDate: Date | null;
+    initialDisbursementAmount: number;
+    assignedFloatAmount: number;
+    collectedRepaymentsAmount: number;
+    disbursementSource: LoanDisbursementSource;
+    loanStatus: LoanStatus;
+    disbursementNote: string | null;
   }) {
     return this.prisma.$transaction(async (tx) => {
       const fullName = [
@@ -522,10 +583,32 @@ export class LoanApplicationsRepository {
           principal,
           balance,
           currency: input.currency,
-          status: LoanStatus.CURRENT,
+          status: input.loanStatus,
           approvedAt: input.goLiveAt,
-          disbursedAt: input.goLiveAt,
+          disbursedAt:
+            input.loanStatus === LoanStatus.CURRENT ? input.goLiveAt : null,
           paymentStartDate: input.paymentStartDate,
+        },
+      });
+
+      await tx.loanDisbursement.create({
+        data: {
+          tenantId: input.application.tenantId,
+          branchId: input.application.branchId,
+          loanId: loan.id,
+          recordedByUserId: input.actorUserId,
+          amount: new Prisma.Decimal(
+            input.initialDisbursementAmount.toFixed(2),
+          ),
+          assignedFloatAmount: new Prisma.Decimal(
+            input.assignedFloatAmount.toFixed(2),
+          ),
+          collectedRepaymentsAmount: new Prisma.Decimal(
+            input.collectedRepaymentsAmount.toFixed(2),
+          ),
+          source: input.disbursementSource,
+          disbursedAt: input.goLiveAt,
+          note: input.disbursementNote,
         },
       });
 

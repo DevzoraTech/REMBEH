@@ -13,12 +13,15 @@ class LoanApplicationLocal {
   final String applicantPhone;
   final String? applicantVillage;
   final double requestedAmount;
+  final double? initialDisbursementAmount;
+  final double collectedRepaymentsAmount;
   final double processingFee;
   final String loanProductId;
   final String? guarantorName;
   final String? guarantorPhone;
   final String? guarantorNin;
   final String? businessDescription;
+  final String? disbursementNote;
   final DateTime createdAt;
   final DateTime? submittedAt;
   final DateTime? syncedAt;
@@ -37,12 +40,15 @@ class LoanApplicationLocal {
     required this.applicantPhone,
     this.applicantVillage,
     required this.requestedAmount,
+    this.initialDisbursementAmount,
+    this.collectedRepaymentsAmount = 0,
     required this.processingFee,
     required this.loanProductId,
     this.guarantorName,
     this.guarantorPhone,
     this.guarantorNin,
     this.businessDescription,
+    this.disbursementNote,
     required this.createdAt,
     this.submittedAt,
     this.syncedAt,
@@ -76,12 +82,17 @@ class LoanApplicationLocal {
       applicantPhone: map['applicant_phone'] as String,
       applicantVillage: map['applicant_village'] as String?,
       requestedAmount: _double(map['requested_amount']),
+      initialDisbursementAmount: map['initial_disbursement_amount'] == null
+          ? null
+          : _double(map['initial_disbursement_amount']),
+      collectedRepaymentsAmount: _double(map['collected_repayments_amount']),
       processingFee: _double(map['processing_fee']),
       loanProductId: map['loan_product_id'] as String,
       guarantorName: map['guarantor_name'] as String?,
       guarantorPhone: map['guarantor_phone'] as String?,
       guarantorNin: map['guarantor_nin'] as String?,
       businessDescription: map['business_description'] as String?,
+      disbursementNote: map['disbursement_note'] as String?,
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int),
       submittedAt: map['submitted_at'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['submitted_at'] as int)
@@ -108,12 +119,15 @@ class LoanApplicationLocal {
       'applicant_phone': applicantPhone,
       'applicant_village': applicantVillage,
       'requested_amount': requestedAmount,
+      'initial_disbursement_amount': initialDisbursementAmount,
+      'collected_repayments_amount': collectedRepaymentsAmount,
       'processing_fee': processingFee,
       'loan_product_id': loanProductId,
       'guarantor_name': guarantorName,
       'guarantor_phone': guarantorPhone,
       'guarantor_nin': guarantorNin,
       'business_description': businessDescription,
+      'disbursement_note': disbursementNote,
       'created_at': createdAt.millisecondsSinceEpoch,
       'submitted_at': submittedAt?.millisecondsSinceEpoch,
       'synced_at': syncedAt?.millisecondsSinceEpoch,
@@ -141,12 +155,15 @@ class LoanApplicationLocal {
       applicantPhone: applicantPhone,
       applicantVillage: applicantVillage,
       requestedAmount: requestedAmount,
+      initialDisbursementAmount: initialDisbursementAmount,
+      collectedRepaymentsAmount: collectedRepaymentsAmount,
       processingFee: processingFee,
       loanProductId: loanProductId,
       guarantorName: guarantorName,
       guarantorPhone: guarantorPhone,
       guarantorNin: guarantorNin,
       businessDescription: businessDescription,
+      disbursementNote: disbursementNote,
       createdAt: createdAt,
       submittedAt: submittedAt ?? this.submittedAt,
       syncedAt: syncedAt ?? this.syncedAt,

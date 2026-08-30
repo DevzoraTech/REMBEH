@@ -116,7 +116,7 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
     // Home only previews the first 2 records.
     // Everything else remains available through View all.
     final visibleAttentionItems = widget.attentionItems
-        .take(2)
+        .take(3)
         .toList(growable: false);
 
     final visibleRecentActivities = widget.recentActivities

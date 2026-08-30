@@ -227,6 +227,34 @@ export class AgentsRepository {
     });
   }
 
+  sumLoanDisbursements(input: {
+    tenantId: string;
+    agentId: string;
+    from?: Date;
+    to?: Date;
+  }) {
+    return this.prisma.loanDisbursement.aggregate({
+      where: {
+        tenantId: input.tenantId,
+        recordedByUserId: input.agentId,
+        ...(input.from || input.to
+          ? {
+              disbursedAt: {
+                ...(input.from ? { gte: input.from } : {}),
+                ...(input.to ? { lte: input.to } : {}),
+              },
+            }
+          : {}),
+      },
+      _sum: {
+        amount: true,
+        assignedFloatAmount: true,
+        collectedRepaymentsAmount: true,
+      },
+      _count: { _all: true },
+    });
+  }
+
   listApplications(input: {
     tenantId: string;
     agentId: string;

@@ -67,6 +67,8 @@ export class AgentsService {
       repaymentsLifetime,
       appsToday,
       appsLifetime,
+      disbursementsToday,
+      disbursementsLifetime,
       floatsToday,
       lastActiveByAgent,
     ] = await Promise.all([
@@ -74,6 +76,8 @@ export class AgentsService {
       this.groupRepayments(scope.tenantId, agentIds),
       this.groupApplications(scope.tenantId, agentIds, dayStart, dayEnd),
       this.groupApplications(scope.tenantId, agentIds),
+      this.groupDisbursements(scope.tenantId, agentIds, dayStart, dayEnd),
+      this.groupDisbursements(scope.tenantId, agentIds),
       this.prisma.agentDailyFloat.findMany({
         where: {
           tenantId: scope.tenantId,
@@ -103,6 +107,14 @@ export class AgentsService {
         };
         const todayApp = appsToday.get(agent.id) ?? { count: 0, amount: 0 };
         const lifeApp = appsLifetime.get(agent.id) ?? { count: 0, amount: 0 };
+        const todayDisbursement = disbursementsToday.get(agent.id) ?? {
+          count: 0,
+          amount: 0,
+        };
+        const lifeDisbursement = disbursementsLifetime.get(agent.id) ?? {
+          count: 0,
+          amount: 0,
+        };
         const lastActiveAt = lastActiveByAgent.get(agent.id) ?? null;
 
         return {
@@ -123,9 +135,9 @@ export class AgentsService {
           applicationsToday: todayApp.count,
           applicationsLifetime: lifeApp.count,
           amountCollectedLifetime: lifeRepay.amount,
-          amountDisbursedLifetime: lifeApp.amount,
+          amountDisbursedLifetime: lifeDisbursement.amount,
           amountCollectedToday: todayRepay.amount,
-          amountDisbursedToday: todayApp.amount,
+          amountDisbursedToday: todayDisbursement.amount,
           floatToday: floatByAgent.get(agent.id) ?? null,
         };
       }),
@@ -165,6 +177,8 @@ export class AgentsService {
       repayLife,
       appsToday,
       appsLife,
+      disbursedToday,
+      disbursedLife,
       floatRow,
       latestSession,
       lastActiveMap,
@@ -189,6 +203,16 @@ export class AgentsService {
         tenantId: scope.tenantId,
         agentId,
       }),
+      this.repository.sumLoanDisbursements({
+        tenantId: scope.tenantId,
+        agentId,
+        from: dayStart,
+        to: dayEnd,
+      }),
+      this.repository.sumLoanDisbursements({
+        tenantId: scope.tenantId,
+        agentId,
+      }),
       this.repository.findFloatForDay({
         tenantId: scope.tenantId,
         agentId,
@@ -203,7 +227,7 @@ export class AgentsService {
 
     const amountGiven = this.decimalToNumber(floatRow?.amountGiven) ?? 0;
     const amountDisbursed =
-      this.decimalToNumber(appsToday._sum.principalAmount) ?? 0;
+      this.decimalToNumber(disbursedToday._sum.amount) ?? 0;
     const amountCollected = this.decimalToNumber(repayToday._sum.amount) ?? 0;
     const expectedCash = this.roundMoney(
       amountGiven - amountDisbursed + amountCollected,
@@ -244,7 +268,7 @@ export class AgentsService {
         amountCollectedLifetime:
           this.decimalToNumber(repayLife._sum.amount) ?? 0,
         amountDisbursedLifetime:
-          this.decimalToNumber(appsLife._sum.principalAmount) ?? 0,
+          this.decimalToNumber(disbursedLife._sum.amount) ?? 0,
       },
     };
   }
@@ -665,8 +689,8 @@ export class AgentsService {
         throw error;
       });
 
-    const [appsToday, repayToday] = await Promise.all([
-      this.repository.sumApplicationPrincipal({
+    const [disbursedToday, repayToday] = await Promise.all([
+      this.repository.sumLoanDisbursements({
         tenantId: scope.tenantId,
         agentId,
         from: dayStart,
@@ -682,7 +706,7 @@ export class AgentsService {
 
     const amountGiven = this.decimalToNumber(amount) ?? 0;
     const amountDisbursed =
-      this.decimalToNumber(appsToday._sum.principalAmount) ?? 0;
+      this.decimalToNumber(disbursedToday._sum.amount) ?? 0;
     const amountCollected = this.decimalToNumber(repayToday._sum.amount) ?? 0;
 
     if (agent.branchId) {
@@ -758,8 +782,8 @@ export class AgentsService {
       notes: dto.notes?.trim() || null,
     });
 
-    const [appsToday, repayToday] = await Promise.all([
-      this.repository.sumApplicationPrincipal({
+    const [disbursedToday, repayToday] = await Promise.all([
+      this.repository.sumLoanDisbursements({
         tenantId: scope.tenantId,
         agentId,
         from: dayStart,
@@ -775,7 +799,7 @@ export class AgentsService {
 
     const amountGiven = this.decimalToNumber(floatRow.amountGiven) ?? 0;
     const amountDisbursed =
-      this.decimalToNumber(appsToday._sum.principalAmount) ?? 0;
+      this.decimalToNumber(disbursedToday._sum.amount) ?? 0;
     const amountCollected = this.decimalToNumber(repayToday._sum.amount) ?? 0;
 
     if (agent.branchId) {
@@ -902,7 +926,46 @@ export class AgentsService {
     );
   }
 
-  /** Latest repayment collection or loan application (submitted) per agent. */
+  private async groupDisbursements(
+    tenantId: string,
+    agentIds: string[],
+    from?: Date,
+    to?: Date,
+  ) {
+    if (agentIds.length === 0) {
+      return new Map<string, { count: number; amount: number }>();
+    }
+
+    const rows = await this.prisma.loanDisbursement.groupBy({
+      by: ['recordedByUserId'],
+      where: {
+        tenantId,
+        recordedByUserId: { in: agentIds },
+        ...(from || to
+          ? {
+              disbursedAt: {
+                ...(from ? { gte: from } : {}),
+                ...(to ? { lte: to } : {}),
+              },
+            }
+          : {}),
+      },
+      _sum: { amount: true },
+      _count: { _all: true },
+    });
+
+    return new Map(
+      rows.map((row) => [
+        row.recordedByUserId,
+        {
+          count: row._count._all,
+          amount: this.decimalToNumber(row._sum.amount) ?? 0,
+        },
+      ]),
+    );
+  }
+
+  /** Latest repayment collection, loan application, or disbursement per staff. */
   private async latestActivityByAgent(
     tenantId: string,
     agentIds: string[],
@@ -910,7 +973,8 @@ export class AgentsService {
     const result = new Map<string, Date>();
     if (agentIds.length === 0) return result;
 
-    const [repaymentRows, applicationRows] = await Promise.all([
+    const [repaymentRows, applicationRows, disbursementRows] =
+      await Promise.all([
       this.prisma.repayment.groupBy({
         by: ['recordedByUserId'],
         where: {
@@ -928,6 +992,14 @@ export class AgentsService {
         },
         _max: { submittedAt: true },
       }),
+      this.prisma.loanDisbursement.groupBy({
+        by: ['recordedByUserId'],
+        where: {
+          tenantId,
+          recordedByUserId: { in: agentIds },
+        },
+        _max: { disbursedAt: true },
+      }),
     ]);
 
     const consider = (agentId: string, at: Date | null | undefined) => {
@@ -944,6 +1016,10 @@ export class AgentsService {
 
     for (const row of applicationRows) {
       consider(row.officerUserId, row._max.submittedAt);
+    }
+
+    for (const row of disbursementRows) {
+      consider(row.recordedByUserId, row._max.disbursedAt);
     }
 
     return result;

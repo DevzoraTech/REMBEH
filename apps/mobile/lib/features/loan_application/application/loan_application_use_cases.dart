@@ -90,7 +90,19 @@ class UploadLoanSignatureUseCase {
 class SubmitLoanApplicationUseCase {
   SubmitLoanApplicationUseCase(this._repository);
   final LoanApplicationRepository _repository;
-  Future<LoanApplication> call(String id) => _repository.submit(id);
+  Future<LoanApplication> call(
+    String id, {
+    double? initialDisbursementAmount,
+    double collectedRepaymentsAmount = 0,
+    String? disbursementNote,
+  }) {
+    return _repository.submit(
+      id,
+      initialDisbursementAmount: initialDisbursementAmount,
+      collectedRepaymentsAmount: collectedRepaymentsAmount,
+      disbursementNote: disbursementNote,
+    );
+  }
 }
 
 class ListLoanApplicationsUseCase {

@@ -188,10 +188,30 @@ class OfflineCapableLoanApplicationRepository
   }
 
   @override
-  Future<LoanApplication> submit(String id) async {
+  Future<LoanApplication> submit(
+    String id, {
+    double? initialDisbursementAmount,
+    double collectedRepaymentsAmount = 0,
+    String? disbursementNote,
+  }) async {
     final draft = _drafts[id];
     if (draft == null) {
-      return _remote.submit(id);
+      return _remote.submit(
+        id,
+        initialDisbursementAmount: initialDisbursementAmount,
+        collectedRepaymentsAmount: collectedRepaymentsAmount,
+        disbursementNote: disbursementNote,
+      );
+    }
+
+    if (initialDisbursementAmount != null) {
+      draft.data['initialDisbursementAmount'] = initialDisbursementAmount;
+    }
+    if (collectedRepaymentsAmount > 0) {
+      draft.data['collectedRepaymentsAmount'] = collectedRepaymentsAmount;
+    }
+    if (disbursementNote != null && disbursementNote.trim().isNotEmpty) {
+      draft.data['disbursementNote'] = disbursementNote.trim();
     }
 
     await _persistLocalSubmission(draft);
@@ -232,6 +252,11 @@ class OfflineCapableLoanApplicationRepository
     }
 
     final principal = _double(draft.data['principalAmount']);
+    final initialDisbursement = _double(
+      draft.data['initialDisbursementAmount'],
+    );
+    final collectedRepayments =
+        _double(draft.data['collectedRepaymentsAmount']) ?? 0;
     final processingFee = _double(draft.data['processingFee']) ?? 0;
     final productId = _string(draft.data['loanProductTemplateId']);
     final phone = _string(draft.data['phone']);
@@ -265,11 +290,14 @@ class OfflineCapableLoanApplicationRepository
         applicantPhone: phone,
         applicantVillage: _string(draft.data['village']),
         requestedAmount: principal,
+        initialDisbursementAmount: initialDisbursement,
+        collectedRepaymentsAmount: collectedRepayments,
         processingFee: processingFee,
         loanProductId: productId,
         guarantorName: _string(guarantorMap['fullName']),
         guarantorPhone: _string(guarantorMap['phone']),
         businessDescription: _string(draft.data['collateralType']),
+        disbursementNote: _string(draft.data['disbursementNote']),
         createdAt: draft.createdAt,
       ),
     );

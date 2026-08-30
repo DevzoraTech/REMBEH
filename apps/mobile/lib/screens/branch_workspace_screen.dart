@@ -27,6 +27,7 @@ import '../features/workspace/presentation/widgets/branch_header.dart';
 import '../features/workspace/presentation/widgets/workspace_bottom_navigation.dart';
 import '../features/agents/presentation/screens/agents_screen.dart';
 import '../models/field_records.dart';
+import '../models/pending_disbursement.dart';
 import '../services/api_client.dart';
 import '../services/auth_service.dart';
 import '../services/network_status_store.dart';
@@ -46,6 +47,7 @@ import 'home/needs_attention_section.dart';
 import 'home/recent_activity_list.dart';
 import 'loan_application/new_loan_application_screen.dart';
 import 'login_screen.dart';
+import 'pending_disbursements_screen.dart';
 import 'records/records_tab.dart';
 import 'register_customer_screen.dart';
 import 'search/search_tab.dart';
@@ -85,6 +87,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   List<Map<String, dynamic>> _repayments = const [];
   List<Map<String, dynamic>> _reports = const [];
   List<Map<String, dynamic>> _shortages = const [];
+  List<PendingDisbursement> _pendingDisbursements = const [];
 
   bool _loading = true;
   bool _saving = false;
@@ -471,6 +474,8 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     var repayments = cached.repayments ?? _repayments;
     var reports = cached.reports ?? _reports;
     var shortages = cached.shortages ?? _shortages;
+    var pendingDisbursements =
+        cached.pendingDisbursements ?? _pendingDisbursements;
     var summary = cached.summary ?? _collectionSummary;
 
     Future<T?> optional<T>(Future<T> Function() loader) async {
@@ -518,6 +523,11 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           branchId: session.branchId,
         ),
       ),
+
+      if (session.hasPermission('loan.read'))
+        optional(() => _api.listPendingDisbursements(session))
+      else
+        Future<Object?>.value(null),
     ]);
 
     if (results[0] is List) {
@@ -550,6 +560,10 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           .toList();
     }
 
+    if (results[6] is PendingDisbursementsResponse) {
+      pendingDisbursements = (results[6] as PendingDisbursementsResponse).items;
+    }
+
     if (!mounted) {
       return;
     }
@@ -561,6 +575,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         repayments: repayments,
         reports: reports,
         shortages: shortages,
+        pendingDisbursements: pendingDisbursements,
         summary: summary,
       ),
     );
@@ -572,6 +587,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       _collectionSummary = summary;
       _reports = reports;
       _shortages = shortages;
+      _pendingDisbursements = pendingDisbursements;
     });
   }
 
@@ -642,6 +658,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     required List<Map<String, dynamic>> repayments,
     required List<Map<String, dynamic>> reports,
     required List<Map<String, dynamic>> shortages,
+    required List<PendingDisbursement> pendingDisbursements,
     required Map<String, dynamic>? summary,
   }) async {
     try {
@@ -650,6 +667,10 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       await _offlineCache.putJson(_managerCacheKey('repayments'), repayments);
       await _offlineCache.putJson(_managerCacheKey('reports'), reports);
       await _offlineCache.putJson(_managerCacheKey('shortages'), shortages);
+      await _offlineCache.putJson(
+        _managerCacheKey('pendingDisbursements'),
+        pendingDisbursements.map(_pendingDisbursementToJson).toList(),
+      );
       if (summary != null) {
         await _offlineCache.putJson(_managerCacheKey('summary'), summary);
       }
@@ -665,6 +686,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       _offlineCache.getPayload(_managerCacheKey('repayments')),
       _offlineCache.getPayload(_managerCacheKey('reports')),
       _offlineCache.getPayload(_managerCacheKey('shortages')),
+      _offlineCache.getPayload(_managerCacheKey('pendingDisbursements')),
       _offlineCache.getPayload(_managerCacheKey('summary')),
     ]);
 
@@ -674,7 +696,10 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       repayments: _mapListPayload(payloads[2]),
       reports: _mapListPayload(payloads[3]),
       shortages: _mapListPayload(payloads[4]),
-      summary: _mapPayload(payloads[5]),
+      pendingDisbursements: (_mapListPayload(payloads[5]) ?? const [])
+          .map(PendingDisbursement.fromJson)
+          .toList(growable: false),
+      summary: _mapPayload(payloads[6]),
     );
   }
 
@@ -946,6 +971,21 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     await _loadManagementData();
   }
 
+  Future<void> _openPendingDisbursements() async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => PendingDisbursementsScreen(
+          session: widget.session,
+          initialItems: _pendingDisbursements,
+        ),
+      ),
+    );
+
+    if (mounted && changed == true) {
+      await _loadManagementData();
+    }
+  }
+
   void _openBranchDetails() {
     Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -964,6 +1004,27 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
   List<AttentionItem> _buildAttentionItems() {
     final items = <AttentionItem>[];
+
+    if (_pendingDisbursements.isNotEmpty) {
+      items.add(
+        AttentionItem(
+          icon: Icons.account_balance_wallet_outlined,
+          iconColor: const Color(0xFFE11D2E),
+          iconBackgroundColor: const Color(0xFFFFEAED),
+          backgroundColor: const Color(0xFFFFEAED),
+          borderColor: const Color(0xFFFFCAD1),
+          title: 'Pending disbursements',
+          subtitle:
+              '${_pendingDisbursements.length} borrower'
+              '${_pendingDisbursements.length == 1 ? '' : 's'} '
+              'have not received their full loans',
+          count: '${_pendingDisbursements.length}',
+          onTap: () {
+            unawaited(_openPendingDisbursements());
+          },
+        ),
+      );
+    }
 
     final overdueLoans = _loans.where(_loanNeedsAttention).length;
 
@@ -2837,6 +2898,7 @@ class _ManagementSnapshot {
     this.repayments,
     this.reports,
     this.shortages,
+    this.pendingDisbursements,
     this.summary,
   });
 
@@ -2845,6 +2907,7 @@ class _ManagementSnapshot {
   final List<Map<String, dynamic>>? repayments;
   final List<Map<String, dynamic>>? reports;
   final List<Map<String, dynamic>>? shortages;
+  final List<PendingDisbursement>? pendingDisbursements;
   final Map<String, dynamic>? summary;
 }
 
@@ -3078,4 +3141,8 @@ num _firstAvailableMoney(Map<String, dynamic> data, List<String> keys) {
   }
 
   return 0;
+}
+
+Map<String, dynamic> _pendingDisbursementToJson(PendingDisbursement item) {
+  return item.toJson();
 }

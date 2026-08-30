@@ -38,7 +38,12 @@ abstract class LoanApplicationRepository {
     bool createNewVersion = false,
   });
 
-  Future<LoanApplication> submit(String id);
+  Future<LoanApplication> submit(
+    String id, {
+    double? initialDisbursementAmount,
+    double collectedRepaymentsAmount = 0,
+    String? disbursementNote,
+  });
 
   Future<List<LoanApplicationListItem>> listApplications();
 }

@@ -115,6 +115,14 @@ class LoanApplicationsRepository {
       'applicantPhone': application.applicantPhone,
       'applicantVillage': application.applicantVillage,
       'requestedAmount': application.requestedAmount,
+      if (application.initialDisbursementAmount != null)
+        'initialDisbursementAmount': application.initialDisbursementAmount,
+      if (application.collectedRepaymentsAmount > 0)
+        'collectedRepaymentsAmount': application.collectedRepaymentsAmount,
+      if (application.initialDisbursementAmount != null)
+        'initialDisbursementLocalId': '${application.localId}-initial-cash',
+      if (application.disbursementNote?.trim().isNotEmpty == true)
+        'disbursementNote': application.disbursementNote!.trim(),
       'processingFee': application.processingFee,
       'loanProductId': application.loanProductId,
       'guarantorName': application.guarantorName,

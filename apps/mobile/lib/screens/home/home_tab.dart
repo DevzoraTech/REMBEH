@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../features/applications_list/data/applications_live_store.dart';
@@ -6,12 +8,16 @@ import '../../features/marketing/presentation/widgets/mobile_marketing_banner.da
 import '../../features/repayment/data/repayments_live_store.dart';
 import '../../models/agent_day_status.dart';
 import '../../models/field_records.dart';
+import '../../models/pending_disbursement.dart';
+import '../../services/api_client.dart';
+import '../../services/offline_cache_store.dart';
 import '../../services/session_store.dart';
 import '../../theme.dart';
 import '../../utils/greeting.dart';
 import '../../utils/money.dart';
 import '../../widgets/client_details_sheet.dart';
 import '../loan_application/new_loan_application_screen.dart';
+import '../pending_disbursements_screen.dart';
 
 class HomeTab extends StatefulWidget {
   const HomeTab({
@@ -45,7 +51,11 @@ class HomeTab extends StatefulWidget {
 
 class _HomeTabState extends State<HomeTab> {
   final _store = RepaymentsLiveStore.instance;
+  final _sessionStore = SessionStore();
+  final _offlineCache = OfflineCacheStore.instance;
+  late final ApiClient _api = ApiClient(_sessionStore);
   late HomeSummary _summary;
+  List<PendingDisbursement> _pendingDisbursements = const [];
 
   @override
   void initState() {
@@ -57,6 +67,7 @@ class _HomeTabState extends State<HomeTab> {
     ApplicationsLiveStore.instance
       ..addListener(_onChanged)
       ..start(widget.session);
+    unawaited(_loadPendingDisbursements());
   }
 
   @override
@@ -97,6 +108,7 @@ class _HomeTabState extends State<HomeTab> {
       _store.refresh(),
       ApplicationsLiveStore.instance.refresh(),
       widget.onRefreshDayStatus(),
+      _loadPendingDisbursements(),
     ]);
     if (!mounted) return;
     setState(() => _summary = _buildSummary());
@@ -112,6 +124,59 @@ class _HomeTabState extends State<HomeTab> {
       await ApplicationsLiveStore.instance.refresh();
       if (!mounted) return;
       setState(() => _summary = _buildSummary());
+    }
+  }
+
+  Future<void> _loadPendingDisbursements() async {
+    if (!widget.session.hasPermission('loan.read')) {
+      return;
+    }
+    final cacheKey = OfflineCacheKeys.pendingDisbursements(
+      widget.session.tenantId ?? 'tenant',
+      widget.session.branchId ?? 'branch',
+    );
+    final cached = await _offlineCache.getPayload(cacheKey);
+    final cachedItems = (cached as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(PendingDisbursement.fromJson)
+        .toList(growable: false);
+    if (cachedItems.isNotEmpty && mounted) {
+      setState(() {
+        _pendingDisbursements = cachedItems;
+      });
+    }
+
+    try {
+      final response = await _api.listPendingDisbursements(widget.session);
+      if (!mounted) return;
+      await _offlineCache.putJson(
+        cacheKey,
+        response.items.map((item) => item.toJson()).toList(),
+      );
+      setState(() {
+        _pendingDisbursements = response.items;
+      });
+    } catch (_) {
+      // The rest of the field workspace can continue from cached live stores.
+    }
+  }
+
+  Future<void> _openPendingDisbursements() async {
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => PendingDisbursementsScreen(
+          session: widget.session,
+          initialItems: _pendingDisbursements,
+        ),
+      ),
+    );
+    if (mounted && changed == true) {
+      await Future.wait([
+        _loadPendingDisbursements(),
+        widget.onRefreshDayStatus(),
+        ApplicationsLiveStore.instance.refresh(),
+      ]);
+      if (mounted) setState(() => _summary = _buildSummary());
     }
   }
 
@@ -347,6 +412,13 @@ class _HomeTabState extends State<HomeTab> {
               ),
             ),
             const SizedBox(height: 18),
+            if (_pendingDisbursements.isNotEmpty) ...[
+              _PendingDisbursementHomeTile(
+                items: _pendingDisbursements,
+                onTap: _openPendingDisbursements,
+              ),
+              const SizedBox(height: 18),
+            ],
             Row(
               children: [
                 Expanded(
@@ -475,6 +547,94 @@ class _HomeProfileAvatar extends StatelessWidget {
           .toUpperCase();
     }
     return ('${parts.first[0]}${parts.last[0]}').toUpperCase();
+  }
+}
+
+class _PendingDisbursementHomeTile extends StatelessWidget {
+  const _PendingDisbursementHomeTile({
+    required this.items,
+    required this.onTap,
+  });
+
+  final List<PendingDisbursement> items;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = items.fold<int>(0, (sum, item) => sum + item.remainingAmount);
+
+    return Material(
+      color: const Color(0xFFFFEAED),
+      borderRadius: rembehBorderRadius(rembehRadiusLg),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: rembehBorderRadius(rembehRadiusLg),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFFFFCAD1)),
+            borderRadius: rembehBorderRadius(rembehRadiusLg),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFD9DF),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.account_balance_wallet_outlined,
+                  color: Color(0xFFE11D2E),
+                  size: 25,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Pending Disbursements',
+                      style: TextStyle(
+                        color: midnightNavy,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '${items.length} borrower${items.length == 1 ? '' : 's'} have not received their full loans',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: midnightNavy,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                'UGX ${formatMoney(total)}',
+                style: const TextStyle(
+                  color: Color(0xFFE11D2E),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(width: 4),
+              const Icon(Icons.chevron_right, color: midnightNavy),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

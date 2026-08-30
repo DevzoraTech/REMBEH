@@ -4,8 +4,11 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 
 import '../config.dart';
+import '../core/database/models/pending_operation.dart';
+import '../core/database/repositories/pending_operations_repository.dart';
 import '../features/marketing/domain/models/mobile_marketing_campaign.dart';
 import '../models/agent_day_status.dart';
+import '../models/pending_disbursement.dart';
 import '../utils/account_access.dart';
 import '../utils/friendly_errors.dart';
 import 'device_identity.dart';
@@ -184,6 +187,64 @@ class ApiClient {
     }
     final loans = body['loans'] as List<dynamic>? ?? const [];
     return loans.cast<Map<String, dynamic>>();
+  }
+
+  Future<PendingDisbursementsResponse> listPendingDisbursements(
+    RembehSession session,
+  ) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/loans/pending-disbursements');
+    final response = await http.get(uri, headers: _authHeaders(session));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+    return PendingDisbursementsResponse.fromJson(body);
+  }
+
+  Future<Map<String, dynamic>> recordLoanDisbursement({
+    required RembehSession session,
+    required String loanId,
+    required num amount,
+    num collectedRepaymentsAmount = 0,
+    String? issuedByUserId,
+    String? note,
+    String? localId,
+  }) async {
+    final effectiveLocalId =
+        localId ??
+        'mobile-disbursement-${DateTime.now().microsecondsSinceEpoch}';
+    final body = {
+      'loanId': loanId,
+      'amount': amount,
+      'collectedRepaymentsAmount': collectedRepaymentsAmount,
+      'localId': effectiveLocalId,
+      'disbursedAt': DateTime.now().toUtc().toIso8601String(),
+      if (issuedByUserId != null && issuedByUserId.trim().isNotEmpty)
+        'issuedByUserId': issuedByUserId.trim(),
+      if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+    };
+
+    try {
+      return await _postJson(
+        session: session,
+        path: '/loans/$loanId/disbursements',
+        body: body,
+      );
+    } on ApiException {
+      rethrow;
+    } catch (_) {
+      NetworkStatusStore.instance.markOffline();
+      await PendingOperationsRepository().insert(
+        PendingOperation(
+          operationType: OperationType.loanDisbursementCreate,
+          localEntityId: effectiveLocalId,
+          payload: jsonEncode(body),
+          createdAt: DateTime.now(),
+          status: OperationStatus.pending,
+        ),
+      );
+      return {'queued': true, 'localId': effectiveLocalId};
+    }
   }
 
   Future<Map<String, dynamic>> getCollectionSummary(

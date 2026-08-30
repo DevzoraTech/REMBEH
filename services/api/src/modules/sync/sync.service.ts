@@ -5,13 +5,14 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { LoanDisbursementSource, LoanStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import {
   computeProcessingFeeAmount,
   termToDurationDays,
 } from '../loan-products/loan-term';
+import { LoanProductsService } from '../loan-products/loan-products.service';
 import { OperationDto } from './dto/upload-queue.dto';
 import { SYNC_PERMISSIONS } from './sync.permissions';
 
@@ -38,7 +39,10 @@ export interface FailedOperation {
 export class SyncService implements OnModuleInit {
   private readonly logger = new Logger(SyncService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly loanProductsService: LoanProductsService,
+  ) {}
 
   async onModuleInit() {
     try {
@@ -188,12 +192,14 @@ export class SyncService implements OnModuleInit {
           orderBy: { updatedAt: 'desc' },
         }),
 
-        // Active and overdue loans in this branch
+        // Active, overdue, and partially disbursed loans in this branch
         this.prisma.loan.findMany({
           where: {
             tenantId,
             ...branchWhere,
-            status: { in: ['CURRENT', 'IN_ARREARS', 'DISBURSED'] },
+            status: {
+              in: ['CURRENT', 'IN_ARREARS', 'DISBURSED', 'PARTIALLY_DISBURSED'],
+            },
             ...incrementalWhere,
           },
           select: {
@@ -217,6 +223,13 @@ export class SyncService implements OnModuleInit {
                 interestRatePercent: true,
                 durationDays: true,
               },
+            },
+            disbursements: {
+              select: {
+                amount: true,
+                disbursedAt: true,
+              },
+              orderBy: { disbursedAt: 'asc' },
             },
           },
           orderBy: { updatedAt: 'desc' },
@@ -372,13 +385,27 @@ export class SyncService implements OnModuleInit {
       updatedAt: r.updatedAt,
     }));
 
+    const loansFormatted = loans.map((loan) => {
+      const disbursedAmount = loan.disbursements.reduce(
+        (sum, disbursement) => sum + Number(disbursement.amount.toString()),
+        0,
+      );
+      const principal = Number(loan.principal.toString());
+      return {
+        ...loan,
+        disbursedAmount,
+        pendingDisbursementAmount: Math.max(0, principal - disbursedAmount),
+        disbursementCount: loan.disbursements.length,
+      };
+    });
+
     const snapshot = {
       version: new Date().toISOString(),
       timestamp: new Date().toISOString(),
       isIncremental,
       data: {
         customers,
-        loans,
+        loans: loansFormatted,
         loanProducts,
         agents: agentsFormatted,
         branches,
@@ -394,7 +421,7 @@ export class SyncService implements OnModuleInit {
     };
 
     this.logger.log(
-      `Snapshot generated: ${customers.length} customers, ${loans.length} loans, ${loanProducts.length} products`,
+      `Snapshot generated: ${customers.length} customers, ${loansFormatted.length} loans, ${loanProducts.length} products`,
     );
 
     return snapshot;
@@ -503,6 +530,12 @@ export class SyncService implements OnModuleInit {
     });
     if (repayment) return repayment;
 
+    const disbursement = await this.prisma.loanDisbursement.findFirst({
+      where: { localId },
+      select: { id: true },
+    });
+    if (disbursement) return disbursement;
+
     return null;
   }
 
@@ -533,6 +566,19 @@ export class SyncService implements OnModuleInit {
           branchId!,
           userId,
           operation.localId,
+          operation.payload,
+        );
+
+      case 'LOAN_DISBURSEMENT_CREATE':
+        if (!branchId) {
+          throw new BadRequestException('Branch ID is required.');
+        }
+        return await this.createLoanDisbursement(
+          tenantId,
+          branchId,
+          userId,
+          operation.localId,
+          operation.createdAt,
           operation.payload,
         );
 
@@ -682,6 +728,150 @@ export class SyncService implements OnModuleInit {
     return { id: application.id };
   }
 
+  private async createLoanDisbursement(
+    tenantId: string,
+    branchId: string,
+    userId: string,
+    localId: string,
+    operationCreatedAt: string,
+    payload: any,
+  ) {
+    const loanId = String(payload.loanId ?? '').trim();
+    const amount = this.parseMoney(payload.amount);
+    const collectedRepaymentsAmount = this.parseMoney(
+      payload.collectedRepaymentsAmount ?? 0,
+    );
+    const assignedFloatAmount = amount - collectedRepaymentsAmount;
+    const disbursedAt = payload.disbursedAt
+      ? new Date(payload.disbursedAt)
+      : new Date(operationCreatedAt);
+
+    if (!loanId) {
+      throw new BadRequestException('Loan ID is required.');
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new BadRequestException('Disbursement amount is required.');
+    }
+    if (
+      !Number.isFinite(collectedRepaymentsAmount) ||
+      collectedRepaymentsAmount < 0 ||
+      collectedRepaymentsAmount > amount
+    ) {
+      throw new BadRequestException(
+        'Repayments used must be part of the amount given now.',
+      );
+    }
+    if (!Number.isFinite(assignedFloatAmount) || assignedFloatAmount < 0) {
+      throw new BadRequestException('Invalid disbursement funding split.');
+    }
+    if (Number.isNaN(disbursedAt.getTime())) {
+      throw new BadRequestException('Invalid disbursement date.');
+    }
+
+    const loan = await this.prisma.loan.findFirst({
+      where: {
+        id: loanId,
+        tenantId,
+        branchId,
+        status: LoanStatus.PARTIALLY_DISBURSED,
+      },
+      select: {
+        id: true,
+        principal: true,
+        application: {
+          select: {
+            paymentStartPolicy: true,
+            paymentStartDelayDays: true,
+            allowAgentDatePick: true,
+          },
+        },
+        disbursements: {
+          select: { amount: true },
+        },
+      },
+    });
+
+    if (!loan) {
+      throw new BadRequestException(
+        'This loan is not waiting for further disbursement.',
+      );
+    }
+
+    const alreadyDisbursed = loan.disbursements.reduce(
+      (sum, row) => sum + Number(row.amount.toString()),
+      0,
+    );
+    const principal = Number(loan.principal.toString());
+    const remaining = Math.max(0, principal - alreadyDisbursed);
+
+    if (amount > remaining) {
+      throw new BadRequestException(
+        `Amount exceeds the remaining disbursement. Maximum: UGX ${this.formatMoney(
+          remaining,
+        )}.`,
+      );
+    }
+
+    const activateLoan = Math.max(0, remaining - amount) <= 0;
+    const paymentStartDate = activateLoan
+      ? await this.loanProductsService.resolvePaymentStartDate({
+          tenantId,
+          branchId,
+          anchorDate: disbursedAt,
+          agentPickedDate: null,
+          paymentStartPolicy: loan.application?.paymentStartPolicy ?? null,
+          paymentStartDelayDays:
+            loan.application?.paymentStartDelayDays ?? null,
+          allowAgentDatePick: loan.application?.allowAgentDatePick ?? false,
+        })
+      : null;
+
+    const saved = await this.prisma.$transaction(async (tx) => {
+      const disbursement = await tx.loanDisbursement.create({
+        data: {
+          localId,
+          tenantId,
+          branchId,
+          loanId,
+          recordedByUserId: userId,
+          amount: new Prisma.Decimal(amount.toFixed(2)),
+          assignedFloatAmount: new Prisma.Decimal(
+            assignedFloatAmount.toFixed(2),
+          ),
+          collectedRepaymentsAmount: new Prisma.Decimal(
+            collectedRepaymentsAmount.toFixed(2),
+          ),
+          source: this.disbursementSource({
+            assignedFloatAmount,
+            collectedRepaymentsAmount,
+          }),
+          disbursedAt,
+          note:
+            typeof payload.note === 'string' && payload.note.trim()
+              ? payload.note.trim()
+              : null,
+        },
+      });
+
+      await tx.loan.update({
+        where: { id: loanId },
+        data: activateLoan
+          ? {
+              status: LoanStatus.CURRENT,
+              disbursedAt,
+              paymentStartDate,
+            }
+          : {
+              updatedAt: new Date(),
+            },
+      });
+
+      return disbursement;
+    });
+
+    return { id: saved.id };
+  }
+
   private parseMoney(value: unknown): number {
     if (typeof value === 'number') return value;
     return Number(
@@ -689,6 +879,23 @@ export class SyncService implements OnModuleInit {
         .replace(/,/g, '')
         .trim(),
     );
+  }
+
+  private formatMoney(value: number): string {
+    return Math.round(value).toLocaleString('en-US');
+  }
+
+  private disbursementSource(input: {
+    assignedFloatAmount: number;
+    collectedRepaymentsAmount: number;
+  }) {
+    if (input.assignedFloatAmount > 0 && input.collectedRepaymentsAmount > 0) {
+      return LoanDisbursementSource.MIXED_CASH;
+    }
+    if (input.collectedRepaymentsAmount > 0) {
+      return LoanDisbursementSource.COLLECTED_REPAYMENTS;
+    }
+    return LoanDisbursementSource.ASSIGNED_FLOAT;
   }
 
   /**

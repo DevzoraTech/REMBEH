@@ -70,6 +70,9 @@ export type OwnerLoan = {
   loanTypeName: string | null;
   status: string;
   principal: number;
+  disbursedAmount?: number;
+  pendingDisbursementAmount?: number;
+  disbursementCount?: number;
   balance: number;
   paidAmount: number;
   openingBalance?: number | null;

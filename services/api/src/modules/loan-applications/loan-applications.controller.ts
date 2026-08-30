@@ -19,6 +19,7 @@ import { PermissionsGuard } from '../../common/auth/permissions.guard';
 import { MediaConfirmDto, MediaPresignDto } from './dto/media-presign.dto';
 import { CreateLoanApplicationFromCustomerDto } from './dto/create-from-customer.dto';
 import { SignatureConfirmDto, SignaturePresignDto } from './dto/signature.dto';
+import { SubmitLoanApplicationDto } from './dto/submit-loan-application.dto';
 import { UpdateLoanApplicationDto } from './dto/update-loan-application.dto';
 import { VerifyApplicantDto } from './dto/verify-applicant.dto';
 import { LOAN_APPLICATION_PERMISSIONS } from './loan-applications.permissions';
@@ -147,7 +148,8 @@ export class LoanApplicationsController {
   submit(
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SubmitLoanApplicationDto,
   ) {
-    return this.loanApplicationsService.submit(user, id);
+    return this.loanApplicationsService.submit(user, id, dto);
   }
 }

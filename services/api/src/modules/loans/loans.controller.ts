@@ -17,6 +17,7 @@ import {
   BulkLoanRemindersDto,
   SendLoanReminderDto,
 } from './dto/loan-reminders.dto';
+import { RecordLoanDisbursementDto } from './dto/record-loan-disbursement.dto';
 import { LoanRemindersService } from './loan-reminders.service';
 import { LOAN_PERMISSIONS } from './loans.permissions';
 import { LoansService } from './loans.service';
@@ -33,6 +34,12 @@ export class LoansController {
   @RequirePermissions(LOAN_PERMISSIONS.read)
   listLoans(@CurrentUser() user: AuthenticatedUser) {
     return this.loansService.listLoans(user);
+  }
+
+  @Get('pending-disbursements')
+  @RequirePermissions(LOAN_PERMISSIONS.read)
+  listPendingDisbursements(@CurrentUser() user: AuthenticatedUser) {
+    return this.loansService.listPendingDisbursements(user);
   }
 
   @Post('reminders/bulk')
@@ -63,6 +70,16 @@ export class LoansController {
     return this.loanRemindersService.enqueueSingle(user, loanId, {
       resend: dto.resend,
     });
+  }
+
+  @Post(':loanId/disbursements')
+  @RequirePermissions(LOAN_PERMISSIONS.create)
+  recordDisbursement(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('loanId', ParseUUIDPipe) loanId: string,
+    @Body() dto: RecordLoanDisbursementDto,
+  ) {
+    return this.loansService.recordDisbursement(user, loanId, dto);
   }
 
   @Post('applications')

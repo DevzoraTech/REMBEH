@@ -1456,6 +1456,91 @@ export class OperationsRepository {
     });
   }
 
+  sumLoanDisbursements(input: {
+    tenantId: string;
+    branchId: string;
+    dayStart: Date;
+    dayEnd: Date;
+  }) {
+    return this.prisma.loanDisbursement.aggregate({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        disbursedAt: {
+          gte: input.dayStart,
+          lte: input.dayEnd,
+        },
+      },
+      _sum: {
+        amount: true,
+        assignedFloatAmount: true,
+        collectedRepaymentsAmount: true,
+      },
+      _count: {
+        _all: true,
+      },
+    });
+  }
+
+  sumLoanDisbursementsByAgent(input: {
+    tenantId: string;
+    branchId: string;
+    agentIds: string[];
+    dayStart: Date;
+    dayEnd: Date;
+  }) {
+    return this.prisma.loanDisbursement.groupBy({
+      by: ['recordedByUserId'],
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        recordedByUserId: {
+          in: input.agentIds,
+        },
+        disbursedAt: {
+          gte: input.dayStart,
+          lte: input.dayEnd,
+        },
+      },
+      _sum: {
+        amount: true,
+        assignedFloatAmount: true,
+        collectedRepaymentsAmount: true,
+      },
+      _count: {
+        _all: true,
+      },
+    });
+  }
+
+  sumLoanDisbursementsForAgent(input: {
+    tenantId: string;
+    branchId: string;
+    agentId: string;
+    dayStart: Date;
+    dayEnd: Date;
+  }) {
+    return this.prisma.loanDisbursement.aggregate({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        recordedByUserId: input.agentId,
+        disbursedAt: {
+          gte: input.dayStart,
+          lte: input.dayEnd,
+        },
+      },
+      _sum: {
+        amount: true,
+        assignedFloatAmount: true,
+        collectedRepaymentsAmount: true,
+      },
+      _count: {
+        _all: true,
+      },
+    });
+  }
+
   sumLoansIssuedByAgent(input: {
     tenantId: string;
     branchId: string;

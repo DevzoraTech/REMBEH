@@ -37,6 +37,8 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   final _phone = TextEditingController();
   final _nationalId = TextEditingController();
   final _principal = TextEditingController();
+  final _initialDisbursement = TextEditingController();
+  final _repaymentsUsed = TextEditingController();
   final _processingFee = TextEditingController();
   final _guarantorName = TextEditingController();
   final _guarantorPhone = TextEditingController();
@@ -129,20 +131,47 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     return double.tryParse(_principal.text.replaceAll(',', '')) ?? 0;
   }
 
+  double _currentInitialDisbursementAmount() {
+    final principal = _currentPrincipalAmount();
+    if (!_draft.partialDisbursement) return principal;
+    return double.tryParse(_initialDisbursement.text.replaceAll(',', '')) ?? 0;
+  }
+
+  double _currentRepaymentsUsedAmount() {
+    return double.tryParse(_repaymentsUsed.text.replaceAll(',', '')) ?? 0;
+  }
+
+  double _currentPendingDisbursementAmount() {
+    final remaining =
+        _currentPrincipalAmount() - _currentInitialDisbursementAmount();
+    return remaining <= 0 ? 0 : remaining;
+  }
+
   int? _remainingFloatForLoan() {
     final status = _dayStore.status;
     if (status == null) return null;
     return status.float.unusedFloat < 0 ? 0 : status.float.unusedFloat;
   }
 
-  String? _floatMessageForPrincipal(double principal) {
+  String? _floatMessageForDisbursement({
+    required double amountGivenNow,
+    required double collectedRepaymentsAmount,
+  }) {
     final status = _dayStore.status;
-    if (status == null || principal <= 0) return null;
+    if (status == null || amountGivenNow <= 0) return null;
+    if (collectedRepaymentsAmount < 0) {
+      return 'Repayments used cannot be negative.';
+    }
+    if (collectedRepaymentsAmount > amountGivenNow) {
+      return 'Repayments used cannot exceed the amount given now.';
+    }
+    final assignedFloatNeeded = amountGivenNow - collectedRepaymentsAmount;
+    if (assignedFloatNeeded <= 0) return null;
     if (status.float.amountReceived <= 0) {
       return 'You need float assigned before issuing a loan.';
     }
     final remaining = _remainingFloatForLoan() ?? 0;
-    if (principal > remaining) {
+    if (assignedFloatNeeded > remaining) {
       return 'Loan amount exceeds your remaining float. Available: UGX ${formatMoney(remaining)}.';
     }
     return null;
@@ -173,6 +202,8 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     _phone.dispose();
     _nationalId.dispose();
     _principal.dispose();
+    _initialDisbursement.dispose();
+    _repaymentsUsed.dispose();
     _processingFee.dispose();
     _guarantorName.dispose();
     _guarantorPhone.dispose();
@@ -403,27 +434,28 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       final principal =
           double.tryParse(_principal.text.replaceAll(',', '')) ?? 0;
       if (template == null) {
-        _showSnack('Select a loan type first.');
-        return;
+        throw LoanApplicationFailure('Select a loan type first.');
       }
       if (template.minLoanAmount != null &&
           principal < template.minLoanAmount!) {
-        _showSnack(
+        throw LoanApplicationFailure(
           'Principal must be at least ${template.minLoanAmount!.toStringAsFixed(0)}.',
         );
-        return;
       }
       if (template.maxLoanAmount != null &&
           principal > template.maxLoanAmount!) {
-        _showSnack(
+        throw LoanApplicationFailure(
           'Principal must be at most ${template.maxLoanAmount!.toStringAsFixed(0)}.',
         );
-        return;
       }
-      final floatMessage = _floatMessageForPrincipal(principal);
+      final amountGivenNow = _currentInitialDisbursementAmount();
+      final repaymentsUsed = _currentRepaymentsUsedAmount();
+      final floatMessage = _floatMessageForDisbursement(
+        amountGivenNow: amountGivenNow,
+        collectedRepaymentsAmount: repaymentsUsed,
+      );
       if (floatMessage != null) {
-        _showSnack(floatMessage);
-        return;
+        throw LoanApplicationFailure(floatMessage);
       }
       await _locator.saveStep(
         id: id,
@@ -437,6 +469,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       );
       _draft
         ..principalAmount = _principal.text.trim()
+        ..initialDisbursementAmount = _draft.partialDisbursement
+            ? _initialDisbursement.text.trim()
+            : _principal.text.trim()
+        ..collectedRepaymentsAmount = _repaymentsUsed.text.trim()
         ..processingFee = _processingFee.text.trim();
       return;
     }
@@ -660,11 +696,23 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
             _draft.ninFrontCaptured &&
             _draft.ninBackCaptured;
       case 3:
+        final principal = _currentPrincipalAmount();
+        final amountGivenNow = _currentInitialDisbursementAmount();
+        final repaymentsUsed = _currentRepaymentsUsedAmount();
+        final partialValid =
+            !_draft.partialDisbursement ||
+            (amountGivenNow > 0 && amountGivenNow < principal);
         return _draft.loanProductTemplateId != null &&
             _principal.text.trim().isNotEmpty &&
+            principal > 0 &&
+            partialValid &&
             _processingFee.text.trim().isNotEmpty &&
             _draft.collateralType != null &&
-            _floatMessageForPrincipal(_currentPrincipalAmount()) == null;
+            _floatMessageForDisbursement(
+                  amountGivenNow: amountGivenNow,
+                  collectedRepaymentsAmount: repaymentsUsed,
+                ) ==
+                null;
       case 4:
         return _guarantorName.text.trim().isNotEmpty &&
             _guarantorPhone.text.trim().isNotEmpty &&
@@ -702,6 +750,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     if (_step == 3) {
       _draft
         ..principalAmount = _principal.text.trim()
+        ..initialDisbursementAmount = _draft.partialDisbursement
+            ? _initialDisbursement.text.trim()
+            : _principal.text.trim()
+        ..collectedRepaymentsAmount = _repaymentsUsed.text.trim()
         ..processingFee = _processingFee.text.trim();
     }
     if (_step == 4) {
@@ -742,7 +794,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     final id = _applicationId;
     if (id == null) return;
 
-    final floatMessage = _floatMessageForPrincipal(_currentPrincipalAmount());
+    final floatMessage = _floatMessageForDisbursement(
+      amountGivenNow: _currentInitialDisbursementAmount(),
+      collectedRepaymentsAmount: _currentRepaymentsUsedAmount(),
+    );
     if (floatMessage != null) {
       _showSnack(floatMessage);
       return;
@@ -751,7 +806,14 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     setState(() => _busy = true);
     try {
       await _persistCurrentStep();
-      await _locator.submit(id);
+      await _locator.submit(
+        id,
+        initialDisbursementAmount: _currentInitialDisbursementAmount(),
+        collectedRepaymentsAmount: _currentRepaymentsUsedAmount(),
+        disbursementNote: _draft.partialDisbursement
+            ? 'Initial partial disbursement recorded from mobile.'
+            : null,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Loan application submitted.')),
@@ -1180,7 +1242,16 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         : 'Allowed: ${selected.minLoanAmount?.toStringAsFixed(0) ?? '—'} – ${selected.maxLoanAmount?.toStringAsFixed(0) ?? '—'}';
     final principal = _currentPrincipalAmount();
     final remainingFloat = _remainingFloatForLoan();
-    final floatMessage = _floatMessageForPrincipal(principal);
+    final amountGivenNow = _currentInitialDisbursementAmount();
+    final repaymentsUsed = _currentRepaymentsUsedAmount();
+    final remainingToGive = _currentPendingDisbursementAmount();
+    final assignedFloatNeeded = amountGivenNow - repaymentsUsed <= 0
+        ? 0
+        : amountGivenNow - repaymentsUsed;
+    final floatMessage = _floatMessageForDisbursement(
+      amountGivenNow: amountGivenNow,
+      collectedRepaymentsAmount: repaymentsUsed,
+    );
     final checkingFloat = remainingFloat == null && _dayStore.loading;
 
     return [
@@ -1281,12 +1352,156 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         errorText: floatMessage,
         onChanged: (_) {
           _recomputeFeeFromTemplate();
+          if (!_draft.partialDisbursement) {
+            _initialDisbursement.text = _principal.text;
+          }
           setState(() {});
         },
       ),
       if (rangeHint != null) ...[
         const SizedBox(height: 6),
         Text(rangeHint, style: const TextStyle(color: slateText, fontSize: 12)),
+      ],
+      const SizedBox(height: 12),
+      Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            setState(() {
+              _draft.partialDisbursement = !_draft.partialDisbursement;
+              if (!_draft.partialDisbursement) {
+                _initialDisbursement.text = _principal.text;
+              } else if (_initialDisbursement.text.trim().isEmpty) {
+                _initialDisbursement.clear();
+              }
+            });
+          },
+          borderRadius: rembehBorderRadius(rembehRadiusMd),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _draft.partialDisbursement
+                  ? forestEmerald.withValues(alpha: 0.07)
+                  : Colors.white,
+              border: Border.all(
+                color: _draft.partialDisbursement
+                    ? forestEmerald.withValues(alpha: 0.35)
+                    : line,
+              ),
+              borderRadius: rembehBorderRadius(rembehRadiusMd),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Checkbox(
+                  value: _draft.partialDisbursement,
+                  onChanged: (value) {
+                    setState(() {
+                      _draft.partialDisbursement = value ?? false;
+                      if (!_draft.partialDisbursement) {
+                        _initialDisbursement.text = _principal.text;
+                      }
+                    });
+                  },
+                  activeColor: forestEmerald,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Giving only part of this amount now',
+                        style: TextStyle(
+                          color: midnightNavy,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                        ),
+                      ),
+                      SizedBox(height: 3),
+                      Text(
+                        'Use this when the client will receive the remaining amount later.',
+                        style: TextStyle(
+                          color: slateText,
+                          fontSize: 12,
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.info_outline, color: forestEmerald, size: 18),
+              ],
+            ),
+          ),
+        ),
+      ),
+      if (_draft.partialDisbursement) ...[
+        const SizedBox(height: 12),
+        const LoanFieldLabel(label: 'Amount Given Now'),
+        const SizedBox(height: 6),
+        LoanTextField(
+          controller: _initialDisbursement,
+          hint: 'Enter amount given now',
+          icon: Icons.payments_outlined,
+          keyboardType: TextInputType.number,
+          onChanged: (_) => setState(() {}),
+        ),
+        if (principal > 0 && amountGivenNow >= principal) ...[
+          const SizedBox(height: 6),
+          const Text(
+            'For partial disbursement, this must be less than the full loan amount.',
+            style: TextStyle(
+              color: Color(0xFFC62828),
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+          decoration: BoxDecoration(
+            color: sage,
+            border: Border.all(color: line),
+            borderRadius: rembehBorderRadius(rembehRadiusMd),
+          ),
+          child: Text(
+            'Remaining to give: UGX ${formatMoney(remainingToGive)}',
+            style: const TextStyle(
+              color: forestEmerald,
+              fontWeight: FontWeight.w900,
+              fontSize: 14,
+            ),
+          ),
+        ),
+      ],
+      if (amountGivenNow > 0) ...[
+        const SizedBox(height: 12),
+        const LoanFieldLabel(
+          label: 'Use Collected Repayments',
+          required: false,
+        ),
+        const SizedBox(height: 6),
+        LoanTextField(
+          controller: _repaymentsUsed,
+          hint: 'Optional amount from repayments',
+          icon: Icons.savings_outlined,
+          keyboardType: TextInputType.number,
+          onChanged: (_) => setState(() {}),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          'Assigned float needed: UGX ${formatMoney(assignedFloatNeeded)}',
+          style: const TextStyle(
+            color: slateText,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ],
       if (checkingFloat || remainingFloat != null) ...[
         const SizedBox(height: 8),
@@ -1648,6 +1863,14 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   List<Widget> _stepReview() {
     final principal =
         int.tryParse(_draft.principalAmount.replaceAll(',', '')) ?? 0;
+    final initialDisbursement =
+        int.tryParse(_draft.initialDisbursementAmount.replaceAll(',', '')) ??
+        principal;
+    final repaymentCashUsed =
+        int.tryParse(_draft.collectedRepaymentsAmount.replaceAll(',', '')) ?? 0;
+    final remainingDisbursement = principal - initialDisbursement <= 0
+        ? 0
+        : principal - initialDisbursement;
     final fee = int.tryParse(_draft.processingFee.replaceAll(',', '')) ?? 0;
 
     return [
@@ -1710,6 +1933,12 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         onEdit: () => _jumpToStep(3),
         rows: [
           ('Loan Amount', formatMoney(principal)),
+          if (_draft.partialDisbursement)
+            ('Amount Given Now', formatMoney(initialDisbursement)),
+          if (_draft.partialDisbursement)
+            ('Remaining To Give', formatMoney(remainingDisbursement)),
+          if (repaymentCashUsed > 0)
+            ('Repayments Used', formatMoney(repaymentCashUsed)),
           ('Interest Rate', _draft.interestRate ?? '—'),
           ('Loan Duration', _draft.loanDurationDays ?? '—'),
           ('Loan Processing Fee', formatMoney(fee)),

@@ -124,11 +124,23 @@ class LoanApplicationApiDatasource {
     return _decodeOk(response);
   }
 
-  Future<Map<String, dynamic>> submit(String id) async {
+  Future<Map<String, dynamic>> submit(
+    String id, {
+    double? initialDisbursementAmount,
+    double collectedRepaymentsAmount = 0,
+    String? disbursementNote,
+  }) async {
     final session = await _requireSession();
     final response = await http.post(
       Uri.parse('$rembehApiBaseUrl/loan-applications/$id/submit'),
-      headers: _headers(session),
+      headers: {..._headers(session), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'initialDisbursementAmount': ?initialDisbursementAmount,
+        if (collectedRepaymentsAmount > 0)
+          'collectedRepaymentsAmount': collectedRepaymentsAmount,
+        if (disbursementNote != null && disbursementNote.trim().isNotEmpty)
+          'disbursementNote': disbursementNote.trim(),
+      }),
     );
     return _decodeOk(response);
   }

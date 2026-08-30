@@ -14,6 +14,9 @@ class LoanLocal {
   final DateTime? maturityDate;
   final double? outstandingBalance;
   final double? totalPaid;
+  final double disbursedAmount;
+  final double pendingDisbursementAmount;
+  final int disbursementCount;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -32,6 +35,9 @@ class LoanLocal {
     this.maturityDate,
     this.outstandingBalance,
     this.totalPaid,
+    this.disbursedAmount = 0,
+    this.pendingDisbursementAmount = 0,
+    this.disbursementCount = 0,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -66,6 +72,9 @@ class LoanLocal {
           : null,
       outstandingBalance: map['outstanding_balance'] as double?,
       totalPaid: map['total_paid'] as double?,
+      disbursedAmount: _double(map['disbursed_amount']),
+      pendingDisbursementAmount: _double(map['pending_disbursement_amount']),
+      disbursementCount: _int(map['disbursement_count']) ?? 0,
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updated_at'] as int),
     );
@@ -88,6 +97,9 @@ class LoanLocal {
       'maturity_date': maturityDate?.millisecondsSinceEpoch,
       'outstanding_balance': outstandingBalance,
       'total_paid': totalPaid,
+      'disbursed_amount': disbursedAmount,
+      'pending_disbursement_amount': pendingDisbursementAmount,
+      'disbursement_count': disbursementCount,
       'created_at': createdAt.millisecondsSinceEpoch,
       'updated_at': updatedAt.millisecondsSinceEpoch,
     };
@@ -99,6 +111,10 @@ class LoanLocal {
         ? json['application'] as Map<String, dynamic>
         : const <String, dynamic>{};
     final principal = _double(json['principal']);
+    final disbursed = _double(json['disbursedAmount']);
+    final double pendingDisbursement = json['pendingDisbursementAmount'] != null
+        ? _double(json['pendingDisbursementAmount'])
+        : (principal - disbursed <= 0 ? 0 : principal - disbursed).toDouble();
     final outstanding = _double(json['outstandingBalance'] ?? json['balance']);
     return LoanLocal(
       id: json['id'] as String,
@@ -130,6 +146,9 @@ class LoanLocal {
           : principal > outstanding
           ? principal - outstanding
           : 0,
+      disbursedAmount: disbursed,
+      pendingDisbursementAmount: pendingDisbursement,
+      disbursementCount: _int(json['disbursementCount']) ?? 0,
       createdAt: DateTime.parse(json['createdAt'] as String),
       updatedAt: DateTime.parse(json['updatedAt'] as String),
     );

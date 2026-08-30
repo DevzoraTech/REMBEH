@@ -5,15 +5,20 @@ import {
   ArrowDown,
   ArrowUp,
   Banknote,
+  CalendarDays,
+  CheckCircle2,
   Download,
   FileText,
+  Info,
   Loader2,
   MessageSquare,
   Percent,
   Plus,
   RefreshCw,
   Search,
+  User,
   UserRound,
+  Wallet,
   X,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -106,6 +111,66 @@ type BorrowerRow = {
   activeLoanId?: string | null;
 };
 
+type LoanDisbursementRow = {
+  id: string;
+  loanId: string;
+  amount: number;
+  assignedFloatAmount: number;
+  collectedRepaymentsAmount: number;
+  source: "ASSIGNED_FLOAT" | "COLLECTED_REPAYMENTS" | "MIXED_CASH";
+  disbursedAt: string;
+  note: string | null;
+  recordedByName: string;
+  recordedByPublicId: string | null;
+  createdAt: string;
+};
+
+type PendingDisbursementRow = {
+  loanId: string;
+  applicationId: string | null;
+  customerId: string;
+  borrowerName: string;
+  phone: string;
+  branchId: string;
+  branchName: string | null;
+  agreedAmount: number;
+  disbursedAmount: number;
+  remainingAmount: number;
+  percentDisbursed: number;
+  disbursementCount: number;
+  lastDisbursementAt: string | null;
+  lastDisbursementAmount: number | null;
+  issuedByName: string | null;
+  issuedByPublicId: string | null;
+  status: string;
+  createdAt: string;
+  disbursements: LoanDisbursementRow[];
+};
+
+type PendingDisbursementsResponse = {
+  summary?: {
+    borrowersCount: number;
+    totalRemaining: number;
+  };
+  pendingDisbursements?: PendingDisbursementRow[];
+};
+
+type DisbursementStaffOption = {
+  id: string;
+  publicId: string | null;
+  name: string;
+  email: string;
+  phone: string | null;
+  status: string;
+  roleName?: string | null;
+  floatToday?: number | null;
+};
+
+type AgentsResponse = {
+  agents?: DisbursementStaffOption[];
+  message?: string | string[];
+};
+
 const ACTIVE_STATUSES = new Set([
   "SUBMITTED",
   "APPROVED",
@@ -172,13 +237,23 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
   const isManager = mode === "manager";
   const [loans, setLoans] = useState<LoanRow[]>([]);
   const [borrowers, setBorrowers] = useState<BorrowerRow[]>([]);
+  const [pendingDisbursements, setPendingDisbursements] = useState<
+    PendingDisbursementRow[]
+  >([]);
+  const [pendingSummary, setPendingSummary] = useState({
+    borrowersCount: 0,
+    totalRemaining: 0,
+  });
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<PortfolioFilter>("all");
+  const [pendingSearch, setPendingSearch] = useState("");
+  const [pendingPanelOpen, setPendingPanelOpen] = useState(false);
   const [advancedFilters, setAdvancedFilters] =
     useState<LoansAdvancedFilters>(EMPTY_LOANS_FILTERS);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [loading, setLoading] = useState(true);
+  const [pendingLoading, setPendingLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -201,6 +276,21 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
   const [bulkFilter, setBulkFilter] = useState<ReminderFilter>("overdue");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkBatch, setBulkBatch] = useState<ReminderBatch | null>(null);
+  const [recordDisbursementLoan, setRecordDisbursementLoan] =
+    useState<PendingDisbursementRow | null>(null);
+  const [disbursementAmount, setDisbursementAmount] = useState("");
+  const [disbursementRepaymentCash, setDisbursementRepaymentCash] =
+    useState("");
+  const [disbursementNote, setDisbursementNote] = useState("");
+  const [disbursementDate, setDisbursementDate] = useState(() =>
+    toDateInputValue(new Date()),
+  );
+  const [disbursementStaffId, setDisbursementStaffId] = useState("");
+  const [disbursementBusy, setDisbursementBusy] = useState(false);
+  const [staffOptions, setStaffOptions] = useState<DisbursementStaffOption[]>(
+    [],
+  );
+  const [staffLoading, setStaffLoading] = useState(false);
   const currency = state.workspace?.currency ?? "UGX";
   // Prefer mobile for new loans — web create flow is disabled.
   const canCreate = false;
@@ -211,7 +301,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
     isManager && Boolean(state.session?.permissions.includes("loan.update"));
   const reminderBatchActive = Boolean(
     bulkBatch &&
-      (bulkBatch.status === "QUEUED" || bulkBatch.status === "PROCESSING"),
+    (bulkBatch.status === "QUEUED" || bulkBatch.status === "PROCESSING"),
   );
 
   useEffect(() => {
@@ -280,6 +370,61 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
       setLoading(false);
     }
   }, [isManager, state.branch?.id, state.session]);
+
+  const loadPendingDisbursements = useCallback(async () => {
+    if (!state.session) return;
+    setPendingLoading(true);
+    try {
+      const payload = await ownerFetch<PendingDisbursementsResponse>(
+        state.session,
+        "/loans/pending-disbursements",
+      );
+      const rows = payload.pendingDisbursements ?? [];
+      const scoped =
+        isManager && state.branch?.id
+          ? rows.filter((row) => row.branchId === state.branch?.id)
+          : rows;
+      setPendingDisbursements(scoped);
+      setPendingSummary({
+        borrowersCount: scoped.length,
+        totalRemaining:
+          scoped.length === rows.length
+            ? (payload.summary?.totalRemaining ?? 0)
+            : sumBy(scoped, (row) => row.remainingAmount),
+      });
+      if (scoped.length === 0) {
+        setPendingPanelOpen(false);
+      }
+    } catch {
+      setPendingDisbursements([]);
+      setPendingSummary({ borrowersCount: 0, totalRemaining: 0 });
+    } finally {
+      setPendingLoading(false);
+    }
+  }, [isManager, state.branch?.id, state.session]);
+
+  const loadDisbursementStaff = useCallback(async () => {
+    if (!state.session || staffLoading) return;
+    setStaffLoading(true);
+    try {
+      const response = await fetch(`${apiBaseUrl}/agents?purpose=float`, {
+        headers: {
+          Authorization: `${state.session.tokenType} ${state.session.accessToken}`,
+        },
+      });
+      const payload = await readApiJson<AgentsResponse>(response);
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      setStaffOptions(
+        (payload.agents ?? []).filter((agent) => agent.status === "ACTIVE"),
+      );
+    } catch {
+      setStaffOptions([]);
+    } finally {
+      setStaffLoading(false);
+    }
+  }, [staffLoading, state.session]);
 
   const loadBorrowers = useCallback(async () => {
     if (!state.session) return;
@@ -391,21 +536,18 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
             },
           },
         );
-        const payload = await readApiJson<ReminderBatch & { message?: string | string[] }>(
-          response,
-        );
+        const payload = await readApiJson<
+          ReminderBatch & { message?: string | string[] }
+        >(response);
         if (!response.ok) {
           throw new Error(formatApiError(payload.message));
         }
         setBulkBatch(payload);
-        if (
-          payload.status !== "QUEUED" &&
-          payload.status !== "PROCESSING"
-        ) {
+        if (payload.status !== "QUEUED" && payload.status !== "PROCESSING") {
           setNotice(
             `Bulk SMS finished: ${payload.sentCount} sent, ${payload.skippedCount} skipped, ${payload.failedCount} failed.`,
           );
-          void loadLoans();
+          void refreshLoansWorkspace();
           return;
         }
         await new Promise((resolve) => window.setTimeout(resolve, 1500));
@@ -460,6 +602,99 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
     state.session,
   ]);
 
+  const refreshLoansWorkspace = useCallback(async () => {
+    await Promise.all([loadLoans(), loadPendingDisbursements()]);
+  }, [loadLoans, loadPendingDisbursements]);
+
+  function openRecordDisbursement(row: PendingDisbursementRow) {
+    setRecordDisbursementLoan(row);
+    setDisbursementAmount("");
+    setDisbursementRepaymentCash("");
+    setDisbursementNote("");
+    setDisbursementDate(toDateInputValue(new Date()));
+    setDisbursementStaffId(state.user?.id ?? "");
+    setError(null);
+    setNotice(null);
+    void loadDisbursementStaff();
+  }
+
+  async function recordPendingDisbursement() {
+    if (!state.session || !recordDisbursementLoan || disbursementBusy) return;
+
+    const amount = roundMoney(parseAmount(disbursementAmount));
+    const collectedRepaymentsAmount = roundMoney(
+      parseAmount(disbursementRepaymentCash),
+    );
+
+    if (amount <= 0) {
+      setError("Enter the amount being given to the borrower.");
+      return;
+    }
+    if (amount > recordDisbursementLoan.remainingAmount) {
+      setError(
+        `Amount exceeds the remaining disbursement. Maximum: ${currency} ${formatMoneyAmount(recordDisbursementLoan.remainingAmount)}.`,
+      );
+      return;
+    }
+    if (collectedRepaymentsAmount > amount) {
+      setError("Repayment cash used cannot exceed the amount being disbursed.");
+      return;
+    }
+
+    setDisbursementBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const body: Record<string, unknown> = {
+        amount,
+        disbursedAt: dateInputToIso(disbursementDate),
+        localId: `web-disbursement-${recordDisbursementLoan.loanId}-${Date.now()}`,
+      };
+      if (collectedRepaymentsAmount > 0) {
+        body.collectedRepaymentsAmount = collectedRepaymentsAmount;
+      }
+      if (disbursementStaffId.trim()) {
+        body.issuedByUserId = disbursementStaffId.trim();
+      }
+      if (disbursementNote.trim()) {
+        body.note = disbursementNote.trim();
+      }
+
+      const response = await fetch(
+        `${apiBaseUrl}/loans/${recordDisbursementLoan.loanId}/disbursements`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `${state.session.tokenType} ${state.session.accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        },
+      );
+      const payload = await readApiJson<{ message?: string | string[] }>(
+        response,
+      );
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      setNotice(
+        amount >= recordDisbursementLoan.remainingAmount
+          ? `${recordDisbursementLoan.borrowerName}'s loan is now fully disbursed.`
+          : `Disbursement recorded for ${recordDisbursementLoan.borrowerName}.`,
+      );
+      setRecordDisbursementLoan(null);
+      await refreshLoansWorkspace();
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not record disbursement.",
+      );
+    } finally {
+      setDisbursementBusy(false);
+    }
+  }
+
   const bulkPreviewCount = useMemo(() => {
     const now = new Date();
     return loans.filter((loan) => {
@@ -484,11 +719,11 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
   useEffect(() => {
     const boot = window.setTimeout(() => {
       if (state.ready && state.session) {
-        void loadLoans();
+        void refreshLoansWorkspace();
       }
     }, 0);
     return () => window.clearTimeout(boot);
-  }, [loadLoans, state.ready, state.session]);
+  }, [refreshLoansWorkspace, state.ready, state.session]);
 
   const officerOptions = useMemo<OfficerOption[]>(() => {
     const map = new Map<string, string>();
@@ -507,7 +742,8 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
     const q = search.trim().toLowerCase();
     const now = new Date();
     return loans.filter((loan) => {
-      if (filter === "active" && !ACTIVE_STATUSES.has(loan.status)) return false;
+      if (filter === "active" && !ACTIVE_STATUSES.has(loan.status))
+        return false;
       if (filter === "closed" && loan.status !== "CLOSED") return false;
       if (filter === "overdue" && !isLoanScheduleOverdue(loan)) {
         return false;
@@ -558,6 +794,35 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
       return false;
     });
   }, [advancedFilters, filter, loans, search]);
+
+  const filteredPendingDisbursements = useMemo(() => {
+    const q = pendingSearch.trim().toLowerCase();
+    if (!q) return pendingDisbursements;
+    const digits = q.replace(/\D/g, "");
+    return pendingDisbursements.filter((row) => {
+      const haystack = [
+        row.loanId,
+        shortLoanId(row.loanId),
+        row.borrowerName,
+        row.phone,
+        row.branchName ?? "",
+        row.issuedByName ?? "",
+        row.status,
+        String(row.agreedAmount),
+        String(row.disbursedAmount),
+        String(row.remainingAmount),
+      ]
+        .join(" ")
+        .toLowerCase();
+      if (haystack.includes(q)) return true;
+      if (digits.length >= 3) {
+        return [row.phone, row.loanId].some((value) =>
+          value.replace(/\D/g, "").includes(digits),
+        );
+      }
+      return false;
+    });
+  }, [pendingDisbursements, pendingSearch]);
 
   useEffect(() => {
     setPage(1);
@@ -630,7 +895,8 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
       const disposition = response.headers.get("content-disposition");
       const match = disposition?.match(/filename="?([^"]+)"?/i);
       anchor.href = objectUrl;
-      anchor.download = match?.[1] ?? `loan-agreement-${shortLoanId(loanId)}.pdf`;
+      anchor.download =
+        match?.[1] ?? `loan-agreement-${shortLoanId(loanId)}.pdf`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -687,7 +953,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
       setAddOpen(false);
       setSelectedBorrowerId("");
       setBorrowerSearch("");
-      await loadLoans();
+      await refreshLoansWorkspace();
     } catch (caught) {
       setPanelError(
         caught instanceof Error
@@ -718,13 +984,13 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
           actions={
             <button
               type="button"
-              onClick={() => void loadLoans()}
-              disabled={loading}
+              onClick={() => void refreshLoansWorkspace()}
+              disabled={loading || pendingLoading}
               aria-label="Refresh loans"
               className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-50 disabled:opacity-60"
             >
               <RefreshCw
-                className={`size-4 ${loading ? "animate-spin" : ""}`}
+                className={`size-4 ${loading || pendingLoading ? "animate-spin" : ""}`}
               />
             </button>
           }
@@ -861,6 +1127,29 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
             ]}
           />
         </section>
+
+        {pendingSummary.borrowersCount > 0 ? (
+          <PendingDisbursementsBanner
+            count={pendingSummary.borrowersCount}
+            totalRemaining={pendingSummary.totalRemaining}
+            currency={currency}
+            onOpen={() => setPendingPanelOpen(true)}
+          />
+        ) : null}
+
+        {pendingPanelOpen ? (
+          <PendingDisbursementsPanel
+            rows={filteredPendingDisbursements}
+            totalCount={pendingDisbursements.length}
+            totalRemaining={pendingSummary.totalRemaining}
+            currency={currency}
+            search={pendingSearch}
+            onSearch={setPendingSearch}
+            loading={pendingLoading}
+            onClose={() => setPendingPanelOpen(false)}
+            onRecord={openRecordDisbursement}
+          />
+        ) : null}
 
         <section className="rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <div className="relative z-20 flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-3.5">
@@ -1219,17 +1508,17 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                 </tbody>
               </table>
             </div>
-          <PaginationControls
-            page={paged.currentPage}
-            pageSize={paged.pageSize}
-            total={paged.total}
-            itemLabel="loans"
-            onPageChange={setPage}
-            onPageSizeChange={(next) => {
-              setPageSize(next);
-              setPage(1);
-            }}
-          />
+            <PaginationControls
+              page={paged.currentPage}
+              pageSize={paged.pageSize}
+              total={paged.total}
+              itemLabel="loans"
+              onPageChange={setPage}
+              onPageSizeChange={(next) => {
+                setPageSize(next);
+                setPage(1);
+              }}
+            />
           </div>
         </section>
       </div>
@@ -1289,14 +1578,13 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
             <p className="mt-3 rounded-xl border border-[#e6ebf0] bg-[#f8faf9] px-3 py-2 text-xs font-semibold text-slate-600">
               {bulkPreviewCount} loan{bulkPreviewCount === 1 ? "" : "s"} match
               this filter
-              {reminderBatchActive
-                ? " · a batch is already running"
-                : ""}
+              {reminderBatchActive ? " · a batch is already running" : ""}
             </p>
             {bulkBatch && reminderBatchActive ? (
               <p className="mt-2 text-xs font-medium text-slate-500">
                 Progress: {bulkBatch.sentCount} sent · {bulkBatch.skippedCount}{" "}
-                skipped · {bulkBatch.failedCount} failed of {bulkBatch.totalCount}
+                skipped · {bulkBatch.failedCount} failed of{" "}
+                {bulkBatch.totalCount}
               </p>
             ) : null}
             <div className="mt-4 flex gap-2">
@@ -1312,9 +1600,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                 type="button"
                 className="inline-flex h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-[#003f35] text-xs font-semibold text-white disabled:opacity-55"
                 disabled={
-                  bulkBusy ||
-                  reminderBatchActive ||
-                  bulkPreviewCount === 0
+                  bulkBusy || reminderBatchActive || bulkPreviewCount === 0
                 }
                 onClick={() => void startBulkReminders()}
               >
@@ -1402,8 +1688,8 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
                     </div>
                   ) : filteredBorrowers.length === 0 ? (
                     <p className="text-sm text-slate-500">
-                      No eligible borrowers. Borrowers with an active loan cannot
-                      start another.
+                      No eligible borrowers. Borrowers with an active loan
+                      cannot start another.
                     </p>
                   ) : (
                     <div className="divide-y divide-[#edf1f5] rounded-xl border border-[#e6ebf0]">
@@ -1518,7 +1804,7 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
               onSubmitted={() => {
                 setEditingApplicationId(null);
                 setNotice("Loan given.");
-                void loadLoans();
+                void refreshLoansWorkspace();
               }}
             />
           ) : null}
@@ -1541,8 +1827,27 @@ export function LoansWorkspace({ mode }: { mode: LoansMode }) {
             onRecorded={() => {
               setNotice("Repayment recorded.");
               setDetailRefreshKey((key) => key + 1);
-              void loadLoans();
+              void refreshLoansWorkspace();
             }}
+          />
+          <RecordDisbursementDrawer
+            row={recordDisbursementLoan}
+            currency={currency}
+            amount={disbursementAmount}
+            repaymentCash={disbursementRepaymentCash}
+            note={disbursementNote}
+            date={disbursementDate}
+            staffId={disbursementStaffId}
+            staffOptions={staffOptions}
+            staffLoading={staffLoading}
+            busy={disbursementBusy}
+            onAmountChange={setDisbursementAmount}
+            onRepaymentCashChange={setDisbursementRepaymentCash}
+            onNoteChange={setDisbursementNote}
+            onDateChange={setDisbursementDate}
+            onStaffChange={setDisbursementStaffId}
+            onClose={() => !disbursementBusy && setRecordDisbursementLoan(null)}
+            onSubmit={() => void recordPendingDisbursement()}
           />
         </>
       ) : null}
@@ -1736,6 +2041,625 @@ function SummaryMetric({
   );
 }
 
+function PendingDisbursementsBanner({
+  count,
+  totalRemaining,
+  currency,
+  onOpen,
+}: {
+  count: number;
+  totalRemaining: number;
+  currency: string;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className="group flex w-full flex-wrap items-center justify-between gap-4 rounded-[14px] border border-red-100 bg-[#fff0f2] px-5 py-4 text-left shadow-[0_10px_26px_rgba(225,29,46,0.08)] transition hover:border-red-200 hover:bg-[#ffe8eb]"
+    >
+      <span className="flex min-w-0 items-center gap-3">
+        <span className="grid size-11 shrink-0 place-items-center rounded-2xl bg-[#ffe1e6] text-[#e11d2e]">
+          <Wallet className="size-5" />
+        </span>
+        <span className="min-w-0">
+          <span className="block text-[15px] font-bold text-[#0b1220]">
+            Pending disbursements
+          </span>
+          <span className="mt-0.5 block text-xs font-semibold text-slate-600">
+            {count} borrower{count === 1 ? "" : "s"} have not received their
+            full loans
+          </span>
+        </span>
+      </span>
+      <span className="flex min-w-0 items-center gap-6">
+        <span className="hidden h-10 w-px bg-red-100 sm:block" />
+        <span className="min-w-0">
+          <span className="block text-sm font-black tabular-nums text-[#e11d2e]">
+            {currency} {formatMoneyAmount(totalRemaining)}
+          </span>
+          <span className="mt-0.5 block text-[11px] font-semibold text-slate-600">
+            Remaining to disburse
+          </span>
+        </span>
+        <span className="text-sm font-bold text-[#e11d2e] transition group-hover:translate-x-0.5">
+          View pending →
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function PendingDisbursementsPanel({
+  rows,
+  totalCount,
+  totalRemaining,
+  currency,
+  search,
+  onSearch,
+  loading,
+  onClose,
+  onRecord,
+}: {
+  rows: PendingDisbursementRow[];
+  totalCount: number;
+  totalRemaining: number;
+  currency: string;
+  search: string;
+  onSearch: (value: string) => void;
+  loading: boolean;
+  onClose: () => void;
+  onRecord: (row: PendingDisbursementRow) => void;
+}) {
+  return (
+    <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[#edf1f5] px-4 py-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="mt-0.5 grid size-8 place-items-center rounded-xl border border-[#e6ebf0] text-[#0b1220] hover:bg-[#f8faf9]"
+            aria-label="Back to loans"
+          >
+            ←
+          </button>
+          <div className="min-w-0">
+            <h2 className="text-lg font-black text-[#0b1220]">
+              Pending Disbursements
+            </h2>
+            <p className="text-xs font-medium text-slate-500">
+              Borrowers have not received their full loan amounts yet.
+            </p>
+          </div>
+        </div>
+      </header>
+
+      <div className="grid gap-3 border-b border-[#edf1f5] p-4 lg:grid-cols-[1fr_1.7fr]">
+        <div className="grid grid-cols-2 overflow-hidden rounded-2xl border border-[#edf1f5] bg-[#fbfcfd]">
+          <DisbursementSummaryCell
+            icon={<Wallet className="size-5" />}
+            label="Borrowers"
+            value={formatNumber(totalCount)}
+            tone="danger"
+          />
+          <DisbursementSummaryCell
+            icon={<Banknote className="size-5" />}
+            label="Total remaining"
+            value={`${currency} ${formatMoneyAmount(totalRemaining)}`}
+            tone="danger"
+          />
+        </div>
+        <div className="flex items-start gap-3 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-blue-900">
+          <Info className="mt-0.5 size-5 shrink-0" />
+          <p className="text-sm font-medium leading-6">
+            These loans become active only when the borrower receives the full
+            requested amount. The repayment schedule starts after the final
+            disbursement is recorded.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-3">
+        <TableSearchField
+          value={search}
+          onChange={onSearch}
+          placeholder="Search borrower or loan ID..."
+          title="Search by borrower, loan ID, phone, branch, staff or amount."
+        />
+        <p className="text-xs font-semibold text-slate-500">
+          Showing {formatNumber(rows.length)} of {formatNumber(totalCount)}
+        </p>
+      </div>
+
+      <div className="overflow-hidden">
+        <table className="hidden w-full table-fixed text-left text-[11px] xl:table">
+          <thead className="border-b border-[#dfe5eb] bg-[#e8edf2] text-[10px] font-semibold text-slate-600">
+            <tr>
+              <th className="w-[19%] px-3 py-2.5">Borrower</th>
+              <th className="w-[12%] px-3 py-2.5">Loan ID</th>
+              <th className="w-[12%] px-3 py-2.5 text-right">Agreed Amount</th>
+              <th className="w-[12%] px-3 py-2.5 text-right">Disbursed</th>
+              <th className="w-[11%] px-3 py-2.5 text-right">Remaining</th>
+              <th className="w-[12%] px-3 py-2.5">% Disbursed</th>
+              <th className="w-[12%] px-3 py-2.5">Last Disbursement</th>
+              <th className="w-[10%] px-3 py-2.5">Issued By</th>
+              <th className="w-[10%] px-3 py-2.5 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[#edf1f5]">
+            {loading ? (
+              <tr>
+                <td
+                  colSpan={9}
+                  className="px-3 py-8 text-center text-slate-500"
+                >
+                  Loading pending disbursements...
+                </td>
+              </tr>
+            ) : rows.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={9}
+                  className="px-3 py-8 text-center text-slate-500"
+                >
+                  No pending disbursements match this view.
+                </td>
+              </tr>
+            ) : (
+              rows.map((row) => (
+                <tr key={row.loanId} className="hover:bg-[#fff8f9]">
+                  <td className="px-3 py-3 align-top">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className="grid size-8 shrink-0 place-items-center rounded-full bg-[#eef9f2] text-[11px] font-black text-[#07885f]">
+                        {initials(row.borrowerName)}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate font-bold text-[#0b1220]">
+                          {row.borrowerName}
+                        </span>
+                        <span className="block truncate text-[10px] text-slate-500">
+                          {row.phone}
+                        </span>
+                      </span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 align-top font-mono font-bold text-slate-600">
+                    {shortLoanId(row.loanId)}
+                  </td>
+                  <td className="px-3 py-3 text-right align-top font-bold tabular-nums text-[#0b1220]">
+                    {formatMoneyAmount(row.agreedAmount)}
+                  </td>
+                  <td className="px-3 py-3 text-right align-top tabular-nums text-[#0b1220]">
+                    <span className="font-bold">
+                      {formatMoneyAmount(row.disbursedAmount)}
+                    </span>
+                    <span className="mt-0.5 block text-[10px] text-slate-500">
+                      {row.disbursementCount} payment
+                      {row.disbursementCount === 1 ? "" : "s"}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 text-right align-top font-black tabular-nums text-[#e11d2e]">
+                    {formatMoneyAmount(row.remainingAmount)}
+                  </td>
+                  <td className="px-3 py-3 align-top">
+                    <DisbursementProgress percent={row.percentDisbursed} />
+                  </td>
+                  <td className="px-3 py-3 align-top text-slate-600">
+                    {row.lastDisbursementAt ? (
+                      <>
+                        <span className="block font-semibold text-[#0b1220]">
+                          {formatDate(row.lastDisbursementAt)}
+                        </span>
+                        <span className="text-[10px]">
+                          {currency}{" "}
+                          {formatMoneyAmount(row.lastDisbursementAmount ?? 0)}
+                        </span>
+                      </>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
+                  <td className="px-3 py-3 align-top">
+                    <span className="block truncate font-semibold text-[#0b1220]">
+                      {row.issuedByName ?? "—"}
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      Field Officer
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 text-right align-top">
+                    <button
+                      type="button"
+                      onClick={() => onRecord(row)}
+                      className="inline-flex min-h-9 items-center justify-center rounded-xl border border-[#07885f] px-3 text-[11px] font-bold text-[#07885f] transition hover:bg-[#eef9f2]"
+                    >
+                      Complete Disbursement
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+
+        <div className="divide-y divide-[#edf1f5] xl:hidden">
+          {rows.map((row) => (
+            <article key={row.loanId} className="px-4 py-3.5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-black text-[#0b1220]">
+                    {row.borrowerName}
+                  </p>
+                  <p className="text-xs font-medium text-slate-500">
+                    Loan: {shortLoanId(row.loanId)}
+                  </p>
+                </div>
+                <p className="text-right text-sm font-black tabular-nums text-[#e11d2e]">
+                  {currency} {formatMoneyAmount(row.remainingAmount)}
+                  <span className="block text-[11px] font-semibold text-slate-500">
+                    remaining
+                  </span>
+                </p>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2 rounded-xl border border-[#edf1f5] bg-[#fbfcfd] p-2">
+                <LoanCardMetric
+                  label="Agreed"
+                  value={
+                    <Money value={row.agreedAmount} currency={currency} stack />
+                  }
+                />
+                <LoanCardMetric
+                  label="Disbursed"
+                  value={
+                    <Money
+                      value={row.disbursedAmount}
+                      currency={currency}
+                      stack
+                    />
+                  }
+                />
+                <LoanCardMetric
+                  label="Count"
+                  value={<span>{row.disbursementCount}</span>}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => onRecord(row)}
+                className="mt-3 h-10 w-full rounded-xl border border-[#07885f] text-xs font-bold text-[#07885f]"
+              >
+                Complete Disbursement
+              </button>
+            </article>
+          ))}
+          {!loading && rows.length === 0 ? (
+            <p className="px-4 py-8 text-center text-sm text-slate-500">
+              No pending disbursements match this view.
+            </p>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="border-t border-[#edf1f5] bg-[#f1fbf5] px-4 py-3 text-xs font-semibold text-[#05603a]">
+        Once the full loan amount has been disbursed, the loan moves to active
+        loans automatically.
+      </div>
+    </section>
+  );
+}
+
+function DisbursementSummaryCell({
+  icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string;
+  tone: "danger" | "good";
+}) {
+  const color = tone === "danger" ? "text-[#e11d2e]" : "text-[#07885f]";
+  const bg = tone === "danger" ? "bg-[#ffe7eb]" : "bg-[#e9f8ef]";
+  return (
+    <div className="flex min-w-0 items-center gap-3 border-r border-[#edf1f5] p-4 last:border-r-0">
+      <span
+        className={`grid size-10 shrink-0 place-items-center rounded-2xl ${bg} ${color}`}
+      >
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <span
+          className={`block truncate text-lg font-black tabular-nums ${color}`}
+        >
+          {value}
+        </span>
+        <span className="block text-xs font-semibold text-slate-500">
+          {label}
+        </span>
+      </span>
+    </div>
+  );
+}
+
+function DisbursementProgress({ percent }: { percent: number }) {
+  const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+  return (
+    <div className="min-w-0">
+      <div className="h-2 overflow-hidden rounded-full bg-[#dfe5eb]">
+        <div
+          className="h-full rounded-full bg-[#07885f]"
+          style={{ width: `${clamped}%` }}
+        />
+      </div>
+      <p className="mt-1 text-[10px] font-bold tabular-nums text-slate-600">
+        {clamped}%
+      </p>
+    </div>
+  );
+}
+
+function RecordDisbursementDrawer({
+  row,
+  currency,
+  amount,
+  repaymentCash,
+  note,
+  date,
+  staffId,
+  staffOptions,
+  staffLoading,
+  busy,
+  onAmountChange,
+  onRepaymentCashChange,
+  onNoteChange,
+  onDateChange,
+  onStaffChange,
+  onClose,
+  onSubmit,
+}: {
+  row: PendingDisbursementRow | null;
+  currency: string;
+  amount: string;
+  repaymentCash: string;
+  note: string;
+  date: string;
+  staffId: string;
+  staffOptions: DisbursementStaffOption[];
+  staffLoading: boolean;
+  busy: boolean;
+  onAmountChange: (value: string) => void;
+  onRepaymentCashChange: (value: string) => void;
+  onNoteChange: (value: string) => void;
+  onDateChange: (value: string) => void;
+  onStaffChange: (value: string) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  if (!row) return null;
+
+  const amountValue = roundMoney(parseAmount(amount));
+  const repaymentValue = roundMoney(parseAmount(repaymentCash));
+  const assignedFloat = Math.max(0, amountValue - repaymentValue);
+  const canSubmit =
+    !busy &&
+    amountValue > 0 &&
+    amountValue <= row.remainingAmount &&
+    repaymentValue <= amountValue;
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-[rgba(8,15,31,0.36)] backdrop-blur-[2px]">
+      <button
+        type="button"
+        className="absolute inset-0"
+        aria-label="Close record disbursement"
+        onClick={onClose}
+      />
+      <aside className="relative z-10 flex h-full w-full max-w-[430px] flex-col border-l border-[#e6ebf0] bg-white shadow-[-18px_0_44px_rgba(15,23,42,0.18)]">
+        <header className="flex items-start justify-between gap-3 border-b border-[#edf1f5] px-5 py-4">
+          <div>
+            <h2 className="text-lg font-black text-[#0b1220]">
+              Record Disbursement
+            </h2>
+            <p className="mt-0.5 text-xs font-medium text-slate-500">
+              Complete or reduce the remaining borrower cash handover.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="grid size-8 place-items-center rounded-xl border border-[#e6ebf0]"
+            onClick={onClose}
+            disabled={busy}
+            aria-label="Close"
+          >
+            <X className="size-4" />
+          </button>
+        </header>
+
+        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          <div className="flex items-center gap-3">
+            <span className="grid size-12 shrink-0 place-items-center rounded-full bg-[#eef9f2] text-sm font-black text-[#07885f]">
+              {initials(row.borrowerName)}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-base font-black text-[#0b1220]">
+                {row.borrowerName}
+              </p>
+              <p className="text-xs font-semibold text-slate-500">
+                Loan ID: {shortLoanId(row.loanId)}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 overflow-hidden rounded-2xl border border-red-100 bg-[#fff4f5]">
+            <DrawerMetric
+              label="Agreed"
+              value={`${currency} ${formatMoneyAmount(row.agreedAmount)}`}
+            />
+            <DrawerMetric
+              label="Disbursed"
+              value={`${currency} ${formatMoneyAmount(row.disbursedAmount)}`}
+            />
+            <DrawerMetric
+              label="Remaining"
+              value={`${currency} ${formatMoneyAmount(row.remainingAmount)}`}
+              danger
+            />
+          </div>
+
+          <label className="block">
+            <span className="text-xs font-bold text-[#0b1220]">
+              Amount to disburse ({currency})
+            </span>
+            <div className="mt-1.5 flex h-11 overflow-hidden rounded-xl border border-[#07885f] bg-white">
+              <span className="grid w-14 place-items-center border-r border-[#e6ebf0] text-xs font-black text-[#0b1220]">
+                {currency}
+              </span>
+              <input
+                value={amount}
+                onChange={(event) => onAmountChange(event.target.value)}
+                inputMode="numeric"
+                placeholder="Enter amount"
+                className="min-w-0 flex-1 px-3 text-sm font-semibold outline-none"
+                disabled={busy}
+              />
+            </div>
+            <span className="mt-1.5 block text-center text-xs font-semibold text-slate-500">
+              Maximum: {currency} {formatMoneyAmount(row.remainingAmount)}
+            </span>
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-bold text-[#0b1220]">
+              Use collected repayments ({currency})
+            </span>
+            <div className="mt-1.5 flex h-10 overflow-hidden rounded-xl border border-[#e6ebf0] bg-white">
+              <span className="grid w-14 place-items-center border-r border-[#e6ebf0] text-xs font-black text-[#0b1220]">
+                {currency}
+              </span>
+              <input
+                value={repaymentCash}
+                onChange={(event) => onRepaymentCashChange(event.target.value)}
+                inputMode="numeric"
+                placeholder="Optional"
+                className="min-w-0 flex-1 px-3 text-sm font-semibold outline-none"
+                disabled={busy}
+              />
+            </div>
+            <span className="mt-1.5 block text-xs font-semibold text-slate-500">
+              Assigned float used: {currency} {formatMoneyAmount(assignedFloat)}
+            </span>
+          </label>
+
+          <label className="block">
+            <span className="flex items-center gap-1.5 text-xs font-bold text-[#0b1220]">
+              <CalendarDays className="size-3.5" />
+              Disbursement date
+            </span>
+            <input
+              type="date"
+              value={date}
+              onChange={(event) => onDateChange(event.target.value)}
+              disabled={busy}
+              className="mt-1.5 h-10 w-full rounded-xl border border-[#e6ebf0] bg-white px-3 text-sm font-semibold outline-none"
+            />
+          </label>
+
+          <label className="block">
+            <span className="flex items-center gap-1.5 text-xs font-bold text-[#0b1220]">
+              <User className="size-3.5" />
+              Issued by
+            </span>
+            <select
+              value={staffId}
+              onChange={(event) => onStaffChange(event.target.value)}
+              disabled={busy || staffLoading}
+              className="mt-1.5 h-10 w-full rounded-xl border border-[#e6ebf0] bg-white px-3 text-sm font-semibold outline-none"
+            >
+              <option value="">Current signed-in user</option>
+              {staffOptions.map((staff) => (
+                <option key={staff.id} value={staff.id}>
+                  {staff.name} {staff.roleName ? `· ${staff.roleName}` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="block">
+            <span className="text-xs font-bold text-[#0b1220]">
+              Notes (optional)
+            </span>
+            <textarea
+              value={note}
+              onChange={(event) => onNoteChange(event.target.value)}
+              disabled={busy}
+              rows={4}
+              placeholder="Add a note..."
+              className="mt-1.5 w-full resize-none rounded-xl border border-[#e6ebf0] bg-white px-3 py-2 text-sm font-medium outline-none"
+            />
+          </label>
+
+          <div className="flex items-start gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs font-semibold leading-5 text-blue-900">
+            <Info className="mt-0.5 size-4 shrink-0" />
+            <p>
+              The loan becomes active only after the remaining amount reaches
+              zero. Repayment cash used here stays visible in cash
+              accountability.
+            </p>
+          </div>
+        </div>
+
+        <footer className="space-y-2 border-t border-[#edf1f5] px-5 py-4">
+          <button
+            type="button"
+            disabled={!canSubmit}
+            onClick={onSubmit}
+            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#07885f] text-sm font-bold text-white transition hover:bg-[#056b4c] disabled:opacity-55"
+          >
+            {busy ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="size-4" />
+            )}
+            Save Disbursement
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onClose}
+            className="h-10 w-full rounded-xl border border-[#e6ebf0] text-sm font-bold text-[#0b1220] disabled:opacity-60"
+          >
+            Cancel
+          </button>
+        </footer>
+      </aside>
+    </div>
+  );
+}
+
+function DrawerMetric({
+  label,
+  value,
+  danger = false,
+}: {
+  label: string;
+  value: string;
+  danger?: boolean;
+}) {
+  return (
+    <div className="border-r border-red-100 px-3 py-3 last:border-r-0">
+      <p className="text-[10px] font-semibold text-slate-600">{label}</p>
+      <p
+        className={`mt-1 text-xs font-black tabular-nums ${
+          danger ? "text-[#e11d2e]" : "text-[#0b1220]"
+        }`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
 function buildLoansSummary(loans: LoanRow[]) {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -1787,15 +2711,28 @@ function buildLoansSummary(loans: LoanRow[]) {
     overduePercentLabel,
     overdueBalance,
     overdueBy2PlusCount,
-    principalThisMonth: sumBy(issuedThisMonth, (loan) => loan.principal),
-    principalLastMonth: sumBy(issuedLastMonth, (loan) => loan.principal),
-    principalAllTime: sumBy(loans, (loan) => loan.principal),
+    principalThisMonth: sumBy(issuedThisMonth, loanIssuedCash),
+    principalLastMonth: sumBy(issuedLastMonth, loanIssuedCash),
+    principalAllTime: sumBy(loans, loanIssuedCash),
     outstanding: sumBy(activeLoans, (loan) => loan.balance),
     repaid: sumBy(loans, (loan) => loan.paidAmount),
     expectedInterest: interestNotOverdue + interestAtRisk,
     interestNotOverdue,
     interestAtRisk,
   };
+}
+
+function loanIssuedCash(loan: LoanRow) {
+  if (typeof loan.disbursedAmount === "number") {
+    return Math.max(0, loan.disbursedAmount);
+  }
+  if (
+    loan.status === "PARTIALLY_DISBURSED" &&
+    typeof loan.pendingDisbursementAmount === "number"
+  ) {
+    return Math.max(0, loan.principal - loan.pendingDisbursementAmount);
+  }
+  return Math.max(0, loan.principal);
 }
 
 function expectedInterestForLoan(loan: LoanRow) {
@@ -1813,15 +2750,24 @@ function expectedInterestForLoan(loan: LoanRow) {
 }
 
 function resolveOverdueDays(loan: LoanRow, today: Date) {
-  if (typeof loan.overdueDays === "number") return Math.max(0, loan.overdueDays);
+  if (typeof loan.overdueDays === "number")
+    return Math.max(0, loan.overdueDays);
   return loanOverdueDaysFallback(loan, today);
 }
 
-type LoanDueState = "closed" | "overdue" | "due_today" | "active";
+type LoanDueState =
+  "closed" | "pending_disbursement" | "overdue" | "due_today" | "active";
 
 function resolveLoanDueState(loan: LoanRow): LoanDueState {
-  if (loan.status === "CLOSED" || loan.status === "WRITTEN_OFF" || loan.balance <= 0) {
+  if (
+    loan.status === "CLOSED" ||
+    loan.status === "WRITTEN_OFF" ||
+    loan.balance <= 0
+  ) {
     return "closed";
+  }
+  if (loan.status === "PARTIALLY_DISBURSED") {
+    return "pending_disbursement";
   }
   const overdueDays = resolveOverdueDays(loan, new Date());
   const label = loan.nextDueLabel?.trim().toLowerCase() ?? "";
@@ -1835,17 +2781,12 @@ function resolveLoanDueState(loan: LoanRow): LoanDueState {
 function loanDueStatusLabel(state: LoanDueState) {
   if (state === "overdue") return "Overdue";
   if (state === "due_today") return "Due Today";
+  if (state === "pending_disbursement") return "Pending Disbursement";
   if (state === "closed") return "Closed";
   return "Active";
 }
 
-function LoanCardMetric({
-  label,
-  value,
-}: {
-  label: string;
-  value: ReactNode;
-}) {
+function LoanCardMetric({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="min-w-0 rounded-xl bg-[#f7faf8] px-2.5 py-2">
       <p className="text-[9px] font-semibold uppercase tracking-[0.06em] text-slate-500">
@@ -1871,6 +2812,7 @@ function loanRowActions(
     canSendReminder &&
     loan.balance > 0 &&
     loan.status !== "CLOSED" &&
+    loan.status !== "PARTIALLY_DISBURSED" &&
     Boolean(loan.phone?.trim());
   const alreadySent =
     reminder?.status === "sent" || Boolean(reminder?.canResend);
@@ -1892,7 +2834,8 @@ function loanRowActions(
       disabled:
         !canRecordRepayment ||
         loan.balance <= 0 ||
-        loan.status === "CLOSED",
+        loan.status === "CLOSED" ||
+        loan.status === "PARTIALLY_DISBURSED",
       onSelect: () => setRepaymentLoan(loan),
     },
     {
@@ -1906,7 +2849,7 @@ function loanRowActions(
     },
     {
       label: "Loan agreement",
-      disabled: !loan.applicationId,
+      disabled: !loan.applicationId || loan.status === "PARTIALLY_DISBURSED",
       onSelect: () => {
         if (loan.applicationId) {
           void downloadLoanAgreement(loan.applicationId, loan.id);
@@ -1916,11 +2859,7 @@ function loanRowActions(
   ];
 }
 
-function ReminderBadge({
-  reminder,
-}: {
-  reminder?: LoanRow["reminder"];
-}) {
+function ReminderBadge({ reminder }: { reminder?: LoanRow["reminder"] }) {
   if (!reminder) {
     return (
       <span
@@ -1962,7 +2901,7 @@ function ReminderBadge({
         ? "No SMS credit"
         : reminder.lastFailureReason === "no_phone"
           ? "No phone"
-          : reminder.lastFailureReason ?? "Failed";
+          : (reminder.lastFailureReason ?? "Failed");
     return (
       <span
         className="inline-flex rounded-full bg-[#fdecec] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-[#c23b3b]"
@@ -1994,6 +2933,12 @@ function NextDueCell({
     return <span className="text-slate-400">—</span>;
   }
 
+  if (dueState === "pending_disbursement") {
+    return (
+      <span className="font-semibold text-[#e11d2e]">Pending disbursement</span>
+    );
+  }
+
   const dateLabel = formatDate(loan.nextDueDate ?? loan.dueDate);
   const overdueDays = resolveOverdueDays(loan, new Date());
 
@@ -2020,19 +2965,23 @@ function LoanStatusBadge({ dueState }: { dueState: LoanDueState }) {
   const tone =
     dueState === "closed"
       ? "bg-[#f3f5f7] text-slate-600"
-      : dueState === "overdue"
+      : dueState === "pending_disbursement"
         ? "bg-[#fdecec] text-[#c23b3b]"
-        : dueState === "due_today"
-          ? "bg-[#fff3e8] text-[#d97706]"
-          : "bg-[#e9f8ef] text-[#07885f]";
+        : dueState === "overdue"
+          ? "bg-[#fdecec] text-[#c23b3b]"
+          : dueState === "due_today"
+            ? "bg-[#fff3e8] text-[#d97706]"
+            : "bg-[#e9f8ef] text-[#07885f]";
   const label =
     dueState === "closed"
       ? "Closed"
-      : dueState === "overdue"
-        ? "Overdue"
-        : dueState === "due_today"
-          ? "Due Today"
-          : "Active";
+      : dueState === "pending_disbursement"
+        ? "Partially Disbursed"
+        : dueState === "overdue"
+          ? "Overdue"
+          : dueState === "due_today"
+            ? "Due Today"
+            : "Active";
 
   return (
     <span
@@ -2047,6 +2996,7 @@ function formatLoanStatus(status: string, overdueDays?: number) {
   const normalized = status.toUpperCase();
   if (normalized === "CLOSED") return "Closed";
   if (normalized === "WRITTEN_OFF") return "Written Off";
+  if (normalized === "PARTIALLY_DISBURSED") return "Partially Disbursed";
   if (
     normalized === "IN_ARREARS" ||
     (typeof overdueDays === "number" && overdueDays >= 1)
@@ -2218,4 +3168,42 @@ async function exportPortfolio(
 /** Compact UI id — full database id stays for API/export/search. */
 function shortLoanId(id: string) {
   return id.replace(/-/g, "").slice(0, 8).toUpperCase();
+}
+
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean).slice(0, 2);
+  return (parts.map((part) => part[0]).join("") || "RB").toUpperCase();
+}
+
+function parseAmount(value: string) {
+  const raw = value.replaceAll(",", "").replaceAll(" ", "").trim();
+  if (!raw) return 0;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function roundMoney(value: number) {
+  return Math.round(value);
+}
+
+function toDateInputValue(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+function dateInputToIso(value: string) {
+  const [y, m, d] = value.split("-").map(Number);
+  if (!y || !m || !d) return new Date().toISOString();
+  const now = new Date();
+  return new Date(
+    y,
+    m - 1,
+    d,
+    now.getHours(),
+    now.getMinutes(),
+    0,
+    0,
+  ).toISOString();
 }

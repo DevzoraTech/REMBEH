@@ -181,9 +181,19 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
   }
 
   @override
-  Future<LoanApplication> submit(String id) async {
+  Future<LoanApplication> submit(
+    String id, {
+    double? initialDisbursementAmount,
+    double collectedRepaymentsAmount = 0,
+    String? disbursementNote,
+  }) async {
     try {
-      final body = await _api.submit(id);
+      final body = await _api.submit(
+        id,
+        initialDisbursementAmount: initialDisbursementAmount,
+        collectedRepaymentsAmount: collectedRepaymentsAmount,
+        disbursementNote: disbursementNote,
+      );
       return _mapApplication(body['application'] as Map<String, dynamic>);
     } catch (error) {
       throw LoanApplicationFailure(friendlyErrorMessage(error));

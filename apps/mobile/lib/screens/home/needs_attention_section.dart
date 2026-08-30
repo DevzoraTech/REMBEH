@@ -91,6 +91,9 @@ class AttentionItem {
     required this.title,
     required this.subtitle,
     this.count,
+    this.backgroundColor,
+    this.borderColor,
+    this.iconBackgroundColor,
     this.onTap,
   });
 
@@ -99,6 +102,9 @@ class AttentionItem {
   final String title;
   final String subtitle;
   final String? count;
+  final Color? backgroundColor;
+  final Color? borderColor;
+  final Color? iconBackgroundColor;
   final VoidCallback? onTap;
 }
 
@@ -192,83 +198,95 @@ class _AttentionItemTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final row = Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 12,
+    final content = Container(
+      decoration: BoxDecoration(
+        color: item.backgroundColor ?? Colors.transparent,
+        border: item.borderColor == null
+            ? null
+            : Border.all(color: item.borderColor!),
+        borderRadius: BorderRadius.circular(14),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: item.iconColor.withValues(alpha: 0.10),
-              shape: BoxShape.circle,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 34,
+              height: 34,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color:
+                    item.iconBackgroundColor ??
+                    item.iconColor.withValues(alpha: 0.10),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                item.icon,
+                color: item.iconColor,
+                size: 19,
+              ),
             ),
-            child: Icon(
-              item.icon,
-              color: item.iconColor,
-              size: 19,
-            ),
-          ),
 
-          const SizedBox(width: 12),
+            const SizedBox(width: 12),
 
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: midnightNavy,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w800,
-                    height: 1.05,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: midnightNavy,
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                      height: 1.05,
+                    ),
                   ),
-                ),
 
-                const SizedBox(height: 3),
+                  const SizedBox(height: 3),
 
-                Text(
-                  item.subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: slateText,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w500,
-                    height: 1.05,
+                  Text(
+                    item.subtitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: slateText,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w500,
+                      height: 1.15,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
 
-          const SizedBox(width: 12),
+            const SizedBox(width: 12),
 
-          const Icon(
-            Icons.chevron_right_rounded,
-            color: midnightNavy,
-            size: 22,
-          ),
-        ],
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: midnightNavy,
+              size: 22,
+            ),
+          ],
+        ),
       ),
     );
 
     if (onTap == null) {
-      return row;
+      return content;
     }
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        child: row,
+        borderRadius: BorderRadius.circular(14),
+        child: content,
       ),
     );
   }

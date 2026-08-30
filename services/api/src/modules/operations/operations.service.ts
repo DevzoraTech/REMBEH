@@ -318,32 +318,42 @@ export class OperationsService {
       };
     }
 
-    const [float, loansAgg, collectionsAgg] = await Promise.all([
-      this.repository.findAgentFloatForDay({
-        tenantId: user.tenantId,
-        branchId: branch.id,
-        agentId: user.userId,
-        floatDate: operation.operationDate,
-      }),
-      this.repository.sumLoansIssuedForAgent({
-        tenantId: user.tenantId,
-        branchId: branch.id,
-        agentId: user.userId,
-        dayStart: bounds.dayStart,
-        dayEnd: bounds.dayEnd,
-      }),
-      this.repository.sumCollectionsForAgent({
-        tenantId: user.tenantId,
-        branchId: branch.id,
-        agentId: user.userId,
-        dayStart: bounds.dayStart,
-        dayEnd: bounds.dayEnd,
-      }),
-    ]);
+    const [float, loansAgg, disbursementsAgg, collectionsAgg] =
+      await Promise.all([
+        this.repository.findAgentFloatForDay({
+          tenantId: user.tenantId,
+          branchId: branch.id,
+          agentId: user.userId,
+          floatDate: operation.operationDate,
+        }),
+        this.repository.sumLoansIssuedForAgent({
+          tenantId: user.tenantId,
+          branchId: branch.id,
+          agentId: user.userId,
+          dayStart: bounds.dayStart,
+          dayEnd: bounds.dayEnd,
+        }),
+        this.repository.sumLoanDisbursementsForAgent({
+          tenantId: user.tenantId,
+          branchId: branch.id,
+          agentId: user.userId,
+          dayStart: bounds.dayStart,
+          dayEnd: bounds.dayEnd,
+        }),
+        this.repository.sumCollectionsForAgent({
+          tenantId: user.tenantId,
+          branchId: branch.id,
+          agentId: user.userId,
+          dayStart: bounds.dayStart,
+          dayEnd: bounds.dayEnd,
+        }),
+      ]);
 
     const amountReceived = this.decimalToNumber(float?.amountGiven);
 
-    const amountDisbursed = this.decimalToNumber(loansAgg._sum.principalAmount);
+    const amountDisbursed = this.decimalToNumber(
+      disbursementsAgg._sum.amount,
+    );
 
     const processingFees = this.decimalToNumber(loansAgg._sum.processingFee);
 
@@ -946,8 +956,15 @@ export class OperationsService {
      * + collections
      * + processing fees
      */
-    const [loansAgg, collectionsAgg] = await Promise.all([
+    const [loansAgg, disbursementsAgg, collectionsAgg] = await Promise.all([
       this.repository.sumLoansIssuedForAgent({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        agentId: dto.agentId,
+        dayStart: bounds.dayStart,
+        dayEnd: bounds.dayEnd,
+      }),
+      this.repository.sumLoanDisbursementsForAgent({
         tenantId: user.tenantId,
         branchId: branch.id,
         agentId: dto.agentId,
@@ -966,7 +983,9 @@ export class OperationsService {
 
     const amountGiven = this.decimalToNumber(float.amountGiven);
 
-    const amountDisbursed = this.decimalToNumber(loansAgg._sum.principalAmount);
+    const amountDisbursed = this.decimalToNumber(
+      disbursementsAgg._sum.amount,
+    );
 
     const processingFees = this.decimalToNumber(loansAgg._sum.processingFee);
 
@@ -2083,6 +2102,7 @@ export class OperationsService {
     const [
       floatAgg,
       loansAgg,
+      cashDisbursementsAgg,
       collectionsAgg,
       expensesAgg,
       expenses,
@@ -2100,6 +2120,13 @@ export class OperationsService {
       }),
 
       this.repository.sumLoansIssued({
+        tenantId: operation.tenantId,
+        branchId: operation.branchId,
+        dayStart,
+        dayEnd,
+      }),
+
+      this.repository.sumLoanDisbursements({
         tenantId: operation.tenantId,
         branchId: operation.branchId,
         dayStart,
@@ -2171,10 +2198,22 @@ export class OperationsService {
 
     const agentIds = agentFloats.map((float) => float.agentId);
 
-    const [loansByAgentRows, collectionsByAgentRows] =
+    const [
+      loanDisbursementsByAgentRows,
+      loansByAgentRows,
+      collectionsByAgentRows,
+    ] =
       agentIds.length === 0
-        ? [[], []]
+        ? [[], [], []]
         : await Promise.all([
+            this.repository.sumLoanDisbursementsByAgent({
+              tenantId: operation.tenantId,
+              branchId: operation.branchId,
+              agentIds,
+              dayStart,
+              dayEnd,
+            }),
+
             this.repository.sumLoansIssuedByAgent({
               tenantId: operation.tenantId,
               branchId: operation.branchId,
@@ -2207,7 +2246,7 @@ export class OperationsService {
     const expensesTotal = this.decimalToNumber(expensesAgg._sum.amount);
 
     const loansIssuedPrincipal = this.decimalToNumber(
-      loansAgg._sum.principalAmount,
+      cashDisbursementsAgg._sum.amount,
     );
 
     const processingFeesTotal = this.decimalToNumber(
@@ -2220,6 +2259,7 @@ export class OperationsService {
 
     const agentReturns = this.toAgentReturnContracts(
       agentFloats,
+      loanDisbursementsByAgentRows,
       loansByAgentRows,
       collectionsByAgentRows,
     );
@@ -3129,6 +3169,9 @@ export class OperationsService {
     agentFloats: Awaited<
       ReturnType<OperationsRepository['listAgentFloatsForOperation']>
     >,
+    loanDisbursementsByAgentRows: Awaited<
+      ReturnType<OperationsRepository['sumLoanDisbursementsByAgent']>
+    >,
     loansByAgentRows: Awaited<
       ReturnType<OperationsRepository['sumLoansIssuedByAgent']>
     >,
@@ -3136,10 +3179,10 @@ export class OperationsService {
       ReturnType<OperationsRepository['sumCollectionsByAgent']>
     >,
   ): DailyOperationAgentReturnContract[] {
-    const loansByAgent = new Map(
-      loansByAgentRows.map((row) => [
-        row.officerUserId,
-        this.decimalToNumber(row._sum.principalAmount),
+    const disbursementsByAgent = new Map(
+      loanDisbursementsByAgentRows.map((row) => [
+        row.recordedByUserId,
+        this.decimalToNumber(row._sum.amount),
       ]),
     );
 
@@ -3160,7 +3203,7 @@ export class OperationsService {
     return agentFloats.map((float) => {
       const amountGiven = this.decimalToNumber(float.amountGiven);
 
-      const amountDisbursed = loansByAgent.get(float.agentId) ?? 0;
+      const amountDisbursed = disbursementsByAgent.get(float.agentId) ?? 0;
 
       const processingFees = feesByAgent.get(float.agentId) ?? 0;
 

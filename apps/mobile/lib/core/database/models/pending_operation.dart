@@ -72,6 +72,7 @@ class OperationType {
   static const String loanApplicationCreate = 'LOAN_APPLICATION_CREATE';
   static const String collectionCreate = 'COLLECTION_CREATE';
   static const String paymentCreate = 'PAYMENT_CREATE';
+  static const String loanDisbursementCreate = 'LOAN_DISBURSEMENT_CREATE';
   static const String agentDayClose = 'AGENT_DAY_CLOSE';
   static const String mediaUpload = 'MEDIA_UPLOAD';
 }

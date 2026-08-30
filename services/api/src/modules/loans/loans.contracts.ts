@@ -29,9 +29,18 @@ export type LoanListItemContract = {
   status: string;
 
   /**
-   * Amount actually advanced to the borrower.
+   * Agreed principal for the loan.
    */
   principal: number;
+
+  /** Amount physically handed to the borrower so far. */
+  disbursedAmount: number;
+
+  /** Principal still waiting to be handed to the borrower. */
+  pendingDisbursementAmount: number;
+
+  /** Number of physical disbursement events recorded. */
+  disbursementCount: number;
 
   /**
    * Current borrower debt outstanding.
@@ -232,4 +241,54 @@ export type LoanListItemContract = {
 export type LoanListResponseContract = {
   loans:
     LoanListItemContract[];
+};
+
+export type LoanDisbursementContract = {
+  id: string;
+  loanId: string;
+  amount: number;
+  assignedFloatAmount: number;
+  collectedRepaymentsAmount: number;
+  source: 'ASSIGNED_FLOAT' | 'COLLECTED_REPAYMENTS' | 'MIXED_CASH';
+  disbursedAt: string;
+  note: string | null;
+  recordedByName: string;
+  recordedByPublicId: string | null;
+  createdAt: string;
+};
+
+export type PendingDisbursementContract = {
+  loanId: string;
+  applicationId: string | null;
+  customerId: string;
+  borrowerName: string;
+  phone: string;
+  branchId: string;
+  branchName: string | null;
+  agreedAmount: number;
+  disbursedAmount: number;
+  remainingAmount: number;
+  percentDisbursed: number;
+  disbursementCount: number;
+  lastDisbursementAt: string | null;
+  lastDisbursementAmount: number | null;
+  issuedByName: string | null;
+  issuedByPublicId: string | null;
+  status: string;
+  createdAt: string;
+  disbursements: LoanDisbursementContract[];
+};
+
+export type PendingDisbursementListResponseContract = {
+  summary: {
+    borrowersCount: number;
+    totalRemaining: number;
+  };
+  pendingDisbursements: PendingDisbursementContract[];
+};
+
+export type RecordLoanDisbursementResponseContract = {
+  pending: PendingDisbursementContract | null;
+  loan: Omit<LoanListItemContract, 'reminder'> | null;
+  disbursement: LoanDisbursementContract;
 };

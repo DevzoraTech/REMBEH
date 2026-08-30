@@ -37,6 +37,7 @@ enum LoanStatus {
   DRAFT
   SUBMITTED
   APPROVED
+  PARTIALLY_DISBURSED
   REJECTED
   DISBURSED
   CURRENT
@@ -110,6 +111,12 @@ enum RepaymentMethod {
   MOBILE_MONEY
   BANK_TRANSFER
   OTHER
+}
+
+enum LoanDisbursementSource {
+  ASSIGNED_FLOAT
+  COLLECTED_REPAYMENTS
+  MIXED_CASH
 }
 
 enum PaymentGatewayProvider {
@@ -412,6 +419,7 @@ model Tenant {
   permissions              Permission[]
   customers                Customer[]
   loans                    Loan[]
+  loanDisbursements        LoanDisbursement[]
   repayments               Repayment[]
   paymentGatewayIntents    PaymentGatewayIntent[]
   clientWallets            ClientWallet[]
@@ -480,6 +488,7 @@ model Branch {
   users                    User[]
   customers                Customer[]
   loans                    Loan[]
+  loanDisbursements        LoanDisbursement[]
   repayments               Repayment[]
   clientWallets            ClientWallet[]
   loanApplications         LoanApplication[]
@@ -713,6 +722,7 @@ model User {
   auditLogs           AuditLog[]
   otpChallenges       OtpChallenge[]
   loanApplications    LoanApplication[] @relation("LoanApplicationOfficer")
+  loanDisbursements   LoanDisbursement[] @relation("LoanDisbursementRecorder")
   repaymentsRecorded  Repayment[]       @relation("RepaymentRecorder")
   dailyFloats         AgentDailyFloat[] @relation("AgentDailyFloatAgent")
   dailyFloatsRecorded AgentDailyFloat[] @relation("AgentDailyFloatRecorder")
@@ -1187,6 +1197,7 @@ model Loan {
   customer      Customer           @relation(fields: [customerId], references: [id])
   application   LoanApplication?
   wallet        ClientWallet?
+  disbursements LoanDisbursement[]
   repayments    Repayment[]
   fines         LoanFine[]
   reminderItems LoanReminderItem[]
@@ -1197,6 +1208,33 @@ model Loan {
   @@index([tenantId, paymentStartDate])
   @@index([tenantId, isFined])
   @@map("loans")
+}
+
+model LoanDisbursement {
+  id                        String                 @id @default(uuid()) @db.Uuid
+  localId                   String?                @unique @map("local_id")
+  tenantId                  String                 @map("tenant_id") @db.Uuid
+  branchId                  String                 @map("branch_id") @db.Uuid
+  loanId                    String                 @map("loan_id") @db.Uuid
+  recordedByUserId          String                 @map("recorded_by_user_id") @db.Uuid
+  amount                    Decimal                @db.Decimal(18, 2)
+  assignedFloatAmount       Decimal                @default(0) @map("assigned_float_amount") @db.Decimal(18, 2)
+  collectedRepaymentsAmount Decimal                @default(0) @map("collected_repayments_amount") @db.Decimal(18, 2)
+  source                    LoanDisbursementSource @default(ASSIGNED_FLOAT)
+  disbursedAt               DateTime               @map("disbursed_at")
+  note                      String?
+  createdAt                 DateTime               @default(now()) @map("created_at")
+  updatedAt                 DateTime               @updatedAt @map("updated_at")
+
+  tenant     Tenant @relation(fields: [tenantId], references: [id])
+  branch     Branch @relation(fields: [branchId], references: [id])
+  loan       Loan   @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  recordedBy User   @relation("LoanDisbursementRecorder", fields: [recordedByUserId], references: [id])
+
+  @@index([tenantId, branchId, disbursedAt])
+  @@index([tenantId, recordedByUserId, disbursedAt])
+  @@index([tenantId, loanId])
+  @@map("loan_disbursements")
 }
 
 model ClientWallet {

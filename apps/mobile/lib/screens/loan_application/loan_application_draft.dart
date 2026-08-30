@@ -6,6 +6,7 @@ class LoanApplicationDraft {
   String givenNames = '';
   String phone = '';
   String nationalId = '';
+
   /// API enum: MALE | FEMALE | OTHER
   String? gender;
   DateTime? dateOfBirth;
@@ -23,6 +24,7 @@ class LoanApplicationDraft {
   bool passportCaptured = false;
   bool ninFrontCaptured = false;
   bool ninBackCaptured = false;
+
   /// Local preview bytes keyed by media type (e.g. PASSPORT).
   final Map<String, Uint8List> mediaPreviews = {};
 
@@ -30,11 +32,15 @@ class LoanApplicationDraft {
   String? loanProductTemplateId;
   String? loanProductTemplateName;
   String principalAmount = '';
+  bool partialDisbursement = false;
+  String initialDisbursementAmount = '';
+  String collectedRepaymentsAmount = '';
   String? interestRate;
   String? loanDurationDays;
   String processingFee = '';
   String? repaymentFrequencyLabel;
   String? collateralType;
+
   /// Provisional payment start computed from the selected template policy.
   DateTime? paymentStartDate;
 
@@ -62,9 +68,10 @@ class LoanApplicationDraft {
   bool termsConfirmed = false;
 
   String get fullName {
-    final parts = [givenNames.trim(), surname.trim()]
-        .where((part) => part.isNotEmpty)
-        .toList();
+    final parts = [
+      givenNames.trim(),
+      surname.trim(),
+    ].where((part) => part.isNotEmpty).toList();
     return parts.join(' ');
   }
 
