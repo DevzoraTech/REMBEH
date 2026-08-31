@@ -14,6 +14,8 @@ import {
   History,
   Landmark,
   LockKeyhole,
+  MessageSquareText,
+  ReceiptText,
   Search,
   ShieldCheck,
   X,
@@ -25,6 +27,9 @@ import { controlCenterFetch } from "../../lib/control-center-api";
 import type { ControlCenterSession } from "../../lib/control-center-session";
 
 import type {
+  ControlCenterPaymentRecord,
+  ControlCenterPlan,
+  ControlCenterSmsBundle,
   ControlCenterSubscriptionLifecycleStatus,
   ControlCenterSubscriptionRecord,
   ControlCenterSubscriptionsResponse,
@@ -41,11 +46,14 @@ type SubscriptionView =
   | "ACTIVE"
   | "EXPIRED"
   | "LOCKED"
+  | "PAYMENTS"
+  | "PLANS"
   | "HISTORY";
 
 type LifecycleStatus = ControlCenterSubscriptionLifecycleStatus;
 
 type SubscriptionRecord = ControlCenterSubscriptionRecord;
+type PaymentRecord = ControlCenterPaymentRecord;
 
 type AttentionSeverity =
   | "CRITICAL"
@@ -81,6 +89,36 @@ export function SubscriptionsSection({
 
   const [selected, setSelected] =
     useState<SubscriptionRecord | null>(null);
+  const [selectedPayment, setSelectedPayment] =
+    useState<PaymentRecord | null>(null);
+  const [busyPaymentId, setBusyPaymentId] =
+    useState<string | null>(null);
+  const [actionError, setActionError] =
+    useState<string | null>(null);
+
+  function applySubscriptionsResponse(
+    response: ControlCenterSubscriptionsResponse,
+  ) {
+    const next = [
+      ...(response.subscriptions ?? []),
+    ].sort(compareSubscriptionPriority);
+
+    setData({
+      ...response,
+      subscriptions: next,
+    });
+    setRecords(next);
+  }
+
+  async function refreshSubscriptions() {
+    const response =
+      await controlCenterFetch<ControlCenterSubscriptionsResponse>(
+        "/subscriptions",
+        session,
+      );
+
+    applySubscriptionsResponse(response);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -96,17 +134,9 @@ export function SubscriptionsSection({
             session,
           );
 
-        const next = [
-          ...(response.subscriptions ?? []),
-        ].sort(compareSubscriptionPriority);
-
         if (cancelled) return;
 
-        setData({
-          ...response,
-          subscriptions: next,
-        });
-        setRecords(next);
+        applySubscriptionsResponse(response);
       } catch (error) {
         if (cancelled) return;
 
@@ -193,7 +223,56 @@ export function SubscriptionsSection({
     [records],
   );
 
-  const plans = useMemo(
+  const paymentRows = data?.payments ?? [];
+  const subscriptionPlans = data?.plans ?? [];
+  const smsBundles = data?.smsBundles ?? [];
+
+  const paymentCounts = useMemo(() => {
+    const stats = data?.paymentStats;
+    if (stats) {
+      return stats;
+    }
+
+    const completed = paymentRows.filter(
+      (row) => row.status === "COMPLETED",
+    );
+
+    return {
+      total: paymentRows.length,
+      pending: paymentRows.filter(
+        (row) => row.status === "PENDING",
+      ).length,
+      pendingSubscriptions: paymentRows.filter(
+        (row) =>
+          row.kind === "subscription" &&
+          row.status === "PENDING",
+      ).length,
+      pendingSms: paymentRows.filter(
+        (row) =>
+          row.kind === "sms" &&
+          row.status === "PENDING",
+      ).length,
+      completed: completed.length,
+      failed: paymentRows.filter((row) =>
+        ["FAILED", "CANCELLED", "REVERSED"].includes(
+          row.status,
+        ),
+      ).length,
+      completedRevenue: completed.reduce(
+        (sum, row) => sum + row.amount,
+        0,
+      ),
+      completedPayments: completed.length,
+      completedSubscriptionRevenue: completed
+        .filter((row) => row.kind === "subscription")
+        .reduce((sum, row) => sum + row.amount, 0),
+      completedSmsRevenue: completed
+        .filter((row) => row.kind === "sms")
+        .reduce((sum, row) => sum + row.amount, 0),
+    };
+  }, [data?.paymentStats, paymentRows]);
+
+  const planCodes = useMemo(
     () =>
       [
         ...new Set(
@@ -204,6 +283,52 @@ export function SubscriptionsSection({
       ].sort((a, b) => a.localeCompare(b)),
     [records],
   );
+
+  const filteredPayments = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+
+    return paymentRows
+      .filter((row) => {
+        const matchesSearch =
+          !needle ||
+          [
+            row.organizationName,
+            row.branchName,
+            row.planCode,
+            row.planName,
+            row.kind,
+            row.merchantReference,
+            row.verificationCode,
+            row.transactionId,
+          ].some((value) =>
+            (value ?? "")
+              .toLowerCase()
+              .includes(needle),
+          );
+
+        const matchesOrganization =
+          organization === "ALL" ||
+          row.organizationName === organization;
+
+        const matchesPlan =
+          plan === "ALL" ||
+          (plan === "SMS"
+            ? row.kind === "sms"
+            : row.planCode === plan);
+
+        return (
+          matchesSearch &&
+          matchesOrganization &&
+          matchesPlan
+        );
+      })
+      .sort(comparePaymentPriority);
+  }, [
+    organization,
+    paymentRows,
+    plan,
+    query,
+  ]);
 
   const filteredRecords = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -280,6 +405,72 @@ export function SubscriptionsSection({
     setPage(1);
   }
 
+  async function verifyPayment(payment: PaymentRecord) {
+    setBusyPaymentId(payment.id);
+    setActionError(null);
+
+    try {
+      await controlCenterFetch(
+        `/payments/${payment.id}/verify`,
+        session,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            kind: payment.kind,
+            transactionId:
+              payment.transactionId ??
+              payment.verificationCode ??
+              undefined,
+          }),
+        },
+      );
+
+      setSelectedPayment(null);
+      await refreshSubscriptions();
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Could not verify payment.",
+      );
+    } finally {
+      setBusyPaymentId(null);
+    }
+  }
+
+  async function rejectPayment(
+    payment: PaymentRecord,
+    reason: string,
+  ) {
+    setBusyPaymentId(payment.id);
+    setActionError(null);
+
+    try {
+      await controlCenterFetch(
+        `/payments/${payment.id}/reject`,
+        session,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            kind: payment.kind,
+            reason,
+          }),
+        },
+      );
+
+      setSelectedPayment(null);
+      await refreshSubscriptions();
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Could not reject payment.",
+      );
+    } finally {
+      setBusyPaymentId(null);
+    }
+  }
+
   return (
     <>
       <div className="mx-auto w-full max-w-[1500px]">
@@ -289,27 +480,35 @@ export function SubscriptionsSection({
           <MetricCard
             icon={AlertTriangle}
             tone="red"
-            label="Needs attention"
+            label="Branch attention"
             value={ccNumber(counts.attention)}
             secondary="Subscription issues requiring review"
           />
 
           <MetricCard
-            icon={CalendarClock}
+            icon={ReceiptText}
             tone="amber"
-            label="Expiring soon"
-            value={ccNumber(counts.expiring)}
-            secondary={`Within ${EXPIRING_DAYS} days`}
+            label="Pending verification"
+            value={ccNumber(paymentCounts.pending)}
+            secondary={`${ccNumber(
+              paymentCounts.pendingSubscriptions,
+            )} subscriptions · ${ccNumber(
+              paymentCounts.pendingSms,
+            )} SMS`}
           />
 
           <MetricCard
-            icon={LockKeyhole}
-            tone="red"
-            label="Locked branches"
+            icon={MessageSquareText}
+            tone="blue"
+            label="SMS bundles"
             value={ccNumber(
-              counts.locked,
+              smsBundles.filter(
+                (bundle) => bundle.status === "ACTIVE",
+              ).length,
             )}
-            secondary="Subscription access blocked"
+            secondary={`${ccNumber(
+              paymentCounts.completedSmsRevenue,
+            )} UGX verified SMS revenue`}
           />
 
           <MetricCard
@@ -331,10 +530,11 @@ export function SubscriptionsSection({
           <SubscriptionNavigation
             active={view}
             counts={counts}
+            pendingPayments={paymentCounts.pending}
             onChange={changeView}
           />
 
-          {view !== "HISTORY" ? (
+          {view !== "HISTORY" && view !== "PLANS" ? (
             <div className="flex flex-wrap items-center gap-2.5 border-t border-[#edf1f4] px-4 py-3">
               <SearchControl
                 value={query}
@@ -373,12 +573,21 @@ export function SubscriptionsSection({
                 options={[
                   {
                     value: "ALL",
-                    label: "All plans",
+                    label: "All products",
                   },
-                  ...plans.map((item) => ({
+                  ...planCodes.map((item) => ({
                     value: item,
                     label: formatPlan(item),
                   })),
+                  ...(paymentRows.some((row) => row.kind === "sms") ||
+                  smsBundles.length
+                    ? [
+                        {
+                          value: "SMS",
+                          label: "SMS bundles",
+                        },
+                      ]
+                    : []),
                 ]}
               />
             </div>
@@ -394,6 +603,19 @@ export function SubscriptionsSection({
             <LoadingState />
           ) : view === "HISTORY" ? (
             <HistoryState />
+          ) : view === "PLANS" ? (
+            <PlansAndSmsWorkspace
+              plans={subscriptionPlans}
+              smsBundles={smsBundles}
+            />
+          ) : view === "PAYMENTS" ? (
+            <PaymentReviewWorkspace
+              payments={filteredPayments}
+              onReview={(payment) => {
+                setActionError(null);
+                setSelectedPayment(payment);
+              }}
+            />
           ) : view === "ATTENTION" ? (
             <AttentionWorkspace
               records={pageRecords}
@@ -408,6 +630,8 @@ export function SubscriptionsSection({
 
           {!loading &&
           view !== "HISTORY" &&
+          view !== "PLANS" &&
+          view !== "PAYMENTS" &&
           filteredRecords.length ? (
             <PaginationFooter
               page={currentPage}
@@ -433,6 +657,24 @@ export function SubscriptionsSection({
           onOpenClient={() => {
             setSelected(null);
             onOpenClient(selected.clientId);
+          }}
+        />
+      ) : null}
+
+      {selectedPayment ? (
+        <PaymentReviewDrawer
+          payment={selectedPayment}
+          busy={busyPaymentId === selectedPayment.id}
+          error={actionError}
+          onClose={() => {
+            setActionError(null);
+            setSelectedPayment(null);
+          }}
+          onVerify={() => {
+            void verifyPayment(selectedPayment);
+          }}
+          onReject={(reason) => {
+            void rejectPayment(selectedPayment, reason);
           }}
         />
       ) : null}
@@ -471,6 +713,7 @@ function PageHeader() {
 function SubscriptionNavigation({
   active,
   counts,
+  pendingPayments,
   onChange,
 }: {
   active: SubscriptionView;
@@ -484,6 +727,8 @@ function SubscriptionNavigation({
     noSubscription: number;
     attention: number;
   };
+
+  pendingPayments: number;
 
   onChange: (value: SubscriptionView) => void;
 }) {
@@ -516,6 +761,15 @@ function SubscriptionNavigation({
       value: "LOCKED",
       label: "Locked",
       count: counts.locked,
+    },
+    {
+      value: "PAYMENTS",
+      label: "Payment review",
+      count: pendingPayments,
+    },
+    {
+      value: "PLANS",
+      label: "Plans & SMS",
     },
     {
       value: "HISTORY",
@@ -1052,6 +1306,666 @@ function HistoryState() {
   );
 }
 
+function PaymentReviewWorkspace({
+  payments,
+  onReview,
+}: {
+  payments: PaymentRecord[];
+  onReview: (payment: PaymentRecord) => void;
+}) {
+  const pending = payments.filter(
+    (payment) => payment.status === "PENDING",
+  );
+  const recent = payments.filter(
+    (payment) => payment.status !== "PENDING",
+  );
+
+  if (!payments.length) {
+    return (
+      <div className="border-t border-[#edf1f4]">
+        <EmptyState
+          icon={ReceiptText}
+          title="No payment claims found"
+          description="Subscription and SMS payment claims will appear here once branches submit merchant transaction details."
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-t border-[#edf1f4]">
+      <div className="grid gap-3 border-b border-[#edf1f4] bg-[#fcfdfe] p-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="rounded-lg border border-[#f0dfc4] bg-[#fffaf1] p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-[#a6610f]">
+            Pending verification
+          </p>
+
+          <p className="mt-1 text-[24px] font-bold text-[#17233c]">
+            {ccNumber(pending.length)}
+          </p>
+
+          <p className="mt-1 text-[10px] font-normal text-[#7b6748]">
+            Approve only after matching the transaction in the merchant account.
+          </p>
+        </div>
+
+        <div className="rounded-lg border border-[#d9e8f8] bg-[#f5f9ff] p-4">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-[#2361ad]">
+            Product mix
+          </p>
+
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <MiniStat
+              label="Subscriptions"
+              value={ccNumber(
+                payments.filter(
+                  (payment) =>
+                    payment.kind === "subscription",
+                ).length,
+              )}
+            />
+
+            <MiniStat
+              label="SMS top-ups"
+              value={ccNumber(
+                payments.filter(
+                  (payment) => payment.kind === "sms",
+                ).length,
+              )}
+            />
+          </div>
+        </div>
+      </div>
+
+      {pending.length ? (
+        <div>
+          <div className="border-b border-[#edf1f4] px-4 py-3">
+            <p className="text-[10.5px] font-semibold text-[#17233c]">
+              Awaiting action
+            </p>
+
+            <p className="mt-1 text-[9.5px] font-normal text-[#69768f]">
+              Subscription renewals and SMS credit purchases that need confirmation.
+            </p>
+          </div>
+
+          <div className="divide-y divide-[#edf1f4]">
+            {pending.map((payment) => (
+              <PaymentReviewRow
+                key={payment.id}
+                payment={payment}
+                onReview={() => onReview(payment)}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {recent.length ? (
+        <div className="border-t border-[#edf1f4]">
+          <div className="border-b border-[#edf1f4] px-4 py-3">
+            <p className="text-[10.5px] font-semibold text-[#17233c]">
+              Recent outcomes
+            </p>
+          </div>
+
+          <div className="divide-y divide-[#edf1f4]">
+            {recent.slice(0, 12).map((payment) => (
+              <PaymentReviewRow
+                key={payment.id}
+                payment={payment}
+                onReview={() => onReview(payment)}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function PaymentReviewRow({
+  payment,
+  onReview,
+}: {
+  payment: PaymentRecord;
+  onReview: () => void;
+}) {
+  return (
+    <div className="grid gap-4 px-4 py-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(150px,0.55fr)_minmax(160px,0.5fr)_minmax(170px,0.6fr)_auto] lg:items-center">
+      <div className="flex min-w-0 items-start gap-3">
+        <SmallIcon
+          icon={
+            payment.kind === "sms"
+              ? MessageSquareText
+              : CreditCard
+          }
+          tone={payment.kind === "sms" ? "blue" : "green"}
+        />
+
+        <div className="min-w-0">
+          <p className="truncate text-[11px] font-semibold text-[#15223a]">
+            {payment.organizationName}
+          </p>
+
+          <p className="mt-1 truncate text-[9.5px] font-medium text-[#61708a]">
+            {payment.branchName}
+          </p>
+
+          <p className="mt-0.5 text-[9px] font-normal text-[#8a94a5]">
+            Submitted {formatDate(payment.createdAt)}
+          </p>
+        </div>
+      </div>
+
+      <div>
+        <p className="text-[9px] font-medium uppercase tracking-[0.04em] text-[#8a94a5]">
+          Product
+        </p>
+
+        <p className="mt-1 text-[10.5px] font-semibold text-[#26344d]">
+          {formatPaymentProduct(payment)}
+        </p>
+      </div>
+
+      <div>
+        <p className="text-[9px] font-medium uppercase tracking-[0.04em] text-[#8a94a5]">
+          Amount
+        </p>
+
+        <p className="mt-1 text-[11px] font-semibold text-[#17233c]">
+          {ccMoney(payment.amount, payment.currency)}
+        </p>
+      </div>
+
+      <div>
+        <p className="text-[9px] font-medium uppercase tracking-[0.04em] text-[#8a94a5]">
+          Reference
+        </p>
+
+        <p className="mt-1 truncate text-[10px] font-semibold text-[#26344d]">
+          {payment.transactionId ??
+            payment.verificationCode ??
+            payment.merchantReference ??
+            "Not available"}
+        </p>
+      </div>
+
+      <div className="flex items-center justify-between gap-3 lg:justify-end">
+        <PaymentStatusBadge status={payment.status} />
+
+        <button
+          type="button"
+          onClick={onReview}
+          className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-[#cfe3d7] bg-[#f4faf6] px-3 text-[10px] font-semibold text-[#168650] transition hover:bg-[#eaf6ef]"
+        >
+          Review
+          <ArrowRight className="size-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function PlansAndSmsWorkspace({
+  plans,
+  smsBundles,
+}: {
+  plans: ControlCenterPlan[];
+  smsBundles: ControlCenterSmsBundle[];
+}) {
+  return (
+    <div className="border-t border-[#edf1f4] p-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <PlanCatalogue
+          title="Subscription plans"
+          description="Current plans available to client branches."
+          rows={plans}
+        />
+
+        <SmsBundleCatalogue bundles={smsBundles} />
+      </div>
+    </div>
+  );
+}
+
+function PlanCatalogue({
+  title,
+  description,
+  rows,
+}: {
+  title: string;
+  description: string;
+  rows: ControlCenterPlan[];
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-[#dfe5eb] bg-white">
+      <div className="border-b border-[#edf1f4] px-4 py-3">
+        <p className="text-[11px] font-semibold text-[#15223a]">
+          {title}
+        </p>
+
+        <p className="mt-1 text-[9.5px] font-normal text-[#69768f]">
+          {description}
+        </p>
+      </div>
+
+      {rows.length ? (
+        <div className="divide-y divide-[#edf1f4]">
+          {rows.map((plan) => (
+            <div
+              key={plan.id}
+              className="grid gap-3 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <SmallIcon
+                  icon={CalendarClock}
+                  tone="green"
+                />
+
+                <div className="min-w-0">
+                  <p className="truncate text-[10.5px] font-semibold text-[#17233c]">
+                    {plan.name}
+                  </p>
+
+                  <p className="mt-0.5 text-[9px] font-normal text-[#68768f]">
+                    {formatPlan(plan.code)} billing
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-[12px] font-bold text-[#17233c]">
+                {ccMoney(plan.amount, plan.currency)}
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyInlineState text="No active subscription plans found." />
+      )}
+    </section>
+  );
+}
+
+function SmsBundleCatalogue({
+  bundles,
+}: {
+  bundles: ControlCenterSmsBundle[];
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-[#dfe5eb] bg-white">
+      <div className="border-b border-[#edf1f4] px-4 py-3">
+        <p className="text-[11px] font-semibold text-[#15223a]">
+          SMS bundles
+        </p>
+
+        <p className="mt-1 text-[9.5px] font-normal text-[#69768f]">
+          Bundles branches can buy for repayment reminders and campaign messages.
+        </p>
+      </div>
+
+      {bundles.length ? (
+        <div className="divide-y divide-[#edf1f4]">
+          {bundles.map((bundle) => (
+            <div
+              key={bundle.id}
+              className="grid gap-3 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <SmallIcon
+                  icon={MessageSquareText}
+                  tone={
+                    bundle.status === "ACTIVE"
+                      ? "blue"
+                      : "amber"
+                  }
+                />
+
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="truncate text-[10.5px] font-semibold text-[#17233c]">
+                      {bundle.name}
+                    </p>
+
+                    <CatalogueStatusBadge status={bundle.status} />
+                  </div>
+
+                  <p className="mt-0.5 text-[9px] font-normal text-[#68768f]">
+                    {ccNumber(bundle.smsUnits)} SMS · {ccMoney(bundle.effectiveRate, bundle.currency)} per SMS
+                  </p>
+                </div>
+              </div>
+
+              <p className="text-[12px] font-bold text-[#17233c]">
+                {ccMoney(bundle.priceUgx, bundle.currency)}
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <EmptyInlineState text="No SMS bundles found." />
+      )}
+    </section>
+  );
+}
+
+function PaymentReviewDrawer({
+  payment,
+  busy,
+  error,
+  onVerify,
+  onReject,
+  onClose,
+}: {
+  payment: PaymentRecord;
+  busy: boolean;
+  error: string | null;
+  onVerify: () => void;
+  onReject: (reason: string) => void;
+  onClose: () => void;
+}) {
+  const [rejecting, setRejecting] = useState(false);
+  const [reason, setReason] = useState("");
+  const canReject = reason.trim().length >= 3 && !busy;
+
+  return (
+    <div className="fixed inset-0 z-[70]">
+      <button
+        type="button"
+        className="absolute inset-0 bg-[#0f172a]/30 backdrop-blur-[1px]"
+        onClick={onClose}
+        aria-label="Close payment review"
+      />
+
+      <aside className="absolute inset-y-0 right-0 flex w-full max-w-[470px] flex-col border-l border-[#dfe5eb] bg-white shadow-[-12px_0_35px_rgba(15,23,42,0.1)]">
+        <div className="flex h-[68px] shrink-0 items-center justify-between border-b border-[#e7ebef] px-5">
+          <div>
+            <p className="text-[13px] font-semibold text-[#15223a]">
+              Payment review
+            </p>
+
+            <p className="mt-0.5 text-[9.5px] font-normal text-[#718099]">
+              Verify subscription and SMS payment claims.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="grid size-8 place-items-center rounded-md text-[#64738d] transition hover:bg-[#f4f6f8]"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          <div className="border-b border-[#edf1f4] px-5 py-5">
+            <div className="flex items-start gap-3">
+              <SmallIcon
+                icon={
+                  payment.kind === "sms"
+                    ? MessageSquareText
+                    : CreditCard
+                }
+                tone={payment.kind === "sms" ? "blue" : "green"}
+              />
+
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold text-[#15223a]">
+                  {payment.organizationName}
+                </p>
+
+                <p className="mt-1 text-[10px] font-medium text-[#61708a]">
+                  {payment.branchName}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <PaymentStatusBadge status={payment.status} />
+            </div>
+          </div>
+
+          <DrawerSection title="Payment">
+            <DetailRow
+              label="Product"
+              value={formatPaymentProduct(payment)}
+            />
+
+            <DetailRow
+              label="Submitted amount"
+              value={ccMoney(payment.amount, payment.currency)}
+            />
+
+            <DetailRow
+              label="Expected amount"
+              value={
+                payment.expectedAmount === null
+                  ? "Not available"
+                  : ccMoney(payment.expectedAmount, payment.currency)
+              }
+            />
+
+            <DetailRow
+              label="Submitted"
+              value={formatDate(payment.createdAt)}
+            />
+          </DrawerSection>
+
+          <DrawerSection title="Merchant details">
+            <DetailRow
+              label="Payment method"
+              value={payment.paymentMethod}
+            />
+
+            <DetailRow
+              label="Merchant reference"
+              value={payment.merchantReference ?? "Not available"}
+            />
+
+            <DetailRow
+              label="Submitted transaction ID"
+              value={payment.transactionId ?? "Not available"}
+            />
+
+            <DetailRow
+              label="Merchant code"
+              value={payment.merchantCode ?? "Not available"}
+            />
+          </DrawerSection>
+
+          {payment.kind === "sms" ? (
+            <DrawerSection title="SMS credits">
+              <DetailRow
+                label="Credits"
+                value={
+                  payment.smsUnits === null
+                    ? "Not available"
+                    : `${ccNumber(payment.smsUnits)} SMS`
+                }
+              />
+
+              <DetailRow
+                label="Bundle"
+                value={payment.planName ?? "SMS bundle"}
+              />
+            </DrawerSection>
+          ) : null}
+
+          {payment.status === "PENDING" ? (
+            <div className="mx-5 my-5 rounded-lg border border-[#f0dfc4] bg-[#fffaf1] p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[#c77917]" />
+
+                <div>
+                  <p className="text-[10.5px] font-semibold text-[#4a371c]">
+                    Verification required
+                  </p>
+
+                  <p className="mt-1 text-[9.5px] font-normal leading-4 text-[#7b6748]">
+                    Check the merchant account first. Verifying SMS payments immediately credits the branch wallet.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        <div className="shrink-0 border-t border-[#e7ebef] bg-[#fbfcfd] px-5 py-4">
+          {payment.status === "PENDING" ? (
+            <div className="space-y-3">
+              {error ? (
+                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[10px] font-medium text-red-700">
+                  {error}
+                </div>
+              ) : null}
+
+              {rejecting ? (
+                <div className="rounded-lg border border-[#efcaca] bg-white p-3">
+                  <label className="text-[10px] font-semibold text-[#713434]">
+                    Rejection reason
+                    <textarea
+                      value={reason}
+                      onChange={(event) => setReason(event.target.value)}
+                      rows={3}
+                      className="mt-2 w-full resize-none rounded-md border border-[#efcaca] px-3 py-2 text-[10.5px] font-medium text-[#27354f] outline-none focus:border-[#c64040]"
+                      placeholder="For example: transaction not found in merchant account"
+                    />
+                  </label>
+                </div>
+              ) : null}
+
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={busy || (rejecting && !canReject)}
+                  onClick={() => {
+                    if (!rejecting) {
+                      setRejecting(true);
+                      return;
+                    }
+                    if (canReject) {
+                      onReject(reason.trim());
+                    }
+                  }}
+                  className="h-9 rounded-md border border-[#efcaca] bg-white px-3.5 text-[10px] font-semibold text-[#c64040] transition hover:bg-[#fff5f5] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {rejecting ? "Confirm rejection" : "Reject payment"}
+                </button>
+
+                <button
+                  type="button"
+                  disabled={busy || rejecting || !payment.canReview}
+                  onClick={onVerify}
+                  className="inline-flex h-9 items-center gap-2 rounded-md bg-[#188653] px-3.5 text-[10px] font-semibold text-white transition hover:bg-[#147849] disabled:cursor-not-allowed disabled:opacity-60"
+                  title={
+                    payment.canReview
+                      ? undefined
+                      : "Only pending manual merchant payments can be verified here"
+                  }
+                >
+                  <CheckCircle2 className="size-3.5" />
+                  {busy ? "Working..." : "Verify payment"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={onClose}
+                className="h-9 rounded-md border border-[#dce2e8] bg-white px-3.5 text-[10px] font-semibold text-[#526078] transition hover:bg-[#f6f8fa]"
+              >
+                Close
+              </button>
+            </div>
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function MiniStat({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div>
+      <p className="text-[9px] font-medium uppercase tracking-[0.04em] text-[#718099]">
+        {label}
+      </p>
+
+      <p className="mt-1 text-[15px] font-bold text-[#17233c]">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function PaymentStatusBadge({
+  status,
+}: {
+  status: PaymentRecord["status"];
+}) {
+  const styles =
+    status === "COMPLETED"
+      ? "bg-[#eaf6ee] text-[#1b804e]"
+      : status === "PENDING"
+        ? "bg-[#fff3df] text-[#ba6a12]"
+        : "bg-[#fff0f0] text-[#c94040]";
+
+  return (
+    <span
+      className={`inline-flex min-h-[21px] items-center rounded-[5px] px-2 text-[9px] font-semibold ${styles}`}
+    >
+      {status === "COMPLETED"
+        ? "Verified"
+        : status === "PENDING"
+          ? "Pending"
+          : status === "CANCELLED"
+            ? "Cancelled"
+            : status === "REVERSED"
+              ? "Reversed"
+              : "Rejected"}
+    </span>
+  );
+}
+
+function CatalogueStatusBadge({
+  status,
+}: {
+  status: ControlCenterSmsBundle["status"];
+}) {
+  const styles =
+    status === "ACTIVE"
+      ? "bg-[#eaf6ee] text-[#1b804e]"
+      : "bg-[#fff3df] text-[#ba6a12]";
+
+  return (
+    <span
+      className={`inline-flex min-h-[20px] items-center rounded-[5px] px-2 text-[8.5px] font-semibold ${styles}`}
+    >
+      {status === "ACTIVE" ? "Active" : "Inactive"}
+    </span>
+  );
+}
+
+function EmptyInlineState({
+  text,
+}: {
+  text: string;
+}) {
+  return (
+    <div className="px-4 py-10 text-center text-[10px] font-medium text-[#6b7890]">
+      {text}
+    </div>
+  );
+}
+
 function MetricCard({
   icon,
   tone,
@@ -1464,6 +2378,20 @@ function compareSubscriptionPriority(
   );
 }
 
+function comparePaymentPriority(
+  a: PaymentRecord,
+  b: PaymentRecord,
+) {
+  if (a.status !== b.status) {
+    return a.status === "PENDING" ? -1 : 1;
+  }
+
+  return (
+    Date.parse(b.createdAt) -
+    Date.parse(a.createdAt)
+  );
+}
+
 function getAttentionSeverity(
   record: SubscriptionRecord,
 ): AttentionSeverity {
@@ -1627,6 +2555,23 @@ function formatPlan(
   return value
     .replace(/^PRO_?/i, "")
     .replace(/_/g, " ");
+}
+
+function formatPaymentProduct(
+  payment: PaymentRecord,
+) {
+  if (payment.kind === "sms") {
+    const credits =
+      payment.smsUnits === null
+        ? "SMS"
+        : `${ccNumber(payment.smsUnits)} SMS`;
+
+    return payment.planName
+      ? `${payment.planName} · ${credits}`
+      : credits;
+  }
+
+  return formatPlan(payment.planCode);
 }
 
 function formatDate(

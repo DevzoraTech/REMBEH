@@ -14,6 +14,7 @@ import {
   CreditCard,
   Download,
   Landmark,
+  MessageSquareText,
   Search,
   ShieldCheck,
   TriangleAlert,
@@ -166,11 +167,13 @@ export function PaymentsSection({
         ...new Set(
           rows.map(
             (row) =>
-              row.planCode,
+              row.kind === "sms"
+                ? "SMS"
+                : row.planCode,
           ),
         ),
       ]
-        .filter(Boolean)
+        .filter((value): value is string => Boolean(value))
         .sort((a, b) =>
           a.localeCompare(b),
         ),
@@ -206,6 +209,8 @@ export function PaymentsSection({
             row.organizationName,
             row.branchName,
             row.planCode,
+            row.planName,
+            row.kind,
             row.merchantReference,
             row.verificationCode,
             row.transactionId,
@@ -222,7 +227,9 @@ export function PaymentsSection({
 
         const matchesPlan =
           plan === "ALL" ||
-          row.planCode === plan;
+          (plan === "SMS"
+            ? row.kind === "sms"
+            : row.planCode === plan);
 
         const matchesDate =
           matchesDateFilter(
@@ -298,6 +305,7 @@ export function PaymentsSection({
         {
           method: "PATCH",
           body: JSON.stringify({
+            kind: payment.kind,
             transactionId:
               payment.transactionId ??
               payment.verificationCode ??
@@ -332,6 +340,7 @@ export function PaymentsSection({
         {
           method: "PATCH",
           body: JSON.stringify({
+            kind: payment.kind,
             reason,
           }),
         },
@@ -353,7 +362,7 @@ export function PaymentsSection({
     const header = [
       "Organization",
       "Branch",
-      "Plan",
+      "Product",
       "Amount",
       "Currency",
       "Payment Method",
@@ -368,9 +377,7 @@ export function PaymentsSection({
       filteredRows.map((row) => [
         row.organizationName,
         row.branchName,
-        formatPlan(
-          row.planCode,
-        ),
+        formatPaymentProduct(row),
         row.amount,
         row.currency,
         paymentMethodLabel(
@@ -565,7 +572,7 @@ export function PaymentsSection({
                   value:
                     "ALL",
                   label:
-                    "All plans",
+                    "All products",
                 },
 
                 ...plans.map(
@@ -950,7 +957,9 @@ function PendingPaymentRow({
       <div className="flex min-w-0 items-start gap-3">
         <SmallIcon
           icon={
-            Landmark
+            record.kind === "sms"
+              ? MessageSquareText
+              : Landmark
           }
           tone={
             index % 3 ===
@@ -999,9 +1008,7 @@ function PendingPaymentRow({
         </p>
 
         <p className="mt-0.5 text-[9px] font-normal text-[#6b7890]">
-          {formatPlan(
-            record.planCode,
-          )}
+          {formatPaymentProduct(record)}
         </p>
       </div>
 
@@ -1096,7 +1103,7 @@ function PaymentHistoryTable({
             </th>
 
             <th className="w-[12%] px-3 py-2.5">
-              Plan
+              Product
             </th>
 
             <th className="w-[14%] px-3 py-2.5">
@@ -1137,7 +1144,9 @@ function PaymentHistoryTable({
                   <div className="flex min-w-0 items-center gap-3">
                     <SmallIcon
                       icon={
-                        Landmark
+                        record.kind === "sms"
+                          ? MessageSquareText
+                          : Landmark
                       }
                       tone={
                         index %
@@ -1169,9 +1178,7 @@ function PaymentHistoryTable({
                 </td>
 
                 <td className="px-3 py-2.5 text-[10.5px] font-medium text-[#26344d]">
-                  {formatPlan(
-                    record.planCode,
-                  )}
+                  {formatPaymentProduct(record)}
                 </td>
 
                 <td className="px-3 py-2.5 text-[10.5px] font-semibold text-[#17233c]">
@@ -1298,9 +1305,11 @@ function PaymentReviewDrawer({
             <div className="flex items-start gap-3">
               <SmallIcon
                 icon={
-                  Landmark
+                  payment.kind === "sms"
+                    ? MessageSquareText
+                    : Landmark
                 }
-                tone="green"
+                tone={payment.kind === "sms" ? "blue" : "green"}
               />
 
               <div className="min-w-0">
@@ -1350,10 +1359,8 @@ function PaymentReviewDrawer({
             />
 
             <DetailRow
-              label="Plan"
-              value={formatPlan(
-                payment.planCode,
-              )}
+              label="Product"
+              value={formatPaymentProduct(payment)}
             />
 
             <DetailRow
@@ -2287,8 +2294,12 @@ function relativeTime(
 }
 
 function formatPlan(
-  value: string,
+  value: string | null,
 ) {
+  if (!value) {
+    return "No plan";
+  }
+
   const normalized =
     value.toUpperCase();
 
@@ -2333,6 +2344,23 @@ function formatPlan(
       /_/g,
       " ",
     );
+}
+
+function formatPaymentProduct(
+  payment: PaymentRecord,
+) {
+  if (payment.kind === "sms") {
+    const units =
+      payment.smsUnits === null
+        ? "SMS"
+        : `${ccNumber(payment.smsUnits)} SMS`;
+
+    return payment.planName
+      ? `${payment.planName} · ${units}`
+      : units;
+  }
+
+  return formatPlan(payment.planCode);
 }
 
 function formatDate(

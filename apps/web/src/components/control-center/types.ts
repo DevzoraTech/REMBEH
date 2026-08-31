@@ -260,14 +260,17 @@ export type ControlCenterPaymentMethod = "MTN" | "AIRTEL" | "OTHER" | "UNKNOWN";
 
 export type ControlCenterPaymentRecord = {
   id: string;
+  kind: "subscription" | "sms";
   tenantId: string;
   branchId: string;
-  planId: string;
+  planId: string | null;
   organizationName: string;
   branchName: string;
-  planCode: string;
-  planName: string;
+  planCode: string | null;
+  planName: string | null;
   interval: string | null;
+  smsUnits: number | null;
+  bundleId: string | null;
   amount: number;
   expectedAmount: number | null;
   currency: string;
@@ -344,7 +347,36 @@ export type ControlCenterSubscriptionsResponse = {
     noSubscription: number;
     attention: number;
   };
+  paymentStats: {
+    total: number;
+    pending: number;
+    pendingSubscriptions: number;
+    pendingSms: number;
+    completed: number;
+    failed: number;
+    completedRevenue: number;
+    completedPayments: number;
+    completedSubscriptionRevenue: number;
+    completedSmsRevenue: number;
+  };
+  plans: ControlCenterPlan[];
+  smsBundles: ControlCenterSmsBundle[];
+  payments: ControlCenterPaymentRecord[];
   subscriptions: ControlCenterSubscriptionRecord[];
+};
+
+export type ControlCenterSmsBundle = {
+  id: string;
+  code: string;
+  name: string;
+  priceUgx: number;
+  smsUnits: number;
+  currency: "UGX";
+  status: "ACTIVE" | "INACTIVE" | "ARCHIVED";
+  version: number;
+  activeFrom: string;
+  activeTo: string | null;
+  effectiveRate: number;
 };
 
 export type ControlCenterClientDetail = {

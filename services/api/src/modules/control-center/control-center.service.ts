@@ -16,6 +16,8 @@ import {
   BranchSubscriptionStatus,
   ControlledFeatureScope,
   Prisma,
+  SmsBundleStatus,
+  SmsPurchaseStatus,
   SubscriptionPaymentStatus,
   UserStatus,
 } from '@prisma/client';
@@ -1691,7 +1693,14 @@ export class ControlCenterService implements OnModuleInit {
 
   async listSubscriptions() {
     const now = new Date();
-    const [branches, completedPaymentGroups, latestPayments] =
+    const [
+      branches,
+      completedPaymentGroups,
+      latestPayments,
+      paymentRows,
+      plans,
+      smsBundles,
+    ] =
       await Promise.all([
         this.prisma.branch.findMany({
           orderBy: [{ tenant: { name: 'asc' } }, { name: 'asc' }],
@@ -1741,6 +1750,15 @@ export class ControlCenterService implements OnModuleInit {
             plan: { select: { code: true, name: true, interval: true } },
           },
           take: 1000,
+        }),
+        this.listControlCenterPaymentRows(500),
+        this.prisma.subscriptionPlan.findMany({
+          where: { isActive: true },
+          orderBy: { createdAt: 'asc' },
+        }),
+        this.prisma.smsBundle.findMany({
+          where: { status: { not: SmsBundleStatus.ARCHIVED } },
+          orderBy: [{ status: 'asc' }, { priceUgx: 'asc' }],
         }),
       ]);
 
@@ -1852,39 +1870,40 @@ export class ControlCenterService implements OnModuleInit {
       ).length,
     };
 
-    return { stats, subscriptions: records };
+    return {
+      stats,
+      subscriptions: records,
+      payments: paymentRows,
+      paymentStats: this.controlCenterPaymentStats(paymentRows),
+      plans: plans.map((plan) => this.toPlan(plan)),
+      smsBundles: smsBundles.map((bundle) => ({
+        id: bundle.id,
+        code: bundle.code,
+        name: bundle.name,
+        priceUgx: bundle.priceUgx,
+        smsUnits: bundle.smsUnits,
+        currency: 'UGX',
+        status: bundle.status,
+        version: bundle.version,
+        activeFrom: bundle.activeFrom.toISOString(),
+        activeTo: bundle.activeTo?.toISOString() ?? null,
+        effectiveRate: this.decimal(bundle.effectiveRate),
+      })),
+    };
   }
 
   async listPayments() {
-    const [summary, rows] = await Promise.all([
-      this.prisma.subscriptionPayment.aggregate({
-        where: { status: SubscriptionPaymentStatus.COMPLETED },
-        _sum: { amount: true },
-        _count: { _all: true },
-      }),
-      this.prisma.subscriptionPayment.findMany({
-        orderBy: { createdAt: 'desc' },
-        take: 500,
-        include: {
-          tenant: { select: { id: true, name: true } },
-          branch: { select: { id: true, name: true } },
-          plan: { select: { code: true, name: true, interval: true } },
-        },
-      }),
-    ]);
-
-    const payments = rows.map((row) => this.toControlCenterPaymentRow(row));
+    const payments = await this.listControlCenterPaymentRows(500);
+    const stats = this.controlCenterPaymentStats(payments);
 
     return {
       stats: {
-        total: payments.length,
-        pending: payments.filter((row) => row.status === 'PENDING').length,
-        completed: payments.filter((row) => row.status === 'COMPLETED').length,
-        failed: payments.filter((row) =>
-          ['FAILED', 'CANCELLED', 'REVERSED'].includes(row.status),
-        ).length,
-        completedRevenue: this.decimal(summary._sum.amount),
-        completedPayments: summary._count._all,
+        total: stats.total,
+        pending: stats.pending,
+        completed: stats.completed,
+        failed: stats.failed,
+        completedRevenue: stats.completedRevenue,
+        completedPayments: stats.completedPayments,
       },
       payments,
     };
@@ -1893,8 +1912,31 @@ export class ControlCenterService implements OnModuleInit {
   async verifyPayment(
     admin: ControlCenterAdminContext,
     paymentId: string,
-    dto: { transactionId?: string },
+    dto: { kind?: 'subscription' | 'sms'; transactionId?: string },
   ) {
+    if (dto.kind === 'sms') {
+      const payment =
+        await this.billingService.completeManualSmsPaymentFromControlCenter({
+          paymentId,
+          adminEmail: admin.email,
+          transactionId: dto.transactionId,
+        });
+
+      await this.audit(
+        admin.adminId,
+        'control_center.sms_payment.verified',
+        'SmsPurchase',
+        paymentId,
+        null,
+        {
+          paymentId,
+          transactionId: dto.transactionId ?? payment.transactionId ?? null,
+        },
+      );
+
+      return { payment };
+    }
+
     const payment =
       await this.billingService.completeManualSubscriptionPaymentFromControlCenter(
         {
@@ -1922,11 +1964,34 @@ export class ControlCenterService implements OnModuleInit {
   async rejectPayment(
     admin: ControlCenterAdminContext,
     paymentId: string,
-    dto: { reason: string },
+    dto: { kind?: 'subscription' | 'sms'; reason: string },
   ) {
     const reason = dto.reason.trim();
     if (!reason) {
       throw new BadRequestException('Enter a rejection reason.');
+    }
+
+    if (dto.kind === 'sms') {
+      const payment =
+        await this.billingService.rejectManualSmsPaymentFromControlCenter({
+          paymentId,
+          adminEmail: admin.email,
+          reason,
+        });
+
+      await this.audit(
+        admin.adminId,
+        'control_center.sms_payment.rejected',
+        'SmsPurchase',
+        paymentId,
+        null,
+        {
+          paymentId,
+          reason,
+        },
+      );
+
+      return { payment };
     }
 
     const payment =
@@ -3988,6 +4053,69 @@ export class ControlCenterService implements OnModuleInit {
     return Math.ceil((value.getTime() - now.getTime()) / (24 * 60 * 60 * 1000));
   }
 
+  private async listControlCenterPaymentRows(take: number) {
+    const [subscriptionRows, smsPurchaseRows] = await Promise.all([
+      this.prisma.subscriptionPayment.findMany({
+        orderBy: { createdAt: 'desc' },
+        take,
+        include: {
+          tenant: { select: { id: true, name: true } },
+          branch: { select: { id: true, name: true } },
+          plan: { select: { code: true, name: true, interval: true } },
+        },
+      }),
+      this.prisma.smsPurchase.findMany({
+        orderBy: { createdAt: 'desc' },
+        take,
+        include: {
+          tenant: { select: { id: true, name: true } },
+          branch: { select: { id: true, name: true } },
+        },
+      }),
+    ]);
+
+    return [
+      ...subscriptionRows.map((row) => this.toControlCenterPaymentRow(row)),
+      ...smsPurchaseRows.map((row) => this.toControlCenterSmsPaymentRow(row)),
+    ]
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+      .slice(0, take);
+  }
+
+  private controlCenterPaymentStats(
+    payments: Array<{
+      kind: 'subscription' | 'sms';
+      status: 'PENDING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'REVERSED';
+      amount: number;
+    }>,
+  ) {
+    const completed = payments.filter((row) => row.status === 'COMPLETED');
+    const failed = payments.filter((row) =>
+      ['FAILED', 'CANCELLED', 'REVERSED'].includes(row.status),
+    );
+
+    return {
+      total: payments.length,
+      pending: payments.filter((row) => row.status === 'PENDING').length,
+      pendingSubscriptions: payments.filter(
+        (row) => row.kind === 'subscription' && row.status === 'PENDING',
+      ).length,
+      pendingSms: payments.filter(
+        (row) => row.kind === 'sms' && row.status === 'PENDING',
+      ).length,
+      completed: completed.length,
+      failed: failed.length,
+      completedRevenue: completed.reduce((sum, row) => sum + row.amount, 0),
+      completedPayments: completed.length,
+      completedSubscriptionRevenue: completed
+        .filter((row) => row.kind === 'subscription')
+        .reduce((sum, row) => sum + row.amount, 0),
+      completedSmsRevenue: completed
+        .filter((row) => row.kind === 'sms')
+        .reduce((sum, row) => sum + row.amount, 0),
+    };
+  }
+
   private toControlCenterPaymentRow(row: {
     id: string;
     tenantId: string;
@@ -4018,6 +4146,7 @@ export class ControlCenterService implements OnModuleInit {
 
     return {
       id: row.id,
+      kind: 'subscription' as const,
       tenantId: row.tenantId,
       branchId: row.branchId,
       planId: row.planId,
@@ -4026,6 +4155,8 @@ export class ControlCenterService implements OnModuleInit {
       planCode: row.plan.code,
       planName: row.plan.name ?? row.plan.code,
       interval: row.plan.interval ?? null,
+      smsUnits: null,
+      bundleId: null,
       amount: this.decimal(row.amount),
       expectedAmount: this.decimal(row.amount),
       currency: row.currency,
@@ -4070,6 +4201,126 @@ export class ControlCenterService implements OnModuleInit {
         row.status === SubscriptionPaymentStatus.PENDING &&
         this.isManualMerchantPayload(row.rawPayload),
     };
+  }
+
+  private toControlCenterSmsPaymentRow(row: {
+    id: string;
+    tenantId: string;
+    branchId: string;
+    bundleId: string;
+    bundleNameSnapshot: string;
+    amountExpected: number;
+    currency: string;
+    smsUnitsExpected: number;
+    merchantReference: string;
+    pesapalOrderTrackingId: string | null;
+    externalTransactionId: string | null;
+    status: SmsPurchaseStatus;
+    rawPayload: Prisma.JsonValue | null;
+    creditedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+    tenant: { id?: string; name: string };
+    branch: { id?: string; name: string };
+  }) {
+    const status = this.smsPurchasePaymentStatus(row.status);
+    const verifiedAt =
+      this.payloadString(row.rawPayload, ['verified_at', 'verifiedAt']) ??
+      (status === 'COMPLETED'
+        ? (row.creditedAt ?? row.updatedAt).toISOString()
+        : null);
+    const failedAt = this.payloadString(row.rawPayload, [
+      'failed_at',
+      'failedAt',
+    ]);
+
+    return {
+      id: row.id,
+      kind: 'sms' as const,
+      tenantId: row.tenantId,
+      branchId: row.branchId,
+      planId: null,
+      organizationName: row.tenant.name,
+      branchName: row.branch.name,
+      planCode: null,
+      planName: row.bundleNameSnapshot,
+      interval: null,
+      smsUnits: row.smsUnitsExpected,
+      bundleId: row.bundleId,
+      amount: row.amountExpected,
+      expectedAmount: row.amountExpected,
+      currency: row.currency,
+      status,
+      createdAt: row.createdAt.toISOString(),
+      paidAt: row.creditedAt?.toISOString() ?? null,
+      paymentMethod: this.paymentMethodFromPayload(row.rawPayload),
+      merchantReference: row.merchantReference,
+      merchantCode: this.payloadString(row.rawPayload, ['merchant_code']),
+      accountName: this.payloadString(row.rawPayload, ['account_name']),
+      transactionId:
+        this.payloadString(row.rawPayload, [
+          'transaction_id',
+          'transactionId',
+          'TransactionId',
+        ]) ??
+        row.externalTransactionId ??
+        row.pesapalOrderTrackingId,
+      verificationCode: this.payloadString(row.rawPayload, [
+        'merchant_confirmed_transaction_id',
+        'verification_code',
+        'verificationCode',
+      ]),
+      verifiedBy:
+        status === 'COMPLETED'
+          ? this.payloadString(row.rawPayload, [
+              'verified_by_name',
+              'verifiedByName',
+              'verified_by',
+              'verifiedBy',
+            ])
+          : null,
+      verifiedAt,
+      failureReason:
+        status === 'FAILED' || status === 'CANCELLED' || status === 'REVERSED'
+          ? this.payloadString(row.rawPayload, [
+              'failure_reason',
+              'failureReason',
+              'reason',
+            ])
+          : null,
+      failedAt,
+      canReview:
+        status === 'PENDING' && this.isManualMerchantPayload(row.rawPayload),
+    };
+  }
+
+  private smsPurchasePaymentStatus(
+    status: SmsPurchaseStatus,
+  ): 'PENDING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'REVERSED' {
+    if (status === SmsPurchaseStatus.CREDITED) {
+      return 'COMPLETED';
+    }
+
+    if (status === SmsPurchaseStatus.CANCELLED_BY_USER) {
+      return 'CANCELLED';
+    }
+
+    if (
+      status === SmsPurchaseStatus.REFUNDED ||
+      status === SmsPurchaseStatus.REVERSED
+    ) {
+      return 'REVERSED';
+    }
+
+    if (
+      status === SmsPurchaseStatus.PAYMENT_FAILED ||
+      status === SmsPurchaseStatus.PAYMENT_MISMATCH ||
+      status === SmsPurchaseStatus.EXPIRED
+    ) {
+      return 'FAILED';
+    }
+
+    return 'PENDING';
   }
 
   private paymentMethodFromPayload(raw: Prisma.JsonValue | null) {

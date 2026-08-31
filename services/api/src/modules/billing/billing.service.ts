@@ -2545,6 +2545,98 @@ export class BillingService implements OnModuleInit {
     return this.toSubscriptionPaymentRow(updated);
   }
 
+  async completeManualSmsPaymentFromControlCenter(input: {
+    paymentId: string;
+    adminEmail: string;
+    transactionId?: string | null;
+  }): Promise<SubscriptionPaymentRowContract> {
+    const purchase = await this.prisma.smsPurchase.findUnique({
+      where: { id: input.paymentId },
+      include: { branch: { select: { name: true } } },
+    });
+
+    if (!purchase) {
+      throw new NotFoundException('SMS payment request not found.');
+    }
+
+    if (purchase.status === SmsPurchaseStatus.CREDITED) {
+      return this.toSmsPurchasePaymentRow(purchase);
+    }
+
+    if (!this.isPendingManualSmsPurchase(purchase.status)) {
+      throw new ConflictException('Only pending SMS payments can be verified.');
+    }
+
+    if (!this.isManualMerchantPayload(purchase.rawPayload)) {
+      throw new BadRequestException(
+        'Only manual merchant SMS payments can be verified in Control Center.',
+      );
+    }
+
+    const transactionId =
+      input.transactionId?.trim() ||
+      this.submittedManualTransactionId(purchase.rawPayload) ||
+      purchase.externalTransactionId ||
+      purchase.pesapalOrderTrackingId ||
+      purchase.merchantReference;
+
+    const updated = await this.completeManualSmsMerchantPayment(purchase, {
+      replyEmailId: `control-center:${purchase.id}:${Date.now()}`,
+      replyFromEmail: input.adminEmail,
+      merchantTransactionId: transactionId,
+    });
+
+    return this.toSmsPurchasePaymentRow(updated);
+  }
+
+  async rejectManualSmsPaymentFromControlCenter(input: {
+    paymentId: string;
+    adminEmail: string;
+    reason: string;
+    transactionId?: string | null;
+  }): Promise<SubscriptionPaymentRowContract> {
+    const purchase = await this.prisma.smsPurchase.findUnique({
+      where: { id: input.paymentId },
+      include: { branch: { select: { name: true } } },
+    });
+
+    if (!purchase) {
+      throw new NotFoundException('SMS payment request not found.');
+    }
+
+    if (
+      purchase.status === SmsPurchaseStatus.PAYMENT_FAILED ||
+      purchase.status === SmsPurchaseStatus.PAYMENT_MISMATCH ||
+      purchase.status === SmsPurchaseStatus.EXPIRED ||
+      purchase.status === SmsPurchaseStatus.REVERSED ||
+      purchase.status === SmsPurchaseStatus.CANCELLED_BY_USER
+    ) {
+      return this.toSmsPurchasePaymentRow(purchase);
+    }
+
+    if (!this.isPendingManualSmsPurchase(purchase.status)) {
+      throw new ConflictException('Only pending SMS payments can be rejected.');
+    }
+
+    if (!this.isManualMerchantPayload(purchase.rawPayload)) {
+      throw new BadRequestException(
+        'Only manual merchant SMS payments can be rejected in Control Center.',
+      );
+    }
+
+    const updated = await this.failManualSmsMerchantPayment(purchase, {
+      replyEmailId: `control-center:${purchase.id}:${Date.now()}`,
+      replyFromEmail: input.adminEmail,
+      reason: input.reason.trim(),
+      merchantTransactionId:
+        input.transactionId?.trim() ||
+        this.submittedManualTransactionId(purchase.rawPayload) ||
+        null,
+    });
+
+    return this.toSmsPurchasePaymentRow(updated);
+  }
+
   private async completeManualMerchantPayment(
     payment: SubscriptionPaymentWithBranchPlan,
     input: {
