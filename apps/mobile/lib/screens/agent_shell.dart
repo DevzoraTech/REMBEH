@@ -18,6 +18,7 @@ import '../services/session_store.dart';
 import '../theme.dart';
 import '../utils/money.dart';
 import 'account_locked_screen.dart';
+import 'agent_reconciliation_tab.dart';
 import 'home/home_tab.dart';
 import 'login_screen.dart';
 import 'profile/agent_profile_screen.dart';
@@ -485,6 +486,11 @@ class _AgentShellState extends State<AgentShell> {
                     autofocus: _searchAutofocus,
                     focusToken: _searchFocusToken,
                   ),
+                  AgentReconciliationTab(
+                    session: widget.session,
+                    status: dayStatus,
+                    onRefreshStatus: _refreshDayStatus,
+                  ),
                 ],
               ),
             ),
@@ -529,6 +535,11 @@ class _AgentShellState extends State<AgentShell> {
                   icon: Icon(Icons.search),
                   selectedIcon: Icon(Icons.search, color: forestEmerald),
                   label: 'Search',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.fact_check_outlined),
+                  selectedIcon: Icon(Icons.fact_check, color: forestEmerald),
+                  label: 'Reconcile',
                 ),
               ],
             ),

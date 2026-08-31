@@ -94,7 +94,7 @@ export class CollectionsController {
   }
 
   @Patch('repayment-correction-requests/:requestId')
-  @RequirePermissions(COLLECTION_PERMISSIONS.reconcile)
+  @RequirePermissions(COLLECTION_PERMISSIONS.read)
   reviewRepaymentCorrectionRequest(
     @CurrentUser() user: AuthenticatedUser,
     @Param('requestId', ParseUUIDPipe) requestId: string,

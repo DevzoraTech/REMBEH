@@ -6,6 +6,7 @@ import {
   ClipboardCheck,
   CreditCard,
   FileText,
+  FilePenLine,
   HandCoins,
   LayoutDashboard,
   LogOut,
@@ -128,6 +129,12 @@ export function AppShell({ children, session, user }: AppShellProps) {
         enabled: operatorRole === "owner",
       },
       {
+        href: "/owner/collections/corrections",
+        label: "Corrections",
+        icon: FilePenLine,
+        enabled: operatorRole === "owner",
+      },
+      {
         href: "/owner/reports",
         label: "Reports",
         icon: ClipboardCheck,
@@ -200,6 +207,14 @@ export function AppShell({ children, session, user }: AppShellProps) {
           Boolean(session.permissions.includes("collection.read")),
       },
       {
+        href: "/collections/corrections",
+        label: "Corrections",
+        icon: FilePenLine,
+        enabled:
+          operatorRole === "manager" &&
+          Boolean(session.permissions.includes("collection.read")),
+      },
+      {
         href: "/reports",
         label: "Reports",
         icon: ClipboardCheck,
@@ -231,8 +246,22 @@ export function AppShell({ children, session, user }: AppShellProps) {
       },
     ];
 
+    const staffPrimary = [
+      {
+        href: "/dashboard",
+        label: "Reconciliation",
+        icon: ClipboardCheck,
+        enabled: operatorRole === "staff",
+        matchPath: "/dashboard",
+      },
+    ];
+
     const items = (
-      operatorRole === "owner" ? ownerPrimary : managerPrimary
+      operatorRole === "owner"
+        ? ownerPrimary
+        : operatorRole === "manager"
+          ? managerPrimary
+          : staffPrimary
     ).filter((item) => item.enabled);
 
     if (branchLocked) {

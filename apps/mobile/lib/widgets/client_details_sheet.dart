@@ -814,7 +814,7 @@ class _PaymentHistoryTrailingState extends State<_PaymentHistoryTrailing> {
                 visualDensity: VisualDensity.compact,
               ),
               child: Text(
-                pending ? 'Correct request' : 'Correct payment',
+                'Correct payment',
                 textAlign: TextAlign.right,
                 style: const TextStyle(
                   fontSize: 11,

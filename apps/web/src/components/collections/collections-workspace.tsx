@@ -171,7 +171,12 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
     state.session?.permissions.includes("collection.create"),
   );
   const canCorrectRepayments = Boolean(
-    state.session?.permissions.includes("collection.reconcile"),
+    state.session &&
+      (state.session.permissions.includes("collection.reconcile") ||
+        state.session.permissions.includes("operation.close") ||
+        state.session.permissions.includes("operation.report.review") ||
+        (state.session.permissions.includes("operation.approve") &&
+          state.session.permissions.includes("branch.create"))),
   );
 
   const loadPayments = useCallback(async () => {

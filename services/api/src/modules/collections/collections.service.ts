@@ -23,6 +23,7 @@ import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { PrismaService } from '../../database/prisma.service';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import { BillingService } from '../billing/billing.service';
+import { OPERATIONS_PERMISSIONS } from '../operations/operations.permissions';
 import {
   isInternationalPhoneNumber,
   normalizeEmailAddress,
@@ -2803,7 +2804,13 @@ export class CollectionsService {
   }
 
   private canReviewRepaymentCorrections(user: AuthenticatedUser) {
-    return user.permissions.includes(COLLECTION_PERMISSIONS.reconcile);
+    return (
+      user.permissions.includes(COLLECTION_PERMISSIONS.reconcile) ||
+      user.permissions.includes(OPERATIONS_PERMISSIONS.close) ||
+      user.permissions.includes(OPERATIONS_PERMISSIONS.reportReview) ||
+      (user.permissions.includes(OPERATIONS_PERMISSIONS.approve) &&
+        user.permissions.includes(BRANCH_PERMISSIONS.create))
+    );
   }
 
   private async findRepaymentCorrectionRequestForUser(

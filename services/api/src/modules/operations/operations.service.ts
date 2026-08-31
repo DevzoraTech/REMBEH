@@ -10,6 +10,7 @@ import {
   ForbiddenException,
   HttpException,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
@@ -32,7 +33,10 @@ import { BillingService } from '../billing/billing.service';
 import { CashShortagesService } from '../cash-shortages/cash-shortages.service';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { OpenBranchOperationDto } from './dto/open-branch-operation.dto';
-import { RecordAgentReturnDto } from './dto/record-agent-return.dto';
+import {
+  RecordAgentReturnDto,
+  RecordOwnAgentReturnDto,
+} from './dto/record-agent-return.dto';
 import { RecordOperationExpenseDto } from './dto/record-operation-expense.dto';
 import { RecordOperationTopUpDto } from './dto/record-operation-top-up.dto';
 import { ReviewOperationReportDto } from './dto/review-operation-report.dto';
@@ -919,6 +923,53 @@ export class OperationsService {
   ): Promise<DailyOperationResponseContract> {
     this.assertCanReturnFloat(user);
 
+    const response = await this.recordAgentReturnInternal(user, dto, {
+      reloadBranchOperation: true,
+    });
+
+    if (!response) {
+      throw new InternalServerErrorException(
+        'Unable to reload branch operation after recording agent return.',
+      );
+    }
+
+    return response;
+  }
+
+  async recordOwnAgentReturn(
+    user: AuthenticatedUser,
+    dto: RecordOwnAgentReturnDto,
+  ): Promise<AgentDailyOperationResponseContract> {
+    this.assertTenant(user);
+    this.assertCanOperateBranch(user);
+
+    if (!user.branchId) {
+      throw new ForbiddenException('Branch scope is required.');
+    }
+
+    await this.recordAgentReturnInternal(
+      user,
+      {
+        date: dto.date,
+        branchId: user.branchId,
+        agentId: user.userId,
+        amountReturned: dto.amountReturned,
+        shortageReason: dto.shortageReason,
+        notes: dto.notes,
+      },
+      {
+        reloadBranchOperation: false,
+      },
+    );
+
+    return this.getAgentToday(user);
+  }
+
+  private async recordAgentReturnInternal(
+    user: AuthenticatedUser,
+    dto: RecordAgentReturnDto,
+    options: { reloadBranchOperation: boolean },
+  ): Promise<DailyOperationResponseContract | null> {
     const branch = await this.resolveBranch(user, dto.branchId);
 
     if (!branch) {
@@ -946,13 +997,7 @@ export class OperationsService {
       floatDate: operation.operationDate,
     });
 
-    if (!float) {
-      throw new BadRequestException(
-        'Assign float to this agent before recording a return.',
-      );
-    }
-
-    if (float.amountReturned != null) {
+    if (float?.amountReturned != null) {
       throw new BadRequestException(
         'This agent cash handover has already been recorded.',
       );
@@ -993,7 +1038,7 @@ export class OperationsService {
       }),
     ]);
 
-    const amountGiven = this.decimalToNumber(float.amountGiven);
+    const amountGiven = this.decimalToNumber(float?.amountGiven);
 
     const amountDisbursed = this.decimalToNumber(
       disbursementsAgg._sum.amount,
@@ -1008,6 +1053,17 @@ export class OperationsService {
     );
 
     const amountReturned = this.roundMoney(dto.amountReturned);
+
+    if (
+      !float &&
+      amountGiven <= 0 &&
+      amountDisbursed <= 0 &&
+      processingFees <= 0 &&
+      amountCollected <= 0 &&
+      amountReturned <= 0
+    ) {
+      throw new BadRequestException('No cash handover is due for this officer.');
+    }
 
     const handoverVariance = this.roundMoney(amountReturned - expectedReturn);
 
@@ -1079,6 +1135,10 @@ export class OperationsService {
             ? 'SHORT'
             : 'OVER',
     });
+
+    if (!options.reloadBranchOperation) {
+      return null;
+    }
 
     return this.getToday(user, {
       branchId: branch.id,

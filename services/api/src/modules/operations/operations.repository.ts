@@ -485,7 +485,7 @@ export class OperationsRepository {
     operationDate: Date;
   }) {
     return this.prisma.$transaction(async (tx) => {
-      const float = await tx.agentDailyFloat.update({
+      const float = await tx.agentDailyFloat.upsert({
         where: {
           tenantId_agentId_floatDate: {
             tenantId: input.tenantId,
@@ -493,11 +493,24 @@ export class OperationsRepository {
             floatDate: input.floatDate,
           },
         },
-        data: {
+        update: {
           amountReturned: input.amountReturned,
           returnedAt: input.returnedAt,
           returnedByUserId: input.returnedByUserId,
           returnNotes: input.notes,
+        },
+        create: {
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+          agentId: input.agentId,
+          floatDate: input.floatDate,
+          amountGiven: new Prisma.Decimal(0),
+          recordedByUserId: input.returnedByUserId,
+          amountReturned: input.amountReturned,
+          returnedAt: input.returnedAt,
+          returnedByUserId: input.returnedByUserId,
+          returnNotes: input.notes,
+          notes: 'Auto-created from officer cash handover.',
         },
         include: {
           agent: {

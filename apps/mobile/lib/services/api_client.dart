@@ -962,6 +962,28 @@ class ApiClient {
     );
   }
 
+  Future<AgentDayStatus> recordOwnAgentReturn({
+    required RembehSession session,
+    required String date,
+    required num amountReturned,
+    String? shortageReason,
+    String? notes,
+  }) async {
+    final body = await _postJson(
+      session: session,
+      path: '/operations/agent-return',
+      body: {
+        'date': date,
+        'amountReturned': amountReturned,
+        if (shortageReason != null && shortageReason.isNotEmpty)
+          'shortageReason': shortageReason,
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+      },
+    );
+
+    return AgentDayStatus.fromApi(body);
+  }
+
   Future<Map<String, dynamic>> startOperationReconciliation({
     required RembehSession session,
     String? branchId,

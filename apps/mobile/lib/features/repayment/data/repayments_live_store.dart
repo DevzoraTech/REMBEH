@@ -48,8 +48,15 @@ class RepaymentsLiveStore extends ChangeNotifier {
   List<DueClient> get dueTodayClients => List.unmodifiable(_dueTodayClients);
   bool get loading => _loading;
   String? get error => _error;
-  bool get canReviewRepaymentCorrections =>
-      _session?.permissions.contains('collection.reconcile') ?? false;
+  bool get canReviewRepaymentCorrections {
+    final permissions = _session?.permissions;
+    if (permissions == null) return false;
+    return permissions.contains('collection.reconcile') ||
+        permissions.contains('operation.close') ||
+        permissions.contains('operation.report.review') ||
+        (permissions.contains('operation.approve') &&
+            permissions.contains('branch.create'));
+  }
 
   Future<void> start(RembehSession session) async {
     final tenantChanged = _tenantId != null && _tenantId != session.tenantId;

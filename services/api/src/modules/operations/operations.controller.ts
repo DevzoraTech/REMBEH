@@ -16,7 +16,10 @@ import { RequirePermissions } from '../../common/auth/permissions.decorator';
 import { PermissionsGuard } from '../../common/auth/permissions.guard';
 
 import { OpenBranchOperationDto } from './dto/open-branch-operation.dto';
-import { RecordAgentReturnDto } from './dto/record-agent-return.dto';
+import {
+  RecordAgentReturnDto,
+  RecordOwnAgentReturnDto,
+} from './dto/record-agent-return.dto';
 import { RecordOperationExpenseDto } from './dto/record-operation-expense.dto';
 import { RecordOperationTopUpDto } from './dto/record-operation-top-up.dto';
 import { ReviewOperationReportDto } from './dto/review-operation-report.dto';
@@ -125,6 +128,14 @@ export class OperationsController {
   // ---------------------------------------------------------------------------
   // Agent balancing / cash handover
   // ---------------------------------------------------------------------------
+
+  @Post('agent-return')
+  recordOwnAgentReturn(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: RecordOwnAgentReturnDto,
+  ) {
+    return this.operationsService.recordOwnAgentReturn(user, dto);
+  }
 
   @Post('agent-returns')
   @RequirePermissions(OPERATIONS_PERMISSIONS.floatReturn)
