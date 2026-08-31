@@ -32,6 +32,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
     clientsDueToday: [],
   );
   final List<FieldRepayment> _repayments = [];
+  final List<DueClient> _dueTodayClients = [];
   final List<String> _recentLoanIds = [];
   final Map<String, ClientLoanDetail> _detailCache = {};
   DateTimeRange? customRange;
@@ -44,8 +45,11 @@ class RepaymentsLiveStore extends ChangeNotifier {
 
   HomeSummary get summary => _summary;
   List<FieldRepayment> get repayments => List.unmodifiable(_repayments);
+  List<DueClient> get dueTodayClients => List.unmodifiable(_dueTodayClients);
   bool get loading => _loading;
   String? get error => _error;
+  bool get canReviewRepaymentCorrections =>
+      _session?.permissions.contains('collection.reconcile') ?? false;
 
   Future<void> start(RembehSession session) async {
     final tenantChanged = _tenantId != null && _tenantId != session.tenantId;
@@ -98,6 +102,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
       clientsDueToday: [],
     );
     _repayments.clear();
+    _dueTodayClients.clear();
     _detailCache.clear();
     _recentLoanIds.clear();
     _error = null;
@@ -123,9 +128,58 @@ class RepaymentsLiveStore extends ChangeNotifier {
       _repayments
         ..clear()
         ..addAll(results[1] as List<FieldRepayment>);
+      _dueTodayClients
+        ..clear()
+        ..addAll(_summary.clientsDueToday);
       _error = null;
     } catch (error) {
-      _error = friendlyErrorMessage(error);
+      final offlineSummary = _buildOfflineSummary();
+      if (NetworkStatusStore.instance.isOffline &&
+          offlineSummary.clientsDueToday.isNotEmpty) {
+        _summary = offlineSummary;
+        _dueTodayClients
+          ..clear()
+          ..addAll(offlineSummary.clientsDueToday);
+        _error = null;
+      } else {
+        _error = friendlyErrorMessage(error);
+      }
+    } finally {
+      _loading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> refreshDueToday() async {
+    _loading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      final clients = await _locator.repository.listDueToday();
+      _dueTodayClients
+        ..clear()
+        ..addAll(clients);
+      _summary = HomeSummary(
+        amountCollectedToday: _summary.amountCollectedToday,
+        repaymentsTodayCount: _summary.repaymentsTodayCount,
+        dueTodayCount: clients.length,
+        newApplicationsTodayCount: _summary.newApplicationsTodayCount,
+        pendingSyncCount: _summary.pendingSyncCount,
+        clientsDueToday: List.unmodifiable(clients),
+      );
+      _error = null;
+    } catch (error) {
+      final offlineSummary = _buildOfflineSummary();
+      if (NetworkStatusStore.instance.isOffline &&
+          offlineSummary.clientsDueToday.isNotEmpty) {
+        _summary = offlineSummary;
+        _dueTodayClients
+          ..clear()
+          ..addAll(offlineSummary.clientsDueToday);
+        _error = null;
+      } else {
+        _error = friendlyErrorMessage(error);
+      }
     } finally {
       _loading = false;
       notifyListeners();
@@ -302,6 +356,15 @@ class RepaymentsLiveStore extends ChangeNotifier {
         _detailCache[detail.loanId] = detail;
       }
     }
+    final offlineSummary = _buildOfflineSummary();
+    _dueTodayClients
+      ..clear()
+      ..addAll(offlineSummary.clientsDueToday);
+    if (_summary.dueTodayCount == 0 &&
+        offlineSummary.clientsDueToday.isNotEmpty) {
+      _summary = offlineSummary;
+    }
+    notifyListeners();
   }
 
   Future<void> refreshOfflineIndexForCurrentSession() async {
@@ -328,6 +391,36 @@ class RepaymentsLiveStore extends ChangeNotifier {
 
   ClientLoanDetail? _offlineDetail(String loanId) {
     return _detailCache[loanId];
+  }
+
+  HomeSummary _buildOfflineSummary() {
+    final clients = _detailCache.values
+        .where((detail) => detail.nextDueIsToday && detail.expectedToday > 0)
+        .map(
+          (detail) => DueClient(
+            id: detail.loanId,
+            fullName: detail.fullName,
+            phone: detail.phone,
+            amountPaid: detail.paidAmount,
+            loanAmount: detail.loanAmount,
+            amountDue: detail.expectedToday,
+            lastActivityAt:
+                detail.lastPaymentAt ??
+                detail.paymentStartDate ??
+                detail.loanStartDate,
+            synced: true,
+          ),
+        )
+        .toList();
+    clients.sort((a, b) => b.lastActivityAt.compareTo(a.lastActivityAt));
+    return HomeSummary(
+      amountCollectedToday: _summary.amountCollectedToday,
+      repaymentsTodayCount: _summary.repaymentsTodayCount,
+      dueTodayCount: clients.length,
+      newApplicationsTodayCount: _summary.newApplicationsTodayCount,
+      pendingSyncCount: _summary.pendingSyncCount,
+      clientsDueToday: List.unmodifiable(clients),
+    );
   }
 
   ClientLoanDetail _compactToDetail(Map<String, dynamic> json) {
@@ -427,6 +520,69 @@ class RepaymentsLiveStore extends ChangeNotifier {
       }
       rethrow;
     }
+  }
+
+  Future<void> requestRepaymentCorrection({
+    required String repaymentId,
+    required String loanId,
+    required String reason,
+    int? requestedAmount,
+    String? requestedMethod,
+    DateTime? requestedPaidAt,
+    String? requestedNote,
+  }) async {
+    final network = NetworkStatusStore.instance;
+    if (network.isOffline && !await network.checkNow()) {
+      throw ApiException(
+        'Connect to the internet to send a correction request to the manager.',
+      );
+    }
+
+    await _locator.requestRepaymentCorrection(
+      repaymentId: repaymentId,
+      reason: reason,
+      requestedAmount: requestedAmount,
+      requestedMethod: requestedMethod,
+      requestedPaidAt: requestedPaidAt,
+      requestedNote: requestedNote,
+    );
+
+    final detail = await _locator.getLoanDetail(loanId);
+    _detailCache[loanId] = detail;
+    notifyListeners();
+  }
+
+  Future<ClientLoanDetail> applyRepaymentCorrection({
+    required String repaymentId,
+    required String loanId,
+    required String reason,
+    String? correctionRequestId,
+    int? amount,
+    String? method,
+    DateTime? paidAt,
+    String? note,
+  }) async {
+    final network = NetworkStatusStore.instance;
+    if (network.isOffline && !await network.checkNow()) {
+      throw ApiException(
+        'Connect to the internet to save an approved correction.',
+      );
+    }
+
+    final detail = await _locator.applyRepaymentCorrection(
+      repaymentId: repaymentId,
+      loanId: loanId,
+      reason: reason,
+      correctionRequestId: correctionRequestId,
+      amount: amount,
+      method: method,
+      paidAt: paidAt,
+      note: note,
+    );
+    _detailCache[loanId] = detail;
+    await refresh();
+    notifyListeners();
+    return detail;
   }
 
   Future<({FieldRepayment repayment, ClientLoanDetail detail})>

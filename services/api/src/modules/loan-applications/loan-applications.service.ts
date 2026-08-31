@@ -76,6 +76,12 @@ const REQUIRED_MEDIA_ON_SUBMIT: LoanApplicationMediaType[] = [
   LoanApplicationMediaType.SIGNATURE_OFFICER,
 ];
 
+const EXISTING_BORROWER_PROFILE_MEDIA: LoanApplicationMediaType[] = [
+  LoanApplicationMediaType.PASSPORT,
+  LoanApplicationMediaType.NIN_FRONT,
+  LoanApplicationMediaType.NIN_BACK,
+];
+
 const REQUIRED_SIGNATURE_ROLES: LoanApplicationSignerRole[] = [
   LoanApplicationSignerRole.APPLICANT,
   LoanApplicationSignerRole.GUARANTOR,
@@ -977,6 +983,13 @@ export class LoanApplicationsService {
 
     const mediaTypes = new Set(application.media.map((item) => item.type));
     for (const type of REQUIRED_MEDIA_ON_SUBMIT) {
+      if (
+        application.customerId &&
+        EXISTING_BORROWER_PROFILE_MEDIA.includes(type)
+      ) {
+        continue;
+      }
+
       if (!mediaTypes.has(type)) {
         missing.push(type.toLowerCase().replaceAll('_', ' '));
       }
@@ -1072,8 +1085,12 @@ export class LoanApplicationsService {
     assignedFloatAmount: number;
     collectedRepaymentsAmount: number;
   }) {
-    const { user, application, assignedFloatAmount, collectedRepaymentsAmount } =
-      input;
+    const {
+      user,
+      application,
+      assignedFloatAmount,
+      collectedRepaymentsAmount,
+    } = input;
 
     const branchId = application.branchId;
     if (!branchId) {
@@ -1456,11 +1473,7 @@ export class LoanApplicationsService {
       return null;
     }
 
-    return (
-      application.loan?.disbursedAt ??
-      application.submittedAt ??
-      null
-    );
+    return application.loan?.disbursedAt ?? application.submittedAt ?? null;
   }
 
   private async requireAccessibleApplication(

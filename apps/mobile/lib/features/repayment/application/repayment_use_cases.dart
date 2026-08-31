@@ -64,3 +64,49 @@ class RecordRepaymentUseCase {
     paidAt: paidAt,
   );
 }
+
+class RequestRepaymentCorrectionUseCase {
+  RequestRepaymentCorrectionUseCase(this._repository);
+  final RepaymentRepository _repository;
+
+  Future<void> call({
+    required String repaymentId,
+    required String reason,
+    int? requestedAmount,
+    String? requestedMethod,
+    DateTime? requestedPaidAt,
+    String? requestedNote,
+  }) => _repository.requestRepaymentCorrection(
+    repaymentId: repaymentId,
+    reason: reason,
+    requestedAmount: requestedAmount,
+    requestedMethod: requestedMethod,
+    requestedPaidAt: requestedPaidAt,
+    requestedNote: requestedNote,
+  );
+}
+
+class ApplyRepaymentCorrectionUseCase {
+  ApplyRepaymentCorrectionUseCase(this._repository);
+  final RepaymentRepository _repository;
+
+  Future<ClientLoanDetail> call({
+    required String repaymentId,
+    required String loanId,
+    required String reason,
+    String? correctionRequestId,
+    int? amount,
+    String? method,
+    DateTime? paidAt,
+    String? note,
+  }) => _repository.applyRepaymentCorrection(
+    repaymentId: repaymentId,
+    loanId: loanId,
+    reason: reason,
+    correctionRequestId: correctionRequestId,
+    amount: amount,
+    method: method,
+    paidAt: paidAt,
+    note: note,
+  );
+}

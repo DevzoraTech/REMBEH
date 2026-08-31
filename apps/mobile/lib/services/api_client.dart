@@ -66,7 +66,8 @@ class ApiClient {
       body: jsonEncode({
         'mimeType': mimeType,
         'extension': extension,
-        'fileName': ?fileName,
+        if (fileName != null && fileName.trim().isNotEmpty)
+          'fileName': fileName.trim(),
       }),
     );
     final presignBody = _decode(presignResponse);
@@ -279,6 +280,66 @@ class ApiClient {
     }
     final repayments = body['repayments'] as List<dynamic>? ?? const [];
     return repayments.cast<Map<String, dynamic>>();
+  }
+
+  Future<List<Map<String, dynamic>>> listRepaymentCorrectionRequests({
+    required RembehSession session,
+    String status = 'PENDING',
+  }) async {
+    final uri = Uri.parse(
+      '$rembehApiBaseUrl/collections/repayment-correction-requests',
+    ).replace(queryParameters: {'status': status});
+    final response = await http.get(uri, headers: _authHeaders(session));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+    final requests = body['requests'] as List<dynamic>? ?? const [];
+    return requests.cast<Map<String, dynamic>>();
+  }
+
+  Future<Map<String, dynamic>> reviewRepaymentCorrectionRequest({
+    required RembehSession session,
+    required String requestId,
+    required String status,
+    bool officerCanEdit = false,
+    String? feedback,
+  }) {
+    return _patchJson(
+      session: session,
+      path: '/collections/repayment-correction-requests/$requestId',
+      body: {
+        'status': status,
+        'officerCanEdit': officerCanEdit,
+        if (feedback != null && feedback.trim().isNotEmpty)
+          'feedback': feedback.trim(),
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> applyRepaymentCorrection({
+    required RembehSession session,
+    required String repaymentId,
+    required num amount,
+    required String method,
+    required String reason,
+    String? correctionRequestId,
+    DateTime? paidAt,
+    String? note,
+  }) {
+    return _patchJson(
+      session: session,
+      path: '/collections/repayments/$repaymentId/correction',
+      body: {
+        'amount': amount,
+        'method': method,
+        'reason': reason.trim(),
+        if (correctionRequestId != null && correctionRequestId.isNotEmpty)
+          'correctionRequestId': correctionRequestId,
+        if (paidAt != null) 'paidAt': paidAt.toUtc().toIso8601String(),
+        if (note != null) 'note': note.trim(),
+      },
+    );
   }
 
   Future<List<Map<String, dynamic>>> listOperationReports({
@@ -797,14 +858,18 @@ class ApiClient {
     String? description,
   }) async {
     final uri = Uri.parse('$rembehApiBaseUrl/operations/expenses/$expenseId');
+    final trimmedCategory = category?.trim();
+    final categoryPayload = trimmedCategory == null || trimmedCategory.isEmpty
+        ? null
+        : trimmedCategory;
 
     final response = await http.patch(
       uri,
       headers: {..._authHeaders(session), 'Content-Type': 'application/json'},
       body: jsonEncode({
-        if (category != null && category.isNotEmpty) 'category': category,
+        'category': ?categoryPayload,
         'amount': ?amount,
-        if (description != null) 'description': description.trim(),
+        'description': ?description?.trim(),
       }),
     );
 

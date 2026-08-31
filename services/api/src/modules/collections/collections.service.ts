@@ -7,13 +7,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  BranchOperationReportStatus,
   ControlledFeatureScope,
   LoanApplicationMediaType,
   LoanApplicationStatus,
   LoanStatus,
   Prisma,
+  RepaymentCorrectionRequestStatus,
   RepaymentMethod,
   SmsMessageStatus,
+  UserStatus,
 } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
@@ -48,6 +51,7 @@ import {
   DueClientContract,
   LegacyLoanCorrectionMediaPresignResponseContract,
   RepaymentBulkSmsResultContract,
+  RepaymentCorrectionRequestContract,
   RecordRepaymentResponseContract,
   RepaymentDetailContract,
   RepaymentListItemContract,
@@ -72,6 +76,13 @@ import {
   BulkRepaymentSmsDto,
   SendRepaymentSmsDto,
 } from './dto/repayment-sms.dto';
+import {
+  ApplyRepaymentCorrectionDto,
+  CreateRepaymentCorrectionRequestDto,
+  ReviewRepaymentCorrectionRequestDto,
+} from './dto/repayment-correction-request.dto';
+import { FcmPushService } from '../notifications/fcm-push.service';
+import { COLLECTION_PERMISSIONS } from './collections.permissions';
 
 const PAYMENT_CONFIRMATION_PURPOSE = 'payment_confirmation';
 const PAYMENT_CONFIRMATION_TRIGGER = 'repayment_recorded';
@@ -109,6 +120,33 @@ type RepaymentSmsMessageRecord = {
   createdAt: Date;
 };
 
+const repaymentCorrectionRequestInclude = {
+  branch: true,
+  loan: {
+    include: {
+      customer: true,
+    },
+  },
+  repayment: {
+    include: {
+      recordedBy: true,
+      loan: {
+        include: {
+          customer: true,
+        },
+      },
+    },
+  },
+  requestedBy: true,
+  reviewedBy: true,
+  correctionAppliedBy: true,
+} satisfies Prisma.RepaymentCorrectionRequestInclude;
+
+type RepaymentCorrectionRequestRecord =
+  Prisma.RepaymentCorrectionRequestGetPayload<{
+    include: typeof repaymentCorrectionRequestInclude;
+  }>;
+
 @Injectable()
 export class CollectionsService {
   private readonly logger = new Logger(CollectionsService.name);
@@ -121,6 +159,7 @@ export class CollectionsService {
     private readonly billingService: BillingService,
     private readonly smsCreditsService: SmsCreditsService,
     private readonly smsNotificationSettings: SmsNotificationSettingsService,
+    private readonly fcmPushService: FcmPushService,
   ) {}
 
   async getSummary(
@@ -1095,6 +1134,9 @@ export class CollectionsService {
     const smsByRepayment = await this.summarizeRepaymentSms(user.tenantId!, [
       row.id,
     ]);
+    const historyItem = detail.paymentHistory.find(
+      (item) => item.id === row.id,
+    );
 
     return {
       repayment: {
@@ -1149,7 +1191,492 @@ export class CollectionsService {
         isFined: detail.isFined,
 
         finesTotal: detail.finesTotal,
+
+        correctionLocked: historyItem?.correctionLocked ?? false,
+
+        canRequestCorrection: historyItem?.canRequestCorrection ?? false,
+
+        pendingCorrectionRequestId:
+          historyItem?.pendingCorrectionRequestId ?? null,
+
+        approvedCorrectionRequestId:
+          historyItem?.approvedCorrectionRequestId ?? null,
+
+        officerCanEdit: historyItem?.officerCanEdit ?? false,
+
+        correctionAppliedAt: historyItem?.correctionAppliedAt ?? null,
       },
+    };
+  }
+
+  async listRepaymentCorrectionRequests(
+    user: AuthenticatedUser,
+    status?: string,
+  ): Promise<{ requests: RepaymentCorrectionRequestContract[] }> {
+    this.assertBranchAccess(user);
+
+    const scope = this.scope(user);
+    const statusFilter = this.parseRepaymentCorrectionStatus(status);
+    const canReview = this.canReviewRepaymentCorrections(user);
+
+    const rows = await this.prisma.repaymentCorrectionRequest.findMany({
+      where: {
+        tenantId: scope.tenantId,
+        ...(scope.branchId ? { branchId: scope.branchId } : {}),
+        ...(statusFilter ? { status: statusFilter } : {}),
+        ...(canReview ? {} : { requestedByUserId: user.userId }),
+      },
+      include: repaymentCorrectionRequestInclude,
+      orderBy: {
+        createdAt: 'desc',
+      },
+      take: 100,
+    });
+
+    return {
+      requests: rows.map((row) =>
+        this.toRepaymentCorrectionRequestContract(row),
+      ),
+    };
+  }
+
+  async createRepaymentCorrectionRequest(
+    user: AuthenticatedUser,
+    repaymentId: string,
+    dto: CreateRepaymentCorrectionRequestDto,
+  ): Promise<{ request: RepaymentCorrectionRequestContract }> {
+    this.assertBranchAccess(user);
+
+    const row = await this.repository.findRepaymentById({
+      ...this.scope(user),
+      repaymentId,
+    });
+
+    if (!row) {
+      throw new NotFoundException('Payment not found.');
+    }
+
+    if (
+      row.recordedByUserId !== user.userId &&
+      !this.canReviewRepaymentCorrections(user)
+    ) {
+      throw new ForbiddenException(
+        'Only the person who recorded this payment or a manager can request a correction.',
+      );
+    }
+
+    await this.assertRepaymentOpenForCorrection(row);
+
+    const reason = dto.reason.trim();
+    const requestedPaidAt = this.parseOptionalIsoDate(
+      dto.requestedPaidAt,
+      'requestedPaidAt',
+    );
+
+    const existing = await this.prisma.repaymentCorrectionRequest.findFirst({
+      where: {
+        tenantId: row.tenantId,
+        repaymentId: row.id,
+        requestedByUserId: user.userId,
+        status: RepaymentCorrectionRequestStatus.PENDING,
+      },
+      include: repaymentCorrectionRequestInclude,
+    });
+
+    if (existing) {
+      return {
+        request: this.toRepaymentCorrectionRequestContract(existing),
+      };
+    }
+
+    const request = await this.prisma.repaymentCorrectionRequest.create({
+      data: {
+        tenantId: row.tenantId,
+        branchId: row.branchId,
+        repaymentId: row.id,
+        loanId: row.loanId,
+        requestedByUserId: user.userId,
+        reason,
+        ...(dto.requestedAmount !== undefined
+          ? {
+              requestedAmount: new Prisma.Decimal(
+                this.roundMoney(dto.requestedAmount).toFixed(2),
+              ),
+            }
+          : {}),
+        ...(dto.requestedMethod
+          ? { requestedMethod: dto.requestedMethod }
+          : {}),
+        ...(requestedPaidAt ? { requestedPaidAt } : {}),
+        ...(dto.requestedNote !== undefined
+          ? { requestedNote: this.cleanOptionalText(dto.requestedNote) }
+          : {}),
+      },
+      include: repaymentCorrectionRequestInclude,
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: row.tenantId,
+        actorUserId: user.userId,
+        action: 'repayment.correction.requested',
+        entityType: 'RepaymentCorrectionRequest',
+        entityId: request.id,
+        oldValue: Prisma.JsonNull,
+        newValue: {
+          repaymentId: row.id,
+          loanId: row.loanId,
+          branchId: row.branchId,
+          amount: this.decimalToNumber(row.amount) ?? 0,
+          reason,
+          requestedAmount: dto.requestedAmount ?? null,
+          requestedMethod: dto.requestedMethod ?? null,
+          requestedPaidAt: requestedPaidAt?.toISOString() ?? null,
+          requestedNote: dto.requestedNote ?? null,
+        },
+      },
+    });
+
+    void this.notifyRepaymentCorrectionManagers(request);
+
+    return {
+      request: this.toRepaymentCorrectionRequestContract(request),
+    };
+  }
+
+  async reviewRepaymentCorrectionRequest(
+    user: AuthenticatedUser,
+    requestId: string,
+    dto: ReviewRepaymentCorrectionRequestDto,
+  ): Promise<{ request: RepaymentCorrectionRequestContract }> {
+    this.assertBranchAccess(user);
+
+    if (!this.canReviewRepaymentCorrections(user)) {
+      throw new ForbiddenException(
+        'Missing permission to review repayment correction requests.',
+      );
+    }
+
+    if (
+      dto.status !== RepaymentCorrectionRequestStatus.APPROVED &&
+      dto.status !== RepaymentCorrectionRequestStatus.REJECTED
+    ) {
+      throw new BadRequestException(
+        'Approve or reject the correction request.',
+      );
+    }
+
+    const request = await this.findRepaymentCorrectionRequestForUser(
+      user,
+      requestId,
+    );
+
+    if (!request) {
+      throw new NotFoundException('Correction request not found.');
+    }
+
+    if (request.status !== RepaymentCorrectionRequestStatus.PENDING) {
+      throw new BadRequestException(
+        'This correction request has already been reviewed.',
+      );
+    }
+
+    await this.assertRepaymentOpenForCorrection(request.repayment);
+
+    const updated = await this.prisma.repaymentCorrectionRequest.update({
+      where: {
+        id: request.id,
+      },
+      data: {
+        status: dto.status,
+        reviewedByUserId: user.userId,
+        reviewedAt: new Date(),
+        officerCanEdit:
+          dto.status === RepaymentCorrectionRequestStatus.APPROVED &&
+          dto.officerCanEdit === true,
+        reviewerFeedback: this.cleanOptionalText(dto.feedback),
+      },
+      include: repaymentCorrectionRequestInclude,
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: request.tenantId,
+        actorUserId: user.userId,
+        action: 'repayment.correction.reviewed',
+        entityType: 'RepaymentCorrectionRequest',
+        entityId: request.id,
+        oldValue: {
+          status: request.status,
+          officerCanEdit: request.officerCanEdit,
+        },
+        newValue: {
+          status: updated.status,
+          officerCanEdit: updated.officerCanEdit,
+          reviewerFeedback: updated.reviewerFeedback,
+        },
+      },
+    });
+
+    void this.notifyRepaymentCorrectionRequester(updated);
+
+    return {
+      request: this.toRepaymentCorrectionRequestContract(updated),
+    };
+  }
+
+  async applyRepaymentCorrection(
+    user: AuthenticatedUser,
+    repaymentId: string,
+    dto: ApplyRepaymentCorrectionDto,
+  ): Promise<{
+    repayment: RepaymentDetailContract;
+    detail: ClientLoanDetailContract;
+    request: RepaymentCorrectionRequestContract | null;
+  }> {
+    this.assertBranchAccess(user);
+
+    const canReview = this.canReviewRepaymentCorrections(user);
+    const canRecord = user.permissions.includes(COLLECTION_PERMISSIONS.create);
+
+    if (!canReview && !canRecord) {
+      throw new ForbiddenException(
+        'Missing permission to correct repayment records.',
+      );
+    }
+
+    const row = await this.repository.findRepaymentById({
+      ...this.scope(user),
+      repaymentId,
+    });
+
+    if (!row) {
+      throw new NotFoundException('Payment not found.');
+    }
+
+    await this.assertRepaymentOpenForCorrection(row);
+
+    let request: RepaymentCorrectionRequestRecord | null = null;
+
+    if (!canReview) {
+      if (row.recordedByUserId !== user.userId) {
+        throw new ForbiddenException(
+          'Only the person who recorded this payment can apply an approved correction.',
+        );
+      }
+
+      if (!dto.correctionRequestId) {
+        throw new ForbiddenException(
+          'A manager-approved correction request is required.',
+        );
+      }
+
+      request = await this.findRepaymentCorrectionRequestForUser(
+        user,
+        dto.correctionRequestId,
+      );
+
+      if (
+        !request ||
+        request.repaymentId !== row.id ||
+        request.requestedByUserId !== user.userId ||
+        request.status !== RepaymentCorrectionRequestStatus.APPROVED ||
+        !request.officerCanEdit ||
+        request.correctionAppliedAt
+      ) {
+        throw new ForbiddenException(
+          'This payment is not open for officer correction.',
+        );
+      }
+    } else if (dto.correctionRequestId) {
+      request = await this.findRepaymentCorrectionRequestForUser(
+        user,
+        dto.correctionRequestId,
+      );
+
+      if (!request || request.repaymentId !== row.id) {
+        throw new NotFoundException('Correction request not found.');
+      }
+
+      if (
+        request.status === RepaymentCorrectionRequestStatus.REJECTED ||
+        request.status === RepaymentCorrectionRequestStatus.CANCELLED
+      ) {
+        throw new BadRequestException(
+          'This correction request is not open for changes.',
+        );
+      }
+    }
+
+    const previousAmount = this.decimalToNumber(row.amount) ?? 0;
+    const nextAmount =
+      dto.amount !== undefined
+        ? this.roundMoney(dto.amount)
+        : this.roundMoney(previousAmount);
+    const nextMethod = dto.method ?? row.method;
+    const nextPaidAt = dto.paidAt
+      ? this.parseOptionalIsoDate(dto.paidAt, 'paidAt')
+      : row.paidAt;
+    const nextNote =
+      dto.note !== undefined ? this.cleanOptionalText(dto.note) : row.note;
+    const reason = dto.reason.trim();
+
+    if (!nextPaidAt) {
+      throw new BadRequestException('paidAt must be a valid date.');
+    }
+
+    await this.assertRepaymentOpenForCorrection({
+      tenantId: row.tenantId,
+      branchId: row.branchId,
+      paidAt: nextPaidAt,
+    });
+
+    if (nextAmount <= 0) {
+      throw new BadRequestException('Amount must be greater than zero.');
+    }
+
+    const changed =
+      Math.abs(previousAmount - nextAmount) > 0.001 ||
+      nextMethod !== row.method ||
+      nextPaidAt.getTime() !== row.paidAt.getTime() ||
+      nextNote !== row.note;
+
+    if (!changed) {
+      throw new BadRequestException('No correction changes were provided.');
+    }
+
+    const appliedRequest = await this.prisma.$transaction(async (tx) => {
+      await tx.repayment.update({
+        where: {
+          id: row.id,
+        },
+        data: {
+          amount: new Prisma.Decimal(nextAmount.toFixed(2)),
+          method: nextMethod,
+          paidAt: nextPaidAt,
+          note: nextNote,
+        },
+      });
+
+      const loan = await tx.loan.findUnique({
+        where: {
+          id: row.loanId,
+        },
+        include: {
+          application: true,
+          wallet: true,
+          repayments: {
+            orderBy: [{ paidAt: 'asc' }, { createdAt: 'asc' }],
+          },
+        },
+      });
+
+      if (!loan) {
+        throw new NotFoundException('Loan not found.');
+      }
+
+      const rebuild = this.rebuildLoanRepaymentState(loan);
+
+      if (rebuild.totalPaid > rebuild.totalObligation + 0.001) {
+        throw new BadRequestException(
+          'Corrected repayments exceed the loan amount due.',
+        );
+      }
+
+      await Promise.all(
+        rebuild.allocations.map((allocation) =>
+          tx.repayment.update({
+            where: {
+              id: allocation.repaymentId,
+            },
+            data: {
+              principalAllocated: new Prisma.Decimal(
+                allocation.principalAllocated.toFixed(2),
+              ),
+              interestAllocated: new Prisma.Decimal(
+                allocation.interestAllocated.toFixed(2),
+              ),
+              feesAllocated: new Prisma.Decimal(
+                allocation.feesAllocated.toFixed(2),
+              ),
+            },
+          }),
+        ),
+      );
+
+      await tx.loan.update({
+        where: {
+          id: row.loanId,
+        },
+        data: {
+          balance: new Prisma.Decimal(rebuild.nextBalance.toFixed(2)),
+          status: rebuild.nextStatus,
+        },
+      });
+
+      let updatedRequest: RepaymentCorrectionRequestRecord | null = null;
+
+      if (request) {
+        updatedRequest = await tx.repaymentCorrectionRequest.update({
+          where: {
+            id: request.id,
+          },
+          data: {
+            status: RepaymentCorrectionRequestStatus.APPROVED,
+            officerCanEdit: !canReview && request.officerCanEdit,
+            reviewedByUserId: request.reviewedByUserId ?? user.userId,
+            reviewedAt: request.reviewedAt ?? new Date(),
+            correctionAppliedByUserId: user.userId,
+            correctionAppliedAt: new Date(),
+          },
+          include: repaymentCorrectionRequestInclude,
+        });
+      }
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: row.tenantId,
+          actorUserId: user.userId,
+          action: 'repayment.corrected',
+          entityType: 'Repayment',
+          entityId: row.id,
+          oldValue: {
+            amount: previousAmount,
+            method: row.method,
+            paidAt: row.paidAt.toISOString(),
+            note: row.note,
+            loanBalance: this.decimalToNumber(row.loan.balance) ?? null,
+            loanStatus: row.loan.status,
+          },
+          newValue: {
+            amount: nextAmount,
+            method: nextMethod,
+            paidAt: nextPaidAt.toISOString(),
+            note: nextNote,
+            reason,
+            correctionRequestId: request?.id ?? null,
+            loanBalance: rebuild.nextBalance,
+            loanStatus: rebuild.nextStatus,
+          },
+        },
+      });
+
+      return updatedRequest;
+    });
+
+    const repayment = await this.getRepaymentDetail(user, repaymentId);
+    const detail = await this.getLoanDetail(user, row.loanId);
+
+    if (appliedRequest) {
+      void this.notifyRepaymentCorrectionRequester(appliedRequest);
+    }
+
+    return {
+      repayment: repayment.repayment,
+      detail: detail.detail,
+      request: appliedRequest
+        ? this.toRepaymentCorrectionRequestContract(appliedRequest)
+        : null,
     };
   }
 
@@ -2259,6 +2786,340 @@ export class CollectionsService {
     return RETRYABLE_PAYMENT_SMS_STATUSES.has(message.status);
   }
 
+  private parseRepaymentCorrectionStatus(status?: string) {
+    const normalized = status?.trim().toUpperCase();
+    if (!normalized) {
+      return null;
+    }
+
+    const allowed = Object.values(RepaymentCorrectionRequestStatus);
+    if (!allowed.includes(normalized as RepaymentCorrectionRequestStatus)) {
+      throw new BadRequestException(
+        'Choose a valid correction request status.',
+      );
+    }
+
+    return normalized as RepaymentCorrectionRequestStatus;
+  }
+
+  private canReviewRepaymentCorrections(user: AuthenticatedUser) {
+    return user.permissions.includes(COLLECTION_PERMISSIONS.reconcile);
+  }
+
+  private async findRepaymentCorrectionRequestForUser(
+    user: AuthenticatedUser,
+    requestId: string,
+  ) {
+    const scope = this.scope(user);
+
+    return this.prisma.repaymentCorrectionRequest.findFirst({
+      where: {
+        id: requestId,
+        tenantId: scope.tenantId,
+        ...(scope.branchId ? { branchId: scope.branchId } : {}),
+      },
+      include: repaymentCorrectionRequestInclude,
+    });
+  }
+
+  private async assertRepaymentOpenForCorrection(input: {
+    tenantId: string;
+    branchId: string;
+    paidAt: Date;
+  }) {
+    const report = await this.prisma.branchOperationReport.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        operationDate: this.dateOnly(input.paidAt),
+        status: {
+          in: [
+            BranchOperationReportStatus.SENT_TO_OWNER,
+            BranchOperationReportStatus.OWNER_APPROVED,
+          ],
+        },
+      },
+      select: {
+        reportNumber: true,
+        status: true,
+      },
+    });
+
+    if (report) {
+      throw new ForbiddenException(
+        `This payment is locked because report ${report.reportNumber} has already been submitted.`,
+      );
+    }
+  }
+
+  private async submittedReportDateSet(
+    tenantId: string,
+    branchId: string,
+    dates: Date[],
+  ) {
+    const dateKeys = [
+      ...new Set(
+        dates
+          .filter(
+            (date) => date instanceof Date && !Number.isNaN(date.getTime()),
+          )
+          .map((date) => this.dateLabel(date)),
+      ),
+    ];
+
+    if (dateKeys.length === 0) {
+      return new Set<string>();
+    }
+
+    const rows = await this.prisma.branchOperationReport.findMany({
+      where: {
+        tenantId,
+        branchId,
+        operationDate: {
+          in: dateKeys.map((dateKey) =>
+            this.dateOnly(new Date(`${dateKey}T00:00:00`)),
+          ),
+        },
+        status: {
+          in: [
+            BranchOperationReportStatus.SENT_TO_OWNER,
+            BranchOperationReportStatus.OWNER_APPROVED,
+          ],
+        },
+      },
+      select: {
+        operationDate: true,
+      },
+    });
+
+    return new Set(rows.map((row) => this.dateLabel(row.operationDate)));
+  }
+
+  private parseOptionalIsoDate(
+    value: string | null | undefined,
+    field: string,
+  ) {
+    if (value == null || value.trim() === '') {
+      return null;
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new BadRequestException(`${field} must be a valid date.`);
+    }
+
+    return parsed;
+  }
+
+  private toRepaymentCorrectionRequestContract(
+    row: RepaymentCorrectionRequestRecord,
+  ): RepaymentCorrectionRequestContract {
+    const loan = row.loan ?? row.repayment.loan;
+    const customer = loan.customer ?? row.repayment.loan.customer;
+
+    return {
+      id: row.id,
+      repaymentId: row.repaymentId,
+      loanId: row.loanId,
+      tenantId: row.tenantId,
+      branchId: row.branchId,
+      borrowerName: customer.fullName,
+      borrowerPhone: customer.phone ?? null,
+      amount: this.decimalToNumber(row.repayment.amount) ?? 0,
+      paidAt: row.repayment.paidAt.toISOString(),
+      method: row.repayment.method,
+      reason: row.reason,
+      requestedAmount: this.decimalToNumber(row.requestedAmount),
+      requestedMethod: row.requestedMethod,
+      requestedPaidAt: row.requestedPaidAt?.toISOString() ?? null,
+      requestedNote: row.requestedNote,
+      status: row.status,
+      officerCanEdit: row.officerCanEdit,
+      requestedByName: row.requestedBy.displayName,
+      reviewedByName: row.reviewedBy?.displayName ?? null,
+      correctionAppliedByName: row.correctionAppliedBy?.displayName ?? null,
+      reviewerFeedback: row.reviewerFeedback,
+      reviewedAt: row.reviewedAt?.toISOString() ?? null,
+      correctionAppliedAt: row.correctionAppliedAt?.toISOString() ?? null,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  }
+
+  private rebuildLoanRepaymentState(loan: {
+    principal: Prisma.Decimal | number;
+    status: LoanStatus;
+    finesTotal: Prisma.Decimal | number | null;
+    application: {
+      principalAmount: Prisma.Decimal | number | null;
+      interestRatePercent: Prisma.Decimal | number | null;
+      durationDays: number | null;
+      processingFee: Prisma.Decimal | number | null;
+    } | null;
+    wallet: {
+      openingBalance: Prisma.Decimal | number;
+      finesTotal: Prisma.Decimal | number | null;
+    } | null;
+    repayments: {
+      id: string;
+      amount: Prisma.Decimal | number;
+    }[];
+  }) {
+    const computed = computeLoanPricing({
+      principalAmount:
+        this.decimalToNumber(loan.application?.principalAmount) ??
+        this.decimalToNumber(loan.principal) ??
+        0,
+      interestRatePercent:
+        this.decimalToNumber(loan.application?.interestRatePercent) ?? 0,
+      durationDays: loan.application?.durationDays ?? 0,
+      processingFee: this.decimalToNumber(loan.application?.processingFee) ?? 0,
+    });
+
+    const openingBalance = this.decimalToNumber(loan.wallet?.openingBalance);
+    const baseRepayable = openingBalance ?? computed.totalRepayable;
+    const principalTotal = computed.principalAmount;
+    const interestTotal = this.roundMoney(
+      Math.max(0, baseRepayable - principalTotal),
+    );
+    const finesTotal =
+      this.decimalToNumber(loan.finesTotal) ??
+      this.decimalToNumber(loan.wallet?.finesTotal) ??
+      0;
+    const totalObligation = this.roundMoney(baseRepayable + finesTotal);
+    const totalPaid = this.roundMoney(
+      loan.repayments.reduce(
+        (sum, repayment) => sum + (this.decimalToNumber(repayment.amount) ?? 0),
+        0,
+      ),
+    );
+
+    let remainingFees = finesTotal;
+    let remainingInterest = interestTotal;
+    let remainingPrincipal = principalTotal;
+
+    const allocations = loan.repayments.map((repayment) => {
+      const allocation = allocateRepayment({
+        amount: this.decimalToNumber(repayment.amount) ?? 0,
+        remainingFees,
+        remainingInterest,
+        remainingPrincipal,
+      });
+
+      remainingFees = this.roundMoney(
+        Math.max(0, remainingFees - allocation.feesAllocated),
+      );
+      remainingInterest = this.roundMoney(
+        Math.max(0, remainingInterest - allocation.interestAllocated),
+      );
+      remainingPrincipal = this.roundMoney(
+        Math.max(0, remainingPrincipal - allocation.principalAllocated),
+      );
+
+      return {
+        repaymentId: repayment.id,
+        feesAllocated: allocation.feesAllocated,
+        interestAllocated: allocation.interestAllocated,
+        principalAllocated: allocation.principalAllocated,
+      };
+    });
+
+    const nextBalance = this.roundMoney(
+      Math.max(0, totalObligation - totalPaid),
+    );
+    const nextStatus =
+      nextBalance <= 0
+        ? LoanStatus.CLOSED
+        : loan.status === LoanStatus.CLOSED ||
+            loan.status === LoanStatus.SUBMITTED ||
+            loan.status === LoanStatus.APPROVED
+          ? LoanStatus.CURRENT
+          : loan.status;
+
+    return {
+      allocations,
+      nextBalance,
+      nextStatus,
+      totalObligation,
+      totalPaid,
+    };
+  }
+
+  private async notifyRepaymentCorrectionManagers(
+    request: RepaymentCorrectionRequestRecord,
+  ) {
+    const users = await this.prisma.user.findMany({
+      where: {
+        tenantId: request.tenantId,
+        status: UserStatus.ACTIVE,
+        OR: [{ branchId: request.branchId }, { branchId: null }],
+        roles: {
+          some: {
+            role: {
+              name: {
+                in: ['Account Owner', 'Owner', 'Manager', 'Branch Manager'],
+              },
+            },
+          },
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    await Promise.allSettled(
+      users.map((manager) =>
+        this.fcmPushService.sendToUser(request.tenantId, manager.id, {
+          title: 'Repayment correction requested',
+          body: `${request.requestedBy.displayName} requested a correction for ${request.loan.customer.fullName}.`,
+          href: '/collections/corrections',
+          data: {
+            type: 'repayment_correction_request',
+            requestId: request.id,
+            repaymentId: request.repaymentId,
+            loanId: request.loanId,
+          },
+        }),
+      ),
+    );
+  }
+
+  private async notifyRepaymentCorrectionRequester(
+    request: RepaymentCorrectionRequestRecord,
+  ) {
+    const approved =
+      request.status === RepaymentCorrectionRequestStatus.APPROVED;
+    const applied = Boolean(request.correctionAppliedAt);
+
+    await this.fcmPushService.sendToUser(
+      request.tenantId,
+      request.requestedByUserId,
+      {
+        title: applied
+          ? 'Repayment correction applied'
+          : approved
+            ? 'Repayment correction approved'
+            : 'Repayment correction reviewed',
+        body: applied
+          ? `The correction for ${request.loan.customer.fullName} has been saved.`
+          : approved && request.officerCanEdit
+            ? `You can now edit the repayment for ${request.loan.customer.fullName}.`
+            : approved
+              ? `A manager approved the correction for ${request.loan.customer.fullName} and will update it.`
+              : `The correction request for ${request.loan.customer.fullName} was not approved.`,
+        href: '/records',
+        data: {
+          type: 'repayment_correction_review',
+          requestId: request.id,
+          repaymentId: request.repaymentId,
+          loanId: request.loanId,
+          status: request.status,
+        },
+      },
+    );
+  }
+
   private safeIdempotencyPart(value: string): string {
     const safe = value
       .trim()
@@ -2598,23 +3459,62 @@ export class CollectionsService {
         ),
       ]);
 
-    const paymentHistory = repayments.map((row, index) => ({
-      id: row.id,
+    const lockedPaymentDates = await this.submittedReportDateSet(
+      loan.tenantId,
+      loan.branchId,
+      repayments.map((row) => row.paidAt),
+    );
 
-      amount: this.decimalToNumber(row.amount) ?? 0,
+    const paymentHistory = repayments.map((row, index) => {
+      const pendingCorrection =
+        row.correctionRequests.find(
+          (request) =>
+            request.status === RepaymentCorrectionRequestStatus.PENDING,
+        ) ?? null;
+      const approvedCorrection =
+        row.correctionRequests.find(
+          (request) =>
+            request.status === RepaymentCorrectionRequestStatus.APPROVED &&
+            !request.correctionAppliedAt,
+        ) ?? null;
+      const appliedCorrection =
+        row.correctionRequests.find((request) => request.correctionAppliedAt) ??
+        null;
+      const correctionLocked = lockedPaymentDates.has(
+        this.dateLabel(row.paidAt),
+      );
 
-      method: row.method,
+      return {
+        id: row.id,
 
-      paidAt: row.paidAt.toISOString(),
+        amount: this.decimalToNumber(row.amount) ?? 0,
 
-      recordedByName: row.recordedBy?.displayName ?? 'Agent',
+        method: row.method,
 
-      recordedByPublicId: row.recordedBy?.publicId ?? null,
+        paidAt: row.paidAt.toISOString(),
 
-      agentPhotoUrl: historyPhotos[index] ?? null,
+        recordedByName: row.recordedBy?.displayName ?? 'Field Officer',
 
-      note: row.note,
-    }));
+        recordedByPublicId: row.recordedBy?.publicId ?? null,
+
+        agentPhotoUrl: historyPhotos[index] ?? null,
+
+        note: row.note,
+
+        correctionLocked,
+
+        canRequestCorrection: !correctionLocked && !pendingCorrection,
+
+        pendingCorrectionRequestId: pendingCorrection?.id ?? null,
+
+        approvedCorrectionRequestId: approvedCorrection?.id ?? null,
+
+        officerCanEdit: approvedCorrection?.officerCanEdit ?? false,
+
+        correctionAppliedAt:
+          appliedCorrection?.correctionAppliedAt?.toISOString() ?? null,
+      };
+    });
 
     const isFined = loan.isFined || (loan.wallet?.isFined ?? false);
 
@@ -2988,6 +3888,17 @@ export class CollectionsService {
       a.getMonth() === b.getMonth() &&
       a.getDate() === b.getDate()
     );
+  }
+
+  private dateOnly(value: Date) {
+    return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  }
+
+  private dateLabel(value: Date) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(
+      2,
+      '0',
+    )}-${String(value.getDate()).padStart(2, '0')}`;
   }
 
   private decimalToNumber(value: Prisma.Decimal | number | null | undefined) {

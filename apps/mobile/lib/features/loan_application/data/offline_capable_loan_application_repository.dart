@@ -30,6 +30,7 @@ class OfflineCapableLoanApplicationRepository
   final SessionStore _sessionStore;
   final local_db.LoanApplicationsRepository _localApplications;
   final OfflineMediaService _offlineMedia;
+
   final Map<String, _OfflineLoanDraft> _drafts = {};
 
   static const _uuid = Uuid();
@@ -53,8 +54,32 @@ class OfflineCapableLoanApplicationRepository
   }
 
   @override
+  Future<LoanApplication> createDraftFromCustomer(String customerId) async {
+    if (NetworkStatusStore.instance.isOffline) {
+      throw LoanApplicationFailure(
+        'Starting a loan for an existing borrower is not available offline yet.',
+      );
+    }
+
+    try {
+      return await _remote.createDraftFromCustomer(customerId);
+    } catch (error) {
+      if (_looksLikeNetworkError(error)) {
+        NetworkStatusStore.instance.markOffline();
+
+        throw LoanApplicationFailure(
+          'You are offline. Existing borrower applications are not available offline yet.',
+        );
+      }
+
+      rethrow;
+    }
+  }
+
+  @override
   Future<LoanApplication> getById(String id) async {
     final draft = _drafts[id];
+
     if (draft != null) {
       return _toApplication(draft);
     }
@@ -68,6 +93,7 @@ class OfflineCapableLoanApplicationRepository
     required Map<String, dynamic> payload,
   }) async {
     final draft = _drafts[id];
+
     if (draft != null) {
       _mergePayload(draft, payload);
       return _toApplication(draft);
@@ -87,11 +113,13 @@ class OfflineCapableLoanApplicationRepository
     required String dateOfBirth,
   }) async {
     final draft = _drafts[id];
+
     if (draft != null) {
       draft
         ..status = 'VERIFIED'
         ..verificationCode = 'OFFLINE-${id.substring(id.length - 6)}'
         ..verifiedAt = DateTime.now();
+
       draft.data.addAll({
         'surname': surname,
         'givenNames': givenNames,
@@ -100,6 +128,7 @@ class OfflineCapableLoanApplicationRepository
         'gender': gender,
         'dateOfBirth': dateOfBirth,
       });
+
       return _toApplication(draft);
     }
 
@@ -123,6 +152,7 @@ class OfflineCapableLoanApplicationRepository
     String? fileName,
   }) async {
     final draft = _drafts[id];
+
     if (draft != null) {
       await _offlineMedia.queueBytes(
         bytes: bytes,
@@ -135,6 +165,7 @@ class OfflineCapableLoanApplicationRepository
       );
 
       draft.mediaTypes.add(mediaType);
+
       return _toApplication(draft);
     }
 
@@ -155,8 +186,10 @@ class OfflineCapableLoanApplicationRepository
     bool createNewVersion = false,
   }) async {
     final draft = _drafts[id];
+
     if (draft != null) {
       final mediaType = 'SIGNATURE_$signerRole';
+
       await _offlineMedia.queueBytes(
         bytes: capture.pngBytes,
         entityType: 'loan_application',
@@ -167,7 +200,9 @@ class OfflineCapableLoanApplicationRepository
       );
 
       draft.mediaTypes.add(mediaType);
+
       draft.signatures.removeWhere((item) => item.signerRole == signerRole);
+
       draft.signatures.add(
         LoanApplicationSignatureSummary(
           signerRole: signerRole,
@@ -176,6 +211,7 @@ class OfflineCapableLoanApplicationRepository
           signerName: capture.metadata['signerName'] as String? ?? '',
         ),
       );
+
       return _toApplication(draft);
     }
 
@@ -195,6 +231,7 @@ class OfflineCapableLoanApplicationRepository
     String? disbursementNote,
   }) async {
     final draft = _drafts[id];
+
     if (draft == null) {
       return _remote.submit(
         id,
@@ -207,15 +244,19 @@ class OfflineCapableLoanApplicationRepository
     if (initialDisbursementAmount != null) {
       draft.data['initialDisbursementAmount'] = initialDisbursementAmount;
     }
+
     if (collectedRepaymentsAmount > 0) {
       draft.data['collectedRepaymentsAmount'] = collectedRepaymentsAmount;
     }
+
     if (disbursementNote != null && disbursementNote.trim().isNotEmpty) {
       draft.data['disbursementNote'] = disbursementNote.trim();
     }
 
     await _persistLocalSubmission(draft);
+
     draft.status = 'SUBMITTED';
+
     return _toApplication(draft);
   }
 
@@ -229,14 +270,18 @@ class OfflineCapableLoanApplicationRepository
       id: 'local-loan-${_uuid.v4()}',
       createdAt: DateTime.now(),
     );
+
     _drafts[draft.id] = draft;
+
     return _toApplication(draft);
   }
 
   Future<void> _persistLocalSubmission(_OfflineLoanDraft draft) async {
     final session = await _sessionStore.read();
+
     final tenantId = session?.tenantId?.trim();
     final branchId = session?.branchId?.trim();
+
     final agentId = session?.publicId?.trim().isNotEmpty == true
         ? session!.publicId!.trim()
         : session?.userEmail.trim();
@@ -244,23 +289,32 @@ class OfflineCapableLoanApplicationRepository
     if (tenantId == null || tenantId.isEmpty) {
       throw LoanApplicationFailure('Tenant information is missing.');
     }
+
     if (branchId == null || branchId.isEmpty) {
       throw LoanApplicationFailure('Branch information is missing.');
     }
+
     if (agentId == null || agentId.isEmpty) {
       throw LoanApplicationFailure('Agent information is missing.');
     }
 
     final principal = _double(draft.data['principalAmount']);
+
     final initialDisbursement = _double(
       draft.data['initialDisbursementAmount'],
     );
+
     final collectedRepayments =
         _double(draft.data['collectedRepaymentsAmount']) ?? 0;
+
     final processingFee = _double(draft.data['processingFee']) ?? 0;
+
     final productId = _string(draft.data['loanProductTemplateId']);
+
     final phone = _string(draft.data['phone']);
+
     final givenNames = _string(draft.data['givenNames']);
+
     final surname = _string(draft.data['surname']);
 
     if (givenNames == null ||
@@ -283,6 +337,7 @@ class OfflineCapableLoanApplicationRepository
         tenantId: tenantId,
         branchId: branchId,
         agentId: agentId,
+        customerId: _string(draft.data['customerId']),
         status: 'DRAFT',
         applicantNin: _string(draft.data['nationalId']),
         applicantFirstName: givenNames,
@@ -301,14 +356,14 @@ class OfflineCapableLoanApplicationRepository
         createdAt: draft.createdAt,
       ),
     );
+
     await _localApplications.submit(draft.id);
   }
 
   void _mergePayload(_OfflineLoanDraft draft, Map<String, dynamic> payload) {
     draft.data.addAll(payload);
 
-    final termsConfirmed = payload['termsConfirmed'];
-    if (termsConfirmed == true) {
+    if (payload['termsConfirmed'] == true) {
       draft.termsConfirmedAt = DateTime.now();
     }
   }
@@ -320,6 +375,7 @@ class OfflineCapableLoanApplicationRepository
       synced: false,
       mediaTypes: Set.unmodifiable(draft.mediaTypes),
       signatures: List.unmodifiable(draft.signatures),
+      customerId: _string(draft.data['customerId']),
       surname: _string(draft.data['surname']),
       givenNames: _string(draft.data['givenNames']),
       phone: _string(draft.data['phone']),
@@ -343,6 +399,7 @@ class OfflineCapableLoanApplicationRepository
 
   bool _looksLikeNetworkError(Object error) {
     final message = error.toString().toLowerCase();
+
     return message.contains('could not connect') ||
         message.contains('socket') ||
         message.contains('network') ||
@@ -357,6 +414,7 @@ class _OfflineLoanDraft {
 
   final String id;
   final DateTime createdAt;
+
   final Map<String, dynamic> data = {};
   final Set<String> mediaTypes = {};
   final List<LoanApplicationSignatureSummary> signatures = [];
@@ -369,9 +427,11 @@ class _OfflineLoanDraft {
 
 String? _string(Object? value) {
   final text = value?.toString().trim();
+
   if (text == null || text.isEmpty) {
     return null;
   }
+
   return text;
 }
 
@@ -379,6 +439,7 @@ double? _double(Object? value) {
   if (value is num) {
     return value.toDouble();
   }
+
   return double.tryParse(value?.toString().replaceAll(',', '').trim() ?? '');
 }
 
@@ -386,6 +447,7 @@ DateTime? _date(Object? value) {
   if (value is DateTime) {
     return value;
   }
+
   return DateTime.tryParse(value?.toString() ?? '');
 }
 

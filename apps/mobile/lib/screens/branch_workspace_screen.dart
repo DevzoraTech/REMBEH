@@ -48,6 +48,7 @@ import 'home/recent_activity_list.dart';
 import 'loan_application/new_loan_application_screen.dart';
 import 'login_screen.dart';
 import 'pending_disbursements_screen.dart';
+import 'repayment_corrections_screen.dart';
 import 'records/records_tab.dart';
 import 'register_customer_screen.dart';
 import 'search/search_tab.dart';
@@ -2441,6 +2442,14 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
       onShortagesTap: () {
         unawaited(_openShortagesList());
+      },
+
+      onRepaymentCorrectionsTap: () {
+        Navigator.of(context).push<void>(
+          MaterialPageRoute(
+            builder: (_) => RepaymentCorrectionsScreen(session: widget.session),
+          ),
+        );
       },
 
       onReportsTap: () {

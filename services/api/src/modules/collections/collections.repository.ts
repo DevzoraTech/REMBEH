@@ -23,6 +23,13 @@ export const activeLoanStatuses: LoanStatus[] = [
   LoanStatus.RESTRUCTURED,
 ];
 
+const searchableLoanStatuses: LoanStatus[] = [
+  ...activeLoanStatuses,
+  LoanStatus.PARTIALLY_DISBURSED,
+  LoanStatus.CLOSED,
+  LoanStatus.WRITTEN_OFF,
+];
+
 // =============================================================================
 // SHARED LOAN RELATIONS
 // =============================================================================
@@ -49,6 +56,16 @@ const loanWithRelations = {
 
     include: {
       recordedBy: true,
+      correctionRequests: {
+        orderBy: {
+          createdAt: 'desc' as const,
+        },
+        include: {
+          requestedBy: true,
+          reviewedBy: true,
+          correctionAppliedBy: true,
+        },
+      },
     },
   },
 
@@ -296,7 +313,7 @@ export class CollectionsRepository {
       }),
 
       status: {
-        in: activeLoanStatuses,
+        in: searchableLoanStatuses,
       },
     };
 

@@ -110,6 +110,10 @@ class RepaymentApiDatasource {
     final extension = fileName?.contains('.') == true
         ? fileName!.split('.').last
         : _extensionForMime(mimeType);
+    final trimmedFileName = fileName?.trim();
+    final fileNamePayload = trimmedFileName == null || trimmedFileName.isEmpty
+        ? null
+        : trimmedFileName;
 
     final presign = await http.post(
       Uri.parse(
@@ -119,8 +123,7 @@ class RepaymentApiDatasource {
       body: jsonEncode({
         'mediaType': mediaType,
         'mimeType': mimeType,
-        if (fileName != null && fileName.trim().isNotEmpty)
-          'fileName': fileName.trim(),
+        'fileName': ?fileNamePayload,
         'extension': ?extension,
       }),
     );
@@ -171,6 +174,73 @@ class RepaymentApiDatasource {
         'method': method,
         if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
         if (paidAt != null) 'paidAt': paidAt.toUtc().toIso8601String(),
+      }),
+    );
+    return _decodeOk(response);
+  }
+
+  Future<Map<String, dynamic>> requestRepaymentCorrection({
+    required String repaymentId,
+    required String reason,
+    int? requestedAmount,
+    String? requestedMethod,
+    DateTime? requestedPaidAt,
+    String? requestedNote,
+  }) async {
+    final session = await _requireSession();
+    final trimmedMethod = requestedMethod?.trim();
+    final methodPayload = trimmedMethod == null || trimmedMethod.isEmpty
+        ? null
+        : trimmedMethod;
+    final trimmedNote = requestedNote?.trim();
+    final notePayload = trimmedNote == null || trimmedNote.isEmpty
+        ? null
+        : trimmedNote;
+    final requestedPaidAtPayload = requestedPaidAt?.toUtc().toIso8601String();
+    final response = await http.post(
+      Uri.parse(
+        '$rembehApiBaseUrl/collections/repayments/$repaymentId/correction-requests',
+      ),
+      headers: {..._headers(session), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'reason': reason.trim(),
+        'requestedAmount': ?requestedAmount,
+        'requestedMethod': ?methodPayload,
+        'requestedPaidAt': ?requestedPaidAtPayload,
+        'requestedNote': ?notePayload,
+      }),
+    );
+    return _decodeOk(response);
+  }
+
+  Future<Map<String, dynamic>> applyRepaymentCorrection({
+    required String repaymentId,
+    required String reason,
+    String? correctionRequestId,
+    int? amount,
+    String? method,
+    DateTime? paidAt,
+    String? note,
+  }) async {
+    final session = await _requireSession();
+    final correctionRequestIdPayload = correctionRequestId?.trim();
+    final trimmedMethod = method?.trim();
+    final methodPayload = trimmedMethod == null || trimmedMethod.isEmpty
+        ? null
+        : trimmedMethod;
+    final paidAtPayload = paidAt?.toUtc().toIso8601String();
+    final response = await http.patch(
+      Uri.parse(
+        '$rembehApiBaseUrl/collections/repayments/$repaymentId/correction',
+      ),
+      headers: {..._headers(session), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'reason': reason.trim(),
+        'correctionRequestId': ?correctionRequestIdPayload,
+        'amount': ?amount,
+        'method': ?methodPayload,
+        'paidAt': ?paidAtPayload,
+        'note': ?note?.trim(),
       }),
     );
     return _decodeOk(response);

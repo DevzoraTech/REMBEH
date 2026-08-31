@@ -82,6 +82,12 @@ export type PaymentHistoryItemContract = {
   recordedByPublicId: string | null;
   agentPhotoUrl: string | null;
   note: string | null;
+  correctionLocked: boolean;
+  canRequestCorrection: boolean;
+  pendingCorrectionRequestId: string | null;
+  approvedCorrectionRequestId: string | null;
+  officerCanEdit: boolean;
+  correctionAppliedAt: string | null;
 };
 
 export type FineHistoryItemContract = {
@@ -182,6 +188,43 @@ export type RepaymentDetailContract = RepaymentListItemContract & {
   loanStatus: string | null;
   isFined: boolean;
   finesTotal: number;
+  correctionLocked: boolean;
+  canRequestCorrection: boolean;
+  pendingCorrectionRequestId: string | null;
+  approvedCorrectionRequestId: string | null;
+  officerCanEdit: boolean;
+  correctionAppliedAt: string | null;
+};
+
+export type RepaymentCorrectionRequestStatus =
+  'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+
+export type RepaymentCorrectionRequestContract = {
+  id: string;
+  repaymentId: string;
+  loanId: string;
+  tenantId: string;
+  branchId: string;
+  borrowerName: string;
+  borrowerPhone: string | null;
+  amount: number;
+  paidAt: string;
+  method: string;
+  reason: string;
+  requestedAmount: number | null;
+  requestedMethod: string | null;
+  requestedPaidAt: string | null;
+  requestedNote: string | null;
+  status: RepaymentCorrectionRequestStatus;
+  officerCanEdit: boolean;
+  requestedByName: string;
+  reviewedByName: string | null;
+  correctionAppliedByName: string | null;
+  reviewerFeedback: string | null;
+  reviewedAt: string | null;
+  correctionAppliedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type DailyAgentApplicationItemContract = {

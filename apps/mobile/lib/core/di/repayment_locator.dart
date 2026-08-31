@@ -11,20 +11,30 @@ class RepaymentLocator {
 
   final SessionStore sessionStore = SessionStore();
 
-  late final RepaymentApiDatasource apiDatasource =
-      RepaymentApiDatasource(sessionStore);
+  late final RepaymentApiDatasource apiDatasource = RepaymentApiDatasource(
+    sessionStore,
+  );
 
-  late final RepaymentRepository repository =
-      RepaymentRepositoryImpl(apiDatasource);
+  late final RepaymentRepository repository = RepaymentRepositoryImpl(
+    apiDatasource,
+  );
 
   late final GetCollectionSummaryUseCase getSummary =
       GetCollectionSummaryUseCase(repository);
-  late final ListRepaymentsUseCase listRepayments =
-      ListRepaymentsUseCase(repository);
-  late final SearchClientsUseCase searchClients =
-      SearchClientsUseCase(repository);
-  late final GetLoanDetailUseCase getLoanDetail =
-      GetLoanDetailUseCase(repository);
-  late final RecordRepaymentUseCase recordRepayment =
-      RecordRepaymentUseCase(repository);
+  late final ListRepaymentsUseCase listRepayments = ListRepaymentsUseCase(
+    repository,
+  );
+  late final SearchClientsUseCase searchClients = SearchClientsUseCase(
+    repository,
+  );
+  late final GetLoanDetailUseCase getLoanDetail = GetLoanDetailUseCase(
+    repository,
+  );
+  late final RecordRepaymentUseCase recordRepayment = RecordRepaymentUseCase(
+    repository,
+  );
+  late final RequestRepaymentCorrectionUseCase requestRepaymentCorrection =
+      RequestRepaymentCorrectionUseCase(repository);
+  late final ApplyRepaymentCorrectionUseCase applyRepaymentCorrection =
+      ApplyRepaymentCorrectionUseCase(repository);
 }

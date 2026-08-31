@@ -69,8 +69,7 @@ export function RecordRepaymentModal({
     setError(null);
     setDetail(null);
     setLoadingDetail(true);
-    // Fallback until collections detail loads (same as list balance).
-    setAmount(loan.balance > 0 ? String(Math.round(loan.balance)) : "");
+    setAmount("");
 
     void (async () => {
       try {
@@ -94,10 +93,6 @@ export function RecordRepaymentModal({
         }
         const next = payload.detail ?? null;
         setDetail(next);
-        if (next) {
-          const defaultAmount = Math.max(0, Math.round(next.expectedToday));
-          setAmount(defaultAmount > 0 ? String(defaultAmount) : "");
-        }
       } catch (caught) {
         if (!cancelled) {
           setError(

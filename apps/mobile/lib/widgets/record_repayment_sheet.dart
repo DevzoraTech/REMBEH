@@ -46,9 +46,7 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
   @override
   void initState() {
     super.initState();
-    _amount = TextEditingController(
-      text: formatCompactMoney(widget.detail.expectedToday),
-    );
+    _amount = TextEditingController();
     _note = TextEditingController();
     _amount.addListener(() => setState(() {}));
     _note.addListener(() => setState(() {}));
@@ -70,6 +68,13 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
     final next = widget.detail.outstanding - _paidAmount;
     return next < 0 ? 0 : next;
   }
+
+  String get _methodLabel => _methods
+      .firstWhere(
+        (method) => method.$1 == _method,
+        orElse: () => (_method, _method.replaceAll('_', ' ')),
+      )
+      .$2;
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -104,6 +109,23 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
       );
       return;
     }
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: rembehSheetRadius()),
+      builder: (context) => _RepaymentConfirmationSheet(
+        detail: widget.detail,
+        amount: _paidAmount,
+        outstandingBefore: widget.detail.outstanding,
+        outstandingAfter: _newOutstanding,
+        method: _methodLabel,
+        paidAt: _paidAt,
+        note: _note.text.trim(),
+      ),
+    );
+    if (confirmed != true || !mounted) return;
 
     setState(() => _saving = true);
     try {
@@ -432,6 +454,204 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
       'Dec',
     ];
     return '${value.day} ${months[value.month - 1]} ${value.year}';
+  }
+}
+
+class _RepaymentConfirmationSheet extends StatelessWidget {
+  const _RepaymentConfirmationSheet({
+    required this.detail,
+    required this.amount,
+    required this.outstandingBefore,
+    required this.outstandingAfter,
+    required this.method,
+    required this.paidAt,
+    required this.note,
+  });
+
+  final ClientDetail detail;
+  final int amount;
+  final int outstandingBefore;
+  final int outstandingAfter;
+  final String method;
+  final DateTime paidAt;
+  final String note;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          16,
+          8,
+          16,
+          16 + MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(child: Container(width: 40, height: 4, color: line)),
+            const SizedBox(height: 14),
+            const Text(
+              'Confirm repayment',
+              style: TextStyle(
+                color: midnightNavy,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Check these details before saving. This reduces corrections later.',
+              style: TextStyle(color: slateText, fontSize: 12.5, height: 1.4),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: softIvory,
+                border: Border.all(color: line),
+                borderRadius: rembehBorderRadius(rembehRadiusLg),
+              ),
+              child: Column(
+                children: [
+                  _ConfirmRow(label: 'Client', value: detail.fullName),
+                  _ConfirmRow(label: 'Phone', value: detail.phone),
+                  _ConfirmRow(
+                    label: 'Amount received',
+                    value: formatMoney(amount),
+                    valueColor: forestEmerald,
+                  ),
+                  _ConfirmRow(
+                    label: 'Outstanding before',
+                    value: formatMoney(outstandingBefore),
+                  ),
+                  _ConfirmRow(
+                    label: 'Outstanding after',
+                    value: formatMoney(outstandingAfter),
+                    valueColor: outstandingAfter == 0
+                        ? forestEmerald
+                        : midnightNavy,
+                  ),
+                  _ConfirmRow(label: 'Method', value: method),
+                  _ConfirmRow(label: 'Date', value: _shortDate(paidAt)),
+                  if (note.isNotEmpty) _ConfirmRow(label: 'Note', value: note),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF7E6),
+                border: Border.all(color: const Color(0xFFE9C46A)),
+                borderRadius: rembehBorderRadius(rembehRadiusMd),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline, color: Color(0xFFB7791F), size: 18),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Only confirm after counting the cash and checking the borrower record.',
+                      style: TextStyle(
+                        color: midnightNavy,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              height: 50,
+              child: ElevatedButton.icon(
+                onPressed: () => Navigator.of(context).pop(true),
+                icon: const Icon(Icons.check_circle),
+                label: const Text('Confirm and record'),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 48,
+              child: OutlinedButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Go back and edit'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _shortDate(DateTime value) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${value.day} ${months[value.month - 1]} ${value.year}';
+  }
+}
+
+class _ConfirmRow extends StatelessWidget {
+  const _ConfirmRow({
+    required this.label,
+    required this.value,
+    this.valueColor = midnightNavy,
+  });
+
+  final String label;
+  final String value;
+  final Color valueColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 126,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: slateText,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: valueColor,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

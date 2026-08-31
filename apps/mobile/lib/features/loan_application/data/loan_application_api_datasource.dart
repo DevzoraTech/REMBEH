@@ -31,6 +31,20 @@ class LoanApplicationApiDatasource {
     return _decodeOk(response);
   }
 
+  Future<Map<String, dynamic>> createDraftFromCustomer(
+    String customerId,
+  ) async {
+    final session = await _requireSession();
+
+    final response = await http.post(
+      Uri.parse('$rembehApiBaseUrl/loans/applications/from-borrower'),
+      headers: {..._headers(session), 'Content-Type': 'application/json'},
+      body: jsonEncode({'customerId': customerId}),
+    );
+
+    return _decodeOk(response);
+  }
+
   Future<Map<String, dynamic>> update(
     String id,
     Map<String, dynamic> body,

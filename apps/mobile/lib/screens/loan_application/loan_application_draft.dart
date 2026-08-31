@@ -1,11 +1,17 @@
 import 'dart:typed_data';
 
 class LoanApplicationDraft {
+  // Borrower source
+  bool existingBorrower = false;
+  String? customerId;
+
   // Step 1 — basic
   String surname = '';
   String givenNames = '';
   String phone = '';
   String nationalId = '';
+
+  bool get isExistingBorrower => customerId != null;
 
   /// API enum: MALE | FEMALE | OTHER
   String? gender;
@@ -58,7 +64,7 @@ class LoanApplicationDraft {
   String supportingDocName = '';
   String otherDocName = '';
 
-  // Step 6 — signatures (locked once confirmed by API)
+  // Step 6 — signatures
   bool applicantSigned = false;
   bool guarantorSigned = false;
   bool officerSigned = false;
@@ -72,10 +78,12 @@ class LoanApplicationDraft {
       givenNames.trim(),
       surname.trim(),
     ].where((part) => part.isNotEmpty).toList();
+
     return parts.join(' ');
   }
 
   bool get hasProgress =>
+      customerId != null ||
       surname.isNotEmpty ||
       givenNames.isNotEmpty ||
       phone.isNotEmpty ||

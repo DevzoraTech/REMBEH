@@ -31,6 +31,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "../app/app-shell";
+import { PaymentDetailDrawer } from "../app/payment-detail-drawer";
 import { RowActions } from "../app/row-actions";
 import { AppBootSkeleton } from "../app/skeleton";
 import {
@@ -162,9 +163,15 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
   const [bulkSmsOpen, setBulkSmsOpen] = useState(false);
   const [bulkSmsBusy, setBulkSmsBusy] = useState(false);
   const [smsFailures, setSmsFailures] = useState<RepaymentSmsResult[]>([]);
+  const [selectedPaymentId, setSelectedPaymentId] = useState<string | null>(
+    null,
+  );
   const currency = state.workspace?.currency ?? "UGX";
   const canSendRepaymentSms = Boolean(
     state.session?.permissions.includes("collection.create"),
+  );
+  const canCorrectRepayments = Boolean(
+    state.session?.permissions.includes("collection.reconcile"),
   );
 
   const loadPayments = useCallback(async () => {
@@ -716,6 +723,7 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
                   canSendSms={canSendRepaymentSms}
                   smsBusy={smsBusyIds.has(payment.id)}
                   onSendSms={(resend) => void sendRepaymentSms(payment, resend)}
+                  onViewDetails={() => setSelectedPaymentId(payment.id)}
                 />
               ))
             )}
@@ -853,6 +861,15 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
           </div>
         </div>
       ) : null}
+
+      <PaymentDetailDrawer
+        repaymentId={selectedPaymentId}
+        accessToken={state.session.accessToken}
+        tokenType={state.session.tokenType}
+        canCorrect={canCorrectRepayments}
+        onClose={() => setSelectedPaymentId(null)}
+        onCorrected={() => void loadPayments()}
+      />
     </AppShell>
   );
 }
@@ -866,6 +883,7 @@ function PaymentRow({
   canSendSms,
   smsBusy,
   onSendSms,
+  onViewDetails,
 }: {
   payment: OwnerRepayment;
   currency: string;
@@ -875,6 +893,7 @@ function PaymentRow({
   canSendSms: boolean;
   smsBusy: boolean;
   onSendSms: (resend: boolean) => void;
+  onViewDetails: () => void;
 }) {
   const methodKey = payment.method.toUpperCase().replace(/\s+/g, "_");
   const isMobile = methodKey.includes("MOBILE");
@@ -1013,6 +1032,10 @@ function PaymentRow({
           label={`Actions For ${payment.clientName}`}
           busy={smsBusy}
           items={[
+            {
+              label: "View Details",
+              onSelect: onViewDetails,
+            },
             {
               label: "Copy Loan ID",
               onSelect: () => onCopy(`${payment.id}-loan`, payment.loanId),

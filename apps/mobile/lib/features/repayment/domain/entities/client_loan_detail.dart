@@ -7,6 +7,12 @@ class PaymentHistoryItem {
     required this.recordedByName,
     this.agentPhotoUrl,
     this.note,
+    this.correctionLocked = false,
+    this.canRequestCorrection = true,
+    this.pendingCorrectionRequestId,
+    this.approvedCorrectionRequestId,
+    this.officerCanEdit = false,
+    this.correctionAppliedAt,
   });
 
   final String id;
@@ -16,6 +22,12 @@ class PaymentHistoryItem {
   final String recordedByName;
   final String? agentPhotoUrl;
   final String? note;
+  final bool correctionLocked;
+  final bool canRequestCorrection;
+  final String? pendingCorrectionRequestId;
+  final String? approvedCorrectionRequestId;
+  final bool officerCanEdit;
+  final DateTime? correctionAppliedAt;
 }
 
 class FineHistoryItem {

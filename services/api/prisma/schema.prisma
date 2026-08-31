@@ -113,6 +113,13 @@ enum RepaymentMethod {
   OTHER
 }
 
+enum RepaymentCorrectionRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
 enum LoanDisbursementSource {
   ASSIGNED_FLOAT
   COLLECTED_REPAYMENTS
@@ -412,29 +419,30 @@ model Tenant {
   createdAt          DateTime     @default(now()) @map("created_at")
   updatedAt          DateTime     @updatedAt @map("updated_at")
 
-  branches                 Branch[]
-  departments              Department[]
-  users                    User[]
-  roles                    Role[]
-  permissions              Permission[]
-  customers                Customer[]
-  loans                    Loan[]
-  loanDisbursements        LoanDisbursement[]
-  repayments               Repayment[]
-  paymentGatewayIntents    PaymentGatewayIntent[]
-  clientWallets            ClientWallet[]
-  loanApplications         LoanApplication[]
-  loanRateOptions          LoanRateOption[]
-  loanPeriodOptions        LoanPeriodOption[]
-  loanProductTemplates     LoanProductTemplate[]
-  loanPaymentStartPolicies LoanPaymentStartPolicy[]
-  loanFinePolicies         LoanFinePolicy[]
-  loanFines                LoanFine[]
-  enabledModules           TenantModule[]
-  auditLogs                AuditLog[]
-  outboxEvents             OutboxEvent[]
-  otpChallenges            OtpChallenge[]
-  agentDailyFloats         AgentDailyFloat[]
+  branches                    Branch[]
+  departments                 Department[]
+  users                       User[]
+  roles                       Role[]
+  permissions                 Permission[]
+  customers                   Customer[]
+  loans                       Loan[]
+  loanDisbursements           LoanDisbursement[]
+  repayments                  Repayment[]
+  repaymentCorrectionRequests RepaymentCorrectionRequest[]
+  paymentGatewayIntents       PaymentGatewayIntent[]
+  clientWallets               ClientWallet[]
+  loanApplications            LoanApplication[]
+  loanRateOptions             LoanRateOption[]
+  loanPeriodOptions           LoanPeriodOption[]
+  loanProductTemplates        LoanProductTemplate[]
+  loanPaymentStartPolicies    LoanPaymentStartPolicy[]
+  loanFinePolicies            LoanFinePolicy[]
+  loanFines                   LoanFine[]
+  enabledModules              TenantModule[]
+  auditLogs                   AuditLog[]
+  outboxEvents                OutboxEvent[]
+  otpChallenges               OtpChallenge[]
+  agentDailyFloats            AgentDailyFloat[]
 
   branchDailyOperations   BranchDailyOperation[]
   branchOperationExpenses BranchOperationExpense[]
@@ -484,21 +492,22 @@ model Branch {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  tenant                   Tenant                   @relation(fields: [tenantId], references: [id])
-  users                    User[]
-  customers                Customer[]
-  loans                    Loan[]
-  loanDisbursements        LoanDisbursement[]
-  repayments               Repayment[]
-  clientWallets            ClientWallet[]
-  loanApplications         LoanApplication[]
-  loanRateOptions          LoanRateOption[]
-  loanPeriodOptions        LoanPeriodOption[]
-  loanProductTemplates     LoanProductTemplate[]
-  loanPaymentStartPolicies LoanPaymentStartPolicy[]
-  loanFinePolicies         LoanFinePolicy[]
-  loanFines                LoanFine[]
-  agentDailyFloats         AgentDailyFloat[]
+  tenant                      Tenant                       @relation(fields: [tenantId], references: [id])
+  users                       User[]
+  customers                   Customer[]
+  loans                       Loan[]
+  loanDisbursements           LoanDisbursement[]
+  repayments                  Repayment[]
+  repaymentCorrectionRequests RepaymentCorrectionRequest[]
+  clientWallets               ClientWallet[]
+  loanApplications            LoanApplication[]
+  loanRateOptions             LoanRateOption[]
+  loanPeriodOptions           LoanPeriodOption[]
+  loanProductTemplates        LoanProductTemplate[]
+  loanPaymentStartPolicies    LoanPaymentStartPolicy[]
+  loanFinePolicies            LoanFinePolicy[]
+  loanFines                   LoanFine[]
+  agentDailyFloats            AgentDailyFloat[]
 
   dailyOperations          BranchDailyOperation[]
   operationExpenses        BranchOperationExpense[]
@@ -718,15 +727,18 @@ model User {
   branch     Branch?     @relation(fields: [branchId], references: [id])
   department Department? @relation(fields: [departmentId], references: [id])
 
-  roles               UserRole[]
-  auditLogs           AuditLog[]
-  otpChallenges       OtpChallenge[]
-  loanApplications    LoanApplication[] @relation("LoanApplicationOfficer")
-  loanDisbursements   LoanDisbursement[] @relation("LoanDisbursementRecorder")
-  repaymentsRecorded  Repayment[]       @relation("RepaymentRecorder")
-  dailyFloats         AgentDailyFloat[] @relation("AgentDailyFloatAgent")
-  dailyFloatsRecorded AgentDailyFloat[] @relation("AgentDailyFloatRecorder")
-  dailyFloatsReturned AgentDailyFloat[] @relation("AgentDailyFloatReturnedBy")
+  roles                       UserRole[]
+  auditLogs                   AuditLog[]
+  otpChallenges               OtpChallenge[]
+  loanApplications            LoanApplication[]            @relation("LoanApplicationOfficer")
+  loanDisbursements           LoanDisbursement[]           @relation("LoanDisbursementRecorder")
+  repaymentsRecorded          Repayment[]                  @relation("RepaymentRecorder")
+  repaymentCorrectionRequests RepaymentCorrectionRequest[] @relation("RepaymentCorrectionRequester")
+  repaymentCorrectionReviews  RepaymentCorrectionRequest[] @relation("RepaymentCorrectionReviewer")
+  repaymentCorrectionsApplied RepaymentCorrectionRequest[] @relation("RepaymentCorrectionApplier")
+  dailyFloats                 AgentDailyFloat[]            @relation("AgentDailyFloatAgent")
+  dailyFloatsRecorded         AgentDailyFloat[]            @relation("AgentDailyFloatRecorder")
+  dailyFloatsReturned         AgentDailyFloat[]            @relation("AgentDailyFloatReturnedBy")
 
   branchOperationsOpened BranchDailyOperation[] @relation("BranchDailyOperationOpenedBy")
   branchOperationsClosed BranchDailyOperation[] @relation("BranchDailyOperationClosedBy")
@@ -1192,15 +1204,16 @@ model Loan {
   createdAt        DateTime   @default(now()) @map("created_at")
   updatedAt        DateTime   @updatedAt @map("updated_at")
 
-  tenant        Tenant             @relation(fields: [tenantId], references: [id])
-  branch        Branch             @relation(fields: [branchId], references: [id])
-  customer      Customer           @relation(fields: [customerId], references: [id])
-  application   LoanApplication?
-  wallet        ClientWallet?
-  disbursements LoanDisbursement[]
-  repayments    Repayment[]
-  fines         LoanFine[]
-  reminderItems LoanReminderItem[]
+  tenant                      Tenant                       @relation(fields: [tenantId], references: [id])
+  branch                      Branch                       @relation(fields: [branchId], references: [id])
+  customer                    Customer                     @relation(fields: [customerId], references: [id])
+  application                 LoanApplication?
+  wallet                      ClientWallet?
+  disbursements               LoanDisbursement[]
+  repayments                  Repayment[]
+  repaymentCorrectionRequests RepaymentCorrectionRequest[]
+  fines                       LoanFine[]
+  reminderItems               LoanReminderItem[]
 
   @@index([tenantId, status])
   @@index([tenantId, branchId])
@@ -1280,16 +1293,54 @@ model Repayment {
   createdAt          DateTime        @default(now()) @map("created_at")
   updatedAt          DateTime        @updatedAt @map("updated_at")
 
-  tenant     Tenant @relation(fields: [tenantId], references: [id])
-  branch     Branch @relation(fields: [branchId], references: [id])
-  loan       Loan   @relation(fields: [loanId], references: [id])
-  recordedBy User   @relation("RepaymentRecorder", fields: [recordedByUserId], references: [id])
+  tenant             Tenant                       @relation(fields: [tenantId], references: [id])
+  branch             Branch                       @relation(fields: [branchId], references: [id])
+  loan               Loan                         @relation(fields: [loanId], references: [id])
+  recordedBy         User                         @relation("RepaymentRecorder", fields: [recordedByUserId], references: [id])
+  correctionRequests RepaymentCorrectionRequest[]
 
   @@index([tenantId, paidAt])
   @@index([tenantId, branchId, paidAt])
   @@index([tenantId, loanId])
   @@index([tenantId, recordedByUserId])
   @@map("repayments")
+}
+
+model RepaymentCorrectionRequest {
+  id                        String                           @id @default(uuid()) @db.Uuid
+  tenantId                  String                           @map("tenant_id") @db.Uuid
+  branchId                  String                           @map("branch_id") @db.Uuid
+  repaymentId               String                           @map("repayment_id") @db.Uuid
+  loanId                    String                           @map("loan_id") @db.Uuid
+  requestedByUserId         String                           @map("requested_by_user_id") @db.Uuid
+  reviewedByUserId          String?                          @map("reviewed_by_user_id") @db.Uuid
+  correctionAppliedByUserId String?                          @map("correction_applied_by_user_id") @db.Uuid
+  status                    RepaymentCorrectionRequestStatus @default(PENDING)
+  reason                    String
+  requestedAmount           Decimal?                         @map("requested_amount") @db.Decimal(18, 2)
+  requestedMethod           RepaymentMethod?                 @map("requested_method")
+  requestedPaidAt           DateTime?                        @map("requested_paid_at")
+  requestedNote             String?                          @map("requested_note")
+  officerCanEdit            Boolean                          @default(false) @map("officer_can_edit")
+  reviewerFeedback          String?                          @map("reviewer_feedback")
+  reviewedAt                DateTime?                        @map("reviewed_at")
+  correctionAppliedAt       DateTime?                        @map("correction_applied_at")
+  createdAt                 DateTime                         @default(now()) @map("created_at")
+  updatedAt                 DateTime                         @updatedAt @map("updated_at")
+
+  tenant              Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch              Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  repayment           Repayment @relation(fields: [repaymentId], references: [id], onDelete: Cascade)
+  loan                Loan      @relation(fields: [loanId], references: [id], onDelete: Cascade)
+  requestedBy         User      @relation("RepaymentCorrectionRequester", fields: [requestedByUserId], references: [id])
+  reviewedBy          User?     @relation("RepaymentCorrectionReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
+  correctionAppliedBy User?     @relation("RepaymentCorrectionApplier", fields: [correctionAppliedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, branchId, status, createdAt])
+  @@index([tenantId, requestedByUserId, status, createdAt])
+  @@index([correctionAppliedByUserId])
+  @@index([loanId, createdAt])
+  @@map("repayment_correction_requests")
 }
 
 model PaymentGatewayIntent {

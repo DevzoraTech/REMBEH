@@ -37,6 +37,7 @@ class LoanApplication {
     required this.synced,
     required this.mediaTypes,
     this.signatures = const [],
+    this.customerId,
     this.surname,
     this.givenNames,
     this.phone,
@@ -64,6 +65,7 @@ class LoanApplication {
   final bool synced;
   final Set<String> mediaTypes;
   final List<LoanApplicationSignatureSummary> signatures;
+  final String? customerId;
   final String? surname;
   final String? givenNames;
   final String? phone;

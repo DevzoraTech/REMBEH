@@ -35,6 +35,16 @@ import { PrismaService } from '../../database/prisma.service';
 const ACCOUNTABILITY_FORMULA =
   'Expected cash = float given − disbursed (new loans) + collected (repayments)';
 
+type AgentMoneyAggregate = {
+  count: number;
+  amount: number;
+};
+
+type AgentDisbursementAggregate = AgentMoneyAggregate & {
+  assignedFloatAmount: number;
+  collectedRepaymentsAmount: number;
+};
+
 @Injectable()
 export class AgentsService {
   constructor(
@@ -874,17 +884,9 @@ export class AgentsService {
     agentIds: string[],
     from?: Date,
     to?: Date,
-  ) {
+  ): Promise<Map<string, AgentMoneyAggregate>> {
     if (agentIds.length === 0) {
-      return new Map<
-        string,
-        {
-          count: number;
-          amount: number;
-          assignedFloatAmount: number;
-          collectedRepaymentsAmount: number;
-        }
-      >();
+      return new Map<string, { count: number; amount: number }>();
     }
 
     const rows = await this.prisma.repayment.groupBy({
@@ -901,11 +903,7 @@ export class AgentsService {
             }
           : {}),
       },
-      _sum: {
-        amount: true,
-        assignedFloatAmount: true,
-        collectedRepaymentsAmount: true,
-      },
+      _sum: { amount: true },
       _count: { _all: true },
     });
 
@@ -915,10 +913,6 @@ export class AgentsService {
         {
           count: row._count._all,
           amount: this.decimalToNumber(row._sum.amount) ?? 0,
-          assignedFloatAmount:
-            this.decimalToNumber(row._sum.assignedFloatAmount) ?? 0,
-          collectedRepaymentsAmount:
-            this.decimalToNumber(row._sum.collectedRepaymentsAmount) ?? 0,
         },
       ]),
     );
@@ -929,9 +923,9 @@ export class AgentsService {
     agentIds: string[],
     from?: Date,
     to?: Date,
-  ) {
+  ): Promise<Map<string, AgentMoneyAggregate>> {
     if (agentIds.length === 0) {
-      return new Map<string, { count: number; amount: number }>();
+      return new Map<string, AgentMoneyAggregate>();
     }
 
     const rows = await this.prisma.loanApplication.groupBy({
@@ -969,9 +963,9 @@ export class AgentsService {
     agentIds: string[],
     from?: Date,
     to?: Date,
-  ) {
+  ): Promise<Map<string, AgentDisbursementAggregate>> {
     if (agentIds.length === 0) {
-      return new Map<string, { count: number; amount: number }>();
+      return new Map<string, AgentDisbursementAggregate>();
     }
 
     const rows = await this.prisma.loanDisbursement.groupBy({
@@ -988,7 +982,11 @@ export class AgentsService {
             }
           : {}),
       },
-      _sum: { amount: true },
+      _sum: {
+        amount: true,
+        assignedFloatAmount: true,
+        collectedRepaymentsAmount: true,
+      },
       _count: { _all: true },
     });
 
@@ -998,6 +996,10 @@ export class AgentsService {
         {
           count: row._count._all,
           amount: this.decimalToNumber(row._sum.amount) ?? 0,
+          assignedFloatAmount:
+            this.decimalToNumber(row._sum.assignedFloatAmount) ?? 0,
+          collectedRepaymentsAmount:
+            this.decimalToNumber(row._sum.collectedRepaymentsAmount) ?? 0,
         },
       ]),
     );
@@ -1013,32 +1015,32 @@ export class AgentsService {
 
     const [repaymentRows, applicationRows, disbursementRows] =
       await Promise.all([
-      this.prisma.repayment.groupBy({
-        by: ['recordedByUserId'],
-        where: {
-          tenantId,
-          recordedByUserId: { in: agentIds },
-        },
-        _max: { paidAt: true },
-      }),
-      this.prisma.loanApplication.groupBy({
-        by: ['officerUserId'],
-        where: {
-          tenantId,
-          officerUserId: { in: agentIds },
-          submittedAt: { not: null },
-        },
-        _max: { submittedAt: true },
-      }),
-      this.prisma.loanDisbursement.groupBy({
-        by: ['recordedByUserId'],
-        where: {
-          tenantId,
-          recordedByUserId: { in: agentIds },
-        },
-        _max: { disbursedAt: true },
-      }),
-    ]);
+        this.prisma.repayment.groupBy({
+          by: ['recordedByUserId'],
+          where: {
+            tenantId,
+            recordedByUserId: { in: agentIds },
+          },
+          _max: { paidAt: true },
+        }),
+        this.prisma.loanApplication.groupBy({
+          by: ['officerUserId'],
+          where: {
+            tenantId,
+            officerUserId: { in: agentIds },
+            submittedAt: { not: null },
+          },
+          _max: { submittedAt: true },
+        }),
+        this.prisma.loanDisbursement.groupBy({
+          by: ['recordedByUserId'],
+          where: {
+            tenantId,
+            recordedByUserId: { in: agentIds },
+          },
+          _max: { disbursedAt: true },
+        }),
+      ]);
 
     const consider = (agentId: string, at: Date | null | undefined) => {
       if (!at) return;

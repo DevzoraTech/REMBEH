@@ -139,6 +139,50 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
     );
   }
 
+  @override
+  Future<void> requestRepaymentCorrection({
+    required String repaymentId,
+    required String reason,
+    int? requestedAmount,
+    String? requestedMethod,
+    DateTime? requestedPaidAt,
+    String? requestedNote,
+  }) async {
+    await _api.requestRepaymentCorrection(
+      repaymentId: repaymentId,
+      reason: reason,
+      requestedAmount: requestedAmount,
+      requestedMethod: requestedMethod,
+      requestedPaidAt: requestedPaidAt,
+      requestedNote: requestedNote,
+    );
+  }
+
+  @override
+  Future<ClientLoanDetail> applyRepaymentCorrection({
+    required String repaymentId,
+    required String loanId,
+    required String reason,
+    String? correctionRequestId,
+    int? amount,
+    String? method,
+    DateTime? paidAt,
+    String? note,
+  }) async {
+    final payload = await _api.applyRepaymentCorrection(
+      repaymentId: repaymentId,
+      reason: reason,
+      correctionRequestId: correctionRequestId,
+      amount: amount,
+      method: method,
+      paidAt: paidAt,
+      note: note,
+    );
+    return _detail(
+      Map<String, dynamic>.from(payload['detail'] as Map? ?? const {}),
+    );
+  }
+
   DueClient _dueClient(Map<String, dynamic> json) {
     return DueClient(
       id: json['loanId'] as String? ?? json['id'] as String? ?? '',
@@ -226,6 +270,17 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
                   recordedByName: row['recordedByName'] as String? ?? '',
                   agentPhotoUrl: row['agentPhotoUrl'] as String?,
                   note: row['note'] as String?,
+                  correctionLocked: row['correctionLocked'] as bool? ?? false,
+                  canRequestCorrection:
+                      row['canRequestCorrection'] as bool? ?? true,
+                  pendingCorrectionRequestId:
+                      row['pendingCorrectionRequestId'] as String?,
+                  approvedCorrectionRequestId:
+                      row['approvedCorrectionRequestId'] as String?,
+                  officerCanEdit: row['officerCanEdit'] as bool? ?? false,
+                  correctionAppliedAt: DateTime.tryParse(
+                    row['correctionAppliedAt'] as String? ?? '',
+                  ),
                 ),
               )
               .toList()
@@ -331,6 +386,12 @@ ui.ClientDetail toUiClientDetail(ClientLoanDetail detail) {
             recordedByName: item.recordedByName,
             agentPhotoUrl: item.agentPhotoUrl,
             note: item.note,
+            correctionLocked: item.correctionLocked,
+            canRequestCorrection: item.canRequestCorrection,
+            pendingCorrectionRequestId: item.pendingCorrectionRequestId,
+            approvedCorrectionRequestId: item.approvedCorrectionRequestId,
+            officerCanEdit: item.officerCanEdit,
+            correctionAppliedAt: item.correctionAppliedAt,
           ),
         )
         .toList(),

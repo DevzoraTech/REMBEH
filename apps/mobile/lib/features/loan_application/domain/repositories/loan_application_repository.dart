@@ -6,6 +6,8 @@ import '../entities/signature_capture.dart';
 abstract class LoanApplicationRepository {
   Future<LoanApplication> createDraft();
 
+  Future<LoanApplication> createDraftFromCustomer(String customerId);
+
   Future<LoanApplication> getById(String id);
 
   Future<LoanApplication> updateStep({

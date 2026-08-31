@@ -1422,17 +1422,17 @@ export function LoansWorkspace({
                               agreementBusyId === loan.id ||
                               reminderBusyId === loan.id
                             }
-                              items={loanRowActions(
-                                loan,
-                                canRecordRepayment,
-                                canSendReminder,
-                                reminderBusyId === loan.id || reminderBatchActive,
-                                setDetailLoan,
-                                setRepaymentLoan,
-                                openRecordDisbursement,
-                                downloadLoanAgreement,
-                                (resend) => void sendLoanReminder(loan, resend),
-                              )}
+                            items={loanRowActions(
+                              loan,
+                              canRecordRepayment,
+                              canSendReminder,
+                              reminderBusyId === loan.id || reminderBatchActive,
+                              setDetailLoan,
+                              setRepaymentLoan,
+                              openRecordDisbursement,
+                              downloadLoanAgreement,
+                              (resend) => void sendLoanReminder(loan, resend),
+                            )}
                           />
                         </div>
                       </div>
@@ -2545,7 +2545,8 @@ function RecordDisbursementDrawer({
     detectedRemainingFloat != null && repaymentShortfall > 0;
   const showRepaymentCash = needsRepaymentCash || repaymentValue > 0;
   const repaymentWithinAvailable = repaymentValue <= repaymentsAvailable;
-  const cashGapCovered = !needsRepaymentCash || repaymentValue >= repaymentShortfall;
+  const cashGapCovered =
+    !needsRepaymentCash || repaymentValue >= repaymentShortfall;
   const canSubmit =
     !busy &&
     amountValue > 0 &&
@@ -3105,8 +3106,7 @@ function loanRowActions(
     },
     {
       label: "Loan agreement",
-      disabled:
-        !loan.applicationId || isPartiallyDisbursedStatus(loan.status),
+      disabled: !loan.applicationId || isPartiallyDisbursedStatus(loan.status),
       onSelect: () => {
         if (loan.applicationId) {
           void downloadLoanAgreement(loan.applicationId, loan.id);

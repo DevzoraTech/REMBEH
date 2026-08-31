@@ -7,6 +7,12 @@ class ClientPaymentHistoryItem {
     required this.recordedByName,
     this.agentPhotoUrl,
     this.note,
+    this.correctionLocked = false,
+    this.canRequestCorrection = true,
+    this.pendingCorrectionRequestId,
+    this.approvedCorrectionRequestId,
+    this.officerCanEdit = false,
+    this.correctionAppliedAt,
   });
 
   final String id;
@@ -16,6 +22,12 @@ class ClientPaymentHistoryItem {
   final String recordedByName;
   final String? agentPhotoUrl;
   final String? note;
+  final bool correctionLocked;
+  final bool canRequestCorrection;
+  final String? pendingCorrectionRequestId;
+  final String? approvedCorrectionRequestId;
+  final bool officerCanEdit;
+  final DateTime? correctionAppliedAt;
 }
 
 class ClientFineHistoryItem {
@@ -216,6 +228,17 @@ class ClientDetail {
                   recordedByName: row['recordedByName'] as String? ?? '',
                   agentPhotoUrl: row['agentPhotoUrl'] as String?,
                   note: row['note'] as String?,
+                  correctionLocked: row['correctionLocked'] as bool? ?? false,
+                  canRequestCorrection:
+                      row['canRequestCorrection'] as bool? ?? true,
+                  pendingCorrectionRequestId:
+                      row['pendingCorrectionRequestId'] as String?,
+                  approvedCorrectionRequestId:
+                      row['approvedCorrectionRequestId'] as String?,
+                  officerCanEdit: row['officerCanEdit'] as bool? ?? false,
+                  correctionAppliedAt: DateTime.tryParse(
+                    row['correctionAppliedAt'] as String? ?? '',
+                  ),
                 ),
               )
               .toList()

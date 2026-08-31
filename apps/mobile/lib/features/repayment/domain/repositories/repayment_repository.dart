@@ -36,4 +36,24 @@ abstract class RepaymentRepository {
     String method = 'CASH',
     DateTime? paidAt,
   });
+
+  Future<void> requestRepaymentCorrection({
+    required String repaymentId,
+    required String reason,
+    int? requestedAmount,
+    String? requestedMethod,
+    DateTime? requestedPaidAt,
+    String? requestedNote,
+  });
+
+  Future<ClientLoanDetail> applyRepaymentCorrection({
+    required String repaymentId,
+    required String loanId,
+    required String reason,
+    String? correctionRequestId,
+    int? amount,
+    String? method,
+    DateTime? paidAt,
+    String? note,
+  });
 }

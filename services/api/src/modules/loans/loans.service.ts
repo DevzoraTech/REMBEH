@@ -231,7 +231,8 @@ export class LoansService {
           anchorDate: disbursedAt,
           agentPickedDate: null,
           paymentStartPolicy: loan.application?.paymentStartPolicy ?? null,
-          paymentStartDelayDays: loan.application?.paymentStartDelayDays ?? null,
+          paymentStartDelayDays:
+            loan.application?.paymentStartDelayDays ?? null,
           allowAgentDatePick: false,
         })
       : null;
@@ -437,9 +438,7 @@ export class LoansService {
     };
   }
 
-  private toPendingContract(
-    loan: LoanListRecord,
-  ): PendingDisbursementContract {
+  private toPendingContract(loan: LoanListRecord): PendingDisbursementContract {
     const agreedAmount = this.decimalToNumber(loan.principal) ?? 0;
     const disbursedAmount = this.totalDisbursed(loan);
     const remainingAmount = this.roundMoney(

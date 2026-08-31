@@ -3,11 +3,11 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 
+import '../../../utils/friendly_errors.dart';
 import '../domain/entities/loan_application.dart';
 import '../domain/entities/signature_capture.dart';
 import '../domain/failures.dart';
 import '../domain/repositories/loan_application_repository.dart';
-import '../../../utils/friendly_errors.dart';
 import 'loan_application_api_datasource.dart';
 
 class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
@@ -19,6 +19,16 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
   Future<LoanApplication> createDraft() async {
     try {
       final body = await _api.createDraft();
+      return _mapApplication(body['application'] as Map<String, dynamic>);
+    } catch (error) {
+      throw LoanApplicationFailure(friendlyErrorMessage(error));
+    }
+  }
+
+  @override
+  Future<LoanApplication> createDraftFromCustomer(String customerId) async {
+    try {
+      final body = await _api.createDraftFromCustomer(customerId);
       return _mapApplication(body['application'] as Map<String, dynamic>);
     } catch (error) {
       throw LoanApplicationFailure(friendlyErrorMessage(error));
@@ -68,6 +78,7 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
         'dateOfBirth': dateOfBirth,
         'country': 'UG',
       });
+
       return _mapApplication(body['application'] as Map<String, dynamic>);
     } catch (error) {
       throw LoanApplicationFailure(friendlyErrorMessage(error));
@@ -86,11 +97,15 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
       final extension = fileName?.contains('.') == true
           ? fileName!.split('.').last
           : _extensionForMime(mimeType);
+      final trimmedFileName = fileName?.trim();
+      final fileNamePayload = trimmedFileName == null || trimmedFileName.isEmpty
+          ? null
+          : trimmedFileName;
 
       final presign = await _api.presignMedia(id, {
         'mediaType': mediaType,
         'mimeType': mimeType,
-        'fileName': ?fileName,
+        'fileName': ?fileNamePayload,
         'extension': ?extension,
       });
 
@@ -108,7 +123,7 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
         'storageKey': storageKey,
         'mimeType': mimeType,
         'byteSize': bytes.length,
-        'fileName': ?fileName,
+        'fileName': ?fileNamePayload,
       });
 
       return _mapApplication(confirmed['application'] as Map<String, dynamic>);
@@ -194,6 +209,7 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
         collectedRepaymentsAmount: collectedRepaymentsAmount,
         disbursementNote: disbursementNote,
       );
+
       return _mapApplication(body['application'] as Map<String, dynamic>);
     } catch (error) {
       throw LoanApplicationFailure(friendlyErrorMessage(error));
@@ -205,6 +221,7 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
     try {
       final body = await _api.list();
       final items = body['applications'] as List<dynamic>? ?? const [];
+
       return items
           .cast<Map<String, dynamic>>()
           .map(_mapListItem)
@@ -217,8 +234,10 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
   LoanApplication _mapApplication(Map<String, dynamic> json) {
     final media = (json['media'] as List<dynamic>? ?? const [])
         .cast<Map<String, dynamic>>();
+
     final signatures = (json['signatures'] as List<dynamic>? ?? const [])
         .cast<Map<String, dynamic>>();
+
     final guarantor = json['guarantor'] as Map<String, dynamic>?;
 
     return LoanApplication(
@@ -236,13 +255,14 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
             ),
           )
           .toList(growable: false),
+      customerId: json['customerId'] as String?,
       surname: json['surname'] as String?,
       givenNames: json['givenNames'] as String?,
       phone: json['phone'] as String?,
       nationalId: json['nationalId'] as String?,
       gender: json['gender'] as String?,
       dateOfBirth: json['dateOfBirth'] != null
-          ? DateTime.tryParse(json['dateOfBirth'] as String)
+          ? DateTime.tryParse(json['dateOfBirth'].toString())
           : null,
       district: json['district'] as String?,
       subCounty: json['subCounty'] as String?,
@@ -250,15 +270,15 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
       village: json['village'] as String?,
       principalAmount: (json['principalAmount'] as num?)?.toDouble(),
       interestRatePercent: (json['interestRatePercent'] as num?)?.toDouble(),
-      durationDays: json['durationDays'] as int?,
+      durationDays: (json['durationDays'] as num?)?.toInt(),
       processingFee: (json['processingFee'] as num?)?.toDouble(),
       collateralType: json['collateralType'] as String?,
       verificationCode: json['verificationCode'] as String?,
       verifiedAt: json['verifiedAt'] != null
-          ? DateTime.tryParse(json['verifiedAt'] as String)
+          ? DateTime.tryParse(json['verifiedAt'].toString())
           : null,
       termsConfirmedAt: json['termsConfirmedAt'] != null
-          ? DateTime.tryParse(json['termsConfirmedAt'] as String)
+          ? DateTime.tryParse(json['termsConfirmedAt'].toString())
           : null,
       guarantorName: guarantor?['fullName'] as String?,
       guarantorPhone: guarantor?['phone'] as String?,
@@ -287,6 +307,8 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
         return 'jpg';
       case 'image/png':
         return 'png';
+      case 'image/webp':
+        return 'webp';
       case 'application/pdf':
         return 'pdf';
       default:

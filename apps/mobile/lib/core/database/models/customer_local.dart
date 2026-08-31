@@ -11,6 +11,7 @@ class CustomerLocal {
   final String? village;
   final String? subCounty;
   final String? district;
+  final String? parish;
   final DateTime? dateOfBirth;
   final String? gender;
   final DateTime createdAt;
@@ -28,16 +29,19 @@ class CustomerLocal {
     this.village,
     this.subCounty,
     this.district,
+    this.parish,
     this.dateOfBirth,
     this.gender,
     required this.createdAt,
     required this.updatedAt,
   });
 
-  /// Full name of the customer
-  String get fullName => '$firstName $lastName';
+  String get fullName {
+    return [firstName.trim(), lastName.trim()]
+        .where((part) => part.isNotEmpty)
+        .join(' ');
+  }
 
-  /// Create from database map
   factory CustomerLocal.fromMap(Map<String, dynamic> map) {
     return CustomerLocal(
       id: map['id'] as String,
@@ -51,6 +55,7 @@ class CustomerLocal {
       village: map['village'] as String?,
       subCounty: map['sub_county'] as String?,
       district: map['district'] as String?,
+      parish: map['parish'] as String?,
       dateOfBirth: map['date_of_birth'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['date_of_birth'] as int)
           : null,
@@ -60,7 +65,6 @@ class CustomerLocal {
     );
   }
 
-  /// Convert to database map
   Map<String, dynamic> toMap() {
     return {
       'id': id,
@@ -74,6 +78,7 @@ class CustomerLocal {
       'village': village,
       'sub_county': subCounty,
       'district': district,
+      'parish': parish,
       'date_of_birth': dateOfBirth?.millisecondsSinceEpoch,
       'gender': gender,
       'created_at': createdAt.millisecondsSinceEpoch,
@@ -81,10 +86,10 @@ class CustomerLocal {
     };
   }
 
-  /// Create from API JSON
   factory CustomerLocal.fromJson(Map<String, dynamic> json) {
     final fullName = _text(json['fullName']);
     final names = _splitName(fullName);
+
     return CustomerLocal(
       id: json['id'] as String,
       tenantId: json['tenantId'] as String,
@@ -97,12 +102,17 @@ class CustomerLocal {
       village: _text(json['village']),
       subCounty: _text(json['subCounty']),
       district: _text(json['district']),
+      parish: _text(json['parish']),
       dateOfBirth: json['dateOfBirth'] != null
-          ? DateTime.parse(json['dateOfBirth'] as String)
+          ? DateTime.tryParse(json['dateOfBirth'].toString())
           : null,
       gender: _text(json['gender']),
-      createdAt: DateTime.parse(json['createdAt'] as String),
-      updatedAt: DateTime.parse(json['updatedAt'] as String),
+      createdAt:
+          DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+          DateTime.now(),
+      updatedAt:
+          DateTime.tryParse(json['updatedAt']?.toString() ?? '') ??
+          DateTime.now(),
     );
   }
 }
@@ -113,13 +123,16 @@ class CustomerLocal {
       .split(RegExp(r'\s+'))
       .where((part) => part.isNotEmpty)
       .toList();
+
   if (parts.isEmpty) return ('Unknown', '');
   if (parts.length == 1) return (parts.first, '');
+
   return (parts.first, parts.skip(1).join(' '));
 }
 
 String? _text(Object? value) {
   if (value == null) return null;
+
   final text = value.toString().trim();
   return text.isEmpty ? null : text;
 }

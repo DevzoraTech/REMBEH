@@ -109,7 +109,9 @@ class LoanApplicationsRepository {
     final database = await _db.database;
 
     final payload = jsonEncode({
-      'applicantNin': application.applicantNin,
+  if (application.customerId != null)
+    'customerId': application.customerId,
+  'applicantNin': application.applicantNin,
       'applicantFirstName': application.applicantFirstName,
       'applicantLastName': application.applicantLastName,
       'applicantPhone': application.applicantPhone,

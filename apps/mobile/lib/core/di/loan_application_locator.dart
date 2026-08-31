@@ -30,6 +30,9 @@ class LoanApplicationLocator {
   late final CreateLoanDraftUseCase createDraft = CreateLoanDraftUseCase(
     repository,
   );
+  late final CreateLoanDraftFromCustomerUseCase createDraftFromCustomer =
+      CreateLoanDraftFromCustomerUseCase(repository);
+
   late final VerifyApplicantUseCase verifyApplicant = VerifyApplicantUseCase(
     repository,
   );

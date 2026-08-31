@@ -8,6 +8,7 @@ class MoreTab extends StatelessWidget {
     required this.onAgentsTap,
     required this.onSalariesTap,
     required this.onShortagesTap,
+    required this.onRepaymentCorrectionsTap,
     required this.onReportsTap,
     required this.onBranchTap,
     required this.onSubscriptionTap,
@@ -18,6 +19,7 @@ class MoreTab extends StatelessWidget {
   final VoidCallback onAgentsTap;
   final VoidCallback onSalariesTap;
   final VoidCallback onShortagesTap;
+  final VoidCallback onRepaymentCorrectionsTap;
   final VoidCallback onReportsTap;
   final VoidCallback onBranchTap;
   final VoidCallback onSubscriptionTap;
@@ -49,6 +51,12 @@ class MoreTab extends StatelessWidget {
               title: 'Shortages',
               subtitle: 'View shortage records and their status',
               onTap: onShortagesTap,
+            ),
+            _MoreMenuItem(
+              icon: Icons.edit_note_rounded,
+              title: 'Repayment corrections',
+              subtitle: 'Approve or correct repayment mistakes',
+              onTap: onRepaymentCorrectionsTap,
             ),
             _MoreMenuItem(
               icon: Icons.description_outlined,

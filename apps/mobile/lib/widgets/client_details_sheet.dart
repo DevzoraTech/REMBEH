@@ -9,6 +9,8 @@ import '../utils/date_groups.dart';
 import '../utils/money.dart';
 import 'legacy_loan_correction_sheet.dart';
 import 'record_repayment_sheet.dart';
+import 'repayment_correction_apply_sheet.dart';
+import 'repayment_correction_request_sheet.dart';
 
 Future<void> showClientDetailsSheet(
   BuildContext context, {
@@ -95,6 +97,15 @@ class ClientDetailsSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final height = MediaQuery.sizeOf(context).height * 0.92;
     final now = DateTime.now();
+    final canRecordPayment =
+        detail.outstanding > 0 &&
+        !{
+          'CLOSED',
+          'WRITTEN_OFF',
+          'PARTIALLY_DISBURSED',
+          'REJECTED',
+          'DRAFT',
+        }.contains(detail.status.toUpperCase());
 
     return SizedBox(
       height: height,
@@ -615,7 +626,7 @@ class ClientDetailsSheet extends StatelessWidget {
                                 children: [
                                   Text(
                                     payment.recordedByName.isEmpty
-                                        ? 'Agent'
+                                        ? 'Field Officer'
                                         : payment.recordedByName,
                                     style: const TextStyle(
                                       color: midnightNavy,
@@ -634,13 +645,9 @@ class ClientDetailsSheet extends StatelessWidget {
                                 ],
                               ),
                             ),
-                            Text(
-                              formatMoney(payment.amount),
-                              style: const TextStyle(
-                                color: forestEmerald,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 14,
-                              ),
+                            _PaymentHistoryTrailing(
+                              detail: detail,
+                              payment: payment,
                             ),
                           ],
                         ),
@@ -655,16 +662,35 @@ class ClientDetailsSheet extends StatelessWidget {
             top: false,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton.icon(
-                  onPressed: () =>
-                      Navigator.of(context).pop('record_repayment'),
-                  icon: const Icon(Icons.payments),
-                  label: const Text('Record payment'),
-                ),
-              ),
+              child: canRecordPayment
+                  ? SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        onPressed: () =>
+                            Navigator.of(context).pop('record_repayment'),
+                        icon: const Icon(Icons.payments),
+                        label: const Text('Record payment'),
+                      ),
+                    )
+                  : Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: sage,
+                        border: Border.all(color: line),
+                        borderRadius: rembehBorderRadius(rembehRadiusMd),
+                      ),
+                      child: const Text(
+                        'This record is visible for review, but it is not open for repayment.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: slateText,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
             ),
           ),
         ],
@@ -699,6 +725,146 @@ class ClientDetailsSheet extends StatelessWidget {
     if (days <= 0) return 'today';
     if (days == 1) return '1 day ago';
     return '$days days ago';
+  }
+}
+
+class _PaymentHistoryTrailing extends StatefulWidget {
+  const _PaymentHistoryTrailing({required this.detail, required this.payment});
+
+  final ClientDetail detail;
+  final ClientPaymentHistoryItem payment;
+
+  @override
+  State<_PaymentHistoryTrailing> createState() =>
+      _PaymentHistoryTrailingState();
+}
+
+class _PaymentHistoryTrailingState extends State<_PaymentHistoryTrailing> {
+  bool _pendingJustSent = false;
+
+  Future<void> _requestCorrection() async {
+    final sent = await showRepaymentCorrectionRequestSheet(
+      context,
+      detail: widget.detail,
+      payment: widget.payment,
+    );
+
+    if (!mounted || !sent) return;
+    setState(() => _pendingJustSent = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Correction request sent to manager.')),
+    );
+  }
+
+  Future<void> _applyApprovedCorrection() async {
+    final updated = await showRepaymentCorrectionApplySheet(
+      context,
+      detail: widget.detail,
+      payment: widget.payment,
+    );
+
+    if (!mounted || updated == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Repayment correction saved.')),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pending =
+        _pendingJustSent || widget.payment.pendingCorrectionRequestId != null;
+    final approvedForOfficer =
+        widget.payment.approvedCorrectionRequestId != null &&
+        widget.payment.officerCanEdit;
+    final canManagerCorrect =
+        RepaymentsLiveStore.instance.canReviewRepaymentCorrections;
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 112),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            formatMoney(widget.payment.amount),
+            style: const TextStyle(
+              color: forestEmerald,
+              fontWeight: FontWeight.w800,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 4),
+          if (widget.payment.correctionLocked)
+            const Text(
+              'Locked by report',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: slateText,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            )
+          else if (canManagerCorrect)
+            TextButton(
+              onPressed: _applyApprovedCorrection,
+              style: TextButton.styleFrom(
+                minimumSize: Size.zero,
+                padding: EdgeInsets.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+              child: Text(
+                pending ? 'Correct request' : 'Correct payment',
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            )
+          else if (pending)
+            const Text(
+              'Correction pending',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: Color(0xFFC45C26),
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+              ),
+            )
+          else if (approvedForOfficer)
+            TextButton(
+              onPressed: _applyApprovedCorrection,
+              style: TextButton.styleFrom(
+                minimumSize: Size.zero,
+                padding: EdgeInsets.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+              child: const Text(
+                'Edit approved',
+                textAlign: TextAlign.right,
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+              ),
+            )
+          else if (widget.payment.canRequestCorrection)
+            TextButton(
+              onPressed: _requestCorrection,
+              style: TextButton.styleFrom(
+                minimumSize: Size.zero,
+                padding: EdgeInsets.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
+              child: const Text(
+                'Request correction',
+                textAlign: TextAlign.right,
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 }
 

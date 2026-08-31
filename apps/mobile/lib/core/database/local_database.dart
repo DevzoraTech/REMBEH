@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import 'package:sqflite/sqflite.dart';
 
 /// Local SQLite database for offline-first data storage.
 /// Stores tenant+branch scoped data synced from the server.
@@ -12,30 +12,30 @@ class LocalDatabase {
   LocalDatabase._internal();
 
   /// Current database schema version
-  static const int _currentVersion = 4;
+  static const int _currentVersion = 5;
 
   /// Database file name
   static const String _databaseName = 'rembeh_local.db';
 
-  /// Get database instance, initializing if needed
   Future<Database> get database async {
     if (_database != null) return _database!;
+
     _database = await _initDatabase();
     return _database!;
   }
 
-  /// Initialize database with schema
   Future<Database> _initDatabase() async {
     final databasePath = await getDatabasesPath();
     final path = join(databasePath, _databaseName);
 
-    return await openDatabase(
+    return openDatabase(
       path,
       version: _currentVersion,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
       onOpen: (db) async {
         await _onCreate(db, _currentVersion);
+        await _ensureCustomerColumns(db);
         await _ensureLoanColumns(db);
         await _ensureLoanProductColumns(db);
         await _ensureLoanApplicationColumns(db);
@@ -43,7 +43,6 @@ class LocalDatabase {
     );
   }
 
-  /// Create database schema
   Future<void> _onCreate(Database db, int version) async {
     await db.execute('''
       CREATE TABLE IF NOT EXISTS customers (
@@ -58,6 +57,7 @@ class LocalDatabase {
         village TEXT,
         sub_county TEXT,
         district TEXT,
+        parish TEXT,
         date_of_birth INTEGER,
         gender TEXT,
         created_at INTEGER NOT NULL,
@@ -194,7 +194,8 @@ class LocalDatabase {
         mime_type TEXT,
         created_at INTEGER NOT NULL,
         uploaded_at INTEGER,
-        FOREIGN KEY (loan_application_local_id) REFERENCES loan_applications(local_id)
+        FOREIGN KEY (loan_application_local_id)
+          REFERENCES loan_applications(local_id)
       )
     ''');
 
@@ -329,14 +330,13 @@ class LocalDatabase {
       )
     ''');
 
-    // Create indexes for performance
     await _createIndexes(db);
   }
 
-  /// Create database indexes
   Future<void> _createIndexes(Database db) async {
     await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_customers_branch ON customers(branch_id, tenant_id)',
+      'CREATE INDEX IF NOT EXISTS idx_customers_branch '
+      'ON customers(branch_id, tenant_id)',
     );
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_customers_phone ON customers(phone)',
@@ -356,20 +356,24 @@ class LocalDatabase {
     );
 
     await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_loan_applications_status ON loan_applications(status)',
+      'CREATE INDEX IF NOT EXISTS idx_loan_applications_status '
+      'ON loan_applications(status)',
     );
     await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_loan_applications_agent ON loan_applications(agent_id)',
+      'CREATE INDEX IF NOT EXISTS idx_loan_applications_agent '
+      'ON loan_applications(agent_id)',
     );
 
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_collections_loan ON collections(loan_id)',
     );
     await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_collections_status ON collections(status)',
+      'CREATE INDEX IF NOT EXISTS idx_collections_status '
+      'ON collections(status)',
     );
     await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_collections_date ON collections(collection_date)',
+      'CREATE INDEX IF NOT EXISTS idx_collections_date '
+      'ON collections(collection_date)',
     );
 
     await db.execute(
@@ -380,27 +384,47 @@ class LocalDatabase {
     );
 
     await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_pending_operations_status ON pending_operations(status)',
+      'CREATE INDEX IF NOT EXISTS idx_pending_operations_status '
+      'ON pending_operations(status)',
     );
     await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_media_upload_status ON loan_application_media(upload_status)',
+      'CREATE INDEX IF NOT EXISTS idx_media_upload_status '
+      'ON loan_application_media(upload_status)',
     );
     await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_pending_media_status ON pending_media(upload_status, entity_type, entity_id)',
+      'CREATE INDEX IF NOT EXISTS idx_pending_media_status '
+      'ON pending_media(upload_status, entity_type, entity_id)',
     );
   }
 
-  /// Handle database schema upgrades
   Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
     if (oldVersion < 2) {
       await _onCreate(db, newVersion);
     }
+
     if (oldVersion < 3) {
       await _ensureLoanProductColumns(db);
     }
+
     if (oldVersion < 4) {
       await _ensureLoanApplicationColumns(db);
     }
+
+    if (oldVersion < 5) {
+      await _ensureCustomerColumns(db);
+    }
+  }
+
+  Future<void> _ensureCustomerColumns(Database db) async {
+    final columns = await db.rawQuery("PRAGMA table_info('customers')");
+    final existing = columns.map((column) => column['name'] as String).toSet();
+
+    Future<void> addColumn(String name, String definition) async {
+      if (existing.contains(name)) return;
+      await db.execute('ALTER TABLE customers ADD COLUMN $definition');
+    }
+
+    await addColumn('parish', 'parish TEXT');
   }
 
   Future<void> _ensureLoanProductColumns(Database db) async {
@@ -493,7 +517,6 @@ class LocalDatabase {
     await addColumn('disbursement_note', 'disbursement_note TEXT');
   }
 
-  /// Get sync metadata value
   Future<String?> getMetadata(String key) async {
     final db = await database;
     final result = await db.query(
@@ -506,55 +529,66 @@ class LocalDatabase {
     return result.first['value'] as String;
   }
 
-  /// Set sync metadata value
   Future<void> setMetadata(String key, String value) async {
     final db = await database;
-    await db.insert('sync_metadata', {
-      'key': key,
-      'value': value,
-      'updated_at': DateTime.now().millisecondsSinceEpoch,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+
+    await db.insert(
+      'sync_metadata',
+      {
+        'key': key,
+        'value': value,
+        'updated_at': DateTime.now().millisecondsSinceEpoch,
+      },
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
   }
 
-  /// Get last sync timestamp
   Future<DateTime?> getLastSyncTimestamp() async {
     final timestamp = await getMetadata('last_sync_timestamp');
     if (timestamp == null) return null;
+
     return DateTime.parse(timestamp);
   }
 
-  /// Update last sync timestamp
   Future<void> updateLastSyncTimestamp(DateTime timestamp) async {
     await setMetadata('last_sync_timestamp', timestamp.toIso8601String());
   }
 
-  /// Get snapshot version
   Future<String?> getSnapshotVersion() async {
-    return await getMetadata('snapshot_version');
+    return getMetadata('snapshot_version');
   }
 
-  /// Update snapshot version
   Future<void> updateSnapshotVersion(String version) async {
     await setMetadata('snapshot_version', version);
   }
 
-  /// Clear all data (used before importing new snapshot)
   Future<void> clearAllData() async {
     final db = await database;
 
-    // Clear all tables except metadata and pending operations
     await db.delete('customers');
     await db.delete('loans');
     await db.delete('loan_products');
     await db.delete('agents');
     await db.delete('branches');
+
     await db.delete(
       'loan_applications',
       where: 'status = ?',
       whereArgs: ['SYNCED'],
     );
-    await db.delete('collections', where: 'status = ?', whereArgs: ['SYNCED']);
-    await db.delete('payments', where: 'status = ?', whereArgs: ['SYNCED']);
+
+    await db.delete(
+      'collections',
+      where: 'status = ?',
+      whereArgs: ['SYNCED'],
+    );
+
+    await db.delete(
+      'payments',
+      where: 'status = ?',
+      whereArgs: ['SYNCED'],
+    );
+
     await db.delete(
       'loan_application_media',
       where: 'upload_status = ?',
@@ -562,25 +596,24 @@ class LocalDatabase {
     );
   }
 
-  /// Get database size in bytes
   Future<int> getDatabaseSize() async {
     final databasePath = await getDatabasesPath();
     final path = join(databasePath, _databaseName);
     final file = await File(path).stat();
+
     return file.size;
   }
 
-  /// Close database connection
   Future<void> close() async {
     final db = await database;
     await db.close();
     _database = null;
   }
 
-  /// Delete database (for testing or complete reset)
   Future<void> deleteDatabase() async {
     final databasePath = await getDatabasesPath();
     final path = join(databasePath, _databaseName);
+
     await databaseFactory.deleteDatabase(path);
     _database = null;
   }

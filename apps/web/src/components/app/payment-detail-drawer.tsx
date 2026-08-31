@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { Loader2, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Edit3, Loader2, X } from "lucide-react";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import { AgentPhoto } from "./agent-photo";
 import { Money } from "./money";
@@ -28,24 +28,42 @@ type PaymentDetail = {
   loanStatus: string | null;
   isFined?: boolean;
   finesTotal?: number;
+  correctionLocked?: boolean;
+  canRequestCorrection?: boolean;
+  pendingCorrectionRequestId?: string | null;
+  approvedCorrectionRequestId?: string | null;
+  officerCanEdit?: boolean;
+  correctionAppliedAt?: string | null;
 };
 
 type PaymentDetailDrawerProps = {
   repaymentId: string | null;
   accessToken: string;
   tokenType?: string;
+  canCorrect?: boolean;
   onClose: () => void;
+  onCorrected?: () => void;
 };
 
 export function PaymentDetailDrawer({
   repaymentId,
   accessToken,
   tokenType = "Bearer",
+  canCorrect = false,
   onClose,
+  onCorrected,
 }: PaymentDetailDrawerProps) {
   const [detail, setDetail] = useState<PaymentDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [correctionOpen, setCorrectionOpen] = useState(false);
+  const [correctionSaving, setCorrectionSaving] = useState(false);
+  const [correctionError, setCorrectionError] = useState<string | null>(null);
+  const [correctionAmount, setCorrectionAmount] = useState("");
+  const [correctionMethod, setCorrectionMethod] = useState("CASH");
+  const [correctionPaidAt, setCorrectionPaidAt] = useState("");
+  const [correctionNote, setCorrectionNote] = useState("");
+  const [correctionReason, setCorrectionReason] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -77,7 +95,15 @@ export function PaymentDetailDrawer({
             throw new Error(formatApiError(payload.message));
           }
           if (!cancelled) {
-            setDetail(payload.repayment ?? null);
+            const next = payload.repayment ?? null;
+            setDetail(next);
+            setCorrectionOpen(false);
+            setCorrectionError(null);
+            setCorrectionAmount(next ? String(Math.round(next.amount)) : "");
+            setCorrectionMethod(next?.method ?? "CASH");
+            setCorrectionPaidAt(next ? toDateTimeInput(next.recordedAt) : "");
+            setCorrectionNote(next?.note ?? "");
+            setCorrectionReason("");
           }
         } catch (caught) {
           if (!cancelled) {
@@ -100,6 +126,72 @@ export function PaymentDetailDrawer({
   }, [repaymentId, accessToken, tokenType]);
 
   if (!repaymentId) return null;
+
+  async function submitCorrection() {
+    if (!detail || correctionSaving) return;
+
+    const amount = Number(correctionAmount.replace(/,/g, "").trim());
+    const paidAt = new Date(correctionPaidAt);
+    const reason = correctionReason.trim();
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setCorrectionError("Enter a valid repayment amount.");
+      return;
+    }
+    if (Number.isNaN(paidAt.getTime())) {
+      setCorrectionError("Choose a valid payment date and time.");
+      return;
+    }
+    if (reason.length < 6) {
+      setCorrectionError("Add a clear reason for this correction.");
+      return;
+    }
+
+    setCorrectionSaving(true);
+    setCorrectionError(null);
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/collections/repayments/${detail.id}/correction`,
+        {
+          method: "PATCH",
+          headers: {
+            Authorization: `${tokenType} ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            amount: Math.round(amount),
+            method: correctionMethod,
+            paidAt: paidAt.toISOString(),
+            note: correctionNote,
+            reason,
+          }),
+        },
+      );
+      const payload = await readApiJson<{
+        repayment?: PaymentDetail;
+        message?: string | string[];
+      }>(response);
+      if (!response.ok || !payload.repayment) {
+        throw new Error(formatApiError(payload.message));
+      }
+      setDetail(payload.repayment);
+      setCorrectionOpen(false);
+      setCorrectionAmount(String(Math.round(payload.repayment.amount)));
+      setCorrectionMethod(payload.repayment.method);
+      setCorrectionPaidAt(toDateTimeInput(payload.repayment.recordedAt));
+      setCorrectionNote(payload.repayment.note ?? "");
+      setCorrectionReason("");
+      onCorrected?.();
+    } catch (caught) {
+      setCorrectionError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not save repayment correction.",
+      );
+    } finally {
+      setCorrectionSaving(false);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/35">
@@ -166,6 +258,50 @@ export function PaymentDetailDrawer({
                   value={formatDateTime(detail.recordedAt)}
                 />
                 <Row label="note" value={detail.note?.trim() || "—"} />
+              </Section>
+
+              <Section title="correction">
+                {detail.correctionLocked ? (
+                  <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                    <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+                    This payment is locked because its daily report has already
+                    been submitted.
+                  </div>
+                ) : canCorrect ? (
+                  <div className="space-y-3">
+                    <button
+                      type="button"
+                      className="inline-flex h-10 items-center gap-2 rounded-xl border border-[var(--forest-emerald)] bg-white px-3 text-xs font-bold text-[var(--forest-emerald)] transition hover:bg-emerald-50"
+                      onClick={() => setCorrectionOpen((open) => !open)}
+                    >
+                      <Edit3 className="size-3.5" />
+                      {correctionOpen
+                        ? "Close correction form"
+                        : "Correct payment"}
+                    </button>
+                    {correctionOpen ? (
+                      <CorrectionForm
+                        amount={correctionAmount}
+                        method={correctionMethod}
+                        paidAt={correctionPaidAt}
+                        note={correctionNote}
+                        reason={correctionReason}
+                        saving={correctionSaving}
+                        error={correctionError}
+                        onAmountChange={setCorrectionAmount}
+                        onMethodChange={setCorrectionMethod}
+                        onPaidAtChange={setCorrectionPaidAt}
+                        onNoteChange={setCorrectionNote}
+                        onReasonChange={setCorrectionReason}
+                        onSubmit={submitCorrection}
+                      />
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-xs font-medium text-slate-500">
+                    Managers can correct open repayment records from this panel.
+                  </p>
+                )}
               </Section>
 
               <Section title="client">
@@ -255,6 +391,108 @@ export function PaymentDetailDrawer({
   );
 }
 
+function CorrectionForm({
+  amount,
+  method,
+  paidAt,
+  note,
+  reason,
+  saving,
+  error,
+  onAmountChange,
+  onMethodChange,
+  onPaidAtChange,
+  onNoteChange,
+  onReasonChange,
+  onSubmit,
+}: {
+  amount: string;
+  method: string;
+  paidAt: string;
+  note: string;
+  reason: string;
+  saving: boolean;
+  error: string | null;
+  onAmountChange: (value: string) => void;
+  onMethodChange: (value: string) => void;
+  onPaidAtChange: (value: string) => void;
+  onNoteChange: (value: string) => void;
+  onReasonChange: (value: string) => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <div className="space-y-3 rounded-2xl border border-[#dfe7ef] bg-white p-3">
+      <label className="block text-xs font-bold text-[var(--midnight-navy)]">
+        Correct amount
+        <input
+          value={amount}
+          onChange={(event) => onAmountChange(event.target.value)}
+          inputMode="numeric"
+          className="mt-1 h-10 w-full rounded-xl border border-[#dfe7ef] px-3 text-sm font-semibold outline-none focus:border-[var(--forest-emerald)]"
+        />
+      </label>
+      <label className="block text-xs font-bold text-[var(--midnight-navy)]">
+        Method
+        <select
+          value={method}
+          onChange={(event) => onMethodChange(event.target.value)}
+          className="mt-1 h-10 w-full rounded-xl border border-[#dfe7ef] bg-white px-3 text-sm font-semibold outline-none focus:border-[var(--forest-emerald)]"
+        >
+          <option value="CASH">Cash</option>
+          <option value="MOBILE_MONEY">Mobile money</option>
+          <option value="BANK_TRANSFER">Bank transfer</option>
+          <option value="OTHER">Other</option>
+        </select>
+      </label>
+      <label className="block text-xs font-bold text-[var(--midnight-navy)]">
+        Payment date and time
+        <input
+          value={paidAt}
+          onChange={(event) => onPaidAtChange(event.target.value)}
+          type="datetime-local"
+          className="mt-1 h-10 w-full rounded-xl border border-[#dfe7ef] px-3 text-sm font-semibold outline-none focus:border-[var(--forest-emerald)]"
+        />
+      </label>
+      <label className="block text-xs font-bold text-[var(--midnight-navy)]">
+        Note
+        <textarea
+          value={note}
+          onChange={(event) => onNoteChange(event.target.value)}
+          className="mt-1 min-h-20 w-full rounded-xl border border-[#dfe7ef] px-3 py-2 text-sm font-medium outline-none focus:border-[var(--forest-emerald)]"
+          placeholder="Optional payment note"
+        />
+      </label>
+      <label className="block text-xs font-bold text-[var(--midnight-navy)]">
+        Correction reason
+        <textarea
+          value={reason}
+          onChange={(event) => onReasonChange(event.target.value)}
+          className="mt-1 min-h-20 w-full rounded-xl border border-[#dfe7ef] px-3 py-2 text-sm font-medium outline-none focus:border-[var(--forest-emerald)]"
+          placeholder="Why is this payment being corrected?"
+        />
+      </label>
+      {error ? (
+        <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+          {error}
+        </p>
+      ) : null}
+      <button
+        type="button"
+        onClick={onSubmit}
+        disabled={saving}
+        className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3 text-xs font-black text-white disabled:opacity-60"
+      >
+        {saving ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : (
+          <CheckCircle2 className="size-3.5" />
+        )}
+        Save correction
+      </button>
+    </div>
+  );
+}
+
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section>
@@ -296,4 +534,11 @@ function methodLabel(method: string) {
 function shortId(id: string) {
   if (id.length <= 12) return id;
   return `${id.slice(0, 8)}…`;
+}
+
+function toDateTimeInput(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }

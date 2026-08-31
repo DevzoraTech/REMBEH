@@ -27,6 +27,11 @@ import {
   LegacyLoanMediaPresignDto,
 } from './dto/legacy-loan-media.dto';
 import {
+  ApplyRepaymentCorrectionDto,
+  CreateRepaymentCorrectionRequestDto,
+  ReviewRepaymentCorrectionRequestDto,
+} from './dto/repayment-correction-request.dto';
+import {
   BulkRepaymentSmsDto,
   SendRepaymentSmsDto,
 } from './dto/repayment-sms.dto';
@@ -76,6 +81,32 @@ export class CollectionsController {
     return this.collectionsService.listRepayments(user, filter);
   }
 
+  @Get('repayment-correction-requests')
+  @RequirePermissions(COLLECTION_PERMISSIONS.read)
+  listRepaymentCorrectionRequests(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('status') status?: string,
+  ) {
+    return this.collectionsService.listRepaymentCorrectionRequests(
+      user,
+      status,
+    );
+  }
+
+  @Patch('repayment-correction-requests/:requestId')
+  @RequirePermissions(COLLECTION_PERMISSIONS.reconcile)
+  reviewRepaymentCorrectionRequest(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+    @Body() dto: ReviewRepaymentCorrectionRequestDto,
+  ) {
+    return this.collectionsService.reviewRepaymentCorrectionRequest(
+      user,
+      requestId,
+      dto,
+    );
+  }
+
   @Get('repayments/:repaymentId')
   @RequirePermissions(COLLECTION_PERMISSIONS.read)
   getRepaymentDetail(
@@ -112,6 +143,33 @@ export class CollectionsController {
       repaymentId,
       dto,
       idempotencyKey,
+    );
+  }
+
+  @Post('repayments/:repaymentId/correction-requests')
+  @RequirePermissions(COLLECTION_PERMISSIONS.create)
+  createRepaymentCorrectionRequest(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('repaymentId', ParseUUIDPipe) repaymentId: string,
+    @Body() dto: CreateRepaymentCorrectionRequestDto,
+  ) {
+    return this.collectionsService.createRepaymentCorrectionRequest(
+      user,
+      repaymentId,
+      dto,
+    );
+  }
+
+  @Patch('repayments/:repaymentId/correction')
+  applyRepaymentCorrection(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('repaymentId', ParseUUIDPipe) repaymentId: string,
+    @Body() dto: ApplyRepaymentCorrectionDto,
+  ) {
+    return this.collectionsService.applyRepaymentCorrection(
+      user,
+      repaymentId,
+      dto,
     );
   }
 

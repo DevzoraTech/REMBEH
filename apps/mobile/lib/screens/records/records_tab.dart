@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../features/applications_list/data/applications_live_store.dart';
@@ -43,6 +45,15 @@ class _RecordsTabState extends State<RecordsTab> {
     _repayStore.addListener(_onChanged);
     _appsStore.start(widget.session);
     _repayStore.start(widget.session);
+    _refreshDueTodayIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(covariant RecordsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.section != widget.section || oldWidget.filter != widget.filter) {
+      _refreshDueTodayIfNeeded();
+    }
   }
 
   @override
@@ -54,6 +65,13 @@ class _RecordsTabState extends State<RecordsTab> {
 
   void _onChanged() {
     if (mounted) setState(() {});
+  }
+
+  void _refreshDueTodayIfNeeded() {
+    if (widget.section == RecordsSection.repayments &&
+        _activeFilter == RecordsFilter.dueToday) {
+      unawaited(_repayStore.refreshDueToday());
+    }
   }
 
   List<RecordsFilter> get _filters =>
@@ -288,7 +306,14 @@ class _RecordsTabState extends State<RecordsTab> {
           ),
           Expanded(
             child: widget.section == RecordsSection.repayments
-                ? _RepaymentsList(
+                ? active == RecordsFilter.dueToday
+                      ? _DueTodayList(
+                          items: _repayStore.dueTodayClients,
+                          loading: _repayStore.loading,
+                          error: _repayStore.error,
+                          onRetry: () => _repayStore.refreshDueToday(),
+                        )
+                      : _RepaymentsList(
                     items: _repayStore.filtered(
                       filter: active,
                       customRange: _repayStore.customRange,
@@ -296,7 +321,7 @@ class _RecordsTabState extends State<RecordsTab> {
                     loading: _repayStore.loading,
                     error: _repayStore.error,
                     onRetry: () => _repayStore.refresh(),
-                  )
+                        )
                 : _ApplicationsList(
                     items: _appsStore.filtered(
                       filter: active,
@@ -386,6 +411,90 @@ class _SegmentTab extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _DueTodayList extends StatelessWidget {
+  const _DueTodayList({
+    required this.items,
+    required this.loading,
+    required this.error,
+    required this.onRetry,
+  });
+
+  final List<DueClient> items;
+  final bool loading;
+  final String? error;
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    if (loading && items.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (error != null && items.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                error!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Color(0xFFC62828), fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton(onPressed: onRetry, child: const Text('Retry')),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (items.isEmpty) {
+      return const _EmptyState(message: 'No clients due today.');
+    }
+
+    final now = DateTime.now();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _CountLabel(text: '${items.length} Clients Due Today'),
+        Expanded(
+          child: RefreshIndicator(
+            color: forestEmerald,
+            onRefresh: onRetry,
+            child: ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              itemCount: items.length,
+              separatorBuilder: (_, _) => const SizedBox.shrink(),
+              itemBuilder: (context, index) {
+                final item = items[index];
+                return _RecordCard(
+                  initials: item.initials,
+                  name: item.fullName,
+                  phone: item.phone,
+                  primaryAmount: formatCompactMoney(item.amountDue),
+                  secondaryValue: formatCompactMoney(item.loanAmount),
+                  secondaryColor: midnightNavy,
+                  timestamp: formatActivityTime(item.lastActivityAt, now),
+                  synced: item.synced,
+                  pendingLabel: 'Pending',
+                  onTap: () => showClientDetailsSheet(
+                    context,
+                    id: item.id,
+                    phone: item.phone,
+                    fullName: item.fullName,
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

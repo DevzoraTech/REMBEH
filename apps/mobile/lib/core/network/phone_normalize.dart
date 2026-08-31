@@ -24,5 +24,7 @@ bool looksLikePhoneQuery(String raw) {
 /// The API expands `07…` / `7…` / `256…` / `+256…` variants. Pre-normalizing
 /// search queries (especially partial `07…`) breaks substring matching.
 String normalizeClientSearchQuery(String raw) {
-  return raw.trim().replaceAll(RegExp(r'[\s()-]'), '');
+  final trimmed = raw.trim();
+  if (!looksLikePhoneQuery(trimmed)) return trimmed;
+  return trimmed.replaceAll(RegExp(r'[\s()-]'), '');
 }

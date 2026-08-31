@@ -10,6 +10,16 @@ class CreateLoanDraftUseCase {
   Future<LoanApplication> call() => _repository.createDraft();
 }
 
+class CreateLoanDraftFromCustomerUseCase {
+  CreateLoanDraftFromCustomerUseCase(this._repository);
+
+  final LoanApplicationRepository _repository;
+
+  Future<LoanApplication> call(String customerId) {
+    return _repository.createDraftFromCustomer(customerId);
+  }
+}
+
 class VerifyApplicantUseCase {
   VerifyApplicantUseCase(this._repository);
   final LoanApplicationRepository _repository;
