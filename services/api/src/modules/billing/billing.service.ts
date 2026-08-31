@@ -264,7 +264,7 @@ export class BillingService implements OnModuleInit {
       };
     }
 
-    const billing = await this.ensureTenantBilling(user.tenantId);
+    await this.ensureTenantBilling(user.tenantId);
     if (monthlyPlan) {
       const effectivePrice = await this.resolveEffectivePlanPrice(
         user.tenantId,
@@ -292,13 +292,17 @@ export class BillingService implements OnModuleInit {
 
     const now = Date.now();
     const locked = sub?.status === BranchSubscriptionStatus.LOCKED;
-    const trialActive = billing.trialEndsAt.getTime() > now;
+    const trialPeriodEnd =
+      sub?.status === BranchSubscriptionStatus.TRIAL
+        ? (sub.currentPeriodEnd ?? null)
+        : null;
+    const trialActive = Boolean(
+      trialPeriodEnd && trialPeriodEnd.getTime() > now,
+    );
     const trialDaysRemaining = trialActive
       ? Math.max(
           0,
-          Math.ceil(
-            (billing.trialEndsAt.getTime() - now) / (24 * 60 * 60 * 1000),
-          ),
+          Math.ceil((trialPeriodEnd!.getTime() - now) / (24 * 60 * 60 * 1000)),
         )
       : null;
 
@@ -323,7 +327,7 @@ export class BillingService implements OnModuleInit {
           )
         : null,
       trialDaysRemaining,
-      trialEndsAt: billing.trialEndsAt.toISOString(),
+      trialEndsAt: trialPeriodEnd?.toISOString() ?? null,
       planAmount,
       planCurrency,
       message: locked
@@ -582,15 +586,24 @@ export class BillingService implements OnModuleInit {
     tenantId: string;
     branchId: string;
   }) {
-    const billing = await this.ensureTenantBilling(input.tenantId);
+    await this.ensureTenantBilling(input.tenantId);
     const plan = await this.ensureProPlan();
     const existing = await this.prisma.branchSubscription.findUnique({
       where: { branchId: input.branchId },
     });
     if (existing) return existing;
 
+    const branch = await this.prisma.branch.findFirst({
+      where: { id: input.branchId, tenantId: input.tenantId },
+      select: { createdAt: true },
+    });
+    if (!branch) {
+      throw new NotFoundException('Branch not found.');
+    }
+
+    const trial = this.branchTrialWindow(branch);
     const now = new Date();
-    const inTrial = billing.trialEndsAt.getTime() > now.getTime();
+    const inTrial = trial.endsAt.getTime() > now.getTime();
 
     if (inTrial) {
       return this.prisma.branchSubscription.create({
@@ -599,8 +612,8 @@ export class BillingService implements OnModuleInit {
           branchId: input.branchId,
           planId: plan.id,
           status: BranchSubscriptionStatus.TRIAL,
-          currentPeriodStart: billing.trialStartsAt,
-          currentPeriodEnd: billing.trialEndsAt,
+          currentPeriodStart: trial.startsAt,
+          currentPeriodEnd: trial.endsAt,
         },
       });
     }
@@ -674,12 +687,6 @@ export class BillingService implements OnModuleInit {
     });
 
     const now = Date.now();
-    const trialActive = billing.trialEndsAt.getTime() > now;
-    const daysRemaining = Math.max(
-      0,
-      Math.ceil((billing.trialEndsAt.getTime() - now) / (24 * 60 * 60 * 1000)),
-    );
-
     const reminders: string[] = [];
     const rows = await Promise.all(
       refreshed.map(async (branch) => {
@@ -745,14 +752,31 @@ export class BillingService implements OnModuleInit {
       ? defaultPlans
       : (rows[0]?.plans ?? defaultPlans);
     const plan = plans.find((row) => row.code === PRO_PLAN_CODE) ?? plans[0];
+    const branchTrial =
+      !canManageAll &&
+      rows[0]?.status === BranchSubscriptionStatus.TRIAL &&
+      rows[0].currentPeriodStart &&
+      rows[0].currentPeriodEnd
+        ? {
+            startsAt: new Date(rows[0].currentPeriodStart),
+            endsAt: new Date(rows[0].currentPeriodEnd),
+          }
+        : null;
+    const trialStart = branchTrial?.startsAt ?? billing.trialStartsAt;
+    const trialEnd = branchTrial?.endsAt ?? billing.trialEndsAt;
+    const trialActive = trialEnd.getTime() > now;
+    const daysRemaining = Math.max(
+      0,
+      Math.ceil((trialEnd.getTime() - now) / (24 * 60 * 60 * 1000)),
+    );
 
     return {
       plan,
       plans,
       trial: {
         active: trialActive,
-        startsAt: billing.trialStartsAt.toISOString(),
-        endsAt: billing.trialEndsAt.toISOString(),
+        startsAt: trialStart.toISOString(),
+        endsAt: trialEnd.toISOString(),
         daysRemaining,
       },
       scope: canManageAll ? 'organisation' : 'branch',
@@ -1719,7 +1743,7 @@ export class BillingService implements OnModuleInit {
   }
 
   async syncTenantSubscriptions(tenantId: string) {
-    const billing = await this.ensureTenantBilling(tenantId);
+    await this.ensureTenantBilling(tenantId);
     const plan = await this.ensureProPlan();
     const now = new Date();
 
@@ -1737,7 +1761,8 @@ export class BillingService implements OnModuleInit {
         });
       }
 
-      const trialActive = billing.trialEndsAt.getTime() > now.getTime();
+      const trial = this.branchTrialWindow(branch);
+      const trialActive = trial.endsAt.getTime() > now.getTime();
 
       if (trialActive) {
         if (sub.status === BranchSubscriptionStatus.TRIAL) {
@@ -1745,14 +1770,14 @@ export class BillingService implements OnModuleInit {
             where: { id: sub.id },
             data: {
               status: BranchSubscriptionStatus.TRIAL,
-              currentPeriodStart: billing.trialStartsAt,
-              currentPeriodEnd: billing.trialEndsAt,
+              currentPeriodStart: trial.startsAt,
+              currentPeriodEnd: trial.endsAt,
               graceEndsAt: null,
               lockedAt: null,
               planId: plan.id,
             },
           });
-          const trialDaysRemaining = this.daysUntil(billing.trialEndsAt, now);
+          const trialDaysRemaining = this.daysUntil(trial.endsAt, now);
           if (SUBSCRIPTION_EXPIRY_REMINDER_DAYS.has(trialDaysRemaining)) {
             await this.maybeNotifyBranchSubscriptionReminder({
               tenantId,
@@ -1763,7 +1788,7 @@ export class BillingService implements OnModuleInit {
               now,
               kind: 'trial_ending',
               daysRemaining: trialDaysRemaining,
-              periodEnd: billing.trialEndsAt,
+              periodEnd: trial.endsAt,
             });
           }
         } else if (
@@ -1799,7 +1824,7 @@ export class BillingService implements OnModuleInit {
           data: {
             status: BranchSubscriptionStatus.GRACE,
             graceEndsAt,
-            currentPeriodEnd: billing.trialEndsAt,
+            currentPeriodEnd: trial.endsAt,
             lastReminderAt: now,
           },
         });
@@ -2033,6 +2058,13 @@ export class BillingService implements OnModuleInit {
 
   private daysUntil(value: Date, now = new Date()) {
     return Math.max(0, Math.ceil((value.getTime() - now.getTime()) / DAY_MS));
+  }
+
+  private branchTrialWindow(branch: { createdAt: Date }) {
+    const startsAt = branch.createdAt;
+    const endsAt = new Date(startsAt.getTime() + TRIAL_DAYS * DAY_MS);
+
+    return { startsAt, endsAt };
   }
 
   private canSendBillingReminder(lastReminderAt: Date | null, now: Date) {
