@@ -171,7 +171,7 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      'v${r.latestVersion ?? '?'}  •  Build ${r.latestBuild}',
+                      'Version ${r.latestVersion ?? '?'}',
                       style: const TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,

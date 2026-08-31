@@ -1,3 +1,5 @@
+// ignore_for_file: unused_element, unused_element_parameter
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -7,7 +9,8 @@ import '../../../../services/session_store.dart';
 import '../../../../theme.dart';
 import '../../../../utils/friendly_errors.dart';
 import '../../../../utils/money.dart';
-import 'day_reconciliation_screen.dart';
+import '../../domain/models/agent_float_position.dart';
+import '../../domain/utils/operation_formatters.dart';
 
 class AgentPositionsScreen extends StatefulWidget {
   const AgentPositionsScreen({
@@ -84,6 +87,84 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
     return raw.whereType<Map<String, dynamic>>().toList();
   }
 
+  num get _totalRepayments {
+    return _agentReturns.fold<num>(
+      0,
+      (total, row) => total + _num(row['amountCollected']),
+    );
+  }
+
+  num get _totalProcessingFees {
+    return _agentReturns.fold<num>(
+      0,
+      (total, row) => total + _num(row['processingFees']),
+    );
+  }
+
+  num get _totalExpectedHandover {
+    return _agentReturns.fold<num>(
+      0,
+      (total, row) => total + _num(row['expectedReturn']),
+    );
+  }
+
+  List<AgentFloatPosition> get _activeOfficerPositions {
+    final agentsById = <String, Map<String, dynamic>>{
+      for (final agent in _agents)
+        if ((_string(agent['id']) ?? '').isNotEmpty)
+          _string(agent['id'])!: agent,
+    };
+
+    return _agentReturns
+        .map((position) {
+          final id = _string(position['agentId']) ?? '';
+          final agent = agentsById[id];
+
+          return AgentFloatPosition(
+            id: id,
+            name:
+                _string(position['agentName']) ??
+                _string(agent?['name']) ??
+                'Field Officer',
+            phone: _string(agent?['phone']),
+            roleName: _string(agent?['roleName']),
+            photoUrl: _string(agent?['photoUrl']),
+            publicId:
+                _string(position['agentPublicId']) ??
+                _string(agent?['publicId']),
+            remainingFloat: _num(position['unusedFloat']),
+            floatAllocated: _num(position['amountGiven']),
+            loansIssued: _num(position['amountDisbursed']),
+            repaymentsCollected: _num(position['amountCollected']),
+            processingFees: _num(position['processingFees']),
+            expectedHandover: _num(position['expectedReturn']),
+          );
+        })
+        .where((position) => position.id.isNotEmpty && position.isActiveToday)
+        .toList(growable: false);
+  }
+
+  List<AgentFloatPosition> get _visibleOfficerPositions {
+    final query = _query.trim().toLowerCase();
+    final positions = _activeOfficerPositions;
+
+    if (query.isEmpty) {
+      return positions;
+    }
+
+    return positions
+        .where((position) {
+          final name = position.name.toLowerCase();
+          final publicId = (position.publicId ?? '').toLowerCase();
+          final phone = (position.phone ?? '').toLowerCase();
+
+          return name.contains(query) ||
+              publicId.contains(query) ||
+              phone.contains(query);
+        })
+        .toList(growable: false);
+  }
+
   Map<String, dynamic>? _positionFor(String agentId) {
     for (final row in _agentReturns) {
       if (_string(row['agentId']) == agentId) {
@@ -92,6 +173,23 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
     }
 
     return null;
+  }
+
+  Map<String, dynamic> _agentForPosition(AgentFloatPosition position) {
+    for (final agent in _agents) {
+      if (_string(agent['id']) == position.id) {
+        return agent;
+      }
+    }
+
+    return {
+      'id': position.id,
+      'name': position.name,
+      'phone': position.phone,
+      'roleName': position.roleName ?? 'Field Officer',
+      'photoUrl': position.photoUrl,
+      'publicId': position.publicId,
+    };
   }
 
   bool _isBalanced(Map<String, dynamic>? position) {
@@ -175,24 +273,37 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
     });
 
     try {
-      final results = await Future.wait<Object?>([
-        _api.getBranchOperation(
+      final operation = await _api.getBranchOperation(
+        session: widget.session,
+        branchId: widget.branchId,
+        date: widget.date,
+      );
+
+      final nextOperation = Map<String, dynamic>.from(operation);
+
+      final returnedPositions = nextOperation['agentReturns'];
+
+      if ((returnedPositions is! List || returnedPositions.isEmpty) &&
+          _agentReturns.isNotEmpty) {
+        nextOperation['agentReturns'] = _agentReturns;
+      }
+
+      var agents = _agents;
+
+      try {
+        agents = await _api.listBranchAgents(
           session: widget.session,
-          branchId: widget.branchId,
           date: widget.date,
-        ),
-        _api.listBranchAgents(session: widget.session, date: widget.date),
-      ]);
+        );
+      } catch (_) {
+        agents = _agents;
+      }
 
       if (!mounted) return;
 
       setState(() {
-        _operation = results[0] as Map<String, dynamic>;
-
-        _agents = List<Map<String, dynamic>>.from(
-          results[1] as List<Map<String, dynamic>>,
-        );
-
+        _operation = nextOperation;
+        _agents = List<Map<String, dynamic>>.from(agents);
         _loading = false;
       });
     } catch (error) {
@@ -298,6 +409,7 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
           session: widget.session,
           branchId: widget.branchId,
           date: widget.date,
+          operation: _operation,
           agent: agent,
           position: position,
           dayOpen: _dayIsOpen,
@@ -316,31 +428,9 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
     }
   }
 
-  Future<void> _proceedToReconciliation() async {
-    if (!_allBalanced) {
-      setState(() {
-        _error =
-            'Complete all field officer handovers before starting branch reconciliation.';
-      });
-
-      return;
-    }
-
-    final changed = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => DayReconciliationScreen(
-          session: widget.session,
-          branchId: widget.branchId,
-          date: widget.date,
-        ),
-      ),
-    );
-
-    if (changed == true && mounted) {
-      Navigator.of(context).pop(true);
-    } else {
-      await _refresh();
-    }
+  Future<void> _openOfficerPosition(AgentFloatPosition officer) async {
+    final agent = _agentForPosition(officer);
+    await _openAgent(agent);
   }
 
   // ===========================================================================
@@ -349,6 +439,8 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final visiblePositions = _visibleOfficerPositions;
+
     return Scaffold(
       backgroundColor: softIvory,
       appBar: AppBar(
@@ -366,19 +458,54 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
           ),
         ),
         titleSpacing: 2,
-        title: const Text(
-          'Field Officer Balancing',
-          style: TextStyle(
-            color: midnightNavy,
-            fontSize: 17,
-            fontWeight: FontWeight.w900,
-          ),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Field officers active today',
+              style: TextStyle(
+                color: midnightNavy,
+                fontSize: 17,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.calendar_today_outlined,
+                  color: forestEmerald,
+                  size: 12,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  operationDate(
+                    DateTime.tryParse(widget.date) ?? DateTime.now(),
+                  ),
+                  style: const TextStyle(
+                    color: slateText,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Filter',
-            onPressed: () {},
-            icon: const Icon(Icons.filter_alt_outlined, color: midnightNavy),
+          Padding(
+            padding: const EdgeInsets.only(right: 14),
+            child: Center(
+              child: Text(
+                'Today (${_activeOfficerPositions.length})',
+                style: const TextStyle(
+                  color: forestEmerald,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -389,6 +516,14 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 5, 16, 30),
           children: [
+            _ActiveOfficerTotalsCard(
+              repayments: _totalRepayments,
+              processingFees: _totalProcessingFees,
+              expectedHandover: _totalExpectedHandover,
+            ),
+
+            const SizedBox(height: 14),
+
             _SearchField(
               controller: _searchController,
               onChanged: (value) {
@@ -398,7 +533,7 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
               },
             ),
 
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
 
             if (_error != null) ...[
               _MessageCard(message: _error!, error: true),
@@ -410,53 +545,28 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
               const SizedBox(height: 10),
             ],
 
-            if (_allBalanced)
-              _AllBalancedCard(
-                balanced: _balancedCount,
-                total: _agentsToBalance,
-                onProceed: () {
-                  unawaited(_proceedToReconciliation());
-                },
+            const _BalanceGuidanceCard(),
+
+            const SizedBox(height: 13),
+
+            if (visiblePositions.isEmpty && _loading)
+              const Padding(
+                padding: EdgeInsets.only(top: 18),
+                child: Center(
+                  child: CircularProgressIndicator(color: forestEmerald),
+                ),
               )
-            else
-              _BalancingSummaryCard(
-                balanced: _balancedCount,
-                total: _agentsToBalance,
-                progress: _progress,
-                pending: _notBalancedCount,
-                shortage: _shortageCount,
-                excess: _excessCount,
-              ),
-
-            const SizedBox(height: 12),
-
-            if (_visibleAgents.isEmpty)
+            else if (visiblePositions.isEmpty)
               const _EmptyAgents()
             else
-              ..._visibleAgents.map((agent) {
-                final id = _string(agent['id']) ?? '';
+              _ActiveOfficerTable(
+                officers: visiblePositions,
+                onTap: (officer) {
+                  unawaited(_openOfficerPosition(officer));
+                },
+              ),
 
-                final position = _positionFor(id);
-
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: _AgentBalancingCard(
-                    agent: agent,
-                    position: position,
-                    dayOpen: _dayIsOpen,
-                    onTap: () {
-                      unawaited(_openAgent(agent));
-                    },
-                    onAllocate: position == null && _dayIsOpen
-                        ? () {
-                            unawaited(_allocateFloat(agent, addMore: false));
-                          }
-                        : null,
-                  ),
-                );
-              }),
-
-            if (_loading)
+            if (_loading && visiblePositions.isNotEmpty)
               const Padding(
                 padding: EdgeInsets.only(top: 18),
                 child: Center(
@@ -479,6 +589,7 @@ class AgentPositionDetailScreen extends StatefulWidget {
     super.key,
     required this.session,
     required this.date,
+    required this.operation,
     required this.agent,
     required this.position,
     required this.dayOpen,
@@ -491,6 +602,7 @@ class AgentPositionDetailScreen extends StatefulWidget {
 
   final String date;
   final String? branchId;
+  final Map<String, dynamic>? operation;
 
   final Map<String, dynamic> agent;
   final Map<String, dynamic>? position;
@@ -514,6 +626,8 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
   bool _saving = false;
 
   String? _error;
+
+  _OfficerActivityFilter _activityFilter = _OfficerActivityFilter.all;
 
   Map<String, dynamic>? get _position => widget.position;
 
@@ -544,6 +658,114 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
   num? get _returned => _nullableNum(_position?['amountReturned']);
 
   num? get _variance => _nullableNum(_position?['variance']);
+
+  String get _agentName => _string(widget.agent['name']) ?? 'Field Officer';
+
+  String? get _agentPublicId =>
+      _string(_position?['agentPublicId']) ?? _string(widget.agent['publicId']);
+
+  List<_OfficerActivityEntry> get _activityEntries {
+    final entries = <_OfficerActivityEntry>[];
+    final operation = widget.operation;
+
+    if (operation == null) {
+      return entries;
+    }
+
+    for (final row in _listPayload(operation['repayments'])) {
+      if (!_rowMatchesOfficer(row, nameKeys: const ['recordedByName'])) {
+        continue;
+      }
+
+      final occurredAt = _dateFromFields(row, const [
+        'paidAt',
+        'recordedAt',
+        'createdAt',
+      ]);
+
+      if (occurredAt == null) {
+        continue;
+      }
+
+      entries.add(
+        _OfficerActivityEntry(
+          type: _OfficerActivityFilter.repayments,
+          label: 'Repayment collected',
+          client:
+              _string(row['borrowerName']) ??
+              _string(row['clientName']) ??
+              'Borrower',
+          amount: _num(row['amount']),
+          occurredAt: occurredAt,
+        ),
+      );
+    }
+
+    for (final row in _listPayload(operation['loansIssued'])) {
+      if (!_rowMatchesOfficer(row, nameKeys: const ['officerName'])) {
+        continue;
+      }
+
+      final occurredAt = _dateFromFields(row, const [
+        'issuedAt',
+        'disbursedAt',
+        'submittedAt',
+        'createdAt',
+      ]);
+
+      if (occurredAt == null) {
+        continue;
+      }
+
+      entries.add(
+        _OfficerActivityEntry(
+          type: _OfficerActivityFilter.loans,
+          label: 'Loan issued',
+          client:
+              _string(row['borrowerName']) ??
+              _string(row['clientName']) ??
+              'Borrower',
+          amount: -_num(row['principalAmount']),
+          occurredAt: occurredAt,
+        ),
+      );
+    }
+
+    entries.sort((a, b) => b.occurredAt.compareTo(a.occurredAt));
+
+    if (_activityFilter == _OfficerActivityFilter.all) {
+      return entries;
+    }
+
+    return entries
+        .where((entry) => entry.type == _activityFilter)
+        .toList(growable: false);
+  }
+
+  bool _rowMatchesOfficer(
+    Map<String, dynamic> row, {
+    required List<String> nameKeys,
+  }) {
+    final publicId = _agentPublicId;
+
+    if (publicId != null &&
+        (_string(row['recordedByPublicId']) == publicId ||
+            _string(row['officerPublicId']) == publicId)) {
+      return true;
+    }
+
+    final normalizedAgent = _normalizeName(_agentName);
+
+    for (final key in nameKeys) {
+      final rowName = _string(row[key]);
+
+      if (rowName != null && _normalizeName(rowName) == normalizedAgent) {
+        return true;
+      }
+    }
+
+    return false;
+  }
 
   Future<void> _balanceAgent() async {
     if (_position == null) {
@@ -687,9 +909,10 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final returned = _returned;
-
-    final variance = _variance ?? 0;
+    final canAllocate =
+        widget.dayOpen &&
+        (widget.onAddFloat != null || widget.onAllocateFloat != null);
+    final canBalance = widget.position != null && widget.dayOpen && !_balanced;
 
     return Scaffold(
       backgroundColor: softIvory,
@@ -708,30 +931,44 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
           ),
         ),
         titleSpacing: 2,
-        title: Text(
-          _balanced ? 'Field Officer Details' : 'Field Officer Position',
-          style: const TextStyle(
-            color: midnightNavy,
-            fontSize: 17,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
+        title: const SizedBox.shrink(),
         actions: [
-          IconButton(
-            onPressed: () {},
-            icon: const Icon(Icons.more_vert_rounded, color: midnightNavy),
+          Padding(
+            padding: const EdgeInsets.only(right: 14),
+            child: Center(
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.calendar_today_outlined,
+                    color: midnightNavy,
+                    size: 16,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    operationDate(
+                      DateTime.tryParse(widget.date) ?? DateTime.now(),
+                    ),
+                    style: const TextStyle(
+                      color: midnightNavy,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 5, 16, 30),
+        padding: const EdgeInsets.fromLTRB(16, 2, 16, 30),
         children: [
           if (_error != null) ...[
             _MessageCard(message: _error!, error: true),
             const SizedBox(height: 10),
           ],
 
-          _AgentIdentityHeader(agent: widget.agent, balanced: _balanced),
+          _OfficerDetailHeader(agent: widget.agent, balanced: _balanced),
 
           const SizedBox(height: 10),
 
@@ -740,78 +977,48 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
               dayOpen: widget.dayOpen,
               onAllocate: widget.onAllocateFloat,
             )
-          else if (_balanced)
-            _BalancedAgentCard(
-              expected: _expected,
-              actual: returned ?? 0,
-              variance: variance,
-              balancedBy:
-                  _string(_position?['returnedByName']) ??
-                  _string(_position?['balancedByName']) ??
-                  widget.session.userName,
-              balancedAt:
-                  _string(_position?['returnedAt']) ??
-                  _string(_position?['balancedAt']),
-            )
           else ...[
-            _ExpectedHandoverCard(amount: _expected),
-
-            const SizedBox(height: 10),
-
-            _PositionBreakdownCard(
-              floatReceived: _amountGiven,
-              loansIssued: _amountDisbursed,
-              unusedFloat: _unusedFloat,
+            _OfficerExpectedHandoverCard(
+              amount: _expected,
+              floatAllocated: _amountGiven,
               repaymentsCollected: _collections,
               processingFees: _processingFees,
+              loansIssued: _amountDisbursed,
               expectedHandover: _expected,
+              returned: _returned,
+              variance: _variance,
             ),
 
             const SizedBox(height: 10),
 
-            _ActivitySummaryCard(position: _position),
+            _OfficerDetailActions(
+              canAllocate: canAllocate,
+              canBalance: canBalance,
+              saving: _saving,
+              onAllocate: canAllocate
+                  ? () async {
+                      final action =
+                          widget.onAddFloat ?? widget.onAllocateFloat;
+                      await action!();
 
-            if (widget.dayOpen && widget.onAddFloat != null) ...[
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: () async {
-                  await widget.onAddFloat!();
+                      if (context.mounted) {
+                        Navigator.of(context).pop(true);
+                      }
+                    }
+                  : null,
+              onBalance: _balanceAgent,
+            ),
 
-                  if (context.mounted) {
-                    Navigator.of(context).pop(true);
-                  }
-                },
-                icon: const Icon(Icons.add_rounded, size: 18),
-                label: const Text('Add float'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: forestEmerald,
-                  side: const BorderSide(color: forestEmerald),
-                  minimumSize: const Size.fromHeight(45),
-                ),
-              ),
-            ],
+            const SizedBox(height: 16),
 
-            const SizedBox(height: 12),
-
-            FilledButton(
-              onPressed: _saving ? null : _balanceAgent,
-              style: FilledButton.styleFrom(
-                backgroundColor: forestEmerald,
-                minimumSize: const Size.fromHeight(50),
-              ),
-              child: _saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text(
-                      'Balance Field Officer',
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
+            _OfficerActivitySection(
+              selected: _activityFilter,
+              entries: _activityEntries,
+              onChanged: (filter) {
+                setState(() {
+                  _activityFilter = filter;
+                });
+              },
             ),
           ],
         ],
@@ -823,6 +1030,350 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
 // =============================================================================
 // LIST SUMMARY
 // =============================================================================
+
+class _ActiveOfficerTotalsCard extends StatelessWidget {
+  const _ActiveOfficerTotalsCard({
+    required this.repayments,
+    required this.processingFees,
+    required this.expectedHandover,
+  });
+
+  final num repayments;
+  final num processingFees;
+  final num expectedHandover;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: line),
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _ActiveTotalMetric(
+              icon: Icons.south_rounded,
+              label: 'Total repayments',
+              value: repayments,
+            ),
+          ),
+          const _VerticalDivider(),
+          Expanded(
+            child: _ActiveTotalMetric(
+              icon: Icons.percent_rounded,
+              label: 'Total processing fees',
+              value: processingFees,
+            ),
+          ),
+          const _VerticalDivider(),
+          Expanded(
+            child: _ActiveTotalMetric(
+              icon: Icons.account_balance_wallet_outlined,
+              label: 'Total expected handover',
+              value: expectedHandover,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActiveTotalMetric extends StatelessWidget {
+  const _ActiveTotalMetric({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final num value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Container(
+          width: 42,
+          height: 42,
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            color: Color(0xFFE8F4EA),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, color: forestEmerald, size: 21),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          label,
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: slateText,
+            fontSize: 9,
+            height: 1.2,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          'UGX ${formatMoney(value)}',
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: forestEmerald,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _VerticalDivider extends StatelessWidget {
+  const _VerticalDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 88,
+      margin: const EdgeInsets.symmetric(horizontal: 8),
+      color: line,
+    );
+  }
+}
+
+class _BalanceGuidanceCard extends StatelessWidget {
+  const _BalanceGuidanceCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF0EC),
+        border: Border.all(color: const Color(0xFFF7CBC2)),
+        borderRadius: rembehBorderRadius(rembehRadiusSm),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.info_outline_rounded, color: Color(0xFFC2412D), size: 17),
+          SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              'Select a field officer to balance them off.',
+              style: TextStyle(
+                color: Color(0xFFC2412D),
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActiveOfficerTable extends StatelessWidget {
+  const _ActiveOfficerTable({required this.officers, required this.onTap});
+
+  final List<AgentFloatPosition> officers;
+  final ValueChanged<AgentFloatPosition> onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(0, 10, 0, 9),
+          child: Row(
+            children: [
+              Expanded(flex: 34, child: _ActiveHeaderCell('Name')),
+              Expanded(
+                flex: 17,
+                child: _ActiveHeaderCell('Repayments', alignEnd: true),
+              ),
+              Expanded(
+                flex: 17,
+                child: _ActiveHeaderCell('Loans', alignEnd: true),
+              ),
+              Expanded(
+                flex: 20,
+                child: _ActiveHeaderCell('Processing fees', alignEnd: true),
+              ),
+              Expanded(
+                flex: 22,
+                child: _ActiveHeaderCell('Expected handover', alignEnd: true),
+              ),
+              SizedBox(width: 14),
+            ],
+          ),
+        ),
+        const Divider(height: 1, color: line),
+        ...List.generate(officers.length, (index) {
+          final officer = officers[index];
+
+          return Column(
+            children: [
+              _ActiveOfficerRow(
+                officer: officer,
+                onTap: () {
+                  onTap(officer);
+                },
+              ),
+              if (index != officers.length - 1)
+                const Divider(height: 1, color: line),
+            ],
+          );
+        }),
+      ],
+    );
+  }
+}
+
+class _ActiveOfficerRow extends StatelessWidget {
+  const _ActiveOfficerRow({required this.officer, required this.onTap});
+
+  final AgentFloatPosition officer;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                flex: 34,
+                child: Row(
+                  children: [
+                    _Avatar(
+                      name: officer.name,
+                      photoUrl: officer.photoUrl,
+                      size: 38,
+                    ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            fieldOfficerSurname(officer.name),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: midnightNavy,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 1),
+                          const Text(
+                            'Field Officer',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: slateText,
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                flex: 17,
+                child: _ActiveMoneyCell(officer.repaymentsCollected),
+              ),
+              Expanded(flex: 17, child: _ActiveMoneyCell(officer.loansIssued)),
+              Expanded(
+                flex: 20,
+                child: _ActiveMoneyCell(officer.processingFees),
+              ),
+              Expanded(
+                flex: 22,
+                child: _ActiveMoneyCell(officer.expectedHandover, green: true),
+              ),
+              const SizedBox(width: 2),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: slateText,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ActiveHeaderCell extends StatelessWidget {
+  const _ActiveHeaderCell(this.label, {this.alignEnd = false});
+
+  final String label;
+  final bool alignEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      textAlign: alignEnd ? TextAlign.end : TextAlign.start,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        color: midnightNavy,
+        fontSize: 7.4,
+        height: 1.15,
+        fontWeight: FontWeight.w800,
+      ),
+    );
+  }
+}
+
+class _ActiveMoneyCell extends StatelessWidget {
+  const _ActiveMoneyCell(this.amount, {this.green = false});
+
+  final num amount;
+  final bool green;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          formatMoney(amount),
+          textAlign: TextAlign.end,
+          maxLines: 1,
+          style: TextStyle(
+            color: green ? forestEmerald : midnightNavy,
+            fontSize: 9.5,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _BalancingSummaryCard extends StatelessWidget {
   const _BalancingSummaryCard({
@@ -1316,6 +1867,593 @@ class _MiniMetric extends StatelessWidget {
 // =============================================================================
 // DETAIL COMPONENTS
 // =============================================================================
+
+class _OfficerDetailHeader extends StatelessWidget {
+  const _OfficerDetailHeader({required this.agent, required this.balanced});
+
+  final Map<String, dynamic> agent;
+  final bool balanced;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = _string(agent['name']) ?? 'Field Officer';
+    final phone = _string(agent['phone']);
+
+    return Row(
+      children: [
+        _Avatar(name: name, photoUrl: _string(agent['photoUrl']), size: 54),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: midnightNavy,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Row(
+                children: [
+                  const Text(
+                    'Field Officer',
+                    style: TextStyle(
+                      color: slateText,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Text(
+                    '•',
+                    style: TextStyle(
+                      color: forestEmerald,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    balanced ? 'Balanced' : 'Active',
+                    style: const TextStyle(
+                      color: forestEmerald,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+              if (phone != null) ...[
+                const SizedBox(height: 3),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.phone_outlined,
+                      color: slateText,
+                      size: 12,
+                    ),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        phone,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: slateText,
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OfficerExpectedHandoverCard extends StatelessWidget {
+  const _OfficerExpectedHandoverCard({
+    required this.amount,
+    required this.floatAllocated,
+    required this.repaymentsCollected,
+    required this.processingFees,
+    required this.loansIssued,
+    required this.expectedHandover,
+    required this.returned,
+    required this.variance,
+  });
+
+  final num amount;
+  final num floatAllocated;
+  final num repaymentsCollected;
+  final num processingFees;
+  final num loansIssued;
+  final num expectedHandover;
+  final num? returned;
+  final num? variance;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(13, 14, 13, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7FBF7),
+        border: Border.all(color: forestEmerald.withValues(alpha: 0.18)),
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Expected handover',
+                      style: TextStyle(
+                        color: slateText,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'UGX ${formatMoney(amount)}',
+                      style: const TextStyle(
+                        color: forestEmerald,
+                        fontSize: 30,
+                        height: 1.05,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                width: 54,
+                height: 54,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE8F4EA),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.payments_outlined,
+                  color: forestEmerald,
+                  size: 28,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 13),
+          const Divider(height: 1, color: line),
+          const SizedBox(height: 7),
+          _OfficerCashLine(label: 'Float allocated', value: floatAllocated),
+          _OfficerCashLine(
+            label: 'Repayments collected',
+            value: repaymentsCollected,
+            signed: true,
+          ),
+          _OfficerCashLine(
+            label: 'Processing fees collected',
+            value: processingFees,
+            signed: true,
+          ),
+          _OfficerCashLine(
+            label: 'Loans issued',
+            value: -loansIssued,
+            signed: true,
+          ),
+          const Divider(height: 17, color: line),
+          _OfficerCashLine(
+            label: 'Expected handover',
+            value: expectedHandover,
+            strong: true,
+          ),
+          if (returned != null) ...[
+            const SizedBox(height: 6),
+            _OfficerCashLine(label: 'Actual handover', value: returned!),
+            if (variance != null && variance != 0)
+              _OfficerCashLine(
+                label: variance! < 0 ? 'Shortage' : 'Excess',
+                value: variance!,
+                signed: true,
+                danger: variance! < 0,
+                strong: true,
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _OfficerCashLine extends StatelessWidget {
+  const _OfficerCashLine({
+    required this.label,
+    required this.value,
+    this.signed = false,
+    this.strong = false,
+    this.danger = false,
+  });
+
+  final String label;
+  final num value;
+  final bool signed;
+  final bool strong;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    final positive = value > 0;
+    final negative = value < 0;
+    final color = danger || negative
+        ? const Color(0xFFB42318)
+        : strong || (signed && positive)
+        ? forestEmerald
+        : midnightNavy;
+    final prefix = !signed
+        ? ''
+        : negative
+        ? '- '
+        : positive
+        ? '+ '
+        : '';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: strong ? midnightNavy : slateText,
+                fontSize: 11,
+                fontWeight: strong ? FontWeight.w900 : FontWeight.w600,
+              ),
+            ),
+          ),
+          Text(
+            '${prefix}UGX ${formatMoney(value.abs())}',
+            style: TextStyle(
+              color: color,
+              fontSize: strong ? 12 : 11,
+              fontWeight: strong ? FontWeight.w900 : FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OfficerDetailActions extends StatelessWidget {
+  const _OfficerDetailActions({
+    required this.canAllocate,
+    required this.canBalance,
+    required this.saving,
+    required this.onBalance,
+    this.onAllocate,
+  });
+
+  final bool canAllocate;
+  final bool canBalance;
+  final bool saving;
+  final Future<void> Function()? onAllocate;
+  final VoidCallback onBalance;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: canAllocate && onAllocate != null
+                ? () {
+                    unawaited(onAllocate!());
+                  }
+                : null,
+            icon: const Icon(Icons.outbox_outlined, size: 18),
+            label: const Text('Allocate float'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: forestEmerald,
+              side: const BorderSide(color: forestEmerald),
+              minimumSize: const Size.fromHeight(48),
+              textStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: FilledButton.icon(
+            onPressed: canBalance && !saving ? onBalance : null,
+            icon: saving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.check_circle_outline, size: 18),
+            label: Text(saving ? 'Saving...' : 'Balance off officer'),
+            style: FilledButton.styleFrom(
+              backgroundColor: forestEmerald,
+              minimumSize: const Size.fromHeight(48),
+              textStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OfficerActivitySection extends StatelessWidget {
+  const _OfficerActivitySection({
+    required this.selected,
+    required this.entries,
+    required this.onChanged,
+  });
+
+  final _OfficerActivityFilter selected;
+  final List<_OfficerActivityEntry> entries;
+  final ValueChanged<_OfficerActivityFilter> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Activity',
+          style: TextStyle(
+            color: midnightNavy,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 10),
+        _OfficerActivityTabs(selected: selected, onChanged: onChanged),
+        const SizedBox(height: 9),
+        if (entries.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: line),
+              borderRadius: rembehBorderRadius(rembehRadiusMd),
+            ),
+            child: const Text(
+              'No activity found for this selection.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: slateText,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          )
+        else
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: line),
+              borderRadius: rembehBorderRadius(rembehRadiusMd),
+            ),
+            child: Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(12, 11, 12, 8),
+                  child: Row(
+                    children: [
+                      Expanded(flex: 30, child: _ActiveHeaderCell('Type')),
+                      Expanded(flex: 27, child: _ActiveHeaderCell('Client')),
+                      Expanded(
+                        flex: 25,
+                        child: _ActiveHeaderCell(
+                          'Amount (UGX)',
+                          alignEnd: true,
+                        ),
+                      ),
+                      Expanded(
+                        flex: 18,
+                        child: _ActiveHeaderCell('Time', alignEnd: true),
+                      ),
+                      SizedBox(width: 16),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: line),
+                ...List.generate(entries.length, (index) {
+                  final entry = entries[index];
+
+                  return Column(
+                    children: [
+                      _OfficerActivityRow(entry: entry),
+                      if (index != entries.length - 1)
+                        const Divider(height: 1, color: line),
+                    ],
+                  );
+                }),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _OfficerActivityTabs extends StatelessWidget {
+  const _OfficerActivityTabs({required this.selected, required this.onChanged});
+
+  final _OfficerActivityFilter selected;
+  final ValueChanged<_OfficerActivityFilter> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: line),
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
+      child: Row(
+        children: _OfficerActivityFilter.values
+            .map((filter) {
+              final active = selected == filter;
+
+              return Expanded(
+                child: InkWell(
+                  onTap: () {
+                    onChanged(filter);
+                  },
+                  borderRadius: rembehBorderRadius(rembehRadiusSm),
+                  child: Container(
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: active
+                          ? forestEmerald.withValues(alpha: 0.10)
+                          : null,
+                      borderRadius: rembehBorderRadius(rembehRadiusSm),
+                    ),
+                    child: Text(
+                      filter.label,
+                      style: TextStyle(
+                        color: active ? forestEmerald : slateText,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            })
+            .toList(growable: false),
+      ),
+    );
+  }
+}
+
+class _OfficerActivityRow extends StatelessWidget {
+  const _OfficerActivityRow({required this.entry});
+
+  final _OfficerActivityEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    final positive = entry.amount >= 0;
+    final color = positive ? forestEmerald : const Color(0xFFB42318);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 30,
+            child: Row(
+              children: [
+                Container(
+                  width: 26,
+                  height: 26,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.10),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    positive ? Icons.south_rounded : Icons.north_east_rounded,
+                    color: color,
+                    size: 16,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    entry.label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            flex: 27,
+            child: Text(
+              entry.client,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: midnightNavy,
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 25,
+            child: Text(
+              '${positive ? '+ ' : '- '}UGX ${formatMoney(entry.amount.abs())}',
+              textAlign: TextAlign.end,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontSize: 9,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 18,
+            child: Text(
+              operationTime(entry.occurredAt),
+              textAlign: TextAlign.end,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: slateText,
+                fontSize: 9,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const Icon(Icons.chevron_right_rounded, color: slateText, size: 16),
+        ],
+      ),
+    );
+  }
+}
 
 class _AgentIdentityHeader extends StatelessWidget {
   const _AgentIdentityHeader({required this.agent, required this.balanced});
@@ -2607,7 +3745,7 @@ class _SearchField extends StatelessWidget {
         controller: controller,
         onChanged: onChanged,
         decoration: const InputDecoration(
-          hintText: 'Search field officers',
+          hintText: 'Search field officer by name...',
           prefixIcon: Icon(Icons.search_rounded, size: 19),
           contentPadding: EdgeInsets.symmetric(vertical: 0),
         ),
@@ -2815,6 +3953,32 @@ class _Initials extends StatelessWidget {
 
 enum _AgentBalanceStatus { noFloat, pending, balanced, shortage, excess }
 
+enum _OfficerActivityFilter {
+  all('All'),
+  repayments('Repayments'),
+  loans('Loans');
+
+  const _OfficerActivityFilter(this.label);
+
+  final String label;
+}
+
+class _OfficerActivityEntry {
+  const _OfficerActivityEntry({
+    required this.type,
+    required this.label,
+    required this.client,
+    required this.amount,
+    required this.occurredAt,
+  });
+
+  final _OfficerActivityFilter type;
+  final String label;
+  final String client;
+  final num amount;
+  final DateTime occurredAt;
+}
+
 _AgentBalanceStatus _balanceStatus(Map<String, dynamic>? position) {
   if (position == null) {
     return _AgentBalanceStatus.noFloat;
@@ -2997,6 +4161,36 @@ String? _string(Object? value) {
   final clean = value.trim();
 
   return clean.isEmpty ? null : clean;
+}
+
+List<Map<String, dynamic>> _listPayload(Object? raw) {
+  if (raw is! List) {
+    return const [];
+  }
+
+  return raw.whereType<Map<String, dynamic>>().toList(growable: false);
+}
+
+DateTime? _dateFromFields(Map<String, dynamic> row, List<String> keys) {
+  for (final key in keys) {
+    final raw = _string(row[key]);
+
+    if (raw == null) {
+      continue;
+    }
+
+    final parsed = DateTime.tryParse(raw);
+
+    if (parsed != null) {
+      return parsed.toLocal();
+    }
+  }
+
+  return null;
+}
+
+String _normalizeName(String value) {
+  return value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
 }
 
 String _friendlyDateTime(String? raw) {

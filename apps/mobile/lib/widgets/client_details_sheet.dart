@@ -96,7 +96,6 @@ class ClientDetailsSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final height = MediaQuery.sizeOf(context).height * 0.92;
-    final now = DateTime.now();
     final canRecordPayment =
         detail.outstanding > 0 &&
         !{
@@ -261,6 +260,47 @@ class ClientDetailsSheet extends StatelessWidget {
                       ),
                       icon: const Icon(Icons.phone),
                     ),
+                    if (detail.correctionAccess.enabled)
+                      PopupMenuButton<String>(
+                        tooltip: 'Loan record actions',
+                        icon: const Icon(
+                          Icons.more_vert_rounded,
+                          color: midnightNavy,
+                        ),
+                        onSelected: (value) {
+                          Navigator.of(context).pop(value);
+                        },
+                        itemBuilder: (context) => const [
+                          PopupMenuItem<String>(
+                            value: 'correct_legacy',
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.edit_outlined,
+                                  color: forestEmerald,
+                                  size: 19,
+                                ),
+                                SizedBox(width: 10),
+                                Text('Correct loan record'),
+                              ],
+                            ),
+                          ),
+                          PopupMenuItem<String>(
+                            value: 'delete_legacy',
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.delete_outline,
+                                  color: Color(0xFFE11D48),
+                                  size: 19,
+                                ),
+                                SizedBox(width: 10),
+                                Text('Delete loan record'),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     IconButton(
                       onPressed: () => Navigator.of(context).pop(),
                       icon: const Icon(Icons.close, color: slateText),
@@ -296,59 +336,6 @@ class ClientDetailsSheet extends StatelessWidget {
                             fontWeight: FontWeight.w800,
                             fontSize: 20,
                           ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _SummaryTile(
-                        label: 'Last Payment',
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              formatMoney(detail.lastPaymentAmount),
-                              style: const TextStyle(
-                                color: midnightNavy,
-                                fontWeight: FontWeight.w800,
-                                fontSize: 18,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              detail.lastPaymentAt == null
-                                  ? 'No payments yet'
-                                  : '${_shortDate(detail.lastPaymentAt!)} (${_relativeDays(detail.lastPaymentAt!, now)})',
-                              style: const TextStyle(
-                                color: slateText,
-                                fontSize: 11,
-                              ),
-                            ),
-                            if (detail.lastPaymentBy != null &&
-                                detail.lastPaymentBy!.isNotEmpty)
-                              Text.rich(
-                                TextSpan(
-                                  style: const TextStyle(
-                                    color: slateText,
-                                    fontSize: 11,
-                                  ),
-                                  children: [
-                                    const TextSpan(text: 'By: '),
-                                    TextSpan(
-                                      text: detail.lastPaymentBy,
-                                      style: const TextStyle(
-                                        color: forestEmerald,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                          ],
                         ),
                       ),
                     ),
@@ -492,10 +479,6 @@ class ClientDetailsSheet extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (detail.correctionAccess.enabled) ...[
-                  const SizedBox(height: 14),
-                  _CorrectionAccessCard(detail: detail),
-                ],
                 if (detail.fineHistory.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   const Align(
@@ -715,17 +698,6 @@ class ClientDetailsSheet extends StatelessWidget {
     ];
     return '${value.day} ${months[value.month - 1]} ${value.year}';
   }
-
-  String _relativeDays(DateTime value, DateTime now) {
-    final days = DateTime(
-      now.year,
-      now.month,
-      now.day,
-    ).difference(DateTime(value.year, value.month, value.day)).inDays;
-    if (days <= 0) return 'today';
-    if (days == 1) return '1 day ago';
-    return '$days days ago';
-  }
 }
 
 class _PaymentHistoryTrailing extends StatefulWidget {
@@ -885,120 +857,6 @@ class _CorrectionActionButton extends StatelessWidget {
             fontWeight: FontWeight.w900,
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _CorrectionAccessCard extends StatelessWidget {
-  const _CorrectionAccessCard({required this.detail});
-
-  final ClientDetail detail;
-
-  @override
-  Widget build(BuildContext context) {
-    final access = detail.correctionAccess;
-    final source = access.source == 'BRANCH'
-        ? 'Branch enabled'
-        : access.source == 'ORGANIZATION'
-        ? 'Organization enabled'
-        : 'Admin enabled';
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
-        border: Border.all(color: const Color(0xFFE8C46A)),
-        borderRadius: rembehBorderRadius(rembehRadiusMd),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: rembehBorderRadius(rembehRadiusSm),
-                ),
-                child: const Icon(
-                  Icons.admin_panel_settings_outlined,
-                  color: warmGold,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Strict correction mode',
-                      style: const TextStyle(
-                        color: midnightNavy,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '$source. Every correction is saved to audit logs.',
-                      style: const TextStyle(
-                        color: slateText,
-                        fontSize: 12,
-                        height: 1.35,
-                      ),
-                    ),
-                    if (access.reason != null && access.reason!.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          access.reason!,
-                          style: const TextStyle(
-                            color: midnightNavy,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            height: 1.35,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => Navigator.of(context).pop('correct_legacy'),
-                  icon: const Icon(Icons.edit_outlined),
-                  label: const Text('Correct record'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: forestEmerald,
-                    side: const BorderSide(color: forestEmerald),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () => Navigator.of(context).pop('delete_legacy'),
-                  icon: const Icon(Icons.delete_outline),
-                  label: const Text('Delete'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFFE11D48),
-                    side: const BorderSide(color: Color(0xFFE11D48)),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }

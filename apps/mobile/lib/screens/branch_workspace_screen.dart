@@ -50,7 +50,6 @@ import 'login_screen.dart';
 import 'pending_disbursements_screen.dart';
 import 'repayment_corrections_screen.dart';
 import 'records/records_tab.dart';
-import 'register_customer_screen.dart';
 import 'search/search_tab.dart';
 import 'profile/agent_profile_screen.dart';
 
@@ -822,6 +821,50 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     }
   }
 
+  Future<void> _openAgentPosition(AgentFloatPosition position) async {
+    final operation = _operation;
+
+    if (operation == null) {
+      setState(() {
+        _error = 'Today’s branch operation is not available.';
+      });
+
+      return;
+    }
+
+    final agent = _agentMapForPosition(position);
+    final agentPosition = _positionForAgent(position.id);
+
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => AgentPositionDetailScreen(
+          session: widget.session,
+          branchId: widget.session.branchId,
+          date: _date,
+          operation: operation,
+          agent: agent,
+          position: agentPosition,
+          dayOpen: _dayOpen,
+          onAllocateFloat: agentPosition == null && _dayOpen
+              ? () =>
+                    _showFloatSheet(addMore: false, initialAgentId: position.id)
+              : null,
+          onAddFloat:
+              agentPosition != null &&
+                  agentPosition['amountReturned'] == null &&
+                  _dayOpen
+              ? () =>
+                    _showFloatSheet(addMore: true, initialAgentId: position.id)
+              : null,
+        ),
+      ),
+    );
+
+    if (changed == true) {
+      await _load();
+    }
+  }
+
   // ===========================================================================
   // WORKSPACE NAVIGATION
   // ===========================================================================
@@ -869,24 +912,6 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     }
 
     await _load();
-  }
-
-  Future<void> _openNewCustomer() async {
-    final created = await Navigator.of(context, rootNavigator: true).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => RegisterCustomerScreen(session: widget.session),
-      ),
-    );
-
-    if (!mounted) {
-      return;
-    }
-
-    if (created == true) {
-      _setNotice('Borrower saved.');
-
-      await _loadManagementData();
-    }
   }
 
   Future<void> _openNewLoan() async {
@@ -1396,17 +1421,142 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   }
 
   List<AgentFloatPosition> _buildAgentFloatPositions() {
-    return _agents.map((agent) {
-      return AgentFloatPosition(
-        id: _string(agent['id']) ?? '',
-        name: _string(agent['name']) ?? 'Agent',
-        remainingFloat: _firstAvailableMoney(agent, const [
-          'floatRemaining',
-          'remainingFloat',
-          'floatToday',
-        ]),
-      );
-    }).toList();
+    final agentsById = <String, Map<String, dynamic>>{
+      for (final agent in _agents)
+        if ((_string(agent['id']) ?? '').isNotEmpty)
+          _string(agent['id'])!: agent,
+    };
+
+    final positions = _operationRows('agentReturns')
+        .map((position) {
+          final id = _string(position['agentId']) ?? '';
+          final agent = agentsById[id];
+
+          return AgentFloatPosition(
+            id: id,
+            name:
+                _string(position['agentName']) ??
+                _string(agent?['name']) ??
+                'Field Officer',
+            phone: _string(agent?['phone']),
+            roleName: _string(agent?['roleName']),
+            photoUrl: _string(agent?['photoUrl']),
+            publicId:
+                _string(position['agentPublicId']) ??
+                _string(agent?['publicId']),
+            remainingFloat: _firstAvailableMoney(position, const [
+              'unusedFloat',
+              'remainingFloat',
+            ]),
+            floatAllocated: _firstAvailableMoney(position, const [
+              'amountGiven',
+              'floatRemaining',
+            ]),
+            loansIssued: _firstAvailableMoney(position, const [
+              'amountDisbursed',
+            ]),
+            repaymentsCollected: _firstAvailableMoney(position, const [
+              'amountCollected',
+            ]),
+            processingFees: _firstAvailableMoney(position, const [
+              'processingFees',
+            ]),
+            expectedHandover: _firstAvailableMoney(position, const [
+              'expectedReturn',
+            ]),
+          );
+        })
+        .where((position) => position.id.isNotEmpty && position.isActiveToday);
+
+    final fallback = _fieldOfficerAgents
+        .where((agent) {
+          final id = _string(agent['id']) ?? '';
+          return id.isNotEmpty &&
+              !_operationRows(
+                'agentReturns',
+              ).any((position) => _string(position['agentId']) == id) &&
+              _firstAvailableMoney(agent, const [
+                    'remainingFloatToday',
+                    'floatRemaining',
+                    'remainingFloat',
+                    'floatToday',
+                  ]) >
+                  0;
+        })
+        .map((agent) {
+          final remaining = _firstAvailableMoney(agent, const [
+            'remainingFloatToday',
+            'floatRemaining',
+            'remainingFloat',
+            'floatToday',
+          ]);
+
+          return AgentFloatPosition(
+            id: _string(agent['id']) ?? '',
+            name: _string(agent['name']) ?? 'Field Officer',
+            phone: _string(agent['phone']),
+            roleName: _string(agent['roleName']),
+            photoUrl: _string(agent['photoUrl']),
+            publicId: _string(agent['publicId']),
+            remainingFloat: remaining,
+            floatAllocated: _firstAvailableMoney(agent, const ['floatToday']),
+            loansIssued: _firstAvailableMoney(agent, const [
+              'amountDisbursedToday',
+            ]),
+            repaymentsCollected: _firstAvailableMoney(agent, const [
+              'amountCollectedToday',
+            ]),
+            processingFees: 0,
+            expectedHandover: remaining,
+          );
+        });
+
+    return [...positions, ...fallback].toList(growable: false);
+  }
+
+  List<Map<String, dynamic>> get _fieldOfficerAgents {
+    return _agents.where(_isFieldOfficerAgent).toList(growable: false);
+  }
+
+  bool _isFieldOfficerAgent(Map<String, dynamic> agent) {
+    final role = (_string(agent['roleName']) ?? '').toLowerCase();
+
+    if (role.contains('field officer')) {
+      return true;
+    }
+
+    if (role == 'agent' || role.contains('loan officer')) {
+      return true;
+    }
+
+    return false;
+  }
+
+  Map<String, dynamic>? _positionForAgent(String agentId) {
+    for (final position in _operationRows('agentReturns')) {
+      if (_string(position['agentId']) == agentId) {
+        return position;
+      }
+    }
+
+    return null;
+  }
+
+  Map<String, dynamic> _agentMapForPosition(AgentFloatPosition position) {
+    for (final agent in _agents) {
+      if (_string(agent['id']) == position.id) {
+        return agent;
+      }
+    }
+
+    return {
+      'id': position.id,
+      'name': position.name,
+      'phone': position.phone,
+      'roleName': position.roleName ?? 'Field Officer',
+      'photoUrl': position.photoUrl,
+      'publicId': position.publicId,
+    };
   }
 
   List<OperationActivity> _buildOperationActivities() {
@@ -1892,7 +2042,10 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     );
   }
 
-  Future<void> _showFloatSheet({required bool addMore}) async {
+  Future<void> _showFloatSheet({
+    required bool addMore,
+    String? initialAgentId,
+  }) async {
     final blockedMessage = _operationMutationBlockedMessage;
 
     if (blockedMessage != null) {
@@ -1901,9 +2054,11 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       return;
     }
 
-    if (_agents.isEmpty) {
+    final eligibleAgents = _fieldOfficerAgents;
+
+    if (eligibleAgents.isEmpty) {
       setState(() {
-        _error = 'No agents found.';
+        _error = 'No field officers found.';
       });
 
       return;
@@ -1913,14 +2068,20 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
     final notes = TextEditingController();
 
-    var agentId = _string(_agents.first['id']) ?? '';
+    var agentId =
+        initialAgentId != null &&
+            eligibleAgents.any(
+              (agent) => _string(agent['id']) == initialAgentId,
+            )
+        ? initialAgentId
+        : _string(eligibleAgents.first['id']) ?? '';
 
     await _showFormSheet(
       title: addMore ? 'Add float' : 'Allocate float',
       actionLabel: 'Save',
       builder: (setModalState) => [
         _AgentPicker(
-          agents: _agents,
+          agents: eligibleAgents,
           value: agentId,
           onChanged: (value) {
             setModalState(() {
@@ -1937,7 +2098,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         final value = _parseAmount(amount.text);
 
         if (agentId.isEmpty) {
-          throw ApiException('Choose an agent.');
+          throw ApiException('Choose a field officer.');
         }
 
         if (value == null || value <= 0) {
@@ -2246,14 +2407,6 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
             }
           : () {},
 
-      onOpenNewBorrower: widget.session.hasPermission('customer.create')
-          ? () {
-              _runIfBranchCanMutate(() {
-                unawaited(_openNewCustomer());
-              });
-            }
-          : () {},
-
       onOpenDailyOps: () => _openTab(1),
 
       onOpenRecordRepayment: () {
@@ -2387,6 +2540,13 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           widget.session.hasPermission('operation.float.manage')
           ? () {
               unawaited(_openAgentPositions());
+            }
+          : null,
+
+      onOpenAgentPosition:
+          widget.session.hasPermission('operation.float.manage')
+          ? (position) {
+              unawaited(_openAgentPosition(position));
             }
           : null,
     );
@@ -2845,7 +3005,7 @@ class _AgentPicker extends StatelessWidget {
         onChanged(value);
       },
 
-      decoration: const InputDecoration(labelText: 'Agent'),
+      decoration: const InputDecoration(labelText: 'Field officer'),
     );
   }
 }

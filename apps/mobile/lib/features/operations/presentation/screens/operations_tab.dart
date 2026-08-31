@@ -39,6 +39,7 @@ class OperationsTab extends StatelessWidget {
     this.onPendingClosure,
     this.onSendAwaitingReport,
     this.onOpenAgentPositions,
+    this.onOpenAgentPosition,
   });
 
   final RembehSession session;
@@ -76,6 +77,7 @@ class OperationsTab extends StatelessWidget {
   final VoidCallback? onPendingClosure;
   final VoidCallback? onSendAwaitingReport;
   final VoidCallback? onOpenAgentPositions;
+  final ValueChanged<AgentFloatPosition>? onOpenAgentPosition;
 
   @override
   Widget build(BuildContext context) {
@@ -116,10 +118,9 @@ class OperationsTab extends StatelessWidget {
 
     final data = operation!;
 
-    final totalFloat = agents.fold<num>(
-      0,
-      (sum, agent) => sum + agent.remainingFloat,
-    );
+    final activeAgents = agents
+        .where((agent) => agent.isActiveToday)
+        .toList(growable: false);
 
     final canReceiveCapital =
         dayOpen &&
@@ -178,14 +179,12 @@ class OperationsTab extends StatelessWidget {
            * Managers still need an entry point for allocating float
            * and opening agent positions.
            */
-          if (agents.isNotEmpty) ...[
+          if (activeAgents.isNotEmpty) ...[
             const SizedBox(height: 10),
             AgentFloatCard(
-              agents: agents,
-              totalFloat: totalFloat,
-              canAllocate: canAllocateFloat,
-              onAllocateFloat: onAllocateFloat,
+              agents: activeAgents,
               onViewAll: canOpenAgentPositions ? onOpenAgentPositions : null,
+              onOpenAgent: canOpenAgentPositions ? onOpenAgentPosition : null,
             ),
           ],
 
@@ -204,13 +203,9 @@ class OperationsTab extends StatelessWidget {
             canReceiveCapital: canReceiveCapital,
             canAllocateFloat: canAllocateFloat,
             canRecordExpense: canRecordExpense,
-            canOpenAgentPositions: canOpenAgentPositions,
             onReceiveCapital: onReceiveCapital,
             onAllocateFloat: onAllocateFloat,
             onRecordExpense: onRecordExpense,
-            onAgentPositions: canOpenAgentPositions
-                ? onOpenAgentPositions
-                : null,
           ),
 
           if (activities.isNotEmpty) ...[

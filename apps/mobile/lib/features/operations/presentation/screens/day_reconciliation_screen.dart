@@ -8,8 +8,10 @@ import '../../../../services/session_store.dart';
 import '../../../../theme.dart';
 import '../../../../utils/friendly_errors.dart';
 import '../../../../utils/money.dart';
+import '../../domain/models/agent_float_position.dart';
 import '../sheets/submit_reconciliation_sheet.dart';
 import '../sheets/update_cash_count_sheet.dart';
+import 'agent_positions_screen.dart';
 
 class DayReconciliationScreen extends StatefulWidget {
   const DayReconciliationScreen({
@@ -57,6 +59,13 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
     }
 
     return raw.whereType<Map<String, dynamic>>().toList();
+  }
+
+  List<AgentFloatPosition> get _activeOfficerPositions {
+    return _agentReturns
+        .map(_positionFromReturn)
+        .where((position) => position.id.isNotEmpty && position.isActiveToday)
+        .toList(growable: false);
   }
 
   List<Map<String, dynamic>> get _variances {
@@ -128,6 +137,67 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
     });
   }
 
+  bool get _canBalanceFieldOfficers {
+    final status = (_string(_operation?['status']) ?? '').toUpperCase();
+
+    return status == 'OPEN' || status == 'CLOSING' || status == 'RECONCILING';
+  }
+
+  AgentFloatPosition _positionFromReturn(Map<String, dynamic> position) {
+    return AgentFloatPosition(
+      id: _string(position['agentId']) ?? '',
+      name: _string(position['agentName']) ?? 'Field Officer',
+      phone: _string(position['agentPhone']) ?? _string(position['phone']),
+      roleName:
+          _string(position['agentRoleName']) ??
+          _string(position['roleName']) ??
+          'Field Officer',
+      photoUrl:
+          _string(position['agentPhotoUrl']) ?? _string(position['photoUrl']),
+      publicId:
+          _string(position['agentPublicId']) ?? _string(position['publicId']),
+      remainingFloat: _firstAvailableMoney(position, const [
+        'unusedFloat',
+        'remainingFloat',
+      ]),
+      floatAllocated: _firstAvailableMoney(position, const [
+        'amountGiven',
+        'floatRemaining',
+      ]),
+      loansIssued: _firstAvailableMoney(position, const ['amountDisbursed']),
+      repaymentsCollected: _firstAvailableMoney(position, const [
+        'amountCollected',
+      ]),
+      processingFees: _firstAvailableMoney(position, const ['processingFees']),
+      expectedHandover: _firstAvailableMoney(position, const [
+        'expectedReturn',
+      ]),
+    );
+  }
+
+  Map<String, dynamic>? _rawPositionFor(String officerId) {
+    for (final position in _agentReturns) {
+      if (_string(position['agentId']) == officerId) {
+        return position;
+      }
+    }
+
+    return null;
+  }
+
+  Map<String, dynamic> _agentForPosition(AgentFloatPosition position) {
+    final raw = _rawPositionFor(position.id);
+
+    return {
+      'id': position.id,
+      'name': position.name,
+      'phone': position.phone ?? _string(raw?['agentPhone']),
+      'roleName': position.roleName ?? 'Field Officer',
+      'photoUrl': position.photoUrl ?? _string(raw?['agentPhotoUrl']),
+      'publicId': position.publicId ?? _string(raw?['agentPublicId']),
+    };
+  }
+
   @override
   void initState() {
     super.initState();
@@ -169,12 +239,26 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
 
       if (!mounted) return;
 
-      final reconciliation = data['reconciliation'] as Map<String, dynamic>?;
+      final nextData = Map<String, dynamic>.from(data);
+      final operation = nextData['operation'];
+
+      final returnedPositions = operation is Map<String, dynamic>
+          ? operation['agentReturns']
+          : null;
+
+      if (operation is Map<String, dynamic> &&
+          (returnedPositions is! List || returnedPositions.isEmpty) &&
+          _agentReturns.isNotEmpty) {
+        nextData['operation'] = {...operation, 'agentReturns': _agentReturns};
+      }
+
+      final reconciliation =
+          nextData['reconciliation'] as Map<String, dynamic>?;
 
       final savedNotes = _string(reconciliation?['notes']) ?? '';
 
       setState(() {
-        _data = data;
+        _data = nextData;
         _loading = false;
 
         if (_notesController.text != savedNotes) {
@@ -249,6 +333,47 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
     }
   }
 
+  void _close() {
+    if (!mounted) {
+      return;
+    }
+
+    final navigator = Navigator.of(context);
+
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+
+    unawaited(Navigator.of(context, rootNavigator: true).maybePop());
+  }
+
+  Future<void> _openOfficerPosition(AgentFloatPosition position) async {
+    final rawPosition = _rawPositionFor(position.id);
+
+    if (rawPosition == null) {
+      return;
+    }
+
+    final changed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => AgentPositionDetailScreen(
+          session: widget.session,
+          branchId: widget.branchId,
+          date: widget.date,
+          operation: _operation,
+          agent: _agentForPosition(position),
+          position: rawPosition,
+          dayOpen: _canBalanceFieldOfficers,
+        ),
+      ),
+    );
+
+    if (changed == true) {
+      await _load();
+    }
+  }
+
   Future<void> _sendReport() async {
     if (_countedCash == null) {
       setState(() {
@@ -310,7 +435,7 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
 
       if (!mounted) return;
 
-      Navigator.of(context).pop(false);
+      _close();
     } catch (error) {
       if (!mounted) return;
 
@@ -350,9 +475,7 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
-          onPressed: () {
-            Navigator.of(context).pop(false);
-          },
+          onPressed: _close,
           icon: const Icon(
             Icons.arrow_back_rounded,
             color: midnightNavy,
@@ -469,8 +592,11 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
                   const SizedBox(height: 10),
 
                   _AgentReturnsCard(
-                    agents: _agentReturns,
+                    officers: _activeOfficerPositions,
                     hasPending: _hasPendingAgentReturns,
+                    onTap: (officer) {
+                      unawaited(_openOfficerPosition(officer));
+                    },
                   ),
 
                   const SizedBox(height: 10),
@@ -790,10 +916,15 @@ class _CashReconciliationSummary extends StatelessWidget {
 }
 
 class _AgentReturnsCard extends StatelessWidget {
-  const _AgentReturnsCard({required this.agents, required this.hasPending});
+  const _AgentReturnsCard({
+    required this.officers,
+    required this.hasPending,
+    required this.onTap,
+  });
 
-  final List<Map<String, dynamic>> agents;
+  final List<AgentFloatPosition> officers;
   final bool hasPending;
+  final ValueChanged<AgentFloatPosition> onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -801,13 +932,17 @@ class _AgentReturnsCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Row(
+          Row(
             children: [
-              Icon(Icons.groups_2_outlined, size: 19, color: forestEmerald),
-              SizedBox(width: 8),
-              Expanded(
+              const Icon(
+                Icons.groups_2_outlined,
+                size: 19,
+                color: forestEmerald,
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
                 child: Text(
-                  'Field officer float returns',
+                  'Field officers active today',
                   style: TextStyle(
                     color: midnightNavy,
                     fontSize: 14,
@@ -816,8 +951,8 @@ class _AgentReturnsCard extends StatelessWidget {
                 ),
               ),
               Text(
-                'View all field officers',
-                style: TextStyle(
+                'Today (${officers.length})',
+                style: const TextStyle(
                   color: forestEmerald,
                   fontSize: 10,
                   fontWeight: FontWeight.w800,
@@ -828,215 +963,240 @@ class _AgentReturnsCard extends StatelessWidget {
 
           const SizedBox(height: 12),
 
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-            color: const Color(0xFFFAFAFA),
-            child: const Row(
+          if (officers.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 18),
+              child: Text(
+                'No field officers were active for this day.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: slateText, fontSize: 10),
+              ),
+            )
+          else
+            Column(
               children: [
-                Expanded(
-                  flex: 3,
-                  child: Text('Field officer', style: _tableHeaderStyle),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: Text(
-                    'Float issued',
-                    textAlign: TextAlign.right,
-                    style: _tableHeaderStyle,
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(0, 10, 0, 9),
+                  child: Row(
+                    children: [
+                      Expanded(flex: 31, child: _OfficerHeaderCell('Name')),
+                      Expanded(
+                        flex: 19,
+                        child: _OfficerHeaderCell(
+                          'Repayments',
+                          alignEnd: true,
+                        ),
+                      ),
+                      Expanded(
+                        flex: 17,
+                        child: _OfficerHeaderCell('Loans', alignEnd: true),
+                      ),
+                      Expanded(
+                        flex: 21,
+                        child: _OfficerHeaderCell(
+                          'Processing fees',
+                          alignEnd: true,
+                        ),
+                      ),
+                      Expanded(
+                        flex: 24,
+                        child: _OfficerHeaderCell(
+                          'Expected handover',
+                          alignEnd: true,
+                        ),
+                      ),
+                      SizedBox(width: 14),
+                    ],
                   ),
                 ),
-                Expanded(
-                  flex: 2,
-                  child: Text(
-                    'Returned',
-                    textAlign: TextAlign.right,
-                    style: _tableHeaderStyle,
-                  ),
+                const Divider(height: 1, color: line),
+                ...List.generate(officers.length, (index) {
+                  final officer = officers[index];
+
+                  return Column(
+                    children: [
+                      _OfficerReturnRow(
+                        officer: officer,
+                        onTap: () {
+                          onTap(officer);
+                        },
+                      ),
+                      if (index != officers.length - 1)
+                        const Divider(height: 1, color: line),
+                    ],
+                  );
+                }),
+              ],
+            ),
+
+          const SizedBox(height: 9),
+
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            decoration: BoxDecoration(
+              color: hasPending
+                  ? const Color(0xFFFFF0EC)
+                  : const Color(0xFFEFF8F2),
+              border: Border.all(
+                color: hasPending
+                    ? const Color(0xFFF7CBC2)
+                    : forestEmerald.withValues(alpha: 0.16),
+              ),
+              borderRadius: rembehBorderRadius(rembehRadiusSm),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  hasPending
+                      ? Icons.info_outline_rounded
+                      : Icons.check_circle_outline_rounded,
+                  color: hasPending ? const Color(0xFFC2412D) : forestEmerald,
+                  size: 17,
                 ),
+                const SizedBox(width: 9),
                 Expanded(
-                  flex: 2,
                   child: Text(
-                    'Balance',
-                    textAlign: TextAlign.right,
-                    style: _tableHeaderStyle,
+                    hasPending
+                        ? 'Select a field officer to balance them off before sending the report.'
+                        : 'All active field officers are balanced for this day.',
+                    style: TextStyle(
+                      color: hasPending
+                          ? const Color(0xFFC2412D)
+                          : forestEmerald,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-
-          for (final agent in agents) _AgentReturnRow(agent: agent),
-
-          if (agents.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 18),
-              child: Text(
-                'No field officer float was issued today.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: slateText, fontSize: 10),
-              ),
-            ),
-
-          if (hasPending) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF7ED),
-                borderRadius: rembehBorderRadius(rembehRadiusMd),
-              ),
-              child: const Row(
-                children: [
-                  Icon(
-                    Icons.warning_amber_rounded,
-                    color: Color(0xFFD97706),
-                    size: 20,
-                  ),
-                  SizedBox(width: 9),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Some float has not been returned.',
-                          style: TextStyle(
-                            color: Color(0xFF92400E),
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        SizedBox(height: 2),
-                        Text(
-                          'Follow up with the field officers before sending the report.',
-                          style: TextStyle(
-                            color: slateText,
-                            fontSize: 9,
-                            height: 1.3,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
         ],
       ),
     );
   }
 }
 
-class _AgentReturnRow extends StatelessWidget {
-  const _AgentReturnRow({required this.agent});
+class _OfficerReturnRow extends StatelessWidget {
+  const _OfficerReturnRow({required this.officer, required this.onTap});
 
-  final Map<String, dynamic> agent;
+  final AgentFloatPosition officer;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final name = _string(agent['agentName']) ?? 'Field Officer';
-
-    final issued = _num(agent['amountGiven']);
-
-    final returned = _nullableNum(agent['amountReturned']) ?? 0;
-
-    final expected = _num(agent['expectedReturn']);
-
-    final balance = expected - returned;
-
-    final balanced = balance <= 0;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: line)),
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                flex: 31,
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 17,
+                      backgroundColor: forestEmerald.withValues(alpha: 0.08),
+                      child: Text(
+                        _initials(officer.name),
+                        style: const TextStyle(
+                          color: forestEmerald,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        officer.displaySurname,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: midnightNavy,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                flex: 19,
+                child: _OfficerMoneyCell(officer.repaymentsCollected),
+              ),
+              Expanded(flex: 17, child: _OfficerMoneyCell(officer.loansIssued)),
+              Expanded(
+                flex: 21,
+                child: _OfficerMoneyCell(officer.processingFees),
+              ),
+              Expanded(
+                flex: 24,
+                child: _OfficerMoneyCell(officer.expectedHandover, green: true),
+              ),
+              const SizedBox(width: 2),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: slateText,
+              ),
+            ],
+          ),
+        ),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 3,
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 15,
-                  backgroundColor: forestEmerald.withValues(alpha: 0.08),
-                  child: Text(
-                    _initials(name),
-                    style: const TextStyle(
-                      color: forestEmerald,
-                      fontSize: 9,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: midnightNavy,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+    );
+  }
+}
+
+class _OfficerHeaderCell extends StatelessWidget {
+  const _OfficerHeaderCell(this.label, {this.alignEnd = false});
+
+  final String label;
+  final bool alignEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      textAlign: alignEnd ? TextAlign.end : TextAlign.start,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        color: midnightNavy,
+        fontSize: 7.4,
+        height: 1.15,
+        fontWeight: FontWeight.w800,
+      ),
+    );
+  }
+}
+
+class _OfficerMoneyCell extends StatelessWidget {
+  const _OfficerMoneyCell(this.amount, {this.green = false});
+
+  final num amount;
+  final bool green;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(
+          formatMoney(amount),
+          textAlign: TextAlign.end,
+          maxLines: 1,
+          style: TextStyle(
+            color: green ? forestEmerald : midnightNavy,
+            fontSize: 9.5,
+            fontWeight: FontWeight.w900,
           ),
-          Expanded(
-            flex: 2,
-            child: Text(
-              'UGX ${formatMoney(issued)}',
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                color: midnightNavy,
-                fontSize: 9,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Text(
-              'UGX ${formatMoney(returned)}',
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                color: balanced ? forestEmerald : const Color(0xFFB42318),
-                fontSize: 9,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Flexible(
-                  child: Text(
-                    'UGX ${formatMoney(balance.abs())}',
-                    textAlign: TextAlign.right,
-                    style: TextStyle(
-                      color: balanced ? forestEmerald : const Color(0xFFB42318),
-                      fontSize: 9,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 4),
-                Icon(
-                  balanced
-                      ? Icons.check_circle_outline
-                      : Icons.warning_amber_rounded,
-                  color: balanced ? forestEmerald : const Color(0xFFB42318),
-                  size: 14,
-                ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -1422,12 +1582,6 @@ class _ErrorCard extends StatelessWidget {
   }
 }
 
-const _tableHeaderStyle = TextStyle(
-  color: slateText,
-  fontSize: 8,
-  fontWeight: FontWeight.w700,
-);
-
 num _num(Object? value) {
   if (value is num) {
     return value;
@@ -1454,6 +1608,22 @@ num? _nullableNum(Object? value) {
   }
 
   return null;
+}
+
+num _firstAvailableMoney(Map<String, dynamic>? values, List<String> keys) {
+  if (values == null) {
+    return 0;
+  }
+
+  for (final key in keys) {
+    final value = _nullableNum(values[key]);
+
+    if (value != null) {
+      return value;
+    }
+  }
+
+  return 0;
 }
 
 String? _string(Object? value) {

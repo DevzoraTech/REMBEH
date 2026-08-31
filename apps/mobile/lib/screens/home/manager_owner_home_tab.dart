@@ -16,7 +16,6 @@ class ManagerOwnerHomeTab extends StatefulWidget {
     required this.onOpenSearch,
     required this.onOpenRecords,
     required this.onOpenNewLoan,
-    required this.onOpenNewBorrower,
     required this.onOpenDailyOps,
     required this.onOpenRecordRepayment,
     required this.onOpenFindClient,
@@ -57,7 +56,6 @@ class ManagerOwnerHomeTab extends StatefulWidget {
   onOpenRecords;
 
   final VoidCallback onOpenNewLoan;
-  final VoidCallback onOpenNewBorrower;
   final VoidCallback onOpenDailyOps;
   final VoidCallback onOpenRecordRepayment;
   final VoidCallback onOpenFindClient;
@@ -421,16 +419,6 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
                   icon: Icons.note_add_outlined,
                   label: 'New loan',
                   onTap: widget.onOpenNewLoan,
-                ),
-              ),
-
-              const SizedBox(width: 10),
-
-              Expanded(
-                child: _QuickActionTile(
-                  icon: Icons.person_add_alt_1_outlined,
-                  label: 'New borrower',
-                  onTap: widget.onOpenNewBorrower,
                 ),
               ),
             ],

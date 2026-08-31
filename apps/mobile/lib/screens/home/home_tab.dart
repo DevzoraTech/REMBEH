@@ -399,7 +399,7 @@ class _HomeTabState extends State<HomeTab> {
                             ),
                             SizedBox(height: 2),
                             Text(
-                              'Register a new client for a loan.',
+                              'Start a loan application.',
                               style: TextStyle(color: slateText, fontSize: 12),
                             ),
                           ],

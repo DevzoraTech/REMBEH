@@ -10,22 +10,18 @@ class OperationsActionsCard extends StatelessWidget {
     required this.canReceiveCapital,
     required this.canAllocateFloat,
     required this.canRecordExpense,
-    required this.canOpenAgentPositions,
     required this.onReceiveCapital,
     required this.onAllocateFloat,
     required this.onRecordExpense,
-    this.onAgentPositions,
   });
 
   final bool canReceiveCapital;
   final bool canAllocateFloat;
   final bool canRecordExpense;
-  final bool canOpenAgentPositions;
 
   final VoidCallback onReceiveCapital;
   final VoidCallback onAllocateFloat;
   final VoidCallback onRecordExpense;
-  final VoidCallback? onAgentPositions;
 
   @override
   Widget build(BuildContext context) {
@@ -75,15 +71,6 @@ class OperationsActionsCard extends StatelessWidget {
                   label: 'Record\nexpense',
                   enabled: canRecordExpense,
                   onTap: onRecordExpense,
-                ),
-              ),
-              const SizedBox(width: 7),
-              Expanded(
-                child: _Action(
-                  icon: Icons.groups_outlined,
-                  label: 'Field officer\npositions',
-                  enabled: canOpenAgentPositions,
-                  onTap: onAgentPositions,
                 ),
               ),
             ],
