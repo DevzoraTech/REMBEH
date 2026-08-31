@@ -528,7 +528,7 @@ export class LoanApplicationsService {
       nationalId,
     });
 
-    if (customerConflict) {
+    if (customerConflict && customerConflict.id !== existing.customerId) {
       throw new ConflictException(
         'This applicant already exists in the system. Open their client profile instead.',
       );

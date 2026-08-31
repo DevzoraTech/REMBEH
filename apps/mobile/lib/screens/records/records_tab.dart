@@ -20,6 +20,7 @@ class RecordsTab extends StatefulWidget {
     required this.filter,
     required this.onSectionChanged,
     required this.onFilterChanged,
+    this.onCorrectionsTap,
   });
 
   final RembehSession session;
@@ -27,6 +28,7 @@ class RecordsTab extends StatefulWidget {
   final RecordsFilter filter;
   final ValueChanged<RecordsSection> onSectionChanged;
   final ValueChanged<RecordsFilter> onFilterChanged;
+  final VoidCallback? onCorrectionsTap;
 
   @override
   State<RecordsTab> createState() => _RecordsTabState();
@@ -223,6 +225,17 @@ class _RecordsTabState extends State<RecordsTab> {
                     ),
                   ),
                 ),
+                if (widget.onCorrectionsTap != null) ...[
+                  Tooltip(
+                    message: 'Repayment correction history',
+                    child: IconButton(
+                      onPressed: widget.onCorrectionsTap,
+                      icon: const Icon(Icons.edit_note_rounded),
+                      color: forestEmerald,
+                    ),
+                  ),
+                  const SizedBox(width: 2),
+                ],
                 InkWell(
                   key: _filterKey,
                   onTap: _openFilterMenu,

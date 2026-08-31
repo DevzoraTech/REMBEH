@@ -36,6 +36,7 @@ class NewLoanApplicationScreen extends StatefulWidget {
 
 class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   static const _totalSteps = 7;
+  static final _internationalPhonePattern = RegExp(r'^\+[1-9]\d{7,14}$');
 
   final _locator = LoanApplicationLocator.instance;
   final _customersRepository = CustomersRepository();
@@ -548,13 +549,27 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         _borrowerResults = const [];
       });
 
-      await _persistBorrowerProfileStep();
+      final missingProfile = _missingBorrowerProfileFields();
+
+      if (missingProfile.isEmpty) {
+        await _persistBorrowerProfileStep();
+
+        if (!mounted) return;
+
+        setState(() {
+          _step = 3;
+          _returnToReviewAfterEdit = false;
+        });
+
+        return;
+      }
 
       if (!mounted) return;
 
       setState(() {
-        _step = 3;
+        _step = 1;
         _returnToReviewAfterEdit = false;
+        _draft.verifyError = _borrowerProfileMissingMessage(missingProfile);
       });
     } catch (error) {
       if (!mounted) return;
@@ -866,6 +881,142 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     return null;
   }
 
+  bool _isValidBorrowerPhone(String value) {
+    final phone = normalizePhoneForApi(value);
+
+    return _internationalPhonePattern.hasMatch(phone);
+  }
+
+  List<String> _missingBorrowerProfileFields() {
+    final missing = <String>[];
+
+    if (_surname.text.trim().isEmpty) {
+      missing.add('surname');
+    }
+
+    if (_givenNames.text.trim().isEmpty) {
+      missing.add('given name(s)');
+    }
+
+    final phone = _phone.text.trim();
+
+    if (phone.isEmpty) {
+      missing.add('phone number');
+    } else if (!_isValidBorrowerPhone(phone)) {
+      missing.add('valid phone number');
+    }
+
+    if (_nationalId.text.trim().isEmpty) {
+      missing.add('national ID');
+    }
+
+    if (_draft.gender == null) {
+      missing.add('gender');
+    }
+
+    if (_draft.dateOfBirth == null) {
+      missing.add('date of birth');
+    }
+
+    if (_draft.district?.trim().isNotEmpty != true) {
+      missing.add('district');
+    }
+
+    if (_draft.subCounty?.trim().isNotEmpty != true) {
+      missing.add('sub-county');
+    }
+
+    if (_draft.parish?.trim().isNotEmpty != true) {
+      missing.add('parish');
+    }
+
+    if (_draft.village?.trim().isNotEmpty != true) {
+      missing.add('village');
+    }
+
+    return missing;
+  }
+
+  bool _canEditBorrowerProfile() {
+    if (!_draft.verified) return true;
+
+    return _draft.existingBorrower &&
+        _missingBorrowerProfileFields().isNotEmpty;
+  }
+
+  String _borrowerProfileMissingMessage(List<String> missing) {
+    return 'Complete borrower details: ${missing.join(', ')}.';
+  }
+
+  int? _firstIncompleteStepForSubmit() {
+    final missingProfile = _missingBorrowerProfileFields();
+
+    if (missingProfile.isNotEmpty) {
+      return 1;
+    }
+
+    if (!_draft.existingBorrower &&
+        (!_draft.passportCaptured ||
+            !_draft.ninFrontCaptured ||
+            !_draft.ninBackCaptured)) {
+      return 2;
+    }
+
+    final principal = _currentPrincipalAmount();
+    final amountGivenNow = _currentInitialDisbursementAmount();
+    final repaymentsUsed = _currentRepaymentsUsedAmount();
+    final partialValid =
+        !_draft.partialDisbursement ||
+        (amountGivenNow > 0 && amountGivenNow < principal);
+
+    if (_draft.loanProductTemplateId == null ||
+        _principal.text.trim().isEmpty ||
+        principal <= 0 ||
+        !partialValid ||
+        _processingFee.text.trim().isEmpty ||
+        _draft.collateralType == null ||
+        _floatMessageForDisbursement(
+              amountGivenNow: amountGivenNow,
+              collectedRepaymentsAmount: repaymentsUsed,
+            ) !=
+            null) {
+      return 3;
+    }
+
+    if (_guarantorName.text.trim().isEmpty ||
+        _guarantorPhone.text.trim().isEmpty ||
+        !_draft.guarantorNinFrontCaptured ||
+        !_draft.guarantorNinBackCaptured) {
+      return 4;
+    }
+
+    if (!_draft.applicantSigned ||
+        !_draft.guarantorSigned ||
+        !_draft.officerSigned ||
+        !_draft.termsConfirmed) {
+      return 6;
+    }
+
+    return null;
+  }
+
+  String _incompleteStepMessage(int step) {
+    switch (step) {
+      case 1:
+        return _borrowerProfileMissingMessage(_missingBorrowerProfileFields());
+      case 2:
+        return 'Capture the applicant photo and both National ID photos.';
+      case 3:
+        return 'Complete the loan details before submitting.';
+      case 4:
+        return 'Complete guarantor details and both guarantor National ID photos.';
+      case 6:
+        return 'Complete all signatures and confirm the loan terms.';
+      default:
+        return 'Complete the required fields before submitting.';
+    }
+  }
+
   @override
   void dispose() {
     _dayStore.removeListener(_onDayStatusChanged);
@@ -1011,7 +1162,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   }
 
   Future<void> _pickDateOfBirth() async {
-    if (_draft.verified) return;
+    if (!_canEditBorrowerProfile()) return;
 
     final now = DateTime.now();
 
@@ -1217,6 +1368,13 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     final givenNames = _givenNames.text.trim();
     final phone = normalizePhoneForApi(_phone.text);
     final nationalId = _nationalId.text.trim();
+    final missingProfile = _missingBorrowerProfileFields();
+
+    if (missingProfile.isNotEmpty) {
+      throw LoanApplicationFailure(
+        _borrowerProfileMissingMessage(missingProfile),
+      );
+    }
 
     await _locator.saveStep(
       id: id,
@@ -1488,7 +1646,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         }
 
         if (_draft.existingBorrower && _selectedBorrower != null) {
-          return true;
+          return _missingBorrowerProfileFields().isEmpty;
         }
 
         return _draft.verified &&
@@ -1551,6 +1709,23 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
       if (_draft.existingBorrower && _selectedBorrower == null) {
         _showSnack('Select an existing borrower first.');
         return;
+      }
+
+      if (_draft.existingBorrower && _selectedBorrower != null) {
+        final missingProfile = _missingBorrowerProfileFields();
+
+        if (missingProfile.isNotEmpty) {
+          setState(() {
+            _draft.verifyError = _borrowerProfileMissingMessage(missingProfile);
+          });
+          _showSnack('Complete the missing borrower details to continue.');
+          return;
+        }
+
+        if (!_draft.verified) {
+          await _verifyApplicant();
+          return;
+        }
       }
 
       if (!_draft.existingBorrower && !_draft.verified) {
@@ -1642,6 +1817,20 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     final id = _applicationId;
 
     if (id == null) return;
+
+    final incompleteStep = _firstIncompleteStepForSubmit();
+
+    if (incompleteStep != null) {
+      final message = _incompleteStepMessage(incompleteStep);
+      setState(() {
+        if (incompleteStep == 1) {
+          _draft.verifyError = message;
+        }
+      });
+      _jumpToStep(incompleteStep, returnToReview: true);
+      _showSnack(message);
+      return;
+    }
 
     final floatMessage = _floatMessageForDisbursement(
       amountGivenNow: _currentInitialDisbursementAmount(),
@@ -1910,6 +2099,16 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
 
   List<Widget> _stepBasic() {
     final selectedBorrower = _selectedBorrower;
+    final missingProfile = _draft.existingBorrower && selectedBorrower != null
+        ? _missingBorrowerProfileFields()
+        : const <String>[];
+    final canEditProfile = _canEditBorrowerProfile();
+    final showAddressFields = _draft.verified || _draft.existingBorrower;
+    final canEditAddress =
+        (!_draft.existingBorrower && _draft.verified) ||
+        (_draft.existingBorrower && missingProfile.isNotEmpty);
+    final phoneHasError =
+        _phone.text.trim().isNotEmpty && !_isValidBorrowerPhone(_phone.text);
 
     return [
       const Text(
@@ -2118,9 +2317,15 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
           ),
         ),
       ],
+      if (_draft.existingBorrower &&
+          selectedBorrower != null &&
+          missingProfile.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        LoanInfoBanner(text: _borrowerProfileMissingMessage(missingProfile)),
+      ],
       if (!_draft.existingBorrower || selectedBorrower != null) ...[
         const SizedBox(height: 16),
-        if (_draft.verified) ...[
+        if (_draft.verified && missingProfile.isEmpty) ...[
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(12),
@@ -2175,7 +2380,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
           controller: _surname,
           hint: 'Enter surname',
           icon: Icons.person_outline,
-          enabled: !_draft.verified,
+          enabled: canEditProfile,
           onChanged: (value) {
             _draft.surname = value;
           },
@@ -2187,7 +2392,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
           controller: _givenNames,
           hint: 'Enter given name(s)',
           icon: Icons.person_outline,
-          enabled: !_draft.verified,
+          enabled: canEditProfile,
           onChanged: (value) {
             _draft.givenNames = value;
           },
@@ -2199,7 +2404,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
           value: _genderLabel(_draft.gender),
           hint: 'Select gender',
           icon: Icons.wc_outlined,
-          enabled: !_draft.verified,
+          enabled: canEditProfile,
           options: const ['Male', 'Female', 'Other'],
           onChanged: (value) {
             setState(() {
@@ -2213,7 +2418,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         LoanDateField(
           value: _draft.dateOfBirth,
           hint: 'Select date of birth',
-          enabled: !_draft.verified,
+          enabled: canEditProfile,
           onTap: _pickDateOfBirth,
         ),
         const SizedBox(height: 14),
@@ -2224,7 +2429,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
           hint: '07xx xxx xxx',
           icon: Icons.phone_outlined,
           keyboardType: TextInputType.phone,
-          enabled: !_draft.verified,
+          enabled: canEditProfile,
+          errorText: phoneHasError
+              ? 'Enter a valid number, for example 0772 123 456.'
+              : null,
           onChanged: (value) {
             _draft.phone = value;
           },
@@ -2236,7 +2444,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
           controller: _nationalId,
           hint: 'Enter National ID number',
           icon: Icons.badge_outlined,
-          enabled: !_draft.verified,
+          enabled: canEditProfile,
           onChanged: (value) {
             _draft.nationalId = value;
           },
@@ -2248,7 +2456,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
             style: const TextStyle(color: Color(0xFFC62828), fontSize: 12),
           ),
         ],
-        if (_draft.verified) ...[
+        if (showAddressFields) ...[
           const SizedBox(height: 18),
           const Text(
             'Address',
@@ -2268,7 +2476,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
                 : 'Select district',
             icon: Icons.location_on_outlined,
             options: _districtOptions(),
-            enabled: !_locationsLoading && _districtOptions().isNotEmpty,
+            enabled:
+                canEditAddress &&
+                !_locationsLoading &&
+                _districtOptions().isNotEmpty,
             onChanged: (value) {
               setState(() {
                 _draft
@@ -2292,6 +2503,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
             icon: Icons.location_on_outlined,
             options: _subCountyOptions(),
             enabled:
+                canEditAddress &&
                 !_locationsLoading &&
                 _draft.district != null &&
                 _subCountyOptions().isNotEmpty,
@@ -2315,6 +2527,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
             icon: Icons.location_on_outlined,
             options: _parishOptions(),
             enabled:
+                canEditAddress &&
                 !_locationsLoading &&
                 _draft.subCounty != null &&
                 _parishOptions().isNotEmpty,
@@ -2337,6 +2550,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
             icon: Icons.location_on_outlined,
             options: _villageOptions(),
             enabled:
+                canEditAddress &&
                 !_locationsLoading &&
                 _draft.parish != null &&
                 _villageOptions().isNotEmpty,

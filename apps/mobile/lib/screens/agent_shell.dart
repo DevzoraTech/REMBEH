@@ -22,6 +22,7 @@ import 'agent_reconciliation_tab.dart';
 import 'home/home_tab.dart';
 import 'login_screen.dart';
 import 'profile/agent_profile_screen.dart';
+import 'repayment_corrections_screen.dart';
 import 'records/records_tab.dart';
 import 'search/search_tab.dart';
 
@@ -292,6 +293,16 @@ class _AgentShellState extends State<AgentShell> {
     unawaitedTouch();
   }
 
+  Future<void> _openRepaymentCorrections() async {
+    unawaitedTouch();
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RepaymentCorrectionsScreen(session: widget.session),
+      ),
+    );
+    unawaitedTouch();
+  }
+
   @override
   Widget build(BuildContext context) {
     final blocked = _dayStore.accountBlockedMessage;
@@ -334,6 +345,7 @@ class _AgentShellState extends State<AgentShell> {
                         session: widget.session,
                         section: _recordsSection,
                         filter: _recordsFilter,
+                        onCorrectionsTap: _openRepaymentCorrections,
                         onSectionChanged: (section) {
                           unawaitedTouch();
                           setState(() => _recordsSection = section);
@@ -473,6 +485,7 @@ class _AgentShellState extends State<AgentShell> {
                     session: widget.session,
                     section: _recordsSection,
                     filter: _recordsFilter,
+                    onCorrectionsTap: _openRepaymentCorrections,
                     onSectionChanged: (section) {
                       unawaitedTouch();
                       setState(() => _recordsSection = section);

@@ -31,6 +31,15 @@ class _RepaymentCorrectionsScreenState
   String? _error;
   String? _notice;
 
+  bool get _canReviewRequests {
+    final permissions = widget.session.permissions;
+    return permissions.contains('collection.reconcile') ||
+        permissions.contains('operation.close') ||
+        permissions.contains('operation.report.review') ||
+        (permissions.contains('operation.approve') &&
+            permissions.contains('branch.create'));
+  }
+
   @override
   void initState() {
     super.initState();
@@ -133,6 +142,8 @@ class _RepaymentCorrectionsScreenState
 
   @override
   Widget build(BuildContext context) {
+    final canReview = _canReviewRequests;
+
     return Scaffold(
       backgroundColor: softIvory,
       appBar: AppBar(
@@ -140,9 +151,9 @@ class _RepaymentCorrectionsScreenState
         foregroundColor: midnightNavy,
         elevation: 0,
         titleSpacing: 0,
-        title: const Text(
-          'Repayment corrections',
-          style: TextStyle(fontWeight: FontWeight.w900),
+        title: Text(
+          canReview ? 'Repayment corrections' : 'Correction history',
+          style: const TextStyle(fontWeight: FontWeight.w900),
         ),
         actions: [
           IconButton(
@@ -163,7 +174,7 @@ class _RepaymentCorrectionsScreenState
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
           children: [
             const Text(
-              'Approve field officer correction requests or correct open repayment records yourself.',
+              '',
               style: TextStyle(
                 color: slateText,
                 height: 1.35,
@@ -210,6 +221,7 @@ class _RepaymentCorrectionsScreenState
                 (request) => _CorrectionRequestCard(
                   request: request,
                   busy: _busyId == _string(request['id']),
+                  canReview: canReview,
                   onEditNow: () => _openApplySheet(request),
                   onOfficerEdit: () =>
                       _review(request, approve: true, officerCanEdit: true),

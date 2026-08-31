@@ -780,7 +780,7 @@ class _PaymentHistoryTrailingState extends State<_PaymentHistoryTrailing> {
         RepaymentsLiveStore.instance.canReviewRepaymentCorrections;
 
     return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 112),
+      constraints: const BoxConstraints(minWidth: 138, maxWidth: 154),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
         mainAxisSize: MainAxisSize.min,
@@ -805,64 +805,83 @@ class _PaymentHistoryTrailingState extends State<_PaymentHistoryTrailing> {
               ),
             )
           else if (canManagerCorrect)
-            TextButton(
+            _CorrectionActionButton(
+              label: 'Correct payment',
+              icon: Icons.edit_outlined,
+              tone: forestEmerald,
               onPressed: _applyApprovedCorrection,
-              style: TextButton.styleFrom(
-                minimumSize: Size.zero,
-                padding: EdgeInsets.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
+            )
+          else if (pending)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF7E6),
+                border: Border.all(color: const Color(0xFFE9C46A)),
+                borderRadius: rembehBorderRadius(rembehRadiusSm),
               ),
-              child: Text(
-                'Correct payment',
+              child: const Text(
+                'Correction pending',
                 textAlign: TextAlign.right,
-                style: const TextStyle(
-                  fontSize: 11,
+                style: TextStyle(
+                  color: Color(0xFFC45C26),
+                  fontSize: 10,
                   fontWeight: FontWeight.w800,
                 ),
               ),
             )
-          else if (pending)
-            const Text(
-              'Correction pending',
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                color: Color(0xFFC45C26),
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-              ),
-            )
           else if (approvedForOfficer)
-            TextButton(
+            _CorrectionActionButton(
+              label: 'Edit approved',
+              icon: Icons.check_circle_outline,
+              tone: forestEmerald,
               onPressed: _applyApprovedCorrection,
-              style: TextButton.styleFrom(
-                minimumSize: Size.zero,
-                padding: EdgeInsets.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-              ),
-              child: const Text(
-                'Edit approved',
-                textAlign: TextAlign.right,
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
-              ),
             )
           else if (widget.payment.canRequestCorrection)
-            TextButton(
+            _CorrectionActionButton(
+              label: 'Request correction',
+              icon: Icons.outgoing_mail,
+              tone: const Color(0xFFC45C26),
               onPressed: _requestCorrection,
-              style: TextButton.styleFrom(
-                minimumSize: Size.zero,
-                padding: EdgeInsets.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
-              ),
-              child: const Text(
-                'Request correction',
-                textAlign: TextAlign.right,
-                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800),
-              ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _CorrectionActionButton extends StatelessWidget {
+  const _CorrectionActionButton({
+    required this.label,
+    required this.icon,
+    required this.tone,
+    required this.onPressed,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color tone;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 31,
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 14),
+        label: Text(label, overflow: TextOverflow.ellipsis),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: tone,
+          minimumSize: Size.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          visualDensity: VisualDensity.compact,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          side: BorderSide(color: tone.withValues(alpha: 0.45)),
+          shape: RoundedRectangleBorder(
+            borderRadius: rembehBorderRadius(rembehRadiusSm),
+          ),
+          textStyle: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900),
+        ),
       ),
     );
   }

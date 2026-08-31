@@ -69,13 +69,6 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
     return next < 0 ? 0 : next;
   }
 
-  String get _methodLabel => _methods
-      .firstWhere(
-        (method) => method.$1 == _method,
-        orElse: () => (_method, _method.replaceAll('_', ' ')),
-      )
-      .$2;
-
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -118,11 +111,6 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
       builder: (context) => _RepaymentConfirmationSheet(
         detail: widget.detail,
         amount: _paidAmount,
-        outstandingBefore: widget.detail.outstanding,
-        outstandingAfter: _newOutstanding,
-        method: _methodLabel,
-        paidAt: _paidAt,
-        note: _note.text.trim(),
       ),
     );
     if (confirmed != true || !mounted) return;
@@ -461,20 +449,10 @@ class _RepaymentConfirmationSheet extends StatelessWidget {
   const _RepaymentConfirmationSheet({
     required this.detail,
     required this.amount,
-    required this.outstandingBefore,
-    required this.outstandingAfter,
-    required this.method,
-    required this.paidAt,
-    required this.note,
   });
 
   final ClientDetail detail;
   final int amount;
-  final int outstandingBefore;
-  final int outstandingAfter;
-  final String method;
-  final DateTime paidAt;
-  final String note;
 
   @override
   Widget build(BuildContext context) {
@@ -482,174 +460,177 @@ class _RepaymentConfirmationSheet extends StatelessWidget {
       top: false,
       child: Padding(
         padding: EdgeInsets.fromLTRB(
-          16,
-          8,
-          16,
-          16 + MediaQuery.viewInsetsOf(context).bottom,
+          24,
+          12,
+          24,
+          18 + MediaQuery.viewInsetsOf(context).bottom,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Center(child: Container(width: 40, height: 4, color: line)),
-            const SizedBox(height: 14),
-            const Text(
-              'Confirm repayment',
-              style: TextStyle(
-                color: midnightNavy,
-                fontSize: 20,
-                fontWeight: FontWeight.w900,
+            Center(
+              child: Container(
+                width: 54,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: line,
+                  borderRadius: BorderRadius.circular(999),
+                ),
               ),
             ),
-            const SizedBox(height: 4),
-            const Text(
-              'Check these details before saving. This reduces corrections later.',
-              style: TextStyle(color: slateText, fontSize: 12.5, height: 1.4),
-            ),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: softIvory,
-                border: Border.all(color: line),
-                borderRadius: rembehBorderRadius(rembehRadiusLg),
-              ),
-              child: Column(
-                children: [
-                  _ConfirmRow(label: 'Client', value: detail.fullName),
-                  _ConfirmRow(label: 'Phone', value: detail.phone),
-                  _ConfirmRow(
-                    label: 'Amount received',
-                    value: formatMoney(amount),
-                    valueColor: forestEmerald,
-                  ),
-                  _ConfirmRow(
-                    label: 'Outstanding before',
-                    value: formatMoney(outstandingBefore),
-                  ),
-                  _ConfirmRow(
-                    label: 'Outstanding after',
-                    value: formatMoney(outstandingAfter),
-                    valueColor: outstandingAfter == 0
-                        ? forestEmerald
-                        : midnightNavy,
-                  ),
-                  _ConfirmRow(label: 'Method', value: method),
-                  _ConfirmRow(label: 'Date', value: _shortDate(paidAt)),
-                  if (note.isNotEmpty) _ConfirmRow(label: 'Note', value: note),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF7E6),
-                border: Border.all(color: const Color(0xFFE9C46A)),
-                borderRadius: rembehBorderRadius(rembehRadiusMd),
-              ),
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.info_outline, color: Color(0xFFB7791F), size: 18),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Only confirm after counting the cash and checking the borrower record.',
-                      style: TextStyle(
-                        color: midnightNavy,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        height: 1.35,
+            const SizedBox(height: 46),
+            Center(
+              child: Container(
+                width: 96,
+                height: 96,
+                decoration: const BoxDecoration(
+                  color: sage,
+                  shape: BoxShape.circle,
+                ),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    const Icon(
+                      Icons.receipt_long_outlined,
+                      color: forestEmerald,
+                      size: 46,
+                    ),
+                    Positioned(
+                      right: 22,
+                      bottom: 24,
+                      child: Container(
+                        width: 31,
+                        height: 31,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: forestEmerald, width: 2),
+                        ),
+                        child: const Icon(
+                          Icons.check,
+                          color: forestEmerald,
+                          size: 20,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 32),
+            const Text(
+              'Confirm repayment',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: midnightNavy,
+                fontSize: 25,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0,
+              ),
+            ),
+            const SizedBox(height: 28),
+            const Text(
+              'Confirm repayment of',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: slateText,
+                fontSize: 21,
+                fontWeight: FontWeight.w500,
+                height: 1.25,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'UGX ${formatMoney(amount)}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: forestEmerald,
+                fontSize: 48,
+                fontWeight: FontWeight.w900,
+                height: 1.05,
+                letterSpacing: 0,
               ),
             ),
             const SizedBox(height: 18),
+            Text.rich(
+              TextSpan(
+                style: const TextStyle(
+                  color: slateText,
+                  fontSize: 20,
+                  height: 1.3,
+                ),
+                children: [
+                  const TextSpan(text: 'from '),
+                  TextSpan(
+                    text: detail.fullName,
+                    style: const TextStyle(
+                      color: midnightNavy,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const TextSpan(text: '.'),
+                ],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 30),
+            const Divider(height: 1, color: line),
+            const SizedBox(height: 34),
             SizedBox(
-              height: 50,
+              height: 68,
               child: ElevatedButton.icon(
                 onPressed: () => Navigator.of(context).pop(true),
-                icon: const Icon(Icons.check_circle),
-                label: const Text('Confirm and record'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: forestEmerald,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: rembehBorderRadius(rembehRadiusMd),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0,
+                  ),
+                ),
+                icon: Container(
+                  width: 30,
+                  height: 30,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.check,
+                    color: forestEmerald,
+                    size: 21,
+                  ),
+                ),
+                label: const Text('Confirm and save'),
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 22),
             SizedBox(
-              height: 48,
+              height: 64,
               child: OutlinedButton(
                 onPressed: () => Navigator.of(context).pop(false),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: forestEmerald,
+                  side: const BorderSide(color: line),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: rembehBorderRadius(rembehRadiusMd),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0,
+                  ),
+                ),
                 child: const Text('Go back and edit'),
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  String _shortDate(DateTime value) {
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return '${value.day} ${months[value.month - 1]} ${value.year}';
-  }
-}
-
-class _ConfirmRow extends StatelessWidget {
-  const _ConfirmRow({
-    required this.label,
-    required this.value,
-    this.valueColor = midnightNavy,
-  });
-
-  final String label;
-  final String value;
-  final Color valueColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 126,
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: slateText,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                color: valueColor,
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
