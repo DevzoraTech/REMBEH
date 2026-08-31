@@ -23,8 +23,8 @@ function resolveCorsOrigin():
       callback: (err: Error | null, allow?: boolean) => void,
     ) => void) {
   const raw = process.env.CORS_ORIGIN?.trim();
+
   if (!raw || raw === '*') {
-    // Reflect request Origin (required when credentials: true; '*' is invalid).
     return true;
   }
 
@@ -43,17 +43,24 @@ function resolveCorsOrigin():
     origin: string | undefined,
     callback: (err: Error | null, allow?: boolean) => void,
   ) => {
-    // Non-browser / same-origin tools often omit Origin.
     if (!origin || origins.includes(origin)) {
       callback(null, true);
       return;
     }
+
     callback(null, false);
   };
 }
 
 export function configureApp(app: INestApplication) {
-  app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: {
+        policy: 'cross-origin',
+      },
+    }),
+  );
+
   app.enableCors({
     origin: resolveCorsOrigin(),
     credentials: true,
@@ -64,12 +71,16 @@ export function configureApp(app: INestApplication) {
       'Accept',
       'Origin',
       'X-Requested-With',
+      'Idempotency-Key',
     ],
     exposedHeaders: ['Content-Disposition'],
     optionsSuccessStatus: 204,
   });
+
   app.setGlobalPrefix('api/v1');
+
   app.useGlobalFilters(new PrismaExceptionFilter());
+
   app.useGlobalPipes(
     new ValidationPipe({
       forbidNonWhitelisted: true,

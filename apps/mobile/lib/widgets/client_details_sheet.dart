@@ -880,7 +880,10 @@ class _CorrectionActionButton extends StatelessWidget {
           shape: RoundedRectangleBorder(
             borderRadius: rembehBorderRadius(rembehRadiusSm),
           ),
-          textStyle: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900),
+          textStyle: const TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w900,
+          ),
         ),
       ),
     );

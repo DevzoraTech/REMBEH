@@ -33,6 +33,7 @@ class _RepaymentCorrectionsScreenState
 
   bool get _canReviewRequests {
     final permissions = widget.session.permissions;
+
     return permissions.contains('collection.reconcile') ||
         permissions.contains('operation.close') ||
         permissions.contains('operation.report.review') ||
@@ -47,22 +48,27 @@ class _RepaymentCorrectionsScreenState
   }
 
   Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+    }
 
     try {
       final requests = await _api.listRepaymentCorrectionRequests(
         session: widget.session,
         status: _status,
       );
+
       if (!mounted) return;
+
       setState(() {
         _requests = requests;
       });
     } catch (error) {
       if (!mounted) return;
+
       setState(() {
         _error = friendlyErrorMessage(error);
       });
@@ -81,6 +87,7 @@ class _RepaymentCorrectionsScreenState
     required bool officerCanEdit,
   }) async {
     final id = _string(request['id']);
+
     if (id == null || _busyId != null) return;
 
     setState(() {
@@ -97,7 +104,9 @@ class _RepaymentCorrectionsScreenState
         officerCanEdit: approve && officerCanEdit,
         feedback: approve ? null : 'Correction request was not approved.',
       );
+
       if (!mounted) return;
+
       setState(() {
         _notice = approve && officerCanEdit
             ? 'Field officer can now edit that repayment.'
@@ -105,9 +114,11 @@ class _RepaymentCorrectionsScreenState
             ? 'Correction approved.'
             : 'Correction request rejected.';
       });
+
       await _load();
     } catch (error) {
       if (!mounted) return;
+
       setState(() {
         _error = friendlyErrorMessage(error);
       });
@@ -134,9 +145,11 @@ class _RepaymentCorrectionsScreenState
     );
 
     if (!mounted || result != true) return;
+
     setState(() {
       _notice = 'Repayment correction saved.';
     });
+
     await _load();
   }
 
@@ -173,9 +186,11 @@ class _RepaymentCorrectionsScreenState
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
           children: [
-            const Text(
-              '',
-              style: TextStyle(
+            Text(
+              canReview
+                  ? 'Approve field officer correction requests or correct open repayment records yourself.'
+                  : 'Track the repayment corrections you have requested and see their approval status.',
+              style: const TextStyle(
                 color: slateText,
                 height: 1.35,
                 fontWeight: FontWeight.w600,
@@ -191,9 +206,12 @@ class _RepaymentCorrectionsScreenState
                       selected: _status == status,
                       label: Text(_statusLabel(status)),
                       onSelected: (_) {
+                        if (_status == status) return;
+
                         setState(() {
                           _status = status;
                         });
+
                         unawaited(_load());
                       },
                     ),
@@ -240,6 +258,7 @@ class _CorrectionRequestCard extends StatelessWidget {
   const _CorrectionRequestCard({
     required this.request,
     required this.busy,
+    required this.canReview,
     required this.onEditNow,
     required this.onOfficerEdit,
     required this.onReject,
@@ -247,6 +266,7 @@ class _CorrectionRequestCard extends StatelessWidget {
 
   final Map<String, dynamic> request;
   final bool busy;
+  final bool canReview;
   final VoidCallback onEditNow;
   final VoidCallback onOfficerEdit;
   final VoidCallback onReject;
@@ -351,7 +371,7 @@ class _CorrectionRequestCard extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
-          if (status == 'PENDING') ...[
+          if (status == 'PENDING' && canReview) ...[
             const SizedBox(height: 12),
             Row(
               children: [
@@ -372,6 +392,7 @@ class _CorrectionRequestCard extends StatelessWidget {
                 ),
                 IconButton(
                   onPressed: busy ? null : onReject,
+                  tooltip: 'Reject',
                   icon: const Icon(
                     Icons.close_rounded,
                     color: Color(0xFFE11D2E),
@@ -379,7 +400,10 @@ class _CorrectionRequestCard extends StatelessWidget {
                 ),
               ],
             ),
-          ] else if (status == 'APPROVED' && !applied && !officerCanEdit) ...[
+          ] else if (canReview &&
+              status == 'APPROVED' &&
+              !applied &&
+              !officerCanEdit) ...[
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,
@@ -389,7 +413,63 @@ class _CorrectionRequestCard extends StatelessWidget {
                 label: const Text('Apply correction'),
               ),
             ),
+          ] else if (!canReview && status == 'APPROVED' && officerCanEdit) ...[
+            const SizedBox(height: 12),
+            const _InlineNotice(
+              icon: Icons.check_circle_outline,
+              text:
+                  'Approved. Open the repayment record to save the correction.',
+              color: forestEmerald,
+            ),
+          ] else if (!canReview && status == 'PENDING') ...[
+            const SizedBox(height: 12),
+            const _InlineNotice(
+              icon: Icons.hourglass_top_rounded,
+              text: 'Waiting for manager review.',
+              color: Color(0xFFC45C26),
+            ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _InlineNotice extends StatelessWidget {
+  const _InlineNotice({
+    required this.icon,
+    required this.text,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        border: Border.all(color: color.withValues(alpha: 0.22)),
+        borderRadius: rembehBorderRadius(rembehRadiusSm),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 17, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -418,20 +498,25 @@ class _ManagerRepaymentCorrectionSheetState
     text:
         '${(_numOrNull(widget.request['requestedAmount']) ?? _num(widget.request['amount'])).round()}',
   );
+
   late final _note = TextEditingController(
     text: _string(widget.request['requestedNote']) ?? '',
   );
+
   late final _reason = TextEditingController(
     text: _string(widget.request['reason']) ?? '',
   );
+
   late String _method =
       _string(widget.request['requestedMethod']) ??
       _string(widget.request['method']) ??
       'CASH';
+
   late DateTime _paidAt =
       DateTime.tryParse(_string(widget.request['requestedPaidAt']) ?? '') ??
       DateTime.tryParse(_string(widget.request['paidAt']) ?? '') ??
       DateTime.now();
+
   bool _saving = false;
   String? _error;
 
@@ -450,12 +535,14 @@ class _ManagerRepaymentCorrectionSheetState
       firstDate: DateTime(2020),
       lastDate: DateTime.now().add(const Duration(days: 1)),
     );
+
     if (date == null || !mounted) return;
 
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_paidAt),
     );
+
     if (time == null || !mounted) return;
 
     setState(() {
@@ -476,17 +563,23 @@ class _ManagerRepaymentCorrectionSheetState
     final reason = _reason.text.trim();
 
     if (repaymentId == null || requestId == null) {
-      setState(
-        () => _error = 'Correction request is missing repayment details.',
-      );
+      setState(() {
+        _error = 'Correction request is missing repayment details.';
+      });
       return;
     }
+
     if (amount == null || amount <= 0) {
-      setState(() => _error = 'Enter a valid corrected amount.');
+      setState(() {
+        _error = 'Enter a valid corrected amount.';
+      });
       return;
     }
+
     if (reason.length < 6) {
-      setState(() => _error = 'Add a clear reason for this correction.');
+      setState(() {
+        _error = 'Add a clear reason for this correction.';
+      });
       return;
     }
 
@@ -506,10 +599,13 @@ class _ManagerRepaymentCorrectionSheetState
         note: _note.text,
         reason: reason,
       );
+
       if (!mounted) return;
+
       Navigator.of(context).pop(true);
     } catch (error) {
       if (!mounted) return;
+
       setState(() {
         _saving = false;
         _error = friendlyErrorMessage(error);
@@ -555,7 +651,9 @@ class _ManagerRepaymentCorrectionSheetState
                     ),
                   ),
                   IconButton(
-                    onPressed: _saving ? null : () => Navigator.pop(context),
+                    onPressed: _saving
+                        ? null
+                        : () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.close_rounded),
                   ),
                 ],
@@ -607,7 +705,10 @@ class _ManagerRepaymentCorrectionSheetState
                     ? null
                     : (value) {
                         if (value == null) return;
-                        setState(() => _method = value);
+
+                        setState(() {
+                          _method = value;
+                        });
                       },
               ),
               const SizedBox(height: 12),
@@ -727,6 +828,7 @@ class _StatusPill extends StatelessWidget {
         : status == 'APPROVED'
         ? const Color(0xFF2563EB)
         : const Color(0xFFE11D2E);
+
     final label = applied
         ? 'Applied'
         : status == 'APPROVED' && officerCanEdit
@@ -820,18 +922,31 @@ class _EmptyCorrections extends StatelessWidget {
 
 String? _string(Object? value) {
   final text = value?.toString().trim();
-  if (text == null || text.isEmpty) return null;
+
+  if (text == null || text.isEmpty) {
+    return null;
+  }
+
   return text;
 }
 
 num _num(Object? value) {
-  if (value is num) return value;
+  if (value is num) {
+    return value;
+  }
+
   return num.tryParse(value?.toString() ?? '') ?? 0;
 }
 
 num? _numOrNull(Object? value) {
-  if (value == null) return null;
-  if (value is num) return value;
+  if (value == null) {
+    return null;
+  }
+
+  if (value is num) {
+    return value;
+  }
+
   return num.tryParse(value.toString());
 }
 
@@ -876,8 +991,13 @@ String _formatDateTime(DateTime value) {
     'Nov',
     'Dec',
   ];
+
   final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
+
   final minute = value.minute.toString().padLeft(2, '0');
+
   final suffix = value.hour >= 12 ? 'PM' : 'AM';
-  return '${value.day} ${months[value.month - 1]} ${value.year}, $hour:$minute $suffix';
+
+  return '${value.day} ${months[value.month - 1]} ${value.year}, '
+      '$hour:$minute $suffix';
 }

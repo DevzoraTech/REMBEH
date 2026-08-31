@@ -53,7 +53,8 @@ class _RecordsTabState extends State<RecordsTab> {
   @override
   void didUpdateWidget(covariant RecordsTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.section != widget.section || oldWidget.filter != widget.filter) {
+    if (oldWidget.section != widget.section ||
+        oldWidget.filter != widget.filter) {
       _refreshDueTodayIfNeeded();
     }
   }
@@ -327,13 +328,13 @@ class _RecordsTabState extends State<RecordsTab> {
                           onRetry: () => _repayStore.refreshDueToday(),
                         )
                       : _RepaymentsList(
-                    items: _repayStore.filtered(
-                      filter: active,
-                      customRange: _repayStore.customRange,
-                    ),
-                    loading: _repayStore.loading,
-                    error: _repayStore.error,
-                    onRetry: () => _repayStore.refresh(),
+                          items: _repayStore.filtered(
+                            filter: active,
+                            customRange: _repayStore.customRange,
+                          ),
+                          loading: _repayStore.loading,
+                          error: _repayStore.error,
+                          onRetry: () => _repayStore.refresh(),
                         )
                 : _ApplicationsList(
                     items: _appsStore.filtered(
