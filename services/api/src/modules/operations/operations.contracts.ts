@@ -1,7 +1,10 @@
 export type BranchOperationStatusContract = 'OPEN' | 'CLOSING' | 'CLOSED';
 
 export type DailyOperationReportStatusContract =
-  'MANAGER_REVIEW' | 'SENT_TO_OWNER' | 'OWNER_APPROVED' | 'RETURNED_TO_MANAGER';
+  | 'MANAGER_REVIEW'
+  | 'SENT_TO_OWNER'
+  | 'OWNER_APPROVED'
+  | 'RETURNED_TO_MANAGER';
 
 export type DailyOperationBranchContract = {
   id: string;
@@ -16,22 +19,10 @@ export type DailyOperationBranchAccessContract = {
   message: string | null;
 };
 
-export type DailyOperationExpenseCategoryContract =
-  | 'TRANSPORT'
-  | 'FUEL'
-  | 'MEALS'
-  | 'AIRTIME'
-  | 'MOBILE_MONEY_CHARGES'
-  | 'STATIONERY'
-  | 'REPAIRS'
-  | 'UTILITIES'
-  | 'OTHER';
-
 export type DailyOperationExpenseContract = {
   id: string;
-  category: DailyOperationExpenseCategoryContract;
   amount: number;
-  description: string | null;
+  description: string;
   incurredAt: string;
   recordedByName: string;
 
@@ -52,7 +43,10 @@ export type DailyOperationTopUpContract = {
 };
 
 export type DailyOperationAgentReturnStatusContract =
-  'PENDING' | 'RETURNED' | 'SHORT' | 'OVER';
+  | 'PENDING'
+  | 'RETURNED'
+  | 'SHORT'
+  | 'OVER';
 
 export type DailyOperationAgentReturnContract = {
   floatId: string;

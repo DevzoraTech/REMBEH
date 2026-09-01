@@ -23,6 +23,13 @@ const TX_START = process.env.COGLIM_TX_START || "2020-01-01";
 const TX_END = process.env.COGLIM_TX_END || new Date().toISOString().slice(0, 10);
 const HEADLESS = process.env.HEADLESS !== "0";
 
+function slugify(value) {
+  return clean(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function clean(text) {
   return String(text ?? "")
     .replace(/\u00a0/g, " ")
@@ -371,8 +378,9 @@ async function main() {
       transactions,
     };
 
-    const jsonPath = path.join(OUT_DIR, `buremba-export-${stamp}.json`);
-    const latestJson = path.join(OUT_DIR, "buremba-latest.json");
+    const outputPrefix = slugify(OFFICE) || "branch";
+    const jsonPath = path.join(OUT_DIR, `${outputPrefix}-export-${stamp}.json`);
+    const latestJson = path.join(OUT_DIR, `${outputPrefix}-latest.json`);
     await fs.writeFile(jsonPath, JSON.stringify(exportPayload, null, 2));
     await fs.writeFile(latestJson, JSON.stringify(exportPayload, null, 2));
 
@@ -398,18 +406,18 @@ async function main() {
     );
     const txCsv = toCsv(transactions.rows);
 
-    await fs.writeFile(path.join(OUT_DIR, "buremba-members.csv"), membersCsv);
-    await fs.writeFile(path.join(OUT_DIR, "buremba-loan-history.csv"), loanCsv);
-    await fs.writeFile(path.join(OUT_DIR, "buremba-transactions.csv"), txCsv);
+    await fs.writeFile(path.join(OUT_DIR, `${outputPrefix}-members.csv`), membersCsv);
+    await fs.writeFile(path.join(OUT_DIR, `${outputPrefix}-loan-history.csv`), loanCsv);
+    await fs.writeFile(path.join(OUT_DIR, `${outputPrefix}-transactions.csv`), txCsv);
 
-    const summaryPath = path.join(OUT_DIR, "buremba-summary.json");
+    const summaryPath = path.join(OUT_DIR, `${outputPrefix}-summary.json`);
     await fs.writeFile(summaryPath, JSON.stringify(exportPayload.summary, null, 2));
 
     console.log("\nExport complete:");
     console.log(`  ${jsonPath}`);
-    console.log(`  ${path.join(OUT_DIR, "buremba-members.csv")}`);
-    console.log(`  ${path.join(OUT_DIR, "buremba-loan-history.csv")}`);
-    console.log(`  ${path.join(OUT_DIR, "buremba-transactions.csv")}`);
+    console.log(`  ${path.join(OUT_DIR, `${outputPrefix}-members.csv`)}`);
+    console.log(`  ${path.join(OUT_DIR, `${outputPrefix}-loan-history.csv`)}`);
+    console.log(`  ${path.join(OUT_DIR, `${outputPrefix}-transactions.csv`)}`);
     console.log(JSON.stringify(exportPayload.summary, null, 2));
   } finally {
     await browser.close();
