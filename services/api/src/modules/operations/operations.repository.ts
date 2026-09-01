@@ -304,85 +304,81 @@ export class OperationsRepository {
   }
 
   recordExpense(input: {
-    tenantId: string;
-    branchId: string;
-    operationId: string;
-    category: BranchOperationExpenseCategory;
-    amount: Prisma.Decimal;
-    description: string | null;
-    incurredAt: Date;
-    recordedByUserId: string;
-    operationDate: Date;
-    status: BranchOperationStatus;
-  }) {
-    return this.prisma.$transaction(async (tx) => {
-      const expense = await tx.branchOperationExpense.create({
-        data: {
+  tenantId: string;
+  branchId: string;
+  operationId: string;
+  amount: Prisma.Decimal;
+  description: string | null;
+  incurredAt: Date;
+  recordedByUserId: string;
+  operationDate: Date;
+  status: BranchOperationStatus;
+}) {
+  return this.prisma.$transaction(async (tx) => {
+    const expense = await tx.branchOperationExpense.create({
+      data: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        operationId: input.operationId,
+        amount: input.amount,
+        description: input.description,
+        incurredAt: input.incurredAt,
+        recordedByUserId: input.recordedByUserId,
+      },
+      include: {
+        recordedBy: {
+          select: {
+            id: true,
+            displayName: true,
+          },
+        },
+        approvedBy: {
+          select: {
+            id: true,
+            displayName: true,
+          },
+        },
+      },
+    });
+
+    await tx.outboxEvent.create({
+      data: {
+        tenantId: input.tenantId,
+        topic: OPERATIONS_EVENTS.expenseRecorded,
+        aggregateType: 'branch_operation_expense',
+        aggregateId: expense.id,
+        payload: {
+          expenseId: expense.id,
+          operationId: input.operationId,
           tenantId: input.tenantId,
           branchId: input.branchId,
-          operationId: input.operationId,
-          category: input.category,
-          amount: input.amount,
-          description: input.description,
-          incurredAt: input.incurredAt,
-          recordedByUserId: input.recordedByUserId,
+          operationDate: this.formatDateLabel(input.operationDate),
+          amount: input.amount.toString(),
+          status: input.status,
         },
-        include: {
-          recordedBy: {
-            select: {
-              id: true,
-              displayName: true,
-            },
-          },
-          approvedBy: {
-            select: {
-              id: true,
-              displayName: true,
-            },
-          },
-        },
-      });
-
-      await tx.outboxEvent.create({
-        data: {
-          tenantId: input.tenantId,
-          topic: OPERATIONS_EVENTS.expenseRecorded,
-          aggregateType: 'branch_operation_expense',
-          aggregateId: expense.id,
-          payload: {
-            expenseId: expense.id,
-            operationId: input.operationId,
-            tenantId: input.tenantId,
-            branchId: input.branchId,
-            operationDate: this.formatDateLabel(input.operationDate),
-            category: input.category,
-            amount: input.amount.toString(),
-            status: input.status,
-          },
-        },
-      });
-
-      await tx.auditLog.create({
-        data: {
-          tenantId: input.tenantId,
-          actorUserId: input.recordedByUserId,
-          action: OPERATIONS_PERMISSIONS.expenseCreate,
-          entityType: 'branch_operation_expense',
-          entityId: expense.id,
-          newValue: {
-            operationId: input.operationId,
-            branchId: input.branchId,
-            operationDate: this.formatDateLabel(input.operationDate),
-            category: input.category,
-            amount: input.amount.toString(),
-            description: input.description,
-          },
-        },
-      });
-
-      return expense;
+      },
     });
-  }
+
+    await tx.auditLog.create({
+      data: {
+        tenantId: input.tenantId,
+        actorUserId: input.recordedByUserId,
+        action: OPERATIONS_PERMISSIONS.expenseCreate,
+        entityType: 'branch_operation_expense',
+        entityId: expense.id,
+        newValue: {
+          operationId: input.operationId,
+          branchId: input.branchId,
+          operationDate: this.formatDateLabel(input.operationDate),
+          amount: input.amount.toString(),
+          description: input.description,
+        },
+      },
+    });
+
+    return expense;
+  });
+}
 
   recordTopUp(input: {
     tenantId: string;
@@ -1030,62 +1026,58 @@ export class OperationsRepository {
     });
   }
 
-  updateExpense(input: {
-    tenantId: string;
-    expenseId: string;
-    actorUserId: string;
-    category?: BranchOperationExpenseCategory;
-    amount?: Prisma.Decimal;
-    description?: string | null;
-  }) {
-    return this.prisma.$transaction(async (tx) => {
-      const existing = await tx.branchOperationExpense.findFirst({
-        where: {
-          id: input.expenseId,
-          tenantId: input.tenantId,
-        },
-      });
-
-      if (!existing) {
-        throw new Error('Expense was not found.');
-      }
-
-      const expense = await tx.branchOperationExpense.update({
-        where: {
-          id: input.expenseId,
-        },
-        data: {
-          ...(input.category !== undefined ? { category: input.category } : {}),
-          ...(input.amount !== undefined ? { amount: input.amount } : {}),
-          ...(input.description !== undefined
-            ? { description: input.description }
-            : {}),
-        },
-      });
-
-      await tx.auditLog.create({
-        data: {
-          tenantId: input.tenantId,
-          actorUserId: input.actorUserId,
-          action: 'operation.expense.update',
-          entityType: 'branch_operation_expense',
-          entityId: expense.id,
-          oldValue: {
-            category: existing.category,
-            amount: existing.amount.toString(),
-            description: existing.description,
-          },
-          newValue: {
-            category: expense.category,
-            amount: expense.amount.toString(),
-            description: expense.description,
-          },
-        },
-      });
-
-      return expense;
+updateExpense(input: {
+  tenantId: string;
+  expenseId: string;
+  actorUserId: string;
+  amount?: Prisma.Decimal;
+  description?: string | null;
+}) {
+  return this.prisma.$transaction(async (tx) => {
+    const existing = await tx.branchOperationExpense.findFirst({
+      where: {
+        id: input.expenseId,
+        tenantId: input.tenantId,
+      },
     });
-  }
+
+    if (!existing) {
+      throw new Error('Expense was not found.');
+    }
+
+    const expense = await tx.branchOperationExpense.update({
+      where: {
+        id: input.expenseId,
+      },
+      data: {
+        ...(input.amount !== undefined ? { amount: input.amount } : {}),
+        ...(input.description !== undefined
+          ? { description: input.description }
+          : {}),
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        tenantId: input.tenantId,
+        actorUserId: input.actorUserId,
+        action: 'operation.expense.update',
+        entityType: 'branch_operation_expense',
+        entityId: expense.id,
+        oldValue: {
+          amount: existing.amount.toString(),
+          description: existing.description,
+        },
+        newValue: {
+          amount: expense.amount.toString(),
+          description: expense.description,
+        },
+      },
+    });
+
+    return expense;
+  });
+}
 
   voidExpense(input: {
     tenantId: string;

@@ -843,7 +843,6 @@ export class OperationsService {
       tenantId: user.tenantId,
       branchId: branch.id,
       operationId: operation.id,
-      category: dto.category,
       amount: new Prisma.Decimal(dto.amount),
       description: dto.description?.trim() || null,
       incurredAt: new Date(),
@@ -1494,7 +1493,6 @@ export class OperationsService {
       tenantId: user.tenantId,
       expenseId: expense.id,
       actorUserId: user.userId,
-      category: dto.category,
       amount:
         dto.amount === undefined ? undefined : new Prisma.Decimal(dto.amount),
       description:
@@ -2492,23 +2490,17 @@ export class OperationsService {
       expensesTotal,
 
       expenses: expenses.map((expense) => ({
-        id: expense.id,
-        category: expense.category,
-        amount: this.decimalToNumber(expense.amount),
-        description: expense.description,
-        incurredAt: expense.incurredAt.toISOString(),
-        recordedByName: expense.recordedBy.displayName,
-
-        approvedAt: expense.approvedAt?.toISOString() ?? null,
-
-        approvedByName: expense.approvedBy?.displayName ?? null,
-
-        voidedAt: expense.voidedAt?.toISOString() ?? null,
-
-        voidedByName: expense.voidedBy?.displayName ?? null,
-
-        voidReason: expense.voidReason,
-      })),
+  id: expense.id,
+  amount: this.decimalToNumber(expense.amount) ?? 0,
+  description: expense.description ?? '',
+  incurredAt: expense.incurredAt.toISOString(),
+  recordedByName: expense.recordedBy.displayName,
+  approvedAt: expense.approvedAt?.toISOString() ?? null,
+  approvedByName: expense.approvedBy?.displayName ?? null,
+  voidedAt: expense.voidedAt?.toISOString() ?? null,
+  voidedByName: expense.voidedBy?.displayName ?? null,
+  voidReason: expense.voidReason,
+})),
 
       branchCashRemaining,
 

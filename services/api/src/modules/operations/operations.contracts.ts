@@ -22,7 +22,7 @@ export type DailyOperationBranchAccessContract = {
 export type DailyOperationExpenseContract = {
   id: string;
   amount: number;
-  description: string;
+  description: string | null;
   incurredAt: string;
   recordedByName: string;
 
