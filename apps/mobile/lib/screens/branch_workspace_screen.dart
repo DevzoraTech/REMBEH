@@ -1460,9 +1460,13 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
                 _string(position['agentName']) ??
                 _string(agent?['name']) ??
                 'Field Officer',
-            phone: _string(agent?['phone']),
-            roleName: _string(agent?['roleName']),
-            photoUrl: _string(agent?['photoUrl']),
+            phone: _string(position['agentPhone']) ?? _string(agent?['phone']),
+            roleName:
+                _string(position['agentRoleName']) ??
+                _string(agent?['roleName']),
+            photoUrl:
+                _string(position['agentPhotoUrl']) ??
+                _string(agent?['photoUrl']),
             publicId:
                 _string(position['agentPublicId']) ??
                 _string(agent?['publicId']),

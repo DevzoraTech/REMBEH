@@ -355,9 +355,7 @@ export class OperationsService {
 
     const amountReceived = this.decimalToNumber(float?.amountGiven);
 
-    const amountDisbursed = this.decimalToNumber(
-      disbursementsAgg._sum.amount,
-    );
+    const amountDisbursed = this.decimalToNumber(disbursementsAgg._sum.amount);
     const assignedFloatDisbursed = this.decimalToNumber(
       disbursementsAgg._sum.assignedFloatAmount,
     );
@@ -1040,9 +1038,7 @@ export class OperationsService {
 
     const amountGiven = this.decimalToNumber(float?.amountGiven);
 
-    const amountDisbursed = this.decimalToNumber(
-      disbursementsAgg._sum.amount,
-    );
+    const amountDisbursed = this.decimalToNumber(disbursementsAgg._sum.amount);
 
     const processingFees = this.decimalToNumber(loansAgg._sum.processingFee);
 
@@ -1062,7 +1058,9 @@ export class OperationsService {
       amountCollected <= 0 &&
       amountReturned <= 0
     ) {
-      throw new BadRequestException('No cash handover is due for this officer.');
+      throw new BadRequestException(
+        'No cash handover is due for this officer.',
+      );
     }
 
     const handoverVariance = this.roundMoney(amountReturned - expectedReturn);
@@ -2180,6 +2178,7 @@ export class OperationsService {
       expenses,
       topUps,
       agentFloats,
+      activeUsers,
       loansIssuedToday,
       collectionsWithProduct,
       cashShortages,
@@ -2233,6 +2232,14 @@ export class OperationsService {
         floatDate: operation.operationDate,
       }),
 
+      this.repository.listOperationActiveUsers({
+        tenantId: operation.tenantId,
+        branchId: operation.branchId,
+        floatDate: operation.operationDate,
+        dayStart,
+        dayEnd,
+      }),
+
       this.repository.listLoansIssuedToday({
         tenantId: operation.tenantId,
         branchId: operation.branchId,
@@ -2268,7 +2275,12 @@ export class OperationsService {
             operationId: previousClosed.id,
           });
 
-    const agentIds = agentFloats.map((float) => float.agentId);
+    const agentIds = [
+      ...new Set([
+        ...agentFloats.map((float) => float.agentId),
+        ...activeUsers.map((staff) => staff.id),
+      ]),
+    ];
 
     const [
       loanDisbursementsByAgentRows,
@@ -2331,6 +2343,7 @@ export class OperationsService {
 
     const agentReturns = this.toAgentReturnContracts(
       agentFloats,
+      activeUsers,
       loanDisbursementsByAgentRows,
       loansByAgentRows,
       collectionsByAgentRows,
@@ -3242,6 +3255,9 @@ export class OperationsService {
     agentFloats: Awaited<
       ReturnType<OperationsRepository['listAgentFloatsForOperation']>
     >,
+    activeUsers: Awaited<
+      ReturnType<OperationsRepository['listOperationActiveUsers']>
+    >,
     loanDisbursementsByAgentRows: Awaited<
       ReturnType<OperationsRepository['sumLoanDisbursementsByAgent']>
     >,
@@ -3273,21 +3289,37 @@ export class OperationsService {
       ]),
     );
 
-    return agentFloats.map((float) => {
-      const amountGiven = this.decimalToNumber(float.amountGiven);
+    const floatsByAgent = new Map(
+      agentFloats.map((float) => [float.agentId, float]),
+    );
 
-      const amountDisbursed = disbursementsByAgent.get(float.agentId) ?? 0;
+    const usersById = new Map(activeUsers.map((staff) => [staff.id, staff]));
 
-      const processingFees = feesByAgent.get(float.agentId) ?? 0;
+    const agentIds = [
+      ...new Set([
+        ...activeUsers.map((staff) => staff.id),
+        ...agentFloats.map((float) => float.agentId),
+      ]),
+    ];
 
-      const amountCollected = collectionsByAgent.get(float.agentId) ?? 0;
+    return agentIds.map((agentId) => {
+      const float = floatsByAgent.get(agentId);
+      const staff = usersById.get(agentId);
+
+      const amountGiven = this.decimalToNumber(float?.amountGiven);
+
+      const amountDisbursed = disbursementsByAgent.get(agentId) ?? 0;
+
+      const processingFees = feesByAgent.get(agentId) ?? 0;
+
+      const amountCollected = collectionsByAgent.get(agentId) ?? 0;
 
       const expectedReturn = this.roundMoney(
         amountGiven - amountDisbursed + amountCollected + processingFees,
       );
 
       const amountReturned =
-        float.amountReturned == null
+        float == null || float.amountReturned == null
           ? null
           : this.decimalToNumber(float.amountReturned);
 
@@ -3306,10 +3338,13 @@ export class OperationsService {
               : 'OVER';
 
       return {
-        floatId: float.id,
-        agentId: float.agentId,
-        agentName: float.agent.displayName,
-        agentPublicId: float.agent.publicId ?? null,
+        floatId: float?.id ?? '',
+        agentId,
+        agentName: staff?.displayName ?? float?.agent.displayName ?? 'Staff',
+        agentPublicId: staff?.publicId ?? float?.agent.publicId ?? null,
+        agentPhone: staff?.phone ?? null,
+        agentRoleName: this.operationUserRoleName(staff),
+        agentPhotoUrl: null,
 
         amountGiven,
         amountDisbursed,
@@ -3319,15 +3354,43 @@ export class OperationsService {
         amountReturned,
         variance,
 
-        returnedAt: float.returnedAt?.toISOString() ?? null,
+        returnedAt: float?.returnedAt?.toISOString() ?? null,
 
-        returnedByName: float.returnedBy?.displayName ?? null,
+        returnedByName: float?.returnedBy?.displayName ?? null,
 
-        notes: float.returnNotes,
+        notes: float?.returnNotes ?? null,
 
         status,
       };
     });
+  }
+
+  private operationUserRoleName(
+    user:
+      | {
+          roles?: { role?: { name?: string | null } | null }[] | null;
+        }
+      | null
+      | undefined,
+  ) {
+    const roleNames = (user?.roles ?? [])
+      .map((row) => row.role?.name?.trim())
+      .filter((name): name is string => Boolean(name));
+
+    return (
+      roleNames.find((name) => name.toLowerCase().includes('manager')) ??
+      roleNames.find((name) => name.toLowerCase().includes('cashier')) ??
+      roleNames.find((name) => {
+        const normalized = name.toLowerCase();
+        return (
+          normalized.includes('field officer') ||
+          normalized.includes('loan officer') ||
+          normalized === 'agent'
+        );
+      }) ??
+      roleNames[0] ??
+      null
+    );
   }
 
   private async resolveBranch(
@@ -3379,13 +3442,13 @@ export class OperationsService {
   }
 
   private assertCanTopUp(user: AuthenticatedUser) {
-  this.assertTenant(user);
-  this.assertCanOperateBranch(user);
+    this.assertTenant(user);
+    this.assertCanOperateBranch(user);
 
-  if (!user.permissions.includes(OPERATIONS_PERMISSIONS.cashTopUp)) {
-    throw new ForbiddenException('Missing permission to add cash.');
+    if (!user.permissions.includes(OPERATIONS_PERMISSIONS.cashTopUp)) {
+      throw new ForbiddenException('Missing permission to add cash.');
+    }
   }
-}
 
   private assertCanCreateExpense(user: AuthenticatedUser) {
     this.assertTenant(user);

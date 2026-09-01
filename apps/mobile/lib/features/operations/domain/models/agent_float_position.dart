@@ -34,6 +34,16 @@ class AgentFloatPosition {
       processingFees > 0 ||
       expectedHandover > 0;
 
+  bool get isManager => (roleName ?? '').toLowerCase().contains('manager');
+
+  bool get isCashier => (roleName ?? '').toLowerCase().contains('cashier');
+
+  String get staffLabel {
+    if (isManager) return 'Manager';
+    if (isCashier) return 'Cashier';
+    return 'Field Officer';
+  }
+
   String get displaySurname => fieldOfficerSurname(name);
 }
 

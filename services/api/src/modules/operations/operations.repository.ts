@@ -1423,6 +1423,106 @@ export class OperationsRepository {
     });
   }
 
+  async listOperationActiveUsers(input: {
+    tenantId: string;
+    branchId: string;
+    floatDate: Date;
+    dayStart: Date;
+    dayEnd: Date;
+  }) {
+    const [floatRows, disbursementRows, loanRows, collectionRows] =
+      await Promise.all([
+        this.prisma.agentDailyFloat.findMany({
+          where: {
+            tenantId: input.tenantId,
+            branchId: input.branchId,
+            floatDate: input.floatDate,
+          },
+          select: {
+            agentId: true,
+          },
+        }),
+
+        this.prisma.loanDisbursement.groupBy({
+          by: ['recordedByUserId'],
+          where: {
+            tenantId: input.tenantId,
+            branchId: input.branchId,
+            disbursedAt: {
+              gte: input.dayStart,
+              lte: input.dayEnd,
+            },
+          },
+        }),
+
+        this.prisma.loanApplication.groupBy({
+          by: ['officerUserId'],
+          where: {
+            tenantId: input.tenantId,
+            branchId: input.branchId,
+            status: LoanApplicationStatus.SUBMITTED,
+            submittedAt: {
+              gte: input.dayStart,
+              lte: input.dayEnd,
+            },
+          },
+        }),
+
+        this.prisma.repayment.groupBy({
+          by: ['recordedByUserId'],
+          where: {
+            tenantId: input.tenantId,
+            branchId: input.branchId,
+            paidAt: {
+              gte: input.dayStart,
+              lte: input.dayEnd,
+            },
+          },
+        }),
+      ]);
+
+    const userIds = [
+      ...new Set([
+        ...floatRows.map((row) => row.agentId),
+        ...disbursementRows.map((row) => row.recordedByUserId),
+        ...loanRows.map((row) => row.officerUserId),
+        ...collectionRows.map((row) => row.recordedByUserId),
+      ]),
+    ].filter((id): id is string => Boolean(id));
+
+    if (userIds.length === 0) {
+      return [];
+    }
+
+    return this.prisma.user.findMany({
+      where: {
+        tenantId: input.tenantId,
+        id: {
+          in: userIds,
+        },
+      },
+      select: {
+        id: true,
+        displayName: true,
+        publicId: true,
+        phone: true,
+        profilePhotoStorageKey: true,
+        roles: {
+          select: {
+            role: {
+              select: {
+                name: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: {
+        displayName: 'asc',
+      },
+    });
+  }
+
   listTopUpsForOperation(input: { tenantId: string; operationId: string }) {
     return this.prisma.branchOperationTopUp.findMany({
       where: {

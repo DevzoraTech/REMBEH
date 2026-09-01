@@ -59,6 +59,9 @@ export type DailyOperationAgentReturnContract = {
   agentId: string;
   agentName: string;
   agentPublicId: string | null;
+  agentPhone: string | null;
+  agentRoleName: string | null;
+  agentPhotoUrl: string | null;
   amountGiven: number;
   amountDisbursed: number;
   processingFees: number;

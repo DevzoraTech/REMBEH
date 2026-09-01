@@ -126,9 +126,13 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
                 _string(position['agentName']) ??
                 _string(agent?['name']) ??
                 'Field Officer',
-            phone: _string(agent?['phone']),
-            roleName: _string(agent?['roleName']),
-            photoUrl: _string(agent?['photoUrl']),
+            phone: _string(position['agentPhone']) ?? _string(agent?['phone']),
+            roleName:
+                _string(position['agentRoleName']) ??
+                _string(agent?['roleName']),
+            photoUrl:
+                _string(position['agentPhotoUrl']) ??
+                _string(agent?['photoUrl']),
             publicId:
                 _string(position['agentPublicId']) ??
                 _string(agent?['publicId']),
@@ -1310,11 +1314,11 @@ class _ActiveOfficerRow extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 1),
-                          const Text(
-                            'Field Officer',
+                          Text(
+                            officer.staffLabel,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
+                            style: const TextStyle(
                               color: slateText,
                               fontSize: 8.5,
                               fontWeight: FontWeight.w600,
