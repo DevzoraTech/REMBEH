@@ -6,7 +6,9 @@
   "type": "module",
   "scripts": {
     "export": "node export-buremba.mjs",
-    "export:headed": "HEADLESS=0 node export-buremba.mjs"
+    "export:headed": "HEADLESS=0 node export-buremba.mjs",
+    "export:ishongororo": "node export-ishongororo.mjs",
+    "export:ishongororo:headed": "HEADLESS=0 node export-ishongororo.mjs"
   },
   "keywords": [],
   "author": "",
