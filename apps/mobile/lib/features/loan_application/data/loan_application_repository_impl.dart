@@ -297,6 +297,9 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
           DateTime.now(),
       synced: json['synced'] as bool? ?? false,
       status: json['status'] as String? ?? 'DRAFT',
+      officerUserId: json['officerUserId'] as String?,
+      officerName: json['officerName'] as String?,
+      officerPublicId: json['officerPublicId'] as String?,
     );
   }
 

@@ -6,6 +6,7 @@ class OperationDashboardData {
     required this.capitalReceived,
     required this.collections,
     required this.processingFees,
+    required this.loansDisbursed,
     required this.expenses,
     required this.floatWithAgents,
     required this.expectedClosingCash,
@@ -20,6 +21,7 @@ class OperationDashboardData {
   final num capitalReceived;
   final num collections;
   final num processingFees;
+  final num loansDisbursed;
   final num expenses;
   final num floatWithAgents;
   final num expectedClosingCash;

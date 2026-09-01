@@ -241,6 +241,9 @@ export class CollectionsService {
       ...scope,
       from: range?.from,
       to: range?.to,
+      recordedByUserId: this.canSeeBranchActivityRecords(user)
+        ? null
+        : user.userId,
     });
 
     const smsByRepayment = await this.summarizeRepaymentSms(
@@ -283,6 +286,8 @@ export class CollectionsService {
           note: row.note,
 
           method: row.method,
+
+          recordedByUserId: row.recordedByUserId,
 
           recordedByName: row.recordedBy.displayName,
 
@@ -1166,6 +1171,8 @@ export class CollectionsService {
         note: row.note,
 
         method: row.method,
+
+        recordedByUserId: row.recordedByUserId,
 
         recordedByName: row.recordedBy.displayName,
 
@@ -2219,6 +2226,8 @@ export class CollectionsService {
 
       method: repayment.method,
 
+      recordedByUserId: repayment.recordedByUserId,
+
       recordedByName: repayment.recordedBy.displayName,
 
       recordedByPublicId: repayment.recordedBy.publicId ?? null,
@@ -3153,6 +3162,17 @@ export class CollectionsService {
 
       branchId: canAllBranches ? null : user.branchId,
     };
+  }
+
+  private canSeeBranchActivityRecords(user: AuthenticatedUser) {
+    return (
+      user.permissions.includes(BRANCH_PERMISSIONS.create) ||
+      user.permissions.includes(BRANCH_PERMISSIONS.staffRead) ||
+      user.permissions.includes(OPERATIONS_PERMISSIONS.read) ||
+      user.permissions.includes(OPERATIONS_PERMISSIONS.floatManage) ||
+      user.permissions.includes(OPERATIONS_PERMISSIONS.close) ||
+      user.permissions.includes(COLLECTION_PERMISSIONS.reconcile)
+    );
   }
 
   private assertBranchAccess(user: AuthenticatedUser) {

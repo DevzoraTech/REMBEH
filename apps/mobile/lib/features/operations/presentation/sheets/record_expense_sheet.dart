@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../../core/constants/expense_categories.dart';
 import '../../../../services/api_client.dart';
 import '../../../../services/session_store.dart';
 import '../../../../theme.dart';
@@ -34,8 +33,6 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
   late final TextEditingController _amount;
   late final TextEditingController _description;
 
-  late String _category;
-
   bool _saving = false;
   String? _error;
 
@@ -47,8 +44,6 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
 
     final expense = widget.initialExpense;
 
-    _category = _string(expense?['category']) ?? expenseCategories.first;
-
     final amount = _num(expense?['amount']);
 
     _amount = TextEditingController(
@@ -56,7 +51,10 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
     );
 
     _description = TextEditingController(
-      text: _string(expense?['description']) ?? '',
+      text:
+          _string(expense?['description']) ??
+          _string(expense?['category']) ??
+          '',
     );
   }
 
@@ -72,6 +70,15 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
     if (_saving) return;
 
     final amount = _parseAmount(_amount.text);
+    final expenseName = _description.text.trim();
+
+    if (expenseName.isEmpty) {
+      setState(() {
+        _error = 'Enter the name of the expense.';
+      });
+
+      return;
+    }
 
     if (amount == null || amount <= 0) {
       setState(() {
@@ -97,18 +104,18 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
         await _api.updateBranchExpense(
           session: widget.session,
           expenseId: expenseId,
-          category: _category,
+          category: expenseName,
           amount: amount,
-          description: _description.text,
+          description: expenseName,
         );
       } else {
         await _api.recordBranchExpense(
           session: widget.session,
           branchId: widget.branchId,
           date: widget.date,
-          category: _category,
+          category: expenseName,
           amount: amount,
-          description: _description.text,
+          description: expenseName,
         );
       }
 
@@ -187,6 +194,28 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
             const SizedBox(height: 12),
 
             const Text(
+              'Name of expense',
+              style: TextStyle(
+                color: midnightNavy,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+
+            const SizedBox(height: 7),
+
+            TextField(
+              controller: _description,
+              autofocus: !_editing,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                hintText: 'e.g. Transport to client follow-up',
+              ),
+            ),
+
+            const SizedBox(height: 18),
+
+            const Text(
               'Amount (UGX)',
               style: TextStyle(
                 color: midnightNavy,
@@ -199,74 +228,10 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
 
             TextField(
               controller: _amount,
-              autofocus: !_editing,
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
               decoration: const InputDecoration(hintText: '0'),
-            ),
-
-            const SizedBox(height: 18),
-
-            const Text(
-              'Category',
-              style: TextStyle(
-                color: midnightNavy,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-
-            const SizedBox(height: 7),
-
-            DropdownButtonFormField<String>(
-              initialValue: _category,
-              items: expenseCategories.map((category) {
-                return DropdownMenuItem(
-                  value: category,
-                  child: Row(
-                    children: [
-                      _CategoryIcon(category: category),
-                      const SizedBox(width: 9),
-                      Text(_categoryLabel(category)),
-                    ],
-                  ),
-                );
-              }).toList(),
-              onChanged: _saving
-                  ? null
-                  : (value) {
-                      if (value == null) {
-                        return;
-                      }
-
-                      setState(() {
-                        _category = value;
-                      });
-                    },
-              decoration: const InputDecoration(),
-            ),
-
-            const SizedBox(height: 18),
-
-            const Text(
-              'Description',
-              style: TextStyle(
-                color: midnightNavy,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-
-            const SizedBox(height: 7),
-
-            TextField(
-              controller: _description,
-              maxLines: 3,
-              maxLength: 500,
-              decoration: const InputDecoration(
-                hintText: 'Add details about this expense',
-              ),
             ),
 
             const SizedBox(height: 4),
@@ -349,25 +314,6 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
   }
 }
 
-class _CategoryIcon extends StatelessWidget {
-  const _CategoryIcon({required this.category});
-
-  final String category;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 29,
-      height: 29,
-      decoration: const BoxDecoration(
-        color: Color(0xFFEAF5EC),
-        shape: BoxShape.circle,
-      ),
-      child: Icon(_categoryIcon(category), color: forestEmerald, size: 15),
-    );
-  }
-}
-
 class _ErrorText extends StatelessWidget {
   const _ErrorText({required this.message});
 
@@ -383,41 +329,6 @@ class _ErrorText extends StatelessWidget {
         fontWeight: FontWeight.w700,
       ),
     );
-  }
-}
-
-String _categoryLabel(String value) {
-  return value
-      .toLowerCase()
-      .split('_')
-      .map(
-        (word) => word.isEmpty
-            ? word
-            : '${word[0].toUpperCase()}${word.substring(1)}',
-      )
-      .join(' ');
-}
-
-IconData _categoryIcon(String value) {
-  switch (value.toUpperCase()) {
-    case 'TRANSPORT':
-      return Icons.directions_car_outlined;
-    case 'FUEL':
-      return Icons.local_gas_station_outlined;
-    case 'MEALS':
-      return Icons.restaurant_outlined;
-    case 'AIRTIME':
-      return Icons.phone_outlined;
-    case 'MOBILE_MONEY_CHARGES':
-      return Icons.phone_android_outlined;
-    case 'STATIONERY':
-      return Icons.shopping_bag_outlined;
-    case 'REPAIRS':
-      return Icons.build_outlined;
-    case 'UTILITIES':
-      return Icons.bolt_outlined;
-    default:
-      return Icons.receipt_long_outlined;
   }
 }
 

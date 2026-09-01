@@ -33,7 +33,7 @@ import { UpdateAgentStatusDto } from './dto/update-agent-status.dto';
 import { PrismaService } from '../../database/prisma.service';
 
 const ACCOUNTABILITY_FORMULA =
-  'Expected cash = float given − disbursed (new loans) + collected (repayments)';
+  'Expected cash = float given − disbursed (new loans) + collected (repayments) + processing fees';
 
 type AgentMoneyAggregate = {
   count: number;

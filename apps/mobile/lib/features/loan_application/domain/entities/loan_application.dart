@@ -117,6 +117,9 @@ class LoanApplicationListItem {
     required this.registeredAt,
     required this.synced,
     required this.status,
+    this.officerUserId,
+    this.officerName,
+    this.officerPublicId,
   });
 
   final String id;
@@ -127,4 +130,7 @@ class LoanApplicationListItem {
   final DateTime registeredAt;
   final bool synced;
   final String status;
+  final String? officerUserId;
+  final String? officerName;
+  final String? officerPublicId;
 }

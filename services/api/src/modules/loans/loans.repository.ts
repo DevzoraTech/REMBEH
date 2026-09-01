@@ -102,6 +102,7 @@ export class LoansRepository {
   listForScope(input: {
     tenantId: string;
     branchId?: string | null;
+    officerUserId?: string | null;
     limit?: number;
   }): Promise<LoanListRecord[]> {
     return this.prisma.loan.findMany({
@@ -111,6 +112,14 @@ export class LoansRepository {
         ...(input.branchId
           ? {
               branchId: input.branchId,
+            }
+          : {}),
+
+        ...(input.officerUserId
+          ? {
+              application: {
+                officerUserId: input.officerUserId,
+              },
             }
           : {}),
       },

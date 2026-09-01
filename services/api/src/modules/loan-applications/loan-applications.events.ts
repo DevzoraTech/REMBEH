@@ -8,6 +8,8 @@ export type LoanApplicationEventPayload = {
   applicationId: string;
   branchId: string;
   officerUserId: string;
+  officerName: string | null;
+  officerPublicId: string | null;
   status: string;
   clientName: string;
   phone: string;

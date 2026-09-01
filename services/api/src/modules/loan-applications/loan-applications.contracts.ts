@@ -120,6 +120,9 @@ export type LoanApplicationListItemContract = {
   synced: boolean;
   status: string;
   branchId: string;
+  officerUserId: string;
+  officerName: string | null;
+  officerPublicId: string | null;
 };
 
 export type LoanApplicationResponseContract = {

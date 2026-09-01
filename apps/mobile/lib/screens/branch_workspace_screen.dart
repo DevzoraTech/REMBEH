@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config.dart';
-import '../core/constants/expense_categories.dart';
 import '../core/sync/sync_service.dart';
 import '../features/applications_list/data/applications_live_store.dart';
 import '../features/more/presentation/screens/more_tab.dart';
@@ -1364,6 +1363,27 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       0,
       (sum, position) => sum + position.remainingFloat,
     );
+    final explicitLoansDisbursed = _firstAvailableMoney(operation, const [
+      'loansDisbursed',
+      'loansDisbursedTotal',
+      'amountDisbursed',
+      'amountDisbursedTotal',
+      'amountDisbursedToday',
+      'loanDisbursementsTotal',
+      'loansIssuedPrincipal',
+    ]);
+    final loansDisbursed = explicitLoansDisbursed > 0
+        ? explicitLoansDisbursed
+        : _operationRows('loansIssued').fold<num>(
+            0,
+            (sum, row) =>
+                sum +
+                _firstAvailableMoney(row, const [
+                  'amountDisbursed',
+                  'principalAmount',
+                  'amount',
+                ]),
+          );
 
     return OperationDashboardData(
       status: _string(operation['status']) ?? 'OPEN',
@@ -1395,6 +1415,8 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         'applicationFeesCollected',
         'feesCollected',
       ]),
+
+      loansDisbursed: loansDisbursed,
 
       expenses: _firstAvailableMoney(operation, const [
         'expensesTotal',
@@ -1989,39 +2011,23 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   Future<void> _showExpenseSheet() async {
     final amount = TextEditingController();
 
-    final description = TextEditingController();
-
-    var category = 'TRANSPORT';
+    final name = TextEditingController();
 
     await _showFormSheet(
       title: 'Record expense',
       actionLabel: 'Save',
       builder: (setModalState) => [
-        DropdownButtonFormField<String>(
-          initialValue: category,
-          items: expenseCategories.map((item) {
-            return DropdownMenuItem<String>(
-              value: item,
-              child: Text(_label(item)),
-            );
-          }).toList(),
-          onChanged: (value) {
-            if (value == null) {
-              return;
-            }
-
-            setModalState(() {
-              category = value;
-            });
-          },
-          decoration: const InputDecoration(labelText: 'Category'),
-        ),
+        _TextField(controller: name, label: 'Name of expense'),
         const SizedBox(height: 10),
         _AmountField(controller: amount, label: 'Amount'),
-        const SizedBox(height: 10),
-        _TextField(controller: description, label: 'Details', maxLines: 3),
       ],
       onSubmit: () async {
+        final expenseName = name.text.trim();
+
+        if (expenseName.isEmpty) {
+          throw ApiException('Enter the name of the expense.');
+        }
+
         final value = _parseAmount(amount.text);
 
         if (value == null || value <= 0) {
@@ -2032,9 +2038,9 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           session: widget.session,
           branchId: widget.session.branchId,
           date: _date,
-          category: category,
+          category: expenseName,
           amount: value,
-          description: description.text,
+          description: expenseName,
         );
 
         _setNotice('Expense saved.');

@@ -13,6 +13,7 @@ class RembehSession {
     required this.userEmail,
     required this.roleName,
     required this.workspaceName,
+    this.userId,
     this.tenantId,
     this.refreshToken,
     this.refreshExpiresAt,
@@ -33,6 +34,7 @@ class RembehSession {
   final String userEmail;
   final String? roleName;
   final String workspaceName;
+  final String? userId;
 
   /// Organisation / tenant id from auth (workspace.id).
   final String? tenantId;
@@ -64,6 +66,15 @@ class RembehSession {
   }
 
   bool hasPermission(String permission) => permissions.contains(permission);
+
+  bool get usesFieldOfficerFloatForLoans {
+    final role = (roleName ?? '').toLowerCase();
+    if (role.contains('manager') || role.contains('cashier')) {
+      return false;
+    }
+
+    return !permissions.contains('operation.float.manage');
+  }
 
   bool get canUseBranchWorkspace {
     final role = (roleName ?? '').toLowerCase();
@@ -139,6 +150,7 @@ class RembehSession {
     String? userEmail,
     String? roleName,
     String? workspaceName,
+    String? userId,
     String? tenantId,
     String? refreshToken,
     String? refreshExpiresAt,
@@ -159,6 +171,7 @@ class RembehSession {
       userEmail: userEmail ?? this.userEmail,
       roleName: roleName ?? this.roleName,
       workspaceName: workspaceName ?? this.workspaceName,
+      userId: userId ?? this.userId,
       tenantId: tenantId ?? this.tenantId,
       refreshToken: refreshToken ?? this.refreshToken,
       refreshExpiresAt: refreshExpiresAt ?? this.refreshExpiresAt,
@@ -182,6 +195,7 @@ class RembehSession {
     'userEmail': userEmail,
     'roleName': roleName,
     'workspaceName': workspaceName,
+    'userId': userId,
     'tenantId': tenantId,
     'refreshToken': refreshToken,
     'refreshExpiresAt': refreshExpiresAt,
@@ -203,6 +217,7 @@ class RembehSession {
     'userEmail': userEmail,
     'roleName': roleName,
     'workspaceName': workspaceName,
+    'userId': userId,
     'tenantId': tenantId,
     'refreshExpiresAt': refreshExpiresAt,
     'branchId': branchId,
@@ -226,6 +241,7 @@ class RembehSession {
       userEmail: json['userEmail'] as String? ?? '',
       roleName: json['roleName'] as String?,
       workspaceName: json['workspaceName'] as String? ?? '',
+      userId: json['userId'] as String?,
       tenantId: json['tenantId'] as String?,
       refreshToken: json['refreshToken'] as String?,
       refreshExpiresAt: json['refreshExpiresAt'] as String?,

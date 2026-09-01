@@ -74,6 +74,11 @@ class CashPositionCard extends StatelessWidget {
             positive: true,
           ),
           _CashLine(
+            label: 'Loans disbursed',
+            amount: operation.loansDisbursed,
+            negative: true,
+          ),
+          _CashLine(
             label: 'Expenses',
             amount: operation.expenses,
             negative: true,

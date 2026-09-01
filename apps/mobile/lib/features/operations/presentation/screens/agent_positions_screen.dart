@@ -661,6 +661,23 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
 
   String get _agentName => _string(widget.agent['name']) ?? 'Field Officer';
 
+  bool get _agentIsManager {
+    final role = (_string(widget.agent['roleName']) ?? '').toLowerCase();
+    return role.contains('manager');
+  }
+
+  bool get _agentUsesBranchCashDirectly {
+    final role = (_string(widget.agent['roleName']) ?? '').toLowerCase();
+    return role.contains('manager') || role.contains('cashier');
+  }
+
+  String get _staffLabel {
+    final role = (_string(widget.agent['roleName']) ?? '').toLowerCase();
+    if (role.contains('manager')) return 'Manager';
+    if (role.contains('cashier')) return 'Cashier';
+    return 'Field Officer';
+  }
+
   String? get _agentPublicId =>
       _string(_position?['agentPublicId']) ?? _string(widget.agent['publicId']);
 
@@ -782,7 +799,10 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
       useSafeArea: true,
       backgroundColor: Colors.transparent,
       builder: (_) {
-        return _RecordHandoverSheet(expected: _expected);
+        return _RecordHandoverSheet(
+          expected: _expected,
+          staffLabel: _staffLabel,
+        );
       },
     );
 
@@ -798,7 +818,8 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
         backgroundColor: Colors.transparent,
         builder: (_) {
           return _ConfirmShortageSheet(
-            agentName: _string(widget.agent['name']) ?? 'Field Officer',
+            agentName: _agentName,
+            staffLabel: _staffLabel,
             shortage: result.variance.abs(),
           );
         },
@@ -824,7 +845,8 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
         backgroundColor: Colors.transparent,
         builder: (_) {
           return _ConfirmExcessSheet(
-            agentName: _string(widget.agent['name']) ?? 'Field Officer',
+            agentName: _agentName,
+            staffLabel: _staffLabel,
             amount: result.variance,
           );
         },
@@ -837,7 +859,7 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
       await _recordReturn(
         amount: result.amount,
         notes:
-            'Field officer handed over excess cash of UGX ${formatMoney(result.variance)}.',
+            '${_staffLabel.toLowerCase()} handed over excess cash of UGX ${formatMoney(result.variance)}.',
       );
 
       return;
@@ -911,6 +933,7 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
   Widget build(BuildContext context) {
     final canAllocate =
         widget.dayOpen &&
+        !_agentUsesBranchCashDirectly &&
         (widget.onAddFloat != null || widget.onAllocateFloat != null);
     final canBalance = widget.position != null && widget.dayOpen && !_balanced;
 
@@ -995,6 +1018,11 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
               canAllocate: canAllocate,
               canBalance: canBalance,
               saving: _saving,
+              balanceLabel: _agentIsManager
+                  ? 'Balance Manager'
+                  : _staffLabel == 'Cashier'
+                  ? 'Balance Cashier'
+                  : 'Balance off officer',
               onAllocate: canAllocate
                   ? () async {
                       final action =
@@ -2146,6 +2174,7 @@ class _OfficerDetailActions extends StatelessWidget {
     required this.canAllocate,
     required this.canBalance,
     required this.saving,
+    required this.balanceLabel,
     required this.onBalance,
     this.onAllocate,
   });
@@ -2153,6 +2182,7 @@ class _OfficerDetailActions extends StatelessWidget {
   final bool canAllocate;
   final bool canBalance;
   final bool saving;
+  final String balanceLabel;
   final Future<void> Function()? onAllocate;
   final VoidCallback onBalance;
 
@@ -2194,7 +2224,7 @@ class _OfficerDetailActions extends StatelessWidget {
                     ),
                   )
                 : const Icon(Icons.check_circle_outline, size: 18),
-            label: Text(saving ? 'Saving...' : 'Balance off officer'),
+            label: Text(saving ? 'Saving...' : balanceLabel),
             style: FilledButton.styleFrom(
               backgroundColor: forestEmerald,
               minimumSize: const Size.fromHeight(48),
@@ -3007,9 +3037,13 @@ class _HandoverResult {
 }
 
 class _RecordHandoverSheet extends StatefulWidget {
-  const _RecordHandoverSheet({required this.expected});
+  const _RecordHandoverSheet({
+    required this.expected,
+    required this.staffLabel,
+  });
 
   final num expected;
+  final String staffLabel;
 
   @override
   State<_RecordHandoverSheet> createState() => _RecordHandoverSheetState();
@@ -3159,7 +3193,7 @@ class _RecordHandoverSheetState extends State<_RecordHandoverSheet> {
             _WarningBox(
               title: 'Shortage detected',
               message:
-                  'Field officer handed over less than the expected amount.',
+                  '${widget.staffLabel} handed over less than the expected amount.',
               color: const Color(0xFFB42318),
             ),
           ],
@@ -3170,7 +3204,7 @@ class _RecordHandoverSheetState extends State<_RecordHandoverSheet> {
             _WarningBox(
               title: 'Excess detected',
               message:
-                  'Field officer handed over more than the expected amount.',
+                  '${widget.staffLabel} handed over more than the expected amount.',
               color: const Color(0xFFA15C00),
             ),
           ],
@@ -3217,10 +3251,12 @@ class _ShortageConfirmation {
 class _ConfirmShortageSheet extends StatefulWidget {
   const _ConfirmShortageSheet({
     required this.agentName,
+    required this.staffLabel,
     required this.shortage,
   });
 
   final String agentName;
+  final String staffLabel;
   final num shortage;
 
   @override
@@ -3354,7 +3390,7 @@ class _ConfirmShortageSheetState extends State<_ConfirmShortageSheet> {
               backgroundColor: const Color(0xFFD92D20),
               minimumSize: const Size.fromHeight(46),
             ),
-            child: const Text('Record Shortage & Balance Field Officer'),
+            child: Text('Record Shortage & Balance ${widget.staffLabel}'),
           ),
 
           const SizedBox(height: 7),
@@ -3379,9 +3415,14 @@ class _ConfirmShortageSheetState extends State<_ConfirmShortageSheet> {
 // =============================================================================
 
 class _ConfirmExcessSheet extends StatelessWidget {
-  const _ConfirmExcessSheet({required this.agentName, required this.amount});
+  const _ConfirmExcessSheet({
+    required this.agentName,
+    required this.staffLabel,
+    required this.amount,
+  });
 
   final String agentName;
+  final String staffLabel;
   final num amount;
 
   @override
@@ -3433,7 +3474,7 @@ class _ConfirmExcessSheet extends StatelessWidget {
               backgroundColor: forestEmerald,
               minimumSize: const Size.fromHeight(46),
             ),
-            child: const Text('Confirm Excess & Balance Field Officer'),
+            child: Text('Confirm Excess & Balance $staffLabel'),
           ),
 
           const SizedBox(height: 7),

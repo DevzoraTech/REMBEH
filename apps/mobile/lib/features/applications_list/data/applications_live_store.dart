@@ -18,6 +18,7 @@ class ApplicationsLiveStore extends ChangeNotifier {
   String? _error;
   bool _listening = false;
   String? _tenantId;
+  RembehSession? _session;
 
   List<FieldApplication> get applications => List.unmodifiable(_applications);
   bool get loading => _loading;
@@ -29,6 +30,7 @@ class ApplicationsLiveStore extends ChangeNotifier {
       clearSessionState();
     }
     _tenantId = session.tenantId;
+    _session = session;
     await refresh();
     if (_listening) return;
     _listening = true;
@@ -46,6 +48,7 @@ class ApplicationsLiveStore extends ChangeNotifier {
     _loading = false;
     _listening = false;
     _tenantId = null;
+    _session = null;
     final client = RealtimeClient.instance;
     client.off('loan_application.submitted', _onRealtime);
     client.off('loan_application.updated', _onRealtime);
@@ -63,7 +66,15 @@ class ApplicationsLiveStore extends ChangeNotifier {
         ..clear()
         ..addAll(
           items
-              .where((item) => item.status == 'SUBMITTED')
+              .where(
+                (item) =>
+                    item.status == 'SUBMITTED' &&
+                    _canShowOfficerRecord(
+                      userId: item.officerUserId,
+                      publicId: item.officerPublicId,
+                      name: item.officerName,
+                    ),
+              )
               .map(_toFieldApplication),
         );
       _error = null;
@@ -146,7 +157,20 @@ class ApplicationsLiveStore extends ChangeNotifier {
           DateTime.tryParse(payload['registeredAt'] as String? ?? '') ??
           DateTime.now(),
       synced: payload['synced'] as bool? ?? true,
+      officerUserId: payload['officerUserId'] as String?,
+      officerName: payload['officerName'] as String?,
+      officerPublicId: payload['officerPublicId'] as String?,
     );
+
+    if (!_canShowOfficerRecord(
+      userId: item.officerUserId,
+      publicId: item.officerPublicId,
+      name: item.officerName,
+    )) {
+      _applications.removeWhere((app) => app.id == id);
+      notifyListeners();
+      return;
+    }
 
     final index = _applications.indexWhere((app) => app.id == id);
     if (index >= 0) {
@@ -167,6 +191,46 @@ class ApplicationsLiveStore extends ChangeNotifier {
       interestRatePercent: item.interestRatePercent,
       registeredAt: item.registeredAt,
       synced: item.synced,
+      officerUserId: item.officerUserId,
+      officerName: item.officerName,
+      officerPublicId: item.officerPublicId,
     );
+  }
+
+  bool _canShowOfficerRecord({
+    required String? userId,
+    required String? publicId,
+    required String? name,
+  }) {
+    final session = _session;
+    if (session == null || !session.usesFieldOfficerFloatForLoans) {
+      return true;
+    }
+
+    final sessionUserId = session.userId?.trim();
+    final itemUserId = userId?.trim();
+    if (sessionUserId != null &&
+        sessionUserId.isNotEmpty &&
+        itemUserId != null &&
+        itemUserId.isNotEmpty) {
+      return sessionUserId == itemUserId;
+    }
+
+    final sessionPublicId = session.publicId?.trim();
+    final itemPublicId = publicId?.trim();
+    if (sessionPublicId != null &&
+        sessionPublicId.isNotEmpty &&
+        itemPublicId != null &&
+        itemPublicId.isNotEmpty) {
+      return sessionPublicId == itemPublicId;
+    }
+
+    final sessionName = session.userName.trim().toLowerCase();
+    final itemName = name?.trim().toLowerCase();
+    if (sessionName.isNotEmpty && itemName != null && itemName.isNotEmpty) {
+      return sessionName == itemName;
+    }
+
+    return itemUserId == null && itemPublicId == null && itemName == null;
   }
 }

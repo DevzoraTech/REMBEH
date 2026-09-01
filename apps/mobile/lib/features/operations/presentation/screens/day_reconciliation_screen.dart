@@ -109,6 +109,36 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
 
   num get _processingFees => _num(_operation?['processingFeesTotal']);
 
+  num get _loansDisbursed {
+    final explicit = _firstAvailableMoney(_operation, const [
+      'loansDisbursed',
+      'loansDisbursedTotal',
+      'amountDisbursed',
+      'amountDisbursedTotal',
+      'amountDisbursedToday',
+      'loanDisbursementsTotal',
+      'loansIssuedPrincipal',
+    ]);
+
+    if (explicit > 0) {
+      return explicit;
+    }
+
+    final loans = _operation?['loansIssued'];
+    if (loans is! List) {
+      return 0;
+    }
+
+    return loans.whereType<Map>().fold<num>(0, (total, row) {
+      return total +
+          _firstAvailableMoney(Map<String, dynamic>.from(row), const [
+            'amountDisbursed',
+            'principalAmount',
+            'amount',
+          ]);
+    });
+  }
+
   num get _expenses => _num(_operation?['expensesTotal']);
 
   num get _floatNotReturned {
@@ -584,6 +614,7 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
                     capitalReceived: _capitalReceived,
                     collections: _collections,
                     processingFees: _processingFees,
+                    loansDisbursed: _loansDisbursed,
                     expenses: _expenses,
                     floatNotReturned: _floatNotReturned,
                     onUpdateCount: _updateCount,
@@ -750,6 +781,7 @@ class _CashReconciliationSummary extends StatelessWidget {
     required this.capitalReceived,
     required this.collections,
     required this.processingFees,
+    required this.loansDisbursed,
     required this.expenses,
     required this.floatNotReturned,
     required this.onUpdateCount,
@@ -763,6 +795,7 @@ class _CashReconciliationSummary extends StatelessWidget {
   final num capitalReceived;
   final num collections;
   final num processingFees;
+  final num loansDisbursed;
   final num expenses;
   final num floatNotReturned;
 
@@ -847,6 +880,11 @@ class _CashReconciliationSummary extends StatelessWidget {
             label: 'Processing fees',
             value: processingFees,
             positive: true,
+          ),
+          _CashRow(
+            label: 'Loans disbursed',
+            value: loansDisbursed,
+            negative: true,
           ),
           _CashRow(label: 'Expenses', value: expenses, negative: true),
           _CashRow(
@@ -982,10 +1020,7 @@ class _AgentReturnsCard extends StatelessWidget {
                       Expanded(flex: 31, child: _OfficerHeaderCell('Name')),
                       Expanded(
                         flex: 19,
-                        child: _OfficerHeaderCell(
-                          'Repayments',
-                          alignEnd: true,
-                        ),
+                        child: _OfficerHeaderCell('Repayments', alignEnd: true),
                       ),
                       Expanded(
                         flex: 17,

@@ -212,6 +212,9 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
           DateTime.now(),
       synced: json['synced'] as bool? ?? true,
       dueToday: json['dueToday'] as bool? ?? false,
+      recordedByUserId: json['recordedByUserId'] as String?,
+      recordedByName: json['recordedByName'] as String?,
+      recordedByPublicId: json['recordedByPublicId'] as String?,
     );
   }
 

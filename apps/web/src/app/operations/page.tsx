@@ -249,9 +249,8 @@ type TopUpForm = {
 };
 
 type ExpenseForm = {
-  category: ExpenseCategory;
+  name: string;
   amount: string;
-  description: string;
 };
 
 type FloatForm = {
@@ -291,9 +290,8 @@ type AttentionItem = {
 };
 
 const emptyExpenseForm: ExpenseForm = {
-  category: "TRANSPORT",
+  name: "",
   amount: "",
-  description: "",
 };
 
 const emptyTopUpForm: TopUpForm = {
@@ -318,18 +316,6 @@ const emptyClosingForm: ClosingForm = {
   notes: "",
   shortageResponsibleUserId: "",
 };
-
-const expenseCategoryOptions: ExpenseCategory[] = [
-  "TRANSPORT",
-  "FUEL",
-  "MEALS",
-  "AIRTIME",
-  "MOBILE_MONEY_CHARGES",
-  "STATIONERY",
-  "REPAIRS",
-  "UTILITIES",
-  "OTHER",
-];
 
 function todayInputValue() {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -896,9 +882,9 @@ export default function OperationsPage() {
         body: JSON.stringify({
           branchId: activeBranch.id,
           date,
-          category: expenseForm.category,
+          category: "OTHER",
           amount: Number(expenseForm.amount),
-          description: expenseForm.description.trim() || undefined,
+          description: expenseForm.name.trim(),
         }),
       });
       const payload = await readApiJson<OperationResponse>(response);
@@ -1309,7 +1295,7 @@ export default function OperationsPage() {
       operation.expenses.forEach((expense) => {
         recordsSheet.addRow([
           "Expense",
-          `${categoryLabel(expense.category)}${expense.description ? ` · ${expense.description}` : ""}`,
+          expenseDisplayName(expense),
           expense.amount,
           formatDateTime(expense.incurredAt),
           expense.recordedByName,
@@ -2468,7 +2454,7 @@ function ComputerisedReportView({
           empty="No expenses recorded."
           rows={operation.expenses.map((expense) => ({
             id: expense.id,
-            label: categoryLabel(expense.category),
+            label: expenseDisplayName(expense),
             meta: `${formatClock(expense.incurredAt)} · ${expense.recordedByName}`,
             value: <Money value={expense.amount} currency="UGX" />,
           }))}
@@ -3512,7 +3498,7 @@ function DayExpensesStrip({
       ) : (
         <>
           <div className="mt-3 -mx-1 grid grid-cols-[1fr_96px_64px_72px] gap-2 border-b border-[#dfe5eb] bg-[#e8edf2] px-2 py-2 text-[10px] font-semibold text-slate-600">
-            <span>Category</span>
+            <span>Expense</span>
             <span className="text-right">Amount</span>
             <span className="text-right">Time</span>
             <span className="text-right">Status</span>
@@ -3525,10 +3511,10 @@ function DayExpensesStrip({
               >
                 <div className="min-w-0">
                   <p className="truncate text-[11px] font-semibold text-[#0b1220]">
-                    {categoryLabel(expense.category)}
+                    {expenseDisplayName(expense)}
                   </p>
                   <p className="truncate text-[10px] font-medium text-slate-500">
-                    {expense.description?.trim() || expense.recordedByName}
+                    {expense.recordedByName}
                   </p>
                 </div>
                 <p className="text-right text-[11px] font-bold tabular-nums text-[#0b1220]">
@@ -3805,7 +3791,9 @@ function OperationActionDrawer({
   const validExpense =
     canRecordExpense &&
     editable &&
+    expenseForm.name.trim().length > 0 &&
     expenseForm.amount !== "" &&
+    Number.isFinite(expenseAmount) &&
     expenseAmount > 0 &&
     expenseAmount <= operation.branchCashRemaining;
   const topUpAmount = Number(topUpForm.amount);
@@ -3952,20 +3940,16 @@ function OperationActionDrawer({
             {panel === "expense" ? (
               <div className="space-y-3.5">
                 <DrawerSection title="Expense details" />
-                <SelectField
-                  label="Category"
-                  value={expenseForm.category}
+                <TextInputField
+                  label="Name of expense"
+                  value={expenseForm.name}
                   locked={!editable || !canRecordExpense}
                   onChange={(value) =>
                     setExpenseForm({
                       ...expenseForm,
-                      category: value as ExpenseCategory,
+                      name: value,
                     })
                   }
-                  options={expenseCategoryOptions.map((category) => ({
-                    id: category,
-                    label: categoryLabel(category),
-                  }))}
                 />
                 <MoneyField
                   label="Amount"
@@ -3973,14 +3957,6 @@ function OperationActionDrawer({
                   locked={!editable || !canRecordExpense}
                   onChange={(value) =>
                     setExpenseForm({ ...expenseForm, amount: value })
-                  }
-                />
-                <TextAreaField
-                  label="Description"
-                  value={expenseForm.description}
-                  locked={!editable || !canRecordExpense}
-                  onChange={(value) =>
-                    setExpenseForm({ ...expenseForm, description: value })
                   }
                 />
                 {expenseForm.amount !== "" &&
@@ -4469,6 +4445,34 @@ function SelectField({
           </option>
         ))}
       </select>
+    </label>
+  );
+}
+
+function TextInputField({
+  label,
+  value,
+  locked = false,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  locked?: boolean;
+  placeholder?: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="text-[11px] font-semibold text-slate-600">{label}</span>
+      <input
+        type="text"
+        value={value}
+        disabled={locked}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-1.5 h-11 w-full rounded-xl border border-[#e6ebf0] bg-[#fbfcfd] px-3 text-sm font-semibold text-[#0b1220] outline-none transition focus:border-[var(--forest-emerald)] focus:bg-white disabled:bg-[#f5f7f8] disabled:text-slate-500"
+      />
     </label>
   );
 }
@@ -5129,24 +5133,17 @@ function ExpenseFormCard({
           </p>
         ) : null}
         <label>
-          <span className="text-xs font-bold text-slate-600">Category</span>
-          <select
-            value={form.category}
+          <span className="text-xs font-bold text-slate-600">
+            Name of expense
+          </span>
+          <input
+            type="text"
+            value={form.name}
             disabled={!editable || !canRecordExpense}
-            onChange={(event) =>
-              setForm({
-                ...form,
-                category: event.target.value as ExpenseCategory,
-              })
-            }
+            placeholder="e.g. Transport to field"
+            onChange={(event) => setForm({ ...form, name: event.target.value })}
             className="mt-1.5 h-11 w-full rounded-xl border border-[#e6ebf0] bg-[#fbfcfd] px-3 text-sm font-semibold text-[#0b1220] outline-none transition focus:border-[var(--forest-emerald)] disabled:bg-[#f5f7f8] disabled:text-slate-500"
-          >
-            {expenseCategoryOptions.map((category) => (
-              <option key={category} value={category}>
-                {categoryLabel(category)}
-              </option>
-            ))}
-          </select>
+          />
         </label>
         <MoneyField
           label="Amount"
@@ -5154,18 +5151,6 @@ function ExpenseFormCard({
           locked={!editable || !canRecordExpense}
           onChange={(value) => setForm({ ...form, amount: value })}
         />
-        <label>
-          <span className="text-xs font-bold text-slate-600">Description</span>
-          <textarea
-            value={form.description}
-            disabled={!editable || !canRecordExpense}
-            onChange={(event) =>
-              setForm({ ...form, description: event.target.value })
-            }
-            rows={3}
-            className="mt-1.5 w-full rounded-xl border border-[#e6ebf0] bg-[#fbfcfd] px-3 py-2.5 text-sm font-medium text-[#0b1220] outline-none transition focus:border-[var(--forest-emerald)] disabled:bg-[#f5f7f8] disabled:text-slate-500"
-          />
-        </label>
       </div>
       <footer className="border-t border-[#edf1f5] bg-[#f8faf9] px-4 py-3.5">
         <button
@@ -5204,7 +5189,7 @@ function ExpenseList({ operation }: { operation: DailyOperation }) {
       ) : (
         <div className="divide-y divide-[#edf1f5]">
           <div className="hidden grid-cols-[minmax(0,1.25fr)_120px_140px_160px] gap-3 bg-[#e5ece8] px-4 py-2.5 text-[10px] font-semibold text-slate-500 sm:grid">
-            <span>Category</span>
+            <span>Expense</span>
             <span className="text-right">Amount</span>
             <span>Recorded by</span>
             <span>Time</span>
@@ -5216,10 +5201,10 @@ function ExpenseList({ operation }: { operation: DailyOperation }) {
             >
               <span className="min-w-0">
                 <span className="block truncate font-bold">
-                  {categoryLabel(expense.category)}
+                  {expenseDisplayName(expense)}
                 </span>
                 <span className="mt-0.5 block truncate text-xs text-slate-500">
-                  {expense.description || "No description"}
+                  {expense.recordedByName}
                 </span>
               </span>
               <span className="text-right font-bold tabular-nums">
@@ -5517,6 +5502,18 @@ function categoryLabel(category: ExpenseCategory) {
     .split("_")
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function expenseDisplayName(
+  expense: Pick<DailyOperationExpense, "category" | "description">,
+) {
+  const name = expense.description?.trim();
+
+  if (name) {
+    return name;
+  }
+
+  return categoryLabel(expense.category);
 }
 
 function styleReportWorksheet(

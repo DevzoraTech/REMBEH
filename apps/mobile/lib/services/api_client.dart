@@ -1134,6 +1134,7 @@ class ApiClient {
       userEmail: user['email'] as String? ?? emailFallback,
       roleName: user['roleName'] as String?,
       workspaceName: workspace['name'] as String? ?? '',
+      userId: user['id'] as String?,
       tenantId: workspace['id'] as String?,
       refreshToken: sessionPayload['refreshToken'] as String?,
       refreshExpiresAt: sessionPayload['refreshExpiresAt'] as String?,

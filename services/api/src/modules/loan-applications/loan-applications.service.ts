@@ -45,6 +45,7 @@ import {
   LOAN_APPLICATION_EVENTS,
   LoanApplicationEventPayload,
 } from './loan-applications.events';
+import { LOAN_APPLICATION_PERMISSIONS } from './loan-applications.permissions';
 import {
   LoanApplicationRecord,
   LoanApplicationsRepository,
@@ -198,15 +199,16 @@ export class LoanApplicationsService {
     const canSeeAllBranches = user.permissions.includes(
       BRANCH_PERMISSIONS.create,
     );
+    const canSeeBranchLoanRecords = this.canSeeBranchLoanRecords(user);
 
     if (!canSeeAllBranches && !user.branchId) {
       return { applications: [] };
     }
 
-    // Agent / manager: branch scope. Owner: all branches.
     const records = await this.repository.listForScope({
       tenantId: user.tenantId,
       branchId: canSeeAllBranches ? null : user.branchId,
+      officerUserId: canSeeBranchLoanRecords ? null : user.userId,
     });
 
     return {
@@ -1639,6 +1641,8 @@ export class LoanApplicationsService {
       applicationId: application.id,
       branchId: application.branchId,
       officerUserId: application.officerUserId,
+      officerName: application.officer?.displayName ?? null,
+      officerPublicId: application.officer?.publicId ?? null,
       status: application.status,
       clientName: this.clientName(application),
       phone: application.phone ?? '',
@@ -1669,7 +1673,20 @@ export class LoanApplicationsService {
       synced: Boolean(application.syncedAt),
       status: application.status,
       branchId: application.branchId,
+      officerUserId: application.officerUserId,
+      officerName: application.officer?.displayName ?? null,
+      officerPublicId: application.officer?.publicId ?? null,
     };
+  }
+
+  private canSeeBranchLoanRecords(user: AuthenticatedUser) {
+    return (
+      user.permissions.includes(BRANCH_PERMISSIONS.create) ||
+      user.permissions.includes(BRANCH_PERMISSIONS.staffRead) ||
+      user.permissions.includes(OPERATIONS_PERMISSIONS.read) ||
+      user.permissions.includes(OPERATIONS_PERMISSIONS.floatManage) ||
+      user.permissions.includes(LOAN_APPLICATION_PERMISSIONS.update)
+    );
   }
 
   private toContract(

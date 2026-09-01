@@ -15,6 +15,7 @@ import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import { computeCollectionSchedule } from '../collections/collection-schedule';
 import { CreateLoanApplicationFromCustomerDto } from '../loan-applications/dto/create-from-customer.dto';
 import { LoanApplicationsService } from '../loan-applications/loan-applications.service';
+import { OPERATIONS_PERMISSIONS } from '../operations/operations.permissions';
 import {
   computeLoanPricing,
   resolveBaseRepayable,
@@ -52,6 +53,7 @@ export class LoansService {
     const canSeeAllBranches = user.permissions.includes(
       BRANCH_PERMISSIONS.create,
     );
+    const canSeeBranchLoanRecords = this.canSeeBranchLoanRecords(user);
 
     if (!canSeeAllBranches && !user.branchId) {
       return { loans: [] };
@@ -60,6 +62,7 @@ export class LoansService {
     const loans = await this.loansRepository.listForScope({
       tenantId: user.tenantId,
       branchId: canSeeAllBranches ? null : user.branchId,
+      officerUserId: canSeeBranchLoanRecords ? null : user.userId,
     });
 
     const reminders = await this.loanRemindersService.summarizeLoans(
@@ -105,6 +108,7 @@ export class LoansService {
     const canSeeAllBranches = user.permissions.includes(
       BRANCH_PERMISSIONS.create,
     );
+    const canSeeBranchLoanRecords = this.canSeeBranchLoanRecords(user);
 
     if (!canSeeAllBranches && !user.branchId) {
       return {
@@ -119,7 +123,7 @@ export class LoansService {
     const loans = await this.loansRepository.listPendingDisbursements({
       tenantId: user.tenantId,
       branchId: canSeeAllBranches ? null : user.branchId,
-      officerUserId: canSeeAllBranches ? null : user.userId,
+      officerUserId: canSeeBranchLoanRecords ? null : user.userId,
     });
 
     const pendingDisbursements = loans
@@ -438,6 +442,16 @@ export class LoansService {
     };
   }
 
+  private canSeeBranchLoanRecords(user: AuthenticatedUser) {
+    return (
+      user.permissions.includes(BRANCH_PERMISSIONS.create) ||
+      user.permissions.includes(BRANCH_PERMISSIONS.staffRead) ||
+      user.permissions.includes(OPERATIONS_PERMISSIONS.read) ||
+      user.permissions.includes(OPERATIONS_PERMISSIONS.floatManage) ||
+      user.permissions.includes(LOAN_PERMISSIONS.update)
+    );
+  }
+
   private toPendingContract(loan: LoanListRecord): PendingDisbursementContract {
     const agreedAmount = this.decimalToNumber(loan.principal) ?? 0;
     const disbursedAmount = this.totalDisbursed(loan);
@@ -580,6 +594,10 @@ export class LoansService {
       throw new BadRequestException(
         'This branch day is closed. New disbursements cannot be recorded.',
       );
+    }
+
+    if (input.user.permissions.includes(OPERATIONS_PERMISSIONS.floatManage)) {
+      return;
     }
 
     const [float, disbursed, collections] = await Promise.all([

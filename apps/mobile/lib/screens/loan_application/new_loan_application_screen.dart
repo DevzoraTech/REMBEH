@@ -57,6 +57,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   final _processingFee = TextEditingController();
   final _guarantorName = TextEditingController();
   final _guarantorPhone = TextEditingController();
+  final _principalFocus = FocusNode();
 
   Timer? _borrowerSearchDebounce;
   int _borrowerSearchGeneration = 0;
@@ -83,12 +84,16 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   String? _locationsError;
 
   bool _repaymentsUsedEdited = false;
+  bool _fundingSheetOpen = false;
+  double? _confirmedMixedFundingPrincipal;
 
   @override
   void initState() {
     super.initState();
 
     _api = ApiClient(_locator.sessionStore);
+
+    _principalFocus.addListener(_onPrincipalFocusChanged);
 
     _dayStore.addListener(_onDayStatusChanged);
 
@@ -770,7 +775,26 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     return remaining <= 0 ? 0 : remaining;
   }
 
+  bool get _usesFieldOfficerFloatForLoans =>
+      widget.session.usesFieldOfficerFloatForLoans;
+
+  void _onPrincipalFocusChanged() {
+    if (!_principalFocus.hasFocus) {
+      unawaited(_evaluateFundingAfterPrincipalEntry(fromContinue: false));
+    }
+  }
+
+  void _resetFundingDecision() {
+    _confirmedMixedFundingPrincipal = null;
+    _repaymentsUsedEdited = false;
+    _setRepaymentsUsedAmount(0);
+  }
+
   int? _remainingFloatForLoan() {
+    if (!_usesFieldOfficerFloatForLoans) {
+      return null;
+    }
+
     final status = _dayStore.status;
 
     if (status == null) return null;
@@ -779,6 +803,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   }
 
   int _collectedRepaymentsAvailableForLoan() {
+    if (!_usesFieldOfficerFloatForLoans) {
+      return 0;
+    }
+
     final status = _dayStore.status;
 
     if (status == null) return 0;
@@ -789,6 +817,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   }
 
   bool _needsRepaymentFundingForLoan(double amountGivenNow) {
+    if (!_usesFieldOfficerFloatForLoans) {
+      return false;
+    }
+
     final remaining = _remainingFloatForLoan();
 
     return amountGivenNow > 0 &&
@@ -814,6 +846,12 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
   }
 
   void _syncRepaymentsUsedFromFloat() {
+    if (!_usesFieldOfficerFloatForLoans) {
+      _repaymentsUsedEdited = false;
+      _setRepaymentsUsedAmount(0);
+      return;
+    }
+
     final amountGivenNow = _currentInitialDisbursementAmount();
 
     if (!_needsRepaymentFundingForLoan(amountGivenNow)) {
@@ -842,6 +880,10 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     required double amountGivenNow,
     required double collectedRepaymentsAmount,
   }) {
+    if (!_usesFieldOfficerFloatForLoans) {
+      return null;
+    }
+
     final status = _dayStore.status;
 
     if (status == null || amountGivenNow <= 0) {
@@ -879,6 +921,174 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     }
 
     return null;
+  }
+
+  Future<bool> _evaluateFundingAfterPrincipalEntry({
+    required bool fromContinue,
+  }) async {
+    if (!_usesFieldOfficerFloatForLoans || _step != 3 || _busy) {
+      return true;
+    }
+
+    final principal = _currentPrincipalAmount();
+    if (principal <= 0) {
+      return !fromContinue;
+    }
+
+    final remainingFloat = _remainingFloatForLoan();
+    if (remainingFloat == null) {
+      if (_dayStore.loading) {
+        return !fromContinue;
+      }
+
+      if (fromContinue) {
+        _showSnack("Today's float position is not ready yet.");
+      }
+
+      return false;
+    }
+
+    final floatAvailable = remainingFloat.toDouble();
+
+    if (principal <= floatAvailable) {
+      _confirmedMixedFundingPrincipal = null;
+      _setRepaymentsUsedAmount(0);
+      if (!_draft.partialDisbursement &&
+          _initialDisbursement.text.trim() != _principal.text.trim()) {
+        _initialDisbursement.text = _principal.text;
+      }
+      return true;
+    }
+
+    final repaymentsAvailable = _collectedRepaymentsAvailableForLoan()
+        .toDouble();
+    final totalAvailable = floatAvailable + repaymentsAvailable;
+
+    if (totalAvailable >= principal) {
+      final repaymentsToUse = principal - floatAvailable;
+      final alreadyConfirmed =
+          !_draft.partialDisbursement &&
+          _confirmedMixedFundingPrincipal == principal &&
+          (_currentRepaymentsUsedAmount() - repaymentsToUse).abs() < 0.01;
+
+      if (alreadyConfirmed) {
+        return true;
+      }
+
+      final action = await _showLowFloatFundingSheet(
+        principal: principal,
+        floatAvailable: floatAvailable,
+        repaymentsToUse: repaymentsToUse,
+      );
+
+      if (!mounted || action == null) {
+        return false;
+      }
+
+      if (action == _FundingAction.confirmFullMixedFunding) {
+        setState(() {
+          _draft.partialDisbursement = false;
+          _confirmedMixedFundingPrincipal = principal;
+          _initialDisbursement.text = _principal.text;
+          _setRepaymentsUsedAmount(repaymentsToUse);
+        });
+        return true;
+      }
+
+      if (action == _FundingAction.usePartialLoan) {
+        final partialAmount = floatAvailable > 0 ? floatAvailable : 0;
+
+        setState(() {
+          _draft.partialDisbursement = true;
+          _confirmedMixedFundingPrincipal = null;
+          _initialDisbursement.text = partialAmount > 0
+              ? partialAmount.toStringAsFixed(0)
+              : '';
+          _setRepaymentsUsedAmount(0);
+        });
+      }
+
+      return false;
+    }
+
+    final action = await _showInsufficientFundingSheet(
+      principal: principal,
+      floatAvailable: floatAvailable,
+      repaymentsAvailable: repaymentsAvailable,
+    );
+
+    if (!mounted || action != _FundingAction.usePartialLoan) {
+      return false;
+    }
+
+    setState(() {
+      _draft.partialDisbursement = true;
+      _confirmedMixedFundingPrincipal = null;
+      _initialDisbursement.text = totalAvailable > 0
+          ? totalAvailable.toStringAsFixed(0)
+          : '';
+      _setRepaymentsUsedAmount(totalAvailable > 0 ? repaymentsAvailable : 0);
+    });
+
+    return false;
+  }
+
+  Future<_FundingAction?> _showLowFloatFundingSheet({
+    required double principal,
+    required double floatAvailable,
+    required double repaymentsToUse,
+  }) async {
+    if (_fundingSheetOpen) {
+      return null;
+    }
+
+    _fundingSheetOpen = true;
+    try {
+      return await showModalBottomSheet<_FundingAction>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) {
+          return _LowFloatFundingSheet(
+            principal: principal,
+            floatAvailable: floatAvailable,
+            repaymentsToUse: repaymentsToUse,
+          );
+        },
+      );
+    } finally {
+      _fundingSheetOpen = false;
+    }
+  }
+
+  Future<_FundingAction?> _showInsufficientFundingSheet({
+    required double principal,
+    required double floatAvailable,
+    required double repaymentsAvailable,
+  }) async {
+    if (_fundingSheetOpen) {
+      return null;
+    }
+
+    _fundingSheetOpen = true;
+    try {
+      return await showModalBottomSheet<_FundingAction>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) {
+          return _InsufficientFundingSheet(
+            principal: principal,
+            floatAvailable: floatAvailable,
+            repaymentsAvailable: repaymentsAvailable,
+          );
+        },
+      );
+    } finally {
+      _fundingSheetOpen = false;
+    }
   }
 
   bool _isValidBorrowerPhone(String value) {
@@ -1029,6 +1239,7 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     _phone.dispose();
     _nationalId.dispose();
     _principal.dispose();
+    _principalFocus.dispose();
     _initialDisbursement.dispose();
     _repaymentsUsed.dispose();
     _processingFee.dispose();
@@ -1732,6 +1943,15 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         await _verifyApplicant();
         return;
       }
+    }
+
+    if (_step == 3 &&
+        !await _evaluateFundingAfterPrincipalEntry(fromContinue: true)) {
+      return;
+    }
+
+    if (!mounted) {
+      return;
     }
 
     if (!_canContinue()) {
@@ -2646,13 +2866,9 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
 
     final amountGivenNow = _currentInitialDisbursementAmount();
 
-    final repaymentsUsed = _currentRepaymentsUsedAmount();
-
     final remainingToGive = _currentPendingDisbursementAmount();
 
-    final assignedFloatNeeded = amountGivenNow - repaymentsUsed <= 0
-        ? 0
-        : amountGivenNow - repaymentsUsed;
+    final repaymentsUsed = _currentRepaymentsUsedAmount();
 
     final floatMessage = _floatMessageForDisbursement(
       amountGivenNow: amountGivenNow,
@@ -2660,8 +2876,6 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
     );
 
     final checkingFloat = remainingFloat == null && _dayStore.loading;
-
-    final needsRepaymentFunding = _needsRepaymentFundingForLoan(amountGivenNow);
 
     return [
       const Text(
@@ -2751,6 +2965,15 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
           ),
         ),
       ],
+      if (_usesFieldOfficerFloatForLoans &&
+          (checkingFloat || remainingFloat != null)) ...[
+        const SizedBox(height: 14),
+        _FundingPositionCard(
+          checking: checkingFloat,
+          floatAvailable: remainingFloat ?? 0,
+          collectedRepaymentsAvailable: collectedRepaymentsAvailable,
+        ),
+      ],
       const SizedBox(height: 14),
       const LoanFieldLabel(label: 'Principal Amount'),
       const SizedBox(height: 6),
@@ -2759,15 +2982,16 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         hint: 'Enter loan amount',
         icon: Icons.payments_outlined,
         keyboardType: TextInputType.number,
-        errorText: floatMessage,
+        focusNode: _principalFocus,
+        suffixText: 'UGX',
         onChanged: (_) {
+          _resetFundingDecision();
+
           _recomputeFeeFromTemplate();
 
           if (!_draft.partialDisbursement) {
             _initialDisbursement.text = _principal.text;
           }
-
-          _syncRepaymentsUsedFromFloat();
 
           setState(() {});
         },
@@ -2776,211 +3000,107 @@ class _NewLoanApplicationScreenState extends State<NewLoanApplicationScreen> {
         const SizedBox(height: 6),
         Text(rangeHint, style: const TextStyle(color: slateText, fontSize: 12)),
       ],
-      const SizedBox(height: 12),
-      Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () {
-            setState(() {
-              _draft.partialDisbursement = !_draft.partialDisbursement;
-
-              if (!_draft.partialDisbursement) {
-                _initialDisbursement.text = _principal.text;
-              } else if (_initialDisbursement.text.trim().isEmpty) {
-                _initialDisbursement.clear();
-              }
-
-              _syncRepaymentsUsedFromFloat();
-            });
-          },
-          borderRadius: rembehBorderRadius(rembehRadiusMd),
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: _draft.partialDisbursement
-                  ? forestEmerald.withValues(alpha: 0.07)
-                  : Colors.white,
-              border: Border.all(
-                color: _draft.partialDisbursement
-                    ? forestEmerald.withValues(alpha: 0.35)
-                    : line,
-              ),
-              borderRadius: rembehBorderRadius(rembehRadiusMd),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Checkbox(
-                  value: _draft.partialDisbursement,
-                  onChanged: (value) {
-                    setState(() {
-                      _draft.partialDisbursement = value ?? false;
-
-                      if (!_draft.partialDisbursement) {
-                        _initialDisbursement.text = _principal.text;
-                      }
-
-                      _syncRepaymentsUsedFromFloat();
-                    });
-                  },
-                  activeColor: forestEmerald,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-                const SizedBox(width: 8),
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Giving only part of this amount now',
-                        style: TextStyle(
-                          color: midnightNavy,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13,
-                        ),
-                      ),
-                      SizedBox(height: 3),
-                      Text(
-                        'Use this when the client will receive the remaining amount later.',
-                        style: TextStyle(
-                          color: slateText,
-                          fontSize: 12,
-                          height: 1.25,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                const Icon(Icons.info_outline, color: forestEmerald, size: 18),
-              ],
-            ),
-          ),
-        ),
-      ),
       if (_draft.partialDisbursement) ...[
         const SizedBox(height: 12),
-        const LoanFieldLabel(label: 'Amount Given Now'),
-        const SizedBox(height: 6),
-        LoanTextField(
-          controller: _initialDisbursement,
-          hint: 'Enter amount given now',
-          icon: Icons.payments_outlined,
-          keyboardType: TextInputType.number,
-          onChanged: (_) {
-            _syncRepaymentsUsedFromFloat();
-            setState(() {});
-          },
-        ),
-        if (principal > 0 && amountGivenNow >= principal) ...[
-          const SizedBox(height: 6),
-          const Text(
-            'For partial disbursement, this must be less than the full loan amount.',
-            style: TextStyle(
-              color: Color(0xFFC62828),
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-        const SizedBox(height: 10),
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+          padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: sage,
-            border: Border.all(color: line),
+            color: const Color(0xFFFFF0F2),
+            border: Border.all(color: const Color(0xFFFFD2D8)),
             borderRadius: rembehBorderRadius(rembehRadiusMd),
           ),
-          child: Text(
-            'Remaining to give: UGX ${formatMoney(remainingToGive)}',
-            style: const TextStyle(
-              color: forestEmerald,
-              fontWeight: FontWeight.w900,
-              fontSize: 14,
-            ),
-          ),
-        ),
-      ],
-      if (needsRepaymentFunding) ...[
-        const SizedBox(height: 12),
-        const LoanFieldLabel(label: 'Use Collected Repayments', required: true),
-        const SizedBox(height: 6),
-        LoanTextField(
-          controller: _repaymentsUsed,
-          hint: 'Amount added from repayments',
-          icon: Icons.savings_outlined,
-          keyboardType: TextInputType.number,
-          onChanged: (_) {
-            _repaymentsUsedEdited = true;
-            setState(() {});
-          },
-        ),
-        const SizedBox(height: 6),
-        Text(
-          'Added from repayments: UGX ${formatMoney(repaymentsUsed)}. Assigned float needed: UGX ${formatMoney(assignedFloatNeeded)}. Available repayments: UGX ${formatMoney(collectedRepaymentsAvailable)}.',
-          style: const TextStyle(
-            color: slateText,
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-      ],
-      if (checkingFloat || remainingFloat != null) ...[
-        const SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: checkingFloat
-                ? sage
-                : floatMessage == null
-                ? forestEmerald.withValues(alpha: 0.08)
-                : const Color(0xFFC62828).withValues(alpha: 0.08),
-            border: Border.all(
-              color: checkingFloat
-                  ? line
-                  : floatMessage == null
-                  ? forestEmerald.withValues(alpha: 0.28)
-                  : const Color(0xFFC62828).withValues(alpha: 0.28),
-            ),
-            borderRadius: rembehBorderRadius(rembehRadiusMd),
-          ),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                checkingFloat
-                    ? Icons.sync_rounded
-                    : floatMessage == null
-                    ? Icons.account_balance_wallet_outlined
-                    : Icons.warning_amber_rounded,
-                color: checkingFloat
-                    ? slateText
-                    : floatMessage == null
-                    ? forestEmerald
-                    : const Color(0xFFC62828),
-                size: 18,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  checkingFloat
-                      ? "Checking today's float..."
-                      : floatMessage ??
-                            'Float left: UGX ${formatMoney(remainingFloat ?? 0)}',
-                  style: TextStyle(
-                    color: checkingFloat
-                        ? slateText
-                        : floatMessage == null
-                        ? forestEmerald
-                        : const Color(0xFFC62828),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    height: 1.2,
+              const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.check_box_rounded, color: midnightNavy, size: 22),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Giving only part of this loan now',
+                          style: TextStyle(
+                            color: midnightNavy,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 13.5,
+                          ),
+                        ),
+                        SizedBox(height: 3),
+                        Text(
+                          'Use this when the client will receive the remaining amount later.',
+                          style: TextStyle(
+                            color: slateText,
+                            fontSize: 11.5,
+                            height: 1.25,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                  SizedBox(width: 8),
+                  Icon(Icons.info_outline, color: slateText, size: 18),
+                ],
+              ),
+              const SizedBox(height: 14),
+              const LoanFieldLabel(label: 'Partial amount given now'),
+              const SizedBox(height: 6),
+              LoanTextField(
+                controller: _initialDisbursement,
+                hint: 'Enter amount given now',
+                icon: Icons.payments_outlined,
+                keyboardType: TextInputType.number,
+                suffixText: 'UGX',
+                onChanged: (_) {
+                  _repaymentsUsedEdited = false;
+                  _syncRepaymentsUsedFromFloat();
+                  setState(() {});
+                },
+              ),
+              if (principal > 0 && amountGivenNow >= principal) ...[
+                const SizedBox(height: 6),
+                const Text(
+                  'For partial disbursement, this must be less than the full loan amount.',
+                  style: TextStyle(
+                    color: Color(0xFFC62828),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 10),
+              Text.rich(
+                TextSpan(
+                  style: const TextStyle(
+                    color: midnightNavy,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                  ),
+                  children: [
+                    const TextSpan(text: 'Remaining balance: '),
+                    TextSpan(
+                      text: 'UGX ${formatMoney(remainingToGive)}',
+                      style: const TextStyle(color: Color(0xFFC62828)),
+                    ),
+                  ],
                 ),
               ),
             ],
+          ),
+        ),
+      ],
+      if (_draft.partialDisbursement && floatMessage != null) ...[
+        const SizedBox(height: 8),
+        Text(
+          floatMessage,
+          style: const TextStyle(
+            color: Color(0xFFC62828),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ],
@@ -3607,6 +3727,617 @@ class _ExistingBorrowerRow extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+enum _FundingAction { confirmFullMixedFunding, usePartialLoan }
+
+class _FundingPositionCard extends StatelessWidget {
+  const _FundingPositionCard({
+    required this.checking,
+    required this.floatAvailable,
+    required this.collectedRepaymentsAvailable,
+  });
+
+  final bool checking;
+  final num floatAvailable;
+  final num collectedRepaymentsAvailable;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: sage,
+        border: Border.all(color: line),
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 35,
+            height: 35,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: forestEmerald.withValues(alpha: 0.09),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.account_balance_wallet_outlined,
+              color: forestEmerald,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        'Your funding position',
+                        style: TextStyle(
+                          color: midnightNavy,
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    Icon(Icons.info_outline, color: slateText, size: 17),
+                  ],
+                ),
+                const SizedBox(height: 7),
+                if (checking)
+                  const Text(
+                    "Checking today's funding position...",
+                    style: TextStyle(
+                      color: slateText,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  )
+                else ...[
+                  _FundingPositionLine(
+                    label: 'Float available:',
+                    value: floatAvailable,
+                  ),
+                  const SizedBox(height: 4),
+                  _FundingPositionLine(
+                    label: 'Collected repayments available:',
+                    value: collectedRepaymentsAvailable,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FundingPositionLine extends StatelessWidget {
+  const _FundingPositionLine({required this.label, required this.value});
+
+  final String label;
+  final num value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text.rich(
+      TextSpan(
+        style: const TextStyle(
+          color: slateText,
+          fontSize: 12.5,
+          fontWeight: FontWeight.w500,
+        ),
+        children: [
+          TextSpan(text: '$label '),
+          TextSpan(
+            text: 'UGX ${formatMoney(value)}',
+            style: const TextStyle(
+              color: forestEmerald,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LowFloatFundingSheet extends StatelessWidget {
+  const _LowFloatFundingSheet({
+    required this.principal,
+    required this.floatAvailable,
+    required this.repaymentsToUse,
+  });
+
+  final double principal;
+  final double floatAvailable;
+  final double repaymentsToUse;
+
+  @override
+  Widget build(BuildContext context) {
+    return _FundingSheetShell(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _FundingSheetClose(
+            onClose: () {
+              Navigator.of(context).pop();
+            },
+          ),
+          const SizedBox(height: 6),
+          Center(
+            child: Container(
+              width: 54,
+              height: 54,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFE9E5),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.priority_high_rounded,
+                color: Color(0xFFD92D20),
+                size: 28,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Available float is low',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: midnightNavy,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text.rich(
+            TextSpan(
+              style: const TextStyle(
+                color: midnightNavy,
+                fontSize: 14,
+                height: 1.45,
+                fontWeight: FontWeight.w500,
+              ),
+              children: [
+                const TextSpan(text: 'You only have '),
+                TextSpan(
+                  text: formatMoney(floatAvailable),
+                  style: const TextStyle(
+                    color: Color(0xFFD92D20),
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const TextSpan(text: ' float left.\n'),
+                TextSpan(
+                  text: formatMoney(repaymentsToUse),
+                  style: const TextStyle(
+                    color: Color(0xFFD92D20),
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const TextSpan(
+                  text:
+                      ' will be used from collected repayments\nto complete this loan.',
+                ),
+              ],
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 22),
+          _FundingBreakdownCard(
+            title: 'How this loan will be funded',
+            rows: [
+              _FundingBreakdownData(
+                icon: Icons.account_balance_wallet_outlined,
+                label: 'From your float',
+                amount: floatAvailable,
+              ),
+              _FundingBreakdownData(
+                icon: Icons.arrow_downward_rounded,
+                label: 'From collected repayments',
+                amount: repaymentsToUse,
+              ),
+            ],
+            totalLabel: 'Total loan amount',
+            total: principal,
+          ),
+          const SizedBox(height: 28),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop(_FundingAction.confirmFullMixedFunding);
+            },
+            icon: const Icon(Icons.check_circle_outline, size: 22),
+            label: const Text('Confirm and continue'),
+            style: FilledButton.styleFrom(
+              backgroundColor: forestEmerald,
+              minimumSize: const Size.fromHeight(56),
+              textStyle: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop(_FundingAction.usePartialLoan);
+            },
+            icon: const Icon(Icons.payments_outlined, size: 22),
+            label: const Text('Give partial loan instead'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: forestEmerald,
+              side: const BorderSide(color: forestEmerald),
+              minimumSize: const Size.fromHeight(56),
+              textStyle: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InsufficientFundingSheet extends StatelessWidget {
+  const _InsufficientFundingSheet({
+    required this.principal,
+    required this.floatAvailable,
+    required this.repaymentsAvailable,
+  });
+
+  final double principal;
+  final double floatAvailable;
+  final double repaymentsAvailable;
+
+  num get _totalAvailable => floatAvailable + repaymentsAvailable;
+
+  @override
+  Widget build(BuildContext context) {
+    final shortfall = principal - _totalAvailable;
+
+    return _FundingSheetShell(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _FundingSheetClose(
+            onClose: () {
+              Navigator.of(context).pop();
+            },
+          ),
+          const SizedBox(height: 6),
+          Center(
+            child: Container(
+              width: 54,
+              height: 54,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFE4E8),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.priority_high_rounded,
+                color: Color(0xFFD92D20),
+                size: 28,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Not enough cash available',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: midnightNavy,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text.rich(
+            TextSpan(
+              style: const TextStyle(
+                color: midnightNavy,
+                fontSize: 14,
+                height: 1.5,
+                fontWeight: FontWeight.w500,
+              ),
+              children: [
+                const TextSpan(
+                  text: "You don't have enough cash to issue the full loan.\n",
+                ),
+                const TextSpan(text: 'The loan amount is '),
+                TextSpan(
+                  text: formatMoney(principal),
+                  style: const TextStyle(
+                    color: Color(0xFFD92D20),
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const TextSpan(text: '.'),
+              ],
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 22),
+          _FundingBreakdownCard(
+            title: 'Your available cash',
+            rows: [
+              _FundingBreakdownData(
+                icon: Icons.account_balance_wallet_outlined,
+                label: 'Float available',
+                amount: floatAvailable,
+              ),
+              _FundingBreakdownData(
+                icon: Icons.arrow_downward_rounded,
+                label: 'Collected repayments available',
+                amount: repaymentsAvailable,
+              ),
+            ],
+            totalLabel: 'Total available',
+            total: _totalAvailable,
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFEAED),
+              border: Border.all(color: const Color(0xFFFFCDD4)),
+              borderRadius: rembehBorderRadius(rembehRadiusSm),
+            ),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.warning_amber_rounded,
+                  color: Color(0xFFD92D20),
+                  size: 20,
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      style: const TextStyle(
+                        color: Color(0xFFD92D20),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      children: [
+                        const TextSpan(text: 'You are short by '),
+                        TextSpan(
+                          text: 'UGX ${formatMoney(shortfall)}.',
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 28),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop(_FundingAction.usePartialLoan);
+            },
+            icon: const Icon(Icons.payments_outlined, size: 22),
+            label: const Text('Give partial loan'),
+            style: FilledButton.styleFrom(
+              backgroundColor: forestEmerald,
+              minimumSize: const Size.fromHeight(56),
+              textStyle: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: () {
+              Navigator.of(context).pop();
+            },
+            icon: const Icon(Icons.arrow_back_rounded, size: 22),
+            label: const Text('Go back'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: forestEmerald,
+              side: const BorderSide(color: forestEmerald),
+              minimumSize: const Size.fromHeight(56),
+              textStyle: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FundingSheetShell extends StatelessWidget {
+  const _FundingSheetShell({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bottomInset),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(24, 11, 24, 22),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: SingleChildScrollView(child: child),
+        ),
+      ),
+    );
+  }
+}
+
+class _FundingSheetClose extends StatelessWidget {
+  const _FundingSheetClose({required this.onClose});
+
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Container(
+          width: 44,
+          height: 5,
+          decoration: BoxDecoration(
+            color: line,
+            borderRadius: BorderRadius.circular(999),
+          ),
+        ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: IconButton(
+            onPressed: onClose,
+            icon: const Icon(Icons.close_rounded),
+            color: midnightNavy,
+            tooltip: 'Close',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _FundingBreakdownData {
+  const _FundingBreakdownData({
+    required this.icon,
+    required this.label,
+    required this.amount,
+  });
+
+  final IconData icon;
+  final String label;
+  final num amount;
+}
+
+class _FundingBreakdownCard extends StatelessWidget {
+  const _FundingBreakdownCard({
+    required this.title,
+    required this.rows,
+    required this.totalLabel,
+    required this.total,
+  });
+
+  final String title;
+  final List<_FundingBreakdownData> rows;
+  final String totalLabel;
+  final num total;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: line),
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: midnightNavy,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 13),
+          ...rows.map(
+            (row) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _FundingBreakdownRow(row: row),
+            ),
+          ),
+          const Divider(height: 1, color: line),
+          const SizedBox(height: 13),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  totalLabel,
+                  style: const TextStyle(
+                    color: midnightNavy,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              Text(
+                'UGX ${formatMoney(total)}',
+                style: const TextStyle(
+                  color: forestEmerald,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FundingBreakdownRow extends StatelessWidget {
+  const _FundingBreakdownRow({required this.row});
+
+  final _FundingBreakdownData row;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(row.icon, color: forestEmerald, size: 24),
+        const SizedBox(width: 13),
+        Expanded(
+          child: Text(
+            row.label,
+            style: const TextStyle(
+              color: midnightNavy,
+              fontSize: 13.5,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        Text(
+          'UGX ${formatMoney(row.amount)}',
+          style: const TextStyle(
+            color: forestEmerald,
+            fontSize: 13.5,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
     );
   }
 }

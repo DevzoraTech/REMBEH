@@ -10,13 +10,6 @@ const FIELD_AGENT_ROLES = [
   'Recovery Officer',
 ] as const;
 
-const FLOAT_RECIPIENT_ROLES = [
-  ...FIELD_AGENT_ROLES,
-  'Cashier',
-  'Manager',
-  'Branch Manager',
-] as const;
-
 @Injectable()
 export class AgentsRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -28,9 +21,7 @@ export class AgentsRepository {
     includeFloatRecipients?: boolean;
   }) {
     const search = input.search?.trim();
-    const roleNames = input.includeFloatRecipients
-      ? [...FLOAT_RECIPIENT_ROLES]
-      : [...FIELD_AGENT_ROLES];
+    const roleNames = [...FIELD_AGENT_ROLES];
     const orFilters: Prisma.UserWhereInput[] | undefined = search
       ? [
           { displayName: { contains: search, mode: 'insensitive' } },
@@ -67,9 +58,7 @@ export class AgentsRepository {
     agentId: string;
     includeFloatRecipients?: boolean;
   }) {
-    const roleNames = input.includeFloatRecipients
-      ? [...FLOAT_RECIPIENT_ROLES]
-      : [...FIELD_AGENT_ROLES];
+    const roleNames = [...FIELD_AGENT_ROLES];
 
     return this.prisma.user.findFirst({
       where: {

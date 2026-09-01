@@ -134,7 +134,9 @@ class RepaymentsLiveStore extends ChangeNotifier {
       _summary = results[0] as HomeSummary;
       _repayments
         ..clear()
-        ..addAll(results[1] as List<FieldRepayment>);
+        ..addAll(
+          (results[1] as List<FieldRepayment>).where(_canShowRepaymentRecord),
+        );
       _dueTodayClients
         ..clear()
         ..addAll(_summary.clientsDueToday);
@@ -690,6 +692,9 @@ class RepaymentsLiveStore extends ChangeNotifier {
       recordedAt: paidAt,
       synced: false,
       dueToday: detail.nextDueIsToday,
+      recordedByUserId: _session?.userId,
+      recordedByName: _session?.userName ?? 'You (offline)',
+      recordedByPublicId: _session?.publicId,
     );
     _repayments.insert(0, repayment);
     notifyListeners();
@@ -837,7 +842,16 @@ class RepaymentsLiveStore extends ChangeNotifier {
           DateTime.now(),
       synced: payload['synced'] as bool? ?? true,
       dueToday: true,
+      recordedByUserId: payload['recordedByUserId'] as String?,
+      recordedByName: payload['recordedByName'] as String?,
+      recordedByPublicId: payload['recordedByPublicId'] as String?,
     );
+
+    if (!_canShowRepaymentRecord(item)) {
+      _repayments.removeWhere((row) => row.id == item.id);
+      notifyListeners();
+      return;
+    }
 
     final idx = _repayments.indexWhere((row) => row.id == item.id);
     if (idx >= 0) {
@@ -862,5 +876,38 @@ class RepaymentsLiveStore extends ChangeNotifier {
         .catchError((_) {});
 
     notifyListeners();
+  }
+
+  bool _canShowRepaymentRecord(FieldRepayment item) {
+    final session = _session;
+    if (session == null || !session.usesFieldOfficerFloatForLoans) {
+      return true;
+    }
+
+    final sessionUserId = session.userId?.trim();
+    final itemUserId = item.recordedByUserId?.trim();
+    if (sessionUserId != null &&
+        sessionUserId.isNotEmpty &&
+        itemUserId != null &&
+        itemUserId.isNotEmpty) {
+      return sessionUserId == itemUserId;
+    }
+
+    final sessionPublicId = session.publicId?.trim();
+    final itemPublicId = item.recordedByPublicId?.trim();
+    if (sessionPublicId != null &&
+        sessionPublicId.isNotEmpty &&
+        itemPublicId != null &&
+        itemPublicId.isNotEmpty) {
+      return sessionPublicId == itemPublicId;
+    }
+
+    final sessionName = session.userName.trim().toLowerCase();
+    final itemName = item.recordedByName?.trim().toLowerCase();
+    if (sessionName.isNotEmpty && itemName != null && itemName.isNotEmpty) {
+      return sessionName == itemName || itemName == 'you (offline)';
+    }
+
+    return itemUserId == null && itemPublicId == null && itemName == null;
   }
 }

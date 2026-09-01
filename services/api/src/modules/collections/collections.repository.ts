@@ -532,6 +532,7 @@ export class CollectionsRepository {
   listRepayments(input: {
     tenantId: string;
     branchId: string | null;
+    recordedByUserId?: string | null;
     from?: Date;
     to?: Date;
     take?: number;
@@ -555,6 +556,12 @@ export class CollectionsRepository {
                     }
                   : {}),
               },
+            }
+          : {}),
+
+        ...(input.recordedByUserId
+          ? {
+              recordedByUserId: input.recordedByUserId,
             }
           : {}),
       },

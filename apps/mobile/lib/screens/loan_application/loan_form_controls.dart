@@ -52,29 +52,35 @@ class LoanTextField extends StatelessWidget {
     required this.hint,
     required this.icon,
     this.keyboardType,
+    this.focusNode,
     this.onChanged,
     this.enabled = true,
     this.errorText,
+    this.suffixText,
   });
 
   final TextEditingController controller;
   final String hint;
   final IconData icon;
   final TextInputType? keyboardType;
+  final FocusNode? focusNode;
   final ValueChanged<String>? onChanged;
   final bool enabled;
   final String? errorText;
+  final String? suffixText;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       controller: controller,
       enabled: enabled,
+      focusNode: focusNode,
       keyboardType: keyboardType,
       onChanged: onChanged,
       decoration: InputDecoration(
         hintText: hint,
         prefixIcon: Icon(icon, color: forestEmerald, size: 20),
+        suffixText: suffixText,
         filled: true,
         fillColor: Colors.white,
         errorText: errorText,

@@ -33,6 +33,7 @@ export type RepaymentListItemContract = {
   dueToday: boolean;
   note: string | null;
   method: string;
+  recordedByUserId: string;
   recordedByName: string;
   recordedByPublicId: string | null;
   /** Presigned GET for the recording agent's profile selfie. */

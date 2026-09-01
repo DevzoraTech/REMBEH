@@ -18,24 +18,20 @@ class OfflineAuthService {
     final database = await _db.database;
 
     // Store hashed credentials in auth_cache table
-    await database.insert(
-      'auth_cache',
-      {
-        'email': email.trim().toLowerCase(),
-        'password_hash': passwordHash,
-        'user_id': session.publicId ?? '',
-        'user_name': session.userName,
-        'role_name': session.roleName ?? '',
-        'tenant_id': session.tenantId ?? '',
-        'branch_id': session.branchId ?? '',
-        'branch_name': session.branchName ?? '',
-        'workspace_name': session.workspaceName,
-        'permissions': jsonEncode(session.permissions),
-        'profile_photo_url': session.profilePhotoUrl ?? '',
-        'cached_at': DateTime.now().millisecondsSinceEpoch,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await database.insert('auth_cache', {
+      'email': email.trim().toLowerCase(),
+      'password_hash': passwordHash,
+      'user_id': session.publicId ?? '',
+      'user_name': session.userName,
+      'role_name': session.roleName ?? '',
+      'tenant_id': session.tenantId ?? '',
+      'branch_id': session.branchId ?? '',
+      'branch_name': session.branchName ?? '',
+      'workspace_name': session.workspaceName,
+      'permissions': jsonEncode(session.permissions),
+      'profile_photo_url': session.profilePhotoUrl ?? '',
+      'cached_at': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   /// Verify offline login credentials
@@ -57,7 +53,8 @@ class OfflineAuthService {
     if (results.isEmpty) {
       return OfflineAuthResult(
         success: false,
-        error: 'No cached credentials found. Please connect to internet to login.',
+        error:
+            'No cached credentials found. Please connect to internet to login.',
       );
     }
 
@@ -86,15 +83,10 @@ class OfflineAuthService {
           .map((e) => e.toString())
           .toList(),
       profilePhotoUrl: cached['profile_photo_url'] as String?,
-      cachedAt: DateTime.fromMillisecondsSinceEpoch(
-        cached['cached_at'] as int,
-      ),
+      cachedAt: DateTime.fromMillisecondsSinceEpoch(cached['cached_at'] as int),
     );
 
-    return OfflineAuthResult(
-      success: true,
-      sessionData: offlineSession,
-    );
+    return OfflineAuthResult(success: true, sessionData: offlineSession);
   }
 
   /// Hash password using bcrypt
@@ -167,9 +159,7 @@ class OfflineAuthService {
           .map((e) => e.toString())
           .toList(),
       profilePhotoUrl: cached['profile_photo_url'] as String?,
-      cachedAt: DateTime.fromMillisecondsSinceEpoch(
-        cached['cached_at'] as int,
-      ),
+      cachedAt: DateTime.fromMillisecondsSinceEpoch(cached['cached_at'] as int),
     );
   }
 }
@@ -180,11 +170,7 @@ class OfflineAuthResult {
   final OfflineSessionData? sessionData;
   final String? error;
 
-  OfflineAuthResult({
-    required this.success,
-    this.sessionData,
-    this.error,
-  });
+  OfflineAuthResult({required this.success, this.sessionData, this.error});
 }
 
 /// Cached session data for offline use
@@ -220,13 +206,16 @@ class OfflineSessionData {
   RembehSession toRembehSession() {
     return RembehSession(
       accessToken: 'offline',
-      expiresAt: DateTime.now().add(const Duration(days: 365)).toIso8601String(),
+      expiresAt: DateTime.now()
+          .add(const Duration(days: 365))
+          .toIso8601String(),
       tokenType: 'Offline',
       permissions: permissions,
       userName: userName,
       userEmail: userEmail,
       roleName: roleName,
       workspaceName: workspaceName,
+      userId: userId,
       tenantId: tenantId,
       branchId: branchId,
       branchName: branchName,

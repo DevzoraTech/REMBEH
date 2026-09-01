@@ -38,7 +38,6 @@ extension RecordsFilterX on RecordsFilter {
         return 'Custom';
     }
   }
-
 }
 
 /// Filters available on Repayments (screenshot 2).
@@ -99,10 +98,13 @@ class DueClient {
   final String id;
   final String fullName;
   final String phone;
+
   /// Total repaid against the loan so far.
   final int amountPaid;
+
   /// Full loan principal / package amount.
   final int loanAmount;
+
   /// Still expected today (used for due counts / search).
   final int amountDue;
   final DateTime lastActivityAt;
@@ -123,22 +125,32 @@ class FieldRepayment {
     required this.recordedAt,
     required this.synced,
     required this.dueToday,
+    this.recordedByUserId,
+    this.recordedByName,
+    this.recordedByPublicId,
   });
 
   final String id;
+
   /// Active loan this repayment was recorded against.
   final String loanId;
   final String clientName;
   final String phone;
+
   /// This repayment entry amount.
   final int amount;
+
   /// Total repaid against the loan so far.
   final int amountPaid;
+
   /// Full loan amount.
   final int loanAmount;
   final DateTime recordedAt;
   final bool synced;
   final bool dueToday;
+  final String? recordedByUserId;
+  final String? recordedByName;
+  final String? recordedByPublicId;
 
   String get initials => initialsFromName(clientName);
 }
@@ -152,16 +164,23 @@ class FieldApplication {
     required this.interestRatePercent,
     required this.registeredAt,
     required this.synced,
+    this.officerUserId,
+    this.officerName,
+    this.officerPublicId,
   });
 
   final String id;
   final String clientName;
   final String phone;
   final int amountRequested;
+
   /// Annual / product interest rate shown as e.g. 20.
   final int interestRatePercent;
   final DateTime registeredAt;
   final bool synced;
+  final String? officerUserId;
+  final String? officerName;
+  final String? officerPublicId;
 
   String get initials => initialsFromName(clientName);
 
@@ -176,7 +195,9 @@ String initialsFromName(String fullName) {
       .toList();
   if (parts.isEmpty) return 'CL';
   if (parts.length == 1) {
-    return parts.first.substring(0, parts.first.length.clamp(0, 2)).toUpperCase();
+    return parts.first
+        .substring(0, parts.first.length.clamp(0, 2))
+        .toUpperCase();
   }
   return ('${parts.first[0]}${parts.last[0]}').toUpperCase();
 }
