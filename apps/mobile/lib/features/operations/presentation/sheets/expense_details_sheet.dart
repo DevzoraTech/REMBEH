@@ -125,7 +125,7 @@ class _ExpenseDetailsSheetState extends State<ExpenseDetailsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final category = _string(widget.expense['category']) ?? 'OTHER';
+    final expenseName = _string(widget.expense['description']) ?? 'Expense';
 
     final amount = _num(widget.expense['amount']);
 
@@ -206,7 +206,7 @@ class _ExpenseDetailsSheetState extends State<ExpenseDetailsSheet> {
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
-                    _categoryIcon(category),
+                    _categoryIcon('OTHER'),
                     color: forestEmerald,
                     size: 22,
                   ),
@@ -219,7 +219,7 @@ class _ExpenseDetailsSheetState extends State<ExpenseDetailsSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _categoryLabel(category),
+                        expenseName,
                         style: const TextStyle(
                           color: midnightNavy,
                           fontSize: 14,

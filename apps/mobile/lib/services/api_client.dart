@@ -853,30 +853,32 @@ class ApiClient {
   Future<Map<String, dynamic>> updateBranchExpense({
     required RembehSession session,
     required String expenseId,
-    String? category,
     num? amount,
     String? description,
+    DateTime? incurredAt,
   }) async {
     final uri = Uri.parse('$rembehApiBaseUrl/operations/expenses/$expenseId');
-    final trimmedCategory = category?.trim();
-    final categoryPayload = trimmedCategory == null || trimmedCategory.isEmpty
-        ? null
-        : trimmedCategory;
 
     final response = await http.patch(
       uri,
-      headers: {..._authHeaders(session), 'Content-Type': 'application/json'},
+      headers: {
+        ..._authHeaders(session),
+        'Content-Type': 'application/json',
+      },
       body: jsonEncode({
-        'category': ?categoryPayload,
-        'amount': ?amount,
-        'description': ?description?.trim(),
+        if (amount != null) 'amount': amount,
+        if (description != null && description.trim().isNotEmpty)
+          'description': description.trim(),
+        if (incurredAt != null) 'incurredAt': incurredAt.toIso8601String(),
       }),
     );
 
     final body = _decode(response);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ApiException(_failureMessage(body, response.statusCode, uri));
+      throw ApiException(
+        _failureMessage(body, response.statusCode, uri),
+      );
     }
 
     return body;
@@ -891,7 +893,8 @@ class ApiClient {
       session: session,
       path: '/operations/expenses/$expenseId/void',
       body: {
-        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+        if (reason != null && reason.trim().isNotEmpty)
+          'reason': reason.trim(),
       },
     );
   }
@@ -900,20 +903,18 @@ class ApiClient {
     required RembehSession session,
     String? branchId,
     required String date,
-    required String category,
     required num amount,
-    String? description,
+    required String description,
   }) {
     return _postJson(
       session: session,
       path: '/operations/expenses',
       body: {
-        if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
+        if (branchId != null && branchId.isNotEmpty)
+          'branchId': branchId,
         'date': date,
-        'category': category,
         'amount': amount,
-        if (description != null && description.trim().isNotEmpty)
-          'description': description.trim(),
+        'description': description.trim(),
       },
     );
   }

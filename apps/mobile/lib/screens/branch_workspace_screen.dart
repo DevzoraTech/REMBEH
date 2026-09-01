@@ -1201,7 +1201,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
             initialsBackgroundColor: const Color(0xFFFFF1E5),
             name:
                 _string(expense['description']) ??
-                _label(_string(expense['category']) ?? 'Expense'),
+                _label(_string(expense['description']) ?? 'Expense'),
             activityType: 'Expense',
             time: operationTime(occurredAt),
             amount: _num(expense['amount']).round(),
@@ -1666,7 +1666,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
             title: 'Expense recorded',
             description:
                 _string(expense['description']) ??
-                _label(_string(expense['category']) ?? 'Expense'),
+                _label(_string(expense['description']) ?? 'Expense'),
             time: operationTime(occurredAt),
             amount: _num(expense['amount']),
             isIncome: false,
@@ -2042,7 +2042,6 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           session: widget.session,
           branchId: widget.session.branchId,
           date: _date,
-          category: expenseName,
           amount: value,
           description: expenseName,
         );

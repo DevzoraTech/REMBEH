@@ -2490,17 +2490,17 @@ export class OperationsService {
       expensesTotal,
 
       expenses: expenses.map((expense) => ({
-  id: expense.id,
-  amount: this.decimalToNumber(expense.amount) ?? 0,
-  description: expense.description ?? '',
-  incurredAt: expense.incurredAt.toISOString(),
-  recordedByName: expense.recordedBy.displayName,
-  approvedAt: expense.approvedAt?.toISOString() ?? null,
-  approvedByName: expense.approvedBy?.displayName ?? null,
-  voidedAt: expense.voidedAt?.toISOString() ?? null,
-  voidedByName: expense.voidedBy?.displayName ?? null,
-  voidReason: expense.voidReason,
-})),
+        id: expense.id,
+        amount: this.decimalToNumber(expense.amount) ?? 0,
+        description: expense.description ?? '',
+        incurredAt: expense.incurredAt.toISOString(),
+        recordedByName: expense.recordedBy.displayName,
+        approvedAt: expense.approvedAt?.toISOString() ?? null,
+        approvedByName: expense.approvedBy?.displayName ?? null,
+        voidedAt: expense.voidedAt?.toISOString() ?? null,
+        voidedByName: expense.voidedBy?.displayName ?? null,
+        voidReason: expense.voidReason,
+      })),
 
       branchCashRemaining,
 
@@ -3287,15 +3287,47 @@ export class OperationsService {
 
     const usersById = new Map(activeUsers.map((staff) => [staff.id, staff]));
 
+    /*
+     * agentReturns is specifically a FIELD CASH HANDOVER ledger.
+     *
+     * Managers and cashiers work directly from branch cash and therefore
+     * must never be represented as pending agent returns merely because
+     * they recorded a repayment, loan or other operation during the day.
+     *
+     * Anyone who actually received float remains included regardless of role,
+     * because a real AgentDailyFloat record is authoritative.
+     *
+     * Active users without float are included only when they are field roles.
+     */
+    const fieldActiveUserIds = activeUsers
+      .filter((staff) => {
+        const roleName = this.operationUserRoleName(staff)?.toLowerCase() ?? '';
+
+        const usesBranchCashDirectly =
+          roleName.includes('manager') || roleName.includes('cashier');
+
+        return !usesBranchCashDirectly;
+      })
+      .map((staff) => staff.id);
+
     const agentIds = [
       ...new Set([
-        ...activeUsers.map((staff) => staff.id),
+        /*
+         * Real float recipients must always be reconciled.
+         */
         ...agentFloats.map((float) => float.agentId),
+
+        /*
+         * Include field staff who handled money even if a float row was
+         * not created, preserving recovery/legacy scenarios.
+         */
+        ...fieldActiveUserIds,
       ]),
     ];
 
     return agentIds.map((agentId) => {
       const float = floatsByAgent.get(agentId);
+
       const staff = usersById.get(agentId);
 
       const amountGiven = this.decimalToNumber(float?.amountGiven);
@@ -3331,19 +3363,31 @@ export class OperationsService {
 
       return {
         floatId: float?.id ?? '',
+
         agentId,
+
         agentName: staff?.displayName ?? float?.agent.displayName ?? 'Staff',
+
         agentPublicId: staff?.publicId ?? float?.agent.publicId ?? null,
+
         agentPhone: staff?.phone ?? null,
+
         agentRoleName: this.operationUserRoleName(staff),
+
         agentPhotoUrl: null,
 
         amountGiven,
+
         amountDisbursed,
+
         processingFees,
+
         amountCollected,
+
         expectedReturn,
+
         amountReturned,
+
         variance,
 
         returnedAt: float?.returnedAt?.toISOString() ?? null,

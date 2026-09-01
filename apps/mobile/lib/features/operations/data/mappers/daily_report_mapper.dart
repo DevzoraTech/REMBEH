@@ -220,7 +220,7 @@ class DailyReportMapper {
   static DailyReportExpense _expense(Map<String, dynamic> row) {
     return DailyReportExpense(
       id: _string(row['id']) ?? '',
-      category: _string(row['category']) ?? 'OTHER',
+      category: 'OTHER',
       amount: _num(row['amount']),
       description: _string(row['description']),
       incurredAt: _date(row['incurredAt']),

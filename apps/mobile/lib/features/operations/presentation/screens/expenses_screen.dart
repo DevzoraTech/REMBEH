@@ -367,7 +367,7 @@ class _ExpenseRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final category = _string(expense['category']) ?? 'OTHER';
+    final expenseName = _string(expense['description']) ?? 'Expense';
 
     final description = _string(expense['description']);
 
@@ -391,7 +391,7 @@ class _ExpenseRow extends StatelessWidget {
           ),
           child: Row(
             children: [
-              _ExpenseIcon(category: category),
+              const _ExpenseIcon(category: 'OTHER'),
               const SizedBox(width: 11),
               Expanded(
                 child: Column(
@@ -401,7 +401,7 @@ class _ExpenseRow extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            _categoryLabel(category),
+                            expenseName,
                             style: TextStyle(
                               color: voided ? slateText : midnightNavy,
                               fontSize: 12,

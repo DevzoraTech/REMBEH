@@ -51,10 +51,7 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
     );
 
     _description = TextEditingController(
-      text:
-          _string(expense?['description']) ??
-          _string(expense?['category']) ??
-          '',
+      text: _string(expense?['description']) ?? '',
     );
   }
 
@@ -67,7 +64,9 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
   }
 
   Future<void> _save() async {
-    if (_saving) return;
+    if (_saving) {
+      return;
+    }
 
     final amount = _parseAmount(_amount.text);
     final expenseName = _description.text.trim();
@@ -104,7 +103,6 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
         await _api.updateBranchExpense(
           session: widget.session,
           expenseId: expenseId,
-          category: expenseName,
           amount: amount,
           description: expenseName,
         );
@@ -113,17 +111,20 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
           session: widget.session,
           branchId: widget.branchId,
           date: widget.date,
-          category: expenseName,
           amount: amount,
           description: expenseName,
         );
       }
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       Navigator.of(context).pop(true);
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       setState(() {
         _error = friendlyErrorMessage(error);
@@ -142,7 +143,9 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(22),
+        ),
       ),
       padding: EdgeInsets.fromLTRB(
         20,
@@ -186,7 +189,10 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
                       : () {
                           Navigator.of(context).pop(false);
                         },
-                  icon: const Icon(Icons.close_rounded, size: 21),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    size: 21,
+                  ),
                 ),
               ],
             ),
@@ -231,13 +237,18 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
-              decoration: const InputDecoration(hintText: '0'),
+              decoration: const InputDecoration(
+                hintText: '0',
+              ),
             ),
 
             const SizedBox(height: 4),
 
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 11,
+              ),
               decoration: BoxDecoration(
                 color: const Color(0xFFF7FAF7),
                 borderRadius: rembehBorderRadius(rembehRadiusMd),
@@ -245,7 +256,11 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
               ),
               child: const Row(
                 children: [
-                  Icon(Icons.payments_outlined, color: forestEmerald, size: 18),
+                  Icon(
+                    Icons.payments_outlined,
+                    color: forestEmerald,
+                    size: 18,
+                  ),
                   SizedBox(width: 9),
                   Expanded(
                     child: Text(
@@ -271,7 +286,9 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
 
             if (_error != null) ...[
               const SizedBox(height: 12),
-              _ErrorText(message: _error!),
+              _ErrorText(
+                message: _error!,
+              ),
             ],
 
             const SizedBox(height: 20),
@@ -291,7 +308,9 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
                         color: Colors.white,
                       ),
                     )
-                  : Text(_editing ? 'Save Changes' : 'Record Expense'),
+                  : Text(
+                      _editing ? 'Save Changes' : 'Record Expense',
+                    ),
             ),
 
             const SizedBox(height: 8),
@@ -315,7 +334,9 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
 }
 
 class _ErrorText extends StatelessWidget {
-  const _ErrorText({required this.message});
+  const _ErrorText({
+    required this.message,
+  });
 
   final String message;
 
@@ -342,24 +363,20 @@ num? _parseAmount(String value) {
   return num.tryParse(clean);
 }
 
-num _num(Object? value) {
+num _num(dynamic value) {
   if (value is num) {
     return value;
   }
 
-  if (value is String) {
-    return num.tryParse(value) ?? 0;
-  }
-
-  return 0;
+  return num.tryParse(value?.toString() ?? '') ?? 0;
 }
 
-String? _string(Object? value) {
-  if (value is! String) {
+String? _string(dynamic value) {
+  final text = value?.toString().trim();
+
+  if (text == null || text.isEmpty) {
     return null;
   }
 
-  final clean = value.trim();
-
-  return clean.isEmpty ? null : clean;
+  return text;
 }
