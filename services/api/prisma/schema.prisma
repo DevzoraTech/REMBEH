@@ -1738,6 +1738,7 @@ model AppRelease {
   appName           String   @map("app_name")
   platform          String   @default("android")
   version           String
+  releaseEpoch      Int      @default(1) @map("release_epoch")
   buildNumber       Int      @map("build_number")
   updateMode        String   @map("update_mode")
   forceUpdate       Boolean  @default(false) @map("force_update")
@@ -1751,8 +1752,9 @@ model AppRelease {
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
-  @@unique([appName, platform, buildNumber])
+  @@unique([appName, platform, releaseEpoch, buildNumber])
   @@index([appName, platform, isActive])
+  @@index([appName, platform, releaseEpoch, isActive])
   @@map("app_releases")
 }
 

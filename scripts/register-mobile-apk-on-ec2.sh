@@ -12,6 +12,7 @@
 #     --apk /path/to/app-release.apk \
 #     --version 1.0.0 \
 #     --build 1 \
+#     [--release-epoch 2] \
 #     [--message "..."] \
 #     [--changelog "item one,item two"] \
 #     [--force] \
@@ -25,6 +26,7 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 APK=""
 VERSION=""
 BUILD=""
+RELEASE_EPOCH="${RELEASE_EPOCH:-2}"
 MESSAGE="First production APK"
 CHANGELOG_CSV=""
 FORCE_UPDATE="false"
@@ -53,6 +55,10 @@ while [[ $# -gt 0 ]]; do
       BUILD="$2"
       shift 2
       ;;
+    --release-epoch)
+      RELEASE_EPOCH="$2"
+      shift 2
+      ;;
     --message|-m)
       MESSAGE="$2"
       shift 2
@@ -78,6 +84,11 @@ done
 
 if [[ -z "$APK" || -z "$VERSION" || -z "$BUILD" ]]; then
   echo "Required: --apk --version --build" >&2
+  exit 1
+fi
+
+if ! [[ "$RELEASE_EPOCH" =~ ^[0-9]+$ ]] || (( RELEASE_EPOCH < 1 )); then
+  echo "--release-epoch must be a positive integer" >&2
   exit 1
 fi
 
@@ -154,7 +165,7 @@ echo "  Region  : $EXPECTED_S3_REGION"
 # Release metadata
 # ----------------------------------------------------------------------
 
-S3_KEY="releases/${APP_NAME}/${PLATFORM}/build-${BUILD}/rembeh-v${VERSION}.apk"
+S3_KEY="releases/${APP_NAME}/${PLATFORM}/line-${RELEASE_EPOCH}/build-${BUILD}/rembeh-v${VERSION}.apk"
 
 HASH="$(shasum -a 256 "$APK" | awk '{print $1}')"
 SIZE="$(wc -c <"$APK" | tr -d ' ')"
@@ -181,6 +192,7 @@ S3_KEY="$S3_KEY" \
 APP_NAME="$APP_NAME" \
 VERSION="$VERSION" \
 BUILD="$BUILD" \
+RELEASE_EPOCH="$RELEASE_EPOCH" \
 EXPECTED_S3_BUCKET="$EXPECTED_S3_BUCKET" \
 EXPECTED_S3_REGION="$EXPECTED_S3_REGION" \
 node <<'NODE'
@@ -248,6 +260,7 @@ async function main() {
       Metadata: {
         'app-name': process.env.APP_NAME,
         'app-version': process.env.VERSION,
+        'release-epoch': process.env.RELEASE_EPOCH,
         'build-number': process.env.BUILD,
         'sha256-hash': hash,
       },
@@ -289,6 +302,7 @@ S3_KEY="$S3_KEY" \
 APP_NAME="$APP_NAME" \
 VERSION="$VERSION" \
 BUILD="$BUILD" \
+RELEASE_EPOCH="$RELEASE_EPOCH" \
 MESSAGE="$MESSAGE" \
 PLATFORM="$PLATFORM" \
 FORCE_UPDATE="$FORCE_UPDATE" \
@@ -347,6 +361,11 @@ async function main() {
       10,
     );
 
+    const releaseEpoch = Number.parseInt(
+      process.env.RELEASE_EPOCH || '1',
+      10,
+    );
+
     const minSupportedBuild = Number.parseInt(
       process.env.MIN_BUILD || '1',
       10,
@@ -354,6 +373,10 @@ async function main() {
 
     if (!Number.isInteger(buildNumber) || buildNumber < 1) {
       throw new Error(`Invalid BUILD: ${process.env.BUILD}`);
+    }
+
+    if (!Number.isInteger(releaseEpoch) || releaseEpoch < 1) {
+      throw new Error(`Invalid RELEASE_EPOCH: ${process.env.RELEASE_EPOCH}`);
     }
 
     if (!Number.isInteger(minSupportedBuild) || minSupportedBuild < 1) {
@@ -370,6 +393,7 @@ async function main() {
       where: {
         appName: process.env.APP_NAME,
         platform: process.env.PLATFORM,
+        releaseEpoch,
         buildNumber,
       },
     });
@@ -378,6 +402,7 @@ async function main() {
       appName: process.env.APP_NAME,
       platform: process.env.PLATFORM,
       version: process.env.VERSION,
+      releaseEpoch,
       buildNumber,
       updateMode: 'full',
       forceUpdate: process.env.FORCE_UPDATE === 'true',
@@ -406,6 +431,7 @@ async function main() {
       JSON.stringify({
         id: release.id,
         version: release.version,
+        releaseEpoch: release.releaseEpoch,
         buildNumber: release.buildNumber,
         forceUpdate: release.forceUpdate,
         minSupportedBuild: release.minSupportedBuild,
@@ -442,6 +468,7 @@ echo
 echo
 echo "Release registration OK"
 echo "Version : ${VERSION}+${BUILD}"
+echo "Line    : ${RELEASE_EPOCH}"
 echo "S3 key  : ${S3_KEY}"
 echo "SHA-256 : ${HASH}"
 echo "Size     : ${SIZE} bytes"

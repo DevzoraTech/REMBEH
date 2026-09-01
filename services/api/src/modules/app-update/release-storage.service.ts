@@ -11,7 +11,7 @@ import * as crypto from 'node:crypto';
 
 /**
  * APK / bundle storage under private bucket prefix:
- *   releases/mobile/android/build-{n}/rembeh-v{version}.apk
+ *   releases/mobile/android/line-{epoch}/build-{n}/rembeh-v{version}.apk
  */
 @Injectable()
 export class ReleaseStorageService {
@@ -66,11 +66,12 @@ export class ReleaseStorageService {
     platform: string,
     version: string,
     buildNumber: number,
+    releaseEpoch = 1,
   ): string {
     const safeApp = sanitize(appName);
     const safePlatform = sanitize(platform);
     const safeVersion = sanitize(version);
-    return `releases/${safeApp}/${safePlatform}/build-${buildNumber}/rembeh-v${safeVersion}.apk`;
+    return `releases/${safeApp}/${safePlatform}/line-${releaseEpoch}/build-${buildNumber}/rembeh-v${safeVersion}.apk`;
   }
 
   async uploadApk(
@@ -79,8 +80,15 @@ export class ReleaseStorageService {
     platform: string,
     version: string,
     buildNumber: number,
+    releaseEpoch = 1,
   ): Promise<{ s3Key: string; sha256Hash: string; sizeBytes: number }> {
-    const s3Key = this.buildS3Key(appName, platform, version, buildNumber);
+    const s3Key = this.buildS3Key(
+      appName,
+      platform,
+      version,
+      buildNumber,
+      releaseEpoch,
+    );
     const sha256Hash = crypto.createHash('sha256').update(buffer).digest('hex');
 
     await this.s3Client.send(
@@ -93,6 +101,7 @@ export class ReleaseStorageService {
         Metadata: {
           'app-name': appName,
           'app-version': version,
+          'release-epoch': String(releaseEpoch),
           'build-number': String(buildNumber),
           'sha256-hash': sha256Hash,
         },
@@ -123,8 +132,15 @@ export class ReleaseStorageService {
     platform: string,
     version: string,
     buildNumber: number,
+    releaseEpoch = 1,
   ): Promise<{ uploadUrl: string; s3Key: string }> {
-    const s3Key = this.buildS3Key(appName, platform, version, buildNumber);
+    const s3Key = this.buildS3Key(
+      appName,
+      platform,
+      version,
+      buildNumber,
+      releaseEpoch,
+    );
     const command = new PutObjectCommand({
       Bucket: this.bucket,
       Key: s3Key,

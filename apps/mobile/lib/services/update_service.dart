@@ -18,7 +18,9 @@ class UpdateCheckResult {
   final bool forceUpdate;
   final bool mustUpdate;
   final int currentBuild;
+  final int currentReleaseEpoch;
   final int latestBuild;
+  final int latestReleaseEpoch;
   final String? latestVersion;
   final int minSupportedBuild;
   final String? apkUrl;
@@ -32,7 +34,9 @@ class UpdateCheckResult {
     required this.forceUpdate,
     required this.mustUpdate,
     required this.currentBuild,
+    required this.currentReleaseEpoch,
     required this.latestBuild,
+    required this.latestReleaseEpoch,
     this.latestVersion,
     required this.minSupportedBuild,
     this.apkUrl,
@@ -48,7 +52,9 @@ class UpdateCheckResult {
       forceUpdate: json['forceUpdate'] == true,
       mustUpdate: json['mustUpdate'] == true,
       currentBuild: (json['currentBuild'] as num?)?.toInt() ?? 0,
+      currentReleaseEpoch: (json['currentReleaseEpoch'] as num?)?.toInt() ?? 1,
       latestBuild: (json['latestBuild'] as num?)?.toInt() ?? 0,
+      latestReleaseEpoch: (json['latestReleaseEpoch'] as num?)?.toInt() ?? 1,
       latestVersion: json['latestVersion']?.toString(),
       minSupportedBuild: (json['minSupportedBuild'] as num?)?.toInt() ?? 1,
       apkUrl: json['apkUrl']?.toString(),
@@ -66,6 +72,7 @@ class UpdateCheckResult {
 
 class UpdateService {
   static const String _appName = 'mobile';
+  static const int _releaseEpoch = 2;
   static const MethodChannel _installerChannel = MethodChannel(
     'com.antikra.rembeh/update_installer',
   );
@@ -82,6 +89,7 @@ class UpdateService {
         queryParameters: {
           'app': _appName,
           'currentBuild': currentBuild.toString(),
+          'currentReleaseEpoch': _releaseEpoch.toString(),
           'platform': platform,
           'currentVersion': currentVersion,
         },
@@ -236,6 +244,7 @@ class UpdateService {
         body: json.encode({
           'app': _appName,
           'buildNumber': int.tryParse(packageInfo.buildNumber) ?? 1,
+          'releaseEpoch': _releaseEpoch,
           'platform': Platform.isAndroid ? 'android' : 'ios',
         }),
       );

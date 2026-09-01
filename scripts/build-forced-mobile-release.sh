@@ -14,6 +14,8 @@
 #     --message "A new REMBEH update is ready"
 #   ./scripts/build-forced-mobile-release.sh \
 #     --changelog "Works better offline,Syncs latest records faster"
+#   RELEASE_EPOCH=2 ./scripts/build-forced-mobile-release.sh \
+#     --increment none
 #
 set -Eeuo pipefail
 
@@ -43,6 +45,7 @@ EXPECTED_S3_REGION="${EXPECTED_S3_REGION:-af-south-1}"
 
 APP_NAME="mobile"
 PLATFORM="android"
+RELEASE_EPOCH="${RELEASE_EPOCH:-2}"
 
 MESSAGE="A new REMBEH update is ready."
 CHANGELOG_CSV="Works better offline,Syncs latest records when internet returns,Keeps daily work smoother,Improves repayment and salary screens"
@@ -68,6 +71,10 @@ Options:
   --increment MODE
       patch, minor, major, build, or none.
       Default: patch.
+
+  --release-epoch NUMBER
+      Release line used by the update server.
+      Default: ${RELEASE_EPOCH}.
 
   --min-build NUMBER
       Minimum supported build.
@@ -96,6 +103,7 @@ Environment:
   EC2_KEY
   EC2_SSH_KEY
   REMBEH_API_URL
+  RELEASE_EPOCH
 
 Production safety overrides:
   EXPECTED_DB_HOST
@@ -117,6 +125,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --increment)
       INCREMENT_MODE="$2"
+      shift 2
+      ;;
+    --release-epoch)
+      RELEASE_EPOCH="$2"
       shift 2
       ;;
     --min-build)
@@ -159,6 +171,11 @@ case "$INCREMENT_MODE" in
     exit 1
     ;;
 esac
+
+if ! [[ "$RELEASE_EPOCH" =~ ^[0-9]+$ ]] || (( RELEASE_EPOCH < 1 )); then
+  echo "--release-epoch must be a positive integer" >&2
+  exit 1
+fi
 
 if [[ ! -f "$PUBSPEC" ]]; then
   echo "Missing mobile pubspec: $PUBSPEC" >&2
@@ -336,6 +353,7 @@ remote_release_exists() {
     "$REMOTE_DIR" \
     "$APP_NAME" \
     "$PLATFORM" \
+    "$RELEASE_EPOCH" \
     "$version" \
     "$build" \
     "$EXPECTED_DB_HOST" \
@@ -345,15 +363,17 @@ set -euo pipefail
 REMOTE_DIR="$1"
 APP_NAME="$2"
 PLATFORM="$3"
-VERSION="$4"
-BUILD="$5"
-EXPECTED_DB_HOST="$6"
-EXPECTED_DB_NAME="$7"
+RELEASE_EPOCH="$4"
+VERSION="$5"
+BUILD="$6"
+EXPECTED_DB_HOST="$7"
+EXPECTED_DB_NAME="$8"
 
 cd "$REMOTE_DIR"
 
 APP_NAME="$APP_NAME" \
 PLATFORM="$PLATFORM" \
+RELEASE_EPOCH="$RELEASE_EPOCH" \
 VERSION="$VERSION" \
 BUILD="$BUILD" \
 EXPECTED_DB_HOST="$EXPECTED_DB_HOST" \
@@ -433,6 +453,7 @@ async function main() {
       where: {
         appName: process.env.APP_NAME,
         platform: process.env.PLATFORM,
+        releaseEpoch: Number(process.env.RELEASE_EPOCH),
         buildNumber: Number(process.env.BUILD),
       },
       select: {
@@ -576,6 +597,7 @@ REMOTE
     "$remote_apk" \
     "$version" \
     "$build" \
+    "$RELEASE_EPOCH" \
     "$message_b64" \
     "$changelog_b64" \
     "$min_build" \
@@ -590,14 +612,15 @@ REMOTE_DIR="$1"
 REMOTE_APK="$2"
 VERSION="$3"
 BUILD="$4"
-MESSAGE_B64="$5"
-CHANGELOG_B64="$6"
-MIN_BUILD="$7"
-FORCE_UPDATE="$8"
-EXPECTED_DB_HOST="$9"
-EXPECTED_DB_NAME="${10}"
-EXPECTED_S3_BUCKET="${11}"
-EXPECTED_S3_REGION="${12}"
+RELEASE_EPOCH="$5"
+MESSAGE_B64="$6"
+CHANGELOG_B64="$7"
+MIN_BUILD="$8"
+FORCE_UPDATE="$9"
+EXPECTED_DB_HOST="${10}"
+EXPECTED_DB_NAME="${11}"
+EXPECTED_S3_BUCKET="${12}"
+EXPECTED_S3_REGION="${13}"
 
 cd "$REMOTE_DIR"
 
@@ -647,6 +670,7 @@ register_args=(
   --apk "$REMOTE_APK"
   --version "$VERSION"
   --build "$BUILD"
+  --release-epoch "$RELEASE_EPOCH"
   --message "$MESSAGE"
   --changelog "$CHANGELOG"
   --min-build "$MIN_BUILD"
@@ -674,12 +698,13 @@ REMOTE
 
   curl -fsS \
     --max-time 20 \
-    "$API_URL/app/check-update?appName=$APP_NAME&platform=$PLATFORM&currentBuild=$current_build" \
+    "$API_URL/app/check-update?app=$APP_NAME&platform=$PLATFORM&currentReleaseEpoch=$RELEASE_EPOCH&currentBuild=$current_build" \
     >/dev/null
 
   echo
   echo "Release ready:"
   echo "  Version: ${version}+${build}"
+  echo "  Line:    ${RELEASE_EPOCH}"
   echo "  Forced:  ${FORCE_UPDATE}"
   echo "  API:     ${API_URL}"
 }
@@ -735,6 +760,7 @@ main() {
     echo
     echo "Would publish:"
     echo "  Version: ${version}+${build}"
+    echo "  Line:    ${RELEASE_EPOCH}"
     echo "  Forced:  ${FORCE_UPDATE}"
     exit 0
   fi

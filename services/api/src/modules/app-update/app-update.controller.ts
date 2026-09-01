@@ -31,13 +31,16 @@ export class AppUpdateController {
   @Get('check-update')
   async checkUpdate(
     @Query('app') app: string,
+    @Query('appName') appName: string | undefined,
     @Query('currentBuild', ParseIntPipe) currentBuild: number,
     @Query('platform') platform?: string,
+    @Query('currentReleaseEpoch') currentReleaseEpoch?: string,
   ) {
     return this.appUpdateService.checkUpdate(
-      app || 'mobile',
+      app || appName || 'mobile',
       currentBuild,
       platform || 'android',
+      parseOptionalPositiveInt(currentReleaseEpoch, 1),
     );
   }
 
@@ -63,6 +66,7 @@ export class AppUpdateController {
       body.app,
       body.buildNumber,
       body.platform || 'android',
+      body.releaseEpoch,
     );
   }
 
@@ -75,6 +79,7 @@ export class AppUpdateController {
       body.platform || 'android',
       body.version,
       body.buildNumber,
+      body.releaseEpoch ?? 1,
     );
   }
 
@@ -92,6 +97,7 @@ export class AppUpdateController {
       appName: string;
       platform?: string;
       version: string;
+      releaseEpoch?: string;
       buildNumber: string;
     },
   ) {
@@ -105,6 +111,7 @@ export class AppUpdateController {
       body.platform || 'android',
       body.version,
       parseInt(body.buildNumber, 10),
+      parseOptionalPositiveInt(body.releaseEpoch, 1),
     );
   }
 
@@ -138,4 +145,16 @@ export class AppUpdateController {
   async updateRelease(@Param('id') id: string, @Body() dto: UpdateReleaseDto) {
     return this.appUpdateService.updateRelease(id, dto);
   }
+}
+
+function parseOptionalPositiveInt(value: string | undefined, fallback: number) {
+  if (value == null || value === '') return fallback;
+
+  const parsed = Number.parseInt(value, 10);
+
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new BadRequestException('Release epoch must be a positive integer.');
+  }
+
+  return parsed;
 }

@@ -5,17 +5,19 @@
 #   REMBEH_ADMIN_TOKEN=<jwt> ./scripts/release-mobile-apk.sh \
 #     --version 1.0.1 --build 2 \
 #     --apk path/to/app-release.apk \
-#     [--message "..."] [--changelog "a,b,c"] [--force]
+#     [--release-epoch 2] [--message "..."] [--changelog "a,b,c"] [--force]
 #
 # Env:
 #   REMBEH_API_URL   default https://rembeh-api.antikra.com/api/v1
 #   REMBEH_ADMIN_TOKEN  JWT with workspace.update
+#   RELEASE_EPOCH    default 2
 set -euo pipefail
 
 API_URL="${REMBEH_API_URL:-https://rembeh-api.antikra.com/api/v1}"
 TOKEN="${REMBEH_ADMIN_TOKEN:-}"
 APP_NAME="mobile"
 PLATFORM="android"
+RELEASE_EPOCH="${RELEASE_EPOCH:-2}"
 VERSION=""
 BUILD=""
 APK=""
@@ -29,6 +31,7 @@ while [[ $# -gt 0 ]]; do
     --version|-v) VERSION="$2"; shift 2 ;;
     --build|-b) BUILD="$2"; shift 2 ;;
     --apk) APK="$2"; shift 2 ;;
+    --release-epoch) RELEASE_EPOCH="$2"; shift 2 ;;
     --message|-m) MESSAGE="$2"; shift 2 ;;
     --changelog|-c) CHANGELOG_CSV="$2"; shift 2 ;;
     --force) FORCE="true"; shift ;;
@@ -45,6 +48,10 @@ if [[ -z "$VERSION" || -z "$BUILD" || -z "$APK" ]]; then
   echo "Required: --version, --build, --apk" >&2
   exit 1
 fi
+if ! [[ "$RELEASE_EPOCH" =~ ^[0-9]+$ ]] || (( RELEASE_EPOCH < 1 )); then
+  echo "--release-epoch must be a positive integer" >&2
+  exit 1
+fi
 if [[ ! -f "$APK" ]]; then
   echo "APK not found: $APK" >&2
   exit 1
@@ -54,7 +61,7 @@ echo "==> Requesting upload URL..."
 UPLOAD_JSON=$(curl -fsS -X POST "$API_URL/app/upload-url" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d "{\"appName\":\"$APP_NAME\",\"platform\":\"$PLATFORM\",\"version\":\"$VERSION\",\"buildNumber\":$BUILD}")
+  -d "{\"appName\":\"$APP_NAME\",\"platform\":\"$PLATFORM\",\"version\":\"$VERSION\",\"releaseEpoch\":$RELEASE_EPOCH,\"buildNumber\":$BUILD}")
 
 UPLOAD_URL=$(echo "$UPLOAD_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['uploadUrl'])")
 S3_KEY=$(echo "$UPLOAD_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['s3Key'])")
@@ -83,6 +90,7 @@ curl -fsS -X POST "$API_URL/app/releases" \
     \"appName\": \"$APP_NAME\",
     \"platform\": \"$PLATFORM\",
     \"version\": \"$VERSION\",
+    \"releaseEpoch\": $RELEASE_EPOCH,
     \"buildNumber\": $BUILD,
     \"updateMode\": \"full\",
     \"forceUpdate\": $FORCE,
@@ -94,6 +102,6 @@ curl -fsS -X POST "$API_URL/app/releases" \
   }"
 
 echo
-echo "OK — download via:"
+echo "OK — release line ${RELEASE_EPOCH}; download via:"
 echo "  $API_URL/app/download/mobile?platform=android"
 echo "  $API_URL/app/download/android"

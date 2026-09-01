@@ -19,6 +19,11 @@ export class CreateReleaseDto {
   version!: string;
 
   @IsInt()
+  @IsOptional()
+  @Min(1)
+  releaseEpoch?: number;
+
+  @IsInt()
   @Min(1)
   buildNumber!: number;
 
@@ -52,6 +57,11 @@ export class CreateReleaseDto {
 }
 
 export class UpdateReleaseDto {
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  releaseEpoch?: number;
+
   @IsBoolean()
   @IsOptional()
   forceUpdate?: boolean;
@@ -94,6 +104,11 @@ export class UploadUrlDto {
   version!: string;
 
   @IsInt()
+  @IsOptional()
+  @Min(1)
+  releaseEpoch?: number;
+
+  @IsInt()
   @Min(1)
   buildNumber!: number;
 }
@@ -105,6 +120,11 @@ export class TrackDownloadDto {
   @IsInt()
   @Min(1)
   buildNumber!: number;
+
+  @IsInt()
+  @IsOptional()
+  @Min(1)
+  releaseEpoch?: number;
 
   @IsString()
   @IsOptional()

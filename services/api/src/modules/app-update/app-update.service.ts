@@ -21,10 +21,15 @@ export class AppUpdateService {
     appName: string,
     currentBuild: number,
     platform = 'android',
+    currentReleaseEpoch = 1,
   ) {
     const latestRelease = await this.prisma.appRelease.findFirst({
       where: { appName, platform, isActive: true },
-      orderBy: { buildNumber: 'desc' },
+      orderBy: [
+        { releaseEpoch: 'desc' },
+        { buildNumber: 'desc' },
+        { updatedAt: 'desc' },
+      ],
     });
 
     if (!latestRelease) {
@@ -34,7 +39,9 @@ export class AppUpdateService {
         forceUpdate: false,
         mustUpdate: false,
         currentBuild,
+        currentReleaseEpoch,
         latestBuild: currentBuild,
+        latestReleaseEpoch: currentReleaseEpoch,
         latestVersion: null,
         minSupportedBuild: 1,
         apkUrl: null,
@@ -44,8 +51,13 @@ export class AppUpdateService {
       };
     }
 
-    const isCurrentBuild = currentBuild >= latestRelease.buildNumber;
-    const isBelowMinimum = currentBuild < latestRelease.minSupportedBuild;
+    const isNewerLine = currentReleaseEpoch > latestRelease.releaseEpoch;
+    const isSameLine = currentReleaseEpoch === latestRelease.releaseEpoch;
+    const isCurrentBuild =
+      isNewerLine || (isSameLine && currentBuild >= latestRelease.buildNumber);
+    const isBelowMinimum =
+      currentReleaseEpoch < latestRelease.releaseEpoch ||
+      (isSameLine && currentBuild < latestRelease.minSupportedBuild);
 
     if (isCurrentBuild && latestRelease.updateMode === 'shorebird') {
       return {
@@ -54,7 +66,9 @@ export class AppUpdateService {
         forceUpdate: false,
         mustUpdate: false,
         currentBuild,
+        currentReleaseEpoch,
         latestBuild: latestRelease.buildNumber,
+        latestReleaseEpoch: latestRelease.releaseEpoch,
         latestVersion: latestRelease.version,
         minSupportedBuild: latestRelease.minSupportedBuild,
         apkUrl: null,
@@ -71,7 +85,9 @@ export class AppUpdateService {
         forceUpdate: false,
         mustUpdate: false,
         currentBuild,
+        currentReleaseEpoch,
         latestBuild: latestRelease.buildNumber,
+        latestReleaseEpoch: latestRelease.releaseEpoch,
         latestVersion: latestRelease.version,
         minSupportedBuild: latestRelease.minSupportedBuild,
         apkUrl: null,
@@ -90,9 +106,19 @@ export class AppUpdateService {
           platform,
           isActive: true,
           updateMode: 'full',
-          buildNumber: { gt: currentBuild },
+          OR: [
+            { releaseEpoch: { gt: currentReleaseEpoch } },
+            {
+              releaseEpoch: currentReleaseEpoch,
+              buildNumber: { gt: currentBuild },
+            },
+          ],
         },
-        orderBy: { buildNumber: 'desc' },
+        orderBy: [
+          { releaseEpoch: 'desc' },
+          { buildNumber: 'desc' },
+          { updatedAt: 'desc' },
+        ],
       });
 
       if (latestFullRelease) {
@@ -104,7 +130,9 @@ export class AppUpdateService {
           forceUpdate: false,
           mustUpdate: isBelowMinimum,
           currentBuild,
+          currentReleaseEpoch,
           latestBuild: latestRelease.buildNumber,
+          latestReleaseEpoch: latestRelease.releaseEpoch,
           latestVersion: latestRelease.version,
           minSupportedBuild: latestRelease.minSupportedBuild,
           apkUrl: null,
@@ -115,16 +143,47 @@ export class AppUpdateService {
       }
     }
 
-    const intermediateReleases = await this.prisma.appRelease.findMany({
-      where: {
-        appName,
-        platform,
-        isActive: true,
-        buildNumber: { gt: currentBuild, lte: releaseToServe.buildNumber },
-      },
-      orderBy: { buildNumber: 'asc' },
-      select: { changelog: true },
-    });
+    const intermediateReleases =
+      currentReleaseEpoch === releaseToServe.releaseEpoch
+        ? await this.prisma.appRelease.findMany({
+            where: {
+              appName,
+              platform,
+              isActive: true,
+              releaseEpoch: releaseToServe.releaseEpoch,
+              buildNumber: {
+                gt: currentBuild,
+                lte: releaseToServe.buildNumber,
+              },
+            },
+            orderBy: [{ buildNumber: 'asc' }, { updatedAt: 'asc' }],
+            select: { changelog: true },
+          })
+        : await this.prisma.appRelease.findMany({
+            where: {
+              appName,
+              platform,
+              isActive: true,
+              OR: [
+                {
+                  releaseEpoch: {
+                    gt: currentReleaseEpoch,
+                    lt: releaseToServe.releaseEpoch,
+                  },
+                },
+                {
+                  releaseEpoch: releaseToServe.releaseEpoch,
+                  buildNumber: { lte: releaseToServe.buildNumber },
+                },
+              ],
+            },
+            orderBy: [
+              { releaseEpoch: 'asc' },
+              { buildNumber: 'asc' },
+              { updatedAt: 'asc' },
+            ],
+            select: { changelog: true },
+          });
 
     const aggregatedChangelog = intermediateReleases
       .flatMap((r) => r.changelog)
@@ -136,7 +195,9 @@ export class AppUpdateService {
       forceUpdate: releaseToServe.forceUpdate || isBelowMinimum,
       mustUpdate: isBelowMinimum,
       currentBuild,
+      currentReleaseEpoch,
       latestBuild: releaseToServe.buildNumber,
+      latestReleaseEpoch: releaseToServe.releaseEpoch,
       latestVersion: releaseToServe.version,
       minSupportedBuild: releaseToServe.minSupportedBuild,
       apkUrl: releaseToServe.apkUrl
@@ -163,7 +224,11 @@ export class AppUpdateService {
         isActive: true,
         updateMode: 'full',
       },
-      orderBy: { buildNumber: 'desc' },
+      orderBy: [
+        { releaseEpoch: 'desc' },
+        { buildNumber: 'desc' },
+        { updatedAt: 'desc' },
+      ],
     });
 
     if (!latestRelease?.apkUrl) {
@@ -182,6 +247,7 @@ export class AppUpdateService {
     return {
       appName: latestRelease.appName,
       version: latestRelease.version,
+      releaseEpoch: latestRelease.releaseEpoch,
       buildNumber: latestRelease.buildNumber,
       platform: latestRelease.platform,
       downloadUrl,
@@ -195,10 +261,16 @@ export class AppUpdateService {
     appName: string,
     buildNumber: number,
     platform = 'android',
+    releaseEpoch?: number,
   ) {
     try {
       await this.prisma.appRelease.updateMany({
-        where: { appName, platform, buildNumber },
+        where: {
+          appName,
+          platform,
+          buildNumber,
+          ...(releaseEpoch !== undefined && { releaseEpoch }),
+        },
         data: { downloadCount: { increment: 1 } },
       });
     } catch {
@@ -212,12 +284,14 @@ export class AppUpdateService {
     platform: string,
     version: string,
     buildNumber: number,
+    releaseEpoch = 1,
   ) {
     return this.storage.getPresignedUploadUrl(
       appName,
       platform,
       version,
       buildNumber,
+      releaseEpoch,
     );
   }
 
@@ -227,6 +301,7 @@ export class AppUpdateService {
     platform: string,
     version: string,
     buildNumber: number,
+    releaseEpoch = 1,
   ) {
     const result = await this.storage.uploadApk(
       buffer,
@@ -234,6 +309,7 @@ export class AppUpdateService {
       platform,
       version,
       buildNumber,
+      releaseEpoch,
     );
     this.logger.log(
       `APK uploaded for ${appName}/${platform} v${version} build ${buildNumber}`,
@@ -243,6 +319,7 @@ export class AppUpdateService {
 
   async createRelease(dto: CreateReleaseDto) {
     const platform = dto.platform || 'android';
+    const releaseEpoch = dto.releaseEpoch ?? 1;
 
     if (dto.updateMode === 'full' && !dto.apkUrl) {
       throw new ConflictException(
@@ -252,9 +329,10 @@ export class AppUpdateService {
 
     const existing = await this.prisma.appRelease.findUnique({
       where: {
-        appName_platform_buildNumber: {
+        appName_platform_releaseEpoch_buildNumber: {
           appName: dto.appName,
           platform,
+          releaseEpoch,
           buildNumber: dto.buildNumber,
         },
       },
@@ -270,6 +348,7 @@ export class AppUpdateService {
         appName: dto.appName,
         platform,
         version: dto.version,
+        releaseEpoch,
         buildNumber: dto.buildNumber,
         updateMode: dto.updateMode,
         forceUpdate: dto.forceUpdate ?? false,
@@ -290,6 +369,9 @@ export class AppUpdateService {
       where: { id },
       data: {
         ...(dto.forceUpdate !== undefined && { forceUpdate: dto.forceUpdate }),
+        ...(dto.releaseEpoch !== undefined && {
+          releaseEpoch: dto.releaseEpoch,
+        }),
         ...(dto.minSupportedBuild !== undefined && {
           minSupportedBuild: dto.minSupportedBuild,
         }),
@@ -308,7 +390,11 @@ export class AppUpdateService {
         ...(appName && { appName }),
         ...(platform && { platform }),
       },
-      orderBy: { buildNumber: 'desc' },
+      orderBy: [
+        { releaseEpoch: 'desc' },
+        { buildNumber: 'desc' },
+        { updatedAt: 'desc' },
+      ],
       take: 50,
     });
   }
