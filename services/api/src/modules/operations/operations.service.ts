@@ -3288,40 +3288,16 @@ export class OperationsService {
     const usersById = new Map(activeUsers.map((staff) => [staff.id, staff]));
 
     /*
-     * agentReturns is specifically a FIELD CASH HANDOVER ledger.
+     * Build a cash position for every staff member who was financially
+     * active during the day, together with every actual float recipient.
      *
-     * Managers and cashiers work directly from branch cash and therefore
-     * must never be represented as pending agent returns merely because
-     * they recorded a repayment, loan or other operation during the day.
-     *
-     * Anyone who actually received float remains included regardless of role,
-     * because a real AgentDailyFloat record is authoritative.
-     *
-     * Active users without float are included only when they are field roles.
+     * This intentionally includes managers and cashiers. The same contract
+     * drives the staff-balancing views in both mobile and web.
      */
-    const fieldActiveUserIds = activeUsers
-      .filter((staff) => {
-        const roleName = this.operationUserRoleName(staff)?.toLowerCase() ?? '';
-
-        const usesBranchCashDirectly =
-          roleName.includes('manager') || roleName.includes('cashier');
-
-        return !usesBranchCashDirectly;
-      })
-      .map((staff) => staff.id);
-
     const agentIds = [
       ...new Set([
-        /*
-         * Real float recipients must always be reconciled.
-         */
+        ...activeUsers.map((staff) => staff.id),
         ...agentFloats.map((float) => float.agentId),
-
-        /*
-         * Include field staff who handled money even if a float row was
-         * not created, preserving recovery/legacy scenarios.
-         */
-        ...fieldActiveUserIds,
       ]),
     ];
 
