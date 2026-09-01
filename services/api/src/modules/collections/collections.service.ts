@@ -178,6 +178,14 @@ export class CollectionsService {
     dayEnd.setDate(dayEnd.getDate() + 1);
     dayEnd.setMilliseconds(dayEnd.getMilliseconds() - 1);
 
+    /*
+     * The Agent home summary is personal.
+     *
+     * Managers, supervisors and owners retain the broader scope provided
+     * by scope(user).
+     */
+    const isFieldAgent = await this.isFieldAgent(user);
+
     const [loans, todayAgg] = await Promise.all([
       this.repository.listActiveLoans(scope),
 
@@ -185,6 +193,7 @@ export class CollectionsService {
         ...scope,
         dayStart,
         dayEnd,
+        recordedByUserId: isFieldAgent ? user.userId : null,
       }),
     ]);
 
@@ -234,16 +243,15 @@ export class CollectionsService {
     this.assertBranchAccess(user);
 
     const scope = this.scope(user);
-
     const range = this.filterToRange(filter);
+
+    const isFieldAgent = await this.isFieldAgent(user);
 
     const rows = await this.repository.listRepayments({
       ...scope,
       from: range?.from,
       to: range?.to,
-      recordedByUserId: this.canSeeBranchActivityRecords(user)
-        ? null
-        : user.userId,
+      recordedByUserId: isFieldAgent ? user.userId : null,
     });
 
     const smsByRepayment = await this.summarizeRepaymentSms(
@@ -254,49 +262,29 @@ export class CollectionsService {
     const repayments = await Promise.all(
       rows.map(async (row) => {
         const loan = row.loan;
-
         const detail = await this.buildDetail(loan);
-
         const agentPhotoStorageKey =
           row.recordedBy.profilePhotoStorageKey ?? null;
 
         return {
           id: row.id,
-
           loanId: row.loanId,
-
           customerId: loan.customerId,
-
           clientName: loan.customer.fullName,
-
           phone: loan.customer.phone,
-
           amount: this.decimalToNumber(row.amount) ?? 0,
-
           amountPaid: detail.paidAmount,
-
           loanAmount: detail.loanAmount,
-
           recordedAt: row.paidAt.toISOString(),
-
           synced: true,
-
           dueToday: detail.nextDueIsToday,
-
           note: row.note,
-
           method: row.method,
-
           recordedByUserId: row.recordedByUserId,
-
           recordedByName: row.recordedBy.displayName,
-
           recordedByPublicId: row.recordedBy.publicId ?? null,
-
           agentPhotoUrl: await this.presignPhotoUrl(agentPhotoStorageKey),
-
           agentPhotoStorageKey,
-
           sms: smsByRepayment.get(row.id) ?? this.emptyRepaymentSmsStatus(),
         } satisfies RepaymentListItemContract;
       }),
@@ -3162,6 +3150,27 @@ export class CollectionsService {
 
       branchId: canAllBranches ? null : user.branchId,
     };
+  }
+
+  private async isFieldAgent(user: AuthenticatedUser): Promise<boolean> {
+    const agent = await this.prisma.user.findFirst({
+      where: {
+        id: user.userId,
+        tenantId: user.tenantId,
+        roles: {
+          some: {
+            role: {
+              name: 'Agent',
+            },
+          },
+        },
+      },
+      select: {
+        id: true,
+      },
+    });
+
+    return agent != null;
   }
 
   private canSeeBranchActivityRecords(user: AuthenticatedUser) {

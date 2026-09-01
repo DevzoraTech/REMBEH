@@ -587,6 +587,7 @@ export class CollectionsRepository {
     branchId: string | null;
     dayStart: Date;
     dayEnd: Date;
+    recordedByUserId?: string | null;
   }) {
     return this.prisma.repayment.aggregate({
       where: {
@@ -594,9 +595,14 @@ export class CollectionsRepository {
 
         paidAt: {
           gte: input.dayStart,
-
           lte: input.dayEnd,
         },
+
+        ...(input.recordedByUserId
+          ? {
+              recordedByUserId: input.recordedByUserId,
+            }
+          : {}),
       },
 
       _sum: {
