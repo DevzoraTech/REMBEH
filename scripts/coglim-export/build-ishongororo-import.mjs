@@ -1,12 +1,21 @@
 /**
- * Build a compact Rembeh import pack from the Ishongororo Coglim export.
+ * Build a compact Rembeh import pack from a Coglim office export.
  */
 import fs from "node:fs/promises";
 import path from "node:path";
 
-const DIR = path.resolve("/Users/tukivusystemsltd/ANTIKRA/rembeh/data/coglim-export/ishongororo");
-const SRC = path.join(DIR, "ishongororo-latest.json");
-const OUT = path.join(DIR, "ishongororo-import.json");
+const SLUG = (process.env.COGLIM_SLUG || "ishongororo").toLowerCase();
+const KEY_PREFIX = process.env.COGLIM_KEY_PREFIX || (SLUG === "ishongororo" ? "cil" : SLUG.slice(0, 8));
+const DIR = path.resolve(
+  process.env.COGLIM_EXPORT_DIR ||
+    `/Users/tukivusystemsltd/ANTIKRA/rembeh/data/coglim-export/${SLUG}`,
+);
+const SRC = path.join(DIR, process.env.COGLIM_EXPORT_FILE || `${SLUG}-latest.json`);
+const OUT = path.join(DIR, process.env.COGLIM_IMPORT_FILE || `${SLUG}-import.json`);
+const BRANCH_HINTS = (process.env.COGLIM_BRANCH_HINTS || "Ishongororo,ISHONGORORO,Inshongororo,inshongororo")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
 
 function clean(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
@@ -69,7 +78,7 @@ for (const member of members) {
 
   customers.push({
     sourceId,
-    systemNumber: member.systemNumber || `CIL${sourceId}`,
+    systemNumber: member.systemNumber || `${KEY_PREFIX.toUpperCase()}${sourceId}`,
     fullName: member.name,
     phone,
     phonePlaceholder: phoneInfo.placeholder,
@@ -131,7 +140,7 @@ for (const member of members) {
 
     loans.push({
       sourceCustomerId: sourceId,
-      sourceLoanKey: `cil-${sourceId}-${index + 1}-${issuedOn || "na"}-${principal || 0}`,
+      sourceLoanKey: `${KEY_PREFIX}-${sourceId}-${index + 1}-${issuedOn || "na"}-${principal || 0}`,
       coglimIssueId: isOfficial ? officialLoan.sourceLoanId || null : null,
       issuedOn,
       dueOn: toIsoDate(isOfficial ? officialLoan.dueOn : cycle.dueOn),
@@ -150,7 +159,7 @@ for (const member of members) {
           paidOn: toIsoDate(p.paidOn),
           amount: round2(p.amount),
           balanceAfter: p.balanceAfter == null ? null : round2(p.balanceAfter),
-          sourceKey: `cil-pay-${sourceId}-${index + 1}-${payIndex + 1}-${toIsoDate(p.paidOn) || "na"}-${round2(p.amount)}`,
+          sourceKey: `${KEY_PREFIX}-pay-${sourceId}-${index + 1}-${payIndex + 1}-${toIsoDate(p.paidOn) || "na"}-${round2(p.amount)}`,
         })),
     });
   }
@@ -159,7 +168,7 @@ for (const member of members) {
     if (usedOfficial.has(i)) continue;
     loans.push({
       sourceCustomerId: sourceId,
-      sourceLoanKey: `cil-${sourceId}-official-${officialLoan.sourceLoanId || officialLoan.issuedOn}`,
+      sourceLoanKey: `${KEY_PREFIX}-${sourceId}-official-${officialLoan.sourceLoanId || officialLoan.issuedOn}`,
       coglimIssueId: officialLoan.sourceLoanId || null,
       issuedOn: toIsoDate(officialLoan.issuedOn),
       dueOn: toIsoDate(officialLoan.dueOn),
@@ -179,12 +188,12 @@ const pack = {
   source: "https://www.coglim.com/cognate",
   exportedAt: payload.exportedAt,
   tenantHints: ["Cognate", "Cognate Investment", "Cognate Investment Limited"],
-  branchHints: ["Ishongororo", "ISHONGORORO", "Inshongororo", "inshongororo"],
+  branchHints: BRANCH_HINTS,
   officersAudit: (payload.officers || []).map((o) => clean(o.name)).filter(Boolean),
   customers,
   loans,
   capital: (payload.capital || []).map((row, i) => ({
-    sourceKey: `cil-cap-${toIsoDate(row.date) || i}-${round2(row.amount)}-${i + 1}`,
+    sourceKey: `${KEY_PREFIX}-cap-${toIsoDate(row.date) || i}-${round2(row.amount)}-${i + 1}`,
     amount: round2(row.amount),
     date: toIsoDate(row.date),
     method: row.method || null,
@@ -192,7 +201,7 @@ const pack = {
     to: row.to || null,
   })),
   expenses: (payload.expenditures || []).map((row, i) => ({
-    sourceKey: `cil-exp-${toIsoDate(row.date) || i}-${round2(row.amount)}-${i + 1}`,
+    sourceKey: `${KEY_PREFIX}-exp-${toIsoDate(row.date) || i}-${round2(row.amount)}-${i + 1}`,
     name: row.name || "Expense",
     amount: round2(row.amount),
     date: toIsoDate(row.date),
@@ -200,7 +209,7 @@ const pack = {
     source: row.source || null,
   })),
   excess: (payload.excess || []).map((row, i) => ({
-    sourceKey: `cil-xs-${toIsoDate(row.date) || i}-${round2(row.amount)}-${i + 1}`,
+    sourceKey: `${KEY_PREFIX}-xs-${toIsoDate(row.date) || i}-${round2(row.amount)}-${i + 1}`,
     reason: row.reason || "Excess/shortage",
     amount: round2(row.amount),
     date: toIsoDate(row.date),

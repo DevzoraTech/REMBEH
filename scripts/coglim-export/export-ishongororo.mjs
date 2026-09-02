@@ -9,7 +9,6 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "../..");
-const OUT_DIR = path.join(ROOT, "data/coglim-export/ishongororo");
 
 const BASE = "https://www.coglim.com/cognate";
 const LOGIN_URL = `${BASE}/Admin/`;
@@ -21,6 +20,14 @@ const PASSWORD = process.env.COGLIM_PASS || "perform";
 const TX_START = process.env.COGLIM_TX_START || "2020-01-01";
 const TX_END = process.env.COGLIM_TX_END || new Date().toISOString().slice(0, 10);
 const HEADLESS = process.env.HEADLESS !== "0";
+const SLUG = (
+  process.env.COGLIM_SLUG ||
+  OFFICE.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "")
+);
+const OUT_DIR = path.join(ROOT, `data/coglim-export/${SLUG}`);
+const BRANCH_LABEL =
+  process.env.COGLIM_BRANCH_LABEL ||
+  OFFICE.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
 function slugify(value) {
   return clean(value)
@@ -597,8 +604,8 @@ async function writeOutputs(payload) {
   const organised = payload.organised;
 
   const files = {
-    [`ishongororo-full-${stamp}.json`]: payload,
-    "ishongororo-latest.json": payload,
+    [`${SLUG}-full-${stamp}.json`]: payload,
+    [`${SLUG}-latest.json`]: payload,
     "summary.json": {
       exportedAt: payload.exportedAt,
       branch: payload.branch,
@@ -647,7 +654,7 @@ async function writeOutputs(payload) {
     "13-current-positions.csv": toCsv(payload.currentPositions),
     "14-rembeh-ready.json": {
       tenantHint: "Cognate",
-      branchHint: "Ishongororo",
+      branchHint: BRANCH_LABEL,
       source: BASE,
       exportedAt: payload.exportedAt,
       manager: payload.profile,
@@ -682,7 +689,7 @@ async function writeOutputs(payload) {
     await fs.writeFile(dest, body);
   }
 
-  const latestRoot = path.join(ROOT, "data/coglim-export", "ishongororo-latest.json");
+  const latestRoot = path.join(ROOT, "data/coglim-export", `${SLUG}-latest.json`);
   await fs.writeFile(latestRoot, JSON.stringify(payload, null, 2));
   return files;
 }
@@ -867,7 +874,7 @@ async function main() {
       source: BASE,
       branch: {
         office: OFFICE,
-        name: "Ishongororo",
+        name: BRANCH_LABEL,
         organisation: "Cognate Investment Limited",
       },
       dashboard,

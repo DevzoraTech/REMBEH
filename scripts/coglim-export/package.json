@@ -8,7 +8,9 @@
     "export": "node export-buremba.mjs",
     "export:headed": "HEADLESS=0 node export-buremba.mjs",
     "export:ishongororo": "node export-ishongororo.mjs",
-    "export:ishongororo:headed": "HEADLESS=0 node export-ishongororo.mjs"
+    "export:ishongororo:headed": "HEADLESS=0 node export-ishongororo.mjs",
+    "export:kakinga": "COGLIM_OFFICE=KAKINGA node export-ishongororo.mjs",
+    "export:kakinga:headed": "COGLIM_OFFICE=KAKINGA HEADLESS=0 node export-ishongororo.mjs"
   },
   "keywords": [],
   "author": "",

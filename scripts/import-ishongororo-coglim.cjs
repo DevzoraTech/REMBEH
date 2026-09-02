@@ -12,7 +12,7 @@ const { PrismaClient, Prisma } = require('@prisma/client');
 const { PrismaPg } = require('@prisma/adapter-pg');
 const { Pool } = require('pg');
 
-const NOTE_PREFIX = '[COGLIM-ISHONGORORO]';
+const NOTE_PREFIX = process.env.COGLIM_NOTE_PREFIX || '[COGLIM-ISHONGORORO]';
 
 function loadEnvFile(filePath) {
   if (!existsSync(filePath)) return;
@@ -140,6 +140,7 @@ function resolvePackPath() {
     resolve(process.cwd(), 'data/coglim-export/ishongororo/ishongororo-import.json'),
     resolve(process.cwd(), '../../data/coglim-export/ishongororo/ishongororo-import.json'),
     resolve(__dirname, '../data/coglim-export/ishongororo/ishongororo-import.json'),
+    resolve(__dirname, '../data/coglim-export/kakinga/kakinga-import.json'),
   ].filter(Boolean);
   for (const candidate of candidates) {
     if (existsSync(candidate)) return candidate;
@@ -183,11 +184,11 @@ async function resolveBranch(prisma, pack) {
   if (matches.length === 1) return matches[0];
   if (matches.length === 0) {
     throw new Error(
-      `No Ishongororo branch on ${tenant.name}. Found: ${branches.map((b) => b.name).join(', ') || '(none)'}`,
+      `No branch matched ${branchHints.join(', ')} on ${tenant.name}. Found: ${branches.map((b) => b.name).join(', ') || '(none)'}`,
     );
   }
   throw new Error(
-    `Multiple Ishongororo branches. Set LEGACY_BRANCH_ID:\n${matches
+    `Multiple matching branches. Set LEGACY_BRANCH_ID:\n${matches
       .map((b) => `${b.name} ${b.id}`)
       .join('\n')}`,
   );
@@ -316,7 +317,7 @@ async function main() {
     let customersUpdated = 0;
 
     for (const row of pack.customers) {
-      const nationalId = row.systemNumber || `CIL${row.sourceId}`;
+      const nationalId = row.systemNumber || `${row.sourceId}`;
       const existingByNational = await prisma.customer.findFirst({
         where: { tenantId: branch.tenantId, nationalId },
         select: { id: true, phone: true },
@@ -375,7 +376,11 @@ async function main() {
     const existingDisbursements = new Set(
       (
         await prisma.loanDisbursement.findMany({
-          where: { localId: { startsWith: 'cil-' } },
+          where: {
+            tenantId: branch.tenantId,
+            branchId: branch.id,
+            localId: { not: null },
+          },
           select: { localId: true },
         })
       )
@@ -385,7 +390,11 @@ async function main() {
     const existingRepayments = new Set(
       (
         await prisma.repayment.findMany({
-          where: { localId: { startsWith: 'cil-pay-' } },
+          where: {
+            tenantId: branch.tenantId,
+            branchId: branch.id,
+            localId: { not: null },
+          },
           select: { localId: true },
         })
       )
