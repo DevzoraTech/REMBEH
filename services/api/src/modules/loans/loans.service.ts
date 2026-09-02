@@ -33,6 +33,7 @@ import { RecordLoanDisbursementDto } from './dto/record-loan-disbursement.dto';
 import { LoanListRecord, LoansRepository } from './loans.repository';
 import { LoanProductsService } from '../loan-products/loan-products.service';
 import { LOAN_PERMISSIONS } from './loans.permissions';
+import { resolveListBranchId } from '../../common/auth/branch-scope';
 
 @Injectable()
 export class LoansService {
@@ -45,7 +46,10 @@ export class LoansService {
     private readonly loanProductsService: LoanProductsService,
   ) {}
 
-  async listLoans(user: AuthenticatedUser): Promise<LoanListResponseContract> {
+  async listLoans(
+    user: AuthenticatedUser,
+    requestedBranchId?: string,
+  ): Promise<LoanListResponseContract> {
     if (!user.tenantId?.trim()) {
       throw new ForbiddenException('Account access is required.');
     }
@@ -54,6 +58,7 @@ export class LoansService {
       BRANCH_PERMISSIONS.create,
     );
     const canSeeBranchLoanRecords = this.canSeeBranchLoanRecords(user);
+    const branchId = resolveListBranchId(user, requestedBranchId);
 
     if (!canSeeAllBranches && !user.branchId) {
       return { loans: [] };
@@ -61,7 +66,7 @@ export class LoansService {
 
     const loans = await this.loansRepository.listForScope({
       tenantId: user.tenantId,
-      branchId: canSeeAllBranches ? null : user.branchId,
+      branchId,
       officerUserId: canSeeBranchLoanRecords ? null : user.userId,
     });
 
@@ -100,6 +105,7 @@ export class LoansService {
 
   async listPendingDisbursements(
     user: AuthenticatedUser,
+    requestedBranchId?: string,
   ): Promise<PendingDisbursementListResponseContract> {
     if (!user.tenantId?.trim()) {
       throw new ForbiddenException('Account access is required.');
@@ -109,6 +115,7 @@ export class LoansService {
       BRANCH_PERMISSIONS.create,
     );
     const canSeeBranchLoanRecords = this.canSeeBranchLoanRecords(user);
+    const branchId = resolveListBranchId(user, requestedBranchId);
 
     if (!canSeeAllBranches && !user.branchId) {
       return {
@@ -122,7 +129,7 @@ export class LoansService {
 
     const loans = await this.loansRepository.listPendingDisbursements({
       tenantId: user.tenantId,
-      branchId: canSeeAllBranches ? null : user.branchId,
+      branchId,
       officerUserId: canSeeBranchLoanRecords ? null : user.userId,
     });
 

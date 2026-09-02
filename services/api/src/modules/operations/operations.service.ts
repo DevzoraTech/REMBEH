@@ -644,6 +644,7 @@ export class OperationsService {
   async listOwnerBranchDailyStatuses(
     user: AuthenticatedUser,
     date?: string,
+    requestedBranchId?: string,
   ): Promise<OwnerBranchDailyStatusResponseContract> {
     this.assertCanOwnerApproveReport(user);
 
@@ -652,6 +653,7 @@ export class OperationsService {
     const branches = await this.repository.listBranchDailyStatuses({
       tenantId: user.tenantId,
       operationDate: bounds.dateOnly,
+      branchId: requestedBranchId?.trim() || null,
     });
 
     return {

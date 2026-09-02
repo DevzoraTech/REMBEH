@@ -252,7 +252,7 @@ export function LoansWorkspace({
   const state = useLoansSession(mode);
   const router = useRouter();
   const isManager = mode === "manager";
-  const { matchesBranch, selectedBranchName } =
+  const { matchesBranch, selectedBranchName, selectedBranchId } =
     useOwnerBranchScope();
   const pendingOnly = view === "pending-disbursements";
   const [loans, setLoans] = useState<LoanRow[]>([]);
@@ -408,7 +408,7 @@ export function LoansWorkspace({
     } finally {
       setLoading(false);
     }
-  }, [isManager, state.branch?.id, state.branch?.name, state.session]);
+  }, [isManager, selectedBranchId, state.branch?.id, state.session]);
 
   const loadPendingDisbursements = useCallback(
     async (fallbackLoans: LoanRow[] = []) => {
@@ -438,7 +438,7 @@ export function LoansWorkspace({
         setPendingLoading(false);
       }
     },
-    [isManager, state.branch?.id, state.branch?.name, state.session],
+    [isManager, selectedBranchId, state.branch?.id, state.branch?.name, state.session],
   );
 
   const loadDisbursementStaff = useCallback(async () => {

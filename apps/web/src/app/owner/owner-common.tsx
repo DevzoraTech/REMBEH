@@ -17,6 +17,7 @@ import {
   refreshAuthSession,
 } from "../../lib/auth-session";
 import { resolveOperatorRole } from "../../lib/roles";
+import { readStoredOwnerBranchId } from "./owner-branch-scope";
 
 export type OwnerBranch = {
   id: string;
@@ -462,8 +463,35 @@ export function authHeaders(session: RembehSession) {
   };
 }
 
+const BRANCH_SCOPED_LIST_PATHS = new Set([
+  "/loans",
+  "/loans/pending-disbursements",
+  "/customers",
+  "/agents",
+  "/collections/repayments",
+  "/collections/repayment-correction-requests",
+  "/operations/reports",
+  "/operations/owner-daily-status",
+  "/borrower-lists",
+  "/salaries",
+  "/cash-shortages",
+]);
+
+function applyOwnerBranchQuery(path: string, branchId: string | null) {
+  if (!branchId) return path;
+  const [pathname, search = ""] = path.split("?");
+  if (!BRANCH_SCOPED_LIST_PATHS.has(pathname)) return path;
+  const params = new URLSearchParams(search);
+  if (!params.get("branchId")) {
+    params.set("branchId", branchId);
+  }
+  const next = params.toString();
+  return next ? `${pathname}?${next}` : pathname;
+}
+
 export async function ownerFetch<T>(session: RembehSession, path: string) {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
+  const scopedPath = applyOwnerBranchQuery(path, readStoredOwnerBranchId());
+  const response = await fetch(`${apiBaseUrl}${scopedPath}`, {
     headers: authHeaders(session),
   });
   const payload = await readApiJson<T & { message?: string | string[] }>(

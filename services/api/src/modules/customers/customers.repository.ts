@@ -162,7 +162,11 @@ export class CustomersRepository {
       },
       include: customerListInclude,
       orderBy: { createdAt: 'desc' },
-      take: input.limit ?? 2000,
+      ...(input.branchId
+        ? {}
+        : {
+            take: input.limit ?? 2000,
+          }),
     });
   }
 

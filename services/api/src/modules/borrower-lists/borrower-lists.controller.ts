@@ -32,8 +32,9 @@ export class BorrowerListsController {
   listEntries(
     @CurrentUser() user: AuthenticatedUser,
     @Query('type') type?: string,
+    @Query('branchId') branchId?: string,
   ) {
-    return this.borrowerListsService.listEntries(user, type);
+    return this.borrowerListsService.listEntries(user, type, branchId);
   }
 
   @Post()

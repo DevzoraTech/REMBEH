@@ -12,6 +12,7 @@ import {
   normalizeInternationalPhoneNumber,
 } from '../../common/security/identity-normalization';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
+import { resolveListBranchId } from '../../common/auth/branch-scope';
 import {
   BorrowerListEntryContract,
   BorrowerListListResponseContract,
@@ -33,10 +34,11 @@ export class BorrowerListsService {
   async listEntries(
     user: AuthenticatedUser,
     type?: string,
+    requestedBranchId?: string,
   ): Promise<BorrowerListListResponseContract> {
     this.requireTenant(user);
     const parsedType = this.parseType(type);
-    const scope = this.branchScopeForRead(user);
+    const scope = this.branchScopeForRead(user, requestedBranchId);
 
     if (scope.blocked) {
       return { entries: [] };
@@ -203,6 +205,7 @@ export class BorrowerListsService {
 
   private branchScopeForRead(
     user: AuthenticatedUser,
+    requestedBranchId?: string | null,
   ):
     | { blocked: true; branchId?: never }
     | { blocked: false; branchId: string | null } {
@@ -211,7 +214,10 @@ export class BorrowerListsService {
     );
 
     if (canSeeAllBranches) {
-      return { blocked: false, branchId: null };
+      return {
+        blocked: false,
+        branchId: resolveListBranchId(user, requestedBranchId),
+      };
     }
 
     if (!user.branchId) {

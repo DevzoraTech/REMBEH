@@ -13,6 +13,7 @@ import {
   normalizeInternationalPhoneNumber,
 } from '../../common/security/identity-normalization';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
+import { resolveListBranchId } from '../../common/auth/branch-scope';
 import {
   computeLoanPricing,
   resolveBaseRepayable,
@@ -43,6 +44,7 @@ export class CustomersService {
 
   async listCustomers(
     user: AuthenticatedUser,
+    requestedBranchId?: string,
   ): Promise<CustomerListResponseContract> {
     if (!user.tenantId?.trim()) {
       throw new ForbiddenException('Tenant scope is required.');
@@ -51,6 +53,7 @@ export class CustomersService {
     const canSeeAllBranches = user.permissions.includes(
       BRANCH_PERMISSIONS.create,
     );
+    const branchId = resolveListBranchId(user, requestedBranchId);
 
     if (!canSeeAllBranches && !user.branchId) {
       return { customers: [] };
@@ -58,7 +61,7 @@ export class CustomersService {
 
     const customers = await this.customersRepository.listForScope({
       tenantId: user.tenantId,
-      branchId: canSeeAllBranches ? null : user.branchId,
+      branchId,
     });
 
     const scoped = customers.filter((customer) => customer.branchId);

@@ -146,7 +146,7 @@ export function RepaymentCorrectionsWorkspace({
   mode: RepaymentCorrectionsMode;
 }) {
   const state = useCorrectionsSession(mode);
-  const { matchesBranch } = useOwnerBranchScope();
+  const { matchesBranch, selectedBranchId } = useOwnerBranchScope();
   const [requests, setRequests] = useState<RepaymentCorrectionRequest[]>([]);
   const [status, setStatus] = useState<CorrectionsStatus>("PENDING");
   const [search, setSearch] = useState("");
@@ -181,7 +181,7 @@ export function RepaymentCorrectionsWorkspace({
     } finally {
       setLoading(false);
     }
-  }, [state.session, status]);
+  }, [selectedBranchId, state.session, status]);
 
   useEffect(() => {
     void loadRequests();

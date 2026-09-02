@@ -5,6 +5,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
@@ -32,14 +33,20 @@ export class LoansController {
 
   @Get()
   @RequirePermissions(LOAN_PERMISSIONS.read)
-  listLoans(@CurrentUser() user: AuthenticatedUser) {
-    return this.loansService.listLoans(user);
+  listLoans(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('branchId') branchId?: string,
+  ) {
+    return this.loansService.listLoans(user, branchId);
   }
 
   @Get('pending-disbursements')
   @RequirePermissions(LOAN_PERMISSIONS.read)
-  listPendingDisbursements(@CurrentUser() user: AuthenticatedUser) {
-    return this.loansService.listPendingDisbursements(user);
+  listPendingDisbursements(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('branchId') branchId?: string,
+  ) {
+    return this.loansService.listPendingDisbursements(user, branchId);
   }
 
   @Post('reminders/bulk')

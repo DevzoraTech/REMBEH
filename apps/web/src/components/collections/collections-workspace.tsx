@@ -148,7 +148,7 @@ function useCollectionsSession(mode: CollectionsMode): CollectionsSession {
 export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
   const state = useCollectionsSession(mode);
   const isManager = mode === "manager";
-  const { matchesBranch } = useOwnerBranchScope();
+  const { matchesBranch, selectedBranchId } = useOwnerBranchScope();
   const [repayments, setRepayments] = useState<OwnerRepayment[]>([]);
   const [filter, setFilter] = useState<PaymentFilter>("all");
   const [methodFilter, setMethodFilter] = useState<MethodFilter>("all");
@@ -198,7 +198,7 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
     } finally {
       setLoading(false);
     }
-  }, [filter, state.session]);
+  }, [filter, selectedBranchId, state.session]);
 
   const applySmsResults = useCallback((results: RepaymentSmsResult[]) => {
     if (results.length === 0) return;

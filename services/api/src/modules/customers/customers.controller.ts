@@ -5,6 +5,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
@@ -25,8 +26,11 @@ export class CustomersController {
 
   @Get()
   @RequirePermissions(CUSTOMER_PERMISSIONS.read)
-  listCustomers(@CurrentUser() user: AuthenticatedUser) {
-    return this.customersService.listCustomers(user);
+  listCustomers(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('branchId') branchId?: string,
+  ) {
+    return this.customersService.listCustomers(user, branchId);
   }
 
   @Get(':customerId')

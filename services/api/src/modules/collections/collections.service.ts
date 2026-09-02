@@ -22,6 +22,7 @@ import { randomUUID } from 'node:crypto';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { PrismaService } from '../../database/prisma.service';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
+import { resolveListBranchId } from '../../common/auth/branch-scope';
 import { BillingService } from '../billing/billing.service';
 import { OPERATIONS_PERMISSIONS } from '../operations/operations.permissions';
 import {
@@ -264,10 +265,11 @@ export class CollectionsService {
   async listRepayments(
     user: AuthenticatedUser,
     filter?: string,
+    requestedBranchId?: string,
   ): Promise<{ repayments: RepaymentListItemContract[] }> {
     this.assertBranchAccess(user);
 
-    const scope = this.scope(user);
+    const scope = this.scope(user, requestedBranchId);
     const range = this.filterToRange(filter);
 
     const isFieldAgent = await this.isFieldAgent(user);
@@ -277,6 +279,7 @@ export class CollectionsService {
       from: range?.from,
       to: range?.to,
       recordedByUserId: isFieldAgent ? user.userId : null,
+      take: scope.branchId || range ? 5_000 : 2_000,
     });
 
     const smsByRepayment = await this.summarizeRepaymentSms(
@@ -1331,10 +1334,11 @@ export class CollectionsService {
   async listRepaymentCorrectionRequests(
     user: AuthenticatedUser,
     status?: string,
+    requestedBranchId?: string,
   ): Promise<{ requests: RepaymentCorrectionRequestContract[] }> {
     this.assertBranchAccess(user);
 
-    const scope = this.scope(user);
+    const scope = this.scope(user, requestedBranchId);
     const statusFilter = this.parseRepaymentCorrectionStatus(status);
     const canReview = this.canReviewRepaymentCorrections(user);
 
@@ -3260,7 +3264,7 @@ export class CollectionsService {
     return safe || randomUUID();
   }
 
-  private scope(user: AuthenticatedUser) {
+  private scope(user: AuthenticatedUser, requestedBranchId?: string | null) {
     if (!user.tenantId?.trim()) {
       throw new ForbiddenException('Tenant scope is required.');
     }
@@ -3270,12 +3274,9 @@ export class CollectionsService {
      *
      * Branch managers and agents stay branch scoped.
      */
-    const canAllBranches = user.permissions.includes(BRANCH_PERMISSIONS.create);
-
     return {
       tenantId: user.tenantId,
-
-      branchId: canAllBranches ? null : user.branchId,
+      branchId: resolveListBranchId(user, requestedBranchId),
     };
   }
 

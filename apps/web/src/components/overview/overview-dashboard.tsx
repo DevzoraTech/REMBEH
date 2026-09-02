@@ -269,7 +269,7 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
         ),
         ownerFetch<{ repayments?: OwnerRepayment[] }>(
           state.session,
-          "/collections/repayments?filter=all",
+          "/collections/repayments?filter=thisWeek",
         ),
         optionalOwnerFetch<{ reports?: OwnerReport[] }>(
           state.session,
@@ -303,7 +303,7 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
     } finally {
       setLoading(false);
     }
-  }, [isManager, state.branch, state.session]);
+  }, [isManager, selectedBranchId, state.branch, state.session]);
 
   useEffect(() => {
     const boot = window.setTimeout(() => {

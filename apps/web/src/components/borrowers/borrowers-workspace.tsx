@@ -125,7 +125,8 @@ function useBorrowersSession(mode: BorrowersMode): BorrowersSession {
 export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
   const state = useBorrowersSession(mode);
   const isManager = mode === "manager";
-  const { matchesBranch, selectedBranchName } = useOwnerBranchScope();
+  const { matchesBranch, selectedBranchName, selectedBranchId } =
+    useOwnerBranchScope();
   const [borrowers, setBorrowers] = useState<OwnerBorrower[]>([]);
   const [search, setSearch] = useState("");
   const [advancedFilters, setAdvancedFilters] = useState<BorrowersAdvancedFilters>(
@@ -163,7 +164,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
     } finally {
       setLoading(false);
     }
-  }, [isManager, state.branch?.id, state.session]);
+  }, [isManager, selectedBranchId, state.branch?.id, state.session]);
 
   useEffect(() => {
     const boot = window.setTimeout(() => {

@@ -31,6 +31,7 @@ import { RecordAgentFloatDto } from './dto/record-agent-float.dto';
 import { UpdateAgentProfileDto } from './dto/update-agent-profile.dto';
 import { UpdateAgentStatusDto } from './dto/update-agent-status.dto';
 import { PrismaService } from '../../database/prisma.service';
+import { resolveListBranchId } from '../../common/auth/branch-scope';
 
 const ACCOUNTABILITY_FORMULA =
   'Expected cash = float given − disbursed (new loans) + collected (repayments) + processing fees';
@@ -59,9 +60,10 @@ export class AgentsService {
     search?: string,
     date?: string,
     purpose?: string,
+    branchId?: string,
   ): Promise<AgentsListResponse> {
     this.assertCanRead(user);
-    const scope = this.scope(user);
+    const scope = this.scope(user, branchId);
     const includeFloatRecipients = purpose === 'float';
     const agents = await this.repository.listAgents({
       ...scope,
@@ -1255,14 +1257,13 @@ export class AgentsService {
     };
   }
 
-  private scope(user: AuthenticatedUser) {
+  private scope(user: AuthenticatedUser, requestedBranchId?: string | null) {
     if (!user.tenantId?.trim()) {
       throw new ForbiddenException('Tenant scope is required.');
     }
-    const canAllBranches = user.permissions.includes(BRANCH_PERMISSIONS.create);
     return {
       tenantId: user.tenantId,
-      branchId: canAllBranches ? null : user.branchId,
+      branchId: resolveListBranchId(user, requestedBranchId),
     };
   }
 

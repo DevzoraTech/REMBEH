@@ -237,8 +237,13 @@ updateReconciliationNotes(
   listOwnerBranchDailyStatuses(
     @CurrentUser() user: AuthenticatedUser,
     @Query('date') date?: string,
+    @Query('branchId') branchId?: string,
   ) {
-    return this.operationsService.listOwnerBranchDailyStatuses(user, date);
+    return this.operationsService.listOwnerBranchDailyStatuses(
+      user,
+      date,
+      branchId,
+    );
   }
 
   @Get('reports/:reportId')

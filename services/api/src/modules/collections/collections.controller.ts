@@ -77,8 +77,9 @@ export class CollectionsController {
   listRepayments(
     @CurrentUser() user: AuthenticatedUser,
     @Query('filter') filter?: string,
+    @Query('branchId') branchId?: string,
   ) {
-    return this.collectionsService.listRepayments(user, filter);
+    return this.collectionsService.listRepayments(user, filter, branchId);
   }
 
   @Get('repayment-correction-requests')
@@ -86,10 +87,12 @@ export class CollectionsController {
   listRepaymentCorrectionRequests(
     @CurrentUser() user: AuthenticatedUser,
     @Query('status') status?: string,
+    @Query('branchId') branchId?: string,
   ) {
     return this.collectionsService.listRepaymentCorrectionRequests(
       user,
       status,
+      branchId,
     );
   }
 

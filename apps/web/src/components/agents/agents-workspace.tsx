@@ -36,7 +36,10 @@ import {
 } from "../app/pagination";
 import { AppBootSkeleton, TableSkeleton } from "../app/skeleton";
 import { OwnerHeader } from "../../app/owner/owner-header";
-import { useOwnerBranchScope } from "../../app/owner/owner-branch-scope";
+import {
+  useOwnerBranchScope,
+  readStoredOwnerBranchId,
+} from "../../app/owner/owner-branch-scope";
 import { TableSearchField } from "../app/table-search-field";
 import {
   FormError,
@@ -156,7 +159,7 @@ export function AgentsWorkspace() {
     session?.permissions.includes("branch.staff.invite"),
   );
   const isOwner = Boolean(session?.permissions.includes("branch.create"));
-  const { matchesBranch, selectedBranchName, branches: scopeBranches } =
+  const { matchesBranch, selectedBranchName, selectedBranchId, branches: scopeBranches } =
     useOwnerBranchScope();
 
   function openInvite() {
@@ -196,6 +199,10 @@ export function AgentsWorkspace() {
       try {
         const params = new URLSearchParams();
         params.set("date", date);
+        if (activeSession.permissions.includes("branch.create")) {
+          const scopedBranchId = selectedBranchId ?? readStoredOwnerBranchId();
+          if (scopedBranchId) params.set("branchId", scopedBranchId);
+        }
         const url = `${apiBaseUrl}/agents?${params.toString()}`;
         const response = await fetch(url, {
           headers: {
@@ -236,7 +243,7 @@ export function AgentsWorkspace() {
         if (requestId === agentsRequestId.current) setLoading(false);
       }
     },
-    [],
+    [selectedBranchId],
   );
 
   useEffect(() => {
@@ -505,7 +512,7 @@ export function AgentsWorkspace() {
         />
         <p className="-mt-2 text-sm font-medium text-slate-500">
           {isOwner
-            ? "Move managers and field officers to another branch. They keep the same login and lose access to the previous branch."
+            ? "Managers, cashiers, and field staff for the selected branch. Transfer keeps the same login and drops the previous branch."
             : "Browse branch field officers, review access status, and manage who can work in the field."}
         </p>
 
@@ -518,7 +525,7 @@ export function AgentsWorkspace() {
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <AgentStat
             icon={<Users className="size-4" />}
-            label="All Officers"
+            label={isOwner ? "All staff" : "All Officers"}
             value={String(summaryStats.all)}
             hint="Registered At The Branch"
             tone="green"
@@ -532,14 +539,14 @@ export function AgentsWorkspace() {
           />
           <AgentStat
             icon={<UserCheck className="size-4" />}
-            label="Active Officers"
+            label={isOwner ? "Active staff" : "Active Officers"}
             value={String(summaryStats.active)}
             hint="Can Access The System"
             tone="violet"
           />
           <AgentStat
             icon={<UserX className="size-4" />}
-            label="Suspended Officers"
+            label={isOwner ? "Suspended" : "Suspended Officers"}
             value={String(summaryStats.suspended)}
             hint="System Access Restricted"
             tone="gold"
@@ -553,7 +560,7 @@ export function AgentsWorkspace() {
         ) : null}
 
         {loading && agents.length === 0 ? (
-          <TableSkeleton rows={6} columns={6} />
+          <TableSkeleton rows={6} columns={7} />
         ) : !canRead ? (
           <p className="rounded-[16px] border border-[#e6ebf0] bg-white px-4 py-6 text-sm text-slate-500">
             You do not have permission to view agents.
@@ -561,7 +568,7 @@ export function AgentsWorkspace() {
         ) : agents.length === 0 ? (
           <div className="rounded-[16px] border border-[#e6ebf0] bg-white px-4 py-10 text-center">
             <p className="text-sm text-slate-500">
-              No agents found in your scope.
+              No staff found in your scope.
             </p>
             {canInvite ? (
               <button
@@ -578,7 +585,7 @@ export function AgentsWorkspace() {
           <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-3.5">
               <h2 className="text-[15px] font-semibold text-[#0b1220]">
-                Branch Officers
+                {isOwner ? "Branch staff" : "Branch Officers"}
               </h2>
               <TableSearchField
                 value={search}
@@ -586,7 +593,7 @@ export function AgentsWorkspace() {
                   setSearch(value);
                   setPage(1);
                 }}
-                placeholder="Search Officers..."
+                placeholder={isOwner ? "Search staff..." : "Search Officers..."}
                 title="Search by agent name, ID, phone, email or branch."
                 className="ml-auto"
               />
@@ -595,19 +602,22 @@ export function AgentsWorkspace() {
               <table className="w-full min-w-[760px] table-fixed text-left text-xs">
                 <thead className="border-b border-[#dfe5eb] bg-[#e8edf2] text-[10px] font-semibold text-slate-600">
                   <tr>
-                    <th className="w-[28%] px-3 py-2.5">Officer</th>
-                    <th className="w-[12%] px-3 py-2.5">Status</th>
-                    <th className="w-[22%] px-3 py-2.5">Contact</th>
-                    <th className="w-[14%] px-3 py-2.5">Joined</th>
-                    <th className="w-[16%] px-3 py-2.5">Last Active</th>
-                    <th className="w-[8%] px-3 py-2.5 text-right">Actions</th>
+                    <th className="w-[22%] px-3 py-2.5">
+                      {isOwner ? "Staff" : "Officer"}
+                    </th>
+                    <th className="w-[14%] px-3 py-2.5">Role</th>
+                    <th className="w-[10%] px-3 py-2.5">Status</th>
+                    <th className="w-[18%] px-3 py-2.5">Contact</th>
+                    <th className="w-[12%] px-3 py-2.5">Joined</th>
+                    <th className="w-[14%] px-3 py-2.5">Last Active</th>
+                    <th className="w-[10%] px-3 py-2.5 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#edf1f5]">
                   {pagedAgents.items.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={6}
+                        colSpan={7}
                         className="px-4 py-12 text-center text-sm text-slate-500"
                       >
                         No agents match this search.
@@ -635,10 +645,13 @@ export function AgentsWorkspace() {
                               {agent.name}
                             </p>
                             <p className="mt-0.5 truncate text-[11px] font-medium tabular-nums text-slate-500">
-                              {agent.publicId ?? "No Officer ID"}
+                              {agent.publicId ?? "No staff ID"}
                             </p>
                           </div>
                         </div>
+                      </td>
+                      <td className="px-3 py-3 text-[11px] font-medium text-[#0b1220]">
+                        {agent.roleName || "Staff"}
                       </td>
                       <td className="px-3 py-3">
                         <StatusBadge status={agent.status} />

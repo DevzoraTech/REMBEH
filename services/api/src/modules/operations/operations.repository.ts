@@ -145,10 +145,15 @@ export class OperationsRepository {
     });
   }
 
-  listBranchDailyStatuses(input: { tenantId: string; operationDate: Date }) {
+  listBranchDailyStatuses(input: {
+    tenantId: string;
+    operationDate: Date;
+    branchId?: string | null;
+  }) {
     return this.prisma.branch.findMany({
       where: {
         tenantId: input.tenantId,
+        ...(input.branchId ? { id: input.branchId } : {}),
         createdAt: {
           lte: new Date(
             input.operationDate.getTime() + 24 * 60 * 60 * 1000 - 1,

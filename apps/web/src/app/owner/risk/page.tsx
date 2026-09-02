@@ -58,7 +58,7 @@ const TABS: Array<{ id: ListTab; label: string }> = [
 
 export default function OwnerRiskPage() {
   const state = useOwnerSession("/owner/risk");
-  const { matchesBranch } = useOwnerBranchScope();
+  const { matchesBranch, selectedBranchId } = useOwnerBranchScope();
   const [entries, setEntries] = useState<RiskEntry[]>([]);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<ListTab>("all");
@@ -93,7 +93,7 @@ export default function OwnerRiskPage() {
     } finally {
       setLoading(false);
     }
-  }, [state.session]);
+  }, [selectedBranchId, state.session]);
 
   useEffect(() => {
     if (state.ready && state.session) {

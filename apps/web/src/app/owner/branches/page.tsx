@@ -67,6 +67,7 @@ import {
   sumBy,
   useOwnerSession,
 } from "../owner-common";
+import { useOwnerBranchScope } from "../owner-branch-scope";
 import {
   StaffTransfersList,
   TransferStaffDialog,
@@ -96,6 +97,7 @@ function OwnerBranchesPageContent() {
   const state = useOwnerSession("/owner/branches");
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { selectedBranchId } = useOwnerBranchScope();
   const [branches, setBranches] = useState<OwnerBranch[]>([]);
   const [loans, setLoans] = useState<OwnerLoan[]>([]);
   const [borrowers, setBorrowers] = useState<OwnerBorrower[]>([]);
@@ -152,7 +154,7 @@ function OwnerBranchesPageContent() {
         ),
         ownerFetch<{ repayments?: OwnerRepayment[] }>(
           state.session,
-          "/collections/repayments?filter=all",
+          "/collections/repayments?filter=thisWeek",
         ),
         ownerFetch<{ reports?: OwnerReport[] }>(
           state.session,
@@ -182,7 +184,7 @@ function OwnerBranchesPageContent() {
     } finally {
       setLoading(false);
     }
-  }, [state.session]);
+  }, [selectedBranchId, state.session]);
 
   useEffect(() => {
     const boot = window.setTimeout(() => {
@@ -219,9 +221,17 @@ function OwnerBranchesPageContent() {
     router.replace("/owner/branches", { scroll: false });
   }, [router]);
 
+  const scopedBranches = useMemo(
+    () =>
+      selectedBranchId
+        ? branches.filter((branch) => branch.id === selectedBranchId)
+        : branches,
+    [branches, selectedBranchId],
+  );
+
   const filteredBranches = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return branches.filter((branch) => {
+    return scopedBranches.filter((branch) => {
       const status = branchStatus(branch);
       const region = branchRegion(branch);
       const matchesStatus = statusFilter === "all" || status === statusFilter;
@@ -237,43 +247,46 @@ function OwnerBranchesPageContent() {
         ].some((value) => value.toLowerCase().includes(q));
       return matchesStatus && matchesRegion && matchesSearch;
     });
-  }, [branches, regionFilter, search, statusFilter]);
+  }, [regionFilter, scopedBranches, search, statusFilter]);
 
-  const assignedManagers = branches.filter((branch) =>
+  const assignedManagers = scopedBranches.filter((branch) =>
     activeManager(branch),
   ).length;
-  const activeStaff = sumBy(branches, (branch) => branch.staffSummary.active);
+  const activeStaff = sumBy(
+    scopedBranches,
+    (branch) => branch.staffSummary.active,
+  );
   const sentReportCount = reports.length;
   const outstandingTotal = sumBy(loans, (loan) => loan.balance);
-  const activeBranchCount = branches.filter(
+  const activeBranchCount = scopedBranches.filter(
     (branch) => branchStatus(branch) === "active",
   ).length;
-  const pendingBranchCount = branches.filter(
+  const pendingBranchCount = scopedBranches.filter(
     (branch) => branchStatus(branch) === "pending",
   ).length;
   const inactiveBranchCount = Math.max(
     0,
-    branches.length - activeBranchCount - pendingBranchCount,
+    scopedBranches.length - activeBranchCount - pendingBranchCount,
   );
   const regionOptions = useMemo(
-    () => Array.from(new Set(branches.map(branchRegion))).sort(),
-    [branches],
+    () => Array.from(new Set(scopedBranches.map(branchRegion))).sort(),
+    [scopedBranches],
   );
   const filtersActive =
     search.trim().length > 0 || statusFilter !== "all" || regionFilter !== "all";
   const recentActivity = useMemo(
-    () => buildBranchActivity(branches, loans, reports),
-    [branches, loans, reports],
+    () => buildBranchActivity(scopedBranches, loans, reports),
+    [loans, reports, scopedBranches],
   );
   const collectionPerformance = useMemo(
     () =>
       buildBranchCollectionPerformance({
-        branches,
+        branches: scopedBranches,
         loans,
         repayments,
         dailyStatuses,
       }),
-    [branches, dailyStatuses, loans, repayments],
+    [dailyStatuses, loans, repayments, scopedBranches],
   );
   const branchAttentionById = useMemo(
     () =>
@@ -437,7 +450,7 @@ function OwnerBranchesPageContent() {
           <BranchStatCard
             icon={<Building2 className="size-5" />}
             label="Total Branches"
-            value={formatNumber(branches.length)}
+            value={formatNumber(scopedBranches.length)}
             detail={`${formatNumber(branchesNeedingAttentionCount)} need attention`}
             detailAction={
               branchesNeedingAttentionCount > 0
@@ -689,12 +702,12 @@ function OwnerBranchesPageContent() {
                 {formatNumber(
                   listMode === "attention"
                     ? branchesNeedingAttentionCount
-                    : branches.length,
+                    : scopedBranches.length,
                 )}{" "}
                 branch
                 {(listMode === "attention"
                   ? branchesNeedingAttentionCount
-                  : branches.length) === 1
+                  : scopedBranches.length) === 1
                   ? ""
                   : "es"}
               </p>
@@ -727,7 +740,7 @@ function OwnerBranchesPageContent() {
               active={activeBranchCount}
               inactive={inactiveBranchCount}
               pending={pendingBranchCount}
-              total={branches.length}
+              total={scopedBranches.length}
               selectedStatus={listMode === "all" ? statusFilter : "all"}
               onSelectStatus={(status) => {
                 setListMode("all");

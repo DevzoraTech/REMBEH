@@ -44,6 +44,10 @@ function readStoredBranchId() {
   }
 }
 
+export function readStoredOwnerBranchId() {
+  return readStoredBranchId();
+}
+
 function persistBranchId(branchId: string | null) {
   if (typeof window === "undefined") return;
   try {
