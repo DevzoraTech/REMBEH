@@ -523,6 +523,32 @@ build_apk() {
 
   echo "APK built:"
   ls -lh "$APK_PATH"
+
+  python3 - "$APK_PATH" <<'PY'
+import sys, zipfile
+apk = sys.argv[1]
+required = [
+    "lib/arm64-v8a/libflutter.so",
+    "lib/arm64-v8a/libapp.so",
+    "lib/armeabi-v7a/libflutter.so",
+    "lib/armeabi-v7a/libapp.so",
+]
+with zipfile.ZipFile(apk) as z:
+    names = set(z.namelist())
+missing = [name for name in required if name not in names]
+abis = sorted({
+    name.split("/")[1]
+    for name in names
+    if name.startswith("lib/") and name.count("/") >= 2
+})
+print("APK ABIs:", ", ".join(abis) or "<none>")
+if missing:
+    print("ERROR: APK is missing Flutter native libs for some phones:", file=sys.stderr)
+    for name in missing:
+        print(f"  {name}", file=sys.stderr)
+    sys.exit(1)
+print("APK includes Flutter for 32-bit and 64-bit phones.")
+PY
 }
 
 # ----------------------------------------------------------------------
