@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  GetBucketAccelerateConfigurationCommand,
   GetObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
@@ -18,8 +19,11 @@ export class ReleaseStorageService {
   private readonly logger = new Logger(ReleaseStorageService.name);
   private readonly s3Client: S3Client;
   private readonly presignClient: S3Client;
+  private readonly accelerateClient: S3Client | null;
   private readonly bucket: string;
   private readonly downloadExpiry = 21600;
+  private readonly cdnBase: string | null;
+  private accelerateEnabled: Promise<boolean> | null = null;
 
   constructor(private readonly configService: ConfigService) {
     const endpoint = emptyToUndefined(
@@ -37,6 +41,9 @@ export class ReleaseStorageService {
     this.bucket =
       this.configService.get<string>('S3_BUCKET')?.trim() ||
       'rembeh-prod-bucket';
+    this.cdnBase = emptyToUndefined(
+      this.configService.get<string>('S3_DOWNLOAD_CDN'),
+    );
 
     const credentials =
       accessKeyId && secretAccessKey
@@ -55,6 +62,13 @@ export class ReleaseStorageService {
       forcePathStyle: Boolean(publicEndpoint),
       ...(credentials ? { credentials } : {}),
     });
+    this.accelerateClient = endpoint
+      ? null
+      : new S3Client({
+          region,
+          useAccelerateEndpoint: true,
+          ...(credentials ? { credentials } : {}),
+        });
 
     this.logger.log(
       `Release storage ready (bucket=${this.bucket}, region=${region})`,
@@ -116,15 +130,32 @@ export class ReleaseStorageService {
   }
 
   async getPresignedDownloadUrl(s3Key: string): Promise<string> {
+    const publicBase = emptyToUndefined(
+      this.configService.get<string>('APK_PUBLIC_BASE_URL'),
+    );
+    if (publicBase) {
+      const fileName = s3Key.split('/').pop();
+      if (fileName) {
+        return `${publicBase.replace(/\/$/, '')}/${fileName}`;
+      }
+    }
+    if (this.cdnBase) {
+      return `${this.cdnBase.replace(/\/$/, '')}/${s3Key}`;
+    }
+
+    const useAccelerate = await this.canAccelerate();
     const command = new GetObjectCommand({
       Bucket: this.bucket,
       Key: s3Key,
       ResponseContentType: 'application/vnd.android.package-archive',
-      ResponseContentDisposition: `attachment; filename="${s3Key.split('/').pop()}"`,
     });
-    return getSignedUrl(this.presignClient, command, {
-      expiresIn: this.downloadExpiry,
-    });
+    return getSignedUrl(
+      useAccelerate && this.accelerateClient
+        ? this.accelerateClient
+        : this.presignClient,
+      command,
+      { expiresIn: this.downloadExpiry },
+    );
   }
 
   async getPresignedUploadUrl(
@@ -163,6 +194,37 @@ export class ReleaseStorageService {
       return { exists: true, sizeBytes: response.ContentLength };
     } catch {
       return { exists: false };
+    }
+  }
+
+  private async canAccelerate(): Promise<boolean> {
+    if (!this.accelerateClient) return false;
+    const forced = this.configService
+      .get<string>('S3_DOWNLOAD_ACCELERATE')
+      ?.trim();
+    if (forced === '0' || forced === 'false') return false;
+    if (this.accelerateEnabled) return this.accelerateEnabled;
+    this.accelerateEnabled = this.detectAccelerate(forced === '1');
+    return this.accelerateEnabled;
+  }
+
+  private async detectAccelerate(prefer: boolean): Promise<boolean> {
+    try {
+      const response = await this.s3Client.send(
+        new GetBucketAccelerateConfigurationCommand({ Bucket: this.bucket }),
+      );
+      const enabled = response.Status === 'Enabled';
+      this.logger.log(
+        `S3 Transfer Acceleration ${enabled ? 'ON' : 'off'} for ${this.bucket}`,
+      );
+      return enabled;
+    } catch (error) {
+      this.logger.warn(
+        `Could not read S3 Transfer Acceleration; using direct S3. ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+      return prefer;
     }
   }
 }

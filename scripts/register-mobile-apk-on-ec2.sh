@@ -291,6 +291,13 @@ main().catch((error) => {
 });
 NODE
 
+echo "==> Publishing APK on get.rembeh.antikra.com for fast in-app download..."
+sudo mkdir -p /var/www/rembeh-get/apk
+sudo cp "$APK" "/var/www/rembeh-get/apk/rembeh-v${VERSION}.apk"
+sudo cp "$APK" /var/www/rembeh-get/apk/rembeh-latest.apk
+sudo chmod 644 "/var/www/rembeh-get/apk/rembeh-v${VERSION}.apk" /var/www/rembeh-get/apk/rembeh-latest.apk
+echo "Published https://get.rembeh.antikra.com/apk/rembeh-v${VERSION}.apk"
+
 # ----------------------------------------------------------------------
 # Register release in production DB
 # ----------------------------------------------------------------------

@@ -16,6 +16,7 @@ class ForceUpdateScreen extends StatefulWidget {
 }
 
 class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
+  late UpdateCheckResult _result;
   bool _isDownloading = false;
   bool _downloadFailed = false;
   bool _needsInstallPermission = false;
@@ -29,11 +30,12 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
 
   bool get _isBlocking => widget.onSkip == null;
 
-  UpdateScreenContent get _screen => widget.updateResult.screen;
+  UpdateScreenContent get _screen => _result.screen;
 
   @override
   void initState() {
     super.initState();
+    _result = widget.updateResult;
     _bootstrap();
   }
 
@@ -47,7 +49,12 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
   }
 
   Future<void> _startUpdate({required bool requestPermissionFirst}) async {
-    final apkUrl = widget.updateResult.apkUrl;
+    final fresh = await UpdateService.checkForUpdate();
+    if (fresh?.apkUrl != null && mounted) {
+      setState(() => _result = fresh!);
+    }
+
+    final apkUrl = _result.apkUrl;
     if (apkUrl == null || apkUrl.isEmpty) {
       setState(() {
         _downloadFailed = true;
@@ -81,14 +88,21 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
       _needsInstallPermission = false;
       _progress = 0.0;
       _receivedBytes = 0;
-      _totalBytes = widget.updateResult.apkSizeBytes;
+      _totalBytes = _result.apkSizeBytes;
       _statusText = 'Downloading update…';
     });
 
     final path = await UpdateService.downloadApk(
       apkUrl,
-      expectedHash: widget.updateResult.apkHash,
-      expectedSizeBytes: widget.updateResult.apkSizeBytes,
+      expectedHash: _result.apkHash,
+      expectedSizeBytes: _result.apkSizeBytes,
+      refreshUrl: () async {
+        final next = await UpdateService.checkForUpdate();
+        if (next?.apkUrl != null && mounted) {
+          setState(() => _result = next!);
+        }
+        return next?.apkUrl;
+      },
       onProgress: (progress, received, total) {
         if (!mounted) return;
         setState(() {
@@ -202,13 +216,13 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
 
   List<UpdateWhatsNewItem> get _whatsNew {
     if (_screen.whatsNew.isNotEmpty) return _screen.whatsNew;
-    return widget.updateResult.changelog
+    return _result.changelog
         .map((line) => UpdateWhatsNewItem(title: line))
         .toList();
   }
 
   String _sizeLabel() {
-    final total = _totalBytes ?? widget.updateResult.apkSizeBytes;
+    final total = _totalBytes ?? _result.apkSizeBytes;
     if (total == null || total <= 0) {
       if (_receivedBytes <= 0) return '';
       return 'Downloaded ${_formatMb(_receivedBytes)}';
@@ -222,7 +236,7 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final r = widget.updateResult;
+    final r = _result;
     final percent = (_progress * 100).clamp(0, 100).toStringAsFixed(0);
     final whatsNew = _whatsNew.take(6).toList();
     final promo = _screen.promo;

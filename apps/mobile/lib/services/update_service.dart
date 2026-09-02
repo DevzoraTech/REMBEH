@@ -241,11 +241,16 @@ class UpdateService {
     DownloadProgressCallback? onProgress,
     String? expectedHash,
     int? expectedSizeBytes,
+    Future<String?> Function()? refreshUrl,
   }) async {
+    var url = apkUrl;
     for (var attempt = 0; attempt < 4; attempt++) {
       try {
+        if (attempt > 0 && refreshUrl != null) {
+          url = await refreshUrl() ?? url;
+        }
         final path = await _downloadApkOnce(
-          apkUrl,
+          url,
           onProgress: onProgress,
           expectedHash: expectedHash,
           expectedSizeBytes: expectedSizeBytes,
@@ -254,7 +259,7 @@ class UpdateService {
       } catch (e) {
         debugPrint('[UpdateService] Download attempt ${attempt + 1} failed: $e');
       }
-      await Future<void>.delayed(Duration(milliseconds: 350 * (attempt + 1)));
+      await Future<void>.delayed(Duration(milliseconds: 400 * (attempt + 1)));
     }
     return null;
   }
@@ -276,42 +281,44 @@ class UpdateService {
         _trackDownload();
         return dest.path;
       }
+      if (expectedSizeBytes != null &&
+          length > 0 &&
+          length < expectedSizeBytes) {
+        onProgress?.call(length / expectedSizeBytes, length, expectedSizeBytes);
+      } else if (await dest.exists()) {
+        await dest.delete();
+      }
     }
 
     final uri = Uri.parse(apkUrl);
     final client = HttpClient()
       ..connectionTimeout = const Duration(seconds: 20)
-      ..idleTimeout = const Duration(seconds: 45)
+      ..idleTimeout = const Duration(minutes: 3)
       ..maxConnectionsPerHost = 8
       ..autoUncompress = false;
 
     try {
-      final probe = await client
-          .getUrl(uri)
-          .timeout(const Duration(seconds: 20));
-      probe.headers.set(HttpHeaders.rangeHeader, 'bytes=0-1048575');
-      final probeResponse = await probe.close().timeout(
-        const Duration(seconds: 30),
-      );
-      final total =
-          _totalFromResponse(probeResponse, expectedSizeBytes) ??
-          expectedSizeBytes;
-      final isPartial = probeResponse.statusCode == 206;
+      var total = expectedSizeBytes;
+      var supportsRange = total != null && total > 2 * 1024 * 1024;
+      if (total == null) {
+        final probed = await _probeSize(client, uri);
+        total = probed.total;
+        supportsRange = probed.supportsRange;
+      }
 
-      if (!isPartial) {
-        if (probeResponse.statusCode < 200 || probeResponse.statusCode >= 300) {
-          await probeResponse.drain<void>();
-          throw HttpException('Download failed (${probeResponse.statusCode})');
-        }
-        await _writeStreamToFile(
+      final existing =
+          await dest.exists() ? await dest.length() : 0;
+      if (existing > 0 && total != null && existing < total) {
+        await _downloadSingle(
+          client,
+          uri,
           dest,
-          probeResponse,
           total: total,
           onProgress: onProgress,
+          start: existing,
         );
-      } else {
-        await probeResponse.drain<void>();
-        if (total != null && total > 2 * 1024 * 1024) {
+      } else if (supportsRange && total != null && total > 2 * 1024 * 1024) {
+        try {
           await _downloadParallel(
             client,
             uri,
@@ -319,7 +326,8 @@ class UpdateService {
             total,
             onProgress: onProgress,
           );
-        } else {
+        } catch (e) {
+          debugPrint('[UpdateService] Parallel download failed, using single: $e');
           await _downloadSingle(
             client,
             uri,
@@ -328,6 +336,14 @@ class UpdateService {
             onProgress: onProgress,
           );
         }
+      } else {
+        await _downloadSingle(
+          client,
+          uri,
+          dest,
+          total: total,
+          onProgress: onProgress,
+        );
       }
 
       if (!await dest.exists()) return null;
@@ -340,6 +356,19 @@ class UpdateService {
     } finally {
       client.close(force: true);
     }
+  }
+
+  static Future<({int? total, bool supportsRange})> _probeSize(
+    HttpClient client,
+    Uri uri,
+  ) async {
+    final request = await client.getUrl(uri).timeout(const Duration(seconds: 20));
+    request.headers.set(HttpHeaders.rangeHeader, 'bytes=0-0');
+    final response = await request.close().timeout(const Duration(seconds: 20));
+    final total = _totalFromResponse(response, null);
+    final supportsRange = response.statusCode == 206;
+    await response.drain<void>();
+    return (total: total, supportsRange: supportsRange);
   }
 
   static Future<File> _destinationFile(String? expectedHash) async {
@@ -403,7 +432,7 @@ class UpdateService {
     int total, {
     DownloadProgressCallback? onProgress,
   }) async {
-    const partCount = 6;
+    const partCount = 4;
     final chunkSize = (total / partCount).ceil();
     final partDir = Directory('${dest.path}.parts');
     if (await partDir.exists()) {
@@ -428,7 +457,7 @@ class UpdateService {
             .timeout(const Duration(seconds: 20));
         request.headers.set(HttpHeaders.rangeHeader, 'bytes=$start-$end');
         final response = await request.close().timeout(
-          const Duration(minutes: 8),
+          const Duration(seconds: 45),
         );
         if (response.statusCode != 206 && response.statusCode != 200) {
           await response.drain<void>();
@@ -469,7 +498,7 @@ class UpdateService {
     }
     final sink = dest.openWrite(mode: append ? FileMode.append : FileMode.write);
     var received = startBytes;
-    await for (final chunk in response.timeout(const Duration(minutes: 8))) {
+    await for (final chunk in response.timeout(const Duration(minutes: 45))) {
       sink.add(chunk);
       received += chunk.length;
       final fraction = total != null && total > 0

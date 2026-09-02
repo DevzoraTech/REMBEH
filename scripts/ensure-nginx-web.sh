@@ -157,7 +157,7 @@ sudo ln -sfn "$GET_DST" /etc/nginx/sites-enabled/rembeh-get
 sudo rm -f /etc/nginx/sites-enabled/default
 
 # Ensure static root exists (populated by deploy-website-ec2.sh)
-sudo mkdir -p /var/www/rembeh-get
+sudo mkdir -p /var/www/rembeh-get /var/www/rembeh-get/apk
 if [[ ! -f /var/www/rembeh-get/index.html ]]; then
   echo "<!doctype html><html><body><p>REMBEH marketing site pending deploy.</p></body></html>" | sudo tee /var/www/rembeh-get/index.html >/dev/null
 fi

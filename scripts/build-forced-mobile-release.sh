@@ -489,6 +489,8 @@ build_apk() {
     build
     apk
     --release
+    --target-platform
+    android-arm64
   )
 
   if [[ -f "$PROD_DEFINES" ]]; then
