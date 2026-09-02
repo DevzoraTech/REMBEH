@@ -78,7 +78,7 @@ Options:
 
   --min-build NUMBER
       Minimum supported build.
-      Default: newly generated build number.
+      Default: 1 (do not force every older phone onto this build).
 
   --no-force
       Register as an optional update.
@@ -489,8 +489,6 @@ build_apk() {
     build
     apk
     --release
-    --target-platform
-    android-arm64
   )
 
   if [[ -f "$PROD_DEFINES" ]]; then
@@ -789,7 +787,7 @@ main() {
   publish_release \
     "$version" \
     "$build" \
-    "${MIN_BUILD:-$build}"
+    "${MIN_BUILD:-1}"
 }
 
 main "$@"

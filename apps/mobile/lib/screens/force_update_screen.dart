@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:video_player/video_player.dart';
 
 import '../services/update_service.dart';
 import '../theme.dart';
@@ -26,7 +25,6 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
   int? _totalBytes;
   String? _downloadedPath;
   String _statusText = '';
-  bool _started = false;
 
   bool get _isBlocking => widget.onSkip == null;
 
@@ -42,10 +40,6 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
   Future<void> _bootstrap() async {
     final wifi = await UpdateService.isOnWifi();
     if (mounted) setState(() => _onWifi = wifi);
-    if (!_started) {
-      _started = true;
-      await _startUpdate(requestPermissionFirst: false);
-    }
   }
 
   Future<void> _startUpdate({required bool requestPermissionFirst}) async {
@@ -184,21 +178,9 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
   Future<void> _openPromo() async {
     final promo = _screen.promo;
     if (promo == null) return;
-    if (promo.isVideo) {
-      final uri = Uri.tryParse(promo.mediaUrl);
-      final isYoutube =
-          uri?.host.contains('youtu') == true ||
-          uri?.host.contains('youtube') == true;
-      if (isYoutube && uri != null) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-        return;
-      }
-      if (!mounted) return;
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => _UpdateVideoPage(url: promo.mediaUrl, title: promo.title),
-        ),
-      );
+    final uri = Uri.tryParse(promo.mediaUrl);
+    if (promo.isVideo && uri != null) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
       return;
     }
     if (!mounted) return;
@@ -799,93 +781,6 @@ class _StayConnectedBanner extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _UpdateVideoPage extends StatefulWidget {
-  const _UpdateVideoPage({required this.url, this.title});
-
-  final String url;
-  final String? title;
-
-  @override
-  State<_UpdateVideoPage> createState() => _UpdateVideoPageState();
-}
-
-class _UpdateVideoPageState extends State<_UpdateVideoPage> {
-  late final VideoPlayerController _controller;
-  bool _ready = false;
-  bool _failed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.url))
-      ..initialize()
-          .then((_) {
-            if (!mounted) return;
-            setState(() => _ready = true);
-            _controller.play();
-          })
-          .catchError((_) {
-            if (mounted) setState(() => _failed = true);
-          });
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
-        title: Text(widget.title?.trim().isNotEmpty == true
-            ? widget.title!
-            : "What's new"),
-      ),
-      body: Center(
-        child: _failed
-            ? const Text(
-                'This video could not be played.',
-                style: TextStyle(color: Colors.white),
-              )
-            : !_ready
-            ? const CircularProgressIndicator(color: Colors.white)
-            : AspectRatio(
-                aspectRatio: _controller.value.aspectRatio == 0
-                    ? 16 / 9
-                    : _controller.value.aspectRatio,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    VideoPlayer(_controller),
-                    IconButton(
-                      onPressed: () {
-                        setState(() {
-                          _controller.value.isPlaying
-                              ? _controller.pause()
-                              : _controller.play();
-                        });
-                      },
-                      icon: Icon(
-                        _controller.value.isPlaying
-                            ? Icons.pause_circle
-                            : Icons.play_circle,
-                        color: Colors.white,
-                        size: 56,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
       ),
     );
   }
