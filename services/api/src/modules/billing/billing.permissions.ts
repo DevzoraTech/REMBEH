@@ -9,7 +9,7 @@ export const PRO_PLAN_CODE = 'PRO';
 export const PRO_3M_PLAN_CODE = 'PRO_3M';
 export const PRO_6M_PLAN_CODE = 'PRO_6M';
 
-export const TRIAL_DAYS = 30;
+export const TRIAL_DAYS = 14;
 export const GRACE_DAYS = 2;
 
 export type ProPlanDefinition = {

@@ -231,7 +231,7 @@ const FALLBACK_PLANS: BillingPlanOption[] = [
   },
 ];
 
-const TRIAL_TOTAL_DAYS = 30;
+const TRIAL_TOTAL_DAYS = 14;
 const PERIOD_TOTAL_DAYS = 30;
 const GRACE_TOTAL_DAYS = 2;
 const PAYMENT_SUPPORT_PHONE = "0777823011, 0752039673";
@@ -472,12 +472,22 @@ function daysRemainingFor(
   return Math.max(0, row.daysUntilPeriodEnd ?? 0);
 }
 
+function trialDurationDays(trial: BillingSummary["trial"]) {
+  const start = Date.parse(trial.startsAt);
+  const end = Date.parse(trial.endsAt);
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return TRIAL_TOTAL_DAYS;
+  }
+  return Math.max(1, Math.round((end - start) / (24 * 60 * 60 * 1000)));
+}
+
 function ringTotals(
   row: BillingSummary["branches"][number],
   trialActive: boolean,
+  trial?: BillingSummary["trial"],
 ) {
   if (row.status === "TRIAL" || (trialActive && row.status === "TRIAL")) {
-    return TRIAL_TOTAL_DAYS;
+    return trial ? trialDurationDays(trial) : TRIAL_TOTAL_DAYS;
   }
   if (row.status === "GRACE" || row.status === "PAST_DUE") {
     return GRACE_TOTAL_DAYS;
@@ -1749,7 +1759,7 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     ? daysRemainingFor(focusedBranch, summary!.trial)
     : 0;
   const ringTotal = focusedBranch
-    ? ringTotals(focusedBranch, trialActive)
+    ? ringTotals(focusedBranch, trialActive, summary?.trial)
     : TRIAL_TOTAL_DAYS;
   const statusTitle = focusedBranch
     ? currentStatusTitle(focusedBranch, trialActive)

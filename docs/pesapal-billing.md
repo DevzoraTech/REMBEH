@@ -4,7 +4,7 @@ REMBEH bills **per branch** after an organisation-wide free trial.
 
 ## Product rules
 
-- New organisations get a **30-day free trial** covering all current and future branches.
+- New organisations get a **14-day free trial** covering all current and future branches.
 - After the trial, each branch needs **Pro**. Billing periods:
   - Monthly **UGX 255,000**
   - 3 months **UGX 725,000** (default / most popular)
