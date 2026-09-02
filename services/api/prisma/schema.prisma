@@ -1780,6 +1780,34 @@ model AppRelease {
   @@map("app_releases")
 }
 
+enum AppUpdateMediaType {
+  NONE
+  IMAGE
+  VIDEO
+}
+
+model AppUpdateScreenContent {
+  id                 String             @id @default(uuid()) @db.Uuid
+  key                String             @unique @default("mobile")
+  readyMessage       String?            @map("ready_message")
+  requiredMessage    String?            @map("required_message")
+  whatsNewTitle      String             @default("What's new in this update") @map("whats_new_title")
+  whatsNewItems      Json               @default("[]") @map("whats_new_items")
+  mediaType          AppUpdateMediaType @default(NONE) @map("media_type")
+  mediaUrl           String?            @map("media_url")
+  mediaStorageKey    String?            @map("media_storage_key")
+  mediaTitle         String?            @map("media_title")
+  mediaBody          String?            @map("media_body")
+  mediaCtaLabel      String?            @map("media_cta_label")
+  stayConnectedTitle String?            @map("stay_connected_title")
+  stayConnectedBody  String?            @map("stay_connected_body")
+  isActive           Boolean            @default(true) @map("is_active")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  @@map("app_update_screen_content")
+}
+
 model TenantBilling {
   id                  String   @id @default(uuid()) @db.Uuid
   tenantId            String   @unique @map("tenant_id") @db.Uuid

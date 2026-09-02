@@ -1,12 +1,46 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import {
+  AppUpdateMediaType,
+  AppUpdateScreenContent,
+  Prisma,
+} from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../database/prisma.service';
-import { CreateReleaseDto, UpdateReleaseDto } from './app-update.dto';
+import { ObjectStorageService } from '../storage/object-storage.service';
+import {
+  CreateReleaseDto,
+  UpdateAppUpdateScreenDto,
+  UpdateReleaseDto,
+  AppUpdateScreenMediaPresignDto,
+} from './app-update.dto';
 import { ReleaseStorageService } from './release-storage.service';
+
+const SCREEN_KEY = 'mobile';
+
+const DEFAULT_WHATS_NEW = [
+  {
+    title: 'Works better offline',
+    body: 'Improved offline reliability for your daily work.',
+  },
+  {
+    title: 'Syncs latest records',
+    body: 'Automatically syncs when internet returns.',
+  },
+  {
+    title: 'Smoother daily operations',
+    body: 'Enhanced performance and stability.',
+  },
+  {
+    title: 'Improved repayment & salary screens',
+    body: 'Easier to use and more reliable.',
+  },
+];
 
 @Injectable()
 export class AppUpdateService {
@@ -15,6 +49,7 @@ export class AppUpdateService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: ReleaseStorageService,
+    private readonly objectStorage: ObjectStorageService,
   ) {}
 
   async checkUpdate(
@@ -189,6 +224,18 @@ export class AppUpdateService {
       .flatMap((r) => r.changelog)
       .filter(Boolean);
 
+    const [apkUrl, apkSizeBytes, screen] = await Promise.all([
+      releaseToServe.apkUrl
+        ? this.resolveDownloadUrl(releaseToServe.apkUrl)
+        : Promise.resolve(null),
+      releaseToServe.apkUrl?.startsWith('releases/')
+        ? this.storage
+            .verifyExists(releaseToServe.apkUrl)
+            .then((info) => info.sizeBytes ?? null)
+        : Promise.resolve(null),
+      this.toPublicScreen(await this.ensureScreenContent()),
+    ]);
+
     return {
       updateAvailable: true,
       updateMode: releaseToServe.updateMode,
@@ -200,12 +247,12 @@ export class AppUpdateService {
       latestReleaseEpoch: releaseToServe.releaseEpoch,
       latestVersion: releaseToServe.version,
       minSupportedBuild: releaseToServe.minSupportedBuild,
-      apkUrl: releaseToServe.apkUrl
-        ? await this.resolveDownloadUrl(releaseToServe.apkUrl)
-        : null,
+      apkUrl,
       apkHash: releaseToServe.apkHash,
+      apkSizeBytes,
       changelog: aggregatedChangelog,
       message: releaseToServe.message,
+      screen,
     };
   }
 
@@ -403,5 +450,213 @@ export class AppUpdateService {
     const release = await this.prisma.appRelease.findUnique({ where: { id } });
     if (!release) throw new NotFoundException('Release not found.');
     return release;
+  }
+
+  async getScreenContent() {
+    return this.toAdminScreen(await this.ensureScreenContent());
+  }
+
+  async updateScreenContent(dto: UpdateAppUpdateScreenDto) {
+    const existing = await this.ensureScreenContent();
+    const mediaType = dto.mediaType
+      ? (dto.mediaType as AppUpdateMediaType)
+      : existing.mediaType;
+    const updated = await this.prisma.appUpdateScreenContent.update({
+      where: { id: existing.id },
+      data: {
+        ...(dto.readyMessage !== undefined && {
+          readyMessage: this.cleanNullable(dto.readyMessage),
+        }),
+        ...(dto.requiredMessage !== undefined && {
+          requiredMessage: this.cleanNullable(dto.requiredMessage),
+        }),
+        ...(dto.whatsNewTitle !== undefined && {
+          whatsNewTitle: dto.whatsNewTitle.trim(),
+        }),
+        ...(dto.whatsNewItems !== undefined && {
+          whatsNewItems: this.normalizeWhatsNew(dto.whatsNewItems),
+        }),
+        ...(dto.mediaType !== undefined && { mediaType }),
+        ...(dto.mediaUrl !== undefined && {
+          mediaUrl: this.cleanNullable(dto.mediaUrl),
+        }),
+        ...(dto.mediaStorageKey !== undefined && {
+          mediaStorageKey: this.cleanNullable(dto.mediaStorageKey),
+        }),
+        ...(dto.mediaTitle !== undefined && {
+          mediaTitle: this.cleanNullable(dto.mediaTitle),
+        }),
+        ...(dto.mediaBody !== undefined && {
+          mediaBody: this.cleanNullable(dto.mediaBody),
+        }),
+        ...(dto.mediaCtaLabel !== undefined && {
+          mediaCtaLabel: this.cleanNullable(dto.mediaCtaLabel),
+        }),
+        ...(dto.stayConnectedTitle !== undefined && {
+          stayConnectedTitle: this.cleanNullable(dto.stayConnectedTitle),
+        }),
+        ...(dto.stayConnectedBody !== undefined && {
+          stayConnectedBody: this.cleanNullable(dto.stayConnectedBody),
+        }),
+        ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+      },
+    });
+    return this.toAdminScreen(updated);
+  }
+
+  async presignScreenMedia(dto: AppUpdateScreenMediaPresignDto) {
+    const mimeType = dto.mimeType.trim().toLowerCase();
+    const mediaType = mimeType.startsWith('image/')
+      ? AppUpdateMediaType.IMAGE
+      : mimeType.startsWith('video/')
+        ? AppUpdateMediaType.VIDEO
+        : null;
+    if (!mediaType) {
+      throw new BadRequestException('Choose an image or video file.');
+    }
+    const extension =
+      dto.fileName
+        ?.split('.')
+        .pop()
+        ?.toLowerCase()
+        .replace(/[^a-z0-9]/g, '') ||
+      mimeType.split('/').pop()?.replace(/[^a-z0-9]/g, '') ||
+      'bin';
+    const storageKey = `control-center/app-update/${randomUUID()}.${extension}`;
+    const presigned = await this.objectStorage.presignPut({
+      storageKey,
+      mimeType,
+      expiresInSeconds: 600,
+    });
+    return { ...presigned, mediaType };
+  }
+
+  private async ensureScreenContent() {
+    const existing = await this.prisma.appUpdateScreenContent.findUnique({
+      where: { key: SCREEN_KEY },
+    });
+    if (existing) return existing;
+    return this.prisma.appUpdateScreenContent.create({
+      data: {
+        key: SCREEN_KEY,
+        readyMessage: 'A new REMBEH update is ready.',
+        requiredMessage: 'This update is required to continue using REMBEH.',
+        whatsNewTitle: "What's new in this update",
+        whatsNewItems: DEFAULT_WHATS_NEW,
+        mediaType: AppUpdateMediaType.NONE,
+        mediaTitle: "See what's new",
+        mediaBody:
+          'Watch a quick 1-minute video to see how this update makes REMBEH even better for you.',
+        mediaCtaLabel: 'Watch video',
+        stayConnectedTitle: 'Stay connected',
+        stayConnectedBody:
+          'Keep REMBEH open and stay connected to Wi-Fi for a faster and uninterrupted update.',
+      },
+    });
+  }
+
+  private async toPublicScreen(
+    row: AppUpdateScreenContent,
+  ) {
+    if (!row.isActive) return null;
+    const mediaUrl = await this.resolveScreenMediaUrl(row);
+    return {
+      readyMessage: row.readyMessage,
+      requiredMessage: row.requiredMessage,
+      whatsNewTitle: row.whatsNewTitle,
+      whatsNew: this.readWhatsNew(row.whatsNewItems),
+      promo:
+        row.mediaType === AppUpdateMediaType.NONE || !mediaUrl
+          ? null
+          : {
+              mediaType: row.mediaType,
+              mediaUrl,
+              title: row.mediaTitle,
+              body: row.mediaBody,
+              ctaLabel: row.mediaCtaLabel,
+            },
+      stayConnected: {
+        title: row.stayConnectedTitle,
+        body: row.stayConnectedBody,
+      },
+    };
+  }
+
+  private async toAdminScreen(
+    row: AppUpdateScreenContent,
+  ) {
+    const mediaPreviewUrl = await this.resolveScreenMediaUrl(row);
+    return {
+      id: row.id,
+      readyMessage: row.readyMessage,
+      requiredMessage: row.requiredMessage,
+      whatsNewTitle: row.whatsNewTitle,
+      whatsNewItems: this.readWhatsNew(row.whatsNewItems),
+      mediaType: row.mediaType,
+      mediaUrl: row.mediaUrl,
+      mediaStorageKey: row.mediaStorageKey,
+      mediaPreviewUrl,
+      mediaTitle: row.mediaTitle,
+      mediaBody: row.mediaBody,
+      mediaCtaLabel: row.mediaCtaLabel,
+      stayConnectedTitle: row.stayConnectedTitle,
+      stayConnectedBody: row.stayConnectedBody,
+      isActive: row.isActive,
+      updatedAt: row.updatedAt.toISOString(),
+    };
+  }
+
+  private async resolveScreenMediaUrl(row: {
+    mediaType: AppUpdateMediaType;
+    mediaUrl: string | null;
+    mediaStorageKey: string | null;
+  }) {
+    if (row.mediaType === AppUpdateMediaType.NONE) return null;
+    if (row.mediaStorageKey) {
+      const signed = await this.objectStorage.presignGet({
+        storageKey: row.mediaStorageKey,
+        expiresInSeconds: 21600,
+      });
+      return signed.downloadUrl;
+    }
+    return row.mediaUrl;
+  }
+
+  private readWhatsNew(value: Prisma.JsonValue): Array<{
+    title: string;
+    body: string | null;
+  }> {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+          if (typeof item === 'string' && item.trim()) {
+            return { title: item.trim(), body: null };
+          }
+          return null;
+        }
+        const record = item as { title?: unknown; body?: unknown };
+        const title = String(record.title ?? '').trim();
+        if (!title) return null;
+        const body = String(record.body ?? '').trim();
+        return { title, body: body || null };
+      })
+      .filter((item): item is { title: string; body: string | null } =>
+        Boolean(item),
+      );
+  }
+
+  private normalizeWhatsNew(items: Array<{ title: string; body?: string | null }>) {
+    return items
+      .map((item) => ({
+        title: item.title.trim(),
+        body: item.body?.trim() || null,
+      }))
+      .filter((item) => item.title.length > 0);
+  }
+
+  private cleanNullable(value: string | null | undefined) {
+    const trimmed = value?.trim();
+    return trimmed ? trimmed : null;
   }
 }

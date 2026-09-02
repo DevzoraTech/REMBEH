@@ -28,6 +28,7 @@ import {
 import { ControlCenterDashboardSection } from "./dashboard-section";
 import { ControlCenterMessagingSection } from "./messaging-section";
 import { ControlCenterMarketingSection } from "./marketing-section";
+import { ControlCenterAppUpdateSection } from "./app-update-section";
 import { PaymentsSection } from "./payments-section";
 import { ControlCenterPricingHistorySection } from "./pricing-history-section";
 import { ControlCenterPricingSection } from "./pricing-section";
@@ -727,6 +728,10 @@ function renderSection(input: {
         users={input.users}
       />
     );
+  }
+
+  if (input.active === "app-update") {
+    return <ControlCenterAppUpdateSection session={input.session} />;
   }
 
   if (input.active === "reports") {

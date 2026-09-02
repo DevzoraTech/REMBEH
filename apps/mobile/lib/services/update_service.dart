@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
@@ -8,10 +9,109 @@ import 'package:http/http.dart' as http;
 import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 import '../config.dart';
 
 /// Result from checking the backend for updates.
+class UpdateWhatsNewItem {
+  final String title;
+  final String? body;
+
+  const UpdateWhatsNewItem({required this.title, this.body});
+}
+
+class UpdatePromo {
+  final String mediaType;
+  final String mediaUrl;
+  final String? title;
+  final String? body;
+  final String? ctaLabel;
+
+  const UpdatePromo({
+    required this.mediaType,
+    required this.mediaUrl,
+    this.title,
+    this.body,
+    this.ctaLabel,
+  });
+
+  bool get isVideo => mediaType.toUpperCase() == 'VIDEO';
+}
+
+class UpdateScreenContent {
+  final String? readyMessage;
+  final String? requiredMessage;
+  final String? whatsNewTitle;
+  final List<UpdateWhatsNewItem> whatsNew;
+  final UpdatePromo? promo;
+  final String? stayConnectedTitle;
+  final String? stayConnectedBody;
+
+  const UpdateScreenContent({
+    this.readyMessage,
+    this.requiredMessage,
+    this.whatsNewTitle,
+    required this.whatsNew,
+    this.promo,
+    this.stayConnectedTitle,
+    this.stayConnectedBody,
+  });
+
+  factory UpdateScreenContent.fromJson(Map<String, dynamic>? json) {
+    if (json == null) {
+      return const UpdateScreenContent(whatsNew: []);
+    }
+    final whatsNew = <UpdateWhatsNewItem>[];
+    final rawItems = json['whatsNew'];
+    if (rawItems is List) {
+      for (final item in rawItems) {
+        if (item is String && item.trim().isNotEmpty) {
+          whatsNew.add(UpdateWhatsNewItem(title: item.trim()));
+        } else if (item is Map) {
+          final title = item['title']?.toString().trim() ?? '';
+          if (title.isEmpty) continue;
+          final body = item['body']?.toString().trim();
+          whatsNew.add(
+            UpdateWhatsNewItem(
+              title: title,
+              body: (body == null || body.isEmpty) ? null : body,
+            ),
+          );
+        }
+      }
+    }
+    final promoJson = json['promo'];
+    UpdatePromo? promo;
+    if (promoJson is Map) {
+      final url = promoJson['mediaUrl']?.toString() ?? '';
+      final type = promoJson['mediaType']?.toString() ?? 'NONE';
+      if (url.isNotEmpty && type.toUpperCase() != 'NONE') {
+        promo = UpdatePromo(
+          mediaType: type,
+          mediaUrl: url,
+          title: promoJson['title']?.toString(),
+          body: promoJson['body']?.toString(),
+          ctaLabel: promoJson['ctaLabel']?.toString(),
+        );
+      }
+    }
+    final stay = json['stayConnected'];
+    return UpdateScreenContent(
+      readyMessage: json['readyMessage']?.toString(),
+      requiredMessage: json['requiredMessage']?.toString(),
+      whatsNewTitle: json['whatsNewTitle']?.toString(),
+      whatsNew: whatsNew,
+      promo: promo,
+      stayConnectedTitle: stay is Map ? stay['title']?.toString() : null,
+      stayConnectedBody: stay is Map ? stay['body']?.toString() : null,
+    );
+  }
+}
+
+typedef DownloadProgressCallback =
+    void Function(double progress, int receivedBytes, int? totalBytes);
+
 class UpdateCheckResult {
   final bool updateAvailable;
   final String updateMode; // 'none' | 'shorebird' | 'full'
@@ -25,8 +125,10 @@ class UpdateCheckResult {
   final int minSupportedBuild;
   final String? apkUrl;
   final String? apkHash;
+  final int? apkSizeBytes;
   final List<String> changelog;
   final String? message;
+  final UpdateScreenContent screen;
 
   UpdateCheckResult({
     required this.updateAvailable,
@@ -41,11 +143,32 @@ class UpdateCheckResult {
     required this.minSupportedBuild,
     this.apkUrl,
     this.apkHash,
+    this.apkSizeBytes,
     required this.changelog,
     this.message,
+    required this.screen,
   });
 
   factory UpdateCheckResult.fromJson(Map<String, dynamic> json) {
+    final changelog =
+        (json['changelog'] as List?)?.map((e) => e.toString()).toList() ?? [];
+    final screenJson = json['screen'];
+    var screen = UpdateScreenContent.fromJson(
+      screenJson is Map<String, dynamic> ? screenJson : null,
+    );
+    if (screen.whatsNew.isEmpty && changelog.isNotEmpty) {
+      screen = UpdateScreenContent(
+        readyMessage: screen.readyMessage,
+        requiredMessage: screen.requiredMessage,
+        whatsNewTitle: screen.whatsNewTitle,
+        whatsNew: changelog
+            .map((line) => UpdateWhatsNewItem(title: line))
+            .toList(),
+        promo: screen.promo,
+        stayConnectedTitle: screen.stayConnectedTitle,
+        stayConnectedBody: screen.stayConnectedBody,
+      );
+    }
     return UpdateCheckResult(
       updateAvailable: json['updateAvailable'] == true,
       updateMode: json['updateMode']?.toString() ?? 'none',
@@ -59,9 +182,10 @@ class UpdateCheckResult {
       minSupportedBuild: (json['minSupportedBuild'] as num?)?.toInt() ?? 1,
       apkUrl: json['apkUrl']?.toString(),
       apkHash: json['apkHash']?.toString(),
-      changelog:
-          (json['changelog'] as List?)?.map((e) => e.toString()).toList() ?? [],
+      apkSizeBytes: (json['apkSizeBytes'] as num?)?.toInt(),
+      changelog: changelog,
       message: json['message']?.toString(),
+      screen: screen,
     );
   }
 
@@ -114,54 +238,270 @@ class UpdateService {
 
   static Future<String?> downloadApk(
     String apkUrl, {
-    void Function(double progress)? onProgress,
+    DownloadProgressCallback? onProgress,
     String? expectedHash,
+    int? expectedSizeBytes,
   }) async {
+    for (var attempt = 0; attempt < 4; attempt++) {
+      try {
+        final path = await _downloadApkOnce(
+          apkUrl,
+          onProgress: onProgress,
+          expectedHash: expectedHash,
+          expectedSizeBytes: expectedSizeBytes,
+        );
+        if (path != null) return path;
+      } catch (e) {
+        debugPrint('[UpdateService] Download attempt ${attempt + 1} failed: $e');
+      }
+      await Future<void>.delayed(Duration(milliseconds: 350 * (attempt + 1)));
+    }
+    return null;
+  }
+
+  static Future<String?> _downloadApkOnce(
+    String apkUrl, {
+    DownloadProgressCallback? onProgress,
+    String? expectedHash,
+    int? expectedSizeBytes,
+  }) async {
+    final dest = await _destinationFile(expectedHash);
+    if (await dest.exists()) {
+      final length = await dest.length();
+      final looksComplete =
+          expectedSizeBytes == null || length >= expectedSizeBytes;
+      if (looksComplete &&
+          await _hashMatches(dest, expectedHash, skipIfMissing: true)) {
+        onProgress?.call(1, length, expectedSizeBytes ?? length);
+        _trackDownload();
+        return dest.path;
+      }
+    }
+
+    final uri = Uri.parse(apkUrl);
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 20)
+      ..idleTimeout = const Duration(seconds: 45)
+      ..maxConnectionsPerHost = 8
+      ..autoUncompress = false;
+
     try {
-      final dir = await getTemporaryDirectory();
-      final fileName = 'update_${DateTime.now().millisecondsSinceEpoch}.apk';
-      final file = File('${dir.path}/$fileName');
+      final probe = await client
+          .getUrl(uri)
+          .timeout(const Duration(seconds: 20));
+      probe.headers.set(HttpHeaders.rangeHeader, 'bytes=0-1048575');
+      final probeResponse = await probe.close().timeout(
+        const Duration(seconds: 30),
+      );
+      final total =
+          _totalFromResponse(probeResponse, expectedSizeBytes) ??
+          expectedSizeBytes;
+      final isPartial = probeResponse.statusCode == 206;
 
-      final request = http.Request('GET', Uri.parse(apkUrl));
-      final streamedResponse = await http.Client()
-          .send(request)
-          .timeout(const Duration(minutes: 10));
-
-      final totalBytes = streamedResponse.contentLength ?? 0;
-      var receivedBytes = 0;
-      final sink = file.openWrite();
-      final hashSink = AccumulatorSink<Digest>();
-      final shaConverter = sha256.startChunkedConversion(hashSink);
-
-      await for (final chunk in streamedResponse.stream) {
-        sink.add(chunk);
-        shaConverter.add(chunk);
-        receivedBytes += chunk.length;
-        if (totalBytes > 0) {
-          onProgress?.call(receivedBytes / totalBytes);
+      if (!isPartial) {
+        if (probeResponse.statusCode < 200 || probeResponse.statusCode >= 300) {
+          await probeResponse.drain<void>();
+          throw HttpException('Download failed (${probeResponse.statusCode})');
+        }
+        await _writeStreamToFile(
+          dest,
+          probeResponse,
+          total: total,
+          onProgress: onProgress,
+        );
+      } else {
+        await probeResponse.drain<void>();
+        if (total != null && total > 2 * 1024 * 1024) {
+          await _downloadParallel(
+            client,
+            uri,
+            dest,
+            total,
+            onProgress: onProgress,
+          );
+        } else {
+          await _downloadSingle(
+            client,
+            uri,
+            dest,
+            total: total,
+            onProgress: onProgress,
+          );
         }
       }
 
-      await sink.close();
-      shaConverter.close();
-      final computedHash = hashSink.events.first.toString();
-
-      if (expectedHash != null && expectedHash.isNotEmpty) {
-        final normalizedExpected = expectedHash
-            .replaceFirst('sha256:', '')
-            .toLowerCase();
-        if (computedHash.toLowerCase() != normalizedExpected) {
-          debugPrint('[UpdateService] HASH MISMATCH');
-          await file.delete();
-          return null;
-        }
+      if (!await dest.exists()) return null;
+      if (!await _hashMatches(dest, expectedHash, skipIfMissing: true)) {
+        await dest.delete();
+        throw StateError('Hash mismatch');
       }
-
       _trackDownload();
-      return file.path;
-    } catch (e) {
-      debugPrint('[UpdateService] Download failed: $e');
-      return null;
+      return dest.path;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  static Future<File> _destinationFile(String? expectedHash) async {
+    final support = await getApplicationSupportDirectory();
+    final dir = Directory('${support.path}/updates');
+    if (!await dir.exists()) {
+      await dir.create(recursive: true);
+    }
+    final normalized = (expectedHash ?? '')
+        .replaceFirst('sha256:', '')
+        .toLowerCase();
+    final name = normalized.length >= 16
+        ? 'rembeh_${normalized.substring(0, 16)}.apk'
+        : 'rembeh_latest.apk';
+    return File('${dir.path}/$name');
+  }
+
+  static int? _totalFromResponse(HttpClientResponse response, int? fallback) {
+    final contentRange = response.headers.value(HttpHeaders.contentRangeHeader);
+    if (contentRange != null) {
+      final match = RegExp(r'\/(\d+)\s*$').firstMatch(contentRange);
+      if (match != null) return int.tryParse(match.group(1)!);
+    }
+    if (response.contentLength > 0 && response.statusCode != 206) {
+      return response.contentLength;
+    }
+    return fallback;
+  }
+
+  static Future<void> _downloadSingle(
+    HttpClient client,
+    Uri uri,
+    File dest, {
+    int? total,
+    DownloadProgressCallback? onProgress,
+    int start = 0,
+  }) async {
+    final request = await client.getUrl(uri).timeout(const Duration(seconds: 20));
+    if (start > 0) {
+      request.headers.set(HttpHeaders.rangeHeader, 'bytes=$start-');
+    }
+    final response = await request.close().timeout(const Duration(seconds: 30));
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      await response.drain<void>();
+      throw HttpException('Download failed (${response.statusCode})');
+    }
+    await _writeStreamToFile(
+      dest,
+      response,
+      total: total ?? _totalFromResponse(response, null),
+      onProgress: onProgress,
+      startBytes: start,
+      append: start > 0,
+    );
+  }
+
+  static Future<void> _downloadParallel(
+    HttpClient client,
+    Uri uri,
+    File dest,
+    int total, {
+    DownloadProgressCallback? onProgress,
+  }) async {
+    const partCount = 6;
+    final chunkSize = (total / partCount).ceil();
+    final partDir = Directory('${dest.path}.parts');
+    if (await partDir.exists()) {
+      await partDir.delete(recursive: true);
+    }
+    await partDir.create(recursive: true);
+    final received = List<int>.filled(partCount, 0);
+
+    void report() {
+      final sum = received.fold<int>(0, (a, b) => a + b);
+      onProgress?.call(min(1.0, sum / total), sum, total);
+    }
+
+    await Future.wait(
+      List.generate(partCount, (index) async {
+        final start = index * chunkSize;
+        if (start >= total) return;
+        final end = min(total - 1, start + chunkSize - 1);
+        final part = File('${partDir.path}/$index');
+        final request = await client
+            .getUrl(uri)
+            .timeout(const Duration(seconds: 20));
+        request.headers.set(HttpHeaders.rangeHeader, 'bytes=$start-$end');
+        final response = await request.close().timeout(
+          const Duration(minutes: 8),
+        );
+        if (response.statusCode != 206 && response.statusCode != 200) {
+          await response.drain<void>();
+          throw HttpException('Range download failed (${response.statusCode})');
+        }
+        final sink = part.openWrite();
+        await for (final chunk in response) {
+          sink.add(chunk);
+          received[index] += chunk.length;
+          report();
+        }
+        await sink.close();
+      }),
+    );
+
+    final out = dest.openWrite();
+    for (var index = 0; index < partCount; index++) {
+      final part = File('${partDir.path}/$index');
+      if (await part.exists()) {
+        await out.addStream(part.openRead());
+      }
+    }
+    await out.close();
+    await partDir.delete(recursive: true);
+    onProgress?.call(1, total, total);
+  }
+
+  static Future<void> _writeStreamToFile(
+    File dest,
+    HttpClientResponse response, {
+    int? total,
+    DownloadProgressCallback? onProgress,
+    int startBytes = 0,
+    bool append = false,
+  }) async {
+    if (!append && await dest.exists()) {
+      await dest.delete();
+    }
+    final sink = dest.openWrite(mode: append ? FileMode.append : FileMode.write);
+    var received = startBytes;
+    await for (final chunk in response.timeout(const Duration(minutes: 8))) {
+      sink.add(chunk);
+      received += chunk.length;
+      final fraction = total != null && total > 0
+          ? min(1.0, received / total)
+          : 0.0;
+      onProgress?.call(fraction, received, total);
+    }
+    await sink.close();
+    if (total != null && total > 0) {
+      onProgress?.call(1, received, total);
+    }
+  }
+
+  static Future<bool> _hashMatches(
+    File file,
+    String? expectedHash, {
+    required bool skipIfMissing,
+  }) async {
+    if (expectedHash == null || expectedHash.isEmpty) return skipIfMissing;
+    final normalizedExpected = expectedHash
+        .replaceFirst('sha256:', '')
+        .toLowerCase();
+    final digest = await sha256.bind(file.openRead()).first;
+    return digest.toString().toLowerCase() == normalizedExpected;
+  }
+
+  static Future<bool> isOnWifi() async {
+    try {
+      final results = await Connectivity().checkConnectivity();
+      return results.contains(ConnectivityResult.wifi);
+    } catch (_) {
+      return false;
     }
   }
 
@@ -255,13 +595,3 @@ class UpdateService {
 enum InstallPermissionResult { alreadyAllowed, permissionScreenOpened, failed }
 
 enum ApkInstallResult { installerOpened, permissionRequired, failed }
-
-class AccumulatorSink<T> implements Sink<T> {
-  final List<T> events = [];
-
-  @override
-  void add(T event) => events.add(event);
-
-  @override
-  void close() {}
-}

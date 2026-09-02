@@ -30,6 +30,11 @@ import { ControlCenterSendMessageDto } from './dto/control-center-message.dto';
 import { ControlCenterSavePricingDto } from './dto/control-center-pricing.dto';
 import { ControlCenterUpdateUserStatusDto } from './dto/control-center-users.dto';
 import { MarketingService } from '../marketing/marketing.service';
+import { AppUpdateService } from '../app-update/app-update.service';
+import {
+  AppUpdateScreenMediaPresignDto,
+  UpdateAppUpdateScreenDto,
+} from '../app-update/app-update.dto';
 import {
   MarketingCampaignDto,
   MarketingCampaignStatusDto,
@@ -42,6 +47,7 @@ export class ControlCenterController {
   constructor(
     private readonly controlCenterService: ControlCenterService,
     private readonly marketingService: MarketingService,
+    private readonly appUpdateService: AppUpdateService,
   ) {}
 
   @Get('auth/status')
@@ -320,5 +326,23 @@ export class ControlCenterController {
       campaignId,
       body,
     );
+  }
+
+  @Get('app-update-screen')
+  @UseGuards(ControlCenterAuthGuard)
+  getAppUpdateScreen() {
+    return this.appUpdateService.getScreenContent();
+  }
+
+  @Patch('app-update-screen')
+  @UseGuards(ControlCenterAuthGuard)
+  updateAppUpdateScreen(@Body() body: UpdateAppUpdateScreenDto) {
+    return this.appUpdateService.updateScreenContent(body);
+  }
+
+  @Post('app-update-screen/media/presign')
+  @UseGuards(ControlCenterAuthGuard)
+  presignAppUpdateScreenMedia(@Body() body: AppUpdateScreenMediaPresignDto) {
+    return this.appUpdateService.presignScreenMedia(body);
   }
 }

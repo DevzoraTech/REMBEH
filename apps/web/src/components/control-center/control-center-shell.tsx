@@ -15,6 +15,7 @@ import {
   Megaphone,
   Menu,
   Settings,
+  Smartphone,
   Tag,
   Users,
   X,
@@ -33,6 +34,7 @@ export type ControlCenterSection =
   | "pricing"
   | "communications"
   | "marketing"
+  | "app-update"
   | "reports"
   | "users"
   | "audit"
@@ -82,6 +84,11 @@ const secondaryNav: NavItem[] = [
     id: "marketing",
     label: "Marketing",
     icon: Megaphone,
+  },
+  {
+    id: "app-update",
+    label: "App update",
+    icon: Smartphone,
   },
   {
     id: "reports",

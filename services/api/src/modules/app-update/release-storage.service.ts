@@ -19,7 +19,7 @@ export class ReleaseStorageService {
   private readonly s3Client: S3Client;
   private readonly presignClient: S3Client;
   private readonly bucket: string;
-  private readonly downloadExpiry = 3600;
+  private readonly downloadExpiry = 21600;
 
   constructor(private readonly configService: ConfigService) {
     const endpoint = emptyToUndefined(
