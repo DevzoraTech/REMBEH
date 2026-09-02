@@ -41,9 +41,9 @@ export class ReleaseStorageService {
     this.bucket =
       this.configService.get<string>('S3_BUCKET')?.trim() ||
       'rembeh-prod-bucket';
-    this.cdnBase = emptyToUndefined(
-      this.configService.get<string>('S3_DOWNLOAD_CDN'),
-    );
+    this.cdnBase =
+      emptyToUndefined(this.configService.get<string>('S3_DOWNLOAD_CDN')) ??
+      null;
 
     const credentials =
       accessKeyId && secretAccessKey
