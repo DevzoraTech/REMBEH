@@ -319,7 +319,11 @@ async function main() {
     for (const row of pack.customers) {
       const nationalId = row.systemNumber || `${row.sourceId}`;
       const existingByNational = await prisma.customer.findFirst({
-        where: { tenantId: branch.tenantId, nationalId },
+        where: {
+          tenantId: branch.tenantId,
+          branchId: branch.id,
+          nationalId,
+        },
         select: { id: true, phone: true },
       });
       const existingByPhone = await prisma.customer.findUnique({
@@ -329,8 +333,12 @@ async function main() {
             phone: row.phone,
           },
         },
-        select: { id: true },
+        select: { id: true, branchId: true },
       });
+      const reusableByPhone =
+        existingByPhone && existingByPhone.branchId === branch.id
+          ? existingByPhone
+          : null;
 
       const data = {
         branchId: branch.id,
@@ -349,17 +357,24 @@ async function main() {
           },
         });
         customersUpdated += 1;
-      } else if (existingByPhone) {
+      } else if (reusableByPhone) {
         customer = await prisma.customer.update({
-          where: { id: existingByPhone.id },
+          where: { id: reusableByPhone.id },
           data,
         });
         customersUpdated += 1;
       } else {
+        let phone = row.phone;
+        if (existingByPhone && existingByPhone.branchId !== branch.id) {
+          const n = BigInt(
+            `0x${String(row.sourceId).replace(/\W/g, '').padEnd(12, '0').slice(0, 12)}`,
+          );
+          phone = `+2568${String(n % 100000000n).padStart(8, '0')}`;
+        }
         customer = await prisma.customer.create({
           data: {
             tenantId: branch.tenantId,
-            phone: row.phone,
+            phone,
             ...data,
             createdAt: kampalaDate(row.registeredOn),
           },
