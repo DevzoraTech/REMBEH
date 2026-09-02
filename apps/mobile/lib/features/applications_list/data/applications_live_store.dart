@@ -109,6 +109,8 @@ class ApplicationsLiveStore extends ChangeNotifier {
       switch (filter) {
         case RecordsFilter.all:
         case RecordsFilter.dueToday:
+        case RecordsFilter.duePaidToday:
+        case RecordsFilter.overduePaid:
           return true;
         case RecordsFilter.today:
         case RecordsFilter.collectedToday:

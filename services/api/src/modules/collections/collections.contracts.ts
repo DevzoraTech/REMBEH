@@ -1,9 +1,21 @@
+export type DueDayCoverageKind =
+  | 'due_paid'
+  | 'due_unpaid'
+  | 'overdue_paid'
+  | 'overdue_unpaid'
+  | 'none';
+
 export type CollectionSummaryContract = {
   amountCollectedToday: number;
   repaymentsTodayCount: number;
   dueTodayCount: number;
+  dueTodayPaidCount: number;
+  dueTodayUnpaidCount: number;
+  overduePaidCount: number;
   pendingSyncCount: number;
   clientsDueToday: DueClientContract[];
+  clientsDueTodayPaid: DueClientContract[];
+  clientsOverduePaid: DueClientContract[];
 };
 
 export type DueClientContract = {
@@ -15,6 +27,8 @@ export type DueClientContract = {
   amountPaid: number;
   loanAmount: number;
   amountDue: number;
+  paidTodayAmount: number;
+  coverage: DueDayCoverageKind;
   lastActivityAt: string;
   synced: boolean;
 };

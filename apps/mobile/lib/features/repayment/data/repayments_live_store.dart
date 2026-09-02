@@ -33,6 +33,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
   );
   final List<FieldRepayment> _repayments = [];
   final List<DueClient> _dueTodayClients = [];
+  final List<DueClient> _dueTodayPaidClients = [];
+  final List<DueClient> _overduePaidClients = [];
   final List<String> _recentLoanIds = [];
   final Map<String, ClientLoanDetail> _detailCache = {};
   DateTimeRange? customRange;
@@ -46,6 +48,10 @@ class RepaymentsLiveStore extends ChangeNotifier {
   HomeSummary get summary => _summary;
   List<FieldRepayment> get repayments => List.unmodifiable(_repayments);
   List<DueClient> get dueTodayClients => List.unmodifiable(_dueTodayClients);
+  List<DueClient> get dueTodayPaidClients =>
+      List.unmodifiable(_dueTodayPaidClients);
+  List<DueClient> get overduePaidClients =>
+      List.unmodifiable(_overduePaidClients);
   bool get loading => _loading;
   String? get error => _error;
   bool get canReviewRepaymentCorrections {
@@ -110,6 +116,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
     );
     _repayments.clear();
     _dueTodayClients.clear();
+    _dueTodayPaidClients.clear();
+    _overduePaidClients.clear();
     _detailCache.clear();
     _recentLoanIds.clear();
     _error = null;
@@ -137,18 +145,24 @@ class RepaymentsLiveStore extends ChangeNotifier {
         ..addAll(
           (results[1] as List<FieldRepayment>).where(_canShowRepaymentRecord),
         );
-      _dueTodayClients
-        ..clear()
-        ..addAll(_summary.clientsDueToday);
+      _applyDueTodayLists(
+        unpaid: _summary.clientsDueToday,
+        paid: _summary.clientsDueTodayPaid,
+        overduePaid: _summary.clientsOverduePaid,
+      );
       _error = null;
     } catch (error) {
       final offlineSummary = _buildOfflineSummary();
       if (NetworkStatusStore.instance.isOffline &&
-          offlineSummary.clientsDueToday.isNotEmpty) {
+          (offlineSummary.clientsDueToday.isNotEmpty ||
+              offlineSummary.clientsDueTodayPaid.isNotEmpty ||
+              offlineSummary.clientsOverduePaid.isNotEmpty)) {
         _summary = offlineSummary;
-        _dueTodayClients
-          ..clear()
-          ..addAll(offlineSummary.clientsDueToday);
+        _applyDueTodayLists(
+          unpaid: offlineSummary.clientsDueToday,
+          paid: offlineSummary.clientsDueTodayPaid,
+          overduePaid: offlineSummary.clientsOverduePaid,
+        );
         _error = null;
       } else {
         _error = friendlyErrorMessage(error);
@@ -164,27 +178,37 @@ class RepaymentsLiveStore extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
-      final clients = await _locator.repository.listDueToday();
-      _dueTodayClients
-        ..clear()
-        ..addAll(clients);
+      final bundle = await _locator.repository.listDueToday();
+      _applyDueTodayLists(
+        unpaid: bundle.unpaid,
+        paid: bundle.paid,
+        overduePaid: bundle.overduePaid,
+      );
       _summary = HomeSummary(
         amountCollectedToday: _summary.amountCollectedToday,
         repaymentsTodayCount: _summary.repaymentsTodayCount,
-        dueTodayCount: clients.length,
+        dueTodayCount: bundle.unpaid.length,
+        dueTodayPaidCount: bundle.paid.length,
+        overduePaidCount: bundle.overduePaid.length,
         newApplicationsTodayCount: _summary.newApplicationsTodayCount,
         pendingSyncCount: _summary.pendingSyncCount,
-        clientsDueToday: List.unmodifiable(clients),
+        clientsDueToday: List.unmodifiable(bundle.unpaid),
+        clientsDueTodayPaid: List.unmodifiable(bundle.paid),
+        clientsOverduePaid: List.unmodifiable(bundle.overduePaid),
       );
       _error = null;
     } catch (error) {
       final offlineSummary = _buildOfflineSummary();
       if (NetworkStatusStore.instance.isOffline &&
-          offlineSummary.clientsDueToday.isNotEmpty) {
+          (offlineSummary.clientsDueToday.isNotEmpty ||
+              offlineSummary.clientsDueTodayPaid.isNotEmpty ||
+              offlineSummary.clientsOverduePaid.isNotEmpty)) {
         _summary = offlineSummary;
-        _dueTodayClients
-          ..clear()
-          ..addAll(offlineSummary.clientsDueToday);
+        _applyDueTodayLists(
+          unpaid: offlineSummary.clientsDueToday,
+          paid: offlineSummary.clientsDueTodayPaid,
+          overduePaid: offlineSummary.clientsOverduePaid,
+        );
         _error = null;
       } else {
         _error = friendlyErrorMessage(error);
@@ -193,6 +217,22 @@ class RepaymentsLiveStore extends ChangeNotifier {
       _loading = false;
       notifyListeners();
     }
+  }
+
+  void _applyDueTodayLists({
+    required List<DueClient> unpaid,
+    required List<DueClient> paid,
+    required List<DueClient> overduePaid,
+  }) {
+    _dueTodayClients
+      ..clear()
+      ..addAll(unpaid);
+    _dueTodayPaidClients
+      ..clear()
+      ..addAll(paid);
+    _overduePaidClients
+      ..clear()
+      ..addAll(overduePaid);
   }
 
   List<FieldRepayment> filtered({
@@ -219,6 +259,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
         case RecordsFilter.all:
           return true;
         case RecordsFilter.dueToday:
+        case RecordsFilter.duePaidToday:
+        case RecordsFilter.overduePaid:
           return item.dueToday;
         case RecordsFilter.collectedToday:
         case RecordsFilter.today:
@@ -369,6 +411,12 @@ class RepaymentsLiveStore extends ChangeNotifier {
     _dueTodayClients
       ..clear()
       ..addAll(offlineSummary.clientsDueToday);
+    _dueTodayPaidClients
+      ..clear()
+      ..addAll(offlineSummary.clientsDueTodayPaid);
+    _overduePaidClients
+      ..clear()
+      ..addAll(offlineSummary.clientsOverduePaid);
     if (_summary.dueTodayCount == 0 &&
         offlineSummary.clientsDueToday.isNotEmpty) {
       _summary = offlineSummary;
@@ -403,32 +451,75 @@ class RepaymentsLiveStore extends ChangeNotifier {
   }
 
   HomeSummary _buildOfflineSummary() {
-    final clients = _detailCache.values
-        .where((detail) => detail.nextDueIsToday && detail.expectedToday > 0)
-        .map(
-          (detail) => DueClient(
-            id: detail.loanId,
-            fullName: detail.fullName,
-            phone: detail.phone,
-            amountPaid: detail.paidAmount,
-            loanAmount: detail.loanAmount,
-            amountDue: detail.expectedToday,
-            lastActivityAt:
-                detail.lastPaymentAt ??
-                detail.paymentStartDate ??
-                detail.loanStartDate,
-            synced: true,
-          ),
-        )
-        .toList();
-    clients.sort((a, b) => b.lastActivityAt.compareTo(a.lastActivityAt));
+    final now = DateTime.now();
+    bool sameDay(DateTime a, DateTime b) =>
+        a.year == b.year && a.month == b.month && a.day == b.day;
+
+    DueClient toClient(ClientLoanDetail detail, DueDayCoverage coverage) {
+      final paidToday = detail.paymentHistory
+          .where((item) => sameDay(item.paidAt, now))
+          .fold<int>(0, (sum, item) => sum + item.amount);
+      return DueClient(
+        id: detail.loanId,
+        fullName: detail.fullName,
+        phone: detail.phone,
+        amountPaid: detail.paidAmount,
+        loanAmount: detail.loanAmount,
+        amountDue: detail.expectedToday,
+        paidTodayAmount: paidToday,
+        coverage: coverage,
+        lastActivityAt:
+            detail.lastPaymentAt ??
+            detail.paymentStartDate ??
+            detail.loanStartDate,
+        synced: true,
+      );
+    }
+
+    final unpaid = <DueClient>[];
+    final paid = <DueClient>[];
+    final overduePaid = <DueClient>[];
+
+    for (final detail in _detailCache.values) {
+      if (detail.outstanding <= 0) continue;
+      final paidToday = detail.paymentHistory
+          .where((item) => sameDay(item.paidAt, now))
+          .fold<int>(0, (sum, item) => sum + item.amount);
+      final paidAnythingToday =
+          paidToday > 0 ||
+          (detail.lastPaymentAt != null &&
+              sameDay(detail.lastPaymentAt!, now));
+      final overdue = detail.nextDueLabel.toLowerCase() == 'overdue' ||
+          detail.carriedForward > 0;
+      final dueToday =
+          detail.nextDueIsToday ||
+          detail.expectedToday > 0 ||
+          detail.nextDueLabel.toLowerCase() == 'due today';
+
+      if (overdue && paidAnythingToday) {
+        overduePaid.add(toClient(detail, DueDayCoverage.overduePaid));
+      } else if (dueToday && paidAnythingToday) {
+        paid.add(toClient(detail, DueDayCoverage.duePaid));
+      } else if ((dueToday || overdue) && !paidAnythingToday) {
+        unpaid.add(toClient(detail, DueDayCoverage.dueUnpaid));
+      }
+    }
+
+    unpaid.sort((a, b) => b.lastActivityAt.compareTo(a.lastActivityAt));
+    paid.sort((a, b) => b.lastActivityAt.compareTo(a.lastActivityAt));
+    overduePaid.sort((a, b) => b.lastActivityAt.compareTo(a.lastActivityAt));
+
     return HomeSummary(
       amountCollectedToday: _summary.amountCollectedToday,
       repaymentsTodayCount: _summary.repaymentsTodayCount,
-      dueTodayCount: clients.length,
+      dueTodayCount: unpaid.length,
+      dueTodayPaidCount: paid.length,
+      overduePaidCount: overduePaid.length,
       newApplicationsTodayCount: _summary.newApplicationsTodayCount,
       pendingSyncCount: _summary.pendingSyncCount,
-      clientsDueToday: List.unmodifiable(clients),
+      clientsDueToday: List.unmodifiable(unpaid),
+      clientsDueTodayPaid: List.unmodifiable(paid),
+      clientsOverduePaid: List.unmodifiable(overduePaid),
     );
   }
 

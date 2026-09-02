@@ -72,7 +72,9 @@ class _RecordsTabState extends State<RecordsTab> {
 
   void _refreshDueTodayIfNeeded() {
     if (widget.section == RecordsSection.repayments &&
-        _activeFilter == RecordsFilter.dueToday) {
+        (_activeFilter == RecordsFilter.dueToday ||
+            _activeFilter == RecordsFilter.duePaidToday ||
+            _activeFilter == RecordsFilter.overduePaid)) {
       unawaited(_repayStore.refreshDueToday());
     }
   }
@@ -86,6 +88,12 @@ class _RecordsTabState extends State<RecordsTab> {
     final filters = _filters;
     if (filters.contains(widget.filter)) return widget.filter;
     return RecordsFilter.all;
+  }
+
+  bool _isDueClientFilter(RecordsFilter filter) {
+    return filter == RecordsFilter.dueToday ||
+        filter == RecordsFilter.duePaidToday ||
+        filter == RecordsFilter.overduePaid;
   }
 
   Future<void> _openFilterMenu() async {
@@ -183,7 +191,11 @@ class _RecordsTabState extends State<RecordsTab> {
       case RecordsFilter.all:
         return Icons.check_circle;
       case RecordsFilter.dueToday:
-        return Icons.calendar_today;
+        return Icons.event_busy;
+      case RecordsFilter.duePaidToday:
+        return Icons.event_available;
+      case RecordsFilter.overduePaid:
+        return Icons.warning_amber_rounded;
       case RecordsFilter.collectedToday:
         return Icons.check_circle;
       case RecordsFilter.today:
@@ -320,9 +332,24 @@ class _RecordsTabState extends State<RecordsTab> {
           ),
           Expanded(
             child: widget.section == RecordsSection.repayments
-                ? active == RecordsFilter.dueToday
+                ? _isDueClientFilter(active)
                       ? _DueTodayList(
-                          items: _repayStore.dueTodayClients,
+                          items: active == RecordsFilter.duePaidToday
+                              ? _repayStore.dueTodayPaidClients
+                              : active == RecordsFilter.overduePaid
+                                  ? _repayStore.overduePaidClients
+                                  : _repayStore.dueTodayClients,
+                          countLabel: active == RecordsFilter.duePaidToday
+                              ? '${_repayStore.dueTodayPaidClients.length} Paid today (even partial)'
+                              : active == RecordsFilter.overduePaid
+                                  ? '${_repayStore.overduePaidClients.length} Overdue with a payment today'
+                                  : '${_repayStore.dueTodayClients.length} Still due — no payment today',
+                          emptyMessage: active == RecordsFilter.duePaidToday
+                              ? 'No due clients have paid yet today.'
+                              : active == RecordsFilter.overduePaid
+                                  ? 'No overdue clients have paid today.'
+                                  : 'No clients still due today.',
+                          showPaidToday: active != RecordsFilter.dueToday,
                           loading: _repayStore.loading,
                           error: _repayStore.error,
                           onRetry: () => _repayStore.refreshDueToday(),
@@ -432,12 +459,18 @@ class _SegmentTab extends StatelessWidget {
 class _DueTodayList extends StatelessWidget {
   const _DueTodayList({
     required this.items,
+    required this.countLabel,
+    required this.emptyMessage,
+    required this.showPaidToday,
     required this.loading,
     required this.error,
     required this.onRetry,
   });
 
   final List<DueClient> items;
+  final String countLabel;
+  final String emptyMessage;
+  final bool showPaidToday;
   final bool loading;
   final String? error;
   final Future<void> Function() onRetry;
@@ -469,14 +502,14 @@ class _DueTodayList extends StatelessWidget {
     }
 
     if (items.isEmpty) {
-      return const _EmptyState(message: 'No clients due today.');
+      return _EmptyState(message: emptyMessage);
     }
 
     final now = DateTime.now();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _CountLabel(text: '${items.length} Clients Due Today'),
+        _CountLabel(text: countLabel),
         Expanded(
           child: RefreshIndicator(
             color: forestEmerald,
@@ -491,7 +524,11 @@ class _DueTodayList extends StatelessWidget {
                   initials: item.initials,
                   name: item.fullName,
                   phone: item.phone,
-                  primaryAmount: formatCompactMoney(item.amountDue),
+                  primaryAmount: formatCompactMoney(
+                    showPaidToday && item.paidTodayAmount > 0
+                        ? item.paidTodayAmount
+                        : item.amountDue,
+                  ),
                   secondaryValue: formatCompactMoney(item.loanAmount),
                   secondaryColor: midnightNavy,
                   timestamp: formatActivityTime(item.lastActivityAt, now),

@@ -41,6 +41,7 @@ import { buildPaymentConfirmationSms } from '../sms-credits/sms-notification-tem
 import { ObjectStorageService } from '../storage/object-storage.service';
 import {
   allocateRepayment,
+  classifyDueDayCoverage,
   computeCollectionSchedule,
 } from './collection-schedule';
 import {
@@ -197,19 +198,25 @@ export class CollectionsService {
       }),
     ]);
 
-    const dueCandidates = await Promise.all(
-      loans.map((loan) => this.toDueClient(loan, now)),
-    );
+    const classified = (
+      await Promise.all(loans.map((loan) => this.toDueClient(loan, now)))
+    ).filter((item): item is DueClientContract => item != null);
 
-    const clientsDueToday = dueCandidates
+    const sortByActivity = (a: DueClientContract, b: DueClientContract) =>
+      new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime();
+
+    const clientsDueTodayUnpaid = classified
       .filter(
-        (item): item is DueClientContract => item != null && item.amountDue > 0,
+        (item) =>
+          item.coverage === 'due_unpaid' || item.coverage === 'overdue_unpaid',
       )
-      .sort(
-        (a, b) =>
-          new Date(b.lastActivityAt).getTime() -
-          new Date(a.lastActivityAt).getTime(),
-      );
+      .sort(sortByActivity);
+    const clientsDueTodayPaid = classified
+      .filter((item) => item.coverage === 'due_paid')
+      .sort(sortByActivity);
+    const clientsOverduePaid = classified
+      .filter((item) => item.coverage === 'overdue_paid')
+      .sort(sortByActivity);
 
     return {
       summary: {
@@ -217,22 +224,40 @@ export class CollectionsService {
 
         repaymentsTodayCount: todayAgg._count._all,
 
-        dueTodayCount: clientsDueToday.length,
+        dueTodayCount: clientsDueTodayUnpaid.length,
+
+        dueTodayPaidCount: clientsDueTodayPaid.length,
+
+        dueTodayUnpaidCount: clientsDueTodayUnpaid.length,
+
+        overduePaidCount: clientsOverduePaid.length,
 
         pendingSyncCount: 0,
 
-        clientsDueToday,
+        clientsDueToday: clientsDueTodayUnpaid,
+
+        clientsDueTodayPaid,
+
+        clientsOverduePaid,
       },
     };
   }
 
   async listDueToday(
     user: AuthenticatedUser,
-  ): Promise<{ clients: DueClientContract[] }> {
+  ): Promise<{
+    clients: DueClientContract[];
+    unpaid: DueClientContract[];
+    paid: DueClientContract[];
+    overduePaid: DueClientContract[];
+  }> {
     const { summary } = await this.getSummary(user);
 
     return {
       clients: summary.clientsDueToday,
+      unpaid: summary.clientsDueToday,
+      paid: summary.clientsDueTodayPaid,
+      overduePaid: summary.clientsOverduePaid,
     };
   }
 
@@ -3700,6 +3725,31 @@ export class CollectionsService {
       return null;
     }
 
+    const paidTodayAmount = this.roundMoney(
+      (loan.repayments ?? []).reduce((sum, row) => {
+        if (!(row.paidAt instanceof Date) || Number.isNaN(row.paidAt.getTime())) {
+          return sum;
+        }
+        if (!this.sameDay(row.paidAt, asOf)) {
+          return sum;
+        }
+        return sum + (this.decimalToNumber(row.amount) ?? 0);
+      }, 0),
+    );
+
+    const morning = this.morningSchedule(loan, detail, paidTodayAmount, asOf);
+    const coverage = classifyDueDayCoverage({
+      morningExpectedToday: morning.expectedToday,
+      morningNextDueIsToday: morning.nextDueIsToday,
+      morningNextDueLabel: morning.nextDueLabel,
+      morningCarriedForward: morning.carriedForward,
+      paidToday: paidTodayAmount,
+    });
+
+    if (coverage === 'none') {
+      return null;
+    }
+
     const last = loan.repayments[0];
 
     return {
@@ -3719,10 +3769,68 @@ export class CollectionsService {
 
       amountDue: detail.expectedToday,
 
+      paidTodayAmount,
+
+      coverage,
+
       lastActivityAt: (last?.paidAt ?? loan.updatedAt ?? asOf).toISOString(),
 
       synced: true,
     };
+  }
+
+  private morningSchedule(
+    loan: LoanWithCollections,
+    detail: ClientLoanDetailContract,
+    paidTodayAmount: number,
+    asOf: Date,
+  ) {
+    const pricing = this.loanPricing(loan);
+    const startDate =
+      loan.paymentStartDate ??
+      loan.application?.paymentStartDate ??
+      loan.disbursedAt ??
+      loan.application?.submittedAt ??
+      loan.createdAt;
+    if (!startDate) {
+      return {
+        expectedToday: detail.expectedToday,
+        nextDueIsToday: detail.nextDueIsToday,
+        nextDueLabel: detail.nextDueLabel,
+        carriedForward: detail.carriedForward,
+      };
+    }
+
+    const recordedPaidAmount = detail.paidAmount;
+    const paidBeforeToday = this.roundMoney(
+      Math.max(0, recordedPaidAmount - paidTodayAmount),
+    );
+    const morningBalance = this.roundMoney(
+      Math.max(0, detail.outstanding + paidTodayAmount),
+    );
+    const openingBalance = this.decimalToNumber(loan.wallet?.openingBalance);
+    const finesTotal = detail.finesTotal;
+    const baseRepayable = resolveBaseRepayable({
+      openingBalance,
+      pricedTotal: pricing.totalRepayable,
+      principal: pricing.principalAmount,
+      paidAmount: paidBeforeToday,
+      balance: morningBalance,
+      finesTotal,
+    });
+
+    return computeCollectionSchedule({
+      principalAmount: pricing.principalAmount,
+      interestRatePercent: pricing.interestRatePercent,
+      durationDays: pricing.durationDays,
+      repaymentFrequency: loan.application?.repaymentFrequency ?? 'DAILY',
+      processingFee: pricing.processingFee,
+      balance: morningBalance,
+      recordedPaidAmount: paidBeforeToday,
+      totalRepayableOverride: baseRepayable,
+      startDate,
+      asOf,
+    });
   }
 
   private loanPricing(loan: LoanWithCollections) {

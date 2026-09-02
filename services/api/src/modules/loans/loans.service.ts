@@ -12,7 +12,7 @@ import {
 } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
-import { computeCollectionSchedule } from '../collections/collection-schedule';
+import { computeCollectionSchedule, classifyDueDayCoverage, isSameCalendarDay } from '../collections/collection-schedule';
 import { CreateLoanApplicationFromCustomerDto } from '../loan-applications/dto/create-from-customer.dto';
 import { LoanApplicationsService } from '../loan-applications/loan-applications.service';
 import { OPERATIONS_PERMISSIONS } from '../operations/operations.permissions';
@@ -366,6 +366,8 @@ export class LoansService {
         overdueDays: 0,
         nextDueLabel: 'Pending disbursement',
         nextDueIsToday: false,
+        paidTodayAmount: 0,
+        dueDayCoverage: 'none',
         nextDueDate: null,
         currency: loan.currency,
         officerName: loan.application?.officer.displayName ?? null,
@@ -403,6 +405,45 @@ export class LoansService {
       nextDueLabel: schedule.nextDueLabel,
     });
 
+    const now = new Date();
+    const paidTodayAmount = this.roundMoney(
+      loan.repayments.reduce((sum, repayment) => {
+        if (
+          !repayment.paidAt ||
+          Number.isNaN(repayment.paidAt.getTime()) ||
+          !isSameCalendarDay(repayment.paidAt, now)
+        ) {
+          return sum;
+        }
+        return sum + (this.decimalToNumber(repayment.amount) ?? 0);
+      }, 0),
+    );
+    const paidBeforeToday = this.roundMoney(
+      Math.max(0, paidAmount - paidTodayAmount),
+    );
+    const morningBalance = this.roundMoney(
+      Math.max(0, balance + paidTodayAmount),
+    );
+    const morning = computeCollectionSchedule({
+      principalAmount: principal,
+      interestRatePercent,
+      durationDays: periodDays,
+      repaymentFrequency: loan.application?.repaymentFrequency ?? 'DAILY',
+      processingFee,
+      balance: morningBalance,
+      recordedPaidAmount: paidBeforeToday,
+      totalRepayableOverride: baseRepayable,
+      startDate,
+      asOf: now,
+    });
+    const dueDayCoverage = classifyDueDayCoverage({
+      morningExpectedToday: morning.expectedToday,
+      morningNextDueIsToday: morning.nextDueIsToday,
+      morningNextDueLabel: morning.nextDueLabel,
+      morningCarriedForward: morning.carriedForward,
+      paidToday: paidTodayAmount,
+    });
+
     return {
       id: loan.id,
       applicationId: loan.application?.id ?? null,
@@ -427,6 +468,8 @@ export class LoansService {
       overdueDays,
       nextDueLabel: balance <= 0 ? 'Paid up' : schedule.nextDueLabel,
       nextDueIsToday: balance > 0 && schedule.nextDueIsToday,
+      paidTodayAmount,
+      dueDayCoverage: balance <= 0 ? 'none' : dueDayCoverage,
       nextDueDate: balance <= 0 ? null : nextDueDate,
       currency: loan.currency,
       officerName: loan.application?.officer.displayName ?? null,

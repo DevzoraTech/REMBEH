@@ -85,6 +85,13 @@ export type OwnerLoan = {
   overdueDays?: number;
   nextDueLabel?: string;
   nextDueIsToday?: boolean;
+  paidTodayAmount?: number;
+  dueDayCoverage?:
+    | "due_paid"
+    | "due_unpaid"
+    | "overdue_paid"
+    | "overdue_unpaid"
+    | "none";
   nextDueDate?: string | null;
   currency: string;
   officerName: string | null;

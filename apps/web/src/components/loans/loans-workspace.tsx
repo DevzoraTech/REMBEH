@@ -75,7 +75,14 @@ import { resolveOperatorRole } from "../../lib/roles";
 export type LoansMode = "owner" | "manager";
 export type LoansWorkspaceView = "loans" | "pending-disbursements";
 
-type PortfolioFilter = "all" | "active" | "closed" | "overdue";
+type PortfolioFilter =
+  | "all"
+  | "active"
+  | "closed"
+  | "overdue"
+  | "due_today"
+  | "due_paid"
+  | "overdue_paid";
 
 type LoanRow = OwnerLoan & {
   applicationId?: string | null;
@@ -326,6 +333,14 @@ export function LoansWorkspace({
       if (fromUrl.repayment && fromUrl.repayment !== "all") {
         setFilter("all");
       }
+    }
+    const coverage = params.get("coverage");
+    if (
+      coverage === "due_today" ||
+      coverage === "due_paid" ||
+      coverage === "overdue_paid"
+    ) {
+      setFilter(coverage);
     }
     if (canCreate && params.get("new") === "1") {
       setPanelError(null);
@@ -767,6 +782,15 @@ export function LoansWorkspace({
         return false;
       if (filter === "closed" && loan.status !== "CLOSED") return false;
       if (filter === "overdue" && !isLoanScheduleOverdue(loan)) {
+        return false;
+      }
+      if (filter === "due_today" && loan.dueDayCoverage !== "due_unpaid" && loan.dueDayCoverage !== "overdue_unpaid") {
+        return false;
+      }
+      if (filter === "due_paid" && loan.dueDayCoverage !== "due_paid") {
+        return false;
+      }
+      if (filter === "overdue_paid" && loan.dueDayCoverage !== "overdue_paid") {
         return false;
       }
 
@@ -1255,11 +1279,14 @@ export function LoansWorkspace({
                 onChange={(event) =>
                   setFilter(event.target.value as PortfolioFilter)
                 }
-                className="h-9 w-full rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold outline-none sm:w-[170px]"
+                className="h-9 w-full rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold outline-none sm:w-[210px]"
               >
                 <option value="all">All Loans</option>
                 <option value="active">Active Loans</option>
                 <option value="closed">Closed Loans</option>
+                <option value="due_today">Still due today</option>
+                <option value="due_paid">Paid today</option>
+                <option value="overdue_paid">Overdue paid today</option>
                 <option value="overdue">Overdue Loans</option>
               </select>
               <LoansFiltersControl

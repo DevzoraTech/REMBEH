@@ -433,6 +433,9 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
       }),
     [activeLoans, branchAnalytics, branches, currency, links, mode, pendingReports, reports],
   );
+  const alertsHref = alerts.some((alert) => alert.id === "overdue-paid-today")
+    ? `${links.loans}?coverage=overdue_paid`
+    : links.loans;
   const activityTotal =
     todayActivity.loansIssued.length +
     todayActivity.collections.length +
@@ -554,7 +557,7 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
                 />
               </div>
               <div className="min-w-0">
-                <AlertsCard alerts={alerts} href={links.risk} />
+                <AlertsCard alerts={alerts} href={alertsHref} />
               </div>
             </section>
 
@@ -600,7 +603,7 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
                 activities={activities}
                 href={links.reports}
               />
-              <AlertsCard alerts={alerts} href={links.risk} />
+              <AlertsCard alerts={alerts} href={alertsHref} />
             </section>
           </>
         )}
@@ -2009,7 +2012,25 @@ function buildAlerts({
     (report) => Math.abs(report.closingVariance ?? 0) > 0,
   );
   const analytics = branchAnalytics[0] ?? null;
+  const overduePaidLoans = loans.filter(
+    (loan) => loan.dueDayCoverage === "overdue_paid",
+  );
   const alerts: AlertItem[] = [];
+
+  if (overduePaidLoans.length > 0) {
+    alerts.push({
+      id: "overdue-paid-today",
+      title:
+        overduePaidLoans.length === 1
+          ? "An overdue borrower paid today"
+          : `${overduePaidLoans.length} overdue borrowers paid today`,
+      detail:
+        "They paid something toward overdue days. Tap view all to see the list and follow up.",
+      time: "Today",
+      tone: "gold",
+      href: `${links.loans}?coverage=overdue_paid`,
+    });
+  }
 
   if (mode === "manager") {
     const compliance = analytics?.dailyCompliance ?? null;

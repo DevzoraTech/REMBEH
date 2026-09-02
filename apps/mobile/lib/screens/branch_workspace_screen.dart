@@ -1051,6 +1051,32 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       );
     }
 
+    final overduePaidCount = _num(
+      _collectionSummary?['overduePaidCount'],
+    ).round();
+
+    if (overduePaidCount > 0) {
+      items.add(
+        AttentionItem(
+          icon: Icons.payments_outlined,
+          iconColor: forestEmerald,
+          iconBackgroundColor: sage,
+          title: 'Overdue paid today',
+          subtitle:
+              '$overduePaidCount overdue borrower'
+              '${overduePaidCount == 1 ? ' paid' : 's paid'} '
+              'something today — follow up on the rest',
+          count: '$overduePaidCount',
+          onTap: () {
+            _openRecords(
+              section: RecordsSection.repayments,
+              filter: RecordsFilter.overduePaid,
+            );
+          },
+        ),
+      );
+    }
+
     final overdueLoans = _loans.where(_loanNeedsAttention).length;
 
     if (overdueLoans > 0) {
@@ -1068,8 +1094,8 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           count: '$overdueLoans',
           onTap: () {
             _openRecords(
-              section: RecordsSection.applications,
-              filter: RecordsFilter.all,
+              section: RecordsSection.repayments,
+              filter: RecordsFilter.dueToday,
             );
           },
         ),

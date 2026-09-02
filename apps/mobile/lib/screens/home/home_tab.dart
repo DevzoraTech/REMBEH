@@ -97,9 +97,13 @@ class _HomeTabState extends State<HomeTab> {
       amountCollectedToday: base.amountCollectedToday,
       repaymentsTodayCount: base.repaymentsTodayCount,
       dueTodayCount: base.dueTodayCount,
+      dueTodayPaidCount: base.dueTodayPaidCount,
+      overduePaidCount: base.overduePaidCount,
       newApplicationsTodayCount: appsToday,
       pendingSyncCount: base.pendingSyncCount,
       clientsDueToday: base.clientsDueToday,
+      clientsDueTodayPaid: base.clientsDueTodayPaid,
+      clientsOverduePaid: base.clientsOverduePaid,
     );
   }
 
@@ -186,6 +190,8 @@ class _HomeTabState extends State<HomeTab> {
     final surname = surnameFromFullName(widget.session.userName);
     final greeting = '${timeOfDayGreeting(now)}, $surname';
     final duePreview = _summary.clientsDueToday.take(8).toList();
+    final paidPreview = _summary.clientsDueTodayPaid.take(8).toList();
+    final overduePaidPreview = _summary.clientsOverduePaid.take(8).toList();
 
     return SafeArea(
       child: RefreshIndicator(
@@ -327,7 +333,7 @@ class _HomeTabState extends State<HomeTab> {
                           child: _SummaryMetric(
                             icon: Icons.calendar_today,
                             iconColor: warmGold,
-                            label: 'Due Today',
+                            label: 'Still due',
                             value: '${_summary.dueTodayCount}',
                             valueColor: Colors.white,
                             onTap: () => widget.onOpenRecords(
@@ -419,69 +425,48 @@ class _HomeTabState extends State<HomeTab> {
               ),
               const SizedBox(height: 18),
             ],
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Clients Due Today (${_summary.dueTodayCount})',
-                    style: const TextStyle(
-                      color: midnightNavy,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => widget.onOpenRecords(
-                    section: RecordsSection.repayments,
-                    filter: RecordsFilter.dueToday,
-                  ),
-                  style: TextButton.styleFrom(
-                    foregroundColor: forestEmerald,
-                    padding: EdgeInsets.zero,
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: Text(
-                    'Show all ${_summary.dueTodayCount} ›',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            if (duePreview.isEmpty)
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border.all(color: line),
-                  borderRadius: rembehBorderRadius(rembehRadiusLg),
-                ),
-                child: const Text(
-                  'No clients due today.',
-                  style: TextStyle(color: slateText, fontSize: 13),
-                ),
-              )
-            else
-              ...duePreview.map(
-                (client) => Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: _DueClientCard(
-                    client: client,
-                    now: now,
-                    onTap: () => showClientDetailsSheet(
-                      context,
-                      id: client.id,
-                      phone: client.phone,
-                      fullName: client.fullName,
-                    ),
-                  ),
-                ),
+            _HomeClientSection(
+              title: 'Still due today (${_summary.dueTodayCount})',
+              showAllLabel: 'Show all ${_summary.dueTodayCount} ›',
+              emptyLabel: 'Everyone due today has paid something, or nobody is due.',
+              items: duePreview,
+              now: now,
+              onShowAll: () => widget.onOpenRecords(
+                section: RecordsSection.repayments,
+                filter: RecordsFilter.dueToday,
               ),
+              amountOf: (client) => client.amountDue,
+            ),
+            const SizedBox(height: 18),
+            _HomeClientSection(
+              title: 'Paid today (${_summary.dueTodayPaidCount})',
+              showAllLabel: 'Show all ${_summary.dueTodayPaidCount} ›',
+              emptyLabel: 'No due clients have paid yet today.',
+              items: paidPreview,
+              now: now,
+              onShowAll: () => widget.onOpenRecords(
+                section: RecordsSection.repayments,
+                filter: RecordsFilter.duePaidToday,
+              ),
+              amountOf: (client) =>
+                  client.paidTodayAmount > 0 ? client.paidTodayAmount : client.amountDue,
+            ),
+            if (_summary.overduePaidCount > 0) ...[
+              const SizedBox(height: 18),
+              _HomeClientSection(
+                title: 'Overdue paid (${_summary.overduePaidCount})',
+                showAllLabel: 'View all ${_summary.overduePaidCount} ›',
+                emptyLabel: 'No overdue clients have paid today.',
+                items: overduePaidPreview,
+                now: now,
+                onShowAll: () => widget.onOpenRecords(
+                  section: RecordsSection.repayments,
+                  filter: RecordsFilter.overduePaid,
+                ),
+                amountOf: (client) =>
+                    client.paidTodayAmount > 0 ? client.paidTodayAmount : client.amountDue,
+              ),
+            ],
           ],
         ),
       ),
@@ -1238,16 +1223,108 @@ class _FittedMoneyText extends StatelessWidget {
   }
 }
 
+class _HomeClientSection extends StatelessWidget {
+  const _HomeClientSection({
+    required this.title,
+    required this.showAllLabel,
+    required this.emptyLabel,
+    required this.items,
+    required this.now,
+    required this.onShowAll,
+    required this.amountOf,
+  });
+
+  final String title;
+  final String showAllLabel;
+  final String emptyLabel;
+  final List<DueClient> items;
+  final DateTime now;
+  final VoidCallback onShowAll;
+  final int Function(DueClient client) amountOf;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: midnightNavy,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: onShowAll,
+              style: TextButton.styleFrom(
+                foregroundColor: forestEmerald,
+                padding: EdgeInsets.zero,
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(
+                showAllLabel,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (items.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: line),
+              borderRadius: rembehBorderRadius(rembehRadiusLg),
+            ),
+            child: Text(
+              emptyLabel,
+              style: const TextStyle(color: slateText, fontSize: 13),
+            ),
+          )
+        else
+          ...items.map(
+            (client) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _DueClientCard(
+                client: client,
+                now: now,
+                highlightAmount: amountOf(client),
+                onTap: () => showClientDetailsSheet(
+                  context,
+                  id: client.id,
+                  phone: client.phone,
+                  fullName: client.fullName,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _DueClientCard extends StatelessWidget {
   const _DueClientCard({
     required this.client,
     required this.now,
     required this.onTap,
+    this.highlightAmount,
   });
 
   final DueClient client;
   final DateTime now;
   final VoidCallback onTap;
+  final int? highlightAmount;
 
   @override
   Widget build(BuildContext context) {
@@ -1379,7 +1456,7 @@ class _DueClientCard extends StatelessWidget {
                               Expanded(
                                 child: _ClientAmountLine(
                                   label: 'Due',
-                                  value: client.loanAmount,
+                                  value: highlightAmount ?? client.loanAmount,
                                   color: warmGold,
                                 ),
                               ),

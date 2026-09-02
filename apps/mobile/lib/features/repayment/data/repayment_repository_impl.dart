@@ -17,17 +17,29 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
     final summary = Map<String, dynamic>.from(
       payload['summary'] as Map? ?? const {},
     );
-    final clients = ((summary['clientsDueToday'] as List?) ?? const [])
+    final unpaid = ((summary['clientsDueToday'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((item) => _dueClient(Map<String, dynamic>.from(item)))
+        .toList();
+    final paid = ((summary['clientsDueTodayPaid'] as List?) ?? const [])
+        .whereType<Map>()
+        .map((item) => _dueClient(Map<String, dynamic>.from(item)))
+        .toList();
+    final overduePaid = ((summary['clientsOverduePaid'] as List?) ?? const [])
         .whereType<Map>()
         .map((item) => _dueClient(Map<String, dynamic>.from(item)))
         .toList();
     return HomeSummary(
       amountCollectedToday: _money(summary['amountCollectedToday']),
       repaymentsTodayCount: _int(summary['repaymentsTodayCount']),
-      dueTodayCount: _int(summary['dueTodayCount']),
+      dueTodayCount: _int(summary['dueTodayUnpaidCount'] ?? summary['dueTodayCount']),
+      dueTodayPaidCount: _int(summary['dueTodayPaidCount']),
+      overduePaidCount: _int(summary['overduePaidCount']),
       newApplicationsTodayCount: 0,
       pendingSyncCount: _int(summary['pendingSyncCount']),
-      clientsDueToday: clients,
+      clientsDueToday: unpaid,
+      clientsDueTodayPaid: paid,
+      clientsOverduePaid: overduePaid,
     );
   }
 
@@ -41,12 +53,23 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
   }
 
   @override
-  Future<List<DueClient>> listDueToday() async {
+  Future<DueTodayBundle> listDueToday() async {
     final payload = await _api.listDueToday();
-    return ((payload['clients'] as List?) ?? const [])
-        .whereType<Map>()
-        .map((item) => _dueClient(Map<String, dynamic>.from(item)))
-        .toList();
+    List<DueClient> parse(String key, [String? fallback]) {
+      final raw = (payload[key] as List?) ??
+          (fallback != null ? payload[fallback] as List? : null) ??
+          const [];
+      return raw
+          .whereType<Map>()
+          .map((item) => _dueClient(Map<String, dynamic>.from(item)))
+          .toList();
+    }
+
+    return DueTodayBundle(
+      unpaid: parse('unpaid', 'clients'),
+      paid: parse('paid'),
+      overduePaid: parse('overduePaid'),
+    );
   }
 
   @override
@@ -191,11 +214,29 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
       amountPaid: _money(json['amountPaid']),
       loanAmount: _money(json['loanAmount']),
       amountDue: _money(json['amountDue']),
+      paidTodayAmount: _money(json['paidTodayAmount']),
+      coverage: _coverage(json['coverage'] as String?),
       lastActivityAt:
           DateTime.tryParse(json['lastActivityAt'] as String? ?? '') ??
           DateTime.now(),
       synced: json['synced'] as bool? ?? true,
     );
+  }
+
+  DueDayCoverage _coverage(String? value) {
+    switch (value) {
+      case 'due_paid':
+        return DueDayCoverage.duePaid;
+      case 'overdue_paid':
+        return DueDayCoverage.overduePaid;
+      case 'overdue_unpaid':
+        return DueDayCoverage.overdueUnpaid;
+      case 'none':
+        return DueDayCoverage.none;
+      case 'due_unpaid':
+      default:
+        return DueDayCoverage.dueUnpaid;
+    }
   }
 
   FieldRepayment _repayment(Map<String, dynamic> json) {

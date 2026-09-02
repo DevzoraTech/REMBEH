@@ -162,9 +162,14 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
             NeedsAttentionSection(
               items: visibleAttentionItems,
               onViewAll: () {
+                final hasOverduePaid = widget.attentionItems.any(
+                  (item) => item.title == 'Overdue paid today',
+                );
                 widget.onOpenRecords(
-                  section: RecordsSection.applications,
-                  filter: RecordsFilter.all,
+                  section: RecordsSection.repayments,
+                  filter: hasOverduePaid
+                      ? RecordsFilter.overduePaid
+                      : RecordsFilter.dueToday,
                 );
               },
             ),

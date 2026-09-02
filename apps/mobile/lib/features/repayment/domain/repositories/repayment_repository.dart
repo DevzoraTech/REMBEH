@@ -7,7 +7,7 @@ abstract class RepaymentRepository {
 
   Future<List<FieldRepayment>> listRepayments({String? filter});
 
-  Future<List<DueClient>> listDueToday();
+  Future<DueTodayBundle> listDueToday();
 
   Future<List<ClientLoanDetail>> searchClients(String query);
 

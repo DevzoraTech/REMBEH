@@ -183,12 +183,53 @@ function addCalendarMonths(date: Date, months: number): Date {
   return target;
 }
 
-function isSameCalendarDay(left: Date, right: Date): boolean {
+export function isSameCalendarDay(left: Date, right: Date): boolean {
   return (
     left.getFullYear() === right.getFullYear() &&
     left.getMonth() === right.getMonth() &&
     left.getDate() === right.getDate()
   );
+}
+
+/**
+ * Operational collection tracking for a business day.
+ *
+ * Does not change instalment coverage, outstanding, or fines.
+ * Any payment on a due day counts that day's due as attended;
+ * overdue borrowers who pay anything are tracked separately.
+ */
+export type DueDayCoverage =
+  | 'due_paid'
+  | 'due_unpaid'
+  | 'overdue_paid'
+  | 'overdue_unpaid'
+  | 'none';
+
+export function classifyDueDayCoverage(input: {
+  morningExpectedToday: number;
+  morningNextDueIsToday: boolean;
+  morningNextDueLabel: string;
+  morningCarriedForward: number;
+  paidToday: number;
+}): DueDayCoverage {
+  const paidToday = Number(input.paidToday) || 0;
+  const overdue =
+    input.morningNextDueLabel === 'Overdue' ||
+    (Number(input.morningCarriedForward) || 0) > 0;
+  const dueToday =
+    input.morningNextDueIsToday ||
+    (Number(input.morningExpectedToday) || 0) > 0 ||
+    input.morningNextDueLabel === 'Due today';
+
+  if (overdue) {
+    return paidToday > 0.001 ? 'overdue_paid' : 'overdue_unpaid';
+  }
+
+  if (dueToday) {
+    return paidToday > 0.001 ? 'due_paid' : 'due_unpaid';
+  }
+
+  return 'none';
 }
 
 // =============================================================================

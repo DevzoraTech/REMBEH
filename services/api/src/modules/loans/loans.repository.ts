@@ -70,6 +70,7 @@ const loanListInclude = {
   repayments: {
     select: {
       amount: true,
+      paidAt: true,
     },
   },
 

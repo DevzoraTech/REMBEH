@@ -3,6 +3,8 @@ enum RecordsSection { repayments, applications }
 enum RecordsFilter {
   all,
   dueToday,
+  duePaidToday,
+  overduePaid,
   collectedToday,
   today,
   yesterday,
@@ -19,7 +21,11 @@ extension RecordsFilterX on RecordsFilter {
       case RecordsFilter.all:
         return 'All';
       case RecordsFilter.dueToday:
-        return 'Due Today';
+        return 'Still due';
+      case RecordsFilter.duePaidToday:
+        return 'Paid today';
+      case RecordsFilter.overduePaid:
+        return 'Overdue paid';
       case RecordsFilter.collectedToday:
         return 'Collected Today';
       case RecordsFilter.today:
@@ -44,6 +50,8 @@ extension RecordsFilterX on RecordsFilter {
 const repaymentFilters = <RecordsFilter>[
   RecordsFilter.all,
   RecordsFilter.dueToday,
+  RecordsFilter.duePaidToday,
+  RecordsFilter.overduePaid,
   RecordsFilter.collectedToday,
   RecordsFilter.yesterday,
   RecordsFilter.thisWeek,
@@ -70,18 +78,28 @@ class HomeSummary {
     required this.amountCollectedToday,
     required this.repaymentsTodayCount,
     required this.dueTodayCount,
+    this.dueTodayPaidCount = 0,
+    this.overduePaidCount = 0,
     required this.newApplicationsTodayCount,
     required this.pendingSyncCount,
     required this.clientsDueToday,
+    this.clientsDueTodayPaid = const [],
+    this.clientsOverduePaid = const [],
   });
 
   final int amountCollectedToday;
   final int repaymentsTodayCount;
   final int dueTodayCount;
+  final int dueTodayPaidCount;
+  final int overduePaidCount;
   final int newApplicationsTodayCount;
   final int pendingSyncCount;
   final List<DueClient> clientsDueToday;
+  final List<DueClient> clientsDueTodayPaid;
+  final List<DueClient> clientsOverduePaid;
 }
+
+enum DueDayCoverage { duePaid, dueUnpaid, overduePaid, overdueUnpaid, none }
 
 class DueClient {
   const DueClient({
@@ -91,6 +109,8 @@ class DueClient {
     required this.amountPaid,
     required this.loanAmount,
     required this.amountDue,
+    this.paidTodayAmount = 0,
+    this.coverage = DueDayCoverage.dueUnpaid,
     required this.lastActivityAt,
     required this.synced,
   });
@@ -107,10 +127,24 @@ class DueClient {
 
   /// Still expected today (used for due counts / search).
   final int amountDue;
+  final int paidTodayAmount;
+  final DueDayCoverage coverage;
   final DateTime lastActivityAt;
   final bool synced;
 
   String get initials => initialsFromName(fullName);
+}
+
+class DueTodayBundle {
+  const DueTodayBundle({
+    this.unpaid = const [],
+    this.paid = const [],
+    this.overduePaid = const [],
+  });
+
+  final List<DueClient> unpaid;
+  final List<DueClient> paid;
+  final List<DueClient> overduePaid;
 }
 
 class FieldRepayment {

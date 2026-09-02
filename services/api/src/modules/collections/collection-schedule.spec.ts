@@ -6,6 +6,7 @@ import {
 
 import {
   allocateRepayment,
+  classifyDueDayCoverage,
   computeCollectionSchedule,
 } from './collection-schedule';
 
@@ -454,5 +455,104 @@ describe('collection-schedule', () => {
     expect(schedule.nextDueLabel).toBe(
       'Due in 3 days',
     );
+  });
+
+  it('treats a partial same-day payment as covering that day’s due for tracking', () => {
+    const start = new Date(2026, 7, 27);
+    const morning = computeCollectionSchedule({
+      principalAmount: 300_000,
+      interestRatePercent: 0,
+      durationDays: 3,
+      repaymentFrequency: 'DAILY',
+      processingFee: 0,
+      balance: 300_000,
+      recordedPaidAmount: 0,
+      startDate: start,
+      asOf: start,
+    });
+    const afterPartial = computeCollectionSchedule({
+      principalAmount: 300_000,
+      interestRatePercent: 0,
+      durationDays: 3,
+      repaymentFrequency: 'DAILY',
+      processingFee: 0,
+      balance: 280_000,
+      recordedPaidAmount: 20_000,
+      startDate: start,
+      asOf: start,
+    });
+
+    expect(morning.nextDueLabel).toBe('Due today');
+    expect(afterPartial.expectedToday).toBe(80_000);
+    expect(afterPartial.nextDueIsToday).toBe(true);
+    expect(
+      classifyDueDayCoverage({
+        morningExpectedToday: morning.expectedToday,
+        morningNextDueIsToday: morning.nextDueIsToday,
+        morningNextDueLabel: morning.nextDueLabel,
+        morningCarriedForward: morning.carriedForward,
+        paidToday: 20_000,
+      }),
+    ).toBe('due_paid');
+  });
+
+  it('keeps unpaid due-today borrowers separate from paid ones', () => {
+    const start = new Date(2026, 7, 27);
+    const morning = computeCollectionSchedule({
+      principalAmount: 300_000,
+      interestRatePercent: 0,
+      durationDays: 3,
+      repaymentFrequency: 'DAILY',
+      processingFee: 0,
+      balance: 300_000,
+      recordedPaidAmount: 0,
+      startDate: start,
+      asOf: start,
+    });
+
+    expect(
+      classifyDueDayCoverage({
+        morningExpectedToday: morning.expectedToday,
+        morningNextDueIsToday: morning.nextDueIsToday,
+        morningNextDueLabel: morning.nextDueLabel,
+        morningCarriedForward: morning.carriedForward,
+        paidToday: 0,
+      }),
+    ).toBe('due_unpaid');
+  });
+
+  it('tracks any payment against overdue days separately from due-today paid', () => {
+    const start = new Date(2026, 7, 27);
+    const morning = computeCollectionSchedule({
+      principalAmount: 300_000,
+      interestRatePercent: 0,
+      durationDays: 3,
+      repaymentFrequency: 'DAILY',
+      processingFee: 0,
+      balance: 300_000,
+      recordedPaidAmount: 0,
+      startDate: start,
+      asOf: new Date(2026, 7, 28),
+    });
+
+    expect(morning.nextDueLabel).toBe('Overdue');
+    expect(
+      classifyDueDayCoverage({
+        morningExpectedToday: morning.expectedToday,
+        morningNextDueIsToday: morning.nextDueIsToday,
+        morningNextDueLabel: morning.nextDueLabel,
+        morningCarriedForward: morning.carriedForward,
+        paidToday: 10_000,
+      }),
+    ).toBe('overdue_paid');
+    expect(
+      classifyDueDayCoverage({
+        morningExpectedToday: morning.expectedToday,
+        morningNextDueIsToday: morning.nextDueIsToday,
+        morningNextDueLabel: morning.nextDueLabel,
+        morningCarriedForward: morning.carriedForward,
+        paidToday: 0,
+      }),
+    ).toBe('overdue_unpaid');
   });
 });

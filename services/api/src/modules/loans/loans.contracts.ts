@@ -150,6 +150,20 @@ export type LoanListItemContract = {
    */
   nextDueIsToday: boolean;
 
+  /** Amount recorded against this loan on the current business day. */
+  paidTodayAmount: number;
+
+  /**
+   * Operational follow-up bucket for today.
+   * Does not change outstanding or instalment coverage.
+   */
+  dueDayCoverage:
+    | 'due_paid'
+    | 'due_unpaid'
+    | 'overdue_paid'
+    | 'overdue_unpaid'
+    | 'none';
+
   /**
    * Next contractual repayment date in ISO format.
    *
