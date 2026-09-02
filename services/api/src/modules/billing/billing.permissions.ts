@@ -10,7 +10,25 @@ export const PRO_3M_PLAN_CODE = 'PRO_3M';
 export const PRO_6M_PLAN_CODE = 'PRO_6M';
 
 export const TRIAL_DAYS = 14;
+/** Original month-long trial kept for Cashboss / Buremba only. */
+export const MONTH_TRIAL_DAYS = 30;
 export const GRACE_DAYS = 2;
+
+export function isLegacyMonthTrialWorkspace(input: {
+  tenantName?: string | null;
+  branchName?: string | null;
+}): boolean {
+  const tenant = (input.tenantName ?? '').trim();
+  const branch = (input.branchName ?? '').trim();
+  return /cashboss/i.test(tenant) && /buremba/i.test(branch);
+}
+
+export function trialDaysForWorkspace(input: {
+  tenantName?: string | null;
+  branchName?: string | null;
+}): number {
+  return isLegacyMonthTrialWorkspace(input) ? MONTH_TRIAL_DAYS : TRIAL_DAYS;
+}
 
 export type ProPlanDefinition = {
   code: string;

@@ -45,6 +45,7 @@ import {
   defaultProPlanCode,
   monthsForInterval,
   proPlanByCode,
+  trialDaysForWorkspace,
 } from './billing.permissions';
 import { PesapalClient } from './pesapal.client';
 import { ConfigService } from '@nestjs/config';
@@ -595,7 +596,11 @@ export class BillingService implements OnModuleInit {
 
     const branch = await this.prisma.branch.findFirst({
       where: { id: input.branchId, tenantId: input.tenantId },
-      select: { createdAt: true },
+      select: {
+        createdAt: true,
+        name: true,
+        tenant: { select: { name: true } },
+      },
     });
     if (!branch) {
       throw new NotFoundException('Branch not found.');
@@ -1747,6 +1752,10 @@ export class BillingService implements OnModuleInit {
     const plan = await this.ensureProPlan();
     const now = new Date();
 
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { name: true },
+    });
     const branches = await this.prisma.branch.findMany({
       where: { tenantId },
       include: { subscription: true },
@@ -1761,7 +1770,11 @@ export class BillingService implements OnModuleInit {
         });
       }
 
-      const trial = this.branchTrialWindow(branch);
+      const trial = this.branchTrialWindow({
+        createdAt: branch.createdAt,
+        name: branch.name,
+        tenant: { name: tenant?.name ?? '' },
+      });
       const trialActive = trial.endsAt.getTime() > now.getTime();
 
       if (trialActive) {
@@ -2060,9 +2073,17 @@ export class BillingService implements OnModuleInit {
     return Math.max(0, Math.ceil((value.getTime() - now.getTime()) / DAY_MS));
   }
 
-  private branchTrialWindow(branch: { createdAt: Date }) {
+  private branchTrialWindow(branch: {
+    createdAt: Date;
+    name?: string | null;
+    tenant?: { name?: string | null } | null;
+  }) {
     const startsAt = branch.createdAt;
-    const endsAt = new Date(startsAt.getTime() + TRIAL_DAYS * DAY_MS);
+    const days = trialDaysForWorkspace({
+      tenantName: branch.tenant?.name,
+      branchName: branch.name,
+    });
+    const endsAt = new Date(startsAt.getTime() + days * DAY_MS);
 
     return { startsAt, endsAt };
   }
