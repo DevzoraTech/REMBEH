@@ -25,6 +25,7 @@ import '../records/records_tab.dart';
 import '../repayment_corrections_screen.dart';
 import '../search/search_tab.dart';
 import '../voided_clients_screen.dart';
+import 'staff_screen.dart';
 
 class OwnerWorkspaceScreen extends StatefulWidget {
   const OwnerWorkspaceScreen({super.key, required this.session});
@@ -167,11 +168,25 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
     return branchId == selected;
   }
 
-  List<Map<String, dynamic>> get _scopedCustomers =>
-      _customers.where((row) => _matchesBranch(row['branchId'] as String?)).toList();
+  bool _isPresent(dynamic value) =>
+      value is String && value.trim().isNotEmpty;
 
-  List<Map<String, dynamic>> get _scopedLoans =>
-      _loans.where((row) => _matchesBranch(row['branchId'] as String?)).toList();
+  List<Map<String, dynamic>> get _scopedCustomers => _customers
+      .where(
+        (row) =>
+            _matchesBranch(row['branchId'] as String?) &&
+            !_isPresent(row['voidedAt']),
+      )
+      .toList();
+
+  List<Map<String, dynamic>> get _scopedLoans => _loans
+      .where(
+        (row) =>
+            _matchesBranch(row['branchId'] as String?) &&
+            !_isPresent(row['customerVoidedAt']) &&
+            !_isPresent(row['voidedAt']),
+      )
+      .toList();
 
   List<FieldRepayment> get _scopedRepayments => _repayStore.repayments
       .where((item) => _matchesBranch(item.branchId))
@@ -364,6 +379,15 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
                                 const SnackBar(
                                   content: Text(
                                     'Contact ANTIKRA support from the web dashboard.',
+                                  ),
+                                ),
+                              );
+                            },
+                            onStaffTap: () {
+                              Navigator.of(context).push<void>(
+                                MaterialPageRoute(
+                                  builder: (_) => OwnerStaffScreen(
+                                    session: widget.session,
                                   ),
                                 ),
                               );

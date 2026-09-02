@@ -42,6 +42,7 @@ import {
   titleCase,
 } from "../../app/owner/owner-common";
 import { OwnerHeader } from "../../app/owner/owner-header";
+import { useOwnerBranchScope } from "../../app/owner/owner-branch-scope";
 import { Money } from "../app/money";
 import { TableSearchField } from "../app/table-search-field";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
@@ -147,6 +148,7 @@ function useCollectionsSession(mode: CollectionsMode): CollectionsSession {
 export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
   const state = useCollectionsSession(mode);
   const isManager = mode === "manager";
+  const { matchesBranch } = useOwnerBranchScope();
   const [repayments, setRepayments] = useState<OwnerRepayment[]>([]);
   const [filter, setFilter] = useState<PaymentFilter>("all");
   const [methodFilter, setMethodFilter] = useState<MethodFilter>("all");
@@ -369,10 +371,11 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
 
   const scopedPayments = useMemo(() => {
     return repayments.filter((payment) => {
+      if (!isManager && !matchesBranch(payment.branchId)) return false;
       const method = payment.method.toUpperCase().replace(/\s+/g, "_");
       return methodFilter === "all" || method === methodFilter;
     });
-  }, [methodFilter, repayments]);
+  }, [isManager, matchesBranch, methodFilter, repayments]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

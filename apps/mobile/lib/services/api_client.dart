@@ -858,6 +858,26 @@ class ApiClient {
     return _getJson(session: session, path: '/branches');
   }
 
+  Future<Map<String, dynamic>> listStaffTransfers(RembehSession session) {
+    return _getJson(session: session, path: '/branches/staff-transfers');
+  }
+
+  Future<Map<String, dynamic>> transferStaff({
+    required RembehSession session,
+    required String userId,
+    required String targetBranchId,
+    String? reason,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/branches/staff/$userId/transfer',
+      body: {
+        'targetBranchId': targetBranchId,
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      },
+    );
+  }
+
   Future<Map<String, dynamic>> updateBranchSettings({
     required RembehSession session,
     required String branchId,

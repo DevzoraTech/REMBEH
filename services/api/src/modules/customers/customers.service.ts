@@ -216,6 +216,7 @@ export class CustomersService {
     const updated = await this.customersRepository.restoreCustomer({
       tenantId: user.tenantId,
       customerId: customer.id,
+      actorUserId: user.userId,
     });
 
     return { customer: this.toCustomerContract(updated) };

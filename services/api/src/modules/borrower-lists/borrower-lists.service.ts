@@ -276,6 +276,7 @@ export class BorrowerListsService {
       phone: entry.phone,
       reason: entry.reason,
       customerId: entry.customerId,
+      branchId: entry.branchId,
       createdAt: entry.createdAt.toISOString(),
       updatedAt: entry.updatedAt.toISOString(),
     };

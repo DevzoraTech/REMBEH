@@ -96,6 +96,7 @@ export type OwnerLoan = {
   currency: string;
   officerName: string | null;
   branchId: string;
+  customerVoidedAt?: string | null;
   paymentStartDate: string | null;
   durationDays: number | null;
   dueDate: string | null;
@@ -180,6 +181,8 @@ export type OwnerRepayment = {
   recordedAt: string;
   method: string;
   recordedByName: string;
+  branchId?: string;
+  branchName?: string | null;
   sms?: {
     status: "not_sent" | "sending" | "sent" | "failed";
     messageId: string | null;

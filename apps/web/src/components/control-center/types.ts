@@ -251,6 +251,13 @@ export type ControlCenterDashboard = {
     adminName: string;
     createdAt: string;
   }>;
+  tenantActivity?: Array<{
+    id: string;
+    action: string;
+    organizationName: string;
+    actorName: string;
+    createdAt: string;
+  }>;
 };
 
 export type ControlCenterPaymentStatus =

@@ -87,12 +87,9 @@ export function reportStatusLabel(status: string) {
 
 export function activeReportFilterChips(
   filters: ReportsAdvancedFilters,
-  mode: "owner" | "manager",
+  _mode: "owner" | "manager",
 ) {
   const chips: Array<{ key: string; label: string }> = [];
-  if (mode === "owner" && filters.branchLabel) {
-    chips.push({ key: "branch", label: filters.branchLabel });
-  }
   if (filters.status !== "all") {
     chips.push({
       key: "status",
@@ -191,7 +188,6 @@ function FilterPill({
 
 export function ReportsFiltersControl({
   mode,
-  branches,
   applied,
   onApply,
 }: {
@@ -341,43 +337,7 @@ export function ReportsFiltersControl({
                 onMouseDown={(event) => event.stopPropagation()}
                 onClick={(event) => event.stopPropagation()}
               >
-                {mode === "owner" ? (
-                  <section className="space-y-2">
-                    <h4 className="text-[12px] font-bold text-[#0b1220]">
-                      Branch
-                    </h4>
-                    <select
-                      value={draft.branchId ?? "all"}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        if (value === "all") {
-                          setDraft((current) => ({
-                            ...current,
-                            branchId: null,
-                            branchLabel: null,
-                          }));
-                          return;
-                        }
-                        const branch = branches.find((row) => row.id === value);
-                        setDraft((current) => ({
-                          ...current,
-                          branchId: value,
-                          branchLabel: branch?.name ?? value,
-                        }));
-                      }}
-                      className="h-10 w-full rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-[#0b1220] outline-none"
-                    >
-                      <option value="all">All branches</option>
-                      {branches.map((branch) => (
-                        <option key={branch.id} value={branch.id}>
-                          {branch.name}
-                        </option>
-                      ))}
-                    </select>
-                  </section>
-                ) : null}
-
-                <section className={`space-y-2 ${mode === "owner" ? "mt-4" : ""}`}>
+                <section className="space-y-2">
                   <h4 className="text-[12px] font-bold text-[#0b1220]">
                     Status
                   </h4>

@@ -324,11 +324,33 @@ export class CustomersRepository {
         });
       }
 
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          action: 'customer.void',
+          entityType: 'customer',
+          entityId: customer.id,
+          oldValue: {
+            voidedAt: null,
+          },
+          newValue: {
+            voidedAt: customer.voidedAt,
+            voidDisposition: customer.voidDisposition,
+            voidReason: customer.voidReason,
+          },
+        },
+      });
+
       return customer;
     });
   }
 
-  restoreCustomer(input: { tenantId: string; customerId: string }) {
+  restoreCustomer(input: {
+    tenantId: string;
+    customerId: string;
+    actorUserId: string;
+  }) {
     return this.prisma.$transaction(async (tx) => {
       const customer = await tx.customer.update({
         where: { id: input.customerId },
@@ -344,6 +366,19 @@ export class CustomersRepository {
         where: {
           tenantId: input.tenantId,
           customerId: input.customerId,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          action: 'customer.restore',
+          entityType: 'customer',
+          entityId: customer.id,
+          newValue: {
+            voidedAt: null,
+          },
         },
       });
 

@@ -18,6 +18,7 @@ import {
   type ReactNode,
 } from "react";
 import { OwnerHeader } from "../../app/owner/owner-header";
+import { useOwnerBranchScope } from "../../app/owner/owner-branch-scope";
 import { formatMoneyAmount, formatNumber } from "../../app/owner/owner-common";
 import { AppShell } from "../app/app-shell";
 import { Money } from "../app/money";
@@ -87,9 +88,6 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
   const [workspace, setWorkspace] = useState<RembehWorkspace | null>(null);
   const [user, setUser] = useState<RembehUser | null>(null);
   const [branch, setBranch] = useState<RembehBranch | null>(null);
-  const [branches, setBranches] = useState<Array<{ id: string; name: string }>>(
-    [],
-  );
   const [branchId, setBranchId] = useState<string>("");
   const [shortages, setShortages] = useState<CashShortageRow[]>([]);
   const [summary, setSummary] = useState({
@@ -118,6 +116,12 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
     session?.permissions.includes("operation.float.return"),
   );
   const isOwner = mode === "owner";
+  const { selectedBranchId } = useOwnerBranchScope();
+
+  useEffect(() => {
+    if (!isOwner) return;
+    setBranchId(selectedBranchId ?? "");
+  }, [isOwner, selectedBranchId]);
 
   useEffect(() => {
     const boot = window.setTimeout(() => {
@@ -148,27 +152,6 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
     }, 0);
     return () => window.clearTimeout(boot);
   }, [isOwner, router]);
-
-  const loadBranches = useCallback(
-    async (active: RembehSession) => {
-      if (!isOwner) return;
-      const response = await fetch(`${apiBaseUrl}/branches`, {
-        headers: {
-          Authorization: `${active.tokenType} ${active.accessToken}`,
-        },
-      });
-      const payload = await readApiJson<{
-        branches?: Array<{ id: string; name: string }>;
-        message?: string | string[];
-      }>(response);
-      if (!response.ok) {
-        throw new Error(formatApiError(payload.message));
-      }
-      const next = payload.branches ?? [];
-      setBranches(next);
-    },
-    [isOwner],
-  );
 
   const load = useCallback(
     async (active: RembehSession, selectedBranchId: string) => {
@@ -222,7 +205,6 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
     if (!session) return;
     void (async () => {
       try {
-        if (isOwner) await loadBranches(session);
         await load(session, isOwner ? branchId : (branch?.id ?? branchId));
       } catch (caught) {
         setError(
@@ -233,7 +215,7 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
         setLoading(false);
       }
     })();
-  }, [session, isOwner, branchId, branch?.id, load, loadBranches]);
+  }, [session, isOwner, branchId, branch?.id, load]);
 
   useEffect(() => {
     if (!session || !selectedId) {
@@ -462,23 +444,6 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
                 <option value="cleared">Cleared</option>
                 <option value="all">All</option>
               </select>
-              {isOwner ? (
-                <select
-                  value={branchId}
-                  onChange={(event) => {
-                    setBranchId(event.target.value);
-                    setPage(1);
-                  }}
-                  className="h-9 w-full rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold outline-none sm:w-[180px]"
-                >
-                  <option value="">All branches</option>
-                  {branches.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              ) : null}
             </div>
           </div>
 

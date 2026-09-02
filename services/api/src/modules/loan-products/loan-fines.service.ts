@@ -91,6 +91,7 @@ export class LoanFinesService {
         tenantId,
         status: { in: ACTIVE_FOR_FINES },
         balance: { gt: 0 },
+        customer: { voidedAt: null },
       },
       include: {
         customer: true,

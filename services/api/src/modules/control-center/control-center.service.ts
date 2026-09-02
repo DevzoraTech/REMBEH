@@ -15,6 +15,7 @@ import {
   ControlCenterMessageStatus,
   BranchSubscriptionStatus,
   ControlledFeatureScope,
+  LoanStatus,
   Prisma,
   SmsBundleStatus,
   SmsPurchaseStatus,
@@ -445,7 +446,11 @@ export class ControlCenterService implements OnModuleInit {
 
       this.prisma.user.count(),
 
-      this.prisma.customer.count(),
+      this.prisma.customer.count({
+        where: {
+          voidedAt: null,
+        },
+      }),
 
       /*
        * A loan belongs in the operational portfolio once it has
@@ -1682,6 +1687,118 @@ export class ControlCenterService implements OnModuleInit {
       }),
     ]);
 
+    const monthStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
+    );
+    const lastMonthStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1),
+    );
+    const dayStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const [
+      dauSessions,
+      mauSessions,
+      mobileSessions,
+      repayments30d,
+      outstandingPortfolio,
+      activeBorrowers,
+      voidedBorrowers,
+      revenueThisMonth,
+      revenueLastMonth,
+      newOrgsThisMonth,
+      newBorrowersThisMonth,
+      applicationsThisMonth,
+      tenantActivity,
+    ] = await Promise.all([
+      this.prisma.authSession.findMany({
+        where: {
+          lastSeenAt: { gte: dayStart },
+          revokedAt: null,
+        },
+        distinct: ['userId'],
+        select: { userId: true },
+      }),
+      this.prisma.authSession.findMany({
+        where: {
+          lastSeenAt: { gte: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000) },
+          revokedAt: null,
+        },
+        distinct: ['userId'],
+        select: { userId: true },
+      }),
+      this.prisma.authSession.count({
+        where: {
+          lastSeenAt: { gte: thirtyDaysAgo },
+          revokedAt: null,
+          OR: [
+            { platform: { in: ['android', 'ios', 'ANDROID', 'IOS'] } },
+            { deviceType: { contains: 'mobile', mode: 'insensitive' } },
+            { userAgent: { contains: 'Dart', mode: 'insensitive' } },
+          ],
+        },
+      }),
+      this.prisma.repayment.aggregate({
+        where: { paidAt: { gte: thirtyDaysAgo } },
+        _sum: { amount: true },
+        _count: { _all: true },
+      }),
+      this.prisma.loan.aggregate({
+        where: {
+          customer: { voidedAt: null },
+          status: {
+            in: [
+              LoanStatus.DISBURSED,
+              LoanStatus.CURRENT,
+              LoanStatus.IN_ARREARS,
+              LoanStatus.RESTRUCTURED,
+              LoanStatus.PARTIALLY_DISBURSED,
+            ],
+          },
+        },
+        _sum: { balance: true },
+      }),
+      this.prisma.customer.count({
+        where: { voidedAt: null },
+      }),
+      this.prisma.customer.count({
+        where: { voidedAt: { not: null } },
+      }),
+      this.prisma.subscriptionPayment.aggregate({
+        where: {
+          status: 'COMPLETED',
+          paidAt: { gte: monthStart },
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.subscriptionPayment.aggregate({
+        where: {
+          status: 'COMPLETED',
+          paidAt: { gte: lastMonthStart, lt: monthStart },
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.tenant.count({
+        where: { createdAt: { gte: monthStart } },
+      }),
+      this.prisma.customer.count({
+        where: { createdAt: { gte: monthStart }, voidedAt: null },
+      }),
+      this.prisma.loanApplication.count({
+        where: { createdAt: { gte: monthStart } },
+      }),
+      this.prisma.auditLog.findMany({
+        take: 12,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          actor: { select: { displayName: true } },
+          tenant: { select: { name: true } },
+        },
+      }),
+    ]);
+
     return {
       stats: {
         totalClients,
@@ -1701,6 +1818,20 @@ export class ControlCenterService implements OnModuleInit {
         activePricingOverrides: activeOverrides,
 
         failedCommunications,
+
+        dailyActiveUsers: dauSessions.length,
+        monthlyActiveUsers: mauSessions.length,
+        mobileSessions30d: mobileSessions,
+        repaymentsCollected30d: this.decimal(repayments30d._sum.amount),
+        repaymentCount30d: repayments30d._count._all,
+        outstandingPortfolio: this.decimal(outstandingPortfolio._sum.balance),
+        activeBorrowers,
+        voidedBorrowers,
+        revenueThisMonth: this.decimal(revenueThisMonth._sum.amount),
+        revenueLastMonth: this.decimal(revenueLastMonth._sum.amount),
+        newOrganizationsThisMonth: newOrgsThisMonth,
+        newBorrowersThisMonth,
+        applicationsThisMonth,
       },
 
       recentPayments: recentPayments.map((payment) => ({
@@ -1734,6 +1865,14 @@ export class ControlCenterService implements OnModuleInit {
 
         adminName: row.admin?.displayName || row.admin?.email || 'System',
 
+        createdAt: row.createdAt.toISOString(),
+      })),
+
+      tenantActivity: tenantActivity.map((row) => ({
+        id: row.id,
+        action: row.action,
+        organizationName: row.tenant.name,
+        actorName: row.actor?.displayName ?? 'System',
         createdAt: row.createdAt.toISOString(),
       })),
     };

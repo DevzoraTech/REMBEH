@@ -52,6 +52,7 @@ import {
   previousDateLabel,
   sumBy,
 } from "../../app/owner/owner-common";
+import { useOwnerBranchScope } from "../../app/owner/owner-branch-scope";
 import {
   RembehBranch,
   RembehSession,
@@ -225,6 +226,11 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
   const state = useOverviewSession(mode);
   const links = OVERVIEW_LINKS[mode];
   const isManager = mode === "manager";
+  const {
+    selectedBranchId,
+    selectedBranchName,
+    matchesBranch,
+  } = useOwnerBranchScope();
   const [branches, setBranches] = useState<OwnerBranch[]>([]);
   const [loans, setLoans] = useState<OwnerLoan[]>([]);
   const [borrowers, setBorrowers] = useState<OwnerBorrower[]>([]);
@@ -309,17 +315,57 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
     return () => window.clearTimeout(boot);
   }, [loadData, state.ready, state.session]);
 
+  useEffect(() => {
+    if (isManager) return;
+    setActivityBranchId(selectedBranchId ?? "all");
+  }, [isManager, selectedBranchId]);
+
+  const scopedLoans = useMemo(
+    () =>
+      loans.filter(
+        (loan) =>
+          matchesBranch(loan.branchId) && !loan.customerVoidedAt,
+      ),
+    [loans, matchesBranch],
+  );
+  const scopedBorrowers = useMemo(
+    () =>
+      borrowers.filter(
+        (borrower) => matchesBranch(borrower.branchId) && !borrower.voidedAt,
+      ),
+    [borrowers, matchesBranch],
+  );
+  const scopedRepayments = useMemo(
+    () => repayments.filter((item) => matchesBranch(item.branchId)),
+    [matchesBranch, repayments],
+  );
+  const scopedReports = useMemo(
+    () => reports.filter((report) => matchesBranch(report.branchId)),
+    [matchesBranch, reports],
+  );
+  const scopedDailyStatuses = useMemo(
+    () => dailyStatuses.filter((row) => matchesBranch(row.branchId)),
+    [dailyStatuses, matchesBranch],
+  );
+  const scopedBranches = useMemo(
+    () =>
+      selectedBranchId
+        ? branches.filter((branch) => branch.id === selectedBranchId)
+        : branches,
+    [branches, selectedBranchId],
+  );
+
   const activeLoans = useMemo(
-    () => loans.filter((loan) => ACTIVE_STATUSES.has(loan.status)),
-    [loans],
+    () => scopedLoans.filter((loan) => ACTIVE_STATUSES.has(loan.status)),
+    [scopedLoans],
   );
   const pendingReports = useMemo(
-    () => reports.filter((report) => report.status === "SENT_TO_OWNER"),
-    [reports],
+    () => scopedReports.filter((report) => report.status === "SENT_TO_OWNER"),
+    [scopedReports],
   );
   const reportsThisMonth = useMemo(
-    () => reports.filter((report) => isSameMonth(report.operationDate, new Date())),
-    [reports],
+    () => scopedReports.filter((report) => isSameMonth(report.operationDate, new Date())),
+    [scopedReports],
   );
   const receivedReportsThisMonth = useMemo(
     () =>
@@ -330,30 +376,30 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
     [reportsThisMonth],
   );
   const todayRepayments = useMemo(
-    () => repayments.filter((repayment) => isToday(repayment.recordedAt)),
-    [repayments],
+    () => scopedRepayments.filter((repayment) => isToday(repayment.recordedAt)),
+    [scopedRepayments],
   );
   const yesterdayRepayments = useMemo(
-    () => repayments.filter((repayment) => isYesterday(repayment.recordedAt)),
-    [repayments],
+    () => scopedRepayments.filter((repayment) => isYesterday(repayment.recordedAt)),
+    [scopedRepayments],
   );
   const todayLoans = useMemo(
     () =>
-      loans.filter((loan) => isToday(loan.disbursedAt ?? loan.createdAt)),
-    [loans],
+      scopedLoans.filter((loan) => isToday(loan.disbursedAt ?? loan.createdAt)),
+    [scopedLoans],
   );
   const todayBorrowers = useMemo(
-    () => borrowers.filter((borrower) => isToday(borrower.createdAt)),
-    [borrowers],
+    () => scopedBorrowers.filter((borrower) => isToday(borrower.createdAt)),
+    [scopedBorrowers],
   );
   const todaySettledLoans = useMemo(
     () =>
-      loans.filter(
+      scopedLoans.filter(
         (loan) => loan.status === "CLOSED" && isToday(loan.updatedAt),
       ),
-    [loans],
+    [scopedLoans],
   );
-  const totalLoanBalance = sumBy(loans, (loan) => loan.balance);
+  const totalLoanBalance = sumBy(scopedLoans, (loan) => loan.balance);
   const collectedToday = sumBy(todayRepayments, (item) => item.amount);
   const collectedYesterday = sumBy(yesterdayRepayments, (item) => item.amount);
   const principalIssuedToday = sumBy(todayLoans, (loan) => loan.principal);
@@ -370,8 +416,8 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
     collectedYesterday,
   );
   const loanById = useMemo(
-    () => new Map(loans.map((loan) => [loan.id, loan])),
-    [loans],
+    () => new Map(scopedLoans.map((loan) => [loan.id, loan])),
+    [scopedLoans],
   );
   const todayActivity = useMemo(() => {
     const matchesBranch = (branchId: string | null | undefined) =>
@@ -398,40 +444,40 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
     todaySettledLoans,
   ]);
   const branchPerformance = useMemo(
-    () => buildBranchPerformance(branches, loans, todayRepayments, loanById),
-    [branches, loans, todayRepayments, loanById],
+    () => buildBranchPerformance(scopedBranches, scopedLoans, todayRepayments, loanById),
+    [scopedBranches, scopedLoans, todayRepayments, loanById],
   );
   const branchAnalytics = useMemo(
     () =>
       buildBranchCollectionPerformance({
-        branches,
-        loans,
-        repayments,
-        dailyStatuses,
+        branches: scopedBranches,
+        loans: scopedLoans,
+        repayments: scopedRepayments,
+        dailyStatuses: scopedDailyStatuses,
       }),
-    [branches, dailyStatuses, loans, repayments],
+    [scopedBranches, scopedDailyStatuses, scopedLoans, scopedRepayments],
   );
   const series = useMemo(
-    () => buildPortfolioSeries(loans, repayments, performancePeriod),
-    [loans, performancePeriod, repayments],
+    () => buildPortfolioSeries(scopedLoans, scopedRepayments, performancePeriod),
+    [performancePeriod, scopedLoans, scopedRepayments],
   );
   const activities = useMemo(
-    () => buildActivities(todayRepayments, loans, reports, currency),
-    [currency, loans, reports, todayRepayments],
+    () => buildActivities(todayRepayments, scopedLoans, scopedReports, currency),
+    [currency, scopedLoans, scopedReports, todayRepayments],
   );
   const alerts = useMemo(
     () =>
       buildAlerts({
-        branches,
+        branches: scopedBranches,
         loans: activeLoans,
-        reports,
+        reports: scopedReports,
         pendingReports,
         currency,
         branchAnalytics,
         links,
         mode,
       }),
-    [activeLoans, branchAnalytics, branches, currency, links, mode, pendingReports, reports],
+    [activeLoans, branchAnalytics, currency, links, mode, pendingReports, scopedBranches, scopedReports],
   );
   const alertsHref = alerts.some((alert) => alert.id === "overdue-paid-today")
     ? `${links.loans}?coverage=overdue_paid`
@@ -444,7 +490,11 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
 
   if (!state.ready || !state.session) return <AppBootSkeleton />;
 
-  const branchScopeHint = isManager ? "This branch" : "Across all branches";
+  const branchScopeHint = isManager
+    ? "This branch"
+    : selectedBranchId
+      ? selectedBranchName
+      : "Across all branches";
   const shellBranch = isManager
     ? state.branch ??
       (branches[0]
@@ -509,7 +559,7 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
           <TopStatCard
             icon={<Users className="size-5" />}
             label="Borrowers"
-            value={formatNumber(borrowers.length)}
+            value={formatNumber(scopedBorrowers.length)}
             hint={`${formatNumber(todayBorrowers.length)} new today`}
             tone="violet"
           />
@@ -592,9 +642,11 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
                 collections={todayActivity.collections.length}
                 newBorrowers={todayActivity.newBorrowers.length}
                 fullySettled={todayActivity.fullySettled.length}
-                branches={branches}
+                branches={scopedBranches}
                 branchId={activityBranchId}
                 onBranchChange={setActivityBranchId}
+                lockBranch
+                collectionsLabel="Repayments"
               />
             </section>
 
@@ -894,7 +946,8 @@ function TodayActivityCard({
         </h2>
         {lockBranch ? (
           <span className="inline-flex h-8 max-w-[160px] items-center truncate rounded-xl border border-[#e6ebf0] bg-white px-3 text-[11px] font-medium text-slate-600 shadow-[0_8px_16px_rgba(15,23,42,0.04)]">
-            {lockedBranch?.name ?? "This branch"}
+            {lockedBranch?.name ??
+              (branchId === "all" ? "All branches" : "This branch")}
           </span>
         ) : (
           <label className="relative min-w-[128px]">

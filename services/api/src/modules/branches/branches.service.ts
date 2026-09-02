@@ -43,6 +43,9 @@ import {
   BranchStaffListResponseContract,
   BranchStaffMemberContract,
   BranchStaffUserContract,
+  StaffTransferContract,
+  StaffTransferListResponseContract,
+  StaffTransferResponseContract,
 } from './branches.contracts';
 import {
   BranchesRepository,
@@ -54,6 +57,7 @@ import { SYNC_PERMISSION_LIST } from '../sync/sync.permissions';
 import { AcceptBranchStaffInvitationDto } from './dto/accept-branch-staff-invitation.dto';
 import { CreateBranchDto } from './dto/create-branch.dto';
 import { InviteBranchStaffDto } from './dto/invite-branch-staff.dto';
+import { TransferStaffDto } from './dto/transfer-staff.dto';
 import { UpdateBranchSettingsDto } from './dto/update-branch-settings.dto';
 import { LookupBranchStaffInvitationDto } from './dto/lookup-branch-staff-invitation.dto';
 
@@ -456,6 +460,178 @@ export class BranchesService {
         expiresAt: invitationExpiresAt,
         ...(showDevAcceptUrl ? { acceptUrl } : {}),
       },
+    };
+  }
+
+  async transferStaff(
+    user: AuthenticatedUser,
+    staffUserId: string,
+    dto: TransferStaffDto,
+  ): Promise<StaffTransferResponseContract> {
+    if (!user.tenantId?.trim()) {
+      throw new ForbiddenException('Tenant scope is required.');
+    }
+    if (!user.permissions.includes(BRANCH_PERMISSIONS.create)) {
+      throw new ForbiddenException(
+        'Only the organisation owner can transfer staff.',
+      );
+    }
+
+    const staff = await this.prisma.user.findFirst({
+      where: {
+        id: staffUserId,
+        tenantId: user.tenantId,
+      },
+      include: {
+        roles: { include: { role: true } },
+        branch: { select: { id: true, name: true } },
+      },
+    });
+
+    if (!staff) {
+      throw new NotFoundException('Staff member was not found.');
+    }
+
+    const staffPermissionRows =
+      await this.branchesRepository.listUserPermissionKeys(staff.id);
+    const staffPermissions = new Set(
+      staffPermissionRows.flatMap((userRole) =>
+        userRole.role.permissions.map(
+          (rolePermission) => rolePermission.permission.key,
+        ),
+      ),
+    );
+    if (staffPermissions.has(BRANCH_PERMISSIONS.create)) {
+      throw new BadRequestException(
+        'Organisation owners cannot be transferred to a branch.',
+      );
+    }
+
+    if (!staff.branchId || !staff.branch) {
+      throw new BadRequestException(
+        'This person is not assigned to a branch.',
+      );
+    }
+
+    if (staff.branchId === dto.targetBranchId) {
+      throw new BadRequestException(
+        'This person already works at that branch.',
+      );
+    }
+
+    const target = await this.branchesRepository.findByTenantAndId({
+      tenantId: user.tenantId,
+      branchId: dto.targetBranchId,
+    });
+    if (!target) {
+      throw new NotFoundException('Destination branch was not found.');
+    }
+
+    const openFloat = await this.prisma.agentDailyFloat.findFirst({
+      where: {
+        tenantId: user.tenantId,
+        agentId: staff.id,
+        amountReturned: null,
+      },
+      select: { id: true },
+    });
+    if (openFloat) {
+      throw new BadRequestException(
+        'Return this officer’s float before transferring them.',
+      );
+    }
+
+    const isManager = staff.roles.some(
+      (row) => row.role.name === 'Branch Manager',
+    );
+    if (isManager) {
+      const openDay = await this.prisma.branchDailyOperation.findFirst({
+        where: {
+          tenantId: user.tenantId,
+          branchId: staff.branchId,
+          status: { in: ['OPEN', 'CLOSING'] },
+        },
+        select: { id: true },
+      });
+      if (openDay) {
+        throw new BadRequestException(
+          'Close the current branch day before transferring this manager.',
+        );
+      }
+    }
+
+    const reason = dto.reason?.trim() || null;
+    const roleName = staff.roles[0]?.role.name ?? 'Staff';
+    const transferred = await this.branchesRepository.transferStaffWithAudit({
+      tenantId: user.tenantId,
+      actorUserId: user.userId,
+      staffUserId: staff.id,
+      fromBranchId: staff.branchId,
+      toBranchId: target.id,
+      fromBranchName: staff.branch.name,
+      toBranchName: target.name,
+      staffName: staff.displayName,
+      roleName,
+      reason,
+    });
+
+    const transfer: StaffTransferContract = {
+      id: transferred.id,
+      staffUserId: staff.id,
+      staffName: staff.displayName,
+      roleName,
+      fromBranchId: staff.branchId,
+      fromBranchName: staff.branch.name,
+      toBranchId: target.id,
+      toBranchName: target.name,
+      reason,
+      transferredByName: user.displayName,
+      transferredAt: new Date().toISOString(),
+    };
+
+    return {
+      staffUser: this.toStaffUserContract(transferred),
+      transfer,
+    };
+  }
+
+  async listStaffTransfers(
+    user: AuthenticatedUser,
+  ): Promise<StaffTransferListResponseContract> {
+    if (!user.tenantId?.trim()) {
+      throw new ForbiddenException('Tenant scope is required.');
+    }
+    if (!user.permissions.includes(BRANCH_PERMISSIONS.create)) {
+      throw new ForbiddenException(
+        'Only the organisation owner can view staff transfers.',
+      );
+    }
+
+    const rows = await this.branchesRepository.listStaffTransfers({
+      tenantId: user.tenantId,
+    });
+
+    return {
+      transfers: rows.map((row) => {
+        const oldValue = (row.oldValue as Record<string, unknown> | null) ?? {};
+        const newValue = (row.newValue as Record<string, unknown> | null) ?? {};
+        return {
+          id: row.id,
+          staffUserId: row.entityId ?? '',
+          staffName: String(newValue.staffName ?? 'Staff'),
+          roleName: String(newValue.roleName ?? 'Staff'),
+          fromBranchId: String(oldValue.branchId ?? ''),
+          fromBranchName: String(oldValue.branchName ?? 'Previous branch'),
+          toBranchId: String(newValue.branchId ?? ''),
+          toBranchName: String(newValue.branchName ?? 'New branch'),
+          reason:
+            typeof newValue.reason === 'string' && newValue.reason.trim()
+              ? newValue.reason
+              : null,
+          transferredByName: row.actor?.displayName ?? 'Owner',
+          transferredAt: row.createdAt.toISOString(),
+        };
+      }),
     };
   }
 

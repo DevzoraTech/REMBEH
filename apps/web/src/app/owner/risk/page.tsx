@@ -31,6 +31,7 @@ import {
   useOwnerSession,
 } from "../owner-common";
 import { OwnerHeader } from "../owner-header";
+import { useOwnerBranchScope } from "../owner-branch-scope";
 import { invalidateOwnerNotifications } from "../owner-notifications";
 
 type ListType = "BLACKLISTED" | "WATCHLIST";
@@ -44,6 +45,7 @@ type RiskEntry = {
   phone: string | null;
   reason: string | null;
   customerId: string | null;
+  branchId?: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -56,6 +58,7 @@ const TABS: Array<{ id: ListTab; label: string }> = [
 
 export default function OwnerRiskPage() {
   const state = useOwnerSession("/owner/risk");
+  const { matchesBranch } = useOwnerBranchScope();
   const [entries, setEntries] = useState<RiskEntry[]>([]);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<ListTab>("all");
@@ -110,6 +113,7 @@ export default function OwnerRiskPage() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return entries.filter((entry) => {
+      if (!matchesBranch(entry.branchId)) return false;
       if (tab !== "all" && entry.type !== tab) return false;
       if (!q) return true;
       return [
@@ -120,7 +124,7 @@ export default function OwnerRiskPage() {
         entry.type,
       ].some((value) => value.toLowerCase().includes(q));
     });
-  }, [entries, search, tab]);
+  }, [entries, matchesBranch, search, tab]);
 
   const paged = useMemo(
     () => paginateItems(filtered, page, pageSize),

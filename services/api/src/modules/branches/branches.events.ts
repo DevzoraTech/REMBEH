@@ -5,6 +5,7 @@ export const BRANCH_EVENTS = {
   staffInvited: 'branch.staff_invited',
   staffInvitationAccepted: 'branch.staff_invitation_accepted',
   staffActivated: 'branch.staff_activated',
+  staffTransferred: 'branch.staff_transferred',
 } as const;
 
 export type BranchCreatedEventPayload = {

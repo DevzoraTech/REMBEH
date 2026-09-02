@@ -444,6 +444,105 @@ export class BranchesRepository {
     });
   }
 
+  transferStaffWithAudit(input: {
+    tenantId: string;
+    actorUserId: string;
+    staffUserId: string;
+    fromBranchId: string;
+    toBranchId: string;
+    fromBranchName: string;
+    toBranchName: string;
+    staffName: string;
+    roleName: string;
+    reason: string | null;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const user = await tx.user.update({
+        where: { id: input.staffUserId },
+        data: { branchId: input.toBranchId },
+        include: {
+          roles: { include: { role: true } },
+        },
+      });
+
+      await tx.employee.updateMany({
+        where: {
+          tenantId: input.tenantId,
+          userId: input.staffUserId,
+        },
+        data: { branchId: input.toBranchId },
+      });
+
+      await tx.authSession.updateMany({
+        where: {
+          tenantId: input.tenantId,
+          userId: input.staffUserId,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: new Date(),
+          revokedByUserId: input.actorUserId,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          action: BRANCH_EVENTS.staffTransferred,
+          entityType: 'user',
+          entityId: input.staffUserId,
+          oldValue: {
+            branchId: input.fromBranchId,
+            branchName: input.fromBranchName,
+          },
+          newValue: {
+            branchId: input.toBranchId,
+            branchName: input.toBranchName,
+            staffName: input.staffName,
+            roleName: input.roleName,
+            reason: input.reason,
+          },
+        },
+      });
+
+      await tx.outboxEvent.create({
+        data: {
+          tenantId: input.tenantId,
+          topic: BRANCH_EVENTS.staffTransferred,
+          aggregateType: 'user',
+          aggregateId: input.staffUserId,
+          payload: {
+            userId: input.staffUserId,
+            fromBranchId: input.fromBranchId,
+            toBranchId: input.toBranchId,
+            transferredByUserId: input.actorUserId,
+          },
+        },
+      });
+
+      return user;
+    });
+  }
+
+  listStaffTransfers(input: { tenantId: string; limit?: number }) {
+    return this.prisma.auditLog.findMany({
+      where: {
+        tenantId: input.tenantId,
+        action: BRANCH_EVENTS.staffTransferred,
+      },
+      include: {
+        actor: {
+          select: {
+            displayName: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: input.limit ?? 100,
+    });
+  }
+
   listUserPermissionKeys(userId: string) {
     return this.prisma.userRole.findMany({
       where: { userId },

@@ -124,3 +124,26 @@ export type BranchStaffInvitationAcceptanceResponseContract = {
     nextStep: 'invite_agents' | 'operations';
   };
 };
+
+export type StaffTransferContract = {
+  id: string;
+  staffUserId: string;
+  staffName: string;
+  roleName: string;
+  fromBranchId: string;
+  fromBranchName: string;
+  toBranchId: string;
+  toBranchName: string;
+  reason: string | null;
+  transferredByName: string;
+  transferredAt: string;
+};
+
+export type StaffTransferListResponseContract = {
+  transfers: StaffTransferContract[];
+};
+
+export type StaffTransferResponseContract = {
+  staffUser: BranchStaffUserContract;
+  transfer: StaffTransferContract;
+};

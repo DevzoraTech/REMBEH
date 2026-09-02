@@ -36,6 +36,7 @@ import {
 } from "../app/pagination";
 import { AppBootSkeleton, TableSkeleton } from "../app/skeleton";
 import { OwnerHeader } from "../../app/owner/owner-header";
+import { useOwnerBranchScope } from "../../app/owner/owner-branch-scope";
 import { TableSearchField } from "../app/table-search-field";
 import {
   FormError,
@@ -54,6 +55,12 @@ import {
   readAuthState,
 } from "../../lib/auth-session";
 import { MANAGER_INVITE_ROLES, resolveOperatorRole } from "../../lib/roles";
+import {
+  StaffTransfersList,
+  TransferStaffDialog,
+  type StaffTransferRow,
+  type TransferableStaff,
+} from "../staff/transfer-staff-dialog";
 
 type AgentRow = {
   id: string;
@@ -116,6 +123,10 @@ export function AgentsWorkspace() {
   const [actionMenu, setActionMenu] = useState<ActionMenuState | null>(null);
   const [statusConfirm, setStatusConfirm] =
     useState<AgentStatusConfirm | null>(null);
+  const [transferStaff, setTransferStaff] = useState<TransferableStaff | null>(
+    null,
+  );
+  const [transfers, setTransfers] = useState<StaffTransferRow[]>([]);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [isInviting, setIsInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -144,6 +155,9 @@ export function AgentsWorkspace() {
   const canInvite = Boolean(
     session?.permissions.includes("branch.staff.invite"),
   );
+  const isOwner = Boolean(session?.permissions.includes("branch.create"));
+  const { matchesBranch, selectedBranchName, branches: scopeBranches } =
+    useOwnerBranchScope();
 
   function openInvite() {
     setInviteError(null);
@@ -197,6 +211,22 @@ export function AgentsWorkspace() {
         if (requestId !== agentsRequestId.current) return;
         setAgents(payload.agents ?? []);
         setCounts(payload.counts ?? null);
+        if (activeSession.permissions.includes("branch.create")) {
+          const transferResponse = await fetch(
+            `${apiBaseUrl}/branches/staff-transfers`,
+            {
+              headers: {
+                Authorization: `${activeSession.tokenType} ${activeSession.accessToken}`,
+              },
+            },
+          );
+          const transferPayload = await readApiJson<{
+            transfers?: StaffTransferRow[];
+          }>(transferResponse);
+          if (transferResponse.ok && requestId === agentsRequestId.current) {
+            setTransfers(transferPayload.transfers ?? []);
+          }
+        }
       } catch (caught) {
         if (requestId !== agentsRequestId.current) return;
         setError(
@@ -219,8 +249,8 @@ export function AgentsWorkspace() {
       }
 
       const role = resolveOperatorRole(auth.session, auth.user);
-      if (role !== "manager") {
-        router.replace(role === "owner" ? "/owner/overview" : "/dashboard");
+      if (role !== "manager" && role !== "owner") {
+        router.replace("/dashboard");
         return;
       }
 
@@ -397,10 +427,13 @@ export function AgentsWorkspace() {
     : null;
 
   const filteredAgents = useMemo(() => {
+    const scoped = isOwner
+      ? agents.filter((agent) => matchesBranch(agent.branchId))
+      : agents;
     const q = search.trim().toLowerCase();
-    if (!q) return agents;
+    if (!q) return scoped;
     const digits = q.replace(/\D/g, "");
-    return agents.filter((agent) => {
+    return scoped.filter((agent) => {
       const haystack = [
         agent.name,
         agent.publicId ?? "",
@@ -419,7 +452,7 @@ export function AgentsWorkspace() {
       }
       return false;
     });
-  }, [agents, search]);
+  }, [agents, isOwner, matchesBranch, search]);
 
   const pagedAgents = useMemo(
     () => paginateItems(filteredAgents, page, pageSize),
@@ -439,10 +472,11 @@ export function AgentsWorkspace() {
     >
       <div className="mx-auto max-w-[1400px] space-y-5 animate-rise">
         <OwnerHeader
-          title="Field Officers"
+          title={isOwner ? "Staff" : "Field Officers"}
+          eyebrow={isOwner ? selectedBranchName : undefined}
           showReportsButton={false}
-          settingsHref="/settings"
-          notificationScope="manager"
+          settingsHref={isOwner ? "/owner/settings" : "/settings"}
+          notificationScope={isOwner ? "owner" : "manager"}
           actions={
             <div className="flex items-center gap-2">
               {canInvite ? (
@@ -470,8 +504,9 @@ export function AgentsWorkspace() {
           }
         />
         <p className="-mt-2 text-sm font-medium text-slate-500">
-          Browse branch field officers, review access status, and manage who can work in
-          the field.
+          {isOwner
+            ? "Move managers and field officers to another branch. They keep the same login and lose access to the previous branch."
+            : "Browse branch field officers, review access status, and manage who can work in the field."}
         </p>
 
         {inviteNotice ? (
@@ -665,6 +700,20 @@ export function AgentsWorkspace() {
             />
           </section>
         )}
+
+        {isOwner ? (
+          <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+            <h2 className="text-[15px] font-semibold text-[#0b1220]">
+              Staff transfers
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">
+              Audit of managers and field officers moved between branches.
+            </p>
+            <div className="mt-3">
+              <StaffTransfersList transfers={transfers.slice(0, 12)} />
+            </div>
+          </section>
+        ) : null}
       </div>
 
       <AgentDetailDrawer
@@ -696,6 +745,21 @@ export function AgentsWorkspace() {
               }}
               label="View Officer"
             />
+            {isOwner && actionMenuAgent.branchId ? (
+              <ActionMenuItem
+                onClick={() => {
+                  setActionMenu(null);
+                  setTransferStaff({
+                    id: actionMenuAgent.id,
+                    name: actionMenuAgent.name,
+                    roleName: actionMenuAgent.roleName ?? "Field Officer",
+                    branchId: actionMenuAgent.branchId ?? "",
+                    branchName: actionMenuAgent.branchName,
+                  });
+                }}
+                label="Transfer"
+              />
+            ) : null}
             {canManage && actionMenuAgent.status === "ACTIVE" ? (
               <ActionMenuItem
                 disabled={statusBusyId === actionMenuAgent.id}
@@ -740,6 +804,17 @@ export function AgentsWorkspace() {
           void updateStatus(payload.agentId, payload.status, payload.reason)
         }
       />
+      {session && transferStaff ? (
+        <TransferStaffDialog
+          session={session}
+          staff={transferStaff}
+          branches={scopeBranches}
+          onClose={() => setTransferStaff(null)}
+          onTransferred={() => {
+            void loadAgents(session, selectedDate);
+          }}
+        />
+      ) : null}
 
       {inviteOpen ? (
         <div className="fixed inset-0 z-[60] flex items-end justify-center bg-[#0b1220]/45 px-0 sm:items-center sm:px-4">

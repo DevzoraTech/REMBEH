@@ -13,6 +13,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OwnerHeader } from "../../app/owner/owner-header";
+import { useOwnerBranchScope } from "../../app/owner/owner-branch-scope";
 import {
   authHeaders,
   formatDate,
@@ -145,6 +146,7 @@ export function RepaymentCorrectionsWorkspace({
   mode: RepaymentCorrectionsMode;
 }) {
   const state = useCorrectionsSession(mode);
+  const { matchesBranch } = useOwnerBranchScope();
   const [requests, setRequests] = useState<RepaymentCorrectionRequest[]>([]);
   const [status, setStatus] = useState<CorrectionsStatus>("PENDING");
   const [search, setSearch] = useState("");
@@ -186,9 +188,13 @@ export function RepaymentCorrectionsWorkspace({
   }, [loadRequests]);
 
   const filtered = useMemo(() => {
+    const scoped =
+      mode === "owner"
+        ? requests.filter((request) => matchesBranch(request.branchId))
+        : requests;
     const q = search.trim().toLowerCase();
-    if (!q) return requests;
-    return requests.filter((request) =>
+    if (!q) return scoped;
+    return scoped.filter((request) =>
       [
         request.borrowerName,
         request.borrowerPhone ?? "",
@@ -200,7 +206,7 @@ export function RepaymentCorrectionsWorkspace({
         .toLowerCase()
         .includes(q),
     );
-  }, [requests, search]);
+  }, [matchesBranch, mode, requests, search]);
 
   const reviewRequest = async (
     request: RepaymentCorrectionRequest,

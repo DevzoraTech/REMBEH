@@ -47,6 +47,7 @@ import {
   titleCase,
 } from "../../app/owner/owner-common";
 import { OwnerHeader } from "../../app/owner/owner-header";
+import { useOwnerBranchScope } from "../../app/owner/owner-branch-scope";
 import { invalidateOwnerNotifications } from "../../app/owner/owner-notifications";
 import { Money } from "../app/money";
 import { TableSearchField } from "../app/table-search-field";
@@ -163,6 +164,7 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
   const state = useReportsSession(mode);
   const router = useRouter();
   const isManager = mode === "manager";
+  const { selectedBranchId } = useOwnerBranchScope();
   const [branches, setBranches] = useState<OwnerBranch[]>([]);
   const [reports, setReports] = useState<OwnerReport[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -190,8 +192,8 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
     setError(null);
     try {
       const params = new URLSearchParams();
-      if (!isManager && advancedFilters.branchId) {
-        params.set("branchId", advancedFilters.branchId);
+      if (!isManager && selectedBranchId) {
+        params.set("branchId", selectedBranchId);
       }
       if (advancedFilters.status !== "all") {
         params.set("status", advancedFilters.status);
@@ -231,7 +233,7 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
     } finally {
       setLoading(false);
     }
-  }, [advancedFilters, isManager, router, state.session]);
+  }, [advancedFilters, isManager, router, selectedBranchId, state.session]);
 
   useEffect(() => {
     const boot = window.setTimeout(() => {

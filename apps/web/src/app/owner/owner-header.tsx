@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Bell,
+  Building2,
   ChevronDown,
   ClipboardCheck,
   Folder,
@@ -16,6 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import { BranchSubscriptionMenu } from "../../components/app/branch-subscription-menu";
 import { SmsCreditsHeaderBadge } from "../../components/app/sms-credits-header-badge";
 import { formatNumber } from "./owner-common";
+import { useOwnerBranchScope } from "./owner-branch-scope";
 import {
   useOwnerNotifications,
   type OwnerNotificationItem,
@@ -47,6 +49,7 @@ export function OwnerHeader({
 }) {
   const { items: notifications } = useOwnerNotifications(notificationScope);
   const { enabled: tooltipsEnabled, setTooltipsEnabled } = useTooltipsEnabled();
+  const branchScope = useOwnerBranchScope();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
   const smsManageHref =
@@ -80,6 +83,27 @@ export function OwnerHeader({
         </h1>
       </div>
       <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
+        {notificationScope === "owner" && branchScope.branches.length > 0 ? (
+          <label className="flex h-9 min-w-[180px] items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-[#0b1220] shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
+            <Building2 className="size-3.5 shrink-0 text-[var(--forest-emerald)]" />
+            <select
+              value={branchScope.selectedBranchId ?? ""}
+              aria-label="Branch"
+              onChange={(event) =>
+                branchScope.setSelectedBranchId(event.target.value || null)
+              }
+              className="min-w-0 flex-1 appearance-none bg-transparent outline-none"
+            >
+              <option value="">All branches</option>
+              {branchScope.branches.map((branch) => (
+                <option key={branch.id} value={branch.id}>
+                  {branch.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
         <SmsCreditsHeaderBadge manageHref={smsManageHref} />
 
         {notificationScope === "manager" ? (

@@ -40,6 +40,7 @@ import {
   titleCase,
 } from "../../app/owner/owner-common";
 import { OwnerHeader } from "../../app/owner/owner-header";
+import { useOwnerBranchScope } from "../../app/owner/owner-branch-scope";
 import { TableSearchField } from "../app/table-search-field";
 import {
   RembehBranch,
@@ -124,9 +125,9 @@ function useBorrowersSession(mode: BorrowersMode): BorrowersSession {
 export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
   const state = useBorrowersSession(mode);
   const isManager = mode === "manager";
+  const { matchesBranch, selectedBranchName } = useOwnerBranchScope();
   const [borrowers, setBorrowers] = useState<OwnerBorrower[]>([]);
   const [search, setSearch] = useState("");
-  const [branchFilter, setBranchFilter] = useState("all");
   const [advancedFilters, setAdvancedFilters] = useState<BorrowersAdvancedFilters>(
     EMPTY_BORROWERS_FILTERS,
   );
@@ -175,19 +176,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
 
   useEffect(() => {
     setPage(1);
-  }, [advancedFilters, branchFilter, search]);
-
-  const branchOptions = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          borrowers
-            .map((borrower) => borrower.branchName?.trim())
-            .filter((value): value is string => Boolean(value)),
-        ),
-      ).sort((a, b) => a.localeCompare(b)),
-    [borrowers],
-  );
+  }, [advancedFilters, search]);
 
   const officerOptions = useMemo<OfficerOption[]>(() => {
     const map = new Map<string, string>();
@@ -206,10 +195,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
     const q = search.trim().toLowerCase();
     const now = new Date();
     return borrowers.filter((borrower) => {
-      const matchesBranch =
-        isManager ||
-        branchFilter === "all" ||
-        borrower.branchName === branchFilter;
+      const matchesBranchFilter = isManager || matchesBranch(borrower.branchId);
 
       const status = resolveBorrowerVerification(borrower);
       const matchesVerification =
@@ -265,7 +251,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
           ));
 
       return (
-        matchesBranch &&
+        matchesBranchFilter &&
         matchesVerification &&
         matchesLoanStatus &&
         matchesOfficer &&
@@ -274,9 +260,19 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
         matchesVoided
       );
     });
-  }, [advancedFilters, borrowers, branchFilter, isManager, search, showVoided]);
+  }, [advancedFilters, borrowers, isManager, matchesBranch, search, showVoided]);
 
-  const summary = useMemo(() => buildBorrowersSummary(borrowers), [borrowers]);
+  const summary = useMemo(
+    () =>
+      buildBorrowersSummary(
+        borrowers.filter(
+          (borrower) =>
+            (isManager || matchesBranch(borrower.branchId)) &&
+            (showVoided || !borrower.voidedAt),
+        ),
+      ),
+    [borrowers, isManager, matchesBranch, showVoided],
+  );
   const paged = useMemo(
     () => paginateItems(filtered, page, pageSize),
     [filtered, page, pageSize],
@@ -423,24 +419,6 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
                   placeholder="Search Borrowers..."
                   title="Search by name, phone, national ID, city or branch."
                 />
-                {!isManager ? (
-                  <label className="relative flex h-9 min-w-0 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-[#0b1224] shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
-                    <Building2 className="size-3.5 shrink-0 text-slate-500" />
-                    <select
-                      value={branchFilter}
-                      aria-label="Branch"
-                      onChange={(event) => setBranchFilter(event.target.value)}
-                      className="min-w-[140px] appearance-none bg-transparent pr-2 text-xs font-semibold outline-none"
-                    >
-                      <option value="all">All Branches</option>
-                      {branchOptions.map((branch) => (
-                        <option key={branch} value={branch}>
-                          {branch}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
                 <BorrowersFiltersControl
                   officers={officerOptions}
                   applied={advancedFilters}
@@ -468,7 +446,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
                     {
                       branch: isManager
                         ? state.branch?.name ?? "Your branch"
-                        : branchFilter,
+                        : selectedBranchName,
                       verification: advancedFilters.verification,
                       loanStatus: advancedFilters.loanStatus,
                       search,
@@ -487,12 +465,10 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
               <EmptyBorrowersState
                 hasFilters={
                   Boolean(search.trim()) ||
-                  activeBorrowerFilterChips(advancedFilters).length > 0 ||
-                  (!isManager && branchFilter !== "all")
+                  activeBorrowerFilterChips(advancedFilters).length > 0
                 }
                 onClear={() => {
                   setSearch("");
-                  setBranchFilter("all");
                   setAdvancedFilters(EMPTY_BORROWERS_FILTERS);
                 }}
               />

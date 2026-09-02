@@ -46,6 +46,7 @@ import {
   titleCase,
 } from "../../app/owner/owner-common";
 import { OwnerHeader } from "../../app/owner/owner-header";
+import { useOwnerBranchScope } from "../../app/owner/owner-branch-scope";
 import { Money } from "../app/money";
 import { TableSearchField } from "../app/table-search-field";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
@@ -251,6 +252,8 @@ export function LoansWorkspace({
   const state = useLoansSession(mode);
   const router = useRouter();
   const isManager = mode === "manager";
+  const { matchesBranch, selectedBranchName } =
+    useOwnerBranchScope();
   const pendingOnly = view === "pending-disbursements";
   const [loans, setLoans] = useState<LoanRow[]>([]);
   const [borrowers, setBorrowers] = useState<BorrowerRow[]>([]);
@@ -778,6 +781,7 @@ export function LoansWorkspace({
     const q = search.trim().toLowerCase();
     const now = new Date();
     return loans.filter((loan) => {
+      if (!isManager && !matchesBranch(loan.branchId)) return false;
       if (filter === "active" && !ACTIVE_STATUSES.has(loan.status))
         return false;
       if (filter === "closed" && loan.status !== "CLOSED") return false;
@@ -838,13 +842,16 @@ export function LoansWorkspace({
       }
       return false;
     });
-  }, [advancedFilters, filter, loans, search]);
+  }, [advancedFilters, filter, isManager, loans, matchesBranch, search]);
 
   const filteredPendingDisbursements = useMemo(() => {
+    const scoped = isManager
+      ? pendingDisbursements
+      : pendingDisbursements.filter((row) => matchesBranch(row.branchId));
     const q = pendingSearch.trim().toLowerCase();
-    if (!q) return pendingDisbursements;
+    if (!q) return scoped;
     const digits = q.replace(/\D/g, "");
-    return pendingDisbursements.filter((row) => {
+    return scoped.filter((row) => {
       const haystack = [
         row.loanId,
         shortLoanId(row.loanId),
@@ -867,7 +874,7 @@ export function LoansWorkspace({
       }
       return false;
     });
-  }, [pendingDisbursements, pendingSearch]);
+  }, [isManager, matchesBranch, pendingDisbursements, pendingSearch]);
 
   useEffect(() => {
     setPage(1);
@@ -886,7 +893,12 @@ export function LoansWorkspace({
     router.replace(`${url.pathname}${url.search}`, { scroll: false });
   }, [advancedFilters.repayment, router, state.ready]);
 
-  const summary = useMemo(() => buildLoansSummary(loans), [loans]);
+  const summary = useMemo(() => {
+    const rows = isManager
+      ? loans
+      : loans.filter((loan) => matchesBranch(loan.branchId));
+    return buildLoansSummary(rows);
+  }, [isManager, loans, matchesBranch]);
   const paged = useMemo(
     () => paginateItems(filtered, page, pageSize),
     [filtered, page, pageSize],
@@ -1022,7 +1034,7 @@ export function LoansWorkspace({
       >
         <div className="mx-auto max-w-[1400px] space-y-5 animate-rise">
           <OwnerHeader
-            eyebrow={isManager ? undefined : "All Branches"}
+            eyebrow={isManager ? undefined : selectedBranchName}
             title="Pending Disbursements"
             showReportsButton={false}
             settingsHref={isManager ? "/settings" : "/owner/settings"}
@@ -1101,7 +1113,7 @@ export function LoansWorkspace({
     >
       <div className="mx-auto max-w-[1400px] space-y-5 animate-rise">
         <OwnerHeader
-          eyebrow={isManager ? undefined : "All Branches"}
+          eyebrow={isManager ? undefined : selectedBranchName}
           title="Loans"
           showReportsButton={false}
           settingsHref={isManager ? "/settings" : "/owner/settings"}

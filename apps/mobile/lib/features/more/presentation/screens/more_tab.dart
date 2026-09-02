@@ -16,6 +16,7 @@ class MoreTab extends StatelessWidget {
     required this.onSupportTap,
     this.onVoidedClientsTap,
     this.onEditRecordsTap,
+    this.onStaffTap,
     this.showBranchTools = true,
   });
 
@@ -30,6 +31,7 @@ class MoreTab extends StatelessWidget {
   final VoidCallback onSupportTap;
   final VoidCallback? onVoidedClientsTap;
   final VoidCallback? onEditRecordsTap;
+  final VoidCallback? onStaffTap;
   final bool showBranchTools;
 
   @override
@@ -87,10 +89,20 @@ class MoreTab extends StatelessWidget {
 
         const SizedBox(height: 12),
 
-        if (showBranchTools || onVoidedClientsTap != null)
+        if (showBranchTools ||
+            onVoidedClientsTap != null ||
+            onStaffTap != null)
           _MoreSection(
             title: showBranchTools ? 'Branch' : 'Organisation',
             children: [
+              if (onStaffTap != null)
+                _MoreMenuItem(
+                  icon: Icons.swap_horiz_rounded,
+                  title: 'Staff',
+                  subtitle: 'Transfer managers and field officers',
+                  onTap: onStaffTap!,
+                  showDivider: showBranchTools || onVoidedClientsTap != null,
+                ),
               if (showBranchTools)
                 _MoreMenuItem(
                   icon: Icons.apartment_outlined,
@@ -118,7 +130,9 @@ class MoreTab extends StatelessWidget {
             ],
           ),
 
-        if (showBranchTools || onVoidedClientsTap != null)
+        if (showBranchTools ||
+            onVoidedClientsTap != null ||
+            onStaffTap != null)
           const SizedBox(height: 12),
 
         _MoreSection(

@@ -185,6 +185,9 @@ export type LoanListItemContract = {
 
   branchId: string;
 
+  /** ISO timestamp when the borrower was set aside. Null for live loans. */
+  customerVoidedAt: string | null;
+
   /**
    * First contractual repayment date.
    *

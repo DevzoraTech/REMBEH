@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
@@ -10,6 +10,7 @@ import { AcceptBranchStaffInvitationDto } from './dto/accept-branch-staff-invita
 import { CreateBranchDto } from './dto/create-branch.dto';
 import { InviteBranchStaffDto } from './dto/invite-branch-staff.dto';
 import { LookupBranchStaffInvitationDto } from './dto/lookup-branch-staff-invitation.dto';
+import { TransferStaffDto } from './dto/transfer-staff.dto';
 import { UpdateBranchSettingsDto } from './dto/update-branch-settings.dto';
 
 @Controller('branches')
@@ -30,6 +31,22 @@ export class BranchesController {
     @Body() dto: CreateBranchDto,
   ) {
     return this.branchesService.createBranch(user, dto);
+  }
+
+  @Get('staff-transfers')
+  @RequirePermissions(BRANCH_PERMISSIONS.create)
+  listStaffTransfers(@CurrentUser() user: AuthenticatedUser) {
+    return this.branchesService.listStaffTransfers(user);
+  }
+
+  @Post('staff/:userId/transfer')
+  @RequirePermissions(BRANCH_PERMISSIONS.create)
+  transferStaff(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Body() dto: TransferStaffDto,
+  ) {
+    return this.branchesService.transferStaff(user, userId, dto);
   }
 
   @Patch(':branchId/settings')

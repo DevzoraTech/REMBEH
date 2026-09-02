@@ -125,6 +125,10 @@ export class LoansRepository {
               },
             }
           : {}),
+
+        customer: {
+          voidedAt: null,
+        },
       },
 
       include: loanListInclude,
@@ -176,6 +180,10 @@ export class LoansRepository {
           : {}),
 
         status: LoanStatus.PARTIALLY_DISBURSED,
+
+        customer: {
+          voidedAt: null,
+        },
       },
 
       include: loanListInclude,

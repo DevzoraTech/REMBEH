@@ -34,6 +34,7 @@ import {
   clearAuthState,
 } from "../../lib/auth-session";
 import { resolveOperatorRole } from "../../lib/roles";
+import { OwnerBranchScopeProvider } from "../../app/owner/owner-branch-scope";
 import { PushNotificationsBootstrap } from "./push-notifications-bootstrap";
 import { playNotificationSound } from "../../lib/notification-sound";
 import {
@@ -120,6 +121,12 @@ export function AppShell({ children, session, user }: AppShellProps) {
         href: "/owner/borrowers",
         label: "Borrowers",
         icon: Users,
+        enabled: operatorRole === "owner",
+      },
+      {
+        href: "/agents",
+        label: "Staff",
+        icon: UserRound,
         enabled: operatorRole === "owner",
       },
       {
@@ -626,7 +633,13 @@ export function AppShell({ children, session, user }: AppShellProps) {
             </div>
           </div>
         ) : null}
-        {children}
+        {operatorRole === "owner" ? (
+          <OwnerBranchScopeProvider session={session}>
+            {children}
+          </OwnerBranchScopeProvider>
+        ) : (
+          children
+        )}
       </main>
 
       {graceModalOpen ? (

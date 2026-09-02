@@ -8,6 +8,7 @@ export type BorrowerListEntryContract = {
   phone: string | null;
   reason: string | null;
   customerId: string | null;
+  branchId: string | null;
   createdAt: string;
   updatedAt: string;
 };

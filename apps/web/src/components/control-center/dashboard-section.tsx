@@ -2,6 +2,7 @@
 
 import {
   ArrowRight,
+  Banknote,
   BellRing,
   Building2,
   ChevronRight,
@@ -12,6 +13,7 @@ import {
   LockKeyhole,
   MessageCircleWarning,
   MoreVertical,
+  Smartphone,
   Tag,
   Users,
 } from "lucide-react";
@@ -185,6 +187,68 @@ export function ControlCenterDashboardSection({
         />
       </div>
 
+      <div className="mt-3.5 grid gap-3.5 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          icon={Users}
+          tone="green"
+          label="Daily active users"
+          value={ccNumber(stats.dailyActiveUsers)}
+          secondary={`${ccNumber(stats.monthlyActiveUsers)} monthly`}
+        />
+        <MetricCard
+          icon={Smartphone}
+          tone="blue"
+          label="Mobile sessions (30d)"
+          value={ccNumber(stats.mobileSessions30d)}
+          secondary={`${ccNumber(stats.applicationsThisMonth)} applications this month`}
+        />
+        <MetricCard
+          icon={Banknote}
+          tone="purple"
+          label="Collections (30d)"
+          value={ccMoney(stats.repaymentsCollected30d)}
+          secondary={`${ccNumber(stats.repaymentCount30d)} repayments`}
+        />
+        <MetricCard
+          icon={CreditCard}
+          tone="amber"
+          label="Revenue this month"
+          value={ccMoney(stats.revenueThisMonth)}
+          secondary={`Last month ${ccMoney(stats.revenueLastMonth)}`}
+        />
+      </div>
+
+      <div className="mt-3.5 grid gap-3.5 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          icon={Landmark}
+          tone="green"
+          label="Live portfolio"
+          value={ccMoney(stats.outstandingPortfolio)}
+          secondary={`${ccNumber(stats.activeBorrowers)} active borrowers`}
+        />
+        <MetricCard
+          icon={Users}
+          tone="blue"
+          label="New borrowers"
+          value={ccNumber(stats.newBorrowersThisMonth)}
+          secondary="This month"
+        />
+        <MetricCard
+          icon={Building2}
+          tone="purple"
+          label="New organisations"
+          value={ccNumber(stats.newOrganizationsThisMonth)}
+          secondary="This month"
+        />
+        <MetricCard
+          icon={Filter}
+          tone="amber"
+          label="Set-aside borrowers"
+          value={ccNumber(stats.voidedBorrowers)}
+          secondary="Abandoned / voided"
+        />
+      </div>
+
       <section className="mt-4 overflow-hidden rounded-[10px] border border-[#dfe5eb] bg-white">
         <div className="flex items-start justify-between gap-4 px-4 pb-2 pt-3.5">
           <div>
@@ -345,6 +409,33 @@ export function ControlCenterDashboardSection({
             </div>
           ) : (
             <EmptyPanel message="No administrative activity recorded yet." />
+          )}
+        </section>
+
+        <section className="overflow-hidden rounded-[10px] border border-[#dfe5eb] bg-white">
+          <SectionHeader title="Customer app activity" />
+          {dashboard?.tenantActivity?.length ? (
+            <div className="divide-y divide-[#edf1f4]">
+              {dashboard.tenantActivity.slice(0, 8).map((activity) => (
+                <div
+                  key={activity.id}
+                  className="flex w-full items-center gap-3 px-4 py-[11px]"
+                >
+                  <span className="size-[6px] shrink-0 rounded-full bg-[#3b82f6]" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[10.5px] font-semibold text-[#17223a]">
+                      {compactAction(activity.action)}
+                    </span>
+                    <span className="mt-1 block truncate text-[9.5px] font-normal text-[#63718b]">
+                      {activity.organizationName} · {activity.actorName} ·{" "}
+                      {ccDateTime(activity.createdAt)}
+                    </span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyPanel message="No organisation activity recorded yet." />
           )}
         </section>
       </div>

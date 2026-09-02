@@ -33,6 +33,7 @@ import {
   TextField,
 } from "../../../components/auth/form-controls";
 import { RowActions } from "../../../components/app/row-actions";
+import { Money } from "../../../components/app/money";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../../lib/api";
 import type { RembehSession } from "../../../lib/auth-session";
 import { formatInternationalPhone } from "../../../lib/phone";
@@ -66,7 +67,12 @@ import {
   sumBy,
   useOwnerSession,
 } from "../owner-common";
-import { Money } from "../../../components/app/money";
+import {
+  StaffTransfersList,
+  TransferStaffDialog,
+  type StaffTransferRow,
+  type TransferableStaff,
+} from "../../../components/staff/transfer-staff-dialog";
 import { StepTimeline } from "../../../components/app/step-timeline";
 
 const emptyBranchForm = {
@@ -117,6 +123,10 @@ function OwnerBranchesPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [transferStaff, setTransferStaff] = useState<TransferableStaff | null>(
+    null,
+  );
+  const [transfers, setTransfers] = useState<StaffTransferRow[]>([]);
 
   const currency = state.workspace?.currency ?? "UGX";
 
@@ -132,6 +142,7 @@ function OwnerBranchesPageContent() {
         repaymentPayload,
         reportPayload,
         dailyStatusPayload,
+        transferPayload,
       ] = await Promise.all([
         ownerFetch<{ branches?: OwnerBranch[] }>(state.session, "/branches"),
         ownerFetch<{ loans?: OwnerLoan[] }>(state.session, "/loans"),
@@ -151,6 +162,10 @@ function OwnerBranchesPageContent() {
           state.session,
           `/operations/owner-daily-status?date=${previousDateLabel()}`,
         ),
+        ownerFetch<{ transfers?: StaffTransferRow[] }>(
+          state.session,
+          "/branches/staff-transfers",
+        ),
       ]);
       const nextBranches = branchPayload.branches ?? [];
       setBranches(nextBranches);
@@ -159,6 +174,7 @@ function OwnerBranchesPageContent() {
       setRepayments(repaymentPayload.repayments ?? []);
       setReports(reportPayload.reports ?? []);
       setDailyStatuses(dailyStatusPayload.statuses ?? []);
+      setTransfers(transferPayload.transfers ?? []);
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Could not load branches.",
@@ -654,6 +670,14 @@ function OwnerBranchesPageContent() {
                       setInviteBranch(branch);
                     }}
                     onOpenDetails={() => setDetailBranch(branch)}
+                    onTransferManager={
+                      activeManager(branch)
+                        ? () =>
+                            setTransferStaff(
+                              toTransferableStaff(activeManager(branch)!, branch),
+                            )
+                        : undefined
+                    }
                   />
                 ))
               )}
@@ -734,6 +758,18 @@ function OwnerBranchesPageContent() {
               }}
             />
             <RecentBranchActivityCard activities={recentActivity} />
+            <section className="rounded-[14px] border border-[#e6ebf0] bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.055)]">
+              <h2 className="text-[13px] font-semibold text-[#0b1220]">
+                Staff transfers
+              </h2>
+              <p className="mt-1 text-[11px] text-slate-500">
+                Managers and field officers moved to another branch. They keep
+                the same login and lose access to the previous branch.
+              </p>
+              <div className="mt-3">
+                <StaffTransfersList transfers={transfers.slice(0, 8)} />
+              </div>
+            </section>
           </aside>
         </section>
       </div>
@@ -849,6 +885,9 @@ function OwnerBranchesPageContent() {
             setDetailBranch(null);
             setInviteBranch(detailBranch);
           }}
+          onTransferStaff={(member) =>
+            setTransferStaff(toTransferableStaff(member, detailBranch))
+          }
           onOpenAttention={
             (branchAttentionById.get(detailBranch.id)?.level ?? "healthy") !==
             "healthy"
@@ -858,6 +897,21 @@ function OwnerBranchesPageContent() {
                 }
               : undefined
           }
+        />
+      ) : null}
+
+      {transferStaff && state.session ? (
+        <TransferStaffDialog
+          session={state.session}
+          staff={transferStaff}
+          branches={branches}
+          onClose={() => setTransferStaff(null)}
+          onTransferred={() => {
+            setNotice(
+              `${transferStaff.name} now works at the destination branch only.`,
+            );
+            void loadData();
+          }}
         />
       ) : null}
 
@@ -1001,6 +1055,7 @@ function BranchRow({
   compact,
   onInvite,
   onOpenDetails,
+  onTransferManager,
 }: {
   branch: OwnerBranch;
   metrics: BranchMetrics;
@@ -1009,6 +1064,7 @@ function BranchRow({
   compact: boolean;
   onInvite: () => void;
   onOpenDetails: () => void;
+  onTransferManager?: () => void;
 }) {
   const manager = activeManager(branch);
   const invitedManager =
@@ -1092,6 +1148,14 @@ function BranchRow({
                 label: manager ? "Invite manager" : "Assign manager",
                 onSelect: onInvite,
               },
+              ...(manager && onTransferManager
+                ? [
+                    {
+                      label: "Transfer manager",
+                      onSelect: onTransferManager,
+                    },
+                  ]
+                : []),
               {
                 label: "View reports",
                 href: `/owner/reports?branchId=${branch.id}`,
@@ -1659,6 +1723,7 @@ function BranchDetailDrawer({
   currency,
   onClose,
   onInvite,
+  onTransferStaff,
   onOpenAttention,
 }: {
   branch: OwnerBranch;
@@ -1667,6 +1732,12 @@ function BranchDetailDrawer({
   currency: string;
   onClose: () => void;
   onInvite: () => void;
+  onTransferStaff: (member: {
+    id: string;
+    name: string;
+    roleName?: string;
+    branchId?: string;
+  }) => void;
   onOpenAttention?: () => void;
 }) {
   const staff = branch.staff ?? [];
@@ -1768,14 +1839,25 @@ function BranchDetailDrawer({
           <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
             Manager
           </p>
-          <button
-            type="button"
-            onClick={onInvite}
-            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-[#0b936b] transition hover:bg-emerald-50"
-          >
-            <Mail className="size-3" />
-            Invite
-          </button>
+          <div className="flex items-center gap-1">
+            {manager ? (
+              <button
+                type="button"
+                onClick={() => onTransferStaff(manager)}
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-[#0b936b] transition hover:bg-emerald-50"
+              >
+                Transfer
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={onInvite}
+              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-[#0b936b] transition hover:bg-emerald-50"
+            >
+              <Mail className="size-3" />
+              Invite
+            </button>
+          </div>
         </div>
         {manager ? (
           <div className="rounded-2xl border border-[#e5ebf0] bg-white p-3">
@@ -1830,7 +1912,18 @@ function BranchDetailDrawer({
                     {member.roleName}
                   </p>
                 </div>
-                <OwnerStatus value={member.inviteStatus} />
+                <div className="flex shrink-0 items-center gap-2">
+                  <OwnerStatus value={member.inviteStatus} />
+                  {member.inviteStatus === "ACTIVE" ? (
+                    <button
+                      type="button"
+                      onClick={() => onTransferStaff(member)}
+                      className="text-[11px] font-semibold text-[#0b936b] hover:underline"
+                    >
+                      Transfer
+                    </button>
+                  ) : null}
+                </div>
               </div>
             ))}
             {staff.length > 4 ? (
@@ -2441,6 +2534,24 @@ type BranchActivity = {
   icon: "report" | "loan" | "staff";
   at: Date;
 };
+
+function toTransferableStaff(
+  member: {
+    id: string;
+    name: string;
+    roleName?: string;
+    branchId?: string;
+  },
+  branch: OwnerBranch,
+): TransferableStaff {
+  return {
+    id: member.id,
+    name: member.name,
+    roleName: member.roleName ?? "Staff",
+    branchId: member.branchId ?? branch.id,
+    branchName: branch.name,
+  };
+}
 
 function activeManager(branch: OwnerBranch) {
   const manager = branch.staff?.find(
