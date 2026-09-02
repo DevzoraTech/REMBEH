@@ -4,6 +4,7 @@ import '../../../../services/api_client.dart';
 import '../../../../services/session_store.dart';
 import '../../../../theme.dart';
 import '../../../../utils/friendly_errors.dart';
+import '../../../../utils/money.dart';
 
 class RecordExpenseSheet extends StatefulWidget {
   const RecordExpenseSheet({
@@ -12,6 +13,8 @@ class RecordExpenseSheet extends StatefulWidget {
     required this.date,
     this.branchId,
     this.initialExpense,
+    this.paidFromAgentFloat = false,
+    this.remainingCash,
   });
 
   final RembehSession session;
@@ -20,6 +23,12 @@ class RecordExpenseSheet extends StatefulWidget {
 
   /// When supplied, the sheet edits an existing expense.
   final Map<String, dynamic>? initialExpense;
+
+  /// Field officers pay from issued float, not branch till cash.
+  final bool paidFromAgentFloat;
+
+  /// Cash still available from this source after earlier expenses.
+  final num? remainingCash;
 
   @override
   State<RecordExpenseSheet> createState() => _RecordExpenseSheetState();
@@ -87,6 +96,16 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
       return;
     }
 
+    final remaining = widget.remainingCash;
+    if (remaining != null && amount > remaining) {
+      setState(() {
+        _error =
+            'Expense exceeds remaining ${widget.paidFromAgentFloat ? 'float' : 'branch cash'}. Available: ${remaining.round()}.';
+      });
+
+      return;
+    }
+
     setState(() {
       _saving = true;
       _error = null;
@@ -113,6 +132,7 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
           date: widget.date,
           amount: amount,
           description: expenseName,
+          paidFrom: widget.paidFromAgentFloat ? 'AGENT_FLOAT' : 'BRANCH_CASH',
         );
       }
 
@@ -240,6 +260,7 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
               decoration: const InputDecoration(
                 hintText: '0',
               ),
+              onChanged: (_) => setState(() {}),
             ),
 
             const SizedBox(height: 4),
@@ -254,15 +275,15 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
                 borderRadius: rembehBorderRadius(rembehRadiusMd),
                 border: Border.all(color: line),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(
+                  const Icon(
                     Icons.payments_outlined,
                     color: forestEmerald,
                     size: 18,
                   ),
-                  SizedBox(width: 9),
-                  Expanded(
+                  const SizedBox(width: 9),
+                  const Expanded(
                     child: Text(
                       'Paid from',
                       style: TextStyle(
@@ -273,8 +294,8 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
                     ),
                   ),
                   Text(
-                    'Branch cash',
-                    style: TextStyle(
+                    widget.paidFromAgentFloat ? 'Your float' : 'Branch cash',
+                    style: const TextStyle(
                       color: midnightNavy,
                       fontSize: 11,
                       fontWeight: FontWeight.w800,
@@ -283,6 +304,15 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
                 ],
               ),
             ),
+
+            if (widget.remainingCash != null) ...[
+              const SizedBox(height: 8),
+              _RemainingCashLine(
+                remaining: widget.remainingCash!,
+                amountText: _amount.text,
+                paidFromAgentFloat: widget.paidFromAgentFloat,
+              ),
+            ],
 
             if (_error != null) ...[
               const SizedBox(height: 12),
@@ -328,6 +358,38 @@ class _RecordExpenseSheetState extends State<RecordExpenseSheet> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _RemainingCashLine extends StatelessWidget {
+  const _RemainingCashLine({
+    required this.remaining,
+    required this.amountText,
+    required this.paidFromAgentFloat,
+  });
+
+  final num remaining;
+  final String amountText;
+  final bool paidFromAgentFloat;
+
+  @override
+  Widget build(BuildContext context) {
+    final entered = _parseAmount(amountText) ?? 0;
+    final after = remaining - entered;
+    final over = after < 0;
+
+    return Text(
+      over
+          ? 'Exceeds remaining ${paidFromAgentFloat ? 'float' : 'cash'} by UGX ${formatMoney(after.abs())}'
+          : entered > 0
+          ? 'Remaining after this expense: UGX ${formatMoney(after)}'
+          : 'Available ${paidFromAgentFloat ? 'in your float' : 'branch cash'}: UGX ${formatMoney(remaining)}',
+      style: TextStyle(
+        color: over ? const Color(0xFFB42318) : slateText,
+        fontSize: 10.5,
+        fontWeight: FontWeight.w700,
       ),
     );
   }

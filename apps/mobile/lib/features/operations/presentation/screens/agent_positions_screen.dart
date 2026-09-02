@@ -142,6 +142,7 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
             repaymentsCollected: _num(position['amountCollected']),
             processingFees: _num(position['processingFees']),
             expectedHandover: _num(position['expectedReturn']),
+            expensesTotal: _num(position['expensesTotal']),
           );
         })
         .where((position) => position.id.isNotEmpty && position.isActiveToday)
@@ -657,6 +658,8 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
 
   num get _processingFees => _num(_position?['processingFees']);
 
+  num get _expensesTotal => _num(_position?['expensesTotal']);
+
   num get _expected => _num(_position?['expectedReturn']);
 
   num? get _returned => _nullableNum(_position?['amountReturned']);
@@ -1011,6 +1014,7 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
               repaymentsCollected: _collections,
               processingFees: _processingFees,
               loansIssued: _amountDisbursed,
+              expensesTotal: _expensesTotal,
               expectedHandover: _expected,
               returned: _returned,
               variance: _variance,
@@ -2000,6 +2004,7 @@ class _OfficerExpectedHandoverCard extends StatelessWidget {
     required this.repaymentsCollected,
     required this.processingFees,
     required this.loansIssued,
+    required this.expensesTotal,
     required this.expectedHandover,
     required this.returned,
     required this.variance,
@@ -2010,6 +2015,7 @@ class _OfficerExpectedHandoverCard extends StatelessWidget {
   final num repaymentsCollected;
   final num processingFees;
   final num loansIssued;
+  final num expensesTotal;
   final num expectedHandover;
   final num? returned;
   final num? variance;
@@ -2082,6 +2088,11 @@ class _OfficerExpectedHandoverCard extends StatelessWidget {
           _OfficerCashLine(
             label: 'Processing fees collected',
             value: processingFees,
+            signed: true,
+          ),
+          _OfficerCashLine(
+            label: 'Field expenses',
+            value: -expensesTotal,
             signed: true,
           ),
           _OfficerCashLine(

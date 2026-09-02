@@ -158,7 +158,10 @@ class DailyReportMapper {
         totalCashAvailable: _num(operation['cashAvailableAtOpening']),
         repaymentsCollected: _num(operation['collectionsReceived']),
         processingFees: _num(operation['processingFeesTotal']),
-        expenses: _num(operation['expensesTotal']),
+        expenses: _firstNum([
+          operation['branchCashExpensesTotal'],
+          operation['expensesTotal'],
+        ]),
         floatIssued: _num(operation['floatIssued']),
         floatReturned: _num(operation['cashReturnedByAgents']),
         expectedClosingCash: _num(operation['expectedClosingBalance']),
@@ -220,11 +223,15 @@ class DailyReportMapper {
   static DailyReportExpense _expense(Map<String, dynamic> row) {
     return DailyReportExpense(
       id: _string(row['id']) ?? '',
-      category: 'OTHER',
+      category: _string(row['paidFrom']) == 'AGENT_FLOAT'
+          ? 'FIELD_FLOAT'
+          : 'OTHER',
       amount: _num(row['amount']),
       description: _string(row['description']),
       incurredAt: _date(row['incurredAt']),
-      recordedByName: _string(row['recordedByName']) ?? 'Manager',
+      recordedByName: _string(row['agentName']) ??
+          _string(row['recordedByName']) ??
+          'Officer',
       approvedAt: _date(row['approvedAt']),
       approvedByName: _string(row['approvedByName']),
       voidedAt: _date(row['voidedAt']),
@@ -243,6 +250,7 @@ class DailyReportMapper {
       amountDisbursed: _num(row['amountDisbursed']),
       processingFees: _num(row['processingFees']),
       amountCollected: _num(row['amountCollected']),
+      expensesTotal: _num(row['expensesTotal']),
       expectedReturn: _num(row['expectedReturn']),
       amountReturned: _nullableNum(row['amountReturned']),
       variance: _nullableNum(row['variance']),

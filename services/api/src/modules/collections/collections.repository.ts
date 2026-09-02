@@ -37,6 +37,12 @@ const searchableLoanStatuses: LoanStatus[] = [
 const loanWithRelations = {
   customer: true,
   wallet: true,
+  branch: {
+    select: {
+      id: true,
+      name: true,
+    },
+  },
 
   application: {
     include: {
@@ -141,6 +147,10 @@ export class CollectionsRepository {
         balance: {
           gt: 0,
         },
+
+        customer: {
+          voidedAt: null,
+        },
       },
 
       include: loanWithRelations,
@@ -188,6 +198,10 @@ export class CollectionsRepository {
 
         balance: {
           gt: 0,
+        },
+
+        customer: {
+          voidedAt: null,
         },
       },
 

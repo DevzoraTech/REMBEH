@@ -8,6 +8,7 @@ class AgentFloatPosition {
     required this.repaymentsCollected,
     required this.processingFees,
     required this.expectedHandover,
+    this.expensesTotal = 0,
     this.phone,
     this.roleName,
     this.photoUrl,
@@ -26,12 +27,14 @@ class AgentFloatPosition {
   final num repaymentsCollected;
   final num processingFees;
   final num expectedHandover;
+  final num expensesTotal;
 
   bool get isActiveToday =>
       floatAllocated > 0 ||
       loansIssued > 0 ||
       repaymentsCollected > 0 ||
       processingFees > 0 ||
+      expensesTotal > 0 ||
       expectedHandover > 0;
 
   bool get isManager => (roleName ?? '').toLowerCase().contains('manager');

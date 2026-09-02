@@ -41,8 +41,10 @@ import {
   normalizeInternationalPhoneNumber,
 } from '../../common/security/identity-normalization';
 import { PrismaService } from '../../database/prisma.service';
+import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { OtpService } from '../../common/security/otp.service';
 import { PasswordService } from '../../common/security/password.service';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import {
   EmailOtpDeliveryResult,
   toPublicOtpDelivery,
@@ -94,6 +96,7 @@ const OWNER_RESTRICTED_OPERATION_PERMISSIONS = [
   'operation.float.return',
   'operation.expense.create',
   'operation.expense.approve',
+  'operation.agent.expense.create',
   'operation.close',
   'operation.report.review',
 ];
@@ -1715,6 +1718,66 @@ export class AuthService {
         },
       }),
     };
+  }
+
+  async changePassword(user: AuthenticatedUser, dto: ChangePasswordDto) {
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new BadRequestException(
+        'New password and confirmation do not match.',
+      );
+    }
+
+    const record = await this.prisma.user.findFirst({
+      where: { id: user.userId, tenantId: user.tenantId },
+      select: { id: true, passwordHash: true },
+    });
+    if (!record) {
+      throw new NotFoundException('Account not found.');
+    }
+
+    if (record.passwordHash) {
+      const currentPassword = dto.currentPassword ?? '';
+      if (!currentPassword) {
+        throw new BadRequestException('Enter your current password.');
+      }
+
+      const currentMatches = await this.passwordService.verifyPassword(
+        currentPassword,
+        record.passwordHash,
+      );
+      if (!currentMatches) {
+        throw new BadRequestException('Current password is incorrect.');
+      }
+
+      const reused = await this.passwordService.verifyPassword(
+        dto.newPassword,
+        record.passwordHash,
+      );
+      if (reused) {
+        throw new BadRequestException(
+          'New password must be different from your current password.',
+        );
+      }
+    }
+
+    const passwordHash = await this.passwordService.hashPassword(
+      dto.newPassword,
+    );
+    await this.prisma.user.update({
+      where: { id: record.id },
+      data: { passwordHash },
+    });
+
+    if (user.sessionId) {
+      await this.revokeUserSessions({
+        tenantId: user.tenantId,
+        userId: user.userId,
+        revokedByUserId: user.userId,
+        exceptSessionId: user.sessionId,
+      });
+    }
+
+    return { ok: true };
   }
 
   async revokeUserSessions(input: {

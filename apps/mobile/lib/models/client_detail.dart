@@ -105,6 +105,8 @@ class ClientDetail {
     this.fineHistory = const [],
     this.media = const [],
     this.correctionAccess = const ClientCorrectionAccess(),
+    this.branchId,
+    this.branchName,
   });
 
   final String id;
@@ -144,6 +146,8 @@ class ClientDetail {
   final List<ClientFineHistoryItem> fineHistory;
   final List<ClientLoanMediaItem> media;
   final ClientCorrectionAccess correctionAccess;
+  final String? branchId;
+  final String? branchName;
 
   String get initials {
     final parts = fullName
@@ -284,6 +288,8 @@ class ClientDetail {
             ? json['correctionAccess'] as Map<String, dynamic>
             : null,
       ),
+      branchId: json['branchId'] as String?,
+      branchName: json['branchName'] as String?,
     );
   }
 }
@@ -291,11 +297,13 @@ class ClientDetail {
 class ClientCorrectionAccess {
   const ClientCorrectionAccess({
     this.enabled = false,
+    this.canDelete = false,
     this.source,
     this.reason,
   });
 
   final bool enabled;
+  final bool canDelete;
   final String? source;
   final String? reason;
 
@@ -303,6 +311,7 @@ class ClientCorrectionAccess {
     if (json == null) return const ClientCorrectionAccess();
     return ClientCorrectionAccess(
       enabled: json['enabled'] as bool? ?? false,
+      canDelete: json['canDelete'] as bool? ?? false,
       source: json['source'] as String?,
       reason: json['reason'] as String?,
     );

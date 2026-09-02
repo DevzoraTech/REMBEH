@@ -19,10 +19,17 @@ export type DailyOperationBranchAccessContract = {
   message: string | null;
 };
 
+export type DailyOperationExpensePaidFromContract =
+  | 'BRANCH_CASH'
+  | 'AGENT_FLOAT';
+
 export type DailyOperationExpenseContract = {
   id: string;
   amount: number;
   description: string | null;
+  paidFrom: DailyOperationExpensePaidFromContract;
+  agentId: string | null;
+  agentName: string | null;
   incurredAt: string;
   recordedByName: string;
 
@@ -60,6 +67,7 @@ export type DailyOperationAgentReturnContract = {
   amountDisbursed: number;
   processingFees: number;
   amountCollected: number;
+  expensesTotal: number;
   expectedReturn: number;
   amountReturned: number | null;
   variance: number | null;
@@ -207,6 +215,8 @@ export type DailyOperationContract = {
 
   expensesCount: number;
   expensesTotal: number;
+  branchCashExpensesTotal: number;
+  agentFloatExpensesTotal: number;
   expenses: DailyOperationExpenseContract[];
 
   branchCashRemaining: number;
@@ -416,6 +426,8 @@ export type AgentDailyFloatSummaryContract = {
   collectedRepaymentsAvailable: number;
   unusedFloat: number;
   expectedHandover: number;
+  expensesTotal: number;
+  expenses: DailyOperationExpenseContract[];
 
   amountReturned: number | null;
   returnedAt: string | null;
@@ -439,6 +451,8 @@ export type AgentDailyOperationResponseContract = {
   lockReason: AgentDailyAccessReasonContract;
   lockTitle: string | null;
   lockMessage: string | null;
+
+  canRecordExpense: boolean;
 
   float: AgentDailyFloatSummaryContract;
 };

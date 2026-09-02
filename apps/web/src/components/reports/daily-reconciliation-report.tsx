@@ -143,6 +143,8 @@ export type DailyReportDocumentModel = {
     description: string | null;
     incurredAt: string;
     recordedByName: string;
+    paidFrom?: "BRANCH_CASH" | "AGENT_FLOAT";
+    agentName?: string | null;
   }>;
   agentReturns: Array<{
     floatId: string;
@@ -151,6 +153,7 @@ export type DailyReportDocumentModel = {
     amountDisbursed: number;
     amountCollected: number;
     processingFees: number;
+    expensesTotal?: number;
     expectedReturn: number;
     amountReturned: number | null;
     variance: number | null;
@@ -1352,18 +1355,20 @@ function AgentHandoverTab({
             "Loans",
             "Repayments",
             "Fees",
+            "Expenses",
             "Expected",
             "Returned",
             "Variance",
             "Status",
           ]}
-          align={[false, true, true, true, true, true, true, true, false]}
+          align={[false, true, true, true, true, true, true, true, true, false]}
           rows={document.agentReturns.map((row) => [
             row.agentName,
             amt(row.amountGiven),
             amt(row.amountDisbursed),
             amt(row.amountCollected),
             amt(row.processingFees),
+            amt(row.expensesTotal ?? 0),
             amt(row.expectedReturn),
             row.amountReturned == null ? "—" : amt(row.amountReturned),
             row.variance == null ? "—" : amt(row.variance),
@@ -1387,14 +1392,14 @@ function ExpensesTab({ document }: { document: DailyReportDocumentModel }) {
       </div>
       <div className="overflow-x-auto p-4">
         <ReportTable
-          columns={["Category", "Description", "Amount", "Time", "Recorded By"]}
+          columns={["Paid from", "Description", "Amount", "Time", "Recorded by"]}
           align={[false, false, true, false, false]}
           rows={document.expenses.map((row) => [
-            titleCase(row.category.replaceAll("_", " ")),
+            row.paidFrom === "AGENT_FLOAT" ? "Field float" : "Branch cash",
             row.description || "—",
             amt(row.amount),
             formatDateTime(row.incurredAt),
-            row.recordedByName,
+            row.agentName || row.recordedByName,
           ])}
           empty="No expenses recorded."
         />
@@ -1625,7 +1630,10 @@ function groupExpenses(expenses: DailyReportDocumentModel["expenses"]) {
     { category: string; count: number; amount: number }
   >();
   for (const expense of expenses) {
-    const category = titleCase(expense.category.replaceAll("_", " "));
+    const category =
+      expense.paidFrom === "AGENT_FLOAT"
+        ? "Field float"
+        : titleCase(expense.category.replaceAll("_", " "));
     const current = map.get(category) ?? { category, count: 0, amount: 0 };
     current.count += 1;
     current.amount += expense.amount;
@@ -1874,6 +1882,8 @@ type OperationLike = {
     description: string | null;
     incurredAt: string;
     recordedByName: string;
+    paidFrom?: "BRANCH_CASH" | "AGENT_FLOAT";
+    agentName?: string | null;
   }>;
   agentReturns: Array<{
     floatId: string;
@@ -1882,6 +1892,7 @@ type OperationLike = {
     amountDisbursed: number;
     amountCollected: number;
     processingFees: number;
+    expensesTotal?: number;
     expectedReturn: number;
     amountReturned: number | null;
     variance: number | null;
@@ -2082,6 +2093,7 @@ export function buildDailyReportDocumentFromSnapshot(
       amountDisbursed: numberValue(item.amountDisbursed),
       amountCollected: numberValue(item.amountCollected),
       processingFees: numberValue(item.processingFees),
+      expensesTotal: numberValue(item.expensesTotal),
       expectedReturn: numberValue(item.expectedReturn),
       amountReturned:
         item.amountReturned == null ? null : numberValue(item.amountReturned),
@@ -2295,6 +2307,12 @@ export function buildDailyReportDocumentFromSnapshot(
           typeof item.description === "string" ? item.description : null,
         incurredAt: stringValue(item.incurredAt) || report.generatedAt,
         recordedByName: stringValue(item.recordedByName) || "—",
+        paidFrom:
+          stringValue(item.paidFrom) === "AGENT_FLOAT"
+            ? "AGENT_FLOAT"
+            : "BRANCH_CASH",
+        agentName:
+          typeof item.agentName === "string" ? item.agentName : null,
       };
     }),
     agentReturns: mappedAgents,

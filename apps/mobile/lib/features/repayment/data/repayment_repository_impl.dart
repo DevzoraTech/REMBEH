@@ -220,6 +220,8 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
           DateTime.tryParse(json['lastActivityAt'] as String? ?? '') ??
           DateTime.now(),
       synced: json['synced'] as bool? ?? true,
+      branchId: json['branchId'] as String?,
+      branchName: json['branchName'] as String?,
     );
   }
 
@@ -256,6 +258,8 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
       recordedByUserId: json['recordedByUserId'] as String?,
       recordedByName: json['recordedByName'] as String?,
       recordedByPublicId: json['recordedByPublicId'] as String?,
+      branchId: json['branchId'] as String?,
+      branchName: json['branchName'] as String?,
     );
   }
 
@@ -370,6 +374,8 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
             ? json['correctionAccess'] as Map<String, dynamic>
             : null,
       ),
+      branchId: json['branchId'] as String?,
+      branchName: json['branchName'] as String?,
     );
   }
 
@@ -465,8 +471,11 @@ ui.ClientDetail toUiClientDetail(ClientLoanDetail detail) {
         .toList(),
     correctionAccess: ui.ClientCorrectionAccess(
       enabled: detail.correctionAccess.enabled,
+      canDelete: detail.correctionAccess.canDelete,
       source: detail.correctionAccess.source,
       reason: detail.correctionAccess.reason,
     ),
+    branchId: detail.branchId,
+    branchName: detail.branchName,
   );
 }

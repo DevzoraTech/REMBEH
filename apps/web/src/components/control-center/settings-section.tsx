@@ -27,6 +27,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  type FormEvent,
 } from "react";
 
 import { controlCenterFetch } from "../../lib/control-center-api";
@@ -248,7 +249,8 @@ export function SettingsSection({
             <SettingsLoading />
           ) : tab ===
             "ADMINISTRATORS" ? (
-            <AdministratorsView
+          <AdministratorsView
+              session={session}
               settings={
                 settings
               }
@@ -470,26 +472,143 @@ function SettingsTabs({
   );
 }
 
+function AdminPasswordCard({
+  session,
+}: {
+  session: ControlCenterSession;
+}) {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setSuccess(null);
+    if (newPassword.length < 8) {
+      setError("New password must be at least 8 characters.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("New password and confirmation do not match.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await controlCenterFetch("/auth/change-password", session, {
+        method: "POST",
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+          confirmPassword,
+        }),
+      });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setSuccess("Password updated.");
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not change password.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={submit}
+      className="border-b border-[#edf1f4] bg-[#fcfdfe] px-4 py-4"
+    >
+      <div className="flex items-start gap-3">
+        <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[#eaf6ee] text-[#168650]">
+          <KeyRound className="size-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10.5px] font-semibold text-[#17233c]">
+            Your password
+          </p>
+          <p className="mt-1 text-[9.5px] leading-4 text-[#718099]">
+            Change the password you use to sign in to Control Center.
+          </p>
+          {success ? (
+            <p className="mt-2 text-[10px] font-medium text-[#168650]">
+              {success}
+            </p>
+          ) : null}
+          {error ? (
+            <p className="mt-2 text-[10px] font-medium text-red-700">{error}</p>
+          ) : null}
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <input
+              type="password"
+              required
+              minLength={8}
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value)}
+              placeholder="Current password"
+              autoComplete="current-password"
+              className="h-9 rounded-[8px] border border-[#dfe5eb] bg-white px-3 text-[11px] outline-none"
+            />
+            <input
+              type="password"
+              required
+              minLength={8}
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              placeholder="New password"
+              autoComplete="new-password"
+              className="h-9 rounded-[8px] border border-[#dfe5eb] bg-white px-3 text-[11px] outline-none"
+            />
+            <input
+              type="password"
+              required
+              minLength={8}
+              value={confirmPassword}
+              onChange={(event) => setConfirmPassword(event.target.value)}
+              placeholder="Confirm new password"
+              autoComplete="new-password"
+              className="h-9 rounded-[8px] border border-[#dfe5eb] bg-white px-3 text-[11px] outline-none"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={saving}
+            className="mt-3 h-8 rounded-[8px] bg-[#168650] px-3 text-[10.5px] font-semibold text-white disabled:opacity-60"
+          >
+            {saving ? "Updating…" : "Update password"}
+          </button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
 function AdministratorsView({
+  session,
   settings,
 }: {
+  session: ControlCenterSession;
   settings:
     ControlCenterSettings | null;
 }) {
-  if (
-    !settings?.administrators.length
-  ) {
-    return (
+  return (
+    <div className="border-t border-[#edf1f4]">
+      <AdminPasswordCard session={session} />
+      {!settings?.administrators.length ? (
       <EmptyState
         icon={UserRoundCog}
         title="No Control Center administrators"
         description="No administrator identities are currently configured."
       />
-    );
-  }
-
-  return (
-    <div className="border-t border-[#edf1f4]">
+    ) : (
+      <>
       <div className="border-b border-[#edf1f4] bg-[#fcfdfe] px-4 py-3">
         <div className="flex items-start gap-3">
           <span className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-[#edf4ff] text-[#3475de]">
@@ -588,6 +707,8 @@ function AdministratorsView({
           ),
         )}
       </div>
+      </>
+    )}
     </div>
   );
 }

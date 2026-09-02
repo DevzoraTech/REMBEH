@@ -172,6 +172,10 @@ class _AgentReconciliationTabState extends State<AgentReconciliationTab> {
           ),
           const SizedBox(height: 16),
           _ExpectedHandoverCard(float: _float),
+          if (_float.expenses.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            _FieldExpensesCard(expenses: _float.expenses),
+          ],
           const SizedBox(height: 12),
           if (_alreadyReturned)
             _ReturnedCard(float: _float)
@@ -203,6 +207,80 @@ class _AgentReconciliationTabState extends State<AgentReconciliationTab> {
             const SizedBox(height: 12),
             _MessageBox(text: _notice!, danger: false),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _FieldExpensesCard extends StatelessWidget {
+  const _FieldExpensesCard({required this.expenses});
+
+  final List<AgentDayExpense> expenses;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = expenses.fold<int>(0, (sum, row) => sum + row.amount);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: line),
+        borderRadius: rembehBorderRadius(rembehRadiusLg),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Field expenses',
+                  style: TextStyle(
+                    color: midnightNavy,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              Text(
+                'UGX ${formatMoney(total)}',
+                style: const TextStyle(
+                  color: Color(0xFFB42318),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ...expenses.map(
+            (expense) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      expense.description,
+                      style: const TextStyle(
+                        color: slateText,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    'UGX ${formatMoney(expense.amount)}',
+                    style: const TextStyle(
+                      color: midnightNavy,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -258,6 +336,10 @@ class _ExpectedHandoverCard extends StatelessWidget {
             value: float.collectedRepaymentsAvailable,
           ),
           _MoneyLine(label: 'Processing fees', value: float.processingFees),
+          _MoneyLine(
+            label: 'Field expenses',
+            value: -float.expensesTotal,
+          ),
           const Divider(height: 20, color: line),
           _MoneyLine(
             label: 'Cash expected back',

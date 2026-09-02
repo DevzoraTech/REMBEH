@@ -10,9 +10,7 @@ import '../theme.dart';
 import '../utils/account_access.dart';
 import '../utils/friendly_errors.dart';
 import 'account_locked_screen.dart';
-import 'agent_shell.dart';
-import 'branch_workspace_screen.dart';
-import 'profile/agent_selfie_capture_screen.dart';
+import 'workspace_router.dart';
 
 const _rememberEmailKey = 'rembeh.login.remember_email';
 const _rememberMeKey = 'rembeh.login.remember_me';
@@ -135,11 +133,7 @@ class _LoginScreenState extends State<LoginScreen>
       if (!mounted) return;
       await widget.pushService?.requestPermissionAndSync();
       if (!mounted) return;
-      final next = session.canUseBranchWorkspace
-          ? BranchWorkspaceScreen(session: session)
-          : session.requiresProfilePhoto && !session.hasProfilePhoto
-          ? AgentSelfieCaptureScreen(session: session)
-          : AgentShell(session: session);
+      final next = rembehWorkspaceFor(session);
       Navigator.of(
         context,
       ).pushReplacement(MaterialPageRoute(builder: (_) => next));

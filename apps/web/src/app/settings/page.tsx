@@ -7,9 +7,16 @@ import {
   useMemo,
   useState,
   type FormEvent,
-  type ReactNode,
 } from "react";
-import { Check, Loader2, Plus } from "lucide-react";
+import {
+  Check,
+  FileText,
+  Loader2,
+  MessageSquareText,
+  Plus,
+  Search,
+  UserRound,
+} from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "../../components/app/app-shell";
 import {
@@ -24,7 +31,13 @@ import {
   SelectField,
   TextField,
 } from "../../components/auth/form-controls";
+import { ChangePasswordCard } from "../../components/settings/change-password-card";
+import { FieldExpenseSettingsCard } from "../../components/settings/field-expense-settings-card";
 import { SettingsModal } from "../../components/settings/settings-modal";
+import {
+  SettingsCard,
+  SettingsInfoRow,
+} from "../../components/settings/settings-chrome";
 import { SmsNotificationSettingsPanel } from "../../components/settings/sms-notification-settings";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import {
@@ -37,6 +50,7 @@ import {
   readAuthState,
 } from "../../lib/auth-session";
 import { resolveOperatorRole } from "../../lib/roles";
+import { OwnerHeader } from "../owner/owner-header";
 
 type SettingsSection = "loan-products" | "sms" | "workspace";
 
@@ -98,21 +112,29 @@ const WIZARD_STEPS: { id: WizardStepId; label: string }[] = [
   { id: "review", label: "review" },
 ];
 
-const SECTIONS: { id: SettingsSection; label: string; hint: string }[] = [
+const SECTIONS: Array<{
+  id: SettingsSection;
+  label: string;
+  hint: string;
+  icon: typeof UserRound;
+}> = [
+  {
+    id: "workspace",
+    label: "Account",
+    hint: "Profile and password",
+    icon: UserRound,
+  },
   {
     id: "loan-products",
     label: "Loan types",
-    hint: "Set the loan options agents choose from.",
+    hint: "Rates, terms, fees, and fines",
+    icon: FileText,
   },
   {
     id: "sms",
     label: "SMS",
-    hint: "Choose which SMS notifications are sent to borrowers.",
-  },
-  {
-    id: "workspace",
-    label: "Account",
-    hint: "View your account details.",
+    hint: "Borrower SMS notifications",
+    icon: MessageSquareText,
   },
 ];
 
@@ -170,6 +192,8 @@ function formFromTemplate(template: LoanTemplate): TemplateForm {
 }
 
 function parseSection(value: string | null): SettingsSection {
+  if (value === "account" || value === "workspace") return "workspace";
+  if (value === "sms") return "sms";
   if (
     value === "payment-start" ||
     value === "fines" ||
@@ -179,8 +203,7 @@ function parseSection(value: string | null): SettingsSection {
   ) {
     return "loan-products";
   }
-  if (value === "sms" || value === "workspace") return value;
-  return "loan-products";
+  return "workspace";
 }
 
 function paymentStartLabel(
@@ -247,39 +270,6 @@ function processingFeeLabel(
   return `${template.processingFeePercent}%`;
 }
 
-function SectionHeader({
-  title,
-  description,
-  action,
-}: {
-  title: string;
-  description: string;
-  action?: ReactNode;
-}) {
-  return (
-    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--line)] pb-3">
-      <div className="min-w-0">
-        <h2 className="text-sm font-bold text-[var(--midnight-navy)]">
-          {title}
-        </h2>
-        <p className="mt-0.5 text-xs text-slate-500">{description}</p>
-      </div>
-      {action}
-    </div>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid gap-0.5 border-b border-[var(--line)] py-2.5 last:border-0 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-3">
-      <dt className="text-[11px] font-semibold capitalize tracking-[0.06em] text-slate-500">
-        {label}
-      </dt>
-      <dd className="text-sm text-[var(--midnight-navy)]">{value || "—"}</dd>
-    </div>
-  );
-}
-
 function WizardStepIndicator({ stepIndex }: { stepIndex: number }) {
   return (
     <ol className="mb-3 flex flex-wrap gap-1.5">
@@ -342,6 +332,8 @@ function SettingsPageContent() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<TemplateForm>(emptyForm);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -352,13 +344,15 @@ function SettingsPageContent() {
   const setSection = useCallback(
     (next: SettingsSection) => {
       const params = new URLSearchParams(searchParams.toString());
-      if (next === "loan-products") {
+      if (next === "workspace") {
         params.delete("section");
       } else {
         params.set("section", next);
       }
       const query = params.toString();
       router.replace(query ? `/settings?${query}` : "/settings");
+      setNotice(null);
+      setError(null);
     },
     [router, searchParams],
   );
@@ -687,6 +681,16 @@ function SettingsPageContent() {
     [section],
   );
 
+  const filteredSections = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return SECTIONS;
+    return SECTIONS.filter(
+      (item) =>
+        item.label.toLowerCase().includes(needle) ||
+        item.hint.toLowerCase().includes(needle),
+    );
+  }, [search]);
+
   const sortedTemplates = useMemo(
     () =>
       [...templates].sort((a, b) => {
@@ -703,6 +707,11 @@ function SettingsPageContent() {
 
   const canManageProducts =
     session?.permissions.includes("loan.product.manage") ?? false;
+  const operatorRole = session ? resolveOperatorRole(session, user) : null;
+  const canManageFieldExpenses =
+    operatorRole === "manager" &&
+    Boolean(session?.permissions.includes("branch.staff.invite")) &&
+    Boolean(branch?.id);
   const isLastWizardStep = wizardStep >= WIZARD_STEPS.length - 1;
   const currentWizard = WIZARD_STEPS[wizardStep];
 
@@ -717,63 +726,152 @@ function SettingsPageContent() {
       user={user}
       branch={branch}
     >
-      <div className="mx-auto max-w-6xl">
-        <header className="mb-4">
-          <h1 className="font-[family-name:var(--font-display)] text-xl tracking-[-0.03em] text-[var(--midnight-navy)]">
-            settings
-          </h1>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Loan types, SMS notifications, and account settings.
-          </p>
-        </header>
+      <div className="mx-auto max-w-[1400px] space-y-5 animate-rise">
+        <OwnerHeader
+          subtitle="Account, password, loan types, and SMS."
+          title="Settings"
+          showReportsButton
+          settingsHref="/settings"
+          reportsHref="/reports"
+          notificationScope="manager"
+        />
 
         <FormError error={error} />
+        {notice ? (
+          <p className="rounded-[14px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            {notice}
+          </p>
+        ) : null}
 
-        <div className="mt-3 grid gap-4 lg:grid-cols-[200px_minmax(0,1fr)]">
-          <aside className="panel h-fit p-1.5 lg:sticky lg:top-[68px]">
+        <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+          <aside className="h-fit overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white p-2 shadow-[0_14px_34px_rgba(15,23,42,0.055)] lg:sticky lg:top-[72px]">
+            <label className="mb-2 flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+              <Search className="size-3.5 shrink-0 text-slate-400" />
+              <input
+                type="search"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search settings..."
+                aria-label="Search settings"
+                className="min-w-0 flex-1 bg-transparent text-xs font-medium text-[var(--midnight-navy)] outline-none placeholder:text-slate-400"
+              />
+            </label>
             <nav className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
-              {SECTIONS.map((item) => {
+              {filteredSections.map((item) => {
+                const Icon = item.icon;
                 const active = item.id === section;
                 return (
                   <button
                     key={item.id}
                     type="button"
                     onClick={() => setSection(item.id)}
-                    className={`shrink-0 px-3 py-2 text-left text-xs font-semibold transition ${
+                    className={`flex min-w-[140px] items-start gap-2.5 rounded-[12px] px-3 py-2.5 text-left transition lg:min-w-0 ${
                       active
-                        ? "bg-[var(--soft-mist)] text-[var(--midnight-navy)]"
-                        : "text-slate-600 hover:bg-[var(--soft-mist)]/70 hover:text-[var(--midnight-navy)]"
+                        ? "bg-[#013f35] text-white shadow-[0_10px_20px_rgba(1,63,53,0.28)]"
+                        : "text-slate-600 hover:bg-[#f4f7f5] hover:text-[#0b1220]"
                     }`}
                   >
-                    {item.label}
+                    <Icon
+                      className={`mt-0.5 size-4 shrink-0 ${
+                        active ? "text-emerald-200" : "text-slate-400"
+                      }`}
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-xs font-bold">
+                        {item.label}
+                      </span>
+                      <span
+                        className={`mt-0.5 block text-[10px] leading-snug ${
+                          active ? "text-emerald-100/90" : "text-slate-500"
+                        }`}
+                      >
+                        {item.hint}
+                      </span>
+                    </span>
                   </button>
                 );
               })}
             </nav>
           </aside>
 
-          <section className="panel min-w-0 p-4">
-            {loading ? <TableSkeleton rows={5} columns={5} /> : null}
+          <section className="min-w-0 space-y-4">
+            {section === "workspace" ? (
+              <>
+                <SettingsCard
+                  title="Your account"
+                  description={activeSection.hint}
+                >
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <SettingsInfoRow
+                      label="Business"
+                      value={workspace?.name ?? "—"}
+                    />
+                    <SettingsInfoRow
+                      label="Country"
+                      value={workspace?.country ?? "—"}
+                    />
+                    <SettingsInfoRow
+                      label="Currency"
+                      value={workspace?.currency ?? "—"}
+                    />
+                    <SettingsInfoRow
+                      label="Status"
+                      value={workspace?.status ?? "—"}
+                    />
+                    <SettingsInfoRow
+                      label="Your name"
+                      value={user?.name ?? "—"}
+                    />
+                    <SettingsInfoRow
+                      label="Email"
+                      value={user?.email ?? "—"}
+                    />
+                    <SettingsInfoRow
+                      label="Phone"
+                      value={user?.phone ?? "—"}
+                    />
+                    <SettingsInfoRow
+                      label="Active branch"
+                      value={
+                        branch?.name
+                          ? `${branch.name}${branch.address ? ` · ${branch.address}` : ""}`
+                          : "Account-wide"
+                      }
+                    />
+                  </div>
+                </SettingsCard>
+                <ChangePasswordCard session={session} />
+                {canManageFieldExpenses && branch?.id ? (
+                  <FieldExpenseSettingsCard
+                    session={session}
+                    branchId={branch.id}
+                  />
+                ) : null}
+              </>
+            ) : null}
+
+            {loading && section !== "workspace" ? (
+              <TableSkeleton rows={5} columns={5} />
+            ) : null}
 
             {!loading && section === "loan-products" ? (
-              <div className="space-y-3">
-                <SectionHeader
-                  title="Loan types"
-                  description={activeSection.hint}
-                  action={
-                    canManageProducts ? (
-                      <button
-                        type="button"
-                        className="btn btn-primary h-8 px-3 text-xs"
-                        onClick={openCreate}
-                        disabled={saving}
-                      >
-                        <Plus className="size-3.5" />
-                        New loan type
-                      </button>
-                    ) : null
-                  }
-                />
+              <SettingsCard
+                title="Loan types"
+                description={activeSection.hint}
+                action={
+                  canManageProducts ? (
+                    <button
+                      type="button"
+                      className="flex h-9 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3.5 text-xs font-semibold text-white shadow-[0_12px_24px_rgba(15,143,104,0.28)] transition hover:brightness-105 disabled:opacity-60"
+                      onClick={openCreate}
+                      disabled={saving}
+                    >
+                      <Plus className="size-3.5" />
+                      New loan type
+                    </button>
+                  ) : null
+                }
+              >
 
                 {!canManageProducts ? (
                   <p className="py-6 text-center text-sm text-slate-500">
@@ -894,47 +992,24 @@ function SettingsPageContent() {
                     />
                   </div>
                 )}
-              </div>
+              </SettingsCard>
             ) : null}
 
             {!loading && section === "sms" ? (
-              <SmsNotificationSettingsPanel
-                session={session}
-                canEdit={Boolean(
-                  session.permissions.includes("loan.product.manage") ||
-                  session.permissions.includes("branch.staff.invite") ||
-                  session.permissions.includes("branch.create"),
-                )}
-              />
-            ) : null}
-
-            {!loading && section === "workspace" ? (
-              <div className="space-y-3">
-                <SectionHeader
-                  title="account"
-                  description={activeSection.hint}
+              <SettingsCard
+                title="SMS"
+                description={activeSection.hint}
+                bare
+              >
+                <SmsNotificationSettingsPanel
+                  session={session}
+                  canEdit={Boolean(
+                    session.permissions.includes("loan.product.manage") ||
+                      session.permissions.includes("branch.staff.invite") ||
+                      session.permissions.includes("branch.create"),
+                  )}
                 />
-                <dl>
-                  <InfoRow label="company" value={workspace?.name ?? "—"} />
-                  <InfoRow label="country" value={workspace?.country ?? "—"} />
-                  <InfoRow
-                    label="currency"
-                    value={workspace?.currency ?? "—"}
-                  />
-                  <InfoRow label="status" value={workspace?.status ?? "—"} />
-                  <InfoRow label="signed-in as" value={user?.name ?? "—"} />
-                  <InfoRow label="email" value={user?.email ?? "—"} />
-                  <InfoRow label="phone" value={user?.phone ?? "—"} />
-                  <InfoRow
-                    label="active branch"
-                    value={
-                      branch?.name
-                        ? `${branch.name}${branch.address ? ` · ${branch.address}` : ""}`
-                        : "account-wide"
-                    }
-                  />
-                </dl>
-              </div>
+              </SettingsCard>
             ) : null}
           </section>
         </div>

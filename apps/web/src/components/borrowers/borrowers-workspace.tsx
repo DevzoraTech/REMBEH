@@ -4,12 +4,14 @@ import {
   AlertTriangle,
   ArrowDown,
   ArrowUp,
+  Ban,
   Building2,
   CalendarDays,
   Check,
   Download,
   MoreVertical,
   RefreshCw,
+  ShieldAlert,
   ShieldCheck,
   Users,
   X,
@@ -138,6 +140,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [showVoided, setShowVoided] = useState(false);
 
   const loadBorrowers = useCallback(async () => {
     if (!state.session) return;
@@ -233,6 +236,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
         advancedFilters,
         now,
       );
+      const matchesVoided = showVoided || !borrower.voidedAt;
 
       const digits = q.replace(/\D/g, "");
       const haystack = [
@@ -266,10 +270,11 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
         matchesLoanStatus &&
         matchesOfficer &&
         matchesDate &&
-        matchesSearch
+        matchesSearch &&
+        matchesVoided
       );
     });
-  }, [advancedFilters, borrowers, branchFilter, isManager, search]);
+  }, [advancedFilters, borrowers, branchFilter, isManager, search, showVoided]);
 
   const summary = useMemo(() => buildBorrowersSummary(borrowers), [borrowers]);
   const paged = useMemo(
@@ -340,7 +345,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
         <p className="-mt-2 text-sm font-medium text-slate-500">
           {isManager
             ? "Manage borrowers, review their details, and track loan activity at your branch."
-            : "Manage borrowers, review their details, and track loan activity across branches."}
+            : "Search any client, then open the loan to edit a record that was captured on the wrong person or with wrong details."}
         </p>
 
         {error ? (
@@ -441,6 +446,18 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
                   applied={advancedFilters}
                   onApply={setAdvancedFilters}
                 />
+                <label className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-[#0b1220] shadow-[0_8px_18px_rgba(15,23,42,0.035)]">
+                  <input
+                    type="checkbox"
+                    checked={showVoided}
+                    onChange={(event) => {
+                      setShowVoided(event.target.checked);
+                      setPage(1);
+                    }}
+                    className="size-3.5 accent-[var(--forest-emerald)]"
+                  />
+                  Show voided
+                </label>
               </div>
               <button
                 type="button"
@@ -517,11 +534,30 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
                               <p className="truncate font-semibold text-[#0b1220]">
                                 {borrower.fullName}
                               </p>
-                              <p className="mt-0.5 truncate text-[11px] font-medium text-slate-500">
-                                {borrower.collateralType
-                                  ? titleCase(borrower.collateralType)
-                                  : "No security on file"}
-                              </p>
+                              {borrower.voidedAt ? (
+                                <p
+                                  className={`mt-0.5 inline-flex items-center gap-1 text-[10px] font-bold ${
+                                    borrower.voidDisposition === "BLACKLISTED"
+                                      ? "text-red-700"
+                                      : "text-amber-800"
+                                  }`}
+                                >
+                                  {borrower.voidDisposition === "BLACKLISTED" ? (
+                                    <Ban className="size-3" />
+                                  ) : (
+                                    <ShieldAlert className="size-3" />
+                                  )}
+                                  {borrower.voidDisposition === "BLACKLISTED"
+                                    ? "Blacklisted"
+                                    : "Warning"}
+                                </p>
+                              ) : (
+                                <p className="mt-0.5 truncate text-[11px] font-medium text-slate-500">
+                                  {borrower.collateralType
+                                    ? titleCase(borrower.collateralType)
+                                    : "No security on file"}
+                                </p>
+                              )}
                             </div>
                           </div>
                         </td>
@@ -606,10 +642,15 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
           canRecordRepayment={Boolean(
             state.session.permissions.includes("collection.create"),
           )}
+          canVoid={!isManager}
+          canCorrect={!isManager}
           initialOpenLoanId={openLoanId}
           onClose={() => {
             setSelectedBorrower(null);
             setOpenLoanId(null);
+          }}
+          onChanged={() => {
+            void loadBorrowers();
           }}
         />
       ) : null}

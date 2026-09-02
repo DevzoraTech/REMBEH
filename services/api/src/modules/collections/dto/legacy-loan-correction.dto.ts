@@ -5,6 +5,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Length,
   Min,
 } from 'class-validator';
@@ -55,6 +56,10 @@ export class LegacyLoanCorrectionDto {
   @IsString()
   @Length(4, 240)
   reason!: string;
+
+  @IsOptional()
+  @IsUUID()
+  customerId?: string;
 }
 
 export class LegacyLoanDeleteDto {

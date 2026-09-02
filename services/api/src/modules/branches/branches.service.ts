@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   GoneException,
   Injectable,
   NotFoundException,
@@ -53,6 +54,7 @@ import { SYNC_PERMISSION_LIST } from '../sync/sync.permissions';
 import { AcceptBranchStaffInvitationDto } from './dto/accept-branch-staff-invitation.dto';
 import { CreateBranchDto } from './dto/create-branch.dto';
 import { InviteBranchStaffDto } from './dto/invite-branch-staff.dto';
+import { UpdateBranchSettingsDto } from './dto/update-branch-settings.dto';
 import { LookupBranchStaffInvitationDto } from './dto/lookup-branch-staff-invitation.dto';
 
 const STAFF_INVITATION_TTL_DAYS = 7;
@@ -114,6 +116,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'loan.read',
     'collection.create',
     'collection.read',
+    'operation.agent.expense.create',
   ],
 
   Agent: [
@@ -125,6 +128,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'loan.read',
     'collection.create',
     'collection.read',
+    'operation.agent.expense.create',
   ],
 
   'Field Officer': [
@@ -136,6 +140,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'loan.read',
     'collection.create',
     'collection.read',
+    'operation.agent.expense.create',
   ],
 
   Cashier: [
@@ -172,6 +177,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'collection.read',
     'arrears.read',
     'recovery.assign',
+    'operation.agent.expense.create',
   ],
 };
 type StaffUserRecord = {
@@ -287,6 +293,49 @@ export class BranchesService {
       branches: visibleBranches.map((branch) =>
         this.toBranchContract(branch, branch.users),
       ),
+    };
+  }
+
+  async updateBranchSettings(
+    user: AuthenticatedUser,
+    branchId: string,
+    dto: UpdateBranchSettingsDto,
+  ): Promise<{ branch: BranchApiContract }> {
+    if (user.permissions.includes(BRANCH_PERMISSIONS.create)) {
+      throw new ForbiddenException(
+        'Field expense settings belong to each branch manager.',
+      );
+    }
+
+    if (!user.permissions.includes(BRANCH_PERMISSIONS.staffInvite)) {
+      throw new ForbiddenException(
+        'Only the branch manager can change field expense settings.',
+      );
+    }
+
+    if (!user.branchId || user.branchId !== branchId) {
+      throw new ForbiddenException(
+        'You can only change settings for your assigned branch.',
+      );
+    }
+
+    const existing = await this.prisma.branch.findFirst({
+      where: { id: branchId, tenantId: user.tenantId },
+    });
+
+    if (!existing) {
+      throw new NotFoundException('Branch was not found.');
+    }
+
+    const branch = await this.prisma.branch.update({
+      where: { id: branchId },
+      data: {
+        agentFieldExpensesEnabled: dto.agentFieldExpensesEnabled,
+      },
+    });
+
+    return {
+      branch: this.toBranchContract(branch),
     };
   }
 
@@ -511,6 +560,7 @@ export class BranchesService {
       gpsLongitude: branch.gpsLongitude?.toString() ?? null,
       phone: branch.phone,
       workingHours: branch.workingHours,
+      agentFieldExpensesEnabled: branch.agentFieldExpensesEnabled,
       createdAt: branch.createdAt,
       manager,
       staff,

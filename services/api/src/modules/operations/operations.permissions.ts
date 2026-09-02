@@ -6,6 +6,7 @@ export const OPERATIONS_PERMISSIONS = {
   floatReturn: 'operation.float.return',
   expenseCreate: 'operation.expense.create',
   expenseApprove: 'operation.expense.approve',
+  agentExpenseCreate: 'operation.agent.expense.create',
   close: 'operation.close',
   approve: 'operation.approve',
   reportReview: 'operation.report.review',

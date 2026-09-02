@@ -84,7 +84,6 @@ export class OperationsController {
   // ---------------------------------------------------------------------------
 
   @Post('expenses')
-  @RequirePermissions(OPERATIONS_PERMISSIONS.expenseCreate)
   recordExpense(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: RecordOperationExpenseDto,
@@ -93,7 +92,6 @@ export class OperationsController {
   }
 
   @Patch('expenses/:expenseId')
-  @RequirePermissions(OPERATIONS_PERMISSIONS.expenseCreate)
   updateExpense(
     @CurrentUser() user: AuthenticatedUser,
     @Param('expenseId') expenseId: string,
@@ -103,7 +101,6 @@ export class OperationsController {
   }
 
   @Post('expenses/:expenseId/void')
-  @RequirePermissions(OPERATIONS_PERMISSIONS.expenseCreate)
   voidExpense(
     @CurrentUser() user: AuthenticatedUser,
     @Param('expenseId') expenseId: string,

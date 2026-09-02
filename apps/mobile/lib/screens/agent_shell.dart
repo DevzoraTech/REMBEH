@@ -6,6 +6,7 @@ import '../features/agent_day/data/agent_day_status_store.dart';
 import '../features/marketing/data/mobile_marketing_campaign_store.dart';
 import '../features/marketing/domain/models/mobile_marketing_campaign.dart';
 import '../features/marketing/presentation/sheets/mobile_marketing_campaign_sheet.dart';
+import '../features/operations/presentation/sheets/record_expense_sheet.dart';
 import '../models/agent_day_status.dart';
 import '../models/field_records.dart';
 import '../features/repayment/data/repayments_live_store.dart';
@@ -283,6 +284,30 @@ class _AgentShellState extends State<AgentShell> {
     );
   }
 
+  Future<void> _openRecordExpense() async {
+    unawaitedTouch();
+    final status = _dayStore.status;
+    if (status == null) {
+      return;
+    }
+    final recorded = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: rembehSheetRadius()),
+      builder: (_) => RecordExpenseSheet(
+        session: widget.session,
+        date: status.date,
+        branchId: widget.session.branchId,
+        paidFromAgentFloat: true,
+        remainingCash: status.float.expectedHandover,
+      ),
+    );
+    if (recorded == true) {
+      await _refreshDayStatus();
+    }
+  }
+
   Future<void> _openProfile() async {
     unawaitedTouch();
     await Navigator.of(context).push(
@@ -480,6 +505,9 @@ class _AgentShellState extends State<AgentShell> {
                     onOpenRecords: _openRecords,
                     marketingCampaign: _marketingCampaign,
                     onMarketingTap: _openMarketingCampaign,
+                    onRecordExpense: dayStatus.canRecordExpense
+                        ? _openRecordExpense
+                        : null,
                   ),
                   RecordsTab(
                     session: widget.session,

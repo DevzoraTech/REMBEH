@@ -7,6 +7,8 @@ import '../features/repayment/data/repayments_live_store.dart';
 import '../features/repayment/domain/entities/client_loan_detail.dart'
     as repayment;
 import '../models/client_detail.dart';
+import '../services/api_client.dart';
+import '../services/session_store.dart';
 import '../shared/camera_capture/camera_capture.dart';
 import '../theme.dart';
 import '../utils/friendly_errors.dart';
@@ -66,6 +68,13 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
   DateTime? _paymentStartDate;
   late List<ClientLoanMediaItem> _media;
   String? _uploadingMediaType;
+  String? _targetCustomerId;
+  String? _targetCustomerName;
+  String? _targetCustomerPhone;
+  final _clientQuery = TextEditingController();
+  List<Map<String, dynamic>> _customers = const [];
+  List<Map<String, dynamic>> _clientMatches = const [];
+  bool _loadingCustomers = false;
 
   static const _statuses = <(String, String)>[
     ('CURRENT', 'Current'),
@@ -133,6 +142,9 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
     _loanStartDate = detail.loanStartDate;
     _paymentStartDate = detail.paymentStartDate;
     _media = List<ClientLoanMediaItem>.of(detail.media);
+    if (detail.correctionAccess.source == 'OWNER') {
+      _loadCustomers();
+    }
   }
 
   @override
@@ -146,11 +158,48 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
     _principal.dispose();
     _outstanding.dispose();
     _reason.dispose();
+    _clientQuery.dispose();
     super.dispose();
   }
 
   void _onAmountChanged() {
     if (mounted) setState(() {});
+  }
+
+  bool get _canReassign => widget.detail.correctionAccess.source == 'OWNER';
+
+  Future<void> _loadCustomers() async {
+    setState(() => _loadingCustomers = true);
+    try {
+      final session = await SessionStore().read();
+      if (session == null) return;
+      final customers = await ApiClient(SessionStore()).listCustomers(session);
+      if (!mounted) return;
+      setState(() {
+        _customers = customers;
+        _loadingCustomers = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingCustomers = false);
+    }
+  }
+
+  void _onClientQueryChanged(String value) {
+    final needle = value.trim().toLowerCase();
+    if (needle.isEmpty) {
+      setState(() => _clientMatches = const []);
+      return;
+    }
+    final matches = _customers.where((item) {
+      final id = item['id'] as String? ?? '';
+      if (id == widget.detail.customerId) return false;
+      if ((item['voidedAt'] as String?)?.isNotEmpty == true) return false;
+      final name = (item['fullName'] as String? ?? '').toLowerCase();
+      final phone = (item['phone'] as String? ?? '').toLowerCase();
+      return name.contains(needle) || phone.contains(needle);
+    }).take(8).toList();
+    setState(() => _clientMatches = matches);
   }
 
   int _moneyValue(TextEditingController controller) =>
@@ -310,10 +359,13 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
       await RepaymentsLiveStore.instance.correctLoan(
         loanId: widget.detail.loanId,
         values: {
-          'customerFullName': _name.text.trim(),
-          'phone': _phone.text.trim(),
-          'nationalId': _emptyToNull(_nin.text),
-          'email': _emptyToNull(_email.text),
+          if (_targetCustomerId != null) 'customerId': _targetCustomerId,
+          if (_targetCustomerId == null) ...{
+            'customerFullName': _name.text.trim(),
+            'phone': _phone.text.trim(),
+            'nationalId': _emptyToNull(_nin.text),
+            'email': _emptyToNull(_email.text),
+          },
           'principalAmount': _moneyValue(_principal),
           'outstandingBalance': _moneyValue(_outstanding),
           'loanStartDate': _loanStartDate.toUtc().toIso8601String(),
@@ -378,44 +430,74 @@ class _LegacyLoanCorrectionSheetState extends State<LegacyLoanCorrectionSheet> {
                   ],
                 ),
                 _AccessNotice(access: widget.detail.correctionAccess),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _name,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(labelText: 'Client name'),
-                  validator: (value) =>
-                      (value ?? '').trim().isEmpty ? 'Enter a name.' : null,
-                ),
-                const SizedBox(height: 10),
-                TextFormField(
-                  controller: _phone,
-                  keyboardType: TextInputType.phone,
-                  textInputAction: TextInputAction.next,
-                  decoration: const InputDecoration(labelText: 'Phone'),
-                  validator: (value) =>
-                      (value ?? '').trim().isEmpty ? 'Enter a phone.' : null,
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _nin,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(labelText: 'NIN'),
+                if (_canReassign) ...[
+                  const SizedBox(height: 12),
+                  _MoveClientCard(
+                    loading: _loadingCustomers,
+                    queryController: _clientQuery,
+                    matches: _clientMatches,
+                    targetName: _targetCustomerName,
+                    targetPhone: _targetCustomerPhone,
+                    onQueryChanged: _onClientQueryChanged,
+                    onSelect: (item) {
+                      setState(() {
+                        _targetCustomerId = item['id'] as String?;
+                        _targetCustomerName = item['fullName'] as String?;
+                        _targetCustomerPhone = item['phone'] as String?;
+                        _clientQuery.clear();
+                        _clientMatches = const [];
+                      });
+                    },
+                    onClear: () {
+                      setState(() {
+                        _targetCustomerId = null;
+                        _targetCustomerName = null;
+                        _targetCustomerPhone = null;
+                      });
+                    },
+                  ),
+                ],
+                if (_targetCustomerId == null) ...[
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: _name,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(labelText: 'Client name'),
+                    validator: (value) =>
+                        (value ?? '').trim().isEmpty ? 'Enter a name.' : null,
+                  ),
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _phone,
+                    keyboardType: TextInputType.phone,
+                    textInputAction: TextInputAction.next,
+                    decoration: const InputDecoration(labelText: 'Phone'),
+                    validator: (value) =>
+                        (value ?? '').trim().isEmpty ? 'Enter a phone.' : null,
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextFormField(
+                          controller: _nin,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(labelText: 'NIN'),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextFormField(
-                        controller: _email,
-                        keyboardType: TextInputType.emailAddress,
-                        textInputAction: TextInputAction.next,
-                        decoration: const InputDecoration(labelText: 'Email'),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: TextFormField(
+                          controller: _email,
+                          keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.next,
+                          decoration: const InputDecoration(labelText: 'Email'),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
+                ] else
+                  const SizedBox(height: 12),
                 const SizedBox(height: 10),
                 Row(
                   children: [
@@ -703,11 +785,16 @@ class _AccessNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final source = access.source == 'BRANCH'
+    final sourceLabel = access.source == 'BRANCH'
         ? 'branch'
         : access.source == 'ORGANIZATION'
         ? 'organization'
+        : access.source == 'OWNER'
+        ? 'organisation owner'
         : 'admin';
+    final message = access.source == 'OWNER'
+        ? 'You can edit this loan because you are the organisation owner. Every save is audited.'
+        : 'Correction access is enabled by $sourceLabel control. Every save is audited.${access.reason == null || access.reason!.isEmpty ? '' : '\n${access.reason}'}';
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -722,7 +809,7 @@ class _AccessNotice extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Correction access is enabled by $source control. Every save is audited.${access.reason == null || access.reason!.isEmpty ? '' : '\n${access.reason}'}',
+              message,
               style: const TextStyle(color: midnightNavy, height: 1.35),
             ),
           ),
@@ -873,3 +960,106 @@ class _DateField extends StatelessWidget {
     return '${value.day} ${months[value.month - 1]} ${value.year}';
   }
 }
+
+class _MoveClientCard extends StatelessWidget {
+  const _MoveClientCard({
+    required this.loading,
+    required this.queryController,
+    required this.matches,
+    required this.targetName,
+    required this.targetPhone,
+    required this.onQueryChanged,
+    required this.onSelect,
+    required this.onClear,
+  });
+
+  final bool loading;
+  final TextEditingController queryController;
+  final List<Map<String, dynamic>> matches;
+  final String? targetName;
+  final String? targetPhone;
+  final ValueChanged<String> onQueryChanged;
+  final ValueChanged<Map<String, dynamic>> onSelect;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: sage,
+        border: Border.all(color: line),
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'This loan belongs to a different client',
+            style: TextStyle(
+              color: midnightNavy,
+              fontWeight: FontWeight.w800,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Search the correct person at the same branch. Their name and phone will replace the ones on this loan.',
+            style: TextStyle(
+              color: slateText.withValues(alpha: 0.8),
+              fontSize: 12,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (targetName != null)
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '$targetName${targetPhone == null || targetPhone!.isEmpty ? '' : ' · $targetPhone'}',
+                    style: const TextStyle(
+                      color: midnightNavy,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                TextButton(onPressed: onClear, child: const Text('Clear')),
+              ],
+            )
+          else
+            TextField(
+              controller: queryController,
+              onChanged: onQueryChanged,
+              decoration: InputDecoration(
+                hintText: loading
+                    ? 'Loading clients…'
+                    : 'Search by name or phone',
+                prefixIcon: const Icon(Icons.search, size: 18),
+                isDense: true,
+              ),
+            ),
+          if (targetName == null && matches.isNotEmpty)
+            ...matches.map((item) {
+              final name = item['fullName'] as String? ?? 'Client';
+              final phone = item['phone'] as String? ?? '';
+              final branch = item['branchName'] as String? ?? '';
+              return ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: Text(
+                  name,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text(
+                  [phone, if (branch.isNotEmpty) branch].join(' · '),
+                ),
+                onTap: () => onSelect(item),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+}
+

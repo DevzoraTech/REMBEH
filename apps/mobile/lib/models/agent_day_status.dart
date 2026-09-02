@@ -9,6 +9,7 @@ class AgentDayStatus {
     this.lockReason,
     this.lockTitle,
     this.lockMessage,
+    this.canRecordExpense = false,
   });
 
   final String date;
@@ -19,6 +20,7 @@ class AgentDayStatus {
   final String? lockReason;
   final String? lockTitle;
   final String? lockMessage;
+  final bool canRecordExpense;
   final AgentDayFloatSummary float;
 
   factory AgentDayStatus.fromApi(Map<String, dynamic> json) {
@@ -33,6 +35,7 @@ class AgentDayStatus {
       lockReason: json['lockReason'] as String?,
       lockTitle: json['lockTitle'] as String?,
       lockMessage: json['lockMessage'] as String?,
+      canRecordExpense: json['canRecordExpense'] as bool? ?? false,
       float: AgentDayFloatSummary.fromApi(
         json['float'] as Map<String, dynamic>? ?? const {},
       ),
@@ -69,6 +72,8 @@ class AgentDayFloatSummary {
     required this.collectedRepaymentsAvailable,
     required this.unusedFloat,
     required this.expectedHandover,
+    this.expensesTotal = 0,
+    this.expenses = const [],
     this.amountReturned,
     this.returnedAt,
   });
@@ -80,6 +85,8 @@ class AgentDayFloatSummary {
   final int collectedRepaymentsAvailable;
   final int unusedFloat;
   final int expectedHandover;
+  final int expensesTotal;
+  final List<AgentDayExpense> expenses;
   final int? amountReturned;
   final DateTime? returnedAt;
 
@@ -94,6 +101,11 @@ class AgentDayFloatSummary {
           : _asMoney(json['collectedRepaymentsAvailable']),
       unusedFloat: _asMoney(json['unusedFloat']),
       expectedHandover: _asMoney(json['expectedHandover']),
+      expensesTotal: _asMoney(json['expensesTotal']),
+      expenses: (json['expenses'] as List? ?? const [])
+          .whereType<Map>()
+          .map((row) => AgentDayExpense.fromApi(Map<String, dynamic>.from(row)))
+          .toList(),
       amountReturned: json['amountReturned'] == null
           ? null
           : _asMoney(json['amountReturned']),
@@ -106,4 +118,27 @@ int _asMoney(Object? value) {
   if (value is num) return value.round();
   if (value is String) return (num.tryParse(value) ?? 0).round();
   return 0;
+}
+
+class AgentDayExpense {
+  const AgentDayExpense({
+    required this.id,
+    required this.amount,
+    required this.description,
+    required this.paidFrom,
+  });
+
+  final String id;
+  final int amount;
+  final String description;
+  final String paidFrom;
+
+  factory AgentDayExpense.fromApi(Map<String, dynamic> json) {
+    return AgentDayExpense(
+      id: json['id'] as String? ?? '',
+      amount: _asMoney(json['amount']),
+      description: (json['description'] as String?)?.trim() ?? 'Expense',
+      paidFrom: json['paidFrom'] as String? ?? 'AGENT_FLOAT',
+    );
+  }
 }

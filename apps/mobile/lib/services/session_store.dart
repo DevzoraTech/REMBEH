@@ -68,6 +68,7 @@ class RembehSession {
   bool hasPermission(String permission) => permissions.contains(permission);
 
   bool get usesFieldOfficerFloatForLoans {
+    if (isOrganisationOwner) return false;
     final role = (roleName ?? '').toLowerCase();
     if (role.contains('manager') || role.contains('cashier')) {
       return false;
@@ -76,7 +77,10 @@ class RembehSession {
     return !permissions.contains('operation.float.manage');
   }
 
+  bool get isOrganisationOwner => permissions.contains('branch.create');
+
   bool get canUseBranchWorkspace {
+    if (isOrganisationOwner) return false;
     final role = (roleName ?? '').toLowerCase();
     return role.contains('manager') ||
         role.contains('cashier') ||

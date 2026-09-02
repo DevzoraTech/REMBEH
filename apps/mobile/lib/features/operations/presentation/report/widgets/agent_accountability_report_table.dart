@@ -28,6 +28,11 @@ class AgentAccountabilityReportTable extends StatelessWidget {
       (sum, row) => sum + row.amountCollected,
     );
 
+    final totalExpenses = agentReturns.fold<num>(
+      0,
+      (sum, row) => sum + row.expensesTotal,
+    );
+
     final totalReturned = agentReturns.fold<num>(
       0,
       (sum, row) => sum + (row.amountReturned ?? 0),
@@ -44,30 +49,35 @@ class AgentAccountabilityReportTable extends StatelessWidget {
         emptyMessage:
             'No field officer float was issued during this business day.',
         columns: const [
-          ReportTableColumn(label: 'Field officer', flex: 25),
+          ReportTableColumn(label: 'Field officer', flex: 22),
           ReportTableColumn(
             label: 'Float\nissued',
-            flex: 17,
+            flex: 14,
             alignment: Alignment.centerRight,
           ),
           ReportTableColumn(
             label: 'Loans\nissued',
-            flex: 16,
+            flex: 13,
             alignment: Alignment.centerRight,
           ),
           ReportTableColumn(
             label: 'Collections',
-            flex: 17,
+            flex: 14,
+            alignment: Alignment.centerRight,
+          ),
+          ReportTableColumn(
+            label: 'Expenses',
+            flex: 13,
             alignment: Alignment.centerRight,
           ),
           ReportTableColumn(
             label: 'Returned',
-            flex: 17,
+            flex: 12,
             alignment: Alignment.centerRight,
           ),
           ReportTableColumn(
             label: 'Variance',
-            flex: 16,
+            flex: 12,
             alignment: Alignment.centerRight,
           ),
         ],
@@ -78,6 +88,7 @@ class AgentAccountabilityReportTable extends StatelessWidget {
                 issued: totalIssued,
                 loans: totalLoans,
                 collections: totalCollections,
+                expenses: totalExpenses,
                 returned: totalReturned,
                 variance: totalVariance,
               ),
@@ -96,6 +107,7 @@ class AgentAccountabilityReportTable extends StatelessWidget {
       ReportTableMoney(formatMoney(row.amountGiven)),
       ReportTableMoney(formatMoney(row.amountDisbursed)),
       ReportTableMoney(formatMoney(row.amountCollected)),
+      ReportTableMoney(formatMoney(row.expensesTotal)),
       row.amountReturned == null
           ? const ReportTableText('Pending', textAlign: TextAlign.right)
           : ReportTableMoney(formatMoney(row.amountReturned!)),
@@ -134,6 +146,7 @@ class _TotalsRow extends StatelessWidget {
     required this.issued,
     required this.loans,
     required this.collections,
+    required this.expenses,
     required this.returned,
     required this.variance,
   });
@@ -141,6 +154,7 @@ class _TotalsRow extends StatelessWidget {
   final num issued;
   final num loans;
   final num collections;
+  final num expenses;
   final num returned;
   final num variance;
 
@@ -151,27 +165,31 @@ class _TotalsRow extends StatelessWidget {
       child: Row(
         children: [
           const Expanded(
-            flex: 25,
+            flex: 22,
             child: ReportTableText('Total', strong: true),
           ),
           Expanded(
-            flex: 17,
+            flex: 14,
             child: ReportTableMoney(formatMoney(issued), strong: true),
           ),
           Expanded(
-            flex: 16,
+            flex: 13,
             child: ReportTableMoney(formatMoney(loans), strong: true),
           ),
           Expanded(
-            flex: 17,
+            flex: 14,
             child: ReportTableMoney(formatMoney(collections), strong: true),
           ),
           Expanded(
-            flex: 17,
+            flex: 13,
+            child: ReportTableMoney(formatMoney(expenses), strong: true),
+          ),
+          Expanded(
+            flex: 12,
             child: ReportTableMoney(formatMoney(returned), strong: true),
           ),
           Expanded(
-            flex: 16,
+            flex: 12,
             child: ReportTableMoney(
               _signedAmount(variance),
               strong: true,

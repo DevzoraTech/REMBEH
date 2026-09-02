@@ -77,6 +77,7 @@ type ReportAgentReturn = {
   amountDisbursed?: number;
   processingFees?: number;
   amountCollected?: number;
+  expensesTotal?: number;
   expectedReturn?: number;
   amountReturned?: number | null;
   variance?: number | null;
@@ -89,6 +90,8 @@ type ReportRecord = {
   amount?: number;
   description?: string | null;
   category?: string;
+  paidFrom?: string;
+  agentName?: string | null;
   addedAt?: string;
   incurredAt?: string;
   recordedByName?: string;
@@ -1047,6 +1050,7 @@ function ReportSummaryView({
                 <th className="px-2 py-2 text-right font-semibold">
                   Repayments
                 </th>
+                <th className="px-2 py-2 text-right font-semibold">Expenses</th>
                 <th className="px-2 py-2 text-right font-semibold">Expected</th>
                 <th className="px-2 py-2 font-semibold">Status</th>
               </tr>
@@ -1055,7 +1059,7 @@ function ReportSummaryView({
               {snapshot.agentReturns.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={6}
+                    colSpan={7}
                     className="px-2 py-6 text-center text-[11px] font-medium text-slate-500"
                   >
                     No field officer float recorded for this day.
@@ -1110,6 +1114,12 @@ function ReportSummaryView({
                           currency={currency}
                         />
                       </td>
+                      <td className="px-2 py-2 text-right text-[11px] tabular-nums text-slate-600">
+                        <Money
+                          value={numberValue(row.expensesTotal)}
+                          currency={currency}
+                        />
+                      </td>
                       <td className="px-2 py-2 text-right text-[11px] font-semibold tabular-nums">
                         <Money
                           value={numberValue(row.expectedReturn)}
@@ -1149,8 +1159,14 @@ function ReportSummaryView({
           empty="No expenses recorded."
           rows={snapshot.expenses.map((expense, index) => ({
             id: expense.id ?? `expense-${index}`,
-            label: categoryLabel(expense.category),
-            meta: `${formatClock(expense.incurredAt)} · ${expense.recordedByName ?? "Manager"}`,
+            label:
+              expense.description?.trim() ||
+              (expense.paidFrom === "AGENT_FLOAT"
+                ? "Field expense"
+                : categoryLabel(expense.category)),
+            meta: `${formatClock(expense.incurredAt)} · ${
+              expense.paidFrom === "AGENT_FLOAT" ? "Field float" : "Branch cash"
+            } · ${expense.agentName || expense.recordedByName || "Officer"}`,
             value: (
               <Money
                 value={numberValue(expense.amount)}
@@ -1760,11 +1776,12 @@ function AgentHandoverExcel({
     "Loans",
     "Repayments",
     "Fees",
+    "Expenses",
     "Expected",
     "Returned",
     "Status",
   ];
-  const letters = ["A", "B", "C", "D", "E", "F", "G", "H"];
+  const letters = ["A", "B", "C", "D", "E", "F", "G", "H", "I"];
   const returnedCount = agents.filter(
     (row) => row.amountReturned != null,
   ).length;
@@ -1774,13 +1791,14 @@ function AgentHandoverExcel({
       <table className="w-full min-w-[980px] table-fixed border-collapse text-left text-[11px]">
         <colgroup>
           <col className="w-9" />
-          <col className="w-[18%]" />
-          <col className="w-[11%]" />
-          <col className="w-[11%]" />
-          <col className="w-[11%]" />
+          <col className="w-[16%]" />
           <col className="w-[10%]" />
-          <col className="w-[11%]" />
-          <col className="w-[11%]" />
+          <col className="w-[10%]" />
+          <col className="w-[10%]" />
+          <col className="w-[9%]" />
+          <col className="w-[9%]" />
+          <col className="w-[10%]" />
+          <col className="w-[10%]" />
           <col className="w-[10%]" />
         </colgroup>
         <thead>
@@ -1799,13 +1817,13 @@ function AgentHandoverExcel({
         <tbody>
           <ExcelMergedRow
             rowNumber={1}
-            cols={8}
+            cols={9}
             value="REMBEH Officer handover"
             strong
           />
           <ExcelMergedRow
             rowNumber={2}
-            cols={8}
+            cols={9}
             value={`${report.branchName} — ${formatDate(report.operationDate)} · ${returnedCount}/${agents.length} returned`}
           />
           <tr>
@@ -1823,7 +1841,7 @@ function AgentHandoverExcel({
             <tr className="bg-white">
               <ExcelRowNumber value={4} />
               <td
-                colSpan={8}
+                colSpan={9}
                 className="border border-[#d0d9d4] px-2 py-6 text-center font-semibold text-slate-500"
               >
                 No field officer float returns on this report
@@ -1864,6 +1882,11 @@ function AgentHandoverExcel({
                   <ExcelMoneyCell
                     value={numberValue(row.processingFees)}
                     tone="in"
+                    currency={currency}
+                  />
+                  <ExcelMoneyCell
+                    value={numberValue(row.expensesTotal)}
+                    tone="out"
                     currency={currency}
                   />
                   <ExcelMoneyCell
@@ -1922,6 +1945,12 @@ function AgentHandoverExcel({
               <ExcelMoneyCell
                 value={sumBy(agents, (row) => numberValue(row.processingFees))}
                 tone="in"
+                total
+                currency={currency}
+              />
+              <ExcelMoneyCell
+                value={sumBy(agents, (row) => numberValue(row.expensesTotal))}
+                tone="out"
                 total
                 currency={currency}
               />
@@ -2398,6 +2427,7 @@ async function exportReport(
       "Loans",
       "Repayments",
       "Fees",
+      "Expenses",
       "Expected",
       "Returned",
       "Status",
@@ -2409,6 +2439,7 @@ async function exportReport(
         numberValue(row.amountDisbursed),
         numberValue(row.amountCollected),
         numberValue(row.processingFees),
+        numberValue(row.expensesTotal),
         numberValue(row.expectedReturn),
         row.amountReturned == null ? "" : numberValue(row.amountReturned),
         row.status ?? "PENDING",
@@ -2423,6 +2454,7 @@ async function exportReport(
       { width: 16 },
       { width: 16 },
       { width: 16 },
+      { width: 16 },
     ];
     agentSheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
     agentSheet.getRow(1).fill = {
@@ -2430,7 +2462,7 @@ async function exportReport(
       pattern: "solid",
       fgColor: { argb: "FF0F8F68" },
     };
-    [2, 3, 4, 5, 6, 7].forEach((column) => {
+    [2, 3, 4, 5, 6, 7, 8].forEach((column) => {
       agentSheet.getColumn(column).numFmt = `"${currency}" #,##0`;
     });
     const buffer = await workbook.xlsx.writeBuffer();

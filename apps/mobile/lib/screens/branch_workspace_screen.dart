@@ -51,6 +51,8 @@ import 'repayment_corrections_screen.dart';
 import 'records/records_tab.dart';
 import 'search/search_tab.dart';
 import 'profile/agent_profile_screen.dart';
+import 'voided_clients_screen.dart';
+import 'edit_records_screen.dart';
 
 class BranchWorkspaceScreen extends StatefulWidget {
   const BranchWorkspaceScreen({super.key, required this.session});
@@ -1445,6 +1447,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       loansDisbursed: loansDisbursed,
 
       expenses: _firstAvailableMoney(operation, const [
+        'branchCashExpensesTotal',
         'expensesTotal',
         'expenses',
       ]),
@@ -1515,6 +1518,9 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
             ]),
             expectedHandover: _firstAvailableMoney(position, const [
               'expectedReturn',
+            ]),
+            expensesTotal: _firstAvailableMoney(position, const [
+              'expensesTotal',
             ]),
           );
         })
@@ -2654,6 +2660,27 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       onBranchTap: () {
         _openBranchDetails();
       },
+
+      onVoidedClientsTap: widget.session.hasPermission('branch.create')
+          ? () {
+              Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) =>
+                      VoidedClientsScreen(session: widget.session),
+                ),
+              );
+            }
+          : null,
+
+      onEditRecordsTap: widget.session.isOrganisationOwner
+          ? () {
+              Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) => EditRecordsScreen(session: widget.session),
+                ),
+              );
+            }
+          : null,
 
       onSubscriptionTap: () {
         _setNotice('Subscription management is handled on the web dashboard.');

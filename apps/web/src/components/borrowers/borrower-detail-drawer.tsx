@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Ban,
   Camera,
   CheckCircle2,
   CircleDot,
@@ -9,7 +10,9 @@ import {
   IdCard,
   Loader2,
   MoreVertical,
+  Pencil,
   Phone,
+  ShieldAlert,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
@@ -23,6 +26,8 @@ import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import type { RembehSession } from "../../lib/auth-session";
 import { ApplicationDetailDrawer } from "../app/application-detail-drawer";
 import { RecordRepaymentModal } from "../loans/record-repayment-modal";
+import { EditLoanRecordDialog } from "./edit-loan-record-dialog";
+import { VoidClientDialog } from "./void-client-dialog";
 
 type BorrowerTab = "overview" | "loans";
 
@@ -65,6 +70,9 @@ type BorrowerDetail = {
   registeredByName: string | null;
   verifiedAt: string | null;
   verificationStatus: "VERIFIED" | "NOT_VERIFIED" | "ISSUE";
+  voidedAt: string | null;
+  voidDisposition: "BLACKLISTED" | "WARNING" | null;
+  voidReason: string | null;
   createdAt: string;
   loanCount: number;
   activeLoanCount: number;
@@ -87,14 +95,20 @@ export function BorrowerDetailDrawer({
   borrower,
   session,
   canRecordRepayment = false,
+  canVoid = false,
+  canCorrect = false,
   initialOpenLoanId = null,
   onClose,
+  onChanged,
 }: {
   borrower: OwnerBorrower;
   session: RembehSession;
   canRecordRepayment?: boolean;
+  canVoid?: boolean;
+  canCorrect?: boolean;
   initialOpenLoanId?: string | null;
   onClose: () => void;
+  onChanged?: () => void;
 }) {
   const [tab, setTab] = useState<BorrowerTab>("overview");
   const [detail, setDetail] = useState<BorrowerDetail | null>(null);
@@ -108,7 +122,10 @@ export function BorrowerDetailDrawer({
     initialOpenLoanId,
   );
   const [repaymentLoanId, setRepaymentLoanId] = useState<string | null>(null);
+  const [editLoanId, setEditLoanId] = useState<string | null>(null);
   const [detailRefreshKey, setDetailRefreshKey] = useState(0);
+  const [voidOpen, setVoidOpen] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   const loadDetail = useCallback(async () => {
     setLoading(true);
@@ -199,6 +216,43 @@ export function BorrowerDetailDrawer({
   const registeredBy =
     detail?.registeredByName ?? borrower.registeredByName ?? "—";
   const joinedAt = detail?.createdAt ?? borrower.createdAt;
+  const voidedAt = detail?.voidedAt ?? borrower.voidedAt ?? null;
+  const voidDisposition =
+    detail?.voidDisposition ?? borrower.voidDisposition ?? null;
+  const voidReason = detail?.voidReason ?? borrower.voidReason ?? null;
+
+  async function restoreClient() {
+    setRestoring(true);
+    setError(null);
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/customers/${borrower.id}/restore`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `${session.tokenType} ${session.accessToken}`,
+            "Content-Type": "application/json",
+          },
+        },
+      );
+      const payload = await readApiJson<{ message?: string | string[] }>(
+        response,
+      );
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      setDetailRefreshKey((key) => key + 1);
+      onChanged?.();
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not restore this client.",
+      );
+    } finally {
+      setRestoring(false);
+    }
+  }
 
   return (
     <>
@@ -227,6 +281,24 @@ export function BorrowerDetailDrawer({
                       {displayName}
                     </h2>
                     <VerificationBadge status={verification} />
+                    {voidedAt ? (
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-[10px] font-bold ${
+                          voidDisposition === "BLACKLISTED"
+                            ? "border-red-200 bg-red-50 text-red-700"
+                            : "border-amber-200 bg-amber-50 text-amber-800"
+                        }`}
+                      >
+                        {voidDisposition === "BLACKLISTED" ? (
+                          <Ban className="size-3" />
+                        ) : (
+                          <ShieldAlert className="size-3" />
+                        )}
+                        {voidDisposition === "BLACKLISTED"
+                          ? "Blacklisted"
+                          : "Warning"}
+                      </span>
+                    ) : null}
                   </div>
                   <div className="mt-2 space-y-1">
                     <p className="flex items-center gap-1.5 text-[13px] font-medium text-slate-600">
@@ -283,6 +355,43 @@ export function BorrowerDetailDrawer({
                       >
                         View current loan
                       </button>
+                      {canCorrect && currentLoan ? (
+                        <button
+                          type="button"
+                          className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#0b1220] hover:bg-[#f4f7f6]"
+                          onClick={() => {
+                            setMenuOpen(false);
+                            setEditLoanId(currentLoan.id);
+                          }}
+                        >
+                          Edit loan record
+                        </button>
+                      ) : null}
+                      {canVoid && !voidedAt ? (
+                        <button
+                          type="button"
+                          className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-red-700 hover:bg-red-50"
+                          onClick={() => {
+                            setMenuOpen(false);
+                            setVoidOpen(true);
+                          }}
+                        >
+                          Void client
+                        </button>
+                      ) : null}
+                      {canVoid && voidedAt ? (
+                        <button
+                          type="button"
+                          disabled={restoring}
+                          className="block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold text-[#0b1220] hover:bg-[#f4f7f6] disabled:opacity-45"
+                          onClick={() => {
+                            setMenuOpen(false);
+                            void restoreClient();
+                          }}
+                        >
+                          Restore to collections
+                        </button>
+                      ) : null}
                     </div>
                   </>
                 ) : null}
@@ -336,7 +445,28 @@ export function BorrowerDetailDrawer({
                 </button>
               </div>
             ) : tab === "overview" ? (
-              <OverviewTab
+              <>
+                {voidedAt ? (
+                  <div
+                    className={`mb-4 rounded-[14px] border px-4 py-3 text-sm ${
+                      voidDisposition === "BLACKLISTED"
+                        ? "border-red-200 bg-red-50 text-red-800"
+                        : "border-amber-200 bg-amber-50 text-amber-900"
+                    }`}
+                  >
+                    <p className="font-bold">
+                      This client is set aside
+                      {voidDisposition === "BLACKLISTED"
+                        ? " and blacklisted."
+                        : " with a warning."}
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed opacity-90">
+                      They are hidden from daily due lists.
+                      {voidReason ? ` ${voidReason}` : ""}
+                    </p>
+                  </div>
+                ) : null}
+                <OverviewTab
                 phone={phone}
                 email={detail?.email ?? borrower.email}
                 nationalId={nationalId}
@@ -350,11 +480,14 @@ export function BorrowerDetailDrawer({
                 onPreview={(src, alt) => setPreview({ src, alt })}
                 onViewLoan={(loanId) => setSelectedLoanId(loanId)}
               />
+              </>
             ) : (
               <LoansTab
                 summary={loanSummary}
                 loans={loans}
+                canCorrect={canCorrect}
                 onViewLoan={(loanId) => setSelectedLoanId(loanId)}
+                onEditLoan={(loanId) => setEditLoanId(loanId)}
               />
             )}
           </div>
@@ -389,6 +522,12 @@ export function BorrowerDetailDrawer({
             canRecordRepayment &&
             isActiveLoanStatus(selectedLoan.status, selectedLoan.balance)
           }
+          canCorrect={canCorrect}
+          session={session}
+          onCorrected={() => {
+            setDetailRefreshKey((key) => key + 1);
+            onChanged?.();
+          }}
           onRecordRepayment={() => setRepaymentLoanId(selectedLoan.id)}
           refreshKey={detailRefreshKey}
           onClose={() => setSelectedLoanId(null)}
@@ -442,6 +581,33 @@ export function BorrowerDetailDrawer({
             />
           </div>
         </div>
+      ) : null}
+
+      {voidOpen ? (
+        <VoidClientDialog
+          session={session}
+          customerId={borrower.id}
+          customerName={displayName}
+          onClose={() => setVoidOpen(false)}
+          onSaved={() => {
+            setVoidOpen(false);
+            setDetailRefreshKey((key) => key + 1);
+            onChanged?.();
+          }}
+        />
+      ) : null}
+
+      {editLoanId ? (
+        <EditLoanRecordDialog
+          session={session}
+          loanId={editLoanId}
+          onClose={() => setEditLoanId(null)}
+          onSaved={() => {
+            setEditLoanId(null);
+            setDetailRefreshKey((key) => key + 1);
+            onChanged?.();
+          }}
+        />
       ) : null}
     </>
   );
@@ -572,11 +738,15 @@ function OverviewTab({
 function LoansTab({
   summary,
   loans,
+  canCorrect = false,
   onViewLoan,
+  onEditLoan,
 }: {
   summary: { total: number; active: number; closed: number };
   loans: BorrowerLoan[];
+  canCorrect?: boolean;
   onViewLoan: (loanId: string) => void;
+  onEditLoan?: (loanId: string) => void;
 }) {
   return (
     <div className="space-y-5">
@@ -640,10 +810,22 @@ function LoansTab({
                       <LoanStatusPill loan={loan} />
                     </td>
                     <td className="px-3 py-3 text-right">
-                      <ViewLoanButton
-                        disabled={!loan.applicationId}
-                        onClick={() => onViewLoan(loan.id)}
-                      />
+                      <div className="flex justify-end gap-2">
+                        {canCorrect ? (
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-1 rounded-lg border border-[#e6ebf0] px-2.5 py-1.5 text-xs font-semibold text-[#0b1220] hover:bg-[#f4f7f6]"
+                            onClick={() => onEditLoan?.(loan.id)}
+                          >
+                            <Pencil className="size-3.5" />
+                            Edit
+                          </button>
+                        ) : null}
+                        <ViewLoanButton
+                          disabled={!loan.applicationId}
+                          onClick={() => onViewLoan(loan.id)}
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))}

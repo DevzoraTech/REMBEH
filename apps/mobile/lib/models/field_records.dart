@@ -113,6 +113,8 @@ class DueClient {
     this.coverage = DueDayCoverage.dueUnpaid,
     required this.lastActivityAt,
     required this.synced,
+    this.branchId,
+    this.branchName,
   });
 
   final String id;
@@ -131,6 +133,8 @@ class DueClient {
   final DueDayCoverage coverage;
   final DateTime lastActivityAt;
   final bool synced;
+  final String? branchId;
+  final String? branchName;
 
   String get initials => initialsFromName(fullName);
 }
@@ -162,6 +166,8 @@ class FieldRepayment {
     this.recordedByUserId,
     this.recordedByName,
     this.recordedByPublicId,
+    this.branchId,
+    this.branchName,
   });
 
   final String id;
@@ -185,6 +191,8 @@ class FieldRepayment {
   final String? recordedByUserId;
   final String? recordedByName;
   final String? recordedByPublicId;
+  final String? branchId;
+  final String? branchName;
 
   String get initials => initialsFromName(clientName);
 }
@@ -201,6 +209,7 @@ class FieldApplication {
     this.officerUserId,
     this.officerName,
     this.officerPublicId,
+    this.branchId,
   });
 
   final String id;
@@ -215,6 +224,7 @@ class FieldApplication {
   final String? officerUserId;
   final String? officerName;
   final String? officerPublicId;
+  final String? branchId;
 
   String get initials => initialsFromName(clientName);
 

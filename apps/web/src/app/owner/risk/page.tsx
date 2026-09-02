@@ -221,7 +221,7 @@ export default function OwnerRiskPage() {
         <OwnerHeader
           eyebrow="Risk"
           title="Risk register"
-          subtitle="Blacklist and watchlist for borrowers who need extra care."
+          subtitle="Voided clients are set aside from daily collections. Blacklist blocks new loans; warning is a caution flag."
           showReportsButton={false}
           actions={
             <>
@@ -626,7 +626,7 @@ function AddRiskModal({
                 Add entry
               </h2>
               <p className="mt-1 text-xs text-emerald-100/85">
-                Blacklist blocks new loans. Watchlist is a caution flag.
+                Blacklist blocks new loans. Warning (watchlist) is a caution flag. Voiding a client also hides them from daily collections.
               </p>
             </div>
             <button

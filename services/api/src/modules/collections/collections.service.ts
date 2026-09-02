@@ -310,6 +310,8 @@ export class CollectionsService {
           recordedByPublicId: row.recordedBy.publicId ?? null,
           agentPhotoUrl: await this.presignPhotoUrl(agentPhotoStorageKey),
           agentPhotoStorageKey,
+          branchId: loan.branchId,
+          branchName: loan.branch?.name ?? null,
           sms: smsByRepayment.get(row.id) ?? this.emptyRepaymentSmsStatus(),
         } satisfies RepaymentListItemContract;
       }),
@@ -365,7 +367,7 @@ export class CollectionsService {
      * Preserve repository phone-first ranking.
      */
     const clients = await Promise.all(
-      loans.map((loan) => this.buildDetail(loan)),
+      loans.map((loan) => this.buildDetail(loan, user)),
     );
 
     return {
@@ -550,6 +552,7 @@ export class CollectionsService {
         const correctionAccess = await this.resolveLegacyCorrectionAccess(
           loan.tenantId,
           loan.branchId,
+          user,
         );
 
         // =====================================================================
@@ -644,7 +647,7 @@ export class CollectionsService {
     }
 
     return {
-      detail: await this.buildDetail(loan),
+      detail: await this.buildDetail(loan, user),
     };
   }
 
@@ -667,11 +670,12 @@ export class CollectionsService {
     const access = await this.resolveLegacyCorrectionAccess(
       loan.tenantId,
       loan.branchId,
+      user,
     );
 
     if (!access.enabled) {
       throw new ForbiddenException(
-        'Legacy data correction is not enabled for this branch.',
+        'You do not have permission to edit this loan record.',
       );
     }
 
@@ -752,9 +756,64 @@ export class CollectionsService {
       Object.keys(loanUpdate).some((key) => key !== 'status') ||
       nextStatus !== loan.status;
 
-    if (Object.keys(customerUpdate).length === 0 && !hasLoanChange) {
+    const nextCustomerId = dto.customerId?.trim() || null;
+    const reassigning =
+      Boolean(nextCustomerId) && nextCustomerId !== loan.customerId;
+
+    if (reassigning && !user.permissions.includes(BRANCH_PERMISSIONS.create)) {
+      throw new ForbiddenException(
+        'Only the organisation owner can move a loan to another client.',
+      );
+    }
+
+    let targetCustomer: {
+      id: string;
+      fullName: string;
+      phone: string;
+      nationalId: string | null;
+      email: string | null;
+      voidedAt: Date | null;
+    } | null = null;
+
+    if (reassigning && nextCustomerId) {
+      targetCustomer = await this.prisma.customer.findFirst({
+        where: {
+          id: nextCustomerId,
+          tenantId: loan.tenantId,
+          branchId: loan.branchId,
+        },
+        select: {
+          id: true,
+          fullName: true,
+          phone: true,
+          nationalId: true,
+          email: true,
+          voidedAt: true,
+        },
+      });
+
+      if (!targetCustomer) {
+        throw new NotFoundException(
+          'The client you selected was not found in this branch.',
+        );
+      }
+
+      if (targetCustomer.voidedAt) {
+        throw new BadRequestException(
+          'Restore that client before moving this loan onto them.',
+        );
+      }
+    }
+
+    if (
+      Object.keys(customerUpdate).length === 0 &&
+      !hasLoanChange &&
+      !reassigning
+    ) {
       throw new BadRequestException('No correction changes were provided.');
     }
+
+    const applyIdentityUpdates = !reassigning;
 
     const oldValue = this.legacyLoanAuditValue(loan);
     const newValue = this.legacyLoanCorrectionAuditValue({
@@ -786,12 +845,18 @@ export class CollectionsService {
         ...(paymentStartDate
           ? { paymentStartDate: paymentStartDate.toISOString() }
           : {}),
+        ...(reassigning && targetCustomer
+          ? {
+              customerId: targetCustomer.id,
+              customerName: targetCustomer.fullName,
+            }
+          : {}),
       },
       access,
     });
 
     await this.prisma.$transaction(async (tx) => {
-      if (nextPhone && nextPhone !== loan.customer.phone) {
+      if (applyIdentityUpdates && nextPhone && nextPhone !== loan.customer.phone) {
         const duplicate = await tx.customer.findFirst({
           where: {
             tenantId: loan.tenantId,
@@ -808,17 +873,47 @@ export class CollectionsService {
         }
       }
 
-      if (Object.keys(customerUpdate).length > 0) {
+      if (applyIdentityUpdates && Object.keys(customerUpdate).length > 0) {
         await tx.customer.update({
           where: { id: loan.customerId },
           data: customerUpdate,
         });
       }
 
+      const nextLoanCustomerId = targetCustomer?.id ?? loan.customerId;
+
       await tx.loan.update({
         where: { id: loan.id },
         data: loanUpdate,
       });
+
+      if (reassigning) {
+        await tx.loan.update({
+          where: { id: loan.id },
+          data: {
+            customer: { connect: { id: nextLoanCustomerId } },
+          },
+        });
+        await tx.clientWallet.updateMany({
+          where: { loanId: loan.id },
+          data: { customerId: nextLoanCustomerId },
+        });
+
+        const applicationNames = this.splitCustomerName(
+          targetCustomer?.fullName ?? '',
+        );
+
+        await tx.loanApplication.updateMany({
+          where: { loanId: loan.id },
+          data: {
+            customerId: nextLoanCustomerId,
+            surname: applicationNames.surname,
+            givenNames: applicationNames.givenNames,
+            phone: targetCustomer?.phone,
+            nationalId: targetCustomer?.nationalId,
+          },
+        });
+      }
 
       if (
         dto.outstandingBalance !== undefined &&
@@ -868,7 +963,7 @@ export class CollectionsService {
     }
 
     return {
-      detail: await this.buildDetail(updated),
+      detail: await this.buildDetail(updated, user),
     };
   }
 
@@ -891,11 +986,12 @@ export class CollectionsService {
     const access = await this.resolveLegacyCorrectionAccess(
       loan.tenantId,
       loan.branchId,
+      user,
     );
 
-    if (!access.enabled) {
+    if (!access.canDelete) {
       throw new ForbiddenException(
-        'Legacy data correction is not enabled for this branch.',
+        'Loan record deletion is only available during a controlled cleanup session.',
       );
     }
 
@@ -977,11 +1073,12 @@ export class CollectionsService {
     const access = await this.resolveLegacyCorrectionAccess(
       loan.tenantId,
       loan.branchId,
+      user,
     );
 
     if (!access.enabled) {
       throw new ForbiddenException(
-        'Legacy data correction is not enabled for this branch.',
+        'You do not have permission to edit this loan record.',
       );
     }
 
@@ -1036,11 +1133,12 @@ export class CollectionsService {
     const access = await this.resolveLegacyCorrectionAccess(
       loan.tenantId,
       loan.branchId,
+      user,
     );
 
     if (!access.enabled) {
       throw new ForbiddenException(
-        'Legacy data correction is not enabled for this branch.',
+        'You do not have permission to edit this loan record.',
       );
     }
 
@@ -1125,7 +1223,7 @@ export class CollectionsService {
     }
 
     return {
-      detail: await this.buildDetail(updated),
+      detail: await this.buildDetail(updated, user),
     };
   }
 
@@ -2249,6 +2347,10 @@ export class CollectionsService {
 
       agentPhotoStorageKey,
 
+      branchId: updatedLoan.branchId,
+
+      branchName: updatedLoan.branch?.name ?? null,
+
       sms: this.emptyRepaymentSmsStatus(),
     };
 
@@ -3224,11 +3326,17 @@ export class CollectionsService {
   private async resolveLegacyCorrectionAccess(
     tenantId: string,
     branchId: string,
+    user?: AuthenticatedUser,
   ): Promise<{
     enabled: boolean;
-    source: 'ORGANIZATION' | 'BRANCH' | null;
+    canDelete: boolean;
+    source: 'OWNER' | 'ORGANIZATION' | 'BRANCH' | null;
     reason: string | null;
   }> {
+    const isOwner = Boolean(
+      user?.permissions.includes(BRANCH_PERMISSIONS.create),
+    );
+
     const rows = await this.prisma.controlledFeatureAccess.findMany({
       where: {
         featureKey: LEGACY_DATA_CORRECTION_FEATURE,
@@ -3253,9 +3361,22 @@ export class CollectionsService {
     const tenantRow =
       rows.find((row) => row.scope === ControlledFeatureScope.TENANT) ?? null;
     const effective = branchRow ?? tenantRow;
+    const ccEnabled = effective?.enabled ?? false;
+
+    if (isOwner) {
+      return {
+        enabled: true,
+        canDelete: ccEnabled,
+        source: 'OWNER',
+        reason: ccEnabled
+          ? (effective?.reason ?? 'Organisation owner record edit')
+          : 'Organisation owner record edit',
+      };
+    }
 
     return {
-      enabled: effective?.enabled ?? false,
+      enabled: ccEnabled,
+      canDelete: ccEnabled,
       source:
         effective?.scope === ControlledFeatureScope.BRANCH
           ? 'BRANCH'
@@ -3408,10 +3529,13 @@ export class CollectionsService {
       approvedAt?: string;
       disbursedAt?: string;
       paymentStartDate?: string;
+      customerId?: string;
+      customerName?: string;
     };
     access: {
       enabled: boolean;
-      source: 'ORGANIZATION' | 'BRANCH' | null;
+      canDelete?: boolean;
+      source: 'OWNER' | 'ORGANIZATION' | 'BRANCH' | null;
       reason: string | null;
     };
   }) {
@@ -3420,6 +3544,7 @@ export class CollectionsService {
 
   private async buildDetail(
     loan: LoanWithCollections,
+    user?: AuthenticatedUser,
   ): Promise<ClientLoanDetailContract> {
     const pricing = this.loanPricing(loan);
 
@@ -3603,6 +3728,7 @@ export class CollectionsService {
     const correctionAccess = await this.resolveLegacyCorrectionAccess(
       loan.tenantId,
       loan.branchId,
+      user,
     );
 
     const mediaRows = loan.application?.media ?? [];
@@ -3618,6 +3744,10 @@ export class CollectionsService {
       walletId: loan.wallet?.id ?? null,
 
       customerId: loan.customerId,
+
+      branchId: loan.branchId,
+
+      branchName: loan.branch?.name ?? null,
 
       fullName: loan.customer.fullName,
 
@@ -3776,6 +3906,10 @@ export class CollectionsService {
       lastActivityAt: (last?.paidAt ?? loan.updatedAt ?? asOf).toISOString(),
 
       synced: true,
+
+      branchId: loan.branchId,
+
+      branchName: loan.branch?.name ?? null,
     };
   }
 

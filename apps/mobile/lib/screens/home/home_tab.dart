@@ -30,6 +30,7 @@ class HomeTab extends StatefulWidget {
     required this.onOpenRecords,
     this.marketingCampaign,
     this.onMarketingTap,
+    this.onRecordExpense,
   });
 
   final RembehSession session;
@@ -44,6 +45,7 @@ class HomeTab extends StatefulWidget {
     required RecordsFilter filter,
   })
   onOpenRecords;
+  final VoidCallback? onRecordExpense;
 
   @override
   State<HomeTab> createState() => _HomeTabState();
@@ -417,6 +419,63 @@ class _HomeTabState extends State<HomeTab> {
                 ),
               ),
             ),
+            if (widget.onRecordExpense != null) ...[
+              const SizedBox(height: 10),
+              Material(
+                color: Colors.white,
+                child: InkWell(
+                  onTap: widget.onRecordExpense,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: line),
+                      borderRadius: rembehBorderRadius(rembehRadiusLg),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: sage,
+                            border: Border.all(color: line),
+                            borderRadius: rembehBorderRadius(rembehRadiusMd),
+                          ),
+                          child: const Icon(
+                            Icons.receipt_long_outlined,
+                            color: forestEmerald,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Record expense',
+                                style: TextStyle(
+                                  color: midnightNavy,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'Log field costs paid from your float.',
+                                style: TextStyle(color: slateText, fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right, color: slateText),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: 18),
             if (_pendingDisbursements.isNotEmpty) ...[
               _PendingDisbursementHomeTile(
@@ -907,6 +966,7 @@ void _showExpectedHandoverSheet(
                 unusedFloat: float.unusedFloat,
                 collectedRepayments: float.amountCollected,
                 processingFees: float.processingFees,
+                expenses: float.expensesTotal,
                 expectedHandover: float.expectedHandover,
               ),
             ],
@@ -996,6 +1056,7 @@ class _HandoverBreakdownCard extends StatelessWidget {
     required this.unusedFloat,
     required this.collectedRepayments,
     required this.processingFees,
+    required this.expenses,
     required this.expectedHandover,
   });
 
@@ -1004,6 +1065,7 @@ class _HandoverBreakdownCard extends StatelessWidget {
   final int unusedFloat;
   final int collectedRepayments;
   final int processingFees;
+  final int expenses;
   final int expectedHandover;
 
   @override
@@ -1068,6 +1130,13 @@ class _HandoverBreakdownCard extends StatelessWidget {
             label: 'Processing fees',
             value: processingFees,
             iconColor: forestEmerald,
+          ),
+          _HandoverBreakdownLine(
+            icon: Icons.receipt_long_outlined,
+            label: 'Field expenses',
+            value: expenses,
+            iconColor: const Color(0xFFB42318),
+            subtract: true,
           ),
           const _HandoverDivider(),
           _HandoverTotalLine(value: expectedHandover),

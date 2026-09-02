@@ -120,6 +120,7 @@ class LoanApplicationListItem {
     this.officerUserId,
     this.officerName,
     this.officerPublicId,
+    this.branchId,
   });
 
   final String id;
@@ -133,4 +134,5 @@ class LoanApplicationListItem {
   final String? officerUserId;
   final String? officerName;
   final String? officerPublicId;
+  final String? branchId;
 }

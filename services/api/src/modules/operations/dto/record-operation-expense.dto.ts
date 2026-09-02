@@ -1,5 +1,6 @@
 import {
   IsDateString,
+  IsIn,
   IsNumber,
   IsOptional,
   IsString,
@@ -24,6 +25,10 @@ export class RecordOperationExpenseDto {
   @IsString()
   @Length(1, 500)
   description!: string;
+
+  @IsOptional()
+  @IsIn(['BRANCH_CASH', 'AGENT_FLOAT'])
+  paidFrom?: 'BRANCH_CASH' | 'AGENT_FLOAT';
 
   @IsOptional()
   @IsDateString()

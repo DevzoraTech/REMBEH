@@ -103,6 +103,8 @@ class ClientLoanDetail {
     this.fineHistory = const [],
     this.media = const [],
     this.correctionAccess = const ClientLoanCorrectionAccess(),
+    this.branchId,
+    this.branchName,
   });
 
   final String id;
@@ -140,6 +142,8 @@ class ClientLoanDetail {
   final List<FineHistoryItem> fineHistory;
   final List<ClientLoanMediaItem> media;
   final ClientLoanCorrectionAccess correctionAccess;
+  final String? branchId;
+  final String? branchName;
 
   String get initials {
     final parts = fullName
@@ -167,11 +171,13 @@ class ClientLoanDetail {
 class ClientLoanCorrectionAccess {
   const ClientLoanCorrectionAccess({
     this.enabled = false,
+    this.canDelete = false,
     this.source,
     this.reason,
   });
 
   final bool enabled;
+  final bool canDelete;
   final String? source;
   final String? reason;
 
@@ -179,6 +185,7 @@ class ClientLoanCorrectionAccess {
     if (json == null) return const ClientLoanCorrectionAccess();
     return ClientLoanCorrectionAccess(
       enabled: json['enabled'] as bool? ?? false,
+      canDelete: json['canDelete'] as bool? ?? false,
       source: json['source'] as String?,
       reason: json['reason'] as String?,
     );

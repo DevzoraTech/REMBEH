@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
-  BranchOperationExpenseCategory,
+  BranchOperationExpensePaidFrom,
   BranchOperationReportStatus,
   BranchOperationStatus,
   LoanApplicationStatus,
@@ -309,6 +309,8 @@ export class OperationsRepository {
   operationId: string;
   amount: Prisma.Decimal;
   description: string | null;
+  paidFrom: BranchOperationExpensePaidFrom;
+  agentId: string | null;
   incurredAt: Date;
   recordedByUserId: string;
   operationDate: Date;
@@ -322,6 +324,8 @@ export class OperationsRepository {
         operationId: input.operationId,
         amount: input.amount,
         description: input.description,
+        paidFrom: input.paidFrom,
+        agentId: input.agentId,
         incurredAt: input.incurredAt,
         recordedByUserId: input.recordedByUserId,
       },
@@ -973,6 +977,12 @@ export class OperationsRepository {
       include: {
         operation: true,
         recordedBy: {
+          select: {
+            id: true,
+            displayName: true,
+          },
+        },
+        agent: {
           select: {
             id: true,
             displayName: true,
@@ -1979,14 +1989,25 @@ updateExpense(input: {
     });
   }
 
-  listExpensesForOperation(input: { tenantId: string; operationId: string }) {
+  listExpensesForOperation(input: {
+    tenantId: string;
+    operationId: string;
+    agentId?: string;
+  }) {
     return this.prisma.branchOperationExpense.findMany({
       where: {
         tenantId: input.tenantId,
         operationId: input.operationId,
+        ...(input.agentId ? { agentId: input.agentId } : {}),
       },
       include: {
         recordedBy: {
+          select: {
+            id: true,
+            displayName: true,
+          },
+        },
+        agent: {
           select: {
             id: true,
             displayName: true,
@@ -2016,12 +2037,19 @@ updateExpense(input: {
     });
   }
 
-  sumExpensesForOperation(input: { tenantId: string; operationId: string }) {
+  sumExpensesForOperation(input: {
+    tenantId: string;
+    operationId: string;
+    paidFrom?: BranchOperationExpensePaidFrom;
+    agentId?: string;
+  }) {
     return this.prisma.branchOperationExpense.aggregate({
       where: {
         tenantId: input.tenantId,
         operationId: input.operationId,
         voidedAt: null,
+        ...(input.paidFrom ? { paidFrom: input.paidFrom } : {}),
+        ...(input.agentId ? { agentId: input.agentId } : {}),
       },
       _sum: {
         amount: true,

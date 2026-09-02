@@ -32,6 +32,7 @@ import {
   CustomersRepository,
 } from './customers.repository';
 import { CreateCustomerDto } from './dto/create-customer.dto';
+import { VoidCustomerDto } from './dto/void-customer.dto';
 
 @Injectable()
 export class CustomersService {
@@ -174,6 +175,81 @@ export class CustomersService {
     };
   }
 
+  async voidCustomer(
+    user: AuthenticatedUser,
+    customerId: string,
+    dto: VoidCustomerDto,
+  ): Promise<CustomerResponseContract> {
+    const customer = await this.requireOwnedCustomer(user, customerId);
+    this.assertOwner(user);
+
+    if (customer.voidedAt && customer.voidDisposition === dto.disposition) {
+      throw new ConflictException('This client is already set aside.');
+    }
+
+    const updated = await this.customersRepository.voidCustomer({
+      tenantId: user.tenantId,
+      customerId: customer.id,
+      actorUserId: user.userId,
+      disposition: dto.disposition,
+      reason: dto.reason?.trim() || null,
+      fullName: customer.fullName,
+      phone: customer.phone,
+      nationalId: customer.nationalId,
+      branchId: customer.branchId,
+    });
+
+    return { customer: this.toCustomerContract(updated) };
+  }
+
+  async restoreCustomer(
+    user: AuthenticatedUser,
+    customerId: string,
+  ): Promise<CustomerResponseContract> {
+    const customer = await this.requireOwnedCustomer(user, customerId);
+    this.assertOwner(user);
+
+    if (!customer.voidedAt) {
+      throw new BadRequestException('This client is not set aside.');
+    }
+
+    const updated = await this.customersRepository.restoreCustomer({
+      tenantId: user.tenantId,
+      customerId: customer.id,
+    });
+
+    return { customer: this.toCustomerContract(updated) };
+  }
+
+  private assertOwner(user: AuthenticatedUser) {
+    if (!user.permissions.includes(BRANCH_PERMISSIONS.create)) {
+      throw new ForbiddenException(
+        'Only the account owner can void or restore clients.',
+      );
+    }
+  }
+
+  private async requireOwnedCustomer(
+    user: AuthenticatedUser,
+    customerId: string,
+  ) {
+    if (!user.tenantId?.trim()) {
+      throw new ForbiddenException('Tenant scope is required.');
+    }
+
+    const customer = await this.customersRepository.findByIdForScope({
+      tenantId: user.tenantId,
+      branchId: null,
+      customerId,
+    });
+
+    if (!customer) {
+      throw new NotFoundException('Customer not found.');
+    }
+
+    return customer;
+  }
+
   private toCustomerContract(
     customer: Customer | CustomerListRecord | CustomerDetailRecord,
     options?: { riskHit?: boolean },
@@ -202,6 +278,9 @@ export class CustomersService {
         customer,
         options?.riskHit ?? false,
       ),
+      voidedAt: customer.voidedAt?.toISOString() ?? null,
+      voidDisposition: customer.voidDisposition ?? null,
+      voidReason: customer.voidReason ?? null,
       createdAt: customer.createdAt.toISOString(),
     };
   }

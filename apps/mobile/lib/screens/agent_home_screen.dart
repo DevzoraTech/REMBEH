@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../services/session_store.dart';
-import 'agent_shell.dart';
-import 'branch_workspace_screen.dart';
+import 'workspace_router.dart';
 
-/// Legacy entry name — routes into the agent shell (Home / Records / Search).
+/// Legacy entry name — routes into the correct workspace.
 class AgentHomeScreen extends StatelessWidget {
   const AgentHomeScreen({super.key, required this.session});
 
@@ -12,9 +11,6 @@ class AgentHomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (session.canUseBranchWorkspace) {
-      return BranchWorkspaceScreen(session: session);
-    }
-    return AgentShell(session: session);
+    return rembehWorkspaceFor(session);
   }
 }

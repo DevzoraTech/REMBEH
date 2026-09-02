@@ -19,6 +19,11 @@ class ManagerOwnerHomeTab extends StatefulWidget {
     required this.onOpenDailyOps,
     required this.onOpenRecordRepayment,
     required this.onOpenFindClient,
+    this.onOpenEditRecords,
+    this.organisationScope = false,
+    this.repaymentsTodayCount = 0,
+    this.financesOverallLabel = 'All branches',
+    this.financesOverallValue = '—',
     this.summaryPeriodLabel = 'Today',
     this.collectedMetricLabel = 'Collected today',
     this.loansIssuedMetricLabel = 'Loans issued today',
@@ -59,6 +64,11 @@ class ManagerOwnerHomeTab extends StatefulWidget {
   final VoidCallback onOpenDailyOps;
   final VoidCallback onOpenRecordRepayment;
   final VoidCallback onOpenFindClient;
+  final VoidCallback? onOpenEditRecords;
+  final bool organisationScope;
+  final int repaymentsTodayCount;
+  final String financesOverallLabel;
+  final String financesOverallValue;
 
   final String summaryPeriodLabel;
   final String collectedMetricLabel;
@@ -230,7 +240,22 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
               primaryMetricLabel: widget.collectedMetricLabel,
               primaryMetricValue: 'UGX ${formatMoney(widget.collectedToday)}',
               primaryMetricColor: forestEmerald,
-              supportingMetrics: [
+              supportingMetrics: widget.organisationScope
+                  ? [
+                      SupportingMetric(
+                        icon: Icons.receipt_long_outlined,
+                        iconColor: forestEmerald,
+                        label: 'Repayments',
+                        value: '${widget.repaymentsTodayCount}',
+                      ),
+                      SupportingMetric(
+                        icon: Icons.event_busy,
+                        iconColor: warmGold,
+                        label: 'Still due',
+                        value: '${widget.borrowersDueToday}',
+                      ),
+                    ]
+                  : [
                 SupportingMetric(
                   icon: Icons.north_east_rounded,
                   iconColor: forestEmerald,
@@ -244,9 +269,16 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
                   value: 'UGX ${formatMoney(widget.shortagesAmount)}',
                 ),
               ],
-              overallLabel: 'Overall | Expected closing cash',
-              overallValue: 'UGX ${formatMoney(widget.expectedClosingCash)}',
-              buttonLabel: 'Open',
+              overallLabel: widget.organisationScope
+                  ? 'Overall | ${widget.financesOverallLabel}'
+                  : 'Overall | Expected closing cash',
+              overallValue: widget.organisationScope
+                  ? widget.financesOverallValue
+                  : 'UGX ${formatMoney(widget.expectedClosingCash)}',
+              buttonLabel: widget.organisationScope ? null : 'Open',
+              onButtonTap: widget.organisationScope
+                  ? null
+                  : widget.onOpenDailyOps,
             ),
           ),
 
@@ -411,9 +443,15 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
             children: [
               Expanded(
                 child: _QuickActionTile(
-                  icon: Icons.payments_outlined,
-                  label: 'Record\nrepayment',
-                  onTap: widget.onOpenRecordRepayment,
+                  icon: widget.organisationScope
+                      ? Icons.search_rounded
+                      : Icons.payments_outlined,
+                  label: widget.organisationScope
+                      ? 'Find\nclient'
+                      : 'Record\nrepayment',
+                  onTap: widget.organisationScope
+                      ? widget.onOpenFindClient
+                      : widget.onOpenRecordRepayment,
                 ),
               ),
 
@@ -421,9 +459,13 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
 
               Expanded(
                 child: _QuickActionTile(
-                  icon: Icons.note_add_outlined,
-                  label: 'New loan',
-                  onTap: widget.onOpenNewLoan,
+                  icon: widget.organisationScope
+                      ? Icons.find_replace_rounded
+                      : Icons.note_add_outlined,
+                  label: widget.organisationScope ? 'Edit records' : 'New loan',
+                  onTap: widget.organisationScope
+                      ? (widget.onOpenEditRecords ?? widget.onOpenFindClient)
+                      : widget.onOpenNewLoan,
                 ),
               ),
             ],

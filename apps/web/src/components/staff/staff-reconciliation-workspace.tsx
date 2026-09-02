@@ -6,10 +6,12 @@ import {
   CheckCircle2,
   Coins,
   Loader2,
+  PlusCircle,
   ReceiptText,
   RefreshCw,
   Send,
   WalletCards,
+  X,
 } from "lucide-react";
 import {
   useCallback,
@@ -21,6 +23,14 @@ import {
 import { formatMoney, formatMoneyAmount } from "../../app/owner/owner-common";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import type { RembehSession, RembehUser } from "../../lib/auth-session";
+
+type AgentDayExpense = {
+  id: string;
+  amount: number;
+  description: string;
+  paidFrom: string;
+  incurredAt?: string;
+};
 
 type AgentDayStatus = {
   date: string;
@@ -41,6 +51,7 @@ type AgentDayStatus = {
     | null;
   lockTitle: string | null;
   lockMessage: string | null;
+  canRecordExpense?: boolean;
   float: {
     amountReceived: number;
     amountDisbursed: number;
@@ -49,6 +60,8 @@ type AgentDayStatus = {
     collectedRepaymentsAvailable: number;
     unusedFloat: number;
     expectedHandover: number;
+    expensesTotal?: number;
+    expenses?: AgentDayExpense[];
     amountReturned: number | null;
     returnedAt: string | null;
   };
@@ -94,6 +107,10 @@ export function StaffReconciliationWorkspace({
   const [amountReturned, setAmountReturned] = useState("");
   const [shortageReason, setShortageReason] = useState("");
   const [notes, setNotes] = useState("");
+  const [expenseOpen, setExpenseOpen] = useState(false);
+  const [expenseName, setExpenseName] = useState("");
+  const [expenseAmount, setExpenseAmount] = useState("");
+  const [recordingExpense, setRecordingExpense] = useState(false);
 
   const loadStatus = useCallback(async () => {
     setLoading(true);
@@ -135,6 +152,14 @@ export function StaffReconciliationWorkspace({
   );
 
   const expected = Math.max(0, status?.float.expectedHandover ?? 0);
+  const expensesTotal = Math.max(0, status?.float.expensesTotal ?? 0);
+  const fieldExpenses = status?.float.expenses ?? [];
+  const canRecordExpense = Boolean(
+    status?.canRecordExpense &&
+      status.branch &&
+      status.branchStatus === "OPEN" &&
+      status.float.amountReturned == null,
+  );
   const variance =
     amountReturned.trim().length === 0 ? null : parsedAmount - expected;
   const hasShortage = variance != null && variance < 0;
@@ -195,6 +220,66 @@ export function StaffReconciliationWorkspace({
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function recordExpense() {
+    if (!status || recordingExpense) return;
+    const name = expenseName.trim();
+    const amount = parseMoney(expenseAmount);
+    if (!name) {
+      setError("Enter the name of the expense.");
+      return;
+    }
+    if (Number.isNaN(amount) || amount <= 0) {
+      setError("Enter the expense amount.");
+      return;
+    }
+    if (amount > expected) {
+      setError(
+        `Expense exceeds remaining float. Available: ${Math.round(expected)}.`,
+      );
+      return;
+    }
+
+    setRecordingExpense(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`${apiBaseUrl}/operations/expenses`, {
+        method: "POST",
+        headers: {
+          Authorization: `${session.tokenType} ${session.accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          branchId: status.branch?.id,
+          date: status.date,
+          category: "OTHER",
+          amount: Math.round(amount),
+          description: name,
+          paidFrom: "AGENT_FLOAT",
+        }),
+      });
+      const payload = await readApiJson<
+        AgentDayStatus & { message?: string | string[] }
+      >(response);
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      setStatus(payload);
+      setExpenseName("");
+      setExpenseAmount("");
+      setExpenseOpen(false);
+      setNotice("Field expense recorded.");
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not record the expense.",
+      );
+    } finally {
+      setRecordingExpense(false);
     }
   }
 
@@ -307,7 +392,70 @@ export function StaffReconciliationWorkspace({
             label="Processing fees collected"
             value={status?.float.processingFees ?? 0}
           />
+          <BreakdownRow
+            label="Field expenses"
+            value={-(status?.float.expensesTotal ?? 0)}
+          />
         </div>
+      </section>
+
+      <section className="rounded-[18px] border border-[#e6ebf0] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-black text-[var(--midnight-navy)]">
+              Field expenses
+            </h2>
+            <p className="mt-1 text-sm font-medium text-slate-500">
+              Record costs paid from your issued float. They reduce the cash you
+              hand back.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setExpenseOpen(true);
+            }}
+            disabled={!canRecordExpense}
+            className="inline-flex h-10 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-3 text-sm font-bold text-white shadow-[0_8px_18px_rgba(0,112,60,0.18)] disabled:cursor-not-allowed disabled:opacity-55"
+          >
+            <PlusCircle className="size-4" />
+            Record expense
+          </button>
+        </div>
+        <p className="mt-4 text-sm font-bold tabular-nums text-[#111a2e]">
+          {formatMoney(expensesTotal)} recorded
+        </p>
+        {fieldExpenses.length === 0 ? (
+          <p className="mt-3 rounded-2xl border border-dashed border-[#e6ebf0] bg-[#fbfcfd] px-4 py-5 text-sm font-medium text-slate-500">
+            No field expenses yet. Transport, meals, and other in-field costs
+            will show here.
+          </p>
+        ) : (
+          <div className="mt-3 divide-y divide-[#edf1f5] rounded-2xl border border-[#edf1f5]">
+            {fieldExpenses.map((expense) => (
+              <div
+                key={expense.id}
+                className="flex items-center justify-between gap-3 px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-[#111a2e]">
+                    {expense.description || "Field expense"}
+                  </p>
+                  <p className="text-xs font-medium text-slate-500">
+                    Paid from your float
+                    {expense.incurredAt
+                      ? ` · ${formatDateTime(expense.incurredAt)}`
+                      : ""}
+                  </p>
+                </div>
+                <span className="shrink-0 text-sm font-black tabular-nums text-[#111a2e]">
+                  {formatMoney(expense.amount)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="rounded-[18px] border border-[#e6ebf0] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
@@ -423,6 +571,133 @@ export function StaffReconciliationWorkspace({
           </div>
         )}
       </section>
+
+      {expenseOpen ? (
+        <FieldExpenseModal
+          remaining={expected}
+          name={expenseName}
+          amount={expenseAmount}
+          saving={recordingExpense}
+          onNameChange={setExpenseName}
+          onAmountChange={setExpenseAmount}
+          onClose={() => {
+            if (recordingExpense) return;
+            setExpenseOpen(false);
+          }}
+          onSave={() => void recordExpense()}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function FieldExpenseModal({
+  remaining,
+  name,
+  amount,
+  saving,
+  onNameChange,
+  onAmountChange,
+  onClose,
+  onSave,
+}: {
+  remaining: number;
+  name: string;
+  amount: string;
+  saving: boolean;
+  onNameChange: (value: string) => void;
+  onAmountChange: (value: string) => void;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const parsed = parseMoney(amount);
+  const entered = Number.isNaN(parsed) ? 0 : parsed;
+  const after = remaining - entered;
+  const over = entered > 0 && after < 0;
+  const canSave = name.trim().length > 0 && entered > 0 && !over && !saving;
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-[#0b1220]/45 px-4 py-6">
+      <div className="w-full max-w-md overflow-hidden rounded-[22px] border border-[#e6ebf0] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.22)]">
+        <header className="flex items-start justify-between gap-3 border-b border-[#edf1f5] px-5 py-4">
+          <div>
+            <p className="text-lg font-black text-[var(--midnight-navy)]">
+              Record expense
+            </p>
+            <p className="mt-1 text-sm font-medium text-slate-500">
+              Paid from your float. Remaining: {formatMoney(remaining)}.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="grid size-9 place-items-center rounded-xl border border-[#edf1f5] text-slate-500"
+          >
+            <X className="size-4" />
+          </button>
+        </header>
+        <div className="space-y-4 px-5 py-4">
+          <label className="block">
+            <span className="text-sm font-bold text-[#111a2e]">
+              Name of expense
+            </span>
+            <input
+              value={name}
+              onChange={(event) => onNameChange(event.target.value)}
+              className="mt-2 h-12 w-full rounded-xl border border-[#dbe4ea] bg-white px-3 text-sm font-semibold outline-none focus:border-[var(--forest-emerald)]"
+              placeholder="e.g. Transport to client follow-up"
+            />
+          </label>
+          <label className="block">
+            <span className="text-sm font-bold text-[#111a2e]">
+              Amount (UGX)
+            </span>
+            <div className="mt-2 flex h-12 overflow-hidden rounded-xl border border-[#dbe4ea] bg-white focus-within:border-[var(--forest-emerald)]">
+              <span className="grid w-16 place-items-center border-r border-[#edf1f5] text-sm font-black text-[#111a2e]">
+                UGX
+              </span>
+              <input
+                value={amount}
+                onChange={(event) => onAmountChange(event.target.value)}
+                inputMode="numeric"
+                className="min-w-0 flex-1 px-3 text-sm font-bold outline-none"
+                placeholder="0"
+              />
+            </div>
+          </label>
+          <p
+            className={`text-sm font-bold ${
+              over ? "text-red-700" : "text-slate-600"
+            }`}
+          >
+            {over
+              ? `Exceeds remaining float by ${formatMoney(Math.abs(after))}`
+              : entered > 0
+                ? `Remaining after this expense: ${formatMoney(after)}`
+                : `Available in your float: ${formatMoney(remaining)}`}
+          </p>
+        </div>
+        <footer className="flex gap-2 border-t border-[#edf1f5] bg-[#f8faf9] px-5 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="inline-flex h-11 flex-1 items-center justify-center rounded-xl border border-[#dbe4ea] bg-white text-sm font-bold text-[#111a2e]"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={!canSave}
+            className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-[var(--forest-emerald)] text-sm font-black text-white disabled:opacity-55"
+          >
+            {saving ? <Loader2 className="size-4 animate-spin" /> : null}
+            Record expense
+          </button>
+        </footer>
+      </div>
     </div>
   );
 }

@@ -300,6 +300,7 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
       officerUserId: json['officerUserId'] as String?,
       officerName: json['officerName'] as String?,
       officerPublicId: json['officerPublicId'] as String?,
+      branchId: json['branchId'] as String?,
     );
   }
 

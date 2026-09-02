@@ -7,10 +7,12 @@ class WorkspaceBottomNavigation extends StatelessWidget {
     super.key,
     required this.selectedIndex,
     required this.onChanged,
+    this.showOperations = true,
   });
 
   final int selectedIndex;
   final ValueChanged<int> onChanged;
+  final bool showOperations;
 
   @override
   Widget build(BuildContext context) {
@@ -29,8 +31,8 @@ class WorkspaceBottomNavigation extends StatelessWidget {
           height: 64,
           selectedIndex: selectedIndex,
           onDestinationSelected: onChanged,
-          destinations: const [
-            NavigationDestination(
+          destinations: [
+            const NavigationDestination(
               icon: Icon(
                 Icons.home_outlined,
               ),
@@ -40,17 +42,18 @@ class WorkspaceBottomNavigation extends StatelessWidget {
               ),
               label: 'Home',
             ),
-            NavigationDestination(
-              icon: Icon(
-                Icons.today_outlined,
+            if (showOperations)
+              const NavigationDestination(
+                icon: Icon(
+                  Icons.today_outlined,
+                ),
+                selectedIcon: Icon(
+                  Icons.today,
+                  color: forestEmerald,
+                ),
+                label: 'Ops',
               ),
-              selectedIcon: Icon(
-                Icons.today,
-                color: forestEmerald,
-              ),
-              label: 'Ops',
-            ),
-            NavigationDestination(
+            const NavigationDestination(
               icon: Icon(
                 Icons.receipt_long_outlined,
               ),
@@ -60,7 +63,7 @@ class WorkspaceBottomNavigation extends StatelessWidget {
               ),
               label: 'Records',
             ),
-            NavigationDestination(
+            const NavigationDestination(
               icon: Icon(
                 Icons.search,
               ),
@@ -70,7 +73,7 @@ class WorkspaceBottomNavigation extends StatelessWidget {
               ),
               label: 'Clients',
             ),
-            NavigationDestination(
+            const NavigationDestination(
               icon: Icon(
                 Icons.grid_view_outlined,
               ),

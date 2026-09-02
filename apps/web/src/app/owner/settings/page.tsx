@@ -25,7 +25,12 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "../../../components/app/app-shell";
 import { AppBootSkeleton } from "../../../components/app/skeleton";
+import { ChangePasswordCard } from "../../../components/settings/change-password-card";
 import { LoanProductsManager } from "../../../components/settings/loan-products-manager";
+import {
+  SettingsCard,
+  SettingsInfoRow,
+} from "../../../components/settings/settings-chrome";
 import { SmsNotificationSettingsPanel } from "../../../components/settings/sms-notification-settings";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../../lib/api";
 import { ensureWebPushRegistration } from "../../../lib/push-notifications";
@@ -47,7 +52,7 @@ const SECTIONS: Array<{
   {
     id: "account",
     label: "Account",
-    hint: "Your business and profile",
+    hint: "Profile and password",
     icon: UserRound,
   },
   {
@@ -262,7 +267,7 @@ function OwnerSettingsContent() {
         <OwnerHeader
           eyebrow="Settings"
           title="Settings"
-          subtitle="Manage your account, loan types, and alerts."
+          subtitle="Manage your account, password, loan types, and alerts."
           showReportsButton={false}
           actions={
             <button
@@ -346,17 +351,34 @@ function OwnerSettingsContent() {
                   description={activeSection.hint}
                 >
                   <div className="grid gap-3 md:grid-cols-2">
-                    <InfoRow label="Business" value={workspace?.name ?? "—"} />
-                    <InfoRow label="Country" value={workspace?.country ?? "—"} />
-                    <InfoRow
+                    <SettingsInfoRow
+                      label="Business"
+                      value={workspace?.name ?? "—"}
+                    />
+                    <SettingsInfoRow
+                      label="Country"
+                      value={workspace?.country ?? "—"}
+                    />
+                    <SettingsInfoRow
                       label="Currency"
                       value={workspace?.currency ?? "—"}
                     />
-                    <InfoRow label="Your name" value={user?.name ?? "—"} />
-                    <InfoRow label="Email" value={user?.email ?? "—"} />
-                    <InfoRow label="Phone" value={user?.phone ?? "—"} />
+                    <SettingsInfoRow
+                      label="Your name"
+                      value={user?.name ?? "—"}
+                    />
+                    <SettingsInfoRow
+                      label="Email"
+                      value={user?.email ?? "—"}
+                    />
+                    <SettingsInfoRow
+                      label="Phone"
+                      value={user?.phone ?? "—"}
+                    />
                   </div>
                 </SettingsCard>
+
+                <ChangePasswordCard session={session} />
 
                 <SettingsCard
                   title="Quick links"
@@ -487,43 +509,6 @@ function OwnerSettingsContent() {
         </div>
       </div>
     </AppShell>
-  );
-}
-
-function SettingsCard({
-  title,
-  description,
-  children,
-  bare,
-}: {
-  title: string;
-  description: string;
-  children: ReactNode;
-  bare?: boolean;
-}) {
-  return (
-    <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.055)]">
-      {!bare ? (
-        <div className="border-b border-[#edf1f5] px-4 py-3.5 sm:px-5">
-          <h2 className="text-base font-bold text-[#0b1220]">{title}</h2>
-          <p className="mt-0.5 text-xs text-slate-500">{description}</p>
-        </div>
-      ) : null}
-      <div className={bare ? "p-4 sm:p-5" : "px-4 py-4 sm:px-5"}>
-        {children}
-      </div>
-    </section>
-  );
-}
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-[12px] border border-[#edf1f5] bg-[#f8faf9] px-3.5 py-3">
-      <p className="text-[10px] font-bold uppercase tracking-[0.05em] text-slate-500">
-        {label}
-      </p>
-      <p className="mt-1 text-sm font-semibold text-[#0b1220]">{value}</p>
-    </div>
   );
 }
 

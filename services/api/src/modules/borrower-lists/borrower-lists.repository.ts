@@ -226,6 +226,21 @@ export class BorrowerListsRepository {
         where: { id: input.entry.id },
       });
 
+      if (input.entry.customerId) {
+        await tx.customer.updateMany({
+          where: {
+            id: input.entry.customerId,
+            tenantId: input.tenantId,
+          },
+          data: {
+            voidedAt: null,
+            voidedByUserId: null,
+            voidDisposition: null,
+            voidReason: null,
+          },
+        });
+      }
+
       await tx.auditLog.create({
         data: {
           tenantId: input.tenantId,

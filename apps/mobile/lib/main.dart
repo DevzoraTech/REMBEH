@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'screens/account_locked_screen.dart';
-import 'screens/agent_shell.dart';
-import 'screens/branch_workspace_screen.dart';
 import 'screens/force_update_screen.dart';
 import 'screens/login_screen.dart';
-import 'screens/profile/agent_selfie_capture_screen.dart';
+import 'screens/workspace_router.dart';
 import 'services/api_client.dart';
 import 'services/push_notification_service.dart';
 import 'services/session_cleanup.dart';
@@ -159,14 +157,9 @@ class _BootScreenState extends State<_BootScreen> {
   }
 
   void _goShell(RembehSession session) {
-    final next = session.canUseBranchWorkspace
-        ? BranchWorkspaceScreen(session: session)
-        : session.requiresProfilePhoto && !session.hasProfilePhoto
-        ? AgentSelfieCaptureScreen(session: session)
-        : AgentShell(session: session);
-    Navigator.of(
-      context,
-    ).pushReplacement(MaterialPageRoute(builder: (_) => next));
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => rembehWorkspaceFor(session)),
+    );
   }
 
   @override

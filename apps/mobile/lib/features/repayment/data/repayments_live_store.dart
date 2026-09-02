@@ -473,6 +473,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
             detail.paymentStartDate ??
             detail.loanStartDate,
         synced: true,
+        branchId: detail.branchId,
+        branchName: detail.branchName,
       );
     }
 
@@ -570,6 +572,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
             ? json['correctionAccess'] as Map<String, dynamic>
             : null,
       ),
+      branchId: json['branchId'] as String?,
+      branchName: json['branchName'] as String?,
     );
   }
 
@@ -770,6 +774,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
       fineHistory: cached.fineHistory,
       media: cached.media,
       correctionAccess: cached.correctionAccess,
+      branchId: cached.branchId,
+      branchName: cached.branchName,
     );
     _detailCache[loanId] = detail;
     final repayment = FieldRepayment(
@@ -786,6 +792,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
       recordedByUserId: _session?.userId,
       recordedByName: _session?.userName ?? 'You (offline)',
       recordedByPublicId: _session?.publicId,
+      branchId: detail.branchId,
+      branchName: detail.branchName,
     );
     _repayments.insert(0, repayment);
     notifyListeners();
@@ -936,6 +944,8 @@ class RepaymentsLiveStore extends ChangeNotifier {
       recordedByUserId: payload['recordedByUserId'] as String?,
       recordedByName: payload['recordedByName'] as String?,
       recordedByPublicId: payload['recordedByPublicId'] as String?,
+      branchId: payload['branchId'] as String?,
+      branchName: payload['branchName'] as String?,
     );
 
     if (!_canShowRepaymentRecord(item)) {

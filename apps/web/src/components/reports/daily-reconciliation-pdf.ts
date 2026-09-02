@@ -50,7 +50,10 @@ function groupExpenses(expenses: DailyReportDocumentModel["expenses"]) {
     { category: string; count: number; amount: number }
   >();
   for (const expense of expenses) {
-    const category = titleCase(expense.category.replaceAll("_", " "));
+    const category =
+      expense.paidFrom === "AGENT_FLOAT"
+        ? "Field float"
+        : titleCase(expense.category.replaceAll("_", " "));
     const current = map.get(category) ?? { category, count: 0, amount: 0 };
     current.count += 1;
     current.amount += expense.amount;

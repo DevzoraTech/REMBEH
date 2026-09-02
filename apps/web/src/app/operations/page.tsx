@@ -96,6 +96,8 @@ type DailyOperation = {
   topUps: DailyOperationTopUp[];
   expensesCount: number;
   expensesTotal: number;
+  branchCashExpensesTotal?: number;
+  agentFloatExpensesTotal?: number;
   expenses: DailyOperationExpense[];
   branchCashRemaining: number;
   expectedClosingBalance: number;
@@ -180,6 +182,9 @@ type DailyOperationExpense = {
   category: ExpenseCategory;
   amount: number;
   description: string | null;
+  paidFrom?: "BRANCH_CASH" | "AGENT_FLOAT";
+  agentId?: string | null;
+  agentName?: string | null;
   incurredAt: string;
   recordedByName: string;
   approvedAt: string | null;
@@ -205,6 +210,7 @@ type DailyOperationAgentReturn = {
   amountDisbursed: number;
   amountCollected: number;
   processingFees: number;
+  expensesTotal?: number;
   expectedReturn: number;
   amountReturned: number | null;
   variance: number | null;
@@ -384,6 +390,12 @@ export default function OperationsPage() {
     () => (session ? resolveOperatorRole(session, user) : "staff"),
     [session, user],
   );
+
+  useEffect(() => {
+    if (operatorRole === "owner") {
+      router.replace("/owner/reports");
+    }
+  }, [operatorRole, router]);
   const canOperateBranch = operatorRole === "manager";
   const branchAccess = data?.branchAccess ?? null;
   const branchAccessBlocked = Boolean(
@@ -1200,7 +1212,7 @@ export default function OperationsPage() {
           operation.collectionsReceived +
           operation.processingFeesTotal,
         operation.floatIssued +
-          operation.expensesTotal +
+          branchCashExpenseTotal(operation) +
           operation.loansIssuedPrincipal,
         operation.expectedClosingBalance,
         formatVariance(operation.closingVariance),
@@ -2455,7 +2467,9 @@ function ComputerisedReportView({
           rows={operation.expenses.map((expense) => ({
             id: expense.id,
             label: expenseDisplayName(expense),
-            meta: `${formatClock(expense.incurredAt)} · ${expense.recordedByName}`,
+            meta: `${formatClock(expense.incurredAt)} · ${
+              expense.paidFrom === "AGENT_FLOAT" ? "Field float" : "Branch cash"
+            } · ${expense.agentName || expense.recordedByName}`,
             value: <Money value={expense.amount} currency="UGX" />,
           }))}
         />
@@ -2616,7 +2630,7 @@ function ExcelReportView({
             <SpreadsheetMoneyCell
               value={
                 operation.floatIssued +
-                operation.expensesTotal +
+                branchCashExpenseTotal(operation) +
                 operation.loansIssuedPrincipal
               }
               tone="out"
@@ -2913,12 +2927,13 @@ function ReportAgentTable({ operation }: { operation: DailyOperation }) {
         <table className="w-full table-fixed text-left text-[11px]">
           <thead className="bg-[#e8edf2] text-[10px] font-bold text-slate-600">
             <tr>
-              <th className="w-[25%] py-1 pr-2">Agent</th>
-              <th className="w-[15%] px-2 py-1 text-right">Float</th>
-              <th className="w-[15%] px-2 py-1 text-right">Loans</th>
-              <th className="w-[15%] px-2 py-1 text-right">Repayments</th>
-              <th className="w-[15%] px-2 py-1 text-right">Fees</th>
-              <th className="w-[15%] pl-2 py-1 text-right">Returned</th>
+              <th className="w-[22%] py-1 pr-2">Agent</th>
+              <th className="w-[13%] px-2 py-1 text-right">Float</th>
+              <th className="w-[13%] px-2 py-1 text-right">Loans</th>
+              <th className="w-[13%] px-2 py-1 text-right">Repayments</th>
+              <th className="w-[13%] px-2 py-1 text-right">Fees</th>
+              <th className="w-[13%] px-2 py-1 text-right">Expenses</th>
+              <th className="w-[13%] pl-2 py-1 text-right">Returned</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#edf1f5]">
@@ -2936,6 +2951,7 @@ function ReportAgentTable({ operation }: { operation: DailyOperation }) {
                 <ReportAmount value={agentReturn.amountDisbursed} />
                 <ReportAmount value={agentReturn.amountCollected} />
                 <ReportAmount value={agentReturn.processingFees} />
+                <ReportAmount value={agentReturn.expensesTotal ?? 0} />
                 <ReportAmount value={agentReturn.amountReturned ?? 0} strong />
               </tr>
             ))}
@@ -3206,7 +3222,7 @@ function CashMovementCard({ operation }: { operation: DailyOperation }) {
     {
       label: "Expenses",
       detail: `${operation.expensesCount} logged`,
-      amount: operation.expensesTotal,
+      amount: branchCashExpenseTotal(operation),
       signed: "minus" as const,
       tone: "rose" as const,
     },
@@ -3514,7 +3530,9 @@ function DayExpensesStrip({
                     {expenseDisplayName(expense)}
                   </p>
                   <p className="truncate text-[10px] font-medium text-slate-500">
-                    {expense.recordedByName}
+                    {expense.paidFrom === "AGENT_FLOAT"
+                      ? `Field float · ${expense.agentName || expense.recordedByName}`
+                      : expense.recordedByName}
                   </p>
                 </div>
                 <p className="text-right text-[11px] font-bold tabular-nums text-[#0b1220]">
@@ -4825,12 +4843,13 @@ function AgentReturnsPanel({
         </div>
       ) : (
         <div className="divide-y divide-[#edf1f5]">
-          <div className="hidden grid-cols-[minmax(0,1.1fr)_96px_96px_96px_90px_110px_90px] gap-3 bg-[#e5ece8] px-4 py-2.5 text-[10px] font-semibold text-slate-500 lg:grid">
+          <div className="hidden grid-cols-[minmax(0,1.1fr)_80px_80px_80px_72px_80px_100px_90px] gap-3 bg-[#e5ece8] px-4 py-2.5 text-[10px] font-semibold text-slate-500 lg:grid">
             <span>Agent</span>
             <span className="text-right">Float</span>
             <span className="text-right">Loans</span>
             <span className="text-right">Repayments</span>
             <span className="text-right">Fees</span>
+            <span className="text-right">Expenses</span>
             <span className="text-right">Expected</span>
             <span className="text-right">Return</span>
           </div>
@@ -4840,7 +4859,7 @@ function AgentReturnsPanel({
             return (
               <div
                 key={agentReturn.floatId}
-                className="grid gap-3 px-4 py-3 text-sm text-[var(--midnight-navy)] lg:grid-cols-[minmax(0,1.1fr)_96px_96px_96px_90px_110px_90px] lg:items-center"
+                className="grid gap-3 px-4 py-3 text-sm text-[var(--midnight-navy)] lg:grid-cols-[minmax(0,1.1fr)_80px_80px_80px_72px_80px_100px_90px] lg:items-center"
               >
                 <div className="min-w-0">
                   <p className="truncate font-bold">{agentReturn.agentName}</p>
@@ -4853,6 +4872,7 @@ function AgentReturnsPanel({
                 <MoneyCell value={agentReturn.amountDisbursed} />
                 <MoneyCell value={agentReturn.amountCollected} />
                 <MoneyCell value={agentReturn.processingFees} />
+                <MoneyCell value={agentReturn.expensesTotal ?? 0} />
                 <MoneyCell value={agentReturn.expectedReturn} strong />
                 <div className="flex items-center justify-between gap-2 lg:justify-end">
                   {returned ? (
@@ -5348,7 +5368,7 @@ function buildExcelRows(operation: DailyOperation) {
   const afterTopUps = operation.cashAvailableAtOpening;
   const afterFloat = afterTopUps - operation.floatIssued;
   const afterReturns = afterFloat + operation.cashReturnedByAgents;
-  const afterExpenses = afterReturns - operation.expensesTotal;
+  const afterExpenses = afterReturns - branchCashExpenseTotal(operation);
 
   return [
     {
@@ -5392,7 +5412,7 @@ function buildExcelRows(operation: DailyOperation) {
       description: "Expenses recorded",
       count: operation.expensesCount,
       cashIn: null,
-      cashOut: operation.expensesTotal,
+      cashOut: branchCashExpenseTotal(operation),
       balance: afterExpenses,
       note: "Branch operating expenses",
     },
@@ -5505,7 +5525,10 @@ function categoryLabel(category: ExpenseCategory) {
 }
 
 function expenseDisplayName(
-  expense: Pick<DailyOperationExpense, "category" | "description">,
+  expense: Pick<
+    DailyOperationExpense,
+    "category" | "description" | "paidFrom"
+  >,
 ) {
   const name = expense.description?.trim();
 
@@ -5513,7 +5536,15 @@ function expenseDisplayName(
     return name;
   }
 
+  if (expense.paidFrom === "AGENT_FLOAT") {
+    return "Field expense";
+  }
+
   return categoryLabel(expense.category);
+}
+
+function branchCashExpenseTotal(operation: DailyOperation) {
+  return operation.branchCashExpensesTotal ?? operation.expensesTotal;
 }
 
 function styleReportWorksheet(

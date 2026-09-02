@@ -153,6 +153,13 @@ class _ExpenseTotal
 }
 
 String _categoryLabel(String raw) {
+  final normalized = raw.trim().toUpperCase();
+  if (normalized == 'FIELD_FLOAT') {
+    return 'Field float';
+  }
+  if (normalized == 'OTHER') {
+    return 'Expense';
+  }
   return raw
       .trim()
       .toLowerCase()

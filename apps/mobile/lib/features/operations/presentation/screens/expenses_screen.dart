@@ -441,7 +441,8 @@ class _ExpenseRow extends StatelessWidget {
                     const SizedBox(height: 4),
                     Text(
                       '${_timeLabel(incurredAt)}'
-                      '${recordedBy.isEmpty ? '' : '  •  $recordedBy'}',
+                      '${recordedBy.isEmpty ? '' : '  •  $recordedBy'}'
+                      '${_string(expense['paidFrom']) == 'AGENT_FLOAT' ? '  •  Field float' : ''}',
                       style: const TextStyle(
                         color: slateText,
                         fontSize: 9,
@@ -555,7 +556,7 @@ class _InfoCard extends StatelessWidget {
           SizedBox(width: 9),
           Expanded(
             child: Text(
-              'Expenses are recorded from branch cash.\n'
+              'Branch cash and field-officer float expenses both appear here.\n'
               'Edit or void only while the day is open.',
               style: TextStyle(
                 color: slateText,

@@ -18,6 +18,7 @@ import { ControlCenterService } from './control-center.service';
 import { CurrentControlCenterAdmin } from './current-control-center-admin.decorator';
 import { ControlCenterFeatureAccessDto } from './dto/control-center-feature-access.dto';
 import {
+  ControlCenterChangePasswordDto,
   ControlCenterLoginDto,
   ControlCenterSetupDto,
 } from './dto/control-center-auth.dto';
@@ -56,6 +57,15 @@ export class ControlCenterController {
   @Post('auth/login')
   login(@Body() body: ControlCenterLoginDto) {
     return this.controlCenterService.login(body);
+  }
+
+  @Post('auth/change-password')
+  @UseGuards(ControlCenterAuthGuard)
+  changePassword(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Body() body: ControlCenterChangePasswordDto,
+  ) {
+    return this.controlCenterService.changePassword(admin, body);
   }
 
   @Get('me')

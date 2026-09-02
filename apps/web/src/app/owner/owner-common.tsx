@@ -162,6 +162,9 @@ export type OwnerBorrower = {
   registeredByPublicId?: string | null;
   verifiedAt: string | null;
   verificationStatus?: "VERIFIED" | "NOT_VERIFIED" | "ISSUE";
+  voidedAt?: string | null;
+  voidDisposition?: "BLACKLISTED" | "WARNING" | null;
+  voidReason?: string | null;
   createdAt: string;
 };
 

@@ -436,13 +436,15 @@ export class LoansService {
       startDate,
       asOf: now,
     });
-    const dueDayCoverage = classifyDueDayCoverage({
-      morningExpectedToday: morning.expectedToday,
-      morningNextDueIsToday: morning.nextDueIsToday,
-      morningNextDueLabel: morning.nextDueLabel,
-      morningCarriedForward: morning.carriedForward,
-      paidToday: paidTodayAmount,
-    });
+    const dueDayCoverage = loan.customer.voidedAt
+      ? 'none'
+      : classifyDueDayCoverage({
+          morningExpectedToday: morning.expectedToday,
+          morningNextDueIsToday: morning.nextDueIsToday,
+          morningNextDueLabel: morning.nextDueLabel,
+          morningCarriedForward: morning.carriedForward,
+          paidToday: paidTodayAmount,
+        });
 
     return {
       id: loan.id,
@@ -466,8 +468,13 @@ export class LoansService {
       processingFee,
       installmentAmount: schedule.dailyInstalment,
       overdueDays,
-      nextDueLabel: balance <= 0 ? 'Paid up' : schedule.nextDueLabel,
-      nextDueIsToday: balance > 0 && schedule.nextDueIsToday,
+      nextDueLabel: loan.customer.voidedAt
+        ? 'Set aside'
+        : balance <= 0
+          ? 'Paid up'
+          : schedule.nextDueLabel,
+      nextDueIsToday:
+        !loan.customer.voidedAt && balance > 0 && schedule.nextDueIsToday,
       paidTodayAmount,
       dueDayCoverage: balance <= 0 ? 'none' : dueDayCoverage,
       nextDueDate: balance <= 0 ? null : nextDueDate,

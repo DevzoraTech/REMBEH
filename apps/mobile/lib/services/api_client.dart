@@ -46,6 +46,23 @@ class ApiClient {
     return body;
   }
 
+  Future<void> changePassword({
+    required RembehSession session,
+    required String currentPassword,
+    required String newPassword,
+    required String confirmPassword,
+  }) async {
+    await _postJson(
+      session: session,
+      path: '/auth/change-password',
+      body: {
+        'currentPassword': currentPassword,
+        'newPassword': newPassword,
+        'confirmPassword': confirmPassword,
+      },
+    );
+  }
+
   Future<RembehSession> uploadProfilePhoto({
     required RembehSession session,
     required Uint8List bytes,
@@ -177,6 +194,33 @@ class ApiClient {
     }
     final customers = body['customers'] as List<dynamic>? ?? const [];
     return customers.cast<Map<String, dynamic>>();
+  }
+
+  Future<Map<String, dynamic>> voidCustomer({
+    required RembehSession session,
+    required String customerId,
+    required String disposition,
+    String? reason,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/customers/$customerId/void',
+      body: {
+        'disposition': disposition,
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> restoreCustomer({
+    required RembehSession session,
+    required String customerId,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/customers/$customerId/restore',
+      body: const {},
+    );
   }
 
   Future<List<Map<String, dynamic>>> listLoans(RembehSession session) async {
@@ -810,6 +854,22 @@ class ApiClient {
     );
   }
 
+  Future<Map<String, dynamic>> listBranches(RembehSession session) {
+    return _getJson(session: session, path: '/branches');
+  }
+
+  Future<Map<String, dynamic>> updateBranchSettings({
+    required RembehSession session,
+    required String branchId,
+    required bool agentFieldExpensesEnabled,
+  }) {
+    return _patchJson(
+      session: session,
+      path: '/branches/$branchId/settings',
+      body: {'agentFieldExpensesEnabled': agentFieldExpensesEnabled},
+    );
+  }
+
   Future<Map<String, dynamic>> openBranchOperation({
     required RembehSession session,
     String? branchId,
@@ -905,6 +965,7 @@ class ApiClient {
     required String date,
     required num amount,
     required String description,
+    String paidFrom = 'BRANCH_CASH',
   }) {
     return _postJson(
       session: session,
@@ -915,6 +976,7 @@ class ApiClient {
         'date': date,
         'amount': amount,
         'description': description.trim(),
+        'paidFrom': paidFrom,
       },
     );
   }
@@ -1154,6 +1216,19 @@ class ApiClient {
   Map<String, String> _authHeaders(RembehSession session) => {
     'Authorization': '${session.tokenType} ${session.accessToken}',
   };
+
+  Future<Map<String, dynamic>> _getJson({
+    required RembehSession session,
+    required String path,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl$path');
+    final response = await http.get(uri, headers: _authHeaders(session));
+    final payload = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(payload, response.statusCode, uri));
+    }
+    return payload;
+  }
 
   Future<Map<String, dynamic>> _postJson({
     required RembehSession session,

@@ -270,8 +270,8 @@ class ClientDetailsSheet extends StatelessWidget {
                         onSelected: (value) {
                           Navigator.of(context).pop(value);
                         },
-                        itemBuilder: (context) => const [
-                          PopupMenuItem<String>(
+                        itemBuilder: (context) => [
+                          const PopupMenuItem<String>(
                             value: 'correct_legacy',
                             child: Row(
                               children: [
@@ -285,20 +285,21 @@ class ClientDetailsSheet extends StatelessWidget {
                               ],
                             ),
                           ),
-                          PopupMenuItem<String>(
-                            value: 'delete_legacy',
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.delete_outline,
-                                  color: Color(0xFFE11D48),
-                                  size: 19,
-                                ),
-                                SizedBox(width: 10),
-                                Text('Delete loan record'),
-                              ],
+                          if (detail.correctionAccess.canDelete)
+                            const PopupMenuItem<String>(
+                              value: 'delete_legacy',
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.delete_outline,
+                                    color: Color(0xFFE11D48),
+                                    size: 19,
+                                  ),
+                                  SizedBox(width: 10),
+                                  Text('Delete loan record'),
+                                ],
+                              ),
                             ),
-                          ),
                         ],
                       ),
                     IconButton(

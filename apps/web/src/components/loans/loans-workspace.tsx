@@ -1901,6 +1901,12 @@ export function LoansWorkspace({
                 : null
             }
             canRecordRepayment={canRecordRepayment}
+            canCorrect={!isManager}
+            session={state.session}
+            onCorrected={() => {
+              setDetailRefreshKey((key) => key + 1);
+              void refreshLoansWorkspace();
+            }}
             onRecordRepayment={
               detailLoan && canRecordRepayment
                 ? () => {

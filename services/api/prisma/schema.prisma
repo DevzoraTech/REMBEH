@@ -156,6 +156,11 @@ enum BranchOperationExpenseCategory {
   OTHER
 }
 
+enum BranchOperationExpensePaidFrom {
+  BRANCH_CASH
+  AGENT_FLOAT
+}
+
 enum BranchOperationReportStatus {
   MANAGER_REVIEW
   SENT_TO_OWNER
@@ -203,6 +208,11 @@ enum LoanRepaymentFrequency {
 enum BorrowerListType {
   BLACKLISTED
   WATCHLIST
+}
+
+enum CustomerVoidDisposition {
+  BLACKLISTED
+  WARNING
 }
 
 enum SubscriptionInterval {
@@ -489,6 +499,7 @@ model Branch {
   gpsLongitude Decimal? @map("gps_longitude") @db.Decimal(10, 7)
   phone        String?
   workingHours Json?    @map("working_hours")
+  agentFieldExpensesEnabled Boolean @default(true) @map("agent_field_expenses_enabled")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
@@ -749,6 +760,7 @@ model User {
 
   operationExpensesRecorded     BranchOperationExpense[] @relation("BranchOperationExpenseRecordedBy")
   operationExpensesApproved     BranchOperationExpense[] @relation("BranchOperationExpenseApprovedBy")
+  operationExpensesAsAgent      BranchOperationExpense[] @relation("BranchOperationExpenseAgent")
   operationTopUpsRecorded       BranchOperationTopUp[]   @relation("BranchOperationTopUpRecordedBy")
   operationReportsReviewed      BranchOperationReport[]  @relation("BranchOperationReportReviewedBy")
   operationReportsApproved      BranchOperationReport[]  @relation("BranchOperationReportApprovedBy")
@@ -766,6 +778,7 @@ model User {
   employeeProfile          Employee?             @relation("EmployeeUser")
   employeesCreated         Employee[]            @relation("EmployeeCreatedBy")
   salaryPaymentsRecorded   SalaryPayment[]       @relation("SalaryPaymentRecordedBy")
+  customersVoided          Customer[]            @relation("CustomerVoidedBy")
 
   smsNotificationSettingsUpdated TenantSmsNotificationSettings[] @relation("SmsNotificationSettingsUpdatedBy")
 
@@ -927,16 +940,18 @@ model BranchDailyOperation {
 }
 
 model BranchOperationExpense {
-  id               String                         @id @default(uuid()) @db.Uuid
-  tenantId         String                         @map("tenant_id") @db.Uuid
-  branchId         String                         @map("branch_id") @db.Uuid
-  operationId      String                         @map("operation_id") @db.Uuid
-  amount           Decimal                        @db.Decimal(18, 2)
+  id               String                            @id @default(uuid()) @db.Uuid
+  tenantId         String                            @map("tenant_id") @db.Uuid
+  branchId         String                            @map("branch_id") @db.Uuid
+  operationId      String                            @map("operation_id") @db.Uuid
+  amount           Decimal                           @db.Decimal(18, 2)
   description      String?
-  incurredAt       DateTime                       @default(now()) @map("incurred_at")
-  recordedByUserId String                         @map("recorded_by_user_id") @db.Uuid
-  approvedAt       DateTime?                      @map("approved_at")
-  approvedByUserId String?                        @map("approved_by_user_id") @db.Uuid
+  paidFrom         BranchOperationExpensePaidFrom    @default(BRANCH_CASH) @map("paid_from")
+  agentId          String?                           @map("agent_id") @db.Uuid
+  incurredAt       DateTime                          @default(now()) @map("incurred_at")
+  recordedByUserId String                            @map("recorded_by_user_id") @db.Uuid
+  approvedAt       DateTime?                         @map("approved_at")
+  approvedByUserId String?                           @map("approved_by_user_id") @db.Uuid
 
   voidedAt       DateTime? @map("voided_at")
   voidedByUserId String?   @map("voided_by_user_id") @db.Uuid
@@ -948,12 +963,14 @@ model BranchOperationExpense {
   tenant     Tenant               @relation(fields: [tenantId], references: [id])
   branch     Branch               @relation(fields: [branchId], references: [id])
   operation  BranchDailyOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  agent      User?                @relation("BranchOperationExpenseAgent", fields: [agentId], references: [id])
   recordedBy User                 @relation("BranchOperationExpenseRecordedBy", fields: [recordedByUserId], references: [id])
   approvedBy User?                @relation("BranchOperationExpenseApprovedBy", fields: [approvedByUserId], references: [id])
   voidedBy   User?                @relation("BranchOperationExpenseVoidedBy", fields: [voidedByUserId], references: [id])
 
   @@index([tenantId, branchId, incurredAt])
   @@index([tenantId, operationId])
+  @@index([tenantId, agentId, incurredAt])
   @@map("branch_operation_expenses")
 }
 
@@ -1142,19 +1159,24 @@ model TenantModule {
 }
 
 model Customer {
-  id         String    @id @default(uuid()) @db.Uuid
-  tenantId   String    @map("tenant_id") @db.Uuid
-  branchId   String?   @map("branch_id") @db.Uuid
-  fullName   String    @map("full_name")
-  phone      String
-  nationalId String?   @map("national_id")
-  email      String?
-  verifiedAt DateTime? @map("verified_at")
-  createdAt  DateTime  @default(now()) @map("created_at")
-  updatedAt  DateTime  @updatedAt @map("updated_at")
+  id                String                    @id @default(uuid()) @db.Uuid
+  tenantId          String                    @map("tenant_id") @db.Uuid
+  branchId          String?                   @map("branch_id") @db.Uuid
+  fullName          String                    @map("full_name")
+  phone             String
+  nationalId        String?                   @map("national_id")
+  email             String?
+  verifiedAt        DateTime?                 @map("verified_at")
+  voidedAt          DateTime?                 @map("voided_at")
+  voidedByUserId    String?                   @map("voided_by_user_id") @db.Uuid
+  voidDisposition   CustomerVoidDisposition?  @map("void_disposition")
+  voidReason        String?                   @map("void_reason")
+  createdAt         DateTime                  @default(now()) @map("created_at")
+  updatedAt         DateTime                  @updatedAt @map("updated_at")
 
   tenant           Tenant            @relation(fields: [tenantId], references: [id])
   branch           Branch?           @relation(fields: [branchId], references: [id])
+  voidedBy         User?             @relation("CustomerVoidedBy", fields: [voidedByUserId], references: [id])
   loans            Loan[]
   wallets          ClientWallet[]
   loanApplications LoanApplication[]
@@ -1162,6 +1184,7 @@ model Customer {
   @@unique([tenantId, phone])
   @@index([tenantId, branchId])
   @@index([tenantId, nationalId])
+  @@index([tenantId, voidedAt])
   @@map("customers")
 }
 

@@ -32,6 +32,7 @@ import { SmsService } from '../notifications/sms.service';
 import { BillingService } from '../billing/billing.service';
 import type { ControlCenterAdminContext } from './control-center-admin';
 import {
+  ControlCenterChangePasswordDto,
   ControlCenterLoginDto,
   ControlCenterSetupDto,
 } from './dto/control-center-auth.dto';
@@ -1478,6 +1479,53 @@ export class ControlCenterService implements OnModuleInit {
     });
 
     return this.toAuthResponse(updated);
+  }
+
+  async changePassword(
+    admin: ControlCenterAdminContext,
+    dto: ControlCenterChangePasswordDto,
+  ) {
+    if (dto.newPassword !== dto.confirmPassword) {
+      throw new BadRequestException(
+        'New password and confirmation do not match.',
+      );
+    }
+
+    const record = await this.prisma.controlCenterAdmin.findUnique({
+      where: { id: admin.adminId },
+      select: { id: true, passwordHash: true },
+    });
+    if (!record?.passwordHash) {
+      throw new NotFoundException('Administrator account not found.');
+    }
+
+    const matches = await this.passwordService.verifyPassword(
+      dto.currentPassword,
+      record.passwordHash,
+    );
+    if (!matches) {
+      throw new BadRequestException('Current password is incorrect.');
+    }
+
+    const reused = await this.passwordService.verifyPassword(
+      dto.newPassword,
+      record.passwordHash,
+    );
+    if (reused) {
+      throw new BadRequestException(
+        'New password must be different from your current password.',
+      );
+    }
+
+    const passwordHash = await this.passwordService.hashPassword(
+      dto.newPassword,
+    );
+    await this.prisma.controlCenterAdmin.update({
+      where: { id: record.id },
+      data: { passwordHash },
+    });
+
+    return { ok: true };
   }
 
   me(admin: ControlCenterAdminContext) {

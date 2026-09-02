@@ -18,10 +18,12 @@ import {
   X,
 } from "lucide-react";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
+import type { RembehSession } from "../../lib/auth-session";
 import { formatMoneyAmount } from "../../app/owner/owner-common";
 import { AgentPhoto } from "./agent-photo";
 import { Money } from "./money";
 import { StepTimeline, type StepTone } from "./step-timeline";
+import { EditLoanRecordDialog } from "../borrowers/edit-loan-record-dialog";
 
 type MediaItem = {
   id: string;
@@ -140,6 +142,9 @@ type ApplicationDetailDrawerProps = {
   loan?: LoanContext | null;
   canRecordRepayment?: boolean;
   onRecordRepayment?: () => void;
+  canCorrect?: boolean;
+  session?: RembehSession | null;
+  onCorrected?: () => void;
   refreshKey?: number;
   /** Stack above another side panel (e.g. borrower details). */
   elevated?: boolean;
@@ -162,6 +167,9 @@ export function ApplicationDetailDrawer({
   loan,
   canRecordRepayment = false,
   onRecordRepayment,
+  canCorrect = false,
+  session = null,
+  onCorrected,
   refreshKey = 0,
   elevated = false,
   onClose,
@@ -179,6 +187,7 @@ export function ApplicationDetailDrawer({
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [viewingPdf, setViewingPdf] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
 
   async function refreshDetailAfterAgreement() {
     if (!applicationId) return;
@@ -501,6 +510,19 @@ export function ApplicationDetailDrawer({
                       View borrower profile
                     </Link>
                   ) : null}
+                  {canCorrect && (loan?.id || detail?.loanId) ? (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="block w-full px-3 py-2 text-left text-xs font-semibold text-[#0b1220] hover:bg-[#f4f7f6]"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setEditOpen(true);
+                      }}
+                    >
+                      Edit loan record
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     role="menuitem"
@@ -614,6 +636,18 @@ export function ApplicationDetailDrawer({
           </div>
         ) : null}
       </aside>
+
+      {editOpen && session && (loan?.id || detail?.loanId) ? (
+        <EditLoanRecordDialog
+          session={session}
+          loanId={(loan?.id || detail?.loanId)!}
+          onClose={() => setEditOpen(false)}
+          onSaved={() => {
+            setEditOpen(false);
+            onCorrected?.();
+          }}
+        />
+      ) : null}
 
       {preview ? (
         <div className={`fixed inset-0 ${previewZ} flex items-center justify-center bg-black/80 p-4`}>

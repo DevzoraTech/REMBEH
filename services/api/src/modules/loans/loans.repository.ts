@@ -15,6 +15,8 @@ const loanListInclude = {
       fullName: true,
       phone: true,
       nationalId: true,
+      voidedAt: true,
+      voidDisposition: true,
     },
   },
 

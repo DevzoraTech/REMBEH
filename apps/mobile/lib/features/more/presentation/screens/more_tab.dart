@@ -14,6 +14,9 @@ class MoreTab extends StatelessWidget {
     required this.onSubscriptionTap,
     required this.onSettingsTap,
     required this.onSupportTap,
+    this.onVoidedClientsTap,
+    this.onEditRecordsTap,
+    this.showBranchTools = true,
   });
 
   final VoidCallback onAgentsTap;
@@ -25,6 +28,9 @@ class MoreTab extends StatelessWidget {
   final VoidCallback onSubscriptionTap;
   final VoidCallback onSettingsTap;
   final VoidCallback onSupportTap;
+  final VoidCallback? onVoidedClientsTap;
+  final VoidCallback? onEditRecordsTap;
+  final bool showBranchTools;
 
   @override
   Widget build(BuildContext context) {
@@ -32,64 +38,88 @@ class MoreTab extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
       children: [
         _MoreSection(
-          title: 'Management',
+          title: showBranchTools ? 'Management' : 'Records',
           children: [
-            _MoreMenuItem(
-              icon: Icons.people_outline_rounded,
-              title: 'Field Officers',
-              subtitle: 'View, manage and monitor your field officers',
-              onTap: onAgentsTap,
-            ),
-            _MoreMenuItem(
-              icon: Icons.payments_outlined,
-              title: 'Salaries',
-              subtitle: 'Manage salaries and view payment history',
-              onTap: onSalariesTap,
-            ),
-            _MoreMenuItem(
-              icon: Icons.warning_amber_rounded,
-              title: 'Shortages',
-              subtitle: 'View shortage records and their status',
-              onTap: onShortagesTap,
-            ),
+            if (showBranchTools) ...[
+              _MoreMenuItem(
+                icon: Icons.people_outline_rounded,
+                title: 'Field Officers',
+                subtitle: 'View, manage and monitor your field officers',
+                onTap: onAgentsTap,
+              ),
+              _MoreMenuItem(
+                icon: Icons.payments_outlined,
+                title: 'Salaries',
+                subtitle: 'Manage salaries and view payment history',
+                onTap: onSalariesTap,
+              ),
+              _MoreMenuItem(
+                icon: Icons.warning_amber_rounded,
+                title: 'Shortages',
+                subtitle: 'View shortage records and their status',
+                onTap: onShortagesTap,
+              ),
+            ],
             _MoreMenuItem(
               icon: Icons.edit_note_rounded,
               title: 'Repayment corrections',
               subtitle: 'Approve or correct repayment mistakes',
               onTap: onRepaymentCorrectionsTap,
             ),
-            _MoreMenuItem(
-              icon: Icons.description_outlined,
-              title: 'Reports',
-              subtitle: 'View and manage daily reports',
-              onTap: onReportsTap,
-              showDivider: false,
-            ),
+            if (onEditRecordsTap != null)
+              _MoreMenuItem(
+                icon: Icons.find_replace_rounded,
+                title: 'Edit records',
+                subtitle: 'Search a loan or client and correct wrong data',
+                onTap: onEditRecordsTap!,
+                showDivider: showBranchTools,
+              ),
+            if (showBranchTools)
+              _MoreMenuItem(
+                icon: Icons.description_outlined,
+                title: 'Reports',
+                subtitle: 'View and manage daily reports',
+                onTap: onReportsTap,
+                showDivider: false,
+              ),
           ],
         ),
 
         const SizedBox(height: 12),
 
-        _MoreSection(
-          title: 'Branch',
-          children: [
-            _MoreMenuItem(
-              icon: Icons.apartment_outlined,
-              title: 'Your branch',
-              subtitle: 'Branch information and configuration',
-              onTap: onBranchTap,
-            ),
-            _MoreMenuItem(
-              icon: Icons.credit_card_outlined,
-              title: 'Subscription',
-              subtitle: 'Manage your subscription and payment',
-              onTap: onSubscriptionTap,
-              showDivider: false,
-            ),
-          ],
-        ),
+        if (showBranchTools || onVoidedClientsTap != null)
+          _MoreSection(
+            title: showBranchTools ? 'Branch' : 'Organisation',
+            children: [
+              if (showBranchTools)
+                _MoreMenuItem(
+                  icon: Icons.apartment_outlined,
+                  title: 'Your branch',
+                  subtitle: 'Branch information and configuration',
+                  onTap: onBranchTap,
+                ),
+              if (onVoidedClientsTap != null)
+                _MoreMenuItem(
+                  icon: Icons.person_off_outlined,
+                  title: 'Voided clients',
+                  subtitle:
+                      'Set aside defaulting clients as warning or blacklist',
+                  onTap: onVoidedClientsTap!,
+                  showDivider: showBranchTools,
+                ),
+              if (showBranchTools)
+                _MoreMenuItem(
+                  icon: Icons.credit_card_outlined,
+                  title: 'Subscription',
+                  subtitle: 'Manage your subscription and payment',
+                  onTap: onSubscriptionTap,
+                  showDivider: false,
+                ),
+            ],
+          ),
 
-        const SizedBox(height: 12),
+        if (showBranchTools || onVoidedClientsTap != null)
+          const SizedBox(height: 12),
 
         _MoreSection(
           title: 'Preferences & support',
@@ -97,7 +127,7 @@ class MoreTab extends StatelessWidget {
             _MoreMenuItem(
               icon: Icons.settings_outlined,
               title: 'Settings',
-              subtitle: 'App preferences and branch settings',
+              subtitle: 'Account details and password',
               onTap: onSettingsTap,
             ),
             _MoreMenuItem(

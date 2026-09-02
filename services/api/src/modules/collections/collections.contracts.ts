@@ -31,6 +31,8 @@ export type DueClientContract = {
   coverage: DueDayCoverageKind;
   lastActivityAt: string;
   synced: boolean;
+  branchId: string;
+  branchName: string | null;
 };
 
 export type RepaymentListItemContract = {
@@ -53,6 +55,8 @@ export type RepaymentListItemContract = {
   /** Presigned GET for the recording agent's profile selfie. */
   agentPhotoUrl: string | null;
   agentPhotoStorageKey: string | null;
+  branchId: string;
+  branchName: string | null;
   sms: RepaymentSmsStatusContract;
 };
 
@@ -129,6 +133,8 @@ export type ClientLoanDetailContract = {
   /** Client wallet id (one per loan); null only for legacy gaps. */
   walletId: string | null;
   customerId: string;
+  branchId: string;
+  branchName: string | null;
   fullName: string;
   phone: string;
   nationalId: string | null;
@@ -177,7 +183,8 @@ export type ClientLoanDetailContract = {
   media: ClientLoanMediaContract[];
   correctionAccess: {
     enabled: boolean;
-    source: 'ORGANIZATION' | 'BRANCH' | null;
+    canDelete: boolean;
+    source: 'OWNER' | 'ORGANIZATION' | 'BRANCH' | null;
     reason: string | null;
   };
 };

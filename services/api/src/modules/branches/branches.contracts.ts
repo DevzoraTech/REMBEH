@@ -32,6 +32,7 @@ export type BranchApiContract = {
   gpsLongitude: string | null;
   phone: string | null;
   workingHours: unknown;
+  agentFieldExpensesEnabled: boolean;
   createdAt: Date;
   manager: BranchStaffMemberContract | null;
   staff: BranchStaffMemberContract[];

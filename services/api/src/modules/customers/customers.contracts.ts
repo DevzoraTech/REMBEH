@@ -21,6 +21,9 @@ export type CustomerApiContract = {
   verifiedAt: string | null;
   /** Derived: VERIFIED | NOT_VERIFIED | ISSUE */
   verificationStatus: 'VERIFIED' | 'NOT_VERIFIED' | 'ISSUE';
+  voidedAt: string | null;
+  voidDisposition: 'BLACKLISTED' | 'WARNING' | null;
+  voidReason: string | null;
   createdAt: string;
 };
 

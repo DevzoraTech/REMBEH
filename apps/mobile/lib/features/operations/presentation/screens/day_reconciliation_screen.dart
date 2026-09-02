@@ -139,7 +139,10 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
     });
   }
 
-  num get _expenses => _num(_operation?['expensesTotal']);
+  num get _expenses => _firstAvailableMoney(_operation ?? const {}, const [
+    'branchCashExpensesTotal',
+    'expensesTotal',
+  ]);
 
   num get _floatNotReturned {
     return _agentReturns.fold<num>(0, (total, row) {
@@ -202,6 +205,7 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
       expectedHandover: _firstAvailableMoney(position, const [
         'expectedReturn',
       ]),
+      expensesTotal: _firstAvailableMoney(position, const ['expensesTotal']),
     );
   }
 

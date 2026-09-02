@@ -21,6 +21,7 @@ class RecordsTab extends StatefulWidget {
     required this.onSectionChanged,
     required this.onFilterChanged,
     this.onCorrectionsTap,
+    this.branchId,
   });
 
   final RembehSession session;
@@ -29,6 +30,7 @@ class RecordsTab extends StatefulWidget {
   final ValueChanged<RecordsSection> onSectionChanged;
   final ValueChanged<RecordsFilter> onFilterChanged;
   final VoidCallback? onCorrectionsTap;
+  final String? branchId;
 
   @override
   State<RecordsTab> createState() => _RecordsTabState();
@@ -88,6 +90,37 @@ class _RecordsTabState extends State<RecordsTab> {
     final filters = _filters;
     if (filters.contains(widget.filter)) return widget.filter;
     return RecordsFilter.all;
+  }
+
+  List<DueClient> _dueClients(RecordsFilter filter) {
+    final raw = filter == RecordsFilter.duePaidToday
+        ? _repayStore.dueTodayPaidClients
+        : filter == RecordsFilter.overduePaid
+        ? _repayStore.overduePaidClients
+        : _repayStore.dueTodayClients;
+    final branchId = widget.branchId;
+    if (branchId == null || branchId.isEmpty) return raw;
+    return raw.where((item) => item.branchId == branchId).toList();
+  }
+
+  List<FieldRepayment> _repayments(RecordsFilter filter) {
+    final raw = _repayStore.filtered(
+      filter: filter,
+      customRange: _repayStore.customRange,
+    );
+    final branchId = widget.branchId;
+    if (branchId == null || branchId.isEmpty) return raw;
+    return raw.where((item) => item.branchId == branchId).toList();
+  }
+
+  List<FieldApplication> _applications(RecordsFilter filter) {
+    final raw = _appsStore.filtered(
+      filter: filter,
+      customRange: _repayStore.customRange,
+    );
+    final branchId = widget.branchId;
+    if (branchId == null || branchId.isEmpty) return raw;
+    return raw.where((item) => item.branchId == branchId).toList();
   }
 
   bool _isDueClientFilter(RecordsFilter filter) {
@@ -334,16 +367,12 @@ class _RecordsTabState extends State<RecordsTab> {
             child: widget.section == RecordsSection.repayments
                 ? _isDueClientFilter(active)
                       ? _DueTodayList(
-                          items: active == RecordsFilter.duePaidToday
-                              ? _repayStore.dueTodayPaidClients
-                              : active == RecordsFilter.overduePaid
-                                  ? _repayStore.overduePaidClients
-                                  : _repayStore.dueTodayClients,
+                          items: _dueClients(active),
                           countLabel: active == RecordsFilter.duePaidToday
-                              ? '${_repayStore.dueTodayPaidClients.length} Paid today (even partial)'
+                              ? '${_dueClients(active).length} Paid today (even partial)'
                               : active == RecordsFilter.overduePaid
-                                  ? '${_repayStore.overduePaidClients.length} Overdue with a payment today'
-                                  : '${_repayStore.dueTodayClients.length} Still due — no payment today',
+                                  ? '${_dueClients(active).length} Overdue with a payment today'
+                                  : '${_dueClients(active).length} Still due — no payment today',
                           emptyMessage: active == RecordsFilter.duePaidToday
                               ? 'No due clients have paid yet today.'
                               : active == RecordsFilter.overduePaid
@@ -355,19 +384,13 @@ class _RecordsTabState extends State<RecordsTab> {
                           onRetry: () => _repayStore.refreshDueToday(),
                         )
                       : _RepaymentsList(
-                          items: _repayStore.filtered(
-                            filter: active,
-                            customRange: _repayStore.customRange,
-                          ),
+                          items: _repayments(active),
                           loading: _repayStore.loading,
                           error: _repayStore.error,
                           onRetry: () => _repayStore.refresh(),
                         )
                 : _ApplicationsList(
-                    items: _appsStore.filtered(
-                      filter: active,
-                      customRange: _repayStore.customRange,
-                    ),
+                    items: _applications(active),
                     loading: _appsStore.loading,
                     error: _appsStore.error,
                     onRetry: () => _appsStore.refresh(),
@@ -524,6 +547,7 @@ class _DueTodayList extends StatelessWidget {
                   initials: item.initials,
                   name: item.fullName,
                   phone: item.phone,
+                  caption: item.branchName,
                   primaryAmount: formatCompactMoney(
                     showPaidToday && item.paidTodayAmount > 0
                         ? item.paidTodayAmount
@@ -620,6 +644,7 @@ class _RepaymentsList extends StatelessWidget {
                 initials: item.initials,
                 name: item.clientName,
                 phone: item.phone,
+                caption: item.branchName,
                 primaryAmount: formatCompactMoney(item.amount),
                 secondaryValue: formatCompactMoney(item.loanAmount),
                 secondaryColor: warmGold,
@@ -746,11 +771,13 @@ class _RecordCard extends StatelessWidget {
     required this.synced,
     required this.pendingLabel,
     required this.onTap,
+    this.caption,
   });
 
   final String initials;
   final String name;
   final String phone;
+  final String? caption;
   final String primaryAmount;
   final String secondaryValue;
   final Color secondaryColor;
@@ -828,6 +855,14 @@ class _RecordCard extends StatelessWidget {
                             text: phone,
                             style: const TextStyle(color: slateText),
                           ),
+                          if (caption != null && caption!.isNotEmpty)
+                            TextSpan(
+                              text: '  ·  $caption',
+                              style: const TextStyle(
+                                color: slateText,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           const TextSpan(
                             text: '  •  ',
                             style: TextStyle(

@@ -162,6 +162,7 @@ class ApplicationsLiveStore extends ChangeNotifier {
       officerUserId: payload['officerUserId'] as String?,
       officerName: payload['officerName'] as String?,
       officerPublicId: payload['officerPublicId'] as String?,
+      branchId: payload['branchId'] as String?,
     );
 
     if (!_canShowOfficerRecord(
@@ -196,6 +197,7 @@ class ApplicationsLiveStore extends ChangeNotifier {
       officerUserId: item.officerUserId,
       officerName: item.officerName,
       officerPublicId: item.officerPublicId,
+      branchId: item.branchId,
     );
   }
 

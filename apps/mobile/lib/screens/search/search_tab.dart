@@ -16,10 +16,12 @@ class SearchTab extends StatefulWidget {
     super.key,
     required this.autofocus,
     required this.focusToken,
+    this.branchId,
   });
 
   final bool autofocus;
   final int focusToken;
+  final String? branchId;
 
   @override
   State<SearchTab> createState() => _SearchTabState();
@@ -63,7 +65,20 @@ class _SearchTabState extends State<SearchTab> {
         _focusNode.requestFocus();
       });
     }
+    if (oldWidget.branchId != widget.branchId && mounted) {
+      setState(() {});
+    }
   }
+
+  List<ClientDetail> _inSelectedBranch(List<ClientDetail> clients) {
+    final branchId = widget.branchId;
+    if (branchId == null || branchId.isEmpty) return clients;
+    return clients.where((client) => client.branchId == branchId).toList();
+  }
+
+  List<ClientDetail> get _visibleResults => _inSelectedBranch(_results);
+
+  List<ClientDetail> get _visibleRecent => _inSelectedBranch(_recent);
 
   @override
   void dispose() {
@@ -159,7 +174,7 @@ class _SearchTabState extends State<SearchTab> {
                       Text(
                         _searching
                             ? 'Searching…'
-                            : '${_results.length} result${_results.length == 1 ? '' : 's'}',
+                            : '${_visibleResults.length} result${_visibleResults.length == 1 ? '' : 's'}',
                         style: const TextStyle(color: slateText, fontSize: 12),
                       ),
                     ],
@@ -177,14 +192,14 @@ class _SearchTabState extends State<SearchTab> {
                         ),
                       ),
                     )
-                  else if (_searching && _results.isEmpty)
+                  else if (_searching && _visibleResults.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 40),
                       child: Center(
                         child: CircularProgressIndicator(color: forestEmerald),
                       ),
                     )
-                  else if (_results.isEmpty)
+                  else if (_visibleResults.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 40),
                       child: Center(
@@ -196,7 +211,7 @@ class _SearchTabState extends State<SearchTab> {
                     )
                   else
                     _ClientList(
-                      clients: _results,
+                      clients: _visibleResults,
                       onTap: (client) async {
                         await showClientDetailsSheet(
                           context,
@@ -221,7 +236,7 @@ class _SearchTabState extends State<SearchTab> {
                         ),
                       ),
                       TextButton.icon(
-                        onPressed: _recent.isEmpty
+                        onPressed: _visibleRecent.isEmpty
                             ? null
                             : () async {
                                 await _store.clearRecentClients();
@@ -237,7 +252,7 @@ class _SearchTabState extends State<SearchTab> {
                     ],
                   ),
                   const SizedBox(height: 8),
-                  if (_recent.isEmpty)
+                  if (_visibleRecent.isEmpty)
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
@@ -253,7 +268,7 @@ class _SearchTabState extends State<SearchTab> {
                     )
                   else
                     _ClientList(
-                      clients: _recent,
+                      clients: _visibleRecent,
                       onTap: (client) async {
                         await showClientDetailsSheet(
                           context,
@@ -414,6 +429,15 @@ class _ClientList extends StatelessWidget {
                                 fontSize: 12,
                               ),
                             ),
+                            if (clients[i].branchName != null &&
+                                clients[i].branchName!.isNotEmpty)
+                              Text(
+                                clients[i].branchName!,
+                                style: TextStyle(
+                                  color: slateText.withValues(alpha: 0.7),
+                                  fontSize: 11,
+                                ),
+                              ),
                           ],
                         ),
                       ),

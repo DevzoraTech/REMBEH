@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
@@ -10,6 +10,7 @@ import { AcceptBranchStaffInvitationDto } from './dto/accept-branch-staff-invita
 import { CreateBranchDto } from './dto/create-branch.dto';
 import { InviteBranchStaffDto } from './dto/invite-branch-staff.dto';
 import { LookupBranchStaffInvitationDto } from './dto/lookup-branch-staff-invitation.dto';
+import { UpdateBranchSettingsDto } from './dto/update-branch-settings.dto';
 
 @Controller('branches')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
@@ -29,6 +30,16 @@ export class BranchesController {
     @Body() dto: CreateBranchDto,
   ) {
     return this.branchesService.createBranch(user, dto);
+  }
+
+  @Patch(':branchId/settings')
+  @RequirePermissions(BRANCH_PERMISSIONS.staffInvite)
+  updateBranchSettings(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('branchId') branchId: string,
+    @Body() dto: UpdateBranchSettingsDto,
+  ) {
+    return this.branchesService.updateBranchSettings(user, branchId, dto);
   }
 
   @Get(':branchId/staff')

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BorrowerListType, CustomerVoidDisposition, Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import {
   CUSTOMER_EVENTS,
@@ -263,6 +263,91 @@ export class CustomersRepository {
         nationalId: true,
         type: true,
       },
+    });
+  }
+
+  voidCustomer(input: {
+    tenantId: string;
+    customerId: string;
+    actorUserId: string;
+    disposition: CustomerVoidDisposition;
+    reason: string | null;
+    fullName: string;
+    phone: string;
+    nationalId: string | null;
+    branchId: string | null;
+  }) {
+    const listType =
+      input.disposition === CustomerVoidDisposition.BLACKLISTED
+        ? BorrowerListType.BLACKLISTED
+        : BorrowerListType.WATCHLIST;
+    const nationalId = input.nationalId?.trim().toUpperCase() || null;
+
+    return this.prisma.$transaction(async (tx) => {
+      const customer = await tx.customer.update({
+        where: { id: input.customerId },
+        data: {
+          voidedAt: new Date(),
+          voidedByUserId: input.actorUserId,
+          voidDisposition: input.disposition,
+          voidReason: input.reason,
+        },
+      });
+
+      if (nationalId && nationalId.length >= 5) {
+        await tx.borrowerListEntry.upsert({
+          where: {
+            tenantId_nationalId: {
+              tenantId: input.tenantId,
+              nationalId,
+            },
+          },
+          create: {
+            tenantId: input.tenantId,
+            branchId: input.branchId,
+            customerId: input.customerId,
+            createdByUserId: input.actorUserId,
+            type: listType,
+            fullName: input.fullName,
+            nationalId,
+            phone: input.phone,
+            reason: input.reason,
+          },
+          update: {
+            branchId: input.branchId,
+            customerId: input.customerId,
+            type: listType,
+            fullName: input.fullName,
+            phone: input.phone,
+            reason: input.reason,
+          },
+        });
+      }
+
+      return customer;
+    });
+  }
+
+  restoreCustomer(input: { tenantId: string; customerId: string }) {
+    return this.prisma.$transaction(async (tx) => {
+      const customer = await tx.customer.update({
+        where: { id: input.customerId },
+        data: {
+          voidedAt: null,
+          voidedByUserId: null,
+          voidDisposition: null,
+          voidReason: null,
+        },
+      });
+
+      await tx.borrowerListEntry.deleteMany({
+        where: {
+          tenantId: input.tenantId,
+          customerId: input.customerId,
+        },
+      });
+
+      return customer;
     });
   }
 }

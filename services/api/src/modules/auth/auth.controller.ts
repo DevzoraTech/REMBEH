@@ -15,6 +15,7 @@ import { resolveClientIp } from '../../common/auth/auth-session.util';
 import { CurrentUser } from '../../common/auth/current-user.decorator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { AuthService } from './auth.service';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { CompleteOAuthWorkspaceDto } from './dto/complete-oauth-workspace.dto';
 import { ExchangeOAuthTicketDto } from './dto/exchange-oauth-ticket.dto';
 import { LoginDto } from './dto/login.dto';
@@ -148,6 +149,15 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   me(@CurrentUser() user: AuthenticatedUser) {
     return this.authService.getMe(user.userId, user.tenantId);
+  }
+
+  @Post('change-password')
+  @UseGuards(JwtAuthGuard)
+  changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(user, dto);
   }
 
   @Post('profile-photo/presign')

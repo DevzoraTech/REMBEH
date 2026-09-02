@@ -9,6 +9,7 @@ import '../../theme.dart';
 import '../../utils/friendly_errors.dart';
 import '../agent_shell.dart';
 import '../branch_workspace_screen.dart';
+import '../owner/owner_workspace_screen.dart';
 
 /// Mandatory professional selfie on first mobile login (or when missing).
 class AgentSelfieCaptureScreen extends StatefulWidget {
@@ -69,7 +70,9 @@ class _AgentSelfieCaptureScreenState extends State<AgentSelfieCaptureScreen> {
         fileName: _fileName,
       );
       if (!mounted) return;
-      final next = updated.canUseBranchWorkspace
+      final next = updated.isOrganisationOwner
+          ? OwnerWorkspaceScreen(session: updated)
+          : updated.canUseBranchWorkspace
           ? BranchWorkspaceScreen(session: updated)
           : AgentShell(session: updated);
       Navigator.of(
