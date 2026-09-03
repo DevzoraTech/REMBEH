@@ -64,6 +64,7 @@ type RecipientMode =
   | "DIRECT";
 
 type MessageAudience =
+  | "ALL_USERS"
   | "TENANT_USERS"
   | "BRANCH_USERS"
   | "TENANT_OWNERS"
@@ -150,39 +151,57 @@ const PAGE_SIZE = 20;
 
 const ROLE_CATEGORIES = [
   {
-    value: "ALL",
-    label: "All roles",
-    roleNames: [],
-  },
-  {
     value: "OWNER",
     label: "Owners",
-    roleNames: [
-      "Account Owner",
-    ],
+    roleNames: ["Account Owner", "Owner", "Workspace Owner"],
   },
   {
     value: "MANAGER",
     label: "Managers",
-    roleNames: [
-      "Manager",
-    ],
+    roleNames: ["Branch Manager", "Manager"],
+  },
+  {
+    value: "SUPERVISOR",
+    label: "Supervisors",
+    roleNames: ["Supervisor"],
   },
   {
     value: "CASHIER",
     label: "Cashiers",
-    roleNames: [
-      "Cashier",
-    ],
+    roleNames: ["Cashier"],
   },
   {
     value: "FIELD_OFFICER",
     label: "Field officers",
-    roleNames: [
-      "Field Officer",
-    ],
+    roleNames: ["Field Officer", "Field Agent"],
+  },
+  {
+    value: "LOAN_OFFICER",
+    label: "Loan officers",
+    roleNames: ["Loan Officer"],
+  },
+  {
+    value: "AGENT",
+    label: "Agents",
+    roleNames: ["Agent"],
+  },
+  {
+    value: "RECOVERY_OFFICER",
+    label: "Recovery officers",
+    roleNames: ["Recovery Officer"],
   },
 ] as const;
+
+function roleNamesForSelection(selectedRoles: string[]) {
+  const names = new Set<string>();
+  for (const value of selectedRoles) {
+    const category = ROLE_CATEGORIES.find((item) => item.value === value);
+    for (const name of category?.roleNames ?? []) {
+      names.add(name);
+    }
+  }
+  return [...names];
+}
 
 export function ControlCenterMessagingSection({
   session,
@@ -261,10 +280,12 @@ export function ControlCenterMessagingSection({
     );
 
   const [
-    roleCategory,
-    setRoleCategory,
+    selectedRoles,
+    setSelectedRoles,
   ] =
-    useState("ALL");
+    useState<string[]>(
+      [],
+    );
 
   const [
     selectedUserIds,
@@ -483,13 +504,9 @@ export function ControlCenterMessagingSection({
       ],
     );
 
-  const selectedRoleCategory =
-    ROLE_CATEGORIES.find(
-      (
-        category,
-      ) =>
-        category.value ===
-        roleCategory,
+  const selectedRoleNames =
+    roleNamesForSelection(
+      selectedRoles,
     );
 
   const selectableUsers =
@@ -516,11 +533,26 @@ export function ControlCenterMessagingSection({
             }
 
             if (
-              roleCategory !==
-                "ALL" &&
-              !userMatchesRoleCategory(
+              recipientMode ===
+                "AUDIENCE" &&
+              audience ===
+                "TENANT_OWNERS" &&
+              !userMatchesSelectedRoles(
                 user,
-                roleCategory,
+                [
+                  "OWNER",
+                ],
+              )
+            ) {
+              return false;
+            }
+
+            if (
+              selectedRoles.length >
+                0 &&
+              !userMatchesSelectedRoles(
+                user,
+                selectedRoles,
               )
             ) {
               return false;
@@ -541,9 +573,11 @@ export function ControlCenterMessagingSection({
           },
         ),
       [
+        audience,
         branchId,
         channel,
-        roleCategory,
+        recipientMode,
+        selectedRoles,
         tenantId,
         userRows,
       ],
@@ -604,13 +638,13 @@ export function ControlCenterMessagingSection({
           selectedUsers,
           selectableUsers,
           directRecipients,
-          roleCategory,
+          selectedRoles,
         }),
       [
         audience,
         directRecipients,
         recipientMode,
-        roleCategory,
+        selectedRoles,
         selectableUsers,
         selectedBranch,
         selectedClient,
@@ -983,8 +1017,8 @@ export function ControlCenterMessagingSection({
       "TENANT_USERS",
     );
 
-    setRoleCategory(
-      "ALL",
+    setSelectedRoles(
+      [],
     );
 
     setSelectedUserIds(
@@ -1062,9 +1096,11 @@ export function ControlCenterMessagingSection({
     if (
       recipientMode ===
         "AUDIENCE" &&
+      audience ===
+        "BRANCH_USERS" &&
       !tenantId
     ) {
-      return "Select an organization.";
+      return "Select an organization for the branch users audience.";
     }
 
     return null;
@@ -1144,11 +1180,24 @@ export function ControlCenterMessagingSection({
           "SELECTED_USERS";
       } else if (
         !directMode &&
-        roleCategory !==
-          "ALL"
+        audience ===
+          "TENANT_OWNERS"
+      ) {
+        resolvedAudience =
+          "TENANT_OWNERS";
+      } else if (
+        !directMode &&
+        selectedRoleNames.length >
+          0
       ) {
         resolvedAudience =
           "ROLE_USERS";
+      } else if (
+        !directMode &&
+        !tenantId
+      ) {
+        resolvedAudience =
+          "ALL_USERS";
       } else if (
         !directMode
       ) {
@@ -1171,7 +1220,9 @@ export function ControlCenterMessagingSection({
 
         branchId:
           directMode ||
-          !branchId
+          !branchId ||
+          audience ===
+            "TENANT_OWNERS"
             ? undefined
             : branchId,
 
@@ -1190,13 +1241,10 @@ export function ControlCenterMessagingSection({
 
         roleNames:
           !directMode &&
-          roleCategory !==
-            "ALL" &&
-          selectedRoleCategory
-            ?.roleNames.length
-            ? [
-                ...selectedRoleCategory.roleNames,
-              ]
+          audience !==
+            "TENANT_OWNERS" &&
+          selectedRoleNames.length
+            ? selectedRoleNames
             : undefined,
 
         subject:
@@ -1413,11 +1461,11 @@ export function ControlCenterMessagingSection({
               setAudience={
                 setAudience
               }
-              roleCategory={
-                roleCategory
+              selectedRoles={
+                selectedRoles
               }
-              setRoleCategory={
-                setRoleCategory
+              setSelectedRoles={
+                setSelectedRoles
               }
               selectedUserIds={
                 selectedUserIds
@@ -3225,8 +3273,8 @@ function ComposeView({
   setBranchId,
   audience,
   setAudience,
-  roleCategory,
-  setRoleCategory,
+  selectedRoles,
+  setSelectedRoles,
   selectedUserIds,
   setSelectedUserIds,
   templateCode,
@@ -3296,14 +3344,15 @@ function ComposeView({
         MessageAudience,
     ) => void;
 
-  roleCategory:
-    string;
+  selectedRoles:
+    string[];
 
-  setRoleCategory:
-    (
-      value:
-        string,
-    ) => void;
+  setSelectedRoles:
+    React.Dispatch<
+      React.SetStateAction<
+        string[]
+      >
+    >;
 
   selectedUserIds:
     string[];
@@ -3531,7 +3580,7 @@ function ComposeView({
                         "AUDIENCE",
 
                       label:
-                        "Organization audience",
+                        "By organization and role",
                     },
 
                     {
@@ -3559,6 +3608,9 @@ function ComposeView({
                   <FieldLabel>
                     Organization
                   </FieldLabel>
+                  <p className="mb-1.5 text-[9.5px] text-[#718099]">
+                    All organizations includes every client. Choose one organization only when you want to limit the message.
+                  </p>
 
                   <SelectInput
                     value={
@@ -3585,7 +3637,7 @@ function ComposeView({
                           "",
 
                         label:
-                          "Select organization",
+                          "All organizations",
                       },
 
                       ...clients.map(
@@ -3618,19 +3670,31 @@ function ComposeView({
                       }
                       onChange={(
                         value,
-                      ) =>
-                        setAudience(
+                      ) => {
+                        const next =
                           value as
-                            MessageAudience,
-                        )
-                      }
+                            MessageAudience;
+
+                        setAudience(
+                          next,
+                        );
+
+                        if (
+                          next ===
+                          "TENANT_OWNERS"
+                        ) {
+                          setSelectedRoles(
+                            [],
+                          );
+                        }
+                      }}
                       options={[
                         {
                           value:
                             "TENANT_USERS",
 
                           label:
-                            "All organization users",
+                            "All users",
                         },
 
                         {
@@ -3638,7 +3702,7 @@ function ComposeView({
                             "TENANT_OWNERS",
 
                           label:
-                            "Organization owners",
+                            "Owners only",
                         },
 
                         {
@@ -3646,7 +3710,7 @@ function ComposeView({
                             "BRANCH_USERS",
 
                           label:
-                            "Branch users",
+                            "One branch",
                         },
                       ]}
                     />
@@ -3676,7 +3740,10 @@ function ComposeView({
                           label:
                             branchesLoading
                               ? "Loading branches..."
-                              : "All branches",
+                              : audience ===
+                                  "BRANCH_USERS"
+                                ? "Select a branch"
+                                : "All branches",
                         },
 
                         ...branchOptions.map(
@@ -3693,35 +3760,68 @@ function ComposeView({
                       ]}
                     />
                   </Field>
-
-                  <Field>
-                    <FieldLabel>
-                      Role filter
-                    </FieldLabel>
-
-                    <SelectInput
-                      value={
-                        roleCategory
-                      }
-                      onChange={
-                        setRoleCategory
-                      }
-                      options={
-                        ROLE_CATEGORIES.map(
-                          (
-                            category,
-                          ) => ({
-                            value:
-                              category.value,
-
-                            label:
-                              category.label,
-                          }),
-                        )
-                      }
-                    />
-                  </Field>
                 </>
+              ) : null}
+
+              {recipientMode ===
+                "SELECTED_USERS" ||
+              (recipientMode ===
+                "AUDIENCE" &&
+                audience !==
+                  "TENANT_OWNERS") ? (
+                <div className="md:col-span-2">
+                  <FieldLabel>
+                    Roles
+                  </FieldLabel>
+                  <p className="mb-2 text-[9.5px] text-[#718099]">
+                    Tick All roles to include everyone, or pick only the people you want: owners, managers, cashiers, officers, agents, and the rest.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-[#dfe5eb] bg-white px-2.5 py-1.5 text-[10px] font-semibold text-[#26344d]">
+                      <input
+                        type="checkbox"
+                        checked={selectedRoles.length === 0}
+                        onChange={() => setSelectedRoles([])}
+                      />
+                      All roles
+                    </label>
+                    {ROLE_CATEGORIES.map((category) => {
+                      const checked = selectedRoles.includes(category.value);
+                      return (
+                        <label
+                          key={category.value}
+                          className={`inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[10px] font-semibold ${
+                            checked
+                              ? "border-[#87bfa1] bg-[#eaf6ee] text-[#198b55]"
+                              : "border-[#dfe5eb] bg-white text-[#26344d]"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setSelectedRoles((current) =>
+                                checked
+                                  ? current.filter((value) => value !== category.value)
+                                  : [...current, category.value],
+                              );
+                            }}
+                          />
+                          {category.label}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : recipientMode ===
+                  "AUDIENCE" &&
+                audience ===
+                  "TENANT_OWNERS" ? (
+                <div className="md:col-span-2">
+                  <p className="rounded-md border border-[#dfe5eb] bg-[#f7f9fb] px-3 py-2 text-[10px] text-[#526078]">
+                    This goes to organization owners only, across the organization you chose or every organization if you left All organizations selected.
+                  </p>
+                </div>
               ) : null}
             </div>
 
@@ -4570,12 +4670,15 @@ function ActionCard({
 
 function Field({
   children,
+  className = "",
 }: {
   children:
     React.ReactNode;
+  className?:
+    string;
 }) {
   return (
-    <label className="block">
+    <label className={`block ${className}`}>
       {children}
     </label>
   );
@@ -5103,7 +5206,7 @@ function buildReviewData({
   selectedUsers,
   selectableUsers,
   directRecipients,
-  roleCategory,
+  selectedRoles,
 }: {
   recipientMode:
     RecipientMode;
@@ -5126,8 +5229,8 @@ function buildReviewData({
   directRecipients:
     string[];
 
-  roleCategory:
-    string;
+  selectedRoles:
+    string[];
 }): ReviewData {
   if (
     recipientMode ===
@@ -5155,31 +5258,35 @@ function buildReviewData({
     };
   }
 
-  const role =
-    ROLE_CATEGORIES.find(
-      (
-        category,
-      ) =>
-        category.value ===
-        roleCategory,
-    );
+  const scopeLabel =
+    selectedBranch
+      ? selectedBranch.name
+      : selectedClient
+        ? selectedClient.name
+        : "All organizations";
 
   if (
-    roleCategory !==
-    "ALL"
+    selectedRoles.length >
+    0
   ) {
+    const labels =
+      ROLE_CATEGORIES.filter(
+        (
+          category,
+        ) =>
+          selectedRoles.includes(
+            category.value,
+          ),
+      ).map(
+        (
+          category,
+        ) =>
+          category.label,
+      );
+
     return {
       recipientLabel:
-        `${
-          role?.label ??
-          "Role users"
-        }${
-          selectedBranch
-            ? ` · ${selectedBranch.name}`
-            : selectedClient
-              ? ` · ${selectedClient.name}`
-              : ""
-        }`,
+        `${labels.join(", ")} · ${scopeLabel}`,
 
       recipientCount:
         selectableUsers.length,
@@ -5192,10 +5299,10 @@ function buildReviewData({
   ) {
     return {
       recipientLabel:
-        "Organization owners",
+        `Owners · ${scopeLabel}`,
 
       recipientCount:
-        null,
+        selectableUsers.length,
     };
   }
 
@@ -5218,63 +5325,43 @@ function buildReviewData({
     recipientLabel:
       selectedClient
         ? `${selectedClient.name} users`
-        : "Organization users",
+        : "All users",
 
     recipientCount:
       selectableUsers.length,
   };
 }
 
-function userMatchesRoleCategory(
+function userMatchesSelectedRoles(
   user:
     ControlCenterUser,
-  category:
-    string,
+  selectedRoles:
+    string[],
 ) {
-  const aliases:
-    Record<
-      string,
-      string[]
-    > = {
-      OWNER: [
-        "Account Owner",
-        "Owner",
-      ],
-
-      MANAGER: [
-        "Manager",
-        "Branch Manager",
-      ],
-
-      CASHIER: [
-        "Cashier",
-      ],
-
-      FIELD_OFFICER: [
-        "Field Officer",
-        "Field Agent",
-        "Agent",
-        "Loan Officer",
-      ],
-    };
-
-  const accepted =
-    aliases[
-      category
-    ];
-
   if (
-    !accepted
+    !selectedRoles.length
   ) {
     return true;
   }
+
+  const accepted =
+    new Set(
+      roleNamesForSelection(
+        selectedRoles,
+      ).map(
+        (
+          name,
+        ) =>
+          name.toLowerCase(),
+      ),
+    );
 
   return user.roles.some(
     (
       role,
     ) =>
-      accepted.includes(
-        role,
+      accepted.has(
+        role.toLowerCase(),
       ),
   );
 }

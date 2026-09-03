@@ -47,12 +47,13 @@ export class ControlCenterSendMessageDto {
 
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(20)
+  @ArrayMaxSize(40)
   @IsString({ each: true })
   roleNames?: string[];
 
   @IsOptional()
   @IsIn([
+    'ALL_USERS',
     'TENANT_USERS',
     'BRANCH_USERS',
     'TENANT_OWNERS',
@@ -60,6 +61,7 @@ export class ControlCenterSendMessageDto {
     'ROLE_USERS',
   ])
   audience?:
+    | 'ALL_USERS'
     | 'TENANT_USERS'
     | 'BRANCH_USERS'
     | 'TENANT_OWNERS'

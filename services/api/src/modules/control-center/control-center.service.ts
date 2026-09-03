@@ -3925,9 +3925,9 @@ export class ControlCenterService implements OnModuleInit {
       ),
     ];
 
-    if (!dto.tenantId && userIds.length === 0) {
+    if (!dto.tenantId && userIds.length === 0 && !dto.audience && !dto.roleNames?.length) {
       throw new BadRequestException(
-        'Choose recipients directly, select users, or select a client organization.',
+        'Choose recipients directly, select users, select a role, or select a client organization.',
       );
     }
 
@@ -3935,16 +3935,20 @@ export class ControlCenterService implements OnModuleInit {
       throw new BadRequestException('Choose at least one user.');
     }
 
+    if (dto.audience === 'BRANCH_USERS' && !dto.branchId) {
+      throw new BadRequestException('Select a branch for the branch users audience.');
+    }
+
     const roleNames = this.normalizeMessageRoleNames(
-      dto.audience === 'TENANT_OWNERS'
-        ? ['Account Owner']
-        : (dto.roleNames ?? []),
+      dto.audience === 'TENANT_OWNERS' ? ['owner'] : (dto.roleNames ?? []),
     );
 
     const where: Prisma.UserWhereInput = {
       ...(dto.tenantId ? { tenantId: dto.tenantId } : {}),
       ...(userIds.length ? { id: { in: userIds } } : {}),
-      ...(dto.branchId ? { branchId: dto.branchId } : {}),
+      ...(dto.audience === 'TENANT_OWNERS' || !dto.branchId
+        ? {}
+        : { branchId: dto.branchId }),
       status: UserStatus.ACTIVE,
       ...(channel === ControlCenterMessageChannel.EMAIL
         ? { email: { not: '' } }
@@ -3957,7 +3961,7 @@ export class ControlCenterService implements OnModuleInit {
 
     const users = await this.prisma.user.findMany({
       where,
-      take: 200,
+      take: 8000,
       orderBy: { createdAt: 'asc' },
       select: {
         displayName: true,
@@ -3987,23 +3991,27 @@ export class ControlCenterService implements OnModuleInit {
 
   private normalizeMessageRoleNames(roleNames: string[]) {
     const aliases = new Map<string, string[]>([
-      ['owner', ['Account Owner', 'Owner']],
-      ['account owner', ['Account Owner', 'Owner']],
+      ['owner', ['Account Owner', 'Owner', 'Workspace Owner']],
+      ['account owner', ['Account Owner', 'Owner', 'Workspace Owner']],
+      ['workspace owner', ['Account Owner', 'Owner', 'Workspace Owner']],
       ['manager', ['Manager', 'Branch Manager']],
       ['branch manager', ['Manager', 'Branch Manager']],
       ['cashier', ['Cashier']],
+      ['supervisor', ['Supervisor']],
+      ['field officer', ['Field Officer', 'Field Agent']],
+      ['field agent', ['Field Officer', 'Field Agent']],
+      ['agent', ['Agent']],
+      ['loan officer', ['Loan Officer']],
+      ['recovery officer', ['Recovery Officer']],
       [
-        'field officer',
-        ['Field Officer', 'Field Agent', 'Agent', 'Loan Officer'],
-      ],
-      [
-        'field agent',
-        ['Field Officer', 'Field Agent', 'Agent', 'Loan Officer'],
-      ],
-      ['agent', ['Field Officer', 'Field Agent', 'Agent', 'Loan Officer']],
-      [
-        'loan officer',
-        ['Field Officer', 'Field Agent', 'Agent', 'Loan Officer'],
+        'field staff',
+        [
+          'Field Officer',
+          'Field Agent',
+          'Agent',
+          'Loan Officer',
+          'Recovery Officer',
+        ],
       ],
     ]);
     const normalized = new Set<string>();
