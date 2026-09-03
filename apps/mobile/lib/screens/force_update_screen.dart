@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lottie/lottie.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/update_service.dart';
@@ -230,25 +231,13 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
           children: [
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 480),
                   child: Column(
                     children: [
-                      Container(
-                        width: 72,
-                        height: 72,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE8F6EE),
-                          borderRadius: BorderRadius.circular(22),
-                        ),
-                        child: const Icon(
-                          Icons.phonelink_setup_rounded,
-                          size: 34,
-                          color: forestEmerald,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
+                      const _UpdateWaitAnimation(),
+                      const SizedBox(height: 8),
                       Text(
                         _isBlocking ? 'Update required' : 'Update available',
                         textAlign: TextAlign.center,
@@ -443,6 +432,30 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UpdateWaitAnimation extends StatelessWidget {
+  const _UpdateWaitAnimation();
+
+  @override
+  Widget build(BuildContext context) {
+    final shortestSide = MediaQuery.sizeOf(context).shortestSide;
+    final size = (shortestSide * 0.42).clamp(156.0, 220.0);
+
+    return Semantics(
+      label: 'Waiting for the update',
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Lottie.asset(
+          'assets/lottie/wait-computer.json',
+          fit: BoxFit.contain,
+          repeat: true,
+          addRepaintBoundary: true,
         ),
       ),
     );
