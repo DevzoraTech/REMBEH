@@ -57,7 +57,7 @@ import {
   isSessionExpired,
   readAuthState,
 } from "../../lib/auth-session";
-import { MANAGER_INVITE_ROLES, resolveOperatorRole } from "../../lib/roles";
+import { MANAGER_INVITE_ROLES, OWNER_INVITE_ROLES, resolveOperatorRole } from "../../lib/roles";
 import {
   canResendStaffInvite,
   resendStaffInvitation,
@@ -68,6 +68,7 @@ import {
   type StaffTransferRow,
   type TransferableStaff,
 } from "../staff/transfer-staff-dialog";
+import { PendingInvitesPanel } from "../staff/pending-invites-panel";
 
 type AgentRow = {
   id: string;
@@ -143,10 +144,12 @@ export function AgentsWorkspace() {
     roleName: string;
     displayName: string;
     email: string;
+    branchId: string;
   }>({
     roleName: MANAGER_INVITE_ROLES[0],
     displayName: "",
     email: "",
+    branchId: "",
   });
   const autoInviteHandled = useRef(false);
 
@@ -167,13 +170,29 @@ export function AgentsWorkspace() {
   const { matchesBranch, selectedBranchName, selectedBranchId, branches: scopeBranches } =
     useOwnerBranchScope();
 
+  const inviteRoles = isOwner
+    ? [...OWNER_INVITE_ROLES, ...MANAGER_INVITE_ROLES]
+    : [...MANAGER_INVITE_ROLES];
+  const inviteBranchId = isOwner
+    ? inviteForm.branchId || selectedBranchId || scopeBranches[0]?.id || ""
+    : branch?.id ?? "";
+  const pendingInvites = useMemo(
+    () =>
+      agents.filter(
+        (agent) =>
+          canResendStaffInvite(agent) && matchesBranch(agent.branchId),
+      ),
+    [agents, matchesBranch],
+  );
+
   function openInvite() {
     setInviteError(null);
     setInviteNotice(null);
     setInviteForm({
-      roleName: MANAGER_INVITE_ROLES[0],
+      roleName: isOwner ? OWNER_INVITE_ROLES[0] : MANAGER_INVITE_ROLES[0],
       displayName: "",
       email: "",
+      branchId: selectedBranchId ?? scopeBranches[0]?.id ?? "",
     });
     setInviteOpen(true);
   }
@@ -183,7 +202,7 @@ export function AgentsWorkspace() {
       autoInviteHandled.current ||
       !canInvite ||
       !session ||
-      !branch?.id
+      (!isOwner && !branch?.id)
     ) {
       return;
     }
@@ -350,15 +369,16 @@ export function AgentsWorkspace() {
 
   async function handleInviteAgent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!session || !branch?.id) {
-      setInviteError("No branch assigned.");
+    const targetBranchId = inviteBranchId;
+    if (!session || !targetBranchId) {
+      setInviteError("Select a branch for this invite.");
       return;
     }
     setInviteError(null);
     setIsInviting(true);
     try {
       const response = await fetch(
-        `${apiBaseUrl}/branches/${branch.id}/staff-invitations`,
+        `${apiBaseUrl}/branches/${targetBranchId}/staff-invitations`,
         {
           method: "POST",
           headers: {
@@ -525,7 +545,7 @@ export function AgentsWorkspace() {
                   className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[#07885f] px-3.5 text-xs font-semibold text-white shadow-[0_10px_20px_rgba(7,136,95,0.22)] transition hover:bg-[#067352]"
                 >
                   <Plus className="size-3.5" />
-                  Add field officer
+                  {isOwner ? "Invite staff" : "Add field officer"}
                 </button>
               ) : null}
               <button
@@ -552,6 +572,23 @@ export function AgentsWorkspace() {
           <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-950">
             {inviteNotice}
           </p>
+        ) : null}
+
+        {canInvite ? (
+          <PendingInvitesPanel
+            items={pendingInvites.map((agent) => ({
+              id: agent.id,
+              name: agent.name,
+              email: agent.email,
+              roleName: agent.roleName || "Staff",
+              branchName: agent.branchName,
+            }))}
+            busyId={resendBusyId}
+            onResend={(item) => {
+              const agent = agents.find((row) => row.id === item.id);
+              if (agent) void handleResendInvite(agent);
+            }}
+          />
         ) : null}
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -609,7 +646,7 @@ export function AgentsWorkspace() {
                 className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-[#07885f] px-4 text-sm font-semibold text-white shadow-[0_12px_24px_rgba(7,136,95,0.22)] transition hover:bg-[#067352]"
               >
                 <Plus className="size-4" />
-                Add field officer
+                {isOwner ? "Invite staff" : "Add field officer"}
               </button>
             ) : null}
           </div>
@@ -915,12 +952,12 @@ export function AgentsWorkspace() {
                   id="invite-agent-title"
                   className="text-base font-bold tracking-[-0.02em] text-[#0b1220]"
                 >
-                  Add field officer
+                  {isOwner ? "Invite staff" : "Add field officer"}
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  Invite field staff to{" "}
-                  {branch?.name ?? "your branch"}. They accept by email before
-                  access is active.
+                  {isOwner
+                    ? "Invite a manager or other staff. They accept by email before access is active."
+                    : `Invite field staff to ${branch?.name ?? "your branch"}. They accept by email before access is active.`}
                 </p>
               </div>
               <button
@@ -934,13 +971,30 @@ export function AgentsWorkspace() {
               </button>
             </div>
             <form className="space-y-3.5 px-5 py-4" onSubmit={handleInviteAgent}>
+              {isOwner ? (
+                <SelectField
+                  label="Branch"
+                  value={inviteForm.branchId}
+                  onChange={(value) =>
+                    setInviteForm((current) => ({
+                      ...current,
+                      branchId: value,
+                    }))
+                  }
+                  options={scopeBranches.map((item) => ({
+                    value: item.id,
+                    label: item.name,
+                  }))}
+                  required
+                />
+              ) : null}
               <SelectField
                 label="Role"
                 value={inviteForm.roleName}
                 onChange={(value) =>
                   setInviteForm((current) => ({ ...current, roleName: value }))
                 }
-                options={MANAGER_INVITE_ROLES.map((role) => ({
+                options={inviteRoles.map((role) => ({
                   value: role,
                   label: role,
                 }))}
@@ -1095,16 +1149,21 @@ function StatusBadge({ status }: { status: string }) {
   const pending =
     normalized === "INVITED" ||
     normalized === "INVITE_PENDING" ||
+    normalized === "INVITE_EXPIRED" ||
     normalized === "PENDING_VERIFICATION";
   const active = normalized === "ACTIVE";
   const suspended = normalized === "SUSPENDED";
   const label = active
     ? "Active"
-    : pending
-      ? "Pending"
-      : suspended
-        ? "Suspended"
-        : "Inactive";
+    : normalized === "INVITE_EXPIRED"
+      ? "Invite expired"
+      : normalized === "INVITED" || normalized === "INVITE_PENDING"
+        ? "Invite pending"
+        : pending
+          ? "Pending"
+          : suspended
+            ? "Suspended"
+            : "Inactive";
   const styles = active
     ? "bg-emerald-50 text-[var(--forest-emerald)]"
     : pending

@@ -79,6 +79,7 @@ import {
   canResendStaffInvite,
   resendStaffInvitation,
 } from "../../../lib/staff-invitations";
+import { PendingInvitesPanel } from "../../../components/staff/pending-invites-panel";
 
 const emptyBranchForm = {
   branchName: "",
@@ -257,6 +258,36 @@ function OwnerBranchesPageContent() {
   const assignedManagers = scopedBranches.filter((branch) =>
     activeManager(branch),
   ).length;
+  const waitingInvites = useMemo(() => {
+    const seen = new Set<string>();
+    const rows: Array<{
+      id: string;
+      name: string;
+      email: string;
+      roleName: string;
+      branchId: string;
+      branchName: string;
+    }> = [];
+    for (const branch of scopedBranches) {
+      const members = [
+        branch.manager,
+        ...(branch.staff ?? []),
+      ].filter((member): member is NonNullable<typeof member> => Boolean(member));
+      for (const member of members) {
+        if (seen.has(member.id) || !canResendStaffInvite(member)) continue;
+        seen.add(member.id);
+        rows.push({
+          id: member.id,
+          name: member.name,
+          email: member.email,
+          roleName: member.roleName ?? "Staff",
+          branchId: branch.id,
+          branchName: branch.name,
+        });
+      }
+    }
+    return rows;
+  }, [scopedBranches]);
   const activeStaff = sumBy(
     scopedBranches,
     (branch) => branch.staffSummary.active,
@@ -478,6 +509,19 @@ function OwnerBranchesPageContent() {
             {error}
           </p>
         ) : null}
+
+        <PendingInvitesPanel
+          items={waitingInvites}
+          busyId={resendBusyId}
+          onResend={(item) =>
+            void handleResendInvite({
+              branchId: item.branchId ?? "",
+              userId: item.id,
+              email: item.email,
+              name: item.name,
+            })
+          }
+        />
 
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           <BranchStatCard
@@ -1264,6 +1308,25 @@ function BranchRow({
             <p className="truncate text-[10px] font-semibold text-slate-500">
               {managerEmail}
             </p>
+            {invitedManager ? (
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-semibold text-amber-700">
+                  Invite pending
+                </span>
+                {onResendInvite ? (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onResendInvite();
+                    }}
+                    className="text-[10px] font-semibold text-[#0b936b] hover:underline"
+                  >
+                    Resend invite
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </div>
       </BranchField>
@@ -1819,6 +1882,9 @@ function BranchDetailDrawer({
   onOpenAttention?: () => void;
 }) {
   const staff = branch.staff ?? [];
+  const pendingStaff = staff.filter((member) => canResendStaffInvite(member));
+  const otherStaff = staff.filter((member) => !canResendStaffInvite(member));
+  const listedStaff = [...pendingStaff, ...otherStaff];
   const manager = activeManager(branch);
   const invitedManager =
     branch.manager && branch.manager.inviteStatus !== "ACTIVE"
@@ -2001,7 +2067,7 @@ function BranchDetailDrawer({
           </p>
         ) : (
           <div className="overflow-hidden rounded-2xl border border-[#e5ebf0] bg-white">
-            {staff.slice(0, 4).map((member) => (
+            {listedStaff.map((member) => (
               <div
                 key={member.id}
                 className="flex items-center justify-between gap-3 border-b border-[#edf1f5] px-3 py-2.5 last:border-b-0"
@@ -2037,11 +2103,6 @@ function BranchDetailDrawer({
                 </div>
               </div>
             ))}
-            {staff.length > 4 ? (
-              <p className="bg-[#fbfcfd] px-3 py-2 text-[11px] font-medium text-slate-500">
-                +{staff.length - 4} more
-              </p>
-            ) : null}
           </div>
         )}
       </section>
