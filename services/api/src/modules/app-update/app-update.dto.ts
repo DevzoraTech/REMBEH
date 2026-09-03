@@ -6,6 +6,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Length,
   Min,
   ValidateNested,
@@ -59,6 +60,15 @@ export class CreateReleaseDto {
   @IsString()
   @IsOptional()
   message?: string;
+
+  @IsOptional()
+  @IsIn(['ALL', 'SELECTED'])
+  audience?: 'ALL' | 'SELECTED';
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  tenantIds?: string[];
 }
 
 export class UpdateReleaseDto {
@@ -95,6 +105,15 @@ export class UpdateReleaseDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsIn(['ALL', 'SELECTED'])
+  audience?: 'ALL' | 'SELECTED';
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  tenantIds?: string[];
 }
 
 export class UploadUrlDto {

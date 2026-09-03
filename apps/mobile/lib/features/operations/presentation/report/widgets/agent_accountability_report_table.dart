@@ -61,7 +61,7 @@ class AgentAccountabilityReportTable extends StatelessWidget {
             alignment: Alignment.centerRight,
           ),
           ReportTableColumn(
-            label: 'Collections',
+            label: 'Cash in',
             flex: 14,
             alignment: Alignment.centerRight,
           ),

@@ -35,12 +35,14 @@ export class AppUpdateController {
     @Query('currentBuild', ParseIntPipe) currentBuild: number,
     @Query('platform') platform?: string,
     @Query('currentReleaseEpoch') currentReleaseEpoch?: string,
+    @Query('tenantId') tenantId?: string,
   ) {
     return this.appUpdateService.checkUpdate(
       app || appName || 'mobile',
       currentBuild,
       platform || 'android',
       parseOptionalPositiveInt(currentReleaseEpoch, 1),
+      parseOptionalUuid(tenantId),
     );
   }
 
@@ -119,7 +121,11 @@ export class AppUpdateController {
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('workspace.update')
   async createRelease(@Body() dto: CreateReleaseDto) {
-    return this.appUpdateService.createRelease(dto);
+    return this.appUpdateService.createRelease({
+      ...dto,
+      audience: undefined,
+      tenantIds: undefined,
+    });
   }
 
   @Get('releases')
@@ -143,7 +149,11 @@ export class AppUpdateController {
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermissions('workspace.update')
   async updateRelease(@Param('id') id: string, @Body() dto: UpdateReleaseDto) {
-    return this.appUpdateService.updateRelease(id, dto);
+    return this.appUpdateService.updateRelease(id, {
+      ...dto,
+      audience: undefined,
+      tenantIds: undefined,
+    });
   }
 }
 
@@ -157,4 +167,17 @@ function parseOptionalPositiveInt(value: string | undefined, fallback: number) {
   }
 
   return parsed;
+}
+
+function parseOptionalUuid(value: string | undefined) {
+  if (value == null || value === '') return undefined;
+  const trimmed = value.trim();
+  if (
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      trimmed,
+    )
+  ) {
+    throw new BadRequestException('Organisation id must be a valid UUID.');
+  }
+  return trimmed;
 }

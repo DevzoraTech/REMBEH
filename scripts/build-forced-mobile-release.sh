@@ -52,6 +52,7 @@ CHANGELOG_CSV="Works better offline,Syncs latest records when internet returns,K
 
 INCREMENT_MODE="patch"
 FORCE_UPDATE="true"
+IS_ACTIVE="true"
 SKIP_BUILD="false"
 SKIP_REGISTER="false"
 DRY_RUN="false"
@@ -82,6 +83,10 @@ Options:
 
   --no-force
       Register as an optional update.
+
+  --inactive
+      Upload and register, but do not offer the update yet.
+      Turn it on later in Control Center with "Release is active".
 
   --skip-build
       Reuse:
@@ -137,6 +142,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-force)
       FORCE_UPDATE="false"
+      shift
+      ;;
+    --inactive)
+      IS_ACTIVE="false"
       shift
       ;;
     --skip-build)
@@ -611,9 +620,14 @@ REMOTE
   )"
 
   local force_value="false"
+  local active_value="true"
 
   if [[ "$FORCE_UPDATE" == "true" ]]; then
     force_value="true"
+  fi
+
+  if [[ "$IS_ACTIVE" != "true" ]]; then
+    active_value="false"
   fi
 
   ec2_ssh \
@@ -628,6 +642,7 @@ REMOTE
     "$changelog_b64" \
     "$min_build" \
     "$force_value" \
+    "$active_value" \
     "$EXPECTED_DB_HOST" \
     "$EXPECTED_DB_NAME" \
     "$EXPECTED_S3_BUCKET" \
@@ -643,10 +658,11 @@ MESSAGE_B64="$6"
 CHANGELOG_B64="$7"
 MIN_BUILD="$8"
 FORCE_UPDATE="$9"
-EXPECTED_DB_HOST="${10}"
-EXPECTED_DB_NAME="${11}"
-EXPECTED_S3_BUCKET="${12}"
-EXPECTED_S3_REGION="${13}"
+IS_ACTIVE="${10}"
+EXPECTED_DB_HOST="${11}"
+EXPECTED_DB_NAME="${12}"
+EXPECTED_S3_BUCKET="${13}"
+EXPECTED_S3_REGION="${14}"
 
 cd "$REMOTE_DIR"
 
@@ -706,6 +722,10 @@ if [[ "$FORCE_UPDATE" == "true" ]]; then
   register_args+=(--force)
 fi
 
+if [[ "$IS_ACTIVE" != "true" ]]; then
+  register_args+=(--inactive)
+fi
+
 ./scripts/register-mobile-apk-on-ec2.sh \
   "${register_args[@]}"
 
@@ -732,6 +752,7 @@ REMOTE
   echo "  Version: ${version}+${build}"
   echo "  Line:    ${RELEASE_EPOCH}"
   echo "  Forced:  ${FORCE_UPDATE}"
+  echo "  Active:  ${IS_ACTIVE}"
   echo "  API:     ${API_URL}"
 }
 
@@ -788,6 +809,7 @@ main() {
     echo "  Version: ${version}+${build}"
     echo "  Line:    ${RELEASE_EPOCH}"
     echo "  Forced:  ${FORCE_UPDATE}"
+    echo "  Active:  ${IS_ACTIVE}"
     exit 0
   fi
 

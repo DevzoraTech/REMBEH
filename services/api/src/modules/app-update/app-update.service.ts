@@ -6,9 +6,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  AppReleaseAudience,
   AppUpdateMediaType,
   AppUpdateScreenContent,
   Prisma,
+  TenantStatus,
 } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../database/prisma.service';
@@ -22,6 +24,16 @@ import {
 import { ReleaseStorageService } from './release-storage.service';
 
 const SCREEN_KEY = 'mobile';
+
+const RELEASE_ADMIN_INCLUDE = {
+  tenants: {
+    include: {
+      tenant: {
+        select: { id: true, name: true, status: true },
+      },
+    },
+  },
+} as const;
 
 const DEFAULT_WHATS_NEW = [
   {
@@ -57,9 +69,10 @@ export class AppUpdateService {
     currentBuild: number,
     platform = 'android',
     currentReleaseEpoch = 1,
+    tenantId?: string,
   ) {
     const latestRelease = await this.prisma.appRelease.findFirst({
-      where: { appName, platform, isActive: true },
+      where: this.visibleReleaseWhere(appName, platform, tenantId),
       orderBy: [
         { releaseEpoch: 'desc' },
         { buildNumber: 'desc' },
@@ -137,9 +150,7 @@ export class AppUpdateService {
     if (latestRelease.updateMode === 'shorebird') {
       const latestFullRelease = await this.prisma.appRelease.findFirst({
         where: {
-          appName,
-          platform,
-          isActive: true,
+          ...this.visibleReleaseWhere(appName, platform, tenantId),
           updateMode: 'full',
           OR: [
             { releaseEpoch: { gt: currentReleaseEpoch } },
@@ -182,9 +193,7 @@ export class AppUpdateService {
       currentReleaseEpoch === releaseToServe.releaseEpoch
         ? await this.prisma.appRelease.findMany({
             where: {
-              appName,
-              platform,
-              isActive: true,
+              ...this.visibleReleaseWhere(appName, platform, tenantId),
               releaseEpoch: releaseToServe.releaseEpoch,
               buildNumber: {
                 gt: currentBuild,
@@ -196,9 +205,7 @@ export class AppUpdateService {
           })
         : await this.prisma.appRelease.findMany({
             where: {
-              appName,
-              platform,
-              isActive: true,
+              ...this.visibleReleaseWhere(appName, platform, tenantId),
               OR: [
                 {
                   releaseEpoch: {
@@ -269,6 +276,7 @@ export class AppUpdateService {
         appName,
         platform,
         isActive: true,
+        audience: AppReleaseAudience.ALL,
         updateMode: 'full',
       },
       orderBy: [
@@ -390,53 +398,106 @@ export class AppUpdateService {
       );
     }
 
-    return this.prisma.appRelease.create({
-      data: {
-        appName: dto.appName,
-        platform,
-        version: dto.version,
-        releaseEpoch,
-        buildNumber: dto.buildNumber,
-        updateMode: dto.updateMode,
-        forceUpdate: dto.forceUpdate ?? false,
-        minSupportedBuild: dto.minSupportedBuild ?? 1,
-        apkUrl: dto.apkUrl,
-        apkHash: dto.apkHash,
-        changelog: dto.changelog ?? [],
-        message: dto.message,
-      },
-    });
+    const audience = this.resolveAudience(dto.audience, dto.tenantIds);
+    const tenantIds = await this.resolveTenantIds(audience, dto.tenantIds);
+
+    return this.toAdminRelease(
+      await this.prisma.appRelease.create({
+        data: {
+          appName: dto.appName,
+          platform,
+          version: dto.version,
+          releaseEpoch,
+          buildNumber: dto.buildNumber,
+          updateMode: dto.updateMode,
+          forceUpdate: dto.forceUpdate ?? false,
+          minSupportedBuild: dto.minSupportedBuild ?? 1,
+          apkUrl: dto.apkUrl,
+          apkHash: dto.apkHash,
+          changelog: dto.changelog ?? [],
+          message: dto.message,
+          audience,
+          tenants:
+            tenantIds.length > 0
+              ? { create: tenantIds.map((tenantId) => ({ tenantId })) }
+              : undefined,
+        },
+        include: RELEASE_ADMIN_INCLUDE,
+      }),
+    );
   }
 
   async updateRelease(id: string, dto: UpdateReleaseDto) {
     const release = await this.prisma.appRelease.findUnique({ where: { id } });
     if (!release) throw new NotFoundException('Release not found.');
 
-    return this.prisma.appRelease.update({
-      where: { id },
-      data: {
-        ...(dto.forceUpdate !== undefined && { forceUpdate: dto.forceUpdate }),
-        ...(dto.releaseEpoch !== undefined && {
-          releaseEpoch: dto.releaseEpoch,
-        }),
-        ...(dto.minSupportedBuild !== undefined && {
-          minSupportedBuild: dto.minSupportedBuild,
-        }),
-        ...(dto.apkUrl !== undefined && { apkUrl: dto.apkUrl }),
-        ...(dto.apkHash !== undefined && { apkHash: dto.apkHash }),
-        ...(dto.changelog !== undefined && { changelog: dto.changelog }),
-        ...(dto.message !== undefined && { message: dto.message }),
-        ...(dto.isActive !== undefined && { isActive: dto.isActive }),
-      },
-    });
+    const audience =
+      dto.audience !== undefined || dto.tenantIds !== undefined
+        ? this.resolveAudience(
+            dto.audience ??
+              (release.audience === AppReleaseAudience.SELECTED
+                ? 'SELECTED'
+                : 'ALL'),
+            dto.tenantIds,
+          )
+        : undefined;
+    const tenantIds =
+      audience === undefined
+        ? undefined
+        : await this.resolveTenantIds(audience, dto.tenantIds);
+
+    return this.toAdminRelease(
+      await this.prisma.appRelease.update({
+        where: { id },
+        data: {
+          ...(dto.forceUpdate !== undefined && { forceUpdate: dto.forceUpdate }),
+          ...(dto.releaseEpoch !== undefined && {
+            releaseEpoch: dto.releaseEpoch,
+          }),
+          ...(dto.minSupportedBuild !== undefined && {
+            minSupportedBuild: dto.minSupportedBuild,
+          }),
+          ...(dto.apkUrl !== undefined && { apkUrl: dto.apkUrl }),
+          ...(dto.apkHash !== undefined && { apkHash: dto.apkHash }),
+          ...(dto.changelog !== undefined && { changelog: dto.changelog }),
+          ...(dto.message !== undefined && { message: dto.message }),
+          ...(dto.isActive !== undefined && { isActive: dto.isActive }),
+          ...(audience !== undefined && { audience }),
+          ...(tenantIds !== undefined && {
+            tenants: {
+              deleteMany: {},
+              create: tenantIds.map((tenantId) => ({ tenantId })),
+            },
+          }),
+        },
+        include: RELEASE_ADMIN_INCLUDE,
+      }),
+    );
+  }
+
+  async promoteReleaseToAll(id: string) {
+    const release = await this.prisma.appRelease.findUnique({ where: { id } });
+    if (!release) throw new NotFoundException('Release not found.');
+
+    return this.toAdminRelease(
+      await this.prisma.appRelease.update({
+        where: { id },
+        data: {
+          audience: AppReleaseAudience.ALL,
+          tenants: { deleteMany: {} },
+        },
+        include: RELEASE_ADMIN_INCLUDE,
+      }),
+    );
   }
 
   async listReleases(appName?: string, platform?: string) {
-    return this.prisma.appRelease.findMany({
+    const releases = await this.prisma.appRelease.findMany({
       where: {
         ...(appName && { appName }),
         ...(platform && { platform }),
       },
+      include: RELEASE_ADMIN_INCLUDE,
       orderBy: [
         { releaseEpoch: 'desc' },
         { buildNumber: 'desc' },
@@ -444,12 +505,24 @@ export class AppUpdateService {
       ],
       take: 50,
     });
+    return releases.map((release) => this.toAdminRelease(release));
   }
 
   async getRelease(id: string) {
-    const release = await this.prisma.appRelease.findUnique({ where: { id } });
+    const release = await this.prisma.appRelease.findUnique({
+      where: { id },
+      include: RELEASE_ADMIN_INCLUDE,
+    });
     if (!release) throw new NotFoundException('Release not found.');
-    return release;
+    return this.toAdminRelease(release);
+  }
+
+  async listRolloutOrganisations() {
+    return this.prisma.tenant.findMany({
+      where: { status: { not: TenantStatus.ARCHIVED } },
+      select: { id: true, name: true, status: true },
+      orderBy: { name: 'asc' },
+    });
   }
 
   async getScreenContent() {
@@ -653,6 +726,100 @@ export class AppUpdateService {
         body: item.body?.trim() || null,
       }))
       .filter((item) => item.title.length > 0);
+  }
+
+  private visibleReleaseWhere(
+    appName: string,
+    platform: string,
+    tenantId?: string,
+  ): Prisma.AppReleaseWhereInput {
+    if (!tenantId) {
+      return {
+        appName,
+        platform,
+        isActive: true,
+        audience: AppReleaseAudience.ALL,
+      };
+    }
+
+    return {
+      appName,
+      platform,
+      isActive: true,
+      OR: [
+        { audience: AppReleaseAudience.ALL },
+        {
+          audience: AppReleaseAudience.SELECTED,
+          tenants: { some: { tenantId } },
+        },
+      ],
+    };
+  }
+
+  private resolveAudience(
+    audience: 'ALL' | 'SELECTED' | undefined,
+    tenantIds?: string[],
+  ): AppReleaseAudience {
+    if (audience === 'SELECTED' || (audience == null && (tenantIds?.length ?? 0) > 0)) {
+      return AppReleaseAudience.SELECTED;
+    }
+    return AppReleaseAudience.ALL;
+  }
+
+  private async resolveTenantIds(
+    audience: AppReleaseAudience,
+    tenantIds?: string[],
+  ) {
+    if (audience !== AppReleaseAudience.SELECTED) {
+      return [] as string[];
+    }
+
+    const uniqueIds = [...new Set((tenantIds ?? []).filter(Boolean))];
+    if (uniqueIds.length === 0) {
+      throw new BadRequestException(
+        'Choose at least one organisation for a selected rollout.',
+      );
+    }
+
+    const tenants = await this.prisma.tenant.findMany({
+      where: { id: { in: uniqueIds } },
+      select: { id: true },
+    });
+    if (tenants.length !== uniqueIds.length) {
+      throw new BadRequestException('One or more organisations were not found.');
+    }
+
+    return uniqueIds;
+  }
+
+  private toAdminRelease(
+    release: Prisma.AppReleaseGetPayload<{ include: typeof RELEASE_ADMIN_INCLUDE }>,
+  ) {
+    return {
+      id: release.id,
+      appName: release.appName,
+      platform: release.platform,
+      version: release.version,
+      releaseEpoch: release.releaseEpoch,
+      buildNumber: release.buildNumber,
+      updateMode: release.updateMode,
+      forceUpdate: release.forceUpdate,
+      minSupportedBuild: release.minSupportedBuild,
+      apkUrl: release.apkUrl,
+      apkHash: release.apkHash,
+      changelog: release.changelog,
+      message: release.message,
+      isActive: release.isActive,
+      audience: release.audience,
+      downloadCount: release.downloadCount,
+      createdAt: release.createdAt.toISOString(),
+      updatedAt: release.updatedAt.toISOString(),
+      tenants: release.tenants.map((row) => ({
+        id: row.tenant.id,
+        name: row.tenant.name,
+        status: row.tenant.status,
+      })),
+    };
   }
 
   private cleanNullable(value: string | null | undefined) {

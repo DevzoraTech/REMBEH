@@ -1237,7 +1237,7 @@ class _ActiveOfficerTable extends StatelessWidget {
               Expanded(flex: 34, child: _ActiveHeaderCell('Name')),
               Expanded(
                 flex: 17,
-                child: _ActiveHeaderCell('Repayments', alignEnd: true),
+                child: _ActiveHeaderCell('Cash in', alignEnd: true),
               ),
               Expanded(
                 flex: 17,
@@ -2081,7 +2081,7 @@ class _OfficerExpectedHandoverCard extends StatelessWidget {
           const SizedBox(height: 7),
           _OfficerCashLine(label: 'Float allocated', value: floatAllocated),
           _OfficerCashLine(
-            label: 'Repayments collected',
+            label: 'Cash in',
             value: repaymentsCollected,
             signed: true,
           ),
@@ -2664,7 +2664,7 @@ class _PositionBreakdownCard extends StatelessWidget {
           const Divider(height: 15, color: line),
 
           _PositionLine(
-            label: 'Repayments collected',
+            label: 'Cash in',
             value: repaymentsCollected,
           ),
 
@@ -2766,7 +2766,7 @@ class _ActivitySummaryCard extends StatelessWidget {
           const SizedBox(height: 7),
           _ActivityLine(
             icon: Icons.payments_outlined,
-            label: 'Repayments collected ($repayments)',
+            label: 'Cash in ($repayments)',
           ),
           _ActivityLine(
             icon: Icons.receipt_long_outlined,

@@ -50,7 +50,7 @@ class CashPositionCard extends StatelessWidget {
           ),
           const SizedBox(height: 3),
           const Text(
-            'Expected cash currently',
+            'Expected closing balance',
             style: TextStyle(
               color: slateText,
               fontSize: 10.5,
@@ -64,7 +64,7 @@ class CashPositionCard extends StatelessWidget {
             amount: operation.capitalReceived,
           ),
           _CashLine(
-            label: 'Collections',
+            label: 'Cash in',
             amount: operation.collections,
             positive: true,
           ),
@@ -90,7 +90,7 @@ class CashPositionCard extends StatelessWidget {
             children: [
               const Expanded(
                 child: Text(
-                  'Expected closing cash',
+                  'Expected closing balance',
                   style: TextStyle(
                     color: midnightNavy,
                     fontSize: 10.5,

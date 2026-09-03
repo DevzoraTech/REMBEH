@@ -34,6 +34,7 @@ import { AppUpdateService } from '../app-update/app-update.service';
 import {
   AppUpdateScreenMediaPresignDto,
   UpdateAppUpdateScreenDto,
+  UpdateReleaseDto,
 } from '../app-update/app-update.dto';
 import {
   MarketingCampaignDto,
@@ -326,6 +327,33 @@ export class ControlCenterController {
       campaignId,
       body,
     );
+  }
+
+  @Get('app-releases')
+  @UseGuards(ControlCenterAuthGuard)
+  listAppReleases(
+    @Query('app') app?: string,
+    @Query('platform') platform?: string,
+  ) {
+    return this.appUpdateService.listReleases(app || 'mobile', platform);
+  }
+
+  @Get('app-release-organisations')
+  @UseGuards(ControlCenterAuthGuard)
+  listAppReleaseOrganisations() {
+    return this.appUpdateService.listRolloutOrganisations();
+  }
+
+  @Patch('app-releases/:id')
+  @UseGuards(ControlCenterAuthGuard)
+  updateAppRelease(@Param('id') id: string, @Body() body: UpdateReleaseDto) {
+    return this.appUpdateService.updateRelease(id, body);
+  }
+
+  @Post('app-releases/:id/promote')
+  @UseGuards(ControlCenterAuthGuard)
+  promoteAppRelease(@Param('id') id: string) {
+    return this.appUpdateService.promoteReleaseToAll(id);
   }
 
   @Get('app-update-screen')

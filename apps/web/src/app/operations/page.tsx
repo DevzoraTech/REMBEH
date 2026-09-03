@@ -2052,12 +2052,12 @@ function OpenOperationView({
         />
         <DayTopStat
           icon={<Landmark className="size-5" />}
-          label="Expected Close"
+          label="Expected closing balance"
           value={
             <Money value={operation.expectedClosingBalance} currency="UGX" />
           }
-          hint="Target cash after loans, repayments, fees, and expenses"
-          tooltip="Expected cash after opening, capital, repayments, processing fees, loans, and branch expenses."
+          hint="Target after loans, cash in, fees, and expenses"
+          tooltip="Expected closing balance after opening, capital received, cash in, processing fees, loans, and branch expenses."
           tone="green"
         />
         <DayTopStat
@@ -2085,7 +2085,7 @@ function OpenOperationView({
         />
         <DayTopStat
           icon={<Banknote className="size-5" />}
-          label="Repayments"
+          label="Cash in"
           value={<Money value={operation.collectionsReceived} currency="UGX" />}
           hint={
             <>
@@ -2093,7 +2093,7 @@ function OpenOperationView({
               <Money value={operation.expensesTotal} currency="UGX" /> expenses
             </>
           }
-          tooltip="Repayments received today, with loans issued and expenses recorded."
+          tooltip="Cash in received today, with loans issued and expenses recorded."
           tone="violet"
           className="sm:col-span-2 xl:col-span-1"
         />
@@ -2360,14 +2360,14 @@ function ComputerisedReportView({
           danger
         />
         <ReportMetric
-          label="Expected Close"
+          label="Expected closing balance"
           value={
             <Money value={operation.expectedClosingBalance} currency="UGX" />
           }
           highlight
         />
         <ReportMetric
-          label="Counted Cash"
+          label="Counted closing balance"
           value={<Money value={operation.closingBalance ?? 0} currency="UGX" />}
         />
       </div>
@@ -2379,7 +2379,7 @@ function ComputerisedReportView({
             value={<Money value={operation.openingBalance} currency="UGX" />}
           />
           <StatementRow
-            label="Capital top-ups today"
+            label="Capital received"
             value={<Money value={operation.topUpsTotal} currency="UGX" />}
           />
           <StatementRow
@@ -2399,7 +2399,7 @@ function ComputerisedReportView({
             strong
           />
           <StatementRow
-            label="Counted cash"
+            label="Counted closing balance"
             value={
               <Money value={operation.closingBalance ?? 0} currency="UGX" />
             }
@@ -2422,7 +2422,7 @@ function ComputerisedReportView({
             }
           />
           <ReportMiniStat
-            label="Repayments"
+            label="Cash in"
             value={`${operation.collectionsCount}`}
             hint={
               <Money value={operation.collectionsReceived} currency="UGX" />
@@ -2564,7 +2564,7 @@ function ExcelReportView({
               value={operation.expectedClosingBalance}
             />
             <SpreadsheetSummaryCell
-              label="Counted cash"
+              label="Counted closing balance"
               value={operation.closingBalance ?? 0}
             />
             <SpreadsheetSummaryCell
@@ -2930,7 +2930,7 @@ function ReportAgentTable({ operation }: { operation: DailyOperation }) {
               <th className="w-[22%] py-1 pr-2">Agent</th>
               <th className="w-[13%] px-2 py-1 text-right">Float</th>
               <th className="w-[13%] px-2 py-1 text-right">Loans</th>
-              <th className="w-[13%] px-2 py-1 text-right">Repayments</th>
+              <th className="w-[13%] px-2 py-1 text-right">Cash in</th>
               <th className="w-[13%] px-2 py-1 text-right">Fees</th>
               <th className="w-[13%] px-2 py-1 text-right">Expenses</th>
               <th className="w-[13%] pl-2 py-1 text-right">Returned</th>
@@ -3199,14 +3199,14 @@ function CashMovementCard({ operation }: { operation: DailyOperation }) {
       tone: "slate" as const,
     },
     {
-      label: "Capital",
+      label: "Capital received",
       detail: `${operation.topUpsCount} recorded`,
       amount: operation.topUpsTotal ?? operation.cashAddedToday,
       signed: "plus" as const,
       tone: "green" as const,
     },
     {
-      label: "Repayments",
+      label: "Cash in",
       detail: `${operation.collectionsCount} received`,
       amount: operation.collectionsReceived,
       signed: "plus" as const,
@@ -4163,7 +4163,7 @@ function OperationActionDrawer({
                   accent
                 />
                 <MoneyField
-                  label="Counted cash"
+                  label="Counted closing balance"
                   value={closingForm.countedCash}
                   locked={!canReconcile || !canClose}
                   onChange={(value) =>
@@ -4263,7 +4263,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
           value: <Money value={operation.branchCashRemaining} currency="UGX" />,
         },
         {
-          label: "Capital top-ups today",
+          label: "Capital received",
           value: (
             <Money
               value={operation.topUpsTotal ?? operation.cashAddedToday}
@@ -4349,7 +4349,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
       icon: <LockKeyhole className="size-5" />,
       stats: (operation: DailyOperation) => [
         {
-          label: "Expected close",
+          label: "Expected closing balance",
           value: (
             <Money value={operation.expectedClosingBalance} currency="UGX" />
           ),
@@ -4768,7 +4768,7 @@ function TopUpList({ operation }: { operation: DailyOperation }) {
     <div className="border-t border-[#edf1f5] pt-3.5">
       <div className="flex items-center justify-between gap-2">
         <p className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-500">
-          Capital top-ups today
+          Capital received
         </p>
         <span className="text-[11px] font-semibold text-slate-500">
           {operation.topUps.length}
@@ -4856,7 +4856,7 @@ function AgentReturnsPanel({
             <span>Agent</span>
             <span className="text-right">Float</span>
             <span className="text-right">Loans</span>
-            <span className="text-right">Repayments</span>
+            <span className="text-right">Cash in</span>
             <span className="text-right">Fees</span>
             <span className="text-right">Expenses</span>
             <span className="text-right">Expected</span>
@@ -5057,7 +5057,7 @@ function CloseDayCard({
           </p>
         ) : null}
         <MoneyField
-          label="Counted cash"
+          label="Counted closing balance"
           value={form.countedCash}
           locked={!editable || !canClose}
           onChange={(value) => setForm({ ...form, countedCash: value })}

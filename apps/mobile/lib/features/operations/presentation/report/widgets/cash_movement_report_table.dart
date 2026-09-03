@@ -49,7 +49,7 @@ class CashMovementReportTable extends StatelessWidget {
                       const SizedBox(height: 8),
 
                       _CashLine(
-                        label: 'Repayments collected',
+                        label: 'Cash in',
                         value: cash.repaymentsCollected,
                         positive: true,
                       ),
@@ -121,7 +121,7 @@ class CashMovementReportTable extends StatelessWidget {
             children: [
               Expanded(
                 child: _ClosingMetric(
-                  label: 'Expected closing cash',
+                  label: 'Expected closing balance',
                   value: cash.expectedClosingCash,
                   color: forestEmerald,
                 ),
@@ -131,7 +131,7 @@ class CashMovementReportTable extends StatelessWidget {
 
               Expanded(
                 child: _ClosingMetric(
-                  label: 'Counted cash',
+                  label: 'Counted closing balance',
                   value: cash.countedCash,
                 ),
               ),

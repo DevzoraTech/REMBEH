@@ -12,6 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import '../config.dart';
+import 'session_store.dart';
 
 /// Result from checking the backend for updates.
 class UpdateWhatsNewItem {
@@ -208,6 +209,7 @@ class UpdateService {
       final currentBuild = int.tryParse(packageInfo.buildNumber) ?? 1;
       final currentVersion = packageInfo.version;
       final platform = Platform.isAndroid ? 'android' : 'ios';
+      final tenantId = (await SessionStore().read())?.tenantId?.trim();
 
       final uri = Uri.parse('$rembehApiBaseUrl/app/check-update').replace(
         queryParameters: {
@@ -216,6 +218,7 @@ class UpdateService {
           'currentReleaseEpoch': _releaseEpoch.toString(),
           'platform': platform,
           'currentVersion': currentVersion,
+          if (tenantId != null && tenantId.isNotEmpty) 'tenantId': tenantId,
         },
       );
 

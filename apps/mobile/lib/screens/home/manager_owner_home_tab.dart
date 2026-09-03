@@ -271,7 +271,7 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
               ],
               overallLabel: widget.organisationScope
                   ? 'Overall | ${widget.financesOverallLabel}'
-                  : 'Overall | Expected closing cash',
+                  : 'Overall | Expected closing balance',
               overallValue: widget.organisationScope
                   ? widget.financesOverallValue
                   : 'UGX ${formatMoney(widget.expectedClosingCash)}',

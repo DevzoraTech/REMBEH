@@ -104,7 +104,7 @@ class _OfficerTableHeader extends StatelessWidget {
       child: Row(
         children: [
           Expanded(flex: 28, child: _HeaderCell('Name')),
-          Expanded(flex: 19, child: _HeaderCell('Repayments', alignEnd: true)),
+          Expanded(flex: 19, child: _HeaderCell('Cash in', alignEnd: true)),
           Expanded(flex: 17, child: _HeaderCell('Loans', alignEnd: true)),
           Expanded(
             flex: 21,

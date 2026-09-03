@@ -168,7 +168,7 @@ class _UpdateCashCountSheetState
             const SizedBox(height: 20),
 
             const Text(
-              'Update counted cash',
+              'Update counted closing balance',
               style: TextStyle(
                 color: midnightNavy,
                 fontSize: 19,
@@ -201,7 +201,7 @@ class _UpdateCashCountSheetState
                 setState(() {});
               },
               decoration: const InputDecoration(
-                labelText: 'Counted cash (UGX)',
+                labelText: 'Counted closing balance (UGX)',
                 hintText: '0',
               ),
             ),
@@ -221,14 +221,14 @@ class _UpdateCashCountSheetState
               child: Column(
                 children: [
                   _ValueRow(
-                    label: 'Expected cash',
+                    label: 'Expected closing balance',
                     value:
                         widget.expectedClosingBalance,
                     color: forestEmerald,
                   ),
                   const SizedBox(height: 12),
                   _ValueRow(
-                    label: 'Counted cash',
+                    label: 'Counted closing balance',
                     value: counted ?? 0,
                   ),
                   const Padding(

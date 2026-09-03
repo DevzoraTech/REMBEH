@@ -1975,7 +1975,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       builder: (_) => [
         _AmountField(controller: opening, label: 'Opening cash'),
         const SizedBox(height: 10),
-        _AmountField(controller: cashAdded, label: 'Cash added'),
+        _AmountField(controller: cashAdded, label: 'Capital received'),
         const SizedBox(height: 10),
         _TextField(controller: notes, label: 'Notes', maxLines: 3),
       ],
@@ -2821,7 +2821,7 @@ class _BranchDetailsScreen extends StatelessWidget {
                 ),
                 _BranchInfoRow(label: 'Today status', value: _label(status)),
                 _BranchInfoRow(
-                  label: 'Expected closing cash',
+                  label: 'Expected closing balance',
                   value: _moneyOrDash(operation?['expectedClosingBalance']),
                 ),
               ],

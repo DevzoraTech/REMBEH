@@ -486,6 +486,7 @@ model Tenant {
   controlCenterMessageLogs   ControlCenterMessageLog[]
   marketingCampaigns         MarketingCampaign[]
   controlledFeatureAccess    ControlledFeatureAccess[]
+  appReleaseTargets          AppReleaseTenant[]
 
   @@map("tenants")
 }
@@ -1755,29 +1756,50 @@ model OtpChallenge {
   @@map("otp_challenges")
 }
 
+enum AppReleaseAudience {
+  ALL
+  SELECTED
+}
+
 model AppRelease {
-  id                String   @id @default(uuid()) @db.Uuid
-  appName           String   @map("app_name")
-  platform          String   @default("android")
+  id                String              @id @default(uuid()) @db.Uuid
+  appName           String              @map("app_name")
+  platform          String              @default("android")
   version           String
-  releaseEpoch      Int      @default(1) @map("release_epoch")
-  buildNumber       Int      @map("build_number")
-  updateMode        String   @map("update_mode")
-  forceUpdate       Boolean  @default(false) @map("force_update")
-  minSupportedBuild Int      @default(1) @map("min_supported_build")
-  apkUrl            String?  @map("apk_url")
-  apkHash           String?  @map("apk_hash")
-  changelog         String[] @default([])
+  releaseEpoch      Int                 @default(1) @map("release_epoch")
+  buildNumber       Int                 @map("build_number")
+  updateMode        String              @map("update_mode")
+  forceUpdate       Boolean             @default(false) @map("force_update")
+  minSupportedBuild Int                 @default(1) @map("min_supported_build")
+  apkUrl            String?             @map("apk_url")
+  apkHash           String?             @map("apk_hash")
+  changelog         String[]            @default([])
   message           String?
-  isActive          Boolean  @default(true) @map("is_active")
-  downloadCount     Int      @default(0) @map("download_count")
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
+  isActive          Boolean             @default(true) @map("is_active")
+  audience          AppReleaseAudience  @default(ALL)
+  downloadCount     Int                 @default(0) @map("download_count")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+  tenants           AppReleaseTenant[]
 
   @@unique([appName, platform, releaseEpoch, buildNumber])
   @@index([appName, platform, isActive])
   @@index([appName, platform, releaseEpoch, isActive])
+  @@index([appName, platform, isActive, audience])
   @@map("app_releases")
+}
+
+model AppReleaseTenant {
+  releaseId String   @map("release_id") @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  release AppRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  tenant  Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([releaseId, tenantId])
+  @@index([tenantId])
+  @@map("app_release_tenants")
 }
 
 enum AppUpdateMediaType {

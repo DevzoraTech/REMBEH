@@ -328,7 +328,7 @@ class _ExpectedHandoverCard extends StatelessWidget {
             value: -float.amountDisbursed,
           ),
           _MoneyLine(
-            label: 'Repayments collected',
+            label: 'Cash in',
             value: float.amountCollected,
           ),
           _MoneyLine(

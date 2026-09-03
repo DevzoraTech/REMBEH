@@ -16,6 +16,7 @@
 #     [--message "..."] \
 #     [--changelog "item one,item two"] \
 #     [--force] \
+#     [--inactive] \
 #     [--min-build 1]
 
 set -euo pipefail
@@ -30,6 +31,7 @@ RELEASE_EPOCH="${RELEASE_EPOCH:-2}"
 MESSAGE="First production APK"
 CHANGELOG_CSV=""
 FORCE_UPDATE="false"
+IS_ACTIVE="true"
 MIN_BUILD="1"
 APP_NAME="mobile"
 PLATFORM="android"
@@ -69,6 +71,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --force)
       FORCE_UPDATE="true"
+      shift
+      ;;
+    --inactive)
+      IS_ACTIVE="false"
       shift
       ;;
     --min-build)
@@ -294,8 +300,14 @@ NODE
 echo "==> Publishing APK on get.rembeh.antikra.com for fast in-app download..."
 sudo mkdir -p /var/www/rembeh-get/apk
 sudo cp "$APK" "/var/www/rembeh-get/apk/rembeh-v${VERSION}.apk"
-sudo cp "$APK" /var/www/rembeh-get/apk/rembeh-latest.apk
-sudo chmod 644 "/var/www/rembeh-get/apk/rembeh-v${VERSION}.apk" /var/www/rembeh-get/apk/rembeh-latest.apk
+sudo chmod 644 "/var/www/rembeh-get/apk/rembeh-v${VERSION}.apk"
+if [[ "$IS_ACTIVE" == "true" ]]; then
+  sudo cp "$APK" /var/www/rembeh-get/apk/rembeh-latest.apk
+  sudo chmod 644 /var/www/rembeh-get/apk/rembeh-latest.apk
+  echo "Published https://get.rembeh.antikra.com/apk/rembeh-latest.apk"
+else
+  echo "Inactive release: left rembeh-latest.apk unchanged."
+fi
 echo "Published https://get.rembeh.antikra.com/apk/rembeh-v${VERSION}.apk"
 
 # ----------------------------------------------------------------------
@@ -313,6 +325,7 @@ RELEASE_EPOCH="$RELEASE_EPOCH" \
 MESSAGE="$MESSAGE" \
 PLATFORM="$PLATFORM" \
 FORCE_UPDATE="$FORCE_UPDATE" \
+IS_ACTIVE="$IS_ACTIVE" \
 MIN_BUILD="$MIN_BUILD" \
 CHANGELOG_JSON="$CHANGELOG_JSON" \
 EXPECTED_DB_HOST="$EXPECTED_DB_HOST" \
@@ -420,7 +433,7 @@ async function main() {
         ? changelog
         : ['Mobile app update'],
       message: process.env.MESSAGE || null,
-      isActive: true,
+      isActive: process.env.IS_ACTIVE !== 'false',
     };
 
     const release = existing
@@ -441,6 +454,7 @@ async function main() {
         releaseEpoch: release.releaseEpoch,
         buildNumber: release.buildNumber,
         forceUpdate: release.forceUpdate,
+        isActive: release.isActive,
         minSupportedBuild: release.minSupportedBuild,
         s3Key: release.apkUrl,
         database: row.database,
@@ -476,6 +490,7 @@ echo
 echo "Release registration OK"
 echo "Version : ${VERSION}+${BUILD}"
 echo "Line    : ${RELEASE_EPOCH}"
+echo "Active  : ${IS_ACTIVE}"
 echo "S3 key  : ${S3_KEY}"
 echo "SHA-256 : ${HASH}"
 echo "Size     : ${SIZE} bytes"

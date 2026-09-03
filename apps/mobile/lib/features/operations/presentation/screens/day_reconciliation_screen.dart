@@ -820,7 +820,7 @@ class _CashReconciliationSummary extends StatelessWidget {
             children: [
               Expanded(
                 child: _SummaryMetric(
-                  label: 'Expected cash',
+                  label: 'Expected closing balance',
                   value: 'UGX ${formatMoney(expected)}',
                   color: forestEmerald,
                 ),
@@ -828,7 +828,7 @@ class _CashReconciliationSummary extends StatelessWidget {
               const _VerticalDivider(),
               Expanded(
                 child: _SummaryMetric(
-                  label: 'Counted cash',
+                  label: 'Counted closing balance',
                   value: counted == null
                       ? 'Not counted'
                       : 'UGX ${formatMoney(counted!)}',
@@ -864,7 +864,7 @@ class _CashReconciliationSummary extends StatelessWidget {
 
           _CashRow(label: 'Opening cash', value: openingCash),
           _CashRow(label: 'Capital received', value: capitalReceived),
-          _CashRow(label: 'Collections', value: collections, positive: true),
+          _CashRow(label: 'Cash in', value: collections, positive: true),
           _CashRow(
             label: 'Processing fees',
             value: processingFees,
@@ -882,7 +882,7 @@ class _CashReconciliationSummary extends StatelessWidget {
           const SizedBox(height: 10),
 
           _CashRow(
-            label: 'Expected cash',
+            label: 'Expected closing balance',
             value: expected,
             emphasized: true,
           ),
@@ -905,7 +905,7 @@ class _CashReconciliationSummary extends StatelessWidget {
                 const SizedBox(width: 9),
                 const Expanded(
                   child: Text(
-                    'Count and confirm the physical cash',
+                    'Count and confirm the physical closing balance',
                     style: TextStyle(
                       color: midnightNavy,
                       fontSize: 10,
@@ -1003,7 +1003,7 @@ class _AgentReturnsCard extends StatelessWidget {
                       Expanded(flex: 31, child: _OfficerHeaderCell('Name')),
                       Expanded(
                         flex: 19,
-                        child: _OfficerHeaderCell('Repayments', alignEnd: true),
+                        child: _OfficerHeaderCell('Cash in', alignEnd: true),
                       ),
                       Expanded(
                         flex: 17,
@@ -1236,7 +1236,7 @@ class _DiscrepanciesCard extends StatelessWidget {
         : [
             {
               'source': 'Shortage',
-              'notes': 'Variance between expected and counted cash',
+              'notes': 'Variance between expected and counted closing balance',
               'variance': fallbackVariance ?? 0,
             },
           ];
@@ -1301,7 +1301,7 @@ class _DiscrepanciesCard extends StatelessWidget {
                         const SizedBox(height: 2),
                         Text(
                           _string(row['notes']) ??
-                              'Variance between expected and counted cash',
+                              'Variance between expected and counted closing balance',
                           style: const TextStyle(color: slateText, fontSize: 9),
                         ),
                       ],

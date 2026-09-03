@@ -14,6 +14,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import type { ControlCenterSession } from "../../lib/control-center-session";
 import { controlCenterFetch } from "../../lib/control-center-api";
+import { ControlCenterAppUpdateRolloutSection } from "./app-update-rollout-section";
 import {
   IconBadge,
   Panel,
@@ -295,8 +296,8 @@ export function ControlCenterAppUpdateSection({
   return (
     <div>
       <SectionTitle
-        title="App update screen"
-        subtitle="The picker below controls the What's new text and the video or image shown when a phone must install a new REMBEH APK."
+        title="App update"
+        subtitle="Choose which organisations receive a mobile build, then set the What's new copy and promo shown on the phone."
         action={
           <button
             type="button"
@@ -308,6 +309,12 @@ export function ControlCenterAppUpdateSection({
           </button>
         }
       />
+
+      <ControlCenterAppUpdateRolloutSection session={session} />
+
+      <p className="mb-4 mt-2 text-sm font-semibold text-[#17233c]">
+        What's new on the phone
+      </p>
 
       {error ? (
         <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

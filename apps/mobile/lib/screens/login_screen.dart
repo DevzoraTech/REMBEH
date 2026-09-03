@@ -6,10 +6,12 @@ import '../core/auth/auth_manager.dart';
 import '../services/api_client.dart';
 import '../services/push_notification_service.dart';
 import '../services/session_store.dart';
+import '../services/update_service.dart';
 import '../theme.dart';
 import '../utils/account_access.dart';
 import '../utils/friendly_errors.dart';
 import 'account_locked_screen.dart';
+import 'force_update_screen.dart';
 import 'workspace_router.dart';
 
 const _rememberEmailKey = 'rembeh.login.remember_email';
@@ -133,6 +135,29 @@ class _LoginScreenState extends State<LoginScreen>
       if (!mounted) return;
       await widget.pushService?.requestPermissionAndSync();
       if (!mounted) return;
+
+      final update = await UpdateService.checkForUpdate();
+      if (!mounted) return;
+      if (update != null && update.requiresFullInstall) {
+        if (update.isBlocking) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (_) => ForceUpdateScreen(updateResult: update),
+            ),
+          );
+          return;
+        }
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ForceUpdateScreen(
+              updateResult: update,
+              onSkip: () => Navigator.of(context).pop(),
+            ),
+          ),
+        );
+        if (!mounted) return;
+      }
+
       final next = rembehWorkspaceFor(session);
       Navigator.of(
         context,

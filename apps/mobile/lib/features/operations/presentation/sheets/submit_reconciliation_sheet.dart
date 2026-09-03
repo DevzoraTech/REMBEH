@@ -200,7 +200,7 @@ class _SubmitReconciliationSheetState extends State<SubmitReconciliationSheet> {
               child: Column(
                 children: [
                   _ConfirmRow(
-                    label: 'Expected cash',
+                    label: 'Expected closing balance',
                     amount: widget.expectedClosingBalance,
                     color: forestEmerald,
                   ),
@@ -211,7 +211,7 @@ class _SubmitReconciliationSheetState extends State<SubmitReconciliationSheet> {
                   ),
 
                   _ConfirmRow(
-                    label: 'Counted cash',
+                    label: 'Counted closing balance',
                     amount: widget.countedCash,
                   ),
 
