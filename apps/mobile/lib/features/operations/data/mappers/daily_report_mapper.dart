@@ -275,6 +275,8 @@ class DailyReportMapper {
       amountDisbursed: _num(row['amountDisbursed']),
       processingFees: _num(row['processingFees']),
       amountCollected: _num(row['amountCollected']),
+      collectedRepaymentsAvailable: _num(row['collectedRepaymentsAvailable']),
+      unusedFloat: _num(row['unusedFloat']),
       expensesTotal: _num(row['expensesTotal']),
       expectedReturn: _num(row['expectedReturn']),
       amountReturned: _nullableNum(row['amountReturned']),

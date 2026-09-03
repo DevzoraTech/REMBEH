@@ -89,6 +89,8 @@ export type DailyOperationAgentReturnContract = {
   amountDisbursed: number;
   processingFees: number;
   amountCollected: number;
+  collectedRepaymentsAvailable: number;
+  unusedFloat: number;
   expensesTotal: number;
   expectedReturn: number;
   amountReturned: number | null;

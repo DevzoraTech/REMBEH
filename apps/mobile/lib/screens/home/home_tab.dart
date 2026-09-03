@@ -964,7 +964,7 @@ void _showExpectedHandoverSheet(
                 floatReceived: float.amountReceived,
                 loansIssued: float.amountDisbursed,
                 unusedFloat: float.unusedFloat,
-                collectedRepayments: float.amountCollected,
+                collectedRepayments: float.collectedRepaymentsAvailable,
                 processingFees: float.processingFees,
                 expenses: float.expensesTotal,
                 expectedHandover: float.expectedHandover,
@@ -1121,7 +1121,7 @@ class _HandoverBreakdownCard extends StatelessWidget {
           ),
           _HandoverBreakdownLine(
             icon: Icons.payments_outlined,
-            label: 'Collected repayments',
+            label: 'Repayments available',
             value: collectedRepayments,
             iconColor: forestEmerald,
           ),

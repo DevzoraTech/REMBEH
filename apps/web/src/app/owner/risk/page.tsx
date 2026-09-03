@@ -33,6 +33,7 @@ import {
 import { OwnerHeader } from "../owner-header";
 import { useOwnerBranchScope } from "../owner-branch-scope";
 import { invalidateOwnerNotifications } from "../owner-notifications";
+import { useOwnerLiveReload } from "../use-owner-live-reload";
 
 type ListType = "BLACKLISTED" | "WATCHLIST";
 type ListTab = "all" | ListType;
@@ -74,14 +75,15 @@ export default function OwnerRiskPage() {
     state.session?.permissions.includes("customer.update"),
   );
 
-  const loadEntries = useCallback(async () => {
+  const loadEntries = useCallback(async (opts?: { silent?: boolean }) => {
     if (!state.session) return;
-    setLoading(true);
+    if (!opts?.silent) setLoading(true);
     setError(null);
     try {
       const payload = await ownerFetch<{ entries?: RiskEntry[] }>(
         state.session,
         "/borrower-lists",
+        { branchId: selectedBranchId },
       );
       setEntries(payload.entries ?? []);
     } catch (caught) {
@@ -100,6 +102,8 @@ export default function OwnerRiskPage() {
       void loadEntries();
     }
   }, [loadEntries, state.ready, state.session]);
+
+  useOwnerLiveReload(loadEntries, Boolean(state.ready && state.session));
 
   const blacklisted = useMemo(
     () => entries.filter((entry) => entry.type === "BLACKLISTED"),

@@ -86,16 +86,20 @@ export function persistAuthState(input: {
 
 export function clearAuthState() {
   const store = storage();
-  if (!store) return;
-  store.removeItem(SESSION_KEY);
-  store.removeItem(WORKSPACE_KEY);
-  store.removeItem(USER_KEY);
-  store.removeItem(BRANCH_KEY);
+  if (store) {
+    store.removeItem(SESSION_KEY);
+    store.removeItem(WORKSPACE_KEY);
+    store.removeItem(USER_KEY);
+    store.removeItem(BRANCH_KEY);
+  }
   if (typeof window !== "undefined") {
     window.sessionStorage.removeItem(SESSION_KEY);
     window.sessionStorage.removeItem(WORKSPACE_KEY);
     window.sessionStorage.removeItem(USER_KEY);
     window.sessionStorage.removeItem(BRANCH_KEY);
+    void import("./live-query-cache").then(({ clearLiveQueryCache }) => {
+      clearLiveQueryCache({ notify: false });
+    });
   }
 }
 

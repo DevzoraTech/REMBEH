@@ -49,6 +49,7 @@ import {
 import { OwnerHeader } from "../../app/owner/owner-header";
 import { useOwnerBranchScope } from "../../app/owner/owner-branch-scope";
 import { invalidateOwnerNotifications } from "../../app/owner/owner-notifications";
+import { useOwnerLiveReload } from "../../app/owner/use-owner-live-reload";
 import { Money } from "../app/money";
 import { TableSearchField } from "../app/table-search-field";
 import {
@@ -186,9 +187,9 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
 
   const currency = state.workspace?.currency ?? "UGX";
 
-  const loadReports = useCallback(async () => {
+  const loadReports = useCallback(async (opts?: { silent?: boolean }) => {
     if (!state.session) return;
-    setLoading(true);
+    if (!opts?.silent) setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams();
@@ -201,11 +202,13 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
       const range = dateRangeQuery(advancedFilters);
       if (range.from) params.set("from", range.from);
       if (range.to) params.set("to", range.to);
+      const reportsPath = `/operations/reports${params.toString() ? `?${params}` : ""}`;
       const [branchPayload, reportPayload] = await Promise.all([
         ownerFetch<{ branches?: OwnerBranch[] }>(state.session, "/branches"),
         ownerFetch<{ reports?: OwnerReport[] }>(
           state.session,
-          `/operations/reports${params.toString() ? `?${params}` : ""}`,
+          reportsPath,
+          { branchId: isManager ? null : selectedBranchId },
         ),
       ]);
       const nextReports = reportPayload.reports ?? [];
@@ -243,6 +246,8 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
     }, 0);
     return () => window.clearTimeout(boot);
   }, [loadReports, state.ready, state.session]);
+
+  useOwnerLiveReload(loadReports, Boolean(state.ready && state.session));
 
   const scopedReports = useMemo(() => {
     return reports.filter((report) =>

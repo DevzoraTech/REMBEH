@@ -43,6 +43,7 @@ import {
 } from "../../app/owner/owner-common";
 import { OwnerHeader } from "../../app/owner/owner-header";
 import { useOwnerBranchScope } from "../../app/owner/owner-branch-scope";
+import { useOwnerLiveReload } from "../../app/owner/use-owner-live-reload";
 import { Money } from "../app/money";
 import { TableSearchField } from "../app/table-search-field";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
@@ -181,14 +182,15 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
           state.session.permissions.includes("branch.create"))),
   );
 
-  const loadPayments = useCallback(async () => {
+  const loadPayments = useCallback(async (opts?: { silent?: boolean }) => {
     if (!state.session) return;
-    setLoading(true);
+    if (!opts?.silent) setLoading(true);
     setError(null);
     try {
       const payload = await ownerFetch<{ repayments?: OwnerRepayment[] }>(
         state.session,
         `/collections/repayments?filter=${filter}`,
+        { branchId: isManager ? (state.branch?.id ?? null) : selectedBranchId },
       );
       setRepayments(payload.repayments ?? []);
     } catch (caught) {
@@ -198,7 +200,7 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
     } finally {
       setLoading(false);
     }
-  }, [filter, selectedBranchId, state.session]);
+  }, [filter, isManager, selectedBranchId, state.branch?.id, state.session]);
 
   const applySmsResults = useCallback((results: RepaymentSmsResult[]) => {
     if (results.length === 0) return;
@@ -364,6 +366,8 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
     }, 0);
     return () => window.clearTimeout(boot);
   }, [loadPayments, state.ready, state.session]);
+
+  useOwnerLiveReload(loadPayments, Boolean(state.ready && state.session));
 
   useEffect(() => {
     setPage(1);

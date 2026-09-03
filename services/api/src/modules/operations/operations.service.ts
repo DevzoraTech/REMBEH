@@ -385,27 +385,23 @@ export class OperationsService {
 
     const amountCollected = this.decimalToNumber(collectionsAgg._sum.amount);
 
-    const unusedFloat = this.roundMoney(
-      Math.max(0, amountReceived - assignedFloatDisbursed),
-    );
-    const collectedRepaymentsAvailable = this.roundMoney(
-      Math.max(0, amountCollected - collectedRepaymentsDisbursed),
-    );
-
     const expensesTotal = this.decimalToNumber(expensesAgg._sum.amount);
     const expenses = expenseRows
       .filter((row) => !row.voidedAt)
       .map((row) => this.toExpenseContract(row));
 
-    const expectedHandover = this.roundMoney(
-      Math.max(
-        0,
-        unusedFloat +
-          collectedRepaymentsAvailable +
-          processingFees -
-          expensesTotal,
-      ),
-    );
+    const {
+      unusedFloat,
+      collectedRepaymentsAvailable,
+      expectedHandover,
+    } = this.agentExpectedHandover({
+      amountGiven: amountReceived,
+      assignedFloatDisbursed,
+      amountCollected,
+      collectedRepaymentsDisbursed,
+      processingFees,
+      expensesTotal,
+    });
 
     const returnedAt = float?.returnedAt?.toISOString() ?? null;
 
@@ -1103,10 +1099,15 @@ export class OperationsService {
       dto.agentId,
     );
 
-    const expectedReturn = this.expectedAgentCashReturn({
+    const { expectedHandover: expectedReturn } = this.agentExpectedHandover({
       amountGiven,
-      amountDisbursed,
+      assignedFloatDisbursed: this.decimalToNumber(
+        disbursementsAgg._sum.assignedFloatAmount,
+      ),
       amountCollected,
+      collectedRepaymentsDisbursed: this.decimalToNumber(
+        disbursementsAgg._sum.collectedRepaymentsAmount,
+      ),
       processingFees,
       expensesTotal,
     });
@@ -3636,23 +3637,44 @@ export class OperationsService {
     return null;
   }
 
-  private expectedAgentCashReturn(input: {
+  /**
+   * Cash the officer must hand in:
+   * unused float (never negative) + repayments still on hand + fees − expenses.
+   *
+   * Loans issued from assigned float reduce unused float.
+   * Loans issued from collected repayments reduce repayments available.
+   * Subtracting total loans from gross collections either double-counts
+   * float-funded loans or, with the unused-float clamp, drops collection-funded loans.
+   */
+  private agentExpectedHandover(input: {
     amountGiven: number;
-    amountDisbursed: number;
+    assignedFloatDisbursed: number;
     amountCollected: number;
+    collectedRepaymentsDisbursed: number;
     processingFees: number;
     expensesTotal: number;
   }) {
-    const unusedFloat = Math.max(0, input.amountGiven - input.amountDisbursed);
-    return this.roundMoney(
+    const unusedFloat = this.roundMoney(
+      Math.max(0, input.amountGiven - input.assignedFloatDisbursed),
+    );
+    const collectedRepaymentsAvailable = this.roundMoney(
+      Math.max(0, input.amountCollected - input.collectedRepaymentsDisbursed),
+    );
+    const expectedHandover = this.roundMoney(
       Math.max(
         0,
         unusedFloat +
-          input.amountCollected +
+          collectedRepaymentsAvailable +
           input.processingFees -
           input.expensesTotal,
       ),
     );
+
+    return {
+      unusedFloat,
+      collectedRepaymentsAvailable,
+      expectedHandover,
+    };
   }
 
   private agentFloatExpensesForAgent(
@@ -3705,7 +3727,15 @@ export class OperationsService {
     const disbursementsByAgent = new Map(
       loanDisbursementsByAgentRows.map((row) => [
         row.recordedByUserId,
-        this.decimalToNumber(row._sum.amount),
+        {
+          amount: this.decimalToNumber(row._sum.amount),
+          assignedFloatAmount: this.decimalToNumber(
+            row._sum.assignedFloatAmount,
+          ),
+          collectedRepaymentsAmount: this.decimalToNumber(
+            row._sum.collectedRepaymentsAmount,
+          ),
+        },
       ]),
     );
 
@@ -3750,7 +3780,9 @@ export class OperationsService {
 
       const amountGiven = this.decimalToNumber(float?.amountGiven);
 
-      const amountDisbursed = disbursementsByAgent.get(agentId) ?? 0;
+      const disbursed = disbursementsByAgent.get(agentId);
+
+      const amountDisbursed = disbursed?.amount ?? 0;
 
       const processingFees = feesByAgent.get(agentId) ?? 0;
 
@@ -3758,10 +3790,15 @@ export class OperationsService {
 
       const expensesTotal = this.agentFloatExpensesForAgent(expenses, agentId);
 
-      const expectedReturn = this.expectedAgentCashReturn({
+      const {
+        unusedFloat,
+        collectedRepaymentsAvailable,
+        expectedHandover: expectedReturn,
+      } = this.agentExpectedHandover({
         amountGiven,
-        amountDisbursed,
+        assignedFloatDisbursed: disbursed?.assignedFloatAmount ?? 0,
         amountCollected,
+        collectedRepaymentsDisbursed: disbursed?.collectedRepaymentsAmount ?? 0,
         processingFees,
         expensesTotal,
       });
@@ -3807,6 +3844,10 @@ export class OperationsService {
         processingFees,
 
         amountCollected,
+
+        collectedRepaymentsAvailable,
+
+        unusedFloat,
 
         expensesTotal,
 
@@ -4141,20 +4182,6 @@ export class OperationsService {
       );
     }
 
-    const unusedFloat = this.roundMoney(
-      Math.max(
-        0,
-        this.decimalToNumber(float?.amountGiven) -
-          this.decimalToNumber(disbursementsAgg._sum.assignedFloatAmount),
-      ),
-    );
-    const collectedRepaymentsAvailable = this.roundMoney(
-      Math.max(
-        0,
-        this.decimalToNumber(collectionsAgg._sum.amount) -
-          this.decimalToNumber(disbursementsAgg._sum.collectedRepaymentsAmount),
-      ),
-    );
     const processingFees = this.decimalToNumber(loansAgg._sum.processingFee);
     let existingExpenses = this.decimalToNumber(expensesAgg._sum.amount);
 
@@ -4171,12 +4198,18 @@ export class OperationsService {
       }
     }
 
-    const available = this.roundMoney(
-      unusedFloat +
-        collectedRepaymentsAvailable +
-        processingFees -
-        existingExpenses,
-    );
+    const { expectedHandover: available } = this.agentExpectedHandover({
+      amountGiven: this.decimalToNumber(float?.amountGiven),
+      assignedFloatDisbursed: this.decimalToNumber(
+        disbursementsAgg._sum.assignedFloatAmount,
+      ),
+      amountCollected: this.decimalToNumber(collectionsAgg._sum.amount),
+      collectedRepaymentsDisbursed: this.decimalToNumber(
+        disbursementsAgg._sum.collectedRepaymentsAmount,
+      ),
+      processingFees,
+      expensesTotal: existingExpenses,
+    });
 
     if (input.amount > available) {
       throw new BadRequestException(

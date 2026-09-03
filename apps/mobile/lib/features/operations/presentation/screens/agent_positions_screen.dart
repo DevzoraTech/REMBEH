@@ -649,6 +649,7 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
       return explicit;
     }
 
+    // Legacy payloads treated every loan as float. Never go negative.
     final calculated = _amountGiven - _amountDisbursed;
 
     return calculated < 0 ? 0 : calculated;
@@ -660,7 +661,17 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
 
   num get _expensesTotal => _num(_position?['expensesTotal']);
 
-  num get _expected => _num(_position?['expectedReturn']);
+  num get _expected {
+    final unused = _nullableNum(_position?['unusedFloat']);
+    final available = _nullableNum(_position?['collectedRepaymentsAvailable']);
+
+    if (unused != null && available != null) {
+      final computed = unused + available + _processingFees - _expensesTotal;
+      return computed < 0 ? 0 : computed;
+    }
+
+    return _num(_position?['expectedReturn']);
+  }
 
   num? get _returned => _nullableNum(_position?['amountReturned']);
 

@@ -9,6 +9,8 @@ class DailyReportAgentReturn {
     required this.amountDisbursed,
     required this.processingFees,
     required this.amountCollected,
+    this.collectedRepaymentsAvailable = 0,
+    this.unusedFloat = 0,
     required this.expectedReturn,
     required this.status,
     this.agentPublicId,
@@ -30,6 +32,8 @@ class DailyReportAgentReturn {
   final num amountDisbursed;
   final num processingFees;
   final num amountCollected;
+  final num collectedRepaymentsAvailable;
+  final num unusedFloat;
   final num expensesTotal;
 
   final num expectedReturn;

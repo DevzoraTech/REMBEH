@@ -58,7 +58,7 @@ class MoreTab extends StatelessWidget {
               _MoreMenuItem(
                 icon: Icons.warning_amber_rounded,
                 title: 'Shortages',
-                subtitle: 'View shortage records and their status',
+                subtitle: 'Record prior shortages and cash payoffs',
                 onTap: onShortagesTap,
               ),
             ],

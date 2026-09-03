@@ -16,6 +16,7 @@ import {
   readAuthState,
   refreshAuthSession,
 } from "../../lib/auth-session";
+import { liveQuery, peekLiveQuery } from "../../lib/live-query-cache";
 import { resolveOperatorRole } from "../../lib/roles";
 import { readStoredOwnerBranchId } from "./owner-branch-scope";
 
@@ -463,6 +464,18 @@ export function authHeaders(session: RembehSession) {
   };
 }
 
+export type OwnerFetchOptions = {
+  /** Bypass the 20s fresh window and hit the network. */
+  fresh?: boolean;
+  /** Skip memory cache entirely (writes / one-off reads). */
+  cache?: boolean;
+  /**
+   * Explicit branch scope. `undefined` uses the owner picker,
+   * `null` means all branches.
+   */
+  branchId?: string | null;
+};
+
 const BRANCH_SCOPED_LIST_PATHS = new Set([
   "/loans",
   "/loans/pending-disbursements",
@@ -477,6 +490,9 @@ const BRANCH_SCOPED_LIST_PATHS = new Set([
   "/cash-shortages",
 ]);
 
+const REQUEST_TIMEOUT_MS = 18_000;
+const MAX_RETRIES = 2;
+
 function applyOwnerBranchQuery(path: string, branchId: string | null) {
   if (!branchId) return path;
   const [pathname, search = ""] = path.split("?");
@@ -489,18 +505,108 @@ function applyOwnerBranchQuery(path: string, branchId: string | null) {
   return next ? `${pathname}?${next}` : pathname;
 }
 
-export async function ownerFetch<T>(session: RembehSession, path: string) {
-  const scopedPath = applyOwnerBranchQuery(path, readStoredOwnerBranchId());
-  const response = await fetch(`${apiBaseUrl}${scopedPath}`, {
-    headers: authHeaders(session),
-  });
-  const payload = await readApiJson<T & { message?: string | string[] }>(
-    response,
-  );
-  if (!response.ok) {
-    throw new Error(formatApiError(payload.message));
+function resolveOwnerBranchId(explicit?: string | null) {
+  if (explicit === undefined) return readStoredOwnerBranchId();
+  return explicit;
+}
+
+function ownerCacheKey(path: string, branchId?: string | null) {
+  return applyOwnerBranchQuery(path, resolveOwnerBranchId(branchId));
+}
+
+export function peekOwnerFetch<T>(
+  path: string,
+  branchId?: string | null,
+): T | undefined {
+  return peekLiveQuery<T>(ownerCacheKey(path, branchId));
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function isRetryableStatus(status: number) {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function isRetryableError(error: unknown) {
+  if (error instanceof DOMException && error.name === "AbortError") {
+    return true;
   }
-  return payload;
+  return error instanceof TypeError;
+}
+
+async function requestOwnerJson<T>(
+  session: RembehSession,
+  scopedPath: string,
+  allowRefresh = true,
+): Promise<T> {
+  let activeSession = session;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(
+      () => controller.abort(),
+      REQUEST_TIMEOUT_MS,
+    );
+    try {
+      const response = await fetch(`${apiBaseUrl}${scopedPath}`, {
+        headers: authHeaders(activeSession),
+        cache: "no-store",
+        signal: controller.signal,
+      });
+
+      if (response.status === 401 && allowRefresh) {
+        const refreshed = await refreshAuthSession(activeSession, apiBaseUrl);
+        if (refreshed) {
+          return requestOwnerJson<T>(refreshed, scopedPath, false);
+        }
+      }
+
+      if (isRetryableStatus(response.status) && attempt < MAX_RETRIES) {
+        await delay(400 * (attempt + 1));
+        continue;
+      }
+
+      const payload = await readApiJson<T & { message?: string | string[] }>(
+        response,
+      );
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      return payload;
+    } catch (error) {
+      lastError = error;
+      if (attempt < MAX_RETRIES && isRetryableError(error)) {
+        await delay(400 * (attempt + 1));
+        continue;
+      }
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new Error("The request timed out. Check your connection.");
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Could not reach the server.");
+}
+
+export async function ownerFetch<T>(
+  session: RembehSession,
+  path: string,
+  options?: OwnerFetchOptions,
+): Promise<T> {
+  const scopedPath = ownerCacheKey(path, options?.branchId);
+  const load = () => requestOwnerJson<T>(session, scopedPath);
+  if (options?.cache === false) {
+    return load();
+  }
+  return liveQuery(scopedPath, load, { fresh: options?.fresh });
 }
 
 /** Plain-string money for exports, toasts, and non-React text. */

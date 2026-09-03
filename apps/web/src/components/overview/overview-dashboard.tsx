@@ -50,10 +50,12 @@ import {
   formatNumber,
   isLoanScheduleOverdue,
   ownerFetch,
+  peekOwnerFetch,
   previousDateLabel,
   sumBy,
 } from "../../app/owner/owner-common";
 import { useOwnerBranchScope } from "../../app/owner/owner-branch-scope";
+import { useOwnerLiveReload } from "../../app/owner/use-owner-live-reload";
 import {
   RembehBranch,
   RembehSession,
@@ -211,18 +213,6 @@ function useOverviewSession(mode: OverviewMode): OverviewSession {
   return state;
 }
 
-async function optionalOwnerFetch<T>(
-  session: RembehSession,
-  path: string,
-  fallback: T,
-): Promise<T> {
-  try {
-    return await ownerFetch<T>(session, path);
-  } catch {
-    return fallback;
-  }
-}
-
 export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
   const state = useOverviewSession(mode);
   const links = OVERVIEW_LINKS[mode];
@@ -250,67 +240,137 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
   const currency = state.workspace?.currency ?? "UGX";
   const loadGeneration = useRef(0);
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (opts?: { silent?: boolean }) => {
     if (!state.session) return;
     const generation = ++loadGeneration.current;
-    setLoading(true);
+    const branchId = isManager ? (state.branch?.id ?? null) : selectedBranchId;
+    const dailyStatusPath = `/operations/owner-daily-status?date=${previousDateLabel()}`;
+    const repaymentPath = "/collections/repayments?filter=thisWeek";
+
+    const cachedBranches = peekOwnerFetch<{ branches?: OwnerBranch[] }>(
+      "/branches",
+      branchId,
+    );
+    const cachedLoans = peekOwnerFetch<{ loans?: OwnerLoan[] }>(
+      "/loans",
+      branchId,
+    );
+    const cachedBorrowers = peekOwnerFetch<{ customers?: OwnerBorrower[] }>(
+      "/customers",
+      branchId,
+    );
+    const cachedRepayments = peekOwnerFetch<{ repayments?: OwnerRepayment[] }>(
+      repaymentPath,
+      branchId,
+    );
+    const cachedReports = peekOwnerFetch<{ reports?: OwnerReport[] }>(
+      "/operations/reports",
+      branchId,
+    );
+    const cachedStatuses = peekOwnerFetch<{
+      statuses?: OwnerBranchDailyStatus[];
+    }>(dailyStatusPath, branchId);
+
+    const hasCached =
+      Boolean(cachedBranches) ||
+      Boolean(cachedLoans) ||
+      Boolean(cachedBorrowers) ||
+      Boolean(cachedRepayments);
+
+    if (cachedBranches) setBranches(cachedBranches.branches ?? []);
+    if (cachedLoans) setLoans(cachedLoans.loans ?? []);
+    if (cachedBorrowers) setBorrowers(cachedBorrowers.customers ?? []);
+    if (cachedRepayments) setRepayments(cachedRepayments.repayments ?? []);
+    if (cachedReports) setReports(cachedReports.reports ?? []);
+    if (cachedStatuses) setDailyStatuses(cachedStatuses.statuses ?? []);
+
+    if (!opts?.silent && !hasCached) {
+      setLoading(true);
+    } else if (!opts?.silent) {
+      setLoading(false);
+    }
     setError(null);
-    try {
-      const [
-        branchPayload,
-        loanPayload,
-        borrowerPayload,
-        repaymentPayload,
-        reportPayload,
-        dailyStatusPayload,
-      ] = await Promise.all([
-        ownerFetch<{ branches?: OwnerBranch[] }>(state.session, "/branches"),
-        ownerFetch<{ loans?: OwnerLoan[] }>(state.session, "/loans"),
+
+    const fetchOpts = { branchId };
+    const [branchResult, loanResult, borrowerResult, repaymentResult, reportResult, dailyStatusResult] =
+      await Promise.allSettled([
+        ownerFetch<{ branches?: OwnerBranch[] }>(
+          state.session,
+          "/branches",
+          fetchOpts,
+        ),
+        ownerFetch<{ loans?: OwnerLoan[] }>(state.session, "/loans", fetchOpts),
         ownerFetch<{ customers?: OwnerBorrower[] }>(
           state.session,
           "/customers",
+          fetchOpts,
         ),
         ownerFetch<{ repayments?: OwnerRepayment[] }>(
           state.session,
-          "/collections/repayments?filter=thisWeek",
+          repaymentPath,
+          fetchOpts,
         ),
-        optionalOwnerFetch<{ reports?: OwnerReport[] }>(
+        ownerFetch<{ reports?: OwnerReport[] }>(
           state.session,
           "/operations/reports",
-          { reports: [] },
+          fetchOpts,
         ),
-        optionalOwnerFetch<{ statuses?: OwnerBranchDailyStatus[] }>(
+        ownerFetch<{ statuses?: OwnerBranchDailyStatus[] }>(
           state.session,
-          `/operations/owner-daily-status?date=${previousDateLabel()}`,
-          { statuses: [] },
+          dailyStatusPath,
+          fetchOpts,
         ),
       ]);
-      if (generation !== loadGeneration.current) return;
-      const nextBranches = branchPayload.branches ?? [];
-      setBranches(nextBranches);
-      setLoans(loanPayload.loans ?? []);
-      setBorrowers(borrowerPayload.customers ?? []);
-      setRepayments(repaymentPayload.repayments ?? []);
-      setReports(reportPayload.reports ?? []);
-      setDailyStatuses(dailyStatusPayload.statuses ?? []);
-      if (isManager) {
-        const lockedBranchId =
-          state.branch?.id ?? nextBranches[0]?.id ?? "all";
-        setActivityBranchId(lockedBranchId);
-      }
-    } catch (caught) {
-      if (generation !== loadGeneration.current) return;
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : "Could not load overview.",
+
+    if (generation !== loadGeneration.current) return;
+
+    const failures: string[] = [];
+    function take<T>(
+      result: PromiseSettledResult<T>,
+      label: string,
+    ): T | null {
+      if (result.status === "fulfilled") return result.value;
+      failures.push(
+        result.reason instanceof Error ? result.reason.message : label,
       );
-    } finally {
-      if (generation === loadGeneration.current) {
-        setLoading(false);
-      }
+      return null;
     }
-  }, [isManager, state.branch, state.session]);
+
+    const branchPayload = take(branchResult, "branches");
+    const loanPayload = take(loanResult, "loans");
+    const borrowerPayload = take(borrowerResult, "borrowers");
+    const repaymentPayload = take(repaymentResult, "collections");
+    const reportPayload = take(reportResult, "reports");
+    const dailyStatusPayload = take(dailyStatusResult, "daily status");
+
+    if (branchPayload) setBranches(branchPayload.branches ?? []);
+    if (loanPayload) setLoans(loanPayload.loans ?? []);
+    if (borrowerPayload) setBorrowers(borrowerPayload.customers ?? []);
+    if (repaymentPayload) setRepayments(repaymentPayload.repayments ?? []);
+    if (reportPayload) setReports(reportPayload.reports ?? []);
+    if (dailyStatusPayload) setDailyStatuses(dailyStatusPayload.statuses ?? []);
+
+    const nextBranches = branchPayload?.branches ?? cachedBranches?.branches ?? [];
+    if (isManager) {
+      const lockedBranchId =
+        state.branch?.id ?? nextBranches[0]?.id ?? "all";
+      setActivityBranchId(lockedBranchId);
+    }
+
+    const loadedAny =
+      Boolean(branchPayload) ||
+      Boolean(loanPayload) ||
+      Boolean(borrowerPayload) ||
+      Boolean(repaymentPayload) ||
+      hasCached;
+    if (!loadedAny) {
+      setError(failures[0] ?? "Could not load overview.");
+    } else if (failures.length > 0 && !hasCached) {
+      setError(failures[0] ?? null);
+    }
+
+    setLoading(false);
+  }, [isManager, selectedBranchId, state.branch, state.session]);
 
   useEffect(() => {
     const boot = window.setTimeout(() => {
@@ -321,6 +381,8 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
 
     return () => window.clearTimeout(boot);
   }, [loadData, state.ready, state.session]);
+
+  useOwnerLiveReload(loadData, Boolean(state.ready && state.session));
 
   useEffect(() => {
     if (isManager) return;

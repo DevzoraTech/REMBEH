@@ -238,6 +238,8 @@ type DailyOperationAgentReturn = {
   amountGiven: number;
   amountDisbursed: number;
   amountCollected: number;
+  collectedRepaymentsAvailable?: number;
+  unusedFloat?: number;
   processingFees: number;
   expensesTotal?: number;
   expectedReturn: number;

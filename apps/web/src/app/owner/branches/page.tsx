@@ -68,6 +68,7 @@ import {
   useOwnerSession,
 } from "../owner-common";
 import { useOwnerBranchScope } from "../owner-branch-scope";
+import { useOwnerLiveReload } from "../use-owner-live-reload";
 import {
   StaffTransfersList,
   TransferStaffDialog,
@@ -138,58 +139,90 @@ function OwnerBranchesPageContent() {
 
   const currency = state.workspace?.currency ?? "UGX";
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (opts?: { silent?: boolean }) => {
     if (!state.session) return;
-    setLoading(true);
+    if (!opts?.silent) setLoading(true);
     setError(null);
-    try {
-      const [
-        branchPayload,
-        loanPayload,
-        borrowerPayload,
-        repaymentPayload,
-        reportPayload,
-        dailyStatusPayload,
-        transferPayload,
-      ] = await Promise.all([
-        ownerFetch<{ branches?: OwnerBranch[] }>(state.session, "/branches"),
-        ownerFetch<{ loans?: OwnerLoan[] }>(state.session, "/loans"),
-        ownerFetch<{ customers?: OwnerBorrower[] }>(
-          state.session,
-          "/customers",
-        ),
-        ownerFetch<{ repayments?: OwnerRepayment[] }>(
-          state.session,
-          "/collections/repayments?filter=thisWeek",
-        ),
-        ownerFetch<{ reports?: OwnerReport[] }>(
-          state.session,
-          "/operations/reports",
-        ),
-        ownerFetch<{ statuses?: OwnerBranchDailyStatus[] }>(
-          state.session,
-          `/operations/owner-daily-status?date=${previousDateLabel()}`,
-        ),
-        ownerFetch<{ transfers?: StaffTransferRow[] }>(
-          state.session,
-          "/branches/staff-transfers",
-        ),
-      ]);
-      const nextBranches = branchPayload.branches ?? [];
-      setBranches(nextBranches);
-      setLoans(loanPayload.loans ?? []);
-      setBorrowers(borrowerPayload.customers ?? []);
-      setRepayments(repaymentPayload.repayments ?? []);
-      setReports(reportPayload.reports ?? []);
-      setDailyStatuses(dailyStatusPayload.statuses ?? []);
-      setTransfers(transferPayload.transfers ?? []);
-    } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : "Could not load branches.",
-      );
-    } finally {
-      setLoading(false);
+    const fetchOpts = { branchId: selectedBranchId };
+    const [
+      branchResult,
+      loanResult,
+      borrowerResult,
+      repaymentResult,
+      reportResult,
+      dailyStatusResult,
+      transferResult,
+    ] = await Promise.allSettled([
+      ownerFetch<{ branches?: OwnerBranch[] }>(state.session, "/branches"),
+      ownerFetch<{ loans?: OwnerLoan[] }>(state.session, "/loans", fetchOpts),
+      ownerFetch<{ customers?: OwnerBorrower[] }>(
+        state.session,
+        "/customers",
+        fetchOpts,
+      ),
+      ownerFetch<{ repayments?: OwnerRepayment[] }>(
+        state.session,
+        "/collections/repayments?filter=thisWeek",
+        fetchOpts,
+      ),
+      ownerFetch<{ reports?: OwnerReport[] }>(
+        state.session,
+        "/operations/reports",
+        fetchOpts,
+      ),
+      ownerFetch<{ statuses?: OwnerBranchDailyStatus[] }>(
+        state.session,
+        `/operations/owner-daily-status?date=${previousDateLabel()}`,
+        fetchOpts,
+      ),
+      ownerFetch<{ transfers?: StaffTransferRow[] }>(
+        state.session,
+        "/branches/staff-transfers",
+      ),
+    ]);
+
+    function take<T>(result: PromiseSettledResult<T>): T | null {
+      return result.status === "fulfilled" ? result.value : null;
     }
+
+    const branchPayload = take(branchResult);
+    const loanPayload = take(loanResult);
+    const borrowerPayload = take(borrowerResult);
+    const repaymentPayload = take(repaymentResult);
+    const reportPayload = take(reportResult);
+    const dailyStatusPayload = take(dailyStatusResult);
+    const transferPayload = take(transferResult);
+
+    if (branchPayload) setBranches(branchPayload.branches ?? []);
+    if (loanPayload) setLoans(loanPayload.loans ?? []);
+    if (borrowerPayload) setBorrowers(borrowerPayload.customers ?? []);
+    if (repaymentPayload) setRepayments(repaymentPayload.repayments ?? []);
+    if (reportPayload) setReports(reportPayload.reports ?? []);
+    if (dailyStatusPayload) setDailyStatuses(dailyStatusPayload.statuses ?? []);
+    if (transferPayload) setTransfers(transferPayload.transfers ?? []);
+
+    const firstFailure = [
+      branchResult,
+      loanResult,
+      borrowerResult,
+      repaymentResult,
+      reportResult,
+      dailyStatusResult,
+      transferResult,
+    ].find((result) => result.status === "rejected");
+    if (
+      firstFailure &&
+      firstFailure.status === "rejected" &&
+      !branchPayload &&
+      !loanPayload
+    ) {
+      setError(
+        firstFailure.reason instanceof Error
+          ? firstFailure.reason.message
+          : "Could not load branches.",
+      );
+    }
+    setLoading(false);
   }, [selectedBranchId, state.session]);
 
   useEffect(() => {
@@ -201,6 +234,8 @@ function OwnerBranchesPageContent() {
 
     return () => window.clearTimeout(boot);
   }, [loadData, state.ready, state.session]);
+
+  useOwnerLiveReload(loadData, Boolean(state.ready && state.session));
 
   useEffect(() => {
     const view = searchParams.get("view");

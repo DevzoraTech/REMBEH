@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Loader2,
+  Plus,
   RefreshCw,
   Scale,
   Wallet,
@@ -19,7 +20,12 @@ import {
 } from "react";
 import { OwnerHeader } from "../../app/owner/owner-header";
 import { useOwnerBranchScope } from "../../app/owner/owner-branch-scope";
-import { formatMoneyAmount, formatNumber } from "../../app/owner/owner-common";
+import {
+  formatMoneyAmount,
+  formatNumber,
+  ownerFetch,
+} from "../../app/owner/owner-common";
+import { useOwnerLiveReload } from "../../app/owner/use-owner-live-reload";
 import { AppShell } from "../app/app-shell";
 import { Money } from "../app/money";
 import {
@@ -30,6 +36,7 @@ import {
 import { AppBootSkeleton, TableSkeleton } from "../app/skeleton";
 import { TableSearchField } from "../app/table-search-field";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
+import { invalidateLiveQueries } from "../../lib/live-query-cache";
 import {
   RembehBranch,
   RembehSession,
@@ -40,6 +47,7 @@ import {
   readAuthState,
 } from "../../lib/auth-session";
 import { resolveOperatorRole } from "../../lib/roles";
+import { RecordOpeningShortageDialog } from "./record-opening-shortage-dialog";
 
 type ShortagePayment = {
   id: string;
@@ -54,7 +62,8 @@ export type CashShortageRow = {
   id: string;
   branchId: string;
   branchName?: string;
-  responsibleUserId: string;
+  responsibleUserId: string | null;
+  employeeId?: string | null;
   responsibleName: string;
   responsiblePublicId: string | null;
   createdByName?: string;
@@ -110,10 +119,11 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
     useState<(typeof METHOD_OPTIONS)[number]["id"]>("CASH");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
-  const [settleUserId, setSettleUserId] = useState("");
+  const [settleKey, setSettleKey] = useState("");
   const [settleAmount, setSettleAmount] = useState("");
   const [settleNotes, setSettleNotes] = useState("");
   const [settleSaving, setSettleSaving] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const canRecordPayment = Boolean(
     session?.permissions.includes("operation.close") ||
@@ -158,32 +168,25 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
   }, [isOwner, router]);
 
   const load = useCallback(
-    async (active: RembehSession, selectedBranchId: string) => {
-      setLoading(true);
+    async (
+      active: RembehSession,
+      selectedBranchId: string,
+      opts?: { silent?: boolean; fresh?: boolean },
+    ) => {
+      if (!opts?.silent) setLoading(true);
       setError(null);
       try {
-        const params = new URLSearchParams();
-        if (selectedBranchId) params.set("branchId", selectedBranchId);
-        const response = await fetch(
-          `${apiBaseUrl}/cash-shortages?${params.toString()}`,
-          {
-            headers: {
-              Authorization: `${active.tokenType} ${active.accessToken}`,
-            },
-          },
-        );
-        const payload = await readApiJson<{
+        const payload = await ownerFetch<{
           shortages?: CashShortageRow[];
           summary?: {
             openCount: number;
             outstandingTotal: number;
             clearedCount: number;
           };
-          message?: string | string[];
-        }>(response);
-        if (!response.ok) {
-          throw new Error(formatApiError(payload.message));
-        }
+        }>(active, "/cash-shortages", {
+          branchId: selectedBranchId || null,
+          fresh: opts?.fresh,
+        });
         setShortages(payload.shortages ?? []);
         setSummary(
           payload.summary ?? {
@@ -205,21 +208,24 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
     [],
   );
 
+  const reloadShortages = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!session) return;
+      await load(
+        session,
+        isOwner ? branchId : (branch?.id ?? branchId),
+        opts,
+      );
+    },
+    [branch?.id, branchId, isOwner, load, session],
+  );
+
   useEffect(() => {
     if (!session) return;
-    void (async () => {
-      try {
-        await load(session, isOwner ? branchId : (branch?.id ?? branchId));
-      } catch (caught) {
-        setError(
-          caught instanceof Error
-            ? caught.message
-            : "Could not load shortages.",
-        );
-        setLoading(false);
-      }
-    })();
-  }, [session, isOwner, branchId, branch?.id, load]);
+    void reloadShortages();
+  }, [reloadShortages, session]);
+
+  useOwnerLiveReload(reloadShortages, Boolean(session));
 
   useEffect(() => {
     if (!session || !selectedId) {
@@ -290,34 +296,34 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
   );
 
   const employeesWithOpenShortages = useMemo(() => {
-    const byUser = new Map<
+    const byEmployee = new Map<
       string,
-      { userId: string; name: string; outstanding: number }
+      {
+        key: string;
+        userId: string | null;
+        employeeId: string | null;
+        name: string;
+        outstanding: number;
+      }
     >();
     for (const row of shortages) {
       if (row.status === "CLEARED" || row.amountOutstanding <= 0) continue;
-      const existing = byUser.get(row.responsibleUserId);
-      byUser.set(row.responsibleUserId, {
-        userId: row.responsibleUserId,
+      const key = row.employeeId || row.responsibleUserId;
+      if (!key) continue;
+      const existing = byEmployee.get(key);
+      byEmployee.set(key, {
+        key,
+        userId: row.responsibleUserId || existing?.userId || null,
+        employeeId: row.employeeId || existing?.employeeId || null,
         name: row.responsibleName || existing?.name || "Employee",
         outstanding:
           (existing?.outstanding ?? 0) + Number(row.amountOutstanding),
       });
     }
-    return Array.from(byUser.values()).sort((left, right) =>
+    return Array.from(byEmployee.values()).sort((left, right) =>
       left.name.localeCompare(right.name),
     );
   }, [shortages]);
-
-  useEffect(() => {
-    if (
-      settleUserId &&
-      !employeesWithOpenShortages.some((row) => row.userId === settleUserId)
-    ) {
-      setSettleUserId("");
-      setSettleAmount("");
-    }
-  }, [employeesWithOpenShortages, settleUserId]);
 
   async function recordPayment() {
     if (!session || !selected) return;
@@ -363,7 +369,11 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
         setMethod("CASH");
       }
       setNotice("Shortage payment recorded.");
-      await load(session, isOwner ? branchId : (branch?.id ?? branchId));
+      invalidateLiveQueries("/cash-shortages", { notify: false });
+      invalidateLiveQueries("/salaries", { notify: false });
+      await load(session, isOwner ? branchId : (branch?.id ?? branchId), {
+        fresh: true,
+      });
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -378,7 +388,7 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
   async function settleEmployee() {
     if (!session) return;
     const selectedEmployee = employeesWithOpenShortages.find(
-      (row) => row.userId === settleUserId,
+      (row) => row.key === settleKey,
     );
     if (!selectedEmployee) {
       setError("Select the employee whose shortage is being cleared.");
@@ -402,7 +412,12 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            responsibleUserId: selectedEmployee.userId,
+            ...(selectedEmployee.userId
+              ? { responsibleUserId: selectedEmployee.userId }
+              : {}),
+            ...(selectedEmployee.employeeId
+              ? { employeeId: selectedEmployee.employeeId }
+              : {}),
             amount: value,
             method: "CASH",
             notes: settleNotes.trim() || undefined,
@@ -423,7 +438,11 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
         setSelectedId(payload.shortage.id);
         setSelected(payload.shortage);
       }
-      await load(session, isOwner ? branchId : (branch?.id ?? branchId));
+      invalidateLiveQueries("/cash-shortages", { notify: false });
+      invalidateLiveQueries("/salaries", { notify: false });
+      await load(session, isOwner ? branchId : (branch?.id ?? branchId), {
+        fresh: true,
+      });
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -452,27 +471,42 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
           settingsHref={isOwner ? "/owner/settings" : "/settings"}
           notificationScope={isOwner ? "owner" : "manager"}
           actions={
-            <button
-              type="button"
-              onClick={() =>
-                void load(
-                  session,
-                  isOwner ? branchId : (branch?.id ?? branchId),
-                )
-              }
-              disabled={loading}
-              aria-label="Refresh shortages"
-              className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-50 disabled:opacity-60"
-            >
-              <RefreshCw
-                className={`size-4 ${loading ? "animate-spin" : ""}`}
-              />
-            </button>
+            <div className="flex items-center gap-2">
+              {canRecordPayment ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError(null);
+                    setCreateOpen(true);
+                  }}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[#07885f] px-3.5 text-xs font-semibold text-white shadow-[0_10px_20px_rgba(7,136,95,0.22)] transition hover:bg-[#067352]"
+                >
+                  <Plus className="size-3.5" />
+                  Record shortage
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() =>
+                  void load(
+                    session,
+                    isOwner ? branchId : (branch?.id ?? branchId),
+                  )
+                }
+                disabled={loading}
+                aria-label="Refresh shortages"
+                className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:bg-emerald-50 disabled:opacity-60"
+              >
+                <RefreshCw
+                  className={`size-4 ${loading ? "animate-spin" : ""}`}
+                />
+              </button>
+            </div>
           }
         />
         <p className="-mt-2 text-sm font-medium text-slate-500">
-          Track who must account for a shortage and record payments until
-          cleared.
+          Track who must account for a shortage, record a prior shortage against
+          an employee, and record cash payoffs until cleared.
         </p>
 
         {error ? (
@@ -527,12 +561,18 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
                   Employee
                 </span>
                 <select
-                  value={settleUserId}
+                  value={
+                    employeesWithOpenShortages.some(
+                      (row) => row.key === settleKey,
+                    )
+                      ? settleKey
+                      : ""
+                  }
                   onChange={(event) => {
-                    const userId = event.target.value;
-                    setSettleUserId(userId);
+                    const key = event.target.value;
+                    setSettleKey(key);
                     const employee = employeesWithOpenShortages.find(
-                      (row) => row.userId === userId,
+                      (row) => row.key === key,
                     );
                     setSettleAmount(
                       employee ? String(employee.outstanding) : "",
@@ -542,7 +582,7 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
                 >
                   <option value="">Select employee</option>
                   {employeesWithOpenShortages.map((employee) => (
-                    <option key={employee.userId} value={employee.userId}>
+                    <option key={employee.key} value={employee.key}>
                       {employee.name} · UGX{" "}
                       {formatMoneyAmount(employee.outstanding)}
                     </option>
@@ -953,6 +993,24 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
             </div>
           </aside>
         </div>
+      ) : null}
+
+      {createOpen ? (
+        <RecordOpeningShortageDialog
+          session={session}
+          branchId={isOwner ? branchId : (branch?.id ?? branchId)}
+          onClose={() => setCreateOpen(false)}
+          onCreated={async (shortage, employeeName) => {
+            setCreateOpen(false);
+            setNotice(`Prior shortage recorded for ${employeeName}.`);
+            setError(null);
+            setSelectedId(shortage.id);
+            setSelected(shortage);
+            await load(session, isOwner ? branchId : (branch?.id ?? branchId), {
+              fresh: true,
+            });
+          }}
+        />
       ) : null}
     </AppShell>
   );

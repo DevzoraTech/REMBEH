@@ -162,6 +162,8 @@ export type DailyReportDocumentModel = {
     amountGiven: number;
     amountDisbursed: number;
     amountCollected: number;
+    collectedRepaymentsAvailable?: number;
+    unusedFloat?: number;
     processingFees: number;
     expensesTotal?: number;
     expectedReturn: number;
@@ -1959,6 +1961,8 @@ type OperationLike = {
     amountGiven: number;
     amountDisbursed: number;
     amountCollected: number;
+    collectedRepaymentsAvailable?: number;
+    unusedFloat?: number;
     processingFees: number;
     expensesTotal?: number;
     expectedReturn: number;
@@ -2165,6 +2169,10 @@ export function buildDailyReportDocumentFromSnapshot(
       amountGiven: numberValue(item.amountGiven),
       amountDisbursed: numberValue(item.amountDisbursed),
       amountCollected: numberValue(item.amountCollected),
+      collectedRepaymentsAvailable: numberValue(
+        item.collectedRepaymentsAvailable,
+      ),
+      unusedFloat: numberValue(item.unusedFloat),
       processingFees: numberValue(item.processingFees),
       expensesTotal: numberValue(item.expensesTotal),
       expectedReturn: numberValue(item.expectedReturn),

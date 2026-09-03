@@ -41,6 +41,7 @@ import {
 } from "../../app/owner/owner-common";
 import { OwnerHeader } from "../../app/owner/owner-header";
 import { useOwnerBranchScope } from "../../app/owner/owner-branch-scope";
+import { useOwnerLiveReload } from "../../app/owner/use-owner-live-reload";
 import { TableSearchField } from "../app/table-search-field";
 import {
   RembehBranch,
@@ -144,14 +145,15 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [showVoided, setShowVoided] = useState(false);
 
-  const loadBorrowers = useCallback(async () => {
+  const loadBorrowers = useCallback(async (opts?: { silent?: boolean }) => {
     if (!state.session) return;
-    setLoading(true);
+    if (!opts?.silent) setLoading(true);
     setError(null);
     try {
       const payload = await ownerFetch<{ customers?: OwnerBorrower[] }>(
         state.session,
         "/customers",
+        { branchId: isManager ? (state.branch?.id ?? null) : selectedBranchId },
       );
       const next = payload.customers ?? [];
       setBorrowers(
@@ -174,6 +176,8 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
     }, 0);
     return () => window.clearTimeout(boot);
   }, [loadBorrowers, state.ready, state.session]);
+
+  useOwnerLiveReload(loadBorrowers, Boolean(state.ready && state.session));
 
   useEffect(() => {
     setPage(1);

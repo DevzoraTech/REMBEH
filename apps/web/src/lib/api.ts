@@ -26,5 +26,17 @@ export function formatApiError(message?: string | string[]) {
 }
 
 export async function readApiJson<T>(response: Response): Promise<T> {
-  return (await response.json()) as T;
+  const text = await response.text();
+  if (!text) {
+    return {} as T;
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(
+      response.ok
+        ? "The server returned an unexpected response."
+        : `Request failed (${response.status}).`,
+    );
+  }
 }

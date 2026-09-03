@@ -1,20 +1,23 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import {
   RembehSession,
   isSessionExpired,
   readAuthState,
 } from "../../lib/auth-session";
+import {
+  LIVE_QUERY_REVALIDATE_EVENT,
+  invalidateLiveQueries,
+} from "../../lib/live-query-cache";
 import { playNotificationSound } from "../../lib/notification-sound";
 import {
   OwnerBranch,
   OwnerLoan,
   OwnerReport,
-  authHeaders,
   formatNumber,
   isLoanScheduleOverdue,
+  ownerFetch,
 } from "./owner-common";
 
 export type NotificationScope = "owner" | "manager";
@@ -61,16 +64,7 @@ function timeAgo(value: string | null | undefined) {
 }
 
 async function fetchJson<T>(session: RembehSession, path: string): Promise<T> {
-  const response = await fetch(`${apiBaseUrl}${path}`, {
-    headers: authHeaders(session),
-  });
-  const payload = await readApiJson<T & { message?: string | string[] }>(
-    response,
-  );
-  if (!response.ok) {
-    throw new Error(formatApiError(payload.message));
-  }
-  return payload;
+  return ownerFetch<T>(session, path, { branchId: null });
 }
 
 function linksFor(scope: NotificationScope) {
@@ -387,7 +381,12 @@ export function useOwnerNotifications(scope: NotificationScope = "owner") {
 
 export function invalidateOwnerNotifications() {
   cache = null;
+  invalidateLiveQueries("/operations/reports", { notify: false });
+  invalidateLiveQueries("/loans", { notify: false });
+  invalidateLiveQueries("/borrower-lists", { notify: false });
+  invalidateLiveQueries("/branches", { notify: false });
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event(INVALIDATE_EVENT));
+    window.dispatchEvent(new Event(LIVE_QUERY_REVALIDATE_EVENT));
   }
 }

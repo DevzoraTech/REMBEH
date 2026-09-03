@@ -22,7 +22,7 @@ import {
   X,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ApplicationDetailDrawer } from "../app/application-detail-drawer";
 import { LoanApplicationFormDrawer } from "../app/loan-application-form-drawer";
@@ -47,6 +47,7 @@ import {
 } from "../../app/owner/owner-common";
 import { OwnerHeader } from "../../app/owner/owner-header";
 import { useOwnerBranchScope } from "../../app/owner/owner-branch-scope";
+import { useOwnerLiveReload } from "../../app/owner/use-owner-live-reload";
 import { Money } from "../app/money";
 import { TableSearchField } from "../app/table-search-field";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
@@ -256,6 +257,8 @@ export function LoansWorkspace({
     useOwnerBranchScope();
   const pendingOnly = view === "pending-disbursements";
   const [loans, setLoans] = useState<LoanRow[]>([]);
+  const loansRef = useRef<LoanRow[]>([]);
+  loansRef.current = loans;
   const [borrowers, setBorrowers] = useState<BorrowerRow[]>([]);
   const [pendingDisbursements, setPendingDisbursements] = useState<
     PendingDisbursementRow[]
@@ -374,14 +377,15 @@ export function LoansWorkspace({
     );
   }, [isManager, loans, router]);
 
-  const loadLoans = useCallback(async (): Promise<LoanRow[]> => {
+  const loadLoans = useCallback(async (opts?: { silent?: boolean }): Promise<LoanRow[]> => {
     if (!state.session) return [];
-    setLoading(true);
+    if (!opts?.silent) setLoading(true);
     setError(null);
     try {
       const payload = await ownerFetch<{ loans?: LoanRow[] }>(
         state.session,
         "/loans",
+        { branchId: isManager ? (state.branch?.id ?? null) : selectedBranchId },
       );
       const next = payload.loans ?? [];
       const scoped =
@@ -422,6 +426,7 @@ export function LoansWorkspace({
         const payload = await ownerFetch<PendingDisbursementsResponse>(
           state.session,
           "/loans/pending-disbursements",
+          { branchId: isManager ? (state.branch?.id ?? null) : selectedBranchId },
         );
         const rows = payload.pendingDisbursements ?? [];
         const scoped =
@@ -640,9 +645,12 @@ export function LoansWorkspace({
     state.session,
   ]);
 
-  const refreshLoansWorkspace = useCallback(async () => {
-    const latestLoans = await loadLoans();
-    await loadPendingDisbursements(latestLoans);
+  const refreshLoansWorkspace = useCallback(async (opts?: { silent?: boolean }) => {
+    const [latestLoans] = await Promise.all([
+      loadLoans(opts),
+      loadPendingDisbursements(loansRef.current),
+    ]);
+    return latestLoans;
   }, [loadLoans, loadPendingDisbursements]);
 
   function openRecordDisbursement(row: PendingDisbursementRow) {
@@ -763,6 +771,8 @@ export function LoansWorkspace({
     }, 0);
     return () => window.clearTimeout(boot);
   }, [refreshLoansWorkspace, state.ready, state.session]);
+
+  useOwnerLiveReload(refreshLoansWorkspace, Boolean(state.ready && state.session));
 
   const officerOptions = useMemo<OfficerOption[]>(() => {
     const map = new Map<string, string>();

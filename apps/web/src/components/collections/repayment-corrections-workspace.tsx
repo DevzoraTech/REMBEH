@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { OwnerHeader } from "../../app/owner/owner-header";
 import { useOwnerBranchScope } from "../../app/owner/owner-branch-scope";
+import { useOwnerLiveReload } from "../../app/owner/use-owner-live-reload";
 import {
   authHeaders,
   formatDate,
@@ -160,9 +161,9 @@ export function RepaymentCorrectionsWorkspace({
   const currency = state.workspace?.currency ?? "UGX";
   const isManager = mode === "manager";
 
-  const loadRequests = useCallback(async () => {
+  const loadRequests = useCallback(async (opts?: { silent?: boolean }) => {
     if (!state.session) return;
-    setLoading(true);
+    if (!opts?.silent) setLoading(true);
     setError(null);
     try {
       const payload = await ownerFetch<{
@@ -170,6 +171,7 @@ export function RepaymentCorrectionsWorkspace({
       }>(
         state.session,
         `/collections/repayment-correction-requests?status=${status}`,
+        { branchId: isManager ? (state.branch?.id ?? null) : selectedBranchId },
       );
       setRequests(payload.requests ?? []);
     } catch (caught) {
@@ -181,11 +183,13 @@ export function RepaymentCorrectionsWorkspace({
     } finally {
       setLoading(false);
     }
-  }, [selectedBranchId, state.session, status]);
+  }, [isManager, selectedBranchId, state.branch?.id, state.session, status]);
 
   useEffect(() => {
     void loadRequests();
   }, [loadRequests]);
+
+  useOwnerLiveReload(loadRequests, Boolean(state.ready && state.session));
 
   const filtered = useMemo(() => {
     const scoped =

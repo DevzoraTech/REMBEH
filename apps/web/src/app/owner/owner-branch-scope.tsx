@@ -9,8 +9,9 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { apiBaseUrl, readApiJson } from "../../lib/api";
+import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import type { RembehSession } from "../../lib/auth-session";
+import { liveQuery } from "../../lib/live-query-cache";
 
 const STORAGE_KEY = "rembehOwnerBranchScope";
 
@@ -75,15 +76,23 @@ export function OwnerBranchScopeProvider({
     const boot = window.setTimeout(() => {
       void (async () => {
         try {
-          const response = await fetch(`${apiBaseUrl}/branches`, {
-            headers: {
-              Authorization: `${session.tokenType} ${session.accessToken}`,
-            },
+          const payload = await liveQuery("/branches", async () => {
+            const response = await fetch(`${apiBaseUrl}/branches`, {
+              headers: {
+                Authorization: `${session.tokenType} ${session.accessToken}`,
+              },
+              cache: "no-store",
+            });
+            const body = await readApiJson<{
+              branches?: Array<{ id?: string; name?: string }>;
+              message?: string | string[];
+            }>(response);
+            if (!response.ok) {
+              throw new Error(formatApiError(body.message));
+            }
+            return body;
           });
-          const payload = await readApiJson<{
-            branches?: Array<{ id?: string; name?: string }>;
-          }>(response);
-          if (!response.ok || cancelled) return;
+          if (cancelled) return;
           const next = (payload.branches ?? [])
             .map((branch) => ({
               id: branch.id ?? "",
@@ -96,8 +105,16 @@ export function OwnerBranchScopeProvider({
             stored && next.some((branch) => branch.id === stored)
               ? stored
               : null;
+          if (stored && !validStored) {
+            persistBranchId(null);
+          }
           setBranches(next);
           setSelectedBranchIdState(validStored);
+        } catch {
+          if (!cancelled) {
+            persistBranchId(null);
+            setSelectedBranchIdState(null);
+          }
         } finally {
           if (!cancelled) setReady(true);
         }
