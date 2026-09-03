@@ -77,6 +77,16 @@ export class BranchesController {
   ) {
     return this.branchesService.inviteBranchStaff(user, branchId, dto);
   }
+
+  @Post(':branchId/staff/:userId/invitation/resend')
+  @RequirePermissions(BRANCH_PERMISSIONS.staffInvite)
+  resendStaffInvitation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('branchId') branchId: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
+  ) {
+    return this.branchesService.resendStaffInvitation(user, branchId, userId);
+  }
 }
 
 @Controller('branch-staff/invitations')

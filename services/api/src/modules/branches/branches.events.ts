@@ -3,6 +3,7 @@ export const BRANCH_EVENTS = {
   updated: 'branch.updated',
   deactivated: 'branch.deactivated',
   staffInvited: 'branch.staff_invited',
+  staffInvitationResent: 'branch.staff_invitation_resent',
   staffInvitationAccepted: 'branch.staff_invitation_accepted',
   staffActivated: 'branch.staff_activated',
   staffTransferred: 'branch.staff_transferred',
@@ -20,4 +21,12 @@ export type BranchStaffInvitedEventPayload = {
   invitedByUserId: string;
   roleName: string;
   email: string;
+};
+
+export type BranchStaffInvitationResentEventPayload = {
+  branchId: string;
+  invitedUserId: string;
+  resentByUserId: string;
+  email: string;
+  resendCount: number;
 };

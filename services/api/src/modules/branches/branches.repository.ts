@@ -4,6 +4,7 @@ import { PrismaService } from '../../database/prisma.service';
 import {
   BRANCH_EVENTS,
   BranchCreatedEventPayload,
+  BranchStaffInvitationResentEventPayload,
   BranchStaffInvitedEventPayload,
 } from './branches.events';
 import { BRANCH_PERMISSIONS } from './branches.permissions';
@@ -38,6 +39,17 @@ type AcceptStaffInvitationInput = {
   userId: string;
   passwordHash: string;
   phone: string;
+};
+
+type RotateStaffInvitationInput = {
+  tenantId: string;
+  actorUserId: string;
+  branchId: string;
+  userId: string;
+  email: string;
+  invitationTokenHash: string;
+  invitationExpiresAt: Date;
+  issuedAt: Date;
 };
 
 export class UserIdentityConflictError extends Error {
@@ -370,6 +382,135 @@ export class BranchesRepository {
       });
 
       return { user: staffUser, role, challenge };
+    });
+  }
+
+  findStaffUserForInvitation(input: {
+    tenantId: string;
+    branchId: string;
+    userId: string;
+  }) {
+    return this.prisma.user.findFirst({
+      where: {
+        id: input.userId,
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+      },
+      include: {
+        roles: {
+          include: {
+            role: true,
+          },
+        },
+        otpChallenges: {
+          where: {
+            purpose: OtpPurpose.EMPLOYEE_INVITATION,
+            channel: OtpChannel.EMAIL,
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+  }
+
+  rotateStaffInvitation(input: RotateStaffInvitationInput) {
+    return this.prisma.$transaction(async (tx) => {
+      const openChallenges = await tx.otpChallenge.findMany({
+        where: {
+          userId: input.userId,
+          tenantId: input.tenantId,
+          purpose: OtpPurpose.EMPLOYEE_INVITATION,
+          channel: OtpChannel.EMAIL,
+          consumedAt: null,
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      const current = openChallenges[0] ?? null;
+      const staleIds = openChallenges.slice(1).map((row) => row.id);
+
+      if (staleIds.length > 0) {
+        await tx.otpChallenge.updateMany({
+          where: { id: { in: staleIds } },
+          data: { consumedAt: input.issuedAt },
+        });
+      }
+
+      const challenge = current
+        ? await tx.otpChallenge.update({
+            where: { id: current.id },
+            data: {
+              destination: input.email,
+              codeHash: input.invitationTokenHash,
+              expiresAt: input.invitationExpiresAt,
+              attempts: 0,
+              lastSentAt: input.issuedAt,
+              sentAt: current.sentAt ?? input.issuedAt,
+              resendCount: { increment: 1 },
+            },
+          })
+        : await tx.otpChallenge.create({
+            data: {
+              tenantId: input.tenantId,
+              userId: input.userId,
+              channel: OtpChannel.EMAIL,
+              purpose: OtpPurpose.EMPLOYEE_INVITATION,
+              destination: input.email,
+              codeHash: input.invitationTokenHash,
+              expiresAt: input.invitationExpiresAt,
+              sentAt: input.issuedAt,
+              lastSentAt: input.issuedAt,
+              resendCount: 1,
+            },
+          });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          action: BRANCH_PERMISSIONS.staffInvite,
+          entityType: 'user',
+          entityId: input.userId,
+          newValue: {
+            userId: input.userId,
+            branchId: input.branchId,
+            email: input.email,
+            resent: true,
+            resendCount: challenge.resendCount,
+          },
+        },
+      });
+
+      const payload: BranchStaffInvitationResentEventPayload = {
+        branchId: input.branchId,
+        invitedUserId: input.userId,
+        resentByUserId: input.actorUserId,
+        email: input.email,
+        resendCount: challenge.resendCount,
+      };
+
+      await tx.outboxEvent.create({
+        data: {
+          tenantId: input.tenantId,
+          topic: BRANCH_EVENTS.staffInvitationResent,
+          aggregateType: 'user',
+          aggregateId: input.userId,
+          payload,
+        },
+      });
+
+      const user = await tx.user.findUniqueOrThrow({
+        where: { id: input.userId },
+        include: {
+          roles: {
+            include: {
+              role: true,
+            },
+          },
+        },
+      });
+
+      return { user, challenge };
     });
   }
 

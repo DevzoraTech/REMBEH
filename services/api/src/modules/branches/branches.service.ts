@@ -62,6 +62,7 @@ import { UpdateBranchSettingsDto } from './dto/update-branch-settings.dto';
 import { LookupBranchStaffInvitationDto } from './dto/lookup-branch-staff-invitation.dto';
 
 const STAFF_INVITATION_TTL_DAYS = 7;
+const STAFF_INVITATION_RESEND_COOLDOWN_MS = 20_000;
 
 const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
   'Branch Manager': [
@@ -379,22 +380,7 @@ export class BranchesService {
     branchId: string,
     dto: InviteBranchStaffDto,
   ): Promise<BranchStaffInvitationResponseContract> {
-    const branch = await this.branchesRepository.findByTenantAndId({
-      tenantId: user.tenantId,
-      branchId,
-    });
-
-    if (!branch) {
-      throw new NotFoundException('Branch was not found.');
-    }
-
-    const canManageAllBranches = user.permissions.includes(
-      BRANCH_PERMISSIONS.create,
-    );
-
-    if (!canManageAllBranches && user.branchId !== branchId) {
-      throw new NotFoundException('Branch was not found.');
-    }
+    const branch = await this.requireStaffInviteBranch(user, branchId);
 
     const roleName = this.normalizeStaffRole(dto.roleName);
     const normalizedEmail = normalizeEmailAddress(dto.email);
@@ -439,6 +425,101 @@ export class BranchesService {
       tenantId: user.tenantId,
       userId: result.user.id,
       destination: normalizedEmail,
+      invitedByName: user.displayName,
+      workspaceName: branch.tenant.name,
+      branchName: branch.name,
+      roleName,
+      token,
+      expiresAt: invitationExpiresAt,
+    });
+
+    const acceptUrl = this.buildInvitationAcceptUrl(token);
+    const showDevAcceptUrl =
+      !delivery.delivered &&
+      this.configService.get<string>('NODE_ENV') !== 'production';
+
+    return {
+      staffUser: this.toStaffUserContract(result.user),
+      emailDelivery: toPublicOtpDelivery(delivery),
+      invitation: {
+        status: 'INVITE_PENDING',
+        expiresAt: invitationExpiresAt,
+        ...(showDevAcceptUrl ? { acceptUrl } : {}),
+      },
+    };
+  }
+
+  async resendStaffInvitation(
+    user: AuthenticatedUser,
+    branchId: string,
+    staffUserId: string,
+  ): Promise<BranchStaffInvitationResponseContract> {
+    const branch = await this.requireStaffInviteBranch(user, branchId);
+    const staff = await this.branchesRepository.findStaffUserForInvitation({
+      tenantId: user.tenantId,
+      branchId,
+      userId: staffUserId,
+    });
+
+    if (!staff) {
+      throw new NotFoundException('Staff invitation was not found.');
+    }
+
+    if (staff.status !== UserStatus.INVITED) {
+      throw new BadRequestException(
+        'This person has already accepted the invitation.',
+      );
+    }
+
+    const latestChallenge =
+      staff.otpChallenges.find((challenge) => !challenge.consumedAt) ??
+      staff.otpChallenges[0] ??
+      null;
+    const lastIssuedAt =
+      latestChallenge?.lastSentAt ??
+      latestChallenge?.sentAt ??
+      latestChallenge?.createdAt ??
+      null;
+
+    if (
+      latestChallenge &&
+      latestChallenge.resendCount > 0 &&
+      lastIssuedAt
+    ) {
+      const waitMs =
+        lastIssuedAt.getTime() +
+        STAFF_INVITATION_RESEND_COOLDOWN_MS -
+        Date.now();
+      if (waitMs > 0) {
+        const waitSeconds = Math.max(1, Math.ceil(waitMs / 1000));
+        throw new BadRequestException(
+          `Please wait ${waitSeconds} seconds before resending this invitation.`,
+        );
+      }
+    }
+
+    const token = this.generateInvitationToken();
+    const issuedAt = new Date();
+    const invitationExpiresAt = new Date(
+      Date.now() + STAFF_INVITATION_TTL_DAYS * 24 * 60 * 60 * 1000,
+    );
+    const roleName = staff.roles[0]?.role.name ?? 'Staff';
+
+    const result = await this.branchesRepository.rotateStaffInvitation({
+      tenantId: user.tenantId,
+      actorUserId: user.userId,
+      branchId,
+      userId: staff.id,
+      email: staff.email,
+      invitationTokenHash: this.otpService.hashCode(token),
+      invitationExpiresAt,
+      issuedAt,
+    });
+
+    const delivery = await this.notificationsService.sendStaffInvitationEmail({
+      tenantId: user.tenantId,
+      userId: result.user.id,
+      destination: staff.email,
       invitedByName: user.displayName,
       workspaceName: branch.tenant.name,
       branchName: branch.name,
@@ -806,6 +887,30 @@ export class BranchesService {
     }
 
     return 'INVITE_PENDING';
+  }
+
+  private async requireStaffInviteBranch(
+    user: AuthenticatedUser,
+    branchId: string,
+  ) {
+    const branch = await this.branchesRepository.findByTenantAndId({
+      tenantId: user.tenantId,
+      branchId,
+    });
+
+    if (!branch) {
+      throw new NotFoundException('Branch was not found.');
+    }
+
+    const canManageAllBranches = user.permissions.includes(
+      BRANCH_PERMISSIONS.create,
+    );
+
+    if (!canManageAllBranches && user.branchId !== branchId) {
+      throw new NotFoundException('Branch was not found.');
+    }
+
+    return branch;
   }
 
   private buildInvitationAcceptUrl(token: string) {

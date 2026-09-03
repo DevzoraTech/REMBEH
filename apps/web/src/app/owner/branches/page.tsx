@@ -75,6 +75,10 @@ import {
   type TransferableStaff,
 } from "../../../components/staff/transfer-staff-dialog";
 import { StepTimeline } from "../../../components/app/step-timeline";
+import {
+  canResendStaffInvite,
+  resendStaffInvitation,
+} from "../../../lib/staff-invitations";
 
 const emptyBranchForm = {
   branchName: "",
@@ -125,6 +129,7 @@ function OwnerBranchesPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [resendBusyId, setResendBusyId] = useState<string | null>(null);
   const [transferStaff, setTransferStaff] = useState<TransferableStaff | null>(
     null,
   );
@@ -345,6 +350,34 @@ function OwnerBranchesPageContent() {
           )
           .filter((branch): branch is OwnerBranch => Boolean(branch))
       : filteredBranches;
+
+  async function handleResendInvite(input: {
+    branchId: string;
+    userId: string;
+    email: string;
+    name: string;
+  }) {
+    if (!state.session) return;
+    setError(null);
+    setNotice(null);
+    setResendBusyId(input.userId);
+    try {
+      await resendStaffInvitation({
+        session: state.session,
+        branchId: input.branchId,
+        userId: input.userId,
+      });
+      setNotice(
+        `Invite resent to ${input.name} (${input.email}). Ask them to check inbox and spam.`,
+      );
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not resend invite.",
+      );
+    } finally {
+      setResendBusyId(null);
+    }
+  }
 
   async function createBranch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -682,6 +715,18 @@ function OwnerBranchesPageContent() {
                       setCreatedBranch(null);
                       setInviteBranch(branch);
                     }}
+                    onResendInvite={
+                      branch.manager &&
+                      canResendStaffInvite(branch.manager)
+                        ? () =>
+                            void handleResendInvite({
+                              branchId: branch.id,
+                              userId: branch.manager!.id,
+                              email: branch.manager!.email,
+                              name: branch.manager!.name,
+                            })
+                        : undefined
+                    }
                     onOpenDetails={() => setDetailBranch(branch)}
                     onTransferManager={
                       activeManager(branch)
@@ -898,6 +943,15 @@ function OwnerBranchesPageContent() {
             setDetailBranch(null);
             setInviteBranch(detailBranch);
           }}
+          onResendInvite={(member) =>
+            void handleResendInvite({
+              branchId: detailBranch.id,
+              userId: member.id,
+              email: member.email,
+              name: member.name,
+            })
+          }
+          resendBusyId={resendBusyId}
           onTransferStaff={(member) =>
             setTransferStaff(toTransferableStaff(member, detailBranch))
           }
@@ -1067,6 +1121,7 @@ function BranchRow({
   currency,
   compact,
   onInvite,
+  onResendInvite,
   onOpenDetails,
   onTransferManager,
 }: {
@@ -1076,6 +1131,7 @@ function BranchRow({
   currency: string;
   compact: boolean;
   onInvite: () => void;
+  onResendInvite?: () => void;
   onOpenDetails: () => void;
   onTransferManager?: () => void;
 }) {
@@ -1094,6 +1150,13 @@ function BranchRow({
   const managerName = manager?.name ?? invitedManager?.name ?? "No manager";
   const managerEmail =
     manager?.email ?? invitedManager?.email ?? "Assign manager";
+  const inviteAction =
+    invitedManager && onResendInvite
+      ? { label: "Resend manager invite", onSelect: onResendInvite }
+      : {
+          label: manager ? "Invite manager" : "Assign manager",
+          onSelect: onInvite,
+        };
 
   return (
     <article
@@ -1157,10 +1220,7 @@ function BranchRow({
             label={`Branch actions for ${branch.name}`}
             items={[
               { label: "View details", onSelect: onOpenDetails },
-              {
-                label: manager ? "Invite manager" : "Assign manager",
-                onSelect: onInvite,
-              },
+              inviteAction,
               ...(manager && onTransferManager
                 ? [
                     {
@@ -1244,10 +1304,7 @@ function BranchRow({
           label={`Branch actions for ${branch.name}`}
           items={[
             { label: "View details", onSelect: onOpenDetails },
-            {
-              label: manager ? "Invite manager" : "Assign manager",
-              onSelect: onInvite,
-            },
+            inviteAction,
             {
               label: "View reports",
               href: `/owner/reports?branchId=${branch.id}`,
@@ -1736,6 +1793,8 @@ function BranchDetailDrawer({
   currency,
   onClose,
   onInvite,
+  onResendInvite,
+  resendBusyId,
   onTransferStaff,
   onOpenAttention,
 }: {
@@ -1745,6 +1804,12 @@ function BranchDetailDrawer({
   currency: string;
   onClose: () => void;
   onInvite: () => void;
+  onResendInvite: (member: {
+    id: string;
+    name: string;
+    email: string;
+  }) => void;
+  resendBusyId: string | null;
   onTransferStaff: (member: {
     id: string;
     name: string;
@@ -1862,14 +1927,28 @@ function BranchDetailDrawer({
                 Transfer
               </button>
             ) : null}
-            <button
-              type="button"
-              onClick={onInvite}
-              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-[#0b936b] transition hover:bg-emerald-50"
-            >
-              <Mail className="size-3" />
-              Invite
-            </button>
+            {invitedManager ? (
+              <button
+                type="button"
+                disabled={resendBusyId === invitedManager.id}
+                onClick={() => onResendInvite(invitedManager)}
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-[#0b936b] transition hover:bg-emerald-50 disabled:opacity-50"
+              >
+                <Mail className="size-3" />
+                {resendBusyId === invitedManager.id
+                  ? "Sending..."
+                  : "Resend invite"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onInvite}
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-[#0b936b] transition hover:bg-emerald-50"
+              >
+                <Mail className="size-3" />
+                Invite
+              </button>
+            )}
           </div>
         </div>
         {manager ? (
@@ -1894,6 +1973,16 @@ function BranchDetailDrawer({
             <p className="mt-2 text-xs font-medium text-amber-700">
               Waiting for acceptance
             </p>
+            <button
+              type="button"
+              disabled={resendBusyId === invitedManager.id}
+              onClick={() => onResendInvite(invitedManager)}
+              className="mt-2 text-[11px] font-semibold text-[#0b936b] hover:underline disabled:opacity-50"
+            >
+              {resendBusyId === invitedManager.id
+                ? "Sending..."
+                : "Resend invite"}
+            </button>
           </div>
         ) : (
           <p className="rounded-2xl border border-dashed border-[#e5ebf0] px-3 py-4 text-center text-xs text-slate-500">
@@ -1934,6 +2023,15 @@ function BranchDetailDrawer({
                       className="text-[11px] font-semibold text-[#0b936b] hover:underline"
                     >
                       Transfer
+                    </button>
+                  ) : canResendStaffInvite(member) ? (
+                    <button
+                      type="button"
+                      disabled={resendBusyId === member.id}
+                      onClick={() => onResendInvite(member)}
+                      className="text-[11px] font-semibold text-[#0b936b] hover:underline disabled:opacity-50"
+                    >
+                      {resendBusyId === member.id ? "Sending..." : "Resend"}
                     </button>
                   ) : null}
                 </div>

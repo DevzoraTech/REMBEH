@@ -428,6 +428,38 @@ describe('AppController (e2e)', () => {
       },
     });
 
+    const agentResendResponse = await request(app.getHttpServer())
+      .post(
+        `/api/v1/branches/${branchBody.branch.id}/staff/${agentInviteBody.staffUser.id}/invitation/resend`,
+      )
+      .set(
+        'Authorization',
+        `${managerAcceptBody.session.tokenType} ${managerAcceptBody.session.accessToken}`,
+      )
+      .expect(201);
+
+    const agentResendBody =
+      agentResendResponse.body as BranchStaffInvitationResponse;
+    expect(agentResendBody).toMatchObject({
+      staffUser: {
+        id: agentInviteBody.staffUser.id,
+        status: 'INVITED',
+      },
+      invitation: {
+        status: 'INVITE_PENDING',
+      },
+    });
+
+    await request(app.getHttpServer())
+      .post(
+        `/api/v1/branches/${branchBody.branch.id}/staff/${managerAcceptBody.staffUser.id}/invitation/resend`,
+      )
+      .set(
+        'Authorization',
+        `${managerAcceptBody.session.tokenType} ${managerAcceptBody.session.accessToken}`,
+      )
+      .expect(400);
+
     await request(app.getHttpServer())
       .post('/api/v1/branches')
       .set(

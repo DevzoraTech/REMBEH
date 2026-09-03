@@ -40,6 +40,10 @@ import {
 } from "../../lib/auth-session";
 import { formatInternationalPhone } from "../../lib/phone";
 import { OWNER_INVITE_ROLES, resolveOperatorRole } from "../../lib/roles";
+import {
+  canResendStaffInvite,
+  resendStaffInvitation,
+} from "../../lib/staff-invitations";
 
 type InviteStatus =
   | "ACTIVE"
@@ -131,6 +135,7 @@ export default function BranchesPage() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isInviting, setIsInviting] = useState(false);
+  const [resendBusyId, setResendBusyId] = useState<string | null>(null);
   const autoInviteHandled = useRef(false);
 
   const operatorRole = useMemo(
@@ -458,6 +463,31 @@ export default function BranchesPage() {
     }
   }
 
+  async function handleResendInvite(member: StaffMember) {
+    if (!session) return;
+    setError(null);
+    setSuccessMessage(null);
+    setResendBusyId(member.id);
+    try {
+      await resendStaffInvitation({
+        session,
+        branchId: member.branchId,
+        userId: member.id,
+      });
+      setSuccessMessage(
+        `Invite resent to ${member.email}. Ask them to check inbox and spam.`,
+      );
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Could not resend invite.",
+      );
+    } finally {
+      setResendBusyId(null);
+    }
+  }
+
   if (!session || isLoading) {
     return (
       <main className="grid min-h-screen place-items-center">
@@ -602,11 +632,28 @@ export default function BranchesPage() {
 
                       <div>
                         {branch.manager ? (
-                          <StatusBadge
-                            status={branch.manager.inviteStatus}
-                            expiresAt={branch.manager.inviteExpiresAt}
-                            compact
-                          />
+                          <div className="flex flex-wrap items-center gap-2">
+                            <StatusBadge
+                              status={branch.manager.inviteStatus}
+                              expiresAt={branch.manager.inviteExpiresAt}
+                              compact
+                            />
+                            {canInviteStaff &&
+                            canResendStaffInvite(branch.manager) ? (
+                              <button
+                                type="button"
+                                disabled={resendBusyId === branch.manager.id}
+                                onClick={() =>
+                                  void handleResendInvite(branch.manager!)
+                                }
+                                className="text-[11px] font-semibold text-[var(--forest-emerald)] hover:underline disabled:opacity-50"
+                              >
+                                {resendBusyId === branch.manager.id
+                                  ? "Sending..."
+                                  : "Resend"}
+                              </button>
+                            ) : null}
+                          </div>
                         ) : (
                           <span className="inline-flex border border-dashed border-[var(--line)] px-1.5 py-0.5 text-[11px] font-semibold text-slate-500">
                             unassigned
@@ -667,6 +714,19 @@ export default function BranchesPage() {
                                 expiresAt={member.inviteExpiresAt}
                                 compact
                               />
+                              {canInviteStaff &&
+                              canResendStaffInvite(member) ? (
+                                <button
+                                  type="button"
+                                  disabled={resendBusyId === member.id}
+                                  onClick={() => void handleResendInvite(member)}
+                                  className="font-semibold text-[var(--forest-emerald)] hover:underline disabled:opacity-50"
+                                >
+                                  {resendBusyId === member.id
+                                    ? "Sending..."
+                                    : "Resend"}
+                                </button>
+                              ) : null}
                             </span>
                           ))}
                         </div>

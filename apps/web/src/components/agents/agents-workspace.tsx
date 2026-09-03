@@ -59,6 +59,10 @@ import {
 } from "../../lib/auth-session";
 import { MANAGER_INVITE_ROLES, resolveOperatorRole } from "../../lib/roles";
 import {
+  canResendStaffInvite,
+  resendStaffInvitation,
+} from "../../lib/staff-invitations";
+import {
   StaffTransfersList,
   TransferStaffDialog,
   type StaffTransferRow,
@@ -134,6 +138,7 @@ export function AgentsWorkspace() {
   const [isInviting, setIsInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteNotice, setInviteNotice] = useState<string | null>(null);
+  const [resendBusyId, setResendBusyId] = useState<string | null>(null);
   const [inviteForm, setInviteForm] = useState<{
     roleName: string;
     displayName: string;
@@ -387,12 +392,39 @@ export function AgentsWorkspace() {
     }
   }
 
+  async function handleResendInvite(agent: AgentRow) {
+    if (!session || !agent.branchId) {
+      setInviteNotice(null);
+      setError("This staff member is not assigned to a branch.");
+      return;
+    }
+    setError(null);
+    setInviteNotice(null);
+    setResendBusyId(agent.id);
+    try {
+      await resendStaffInvitation({
+        session,
+        branchId: agent.branchId,
+        userId: agent.id,
+      });
+      setInviteNotice(
+        `Invite resent to ${agent.email}. Ask them to check inbox and spam.`,
+      );
+    } catch (caught) {
+      setError(
+        caught instanceof Error ? caught.message : "Could not resend invite.",
+      );
+    } finally {
+      setResendBusyId(null);
+    }
+  }
+
   function toggleActionMenu(
     agentId: string,
     event: MouseEvent<HTMLButtonElement>,
   ) {
     const rect = event.currentTarget.getBoundingClientRect();
-    const menuWidth = 168;
+    const menuWidth = 188;
     setActionMenu((current) =>
       current?.agentId === agentId
         ? null
@@ -654,7 +686,24 @@ export function AgentsWorkspace() {
                         {agent.roleName || "Staff"}
                       </td>
                       <td className="px-3 py-3">
-                        <StatusBadge status={agent.status} />
+                        <div className="flex flex-col items-start gap-1">
+                          <StatusBadge status={agent.status} />
+                          {canInvite && canResendStaffInvite(agent) ? (
+                            <button
+                              type="button"
+                              disabled={resendBusyId === agent.id}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handleResendInvite(agent);
+                              }}
+                              className="text-[11px] font-semibold text-[#0b936b] hover:underline disabled:opacity-50"
+                            >
+                              {resendBusyId === agent.id
+                                ? "Sending..."
+                                : "Resend invite"}
+                            </button>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="px-3 py-3 text-[11px] text-slate-600">
                         <p className="truncate font-medium text-[#0b1220]">
@@ -681,12 +730,16 @@ export function AgentsWorkspace() {
                             aria-label={`Open actions for ${agent.name}`}
                             aria-haspopup="menu"
                             aria-expanded={actionMenu?.agentId === agent.id}
-                            disabled={statusBusyId === agent.id}
+                            disabled={
+                              statusBusyId === agent.id ||
+                              resendBusyId === agent.id
+                            }
                             onClick={(event) =>
                               toggleActionMenu(agent.id, event)
                             }
                           >
-                            {statusBusyId === agent.id ? (
+                            {statusBusyId === agent.id ||
+                            resendBusyId === agent.id ? (
                               <Loader2 className="size-3.5 animate-spin" />
                             ) : (
                               <MoreVertical className="size-4" />
@@ -748,7 +801,7 @@ export function AgentsWorkspace() {
           />
           <div
             role="menu"
-            className="fixed z-50 w-[168px] rounded-xl border border-[#e6ebf0] bg-white p-1 text-left shadow-[0_14px_34px_rgba(15,23,42,0.16)]"
+            className="fixed z-50 w-[188px] rounded-xl border border-[#e6ebf0] bg-white p-1 text-left shadow-[0_14px_34px_rgba(15,23,42,0.16)]"
             style={{ top: actionMenu.top, left: actionMenu.left }}
           >
             <ActionMenuItem
@@ -758,6 +811,16 @@ export function AgentsWorkspace() {
               }}
               label="View Officer"
             />
+            {canInvite && canResendStaffInvite(actionMenuAgent) ? (
+              <ActionMenuItem
+                disabled={resendBusyId === actionMenuAgent.id}
+                onClick={() => {
+                  setActionMenu(null);
+                  void handleResendInvite(actionMenuAgent);
+                }}
+                label="Resend invite"
+              />
+            ) : null}
             {isOwner && actionMenuAgent.branchId ? (
               <ActionMenuItem
                 onClick={() => {
