@@ -30,7 +30,7 @@ export class RecordAgentReturnDto {
   @IsNumber({
     maxDecimalPlaces: 2,
   })
-  @Min(0)
+  @Min(-10_000_000_000)
   @Max(10_000_000_000)
   @Type(() => Number)
   amountReturned!: number;
@@ -59,7 +59,7 @@ export class RecordOwnAgentReturnDto {
   @IsNumber({
     maxDecimalPlaces: 2,
   })
-  @Min(0)
+  @Min(-10_000_000_000)
   @Max(10_000_000_000)
   @Type(() => Number)
   amountReturned!: number;

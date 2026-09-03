@@ -63,7 +63,7 @@ class _AgentReconciliationTabState extends State<AgentReconciliationTab> {
 
   Future<void> _submit() async {
     final amount = _enteredAmount;
-    if (amount == null || amount < 0) {
+    if (amount == null) {
       setState(() => _error = 'Enter the cash you are handing over.');
       return;
     }
@@ -406,7 +406,10 @@ class _HandoverForm extends StatelessWidget {
           const SizedBox(height: 12),
           TextField(
             controller: amountController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: const TextInputType.numberWithOptions(
+              decimal: true,
+              signed: true,
+            ),
             onChanged: (_) => onChanged(),
             decoration: const InputDecoration(
               prefixText: 'UGX ',

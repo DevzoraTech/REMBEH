@@ -2149,7 +2149,7 @@ class _OfficerCashLine extends StatelessWidget {
         ? forestEmerald
         : midnightNavy;
     final prefix = !signed
-        ? ''
+        ? (negative ? '- ' : '')
         : negative
         ? '- '
         : positive
@@ -3087,7 +3087,7 @@ class _RecordHandoverSheetState extends State<_RecordHandoverSheet> {
   void _continue() {
     final actual = _actual;
 
-    if (actual == null || actual < 0) {
+    if (actual == null) {
       return;
     }
 
@@ -3162,7 +3162,10 @@ class _RecordHandoverSheetState extends State<_RecordHandoverSheet> {
           TextField(
             controller: _amount,
             autofocus: true,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: const TextInputType.numberWithOptions(
+              decimal: true,
+              signed: true,
+            ),
             onChanged: (_) {
               setState(() {});
             },

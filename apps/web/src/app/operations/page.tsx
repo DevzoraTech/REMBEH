@@ -2056,8 +2056,8 @@ function OpenOperationView({
           value={
             <Money value={operation.expectedClosingBalance} currency="UGX" />
           }
-          hint="Target Cash Left"
-          tooltip="Expected cash left after float, returns, and expenses."
+          hint="Target cash after loans, repayments, fees, and expenses"
+          tooltip="Expected cash after opening, capital, repayments, processing fees, loans, and branch expenses."
           tone="green"
         />
         <DayTopStat
@@ -3206,18 +3206,25 @@ function CashMovementCard({ operation }: { operation: DailyOperation }) {
       tone: "green" as const,
     },
     {
-      label: "Float out",
-      detail: `${operation.agentsWithFloatCount} agent${operation.agentsWithFloatCount === 1 ? "" : "s"}`,
-      amount: operation.floatIssued,
-      signed: "minus" as const,
-      tone: "amber" as const,
-    },
-    {
-      label: "Returns in",
-      detail: `${operation.agentsReturnedCount} back`,
-      amount: operation.cashReturnedByAgents,
+      label: "Repayments",
+      detail: `${operation.collectionsCount} received`,
+      amount: operation.collectionsReceived,
       signed: "plus" as const,
       tone: "blue" as const,
+    },
+    {
+      label: "Processing fees",
+      detail: `${operation.loansIssuedCount} loans`,
+      amount: operation.processingFeesTotal,
+      signed: "plus" as const,
+      tone: "green" as const,
+    },
+    {
+      label: "Loans issued",
+      detail: `${operation.loansIssuedCount} disbursed`,
+      amount: operation.loansIssuedPrincipal,
+      signed: "minus" as const,
+      tone: "amber" as const,
     },
     {
       label: "Expenses",
@@ -3836,8 +3843,7 @@ function OperationActionDrawer({
     editable &&
     canRecordReturn &&
     Boolean(selectedReturn) &&
-    agentReturnForm.amountReturned !== "" &&
-    Number(agentReturnForm.amountReturned) >= 0;
+    isFiniteReturnAmount(agentReturnForm.amountReturned);
   const allReturnsRecorded =
     operation.agentsReturnedCount === operation.agentsWithFloatCount;
   const countedCash = Number(closingForm.countedCash || 0);
@@ -4094,6 +4100,7 @@ function OperationActionDrawer({
                     <MoneyField
                       label="Cash received"
                       value={agentReturnForm.amountReturned}
+                      allowNegative
                       locked={!editable || !canRecordReturn}
                       onChange={(value) =>
                         setAgentReturnForm({
@@ -4323,7 +4330,10 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
         {
           label: "Expected back",
           value: (
-            <Money value={operation.expectedAgentReturnTotal} currency="UGX" />
+            <Money
+              value={remainingExpectedAgentReturn(operation)}
+              currency="UGX"
+            />
           ),
         },
         {
@@ -4818,8 +4828,7 @@ function AgentReturnsPanel({
     editable &&
     canRecordReturn &&
     Boolean(selectedReturn) &&
-    form.amountReturned !== "" &&
-    Number(form.amountReturned) >= 0;
+    isFiniteReturnAmount(form.amountReturned);
 
   return (
     <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
@@ -4920,6 +4929,7 @@ function AgentReturnsPanel({
                     <MoneyField
                       label="Returned cash"
                       value={form.amountReturned}
+                      allowNegative
                       locked={!editable || !canRecordReturn}
                       onChange={(value) =>
                         setForm({ ...form, amountReturned: value })
@@ -5248,11 +5258,13 @@ function MoneyField({
   label,
   value,
   locked = false,
+  allowNegative = false,
   onChange,
 }: {
   label: string;
   value: string;
   locked?: boolean;
+  allowNegative?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
@@ -5264,7 +5276,7 @@ function MoneyField({
         </span>
         <input
           type="number"
-          min="0"
+          min={allowNegative ? undefined : "0"}
           step="100"
           value={value}
           disabled={locked}
@@ -5545,6 +5557,24 @@ function expenseDisplayName(
 
 function branchCashExpenseTotal(operation: DailyOperation) {
   return operation.branchCashExpensesTotal ?? operation.expensesTotal;
+}
+
+function remainingExpectedAgentReturn(operation: DailyOperation) {
+  return operation.agentReturns.reduce((total, agentReturn) => {
+    if (agentReturn.amountReturned != null) {
+      return total;
+    }
+
+    return total + agentReturn.expectedReturn;
+  }, 0);
+}
+
+function isFiniteReturnAmount(value: string) {
+  if (value.trim() === "") {
+    return false;
+  }
+
+  return Number.isFinite(Number(value));
 }
 
 function styleReportWorksheet(

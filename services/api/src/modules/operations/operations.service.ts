@@ -1055,38 +1055,39 @@ export class OperationsService {
 
     /*
      * Calculate the expected handover BEFORE writing anything.
+     * Must match toAgentReturnContracts so a balanced UI save stays balanced.
      *
-     * Expected handover:
-     *
-     * float received
-     * - loans issued
-     * + collections
-     * + processing fees
+     * float received - loans issued + collections + processing fees - field expenses
      */
-    const [loansAgg, disbursementsAgg, collectionsAgg] = await Promise.all([
-      this.repository.sumLoansIssuedForAgent({
-        tenantId: user.tenantId,
-        branchId: branch.id,
-        agentId: dto.agentId,
-        dayStart: bounds.dayStart,
-        dayEnd: bounds.dayEnd,
-      }),
-      this.repository.sumLoanDisbursementsForAgent({
-        tenantId: user.tenantId,
-        branchId: branch.id,
-        agentId: dto.agentId,
-        dayStart: bounds.dayStart,
-        dayEnd: bounds.dayEnd,
-      }),
+    const [loansAgg, disbursementsAgg, collectionsAgg, expenses] =
+      await Promise.all([
+        this.repository.sumLoansIssuedForAgent({
+          tenantId: user.tenantId,
+          branchId: branch.id,
+          agentId: dto.agentId,
+          dayStart: bounds.dayStart,
+          dayEnd: bounds.dayEnd,
+        }),
+        this.repository.sumLoanDisbursementsForAgent({
+          tenantId: user.tenantId,
+          branchId: branch.id,
+          agentId: dto.agentId,
+          dayStart: bounds.dayStart,
+          dayEnd: bounds.dayEnd,
+        }),
 
-      this.repository.sumCollectionsForAgent({
-        tenantId: user.tenantId,
-        branchId: branch.id,
-        agentId: dto.agentId,
-        dayStart: bounds.dayStart,
-        dayEnd: bounds.dayEnd,
-      }),
-    ]);
+        this.repository.sumCollectionsForAgent({
+          tenantId: user.tenantId,
+          branchId: branch.id,
+          agentId: dto.agentId,
+          dayStart: bounds.dayStart,
+          dayEnd: bounds.dayEnd,
+        }),
+        this.repository.listExpensesForOperation({
+          tenantId: user.tenantId,
+          operationId: operation.id,
+        }),
+      ]);
 
     const amountGiven = this.decimalToNumber(float?.amountGiven);
 
@@ -1096,9 +1097,18 @@ export class OperationsService {
 
     const amountCollected = this.decimalToNumber(collectionsAgg._sum.amount);
 
-    const expectedReturn = this.roundMoney(
-      amountGiven - amountDisbursed + amountCollected + processingFees,
+    const expensesTotal = this.agentFloatExpensesForAgent(
+      expenses,
+      dto.agentId,
     );
+
+    const expectedReturn = this.expectedAgentCashReturn({
+      amountGiven,
+      amountDisbursed,
+      amountCollected,
+      processingFees,
+      expensesTotal,
+    });
 
     const amountReturned = this.roundMoney(dto.amountReturned);
 
@@ -1108,6 +1118,7 @@ export class OperationsService {
       amountDisbursed <= 0 &&
       processingFees <= 0 &&
       amountCollected <= 0 &&
+      expensesTotal <= 0 &&
       amountReturned <= 0
     ) {
       throw new BadRequestException(
@@ -2448,10 +2459,10 @@ export class OperationsService {
     );
 
     const cashReturnedByAgents = this.roundMoney(
-      agentReturns.reduce(
-        (total, agentReturn) => total + (agentReturn.amountReturned ?? 0),
-        0,
-      ),
+      agentReturns.reduce((total, agentReturn) => {
+        const returned = agentReturn.amountReturned ?? 0;
+        return total + Math.max(returned, 0);
+      }, 0),
     );
 
     const expectedAgentReturnTotal = this.roundMoney(
@@ -3338,6 +3349,49 @@ export class OperationsService {
     return null;
   }
 
+  private expectedAgentCashReturn(input: {
+    amountGiven: number;
+    amountDisbursed: number;
+    amountCollected: number;
+    processingFees: number;
+    expensesTotal: number;
+  }) {
+    return this.roundMoney(
+      input.amountGiven -
+        input.amountDisbursed +
+        input.amountCollected +
+        input.processingFees -
+        input.expensesTotal,
+    );
+  }
+
+  private agentFloatExpensesForAgent(
+    expenses: Awaited<
+      ReturnType<OperationsRepository['listExpensesForOperation']>
+    >,
+    agentId: string,
+  ) {
+    return this.roundMoney(
+      expenses.reduce((total, expense) => {
+        if (expense.voidedAt) {
+          return total;
+        }
+
+        if (expense.paidFrom !== BranchOperationExpensePaidFrom.AGENT_FLOAT) {
+          return total;
+        }
+
+        const ownerId = expense.agentId ?? expense.recordedByUserId;
+
+        if (ownerId !== agentId) {
+          return total;
+        }
+
+        return total + (this.decimalToNumber(expense.amount) ?? 0);
+      }, 0),
+    );
+  }
+
   private toAgentReturnContracts(
     agentFloats: Awaited<
       ReturnType<OperationsRepository['listAgentFloatsForOperation']>
@@ -3379,20 +3433,6 @@ export class OperationsService {
       ]),
     );
 
-    const expensesByAgent = new Map<string, number>();
-    for (const expense of expenses) {
-      if (expense.voidedAt) continue;
-      if (expense.paidFrom !== BranchOperationExpensePaidFrom.AGENT_FLOAT) {
-        continue;
-      }
-      const agentId = expense.agentId ?? expense.recordedByUserId;
-      expensesByAgent.set(
-        agentId,
-        (expensesByAgent.get(agentId) ?? 0) +
-          (this.decimalToNumber(expense.amount) ?? 0),
-      );
-    }
-
     const floatsByAgent = new Map(
       agentFloats.map((float) => [float.agentId, float]),
     );
@@ -3426,15 +3466,15 @@ export class OperationsService {
 
       const amountCollected = collectionsByAgent.get(agentId) ?? 0;
 
-      const expensesTotal = this.roundMoney(expensesByAgent.get(agentId) ?? 0);
+      const expensesTotal = this.agentFloatExpensesForAgent(expenses, agentId);
 
-      const expectedReturn = this.roundMoney(
-        amountGiven -
-          amountDisbursed +
-          amountCollected +
-          processingFees -
-          expensesTotal,
-      );
+      const expectedReturn = this.expectedAgentCashReturn({
+        amountGiven,
+        amountDisbursed,
+        amountCollected,
+        processingFees,
+        expensesTotal,
+      });
 
       const amountReturned =
         float == null || float.amountReturned == null

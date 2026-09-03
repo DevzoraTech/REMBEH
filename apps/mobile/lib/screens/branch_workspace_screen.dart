@@ -1392,13 +1392,13 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       (sum, position) => sum + position.remainingFloat,
     );
     final explicitLoansDisbursed = _firstAvailableMoney(operation, const [
+      'loansIssuedPrincipal',
       'loansDisbursed',
       'loansDisbursedTotal',
       'amountDisbursed',
       'amountDisbursedTotal',
       'amountDisbursedToday',
       'loanDisbursementsTotal',
-      'loansIssuedPrincipal',
     ]);
     final loansDisbursed = explicitLoansDisbursed > 0
         ? explicitLoansDisbursed
@@ -2201,7 +2201,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           throw ApiException('Choose an agent.');
         }
 
-        if (value == null || value < 0) {
+        if (value == null) {
           throw ApiException('Enter amount.');
         }
 

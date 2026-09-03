@@ -111,13 +111,13 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
 
   num get _loansDisbursed {
     final explicit = _firstAvailableMoney(_operation, const [
+      'loansIssuedPrincipal',
       'loansDisbursed',
       'loansDisbursedTotal',
       'amountDisbursed',
       'amountDisbursedTotal',
       'amountDisbursedToday',
       'loanDisbursementsTotal',
-      'loansIssuedPrincipal',
     ]);
 
     if (explicit > 0) {
@@ -143,18 +143,6 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
     'branchCashExpensesTotal',
     'expensesTotal',
   ]);
-
-  num get _floatNotReturned {
-    return _agentReturns.fold<num>(0, (total, row) {
-      final expected = _num(row['expectedReturn']);
-
-      final returned = _nullableNum(row['amountReturned']) ?? 0;
-
-      final difference = expected - returned;
-
-      return total + (difference > 0 ? difference : 0);
-    });
-  }
 
   bool get _hasPendingAgentReturns {
     return _agentReturns.any((row) {
@@ -620,7 +608,6 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
                     processingFees: _processingFees,
                     loansDisbursed: _loansDisbursed,
                     expenses: _expenses,
-                    floatNotReturned: _floatNotReturned,
                     onUpdateCount: _updateCount,
                   ),
 
@@ -787,7 +774,6 @@ class _CashReconciliationSummary extends StatelessWidget {
     required this.processingFees,
     required this.loansDisbursed,
     required this.expenses,
-    required this.floatNotReturned,
     required this.onUpdateCount,
   });
 
@@ -801,7 +787,6 @@ class _CashReconciliationSummary extends StatelessWidget {
   final num processingFees;
   final num loansDisbursed;
   final num expenses;
-  final num floatNotReturned;
 
   final VoidCallback onUpdateCount;
 
@@ -891,11 +876,6 @@ class _CashReconciliationSummary extends StatelessWidget {
             negative: true,
           ),
           _CashRow(label: 'Expenses', value: expenses, negative: true),
-          _CashRow(
-            label: 'Float with field officers (not returned)',
-            value: floatNotReturned,
-            negative: true,
-          ),
 
           const SizedBox(height: 8),
           const Divider(height: 1, color: line),
@@ -905,7 +885,6 @@ class _CashReconciliationSummary extends StatelessWidget {
             label: 'Expected cash',
             value: expected,
             emphasized: true,
-            positive: true,
           ),
 
           const SizedBox(height: 12),
@@ -1532,9 +1511,14 @@ class _CashRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final valueColor = negative
         ? const Color(0xFFB42318)
-        : positive
+        : positive || emphasized
         ? forestEmerald
         : midnightNavy;
+    final amountText = positive
+        ? '+ UGX ${formatMoney(value.abs())}'
+        : negative
+        ? '- UGX ${formatMoney(value.abs())}'
+        : 'UGX ${formatMoney(value)}';
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
@@ -1551,11 +1535,7 @@ class _CashRow extends StatelessWidget {
             ),
           ),
           Text(
-            '${positive
-                ? '+ '
-                : negative
-                ? '- '
-                : ''}UGX ${formatMoney(value.abs())}',
+            amountText,
             style: TextStyle(
               color: valueColor,
               fontSize: 10,
