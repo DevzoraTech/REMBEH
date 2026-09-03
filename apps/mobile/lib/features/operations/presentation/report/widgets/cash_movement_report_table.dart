@@ -13,7 +13,8 @@ class CashMovementReportTable extends StatelessWidget {
   Widget build(BuildContext context) {
     final totalAdditions = cash.repaymentsCollected + cash.processingFees;
 
-    final netDeductions = cash.expenses + cash.floatIssued - cash.floatReturned;
+    final netDeductions =
+        cash.expenses + cash.salaries + cash.floatIssued - cash.floatReturned;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -69,7 +70,7 @@ class CashMovementReportTable extends StatelessWidget {
                 ),
               ),
 
-              Container(width: 1, height: 136, color: line),
+              Container(width: 1, height: 162, color: line),
 
               Expanded(
                 child: Padding(
@@ -79,6 +80,11 @@ class CashMovementReportTable extends StatelessWidget {
                       _CashLine(
                         label: 'Expenses',
                         value: cash.expenses,
+                        negative: true,
+                      ),
+                      _CashLine(
+                        label: 'Salaries',
+                        value: cash.salaries,
                         negative: true,
                       ),
                       _CashLine(

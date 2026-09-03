@@ -1123,21 +1123,12 @@ class _PayrollInformationStrip extends StatelessWidget {
 
           Expanded(
             child: Text(
-              'Salaries are calculated based on the payroll cycle (22nd – 21st).',
+              'Salaries are calculated on the 22nd–21st cycle and paid from that day’s open branch cash.',
               style: TextStyle(
                 color: forestEmerald,
                 fontSize: 7.8,
                 fontWeight: FontWeight.w600,
               ),
-            ),
-          ),
-
-          Text(
-            'Learn more',
-            style: TextStyle(
-              color: forestEmerald,
-              fontSize: 7.8,
-              fontWeight: FontWeight.w900,
             ),
           ),
         ],

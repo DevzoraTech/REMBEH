@@ -8,6 +8,7 @@ class DailyReportCashPosition {
     required this.repaymentsCollected,
     required this.processingFees,
     required this.expenses,
+    required this.salaries,
     required this.floatIssued,
     required this.floatReturned,
     required this.expectedClosingCash,
@@ -23,6 +24,7 @@ class DailyReportCashPosition {
   final num processingFees;
 
   final num expenses;
+  final num salaries;
 
   final num floatIssued;
   final num floatReturned;

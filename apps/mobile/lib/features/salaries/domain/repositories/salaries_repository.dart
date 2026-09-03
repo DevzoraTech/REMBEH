@@ -19,7 +19,7 @@ abstract class SalariesRepository {
     required Map<String, dynamic> input,
   });
 
-  Future<SalaryEmployee> getEmployee({
+  Future<({SalaryEmployee employee, SalaryOpenCashDay? openCashDay})> getEmployee({
     required RembehSession session,
     required String employeeId,
     String? cycleStart,

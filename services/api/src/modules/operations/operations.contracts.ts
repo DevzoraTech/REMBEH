@@ -41,6 +41,17 @@ export type DailyOperationExpenseContract = {
   voidReason: string | null;
 };
 
+export type DailyOperationSalaryContract = {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  amount: number;
+  method: string;
+  paidAt: string;
+  recordedByName: string;
+  reversedAt: string | null;
+};
+
 export type DailyOperationTopUpContract = {
   id: string;
   amount: number;
@@ -218,6 +229,10 @@ export type DailyOperationContract = {
   branchCashExpensesTotal: number;
   agentFloatExpensesTotal: number;
   expenses: DailyOperationExpenseContract[];
+
+  salariesCount: number;
+  salariesTotal: number;
+  salaries: DailyOperationSalaryContract[];
 
   branchCashRemaining: number;
   expectedClosingBalance: number;

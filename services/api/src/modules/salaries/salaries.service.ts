@@ -22,6 +22,7 @@ import type {
   SalaryCycleContract,
   SalaryEmployeeContract,
   SalaryHistoryCycleContract,
+  SalaryOpenCashDayContract,
   SalaryPaymentContract,
 } from './salaries.contracts';
 import { SalariesRepository } from './salaries.repository';
@@ -66,6 +67,7 @@ export class SalariesService {
       cycle: this.toCycleContract(cycle),
       summary: this.summary(employees),
       employees,
+      openCashDay: await this.toOpenCashDay(user.tenantId, scope.branchId),
     };
   }
 
@@ -170,6 +172,7 @@ export class SalariesService {
     return {
       cycle: this.toCycleContract(cycle),
       employee: await this.toEmployeeContract(row, cycle, shortages),
+      openCashDay: await this.toOpenCashDay(user.tenantId, row.branchId),
     };
   }
 
@@ -259,7 +262,7 @@ export class SalariesService {
     }
 
     const cycle = this.resolveCycle(cycleStart);
-    const paidAt = dto.paidAt ? new Date(dto.paidAt) : new Date();
+    const paidAt = new Date();
     const payment = await this.repository.recordPayment({
       tenantId: user.tenantId,
       branchId: current.employee.branchId,
@@ -358,25 +361,19 @@ export class SalariesService {
       .map((cycle) => {
         const rows =
           paymentsByCycle.get(this.formatDate(cycle.startDate)) ?? [];
-        const salaryDue = this.salaryDueFor(
-          current.employee.monthlySalary,
-          current.employee.dateJoined,
-          cycle,
-        ).salaryDue;
         const paid = this.sumActivePayments(rows);
-        const outstanding = this.roundMoney(Math.max(0, salaryDue - paid));
         return {
           start: this.formatDate(cycle.startDate),
           end: this.formatDate(cycle.endDate),
           label: this.cycleLabel(cycle.startDate, cycle.endDate),
-          salaryDue,
+          salaryDue: paid,
           paid,
-          outstanding,
-          paymentStatus: this.paymentStatus(salaryDue, paid),
+          outstanding: 0,
+          paymentStatus: this.paymentStatus(paid, paid),
           payments: rows.map((payment) => this.toPaymentContract(payment)),
         };
       })
-      .filter((cycle) => cycle.salaryDue > 0 || cycle.payments.length > 0);
+      .filter((cycle) => cycle.payments.length > 0);
 
     const totalDue = historyCycles.reduce((sum, row) => sum + row.salaryDue, 0);
     const totalPaid = historyCycles.reduce((sum, row) => sum + row.paid, 0);
@@ -400,6 +397,7 @@ export class SalariesService {
     const salary = this.salaryDueFor(
       Number(row.monthlySalary),
       row.dateJoined,
+      row.status,
       cycle,
     );
     const paid = this.sumActivePayments(row.salaryPayments);
@@ -501,22 +499,50 @@ export class SalariesService {
   }
 
   private toPaymentContract(payment: SalaryPaymentRow): SalaryPaymentContract {
+    const operationDate = payment.operation?.operationDate
+      ? this.formatDate(payment.operation.operationDate)
+      : null;
+    const operationOpen =
+      payment.operation?.status === 'OPEN' && !payment.reversedAt;
     return {
       id: payment.id,
       amount: Number(payment.amount),
       method: payment.method,
       paidAt: payment.paidAt.toISOString(),
+      operationDate,
+      paidFromCash: Boolean(payment.operationId),
+      canReverse: operationOpen,
       referenceNote: payment.referenceNote,
       recordedByName: payment.recordedBy.displayName,
       reversedAt: payment.reversedAt?.toISOString() ?? null,
     };
   }
 
+  private async toOpenCashDay(
+    tenantId: string,
+    branchId: string | null,
+  ): Promise<SalaryOpenCashDayContract | null> {
+    const day = await this.repository.peekOpenCashDay({ tenantId, branchId });
+    if (!day) {
+      return null;
+    }
+    return {
+      operationDate: this.formatDate(day.operationDate),
+      branchCashRemaining: day.branchCashRemaining,
+    };
+  }
+
   private salaryDueFor(
     monthlySalary: number,
     dateJoined: Date | string,
+    status: EmployeeStatus | string,
     cycle: CycleBounds,
   ) {
+    const cycleDays = this.daysInclusive(cycle.startDate, cycle.endDate);
+    if (status === EmployeeStatus.INACTIVE || status === 'INACTIVE') {
+      return { salaryDue: 0, cycleDays, eligibleDays: 0 };
+    }
+
     const joined =
       typeof dateJoined === 'string'
         ? this.parseDate(dateJoined)
@@ -525,7 +551,6 @@ export class SalariesService {
             dateJoined.getUTCMonth(),
             dateJoined.getUTCDate(),
           );
-    const cycleDays = this.daysInclusive(cycle.startDate, cycle.endDate);
     if (joined > cycle.endDate) {
       return { salaryDue: 0, cycleDays, eligibleDays: 0 };
     }
@@ -600,23 +625,13 @@ export class SalariesService {
       normalizedStart.getUTCMonth() + 2,
       21,
     );
-    const paymentWindowStart = this.startOfUtcDate(
-      endDate.getUTCFullYear(),
-      endDate.getUTCMonth(),
-      27,
-    );
-    const paymentWindowEnd = this.endOfUtcMonth(
-      endDate.getUTCFullYear(),
-      endDate.getUTCMonth(),
-    );
-
     return {
       startDate: normalizedStart,
       endDate,
       nextStart,
       nextEnd,
-      paymentWindowStart,
-      paymentWindowEnd,
+      paymentWindowStart: normalizedStart,
+      paymentWindowEnd: endDate,
     };
   }
 
@@ -659,10 +674,6 @@ export class SalariesService {
 
   private startOfUtcDate(year: number, month: number, day: number) {
     return new Date(Date.UTC(year, month, day));
-  }
-
-  private endOfUtcMonth(year: number, month: number) {
-    return this.startOfUtcDate(year, month + 1, 0);
   }
 
   private formatDate(date: Date) {

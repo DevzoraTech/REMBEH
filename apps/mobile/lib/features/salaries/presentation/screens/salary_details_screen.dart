@@ -50,6 +50,7 @@ class _SalaryDetailsScreenState extends State<SalaryDetailsScreen> {
 
   late SalaryEmployee _employee;
   SalaryCycle? _cycle;
+  SalaryOpenCashDay? _openCashDay;
 
   bool _loading = false;
   String? _error;
@@ -93,6 +94,23 @@ class _SalaryDetailsScreenState extends State<SalaryDetailsScreen> {
     return start.toIso8601String().substring(0, 10);
   }
 
+  Future<void> _refreshEmployee() async {
+    final result = await _getEmployee(
+      session: widget.session,
+      employeeId: _employee.id,
+      cycleStart: _cycleStart,
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _employee = result.employee;
+      _openCashDay = result.openCashDay;
+    });
+  }
+
   Future<void> _load() async {
     if (_loading) {
       return;
@@ -104,7 +122,7 @@ class _SalaryDetailsScreenState extends State<SalaryDetailsScreen> {
     });
 
     try {
-      final employee = await _getEmployee(
+      final result = await _getEmployee(
         session: widget.session,
         employeeId: _employee.id,
         cycleStart: _cycleStart,
@@ -115,7 +133,8 @@ class _SalaryDetailsScreenState extends State<SalaryDetailsScreen> {
       }
 
       setState(() {
-        _employee = employee;
+        _employee = result.employee;
+        _openCashDay = result.openCashDay;
       });
     } catch (error) {
       if (!mounted) {
@@ -202,6 +221,7 @@ class _SalaryDetailsScreenState extends State<SalaryDetailsScreen> {
         return RecordSalaryPaymentSheet(
           employee: _employee,
           cycleLabel: _cycle?.label ?? 'Current cycle',
+          openCashDay: _openCashDay,
         );
       },
     );
@@ -225,6 +245,12 @@ class _SalaryDetailsScreenState extends State<SalaryDetailsScreen> {
       setState(() {
         _employee = result.employee;
       });
+
+      await _refreshEmployee();
+
+      if (!mounted) {
+        return;
+      }
 
       await _showPaymentDetails(result.payment);
     } catch (error) {
@@ -277,6 +303,12 @@ class _SalaryDetailsScreenState extends State<SalaryDetailsScreen> {
       setState(() {
         _employee = updated;
       });
+
+      await _refreshEmployee();
+
+      if (!mounted) {
+        return;
+      }
 
       ScaffoldMessenger.of(
         context,
@@ -1309,7 +1341,7 @@ class _NextCycleCard extends StatelessWidget {
                 const SizedBox(height: 2),
 
                 Text(
-                  'Payment window: ${salaryDateShort(cycle.paymentWindowStart)} – ${salaryDateShort(cycle.paymentWindowEnd)}',
+                  'Paid from the open branch day’s cash, same as expenses.',
                   style: const TextStyle(
                     color: slateText,
                     fontSize: 8,

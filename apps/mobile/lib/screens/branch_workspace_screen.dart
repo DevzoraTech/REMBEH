@@ -1457,6 +1457,11 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         'expenses',
       ]),
 
+      salaries: _firstAvailableMoney(operation, const [
+        'salariesTotal',
+        'salaries',
+      ]),
+
       floatWithAgents: floatWithAgents,
 
       expectedClosingCash: _firstAvailableMoney(operation, const [

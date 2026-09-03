@@ -8,6 +8,7 @@ class OperationDashboardData {
     required this.processingFees,
     required this.loansDisbursed,
     required this.expenses,
+    required this.salaries,
     required this.floatWithAgents,
     required this.expectedClosingCash,
     this.openedBy,
@@ -23,6 +24,7 @@ class OperationDashboardData {
   final num processingFees;
   final num loansDisbursed;
   final num expenses;
+  final num salaries;
   final num floatWithAgents;
   final num expectedClosingCash;
 

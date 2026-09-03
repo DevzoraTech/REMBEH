@@ -16,10 +16,12 @@ class RecordSalaryPaymentSheet extends StatefulWidget {
     super.key,
     required this.employee,
     required this.cycleLabel,
+    this.openCashDay,
   });
 
   final SalaryEmployee employee;
   final String cycleLabel;
+  final SalaryOpenCashDay? openCashDay;
 
   @override
   State<RecordSalaryPaymentSheet> createState() =>
@@ -31,12 +33,12 @@ class _RecordSalaryPaymentSheetState extends State<RecordSalaryPaymentSheet> {
   late final TextEditingController _shortageSettlementController;
   late final TextEditingController _referenceController;
 
-  String? _paymentMethod;
-  DateTime _paidAt = DateTime.now();
+  String? _paymentMethod = 'CASH';
 
   String? _amountError;
   String? _shortageSettlementError;
   String? _methodError;
+  String? _cashDayError;
 
   @override
   void initState() {
@@ -64,26 +66,6 @@ class _RecordSalaryPaymentSheetState extends State<RecordSalaryPaymentSheet> {
     Navigator.of(context).maybePop();
   }
 
-  Future<void> _pickDate() async {
-    final now = DateTime.now();
-
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _paidAt,
-      firstDate: DateTime(2020),
-      lastDate: DateTime(now.year + 1, now.month, now.day),
-      helpText: 'Select payment date',
-    );
-
-    if (picked == null || !mounted) {
-      return;
-    }
-
-    setState(() {
-      _paidAt = picked;
-    });
-  }
-
   void _save() {
     final amount = _parseAmount(_amountController.text);
     final shortageSettlement = _parseAmount(_shortageSettlementController.text);
@@ -91,12 +73,23 @@ class _RecordSalaryPaymentSheetState extends State<RecordSalaryPaymentSheet> {
     String? amountError;
     String? shortageSettlementError;
     String? methodError;
+    String? cashDayError;
+
+    final openCashDay = widget.openCashDay;
+    if (openCashDay == null) {
+      cashDayError =
+          'Open the branch day before paying salary. The amount is taken from that day’s cash.';
+    }
 
     if (amount == null || amount <= 0) {
       amountError = 'Enter a valid payment amount.';
     } else if (amount > widget.employee.outstanding) {
       amountError =
           'Payment cannot exceed ${salaryMoney(widget.employee.outstanding)}.';
+    } else if (openCashDay != null &&
+        amount > openCashDay.branchCashRemaining + 0.001) {
+      amountError =
+          'Payment cannot exceed remaining branch cash (${salaryMoney(openCashDay.branchCashRemaining)}).';
     }
 
     if (shortageSettlement != null &&
@@ -111,11 +104,13 @@ class _RecordSalaryPaymentSheetState extends State<RecordSalaryPaymentSheet> {
 
     if (amountError != null ||
         shortageSettlementError != null ||
-        methodError != null) {
+        methodError != null ||
+        cashDayError != null) {
       setState(() {
         _amountError = amountError;
         _shortageSettlementError = shortageSettlementError;
         _methodError = methodError;
+        _cashDayError = cashDayError;
       });
 
       return;
@@ -125,6 +120,7 @@ class _RecordSalaryPaymentSheetState extends State<RecordSalaryPaymentSheet> {
       _amountError = null;
       _shortageSettlementError = null;
       _methodError = null;
+      _cashDayError = null;
     });
 
     final cleanAmount = amount ?? 0;
@@ -133,7 +129,6 @@ class _RecordSalaryPaymentSheetState extends State<RecordSalaryPaymentSheet> {
     Navigator.of(context).pop(<String, dynamic>{
       'amount': cleanAmount,
       'method': _paymentMethod!,
-      'paidAt': _paidAt.toIso8601String(),
       if (_referenceController.text.trim().isNotEmpty)
         'referenceNote': _referenceController.text.trim(),
       if (cleanShortageSettlement > 0) ...{
@@ -430,19 +425,9 @@ class _RecordSalaryPaymentSheetState extends State<RecordSalaryPaymentSheet> {
 
                         const SizedBox(height: 14),
 
-                        // =====================================================
-                        // DATE
-                        // =====================================================
-                        const _FieldLabel(
-                          label: 'Payment date',
-                          required: true,
-                        ),
-
-                        const SizedBox(height: 6),
-
-                        _DateField(
-                          value: salaryDate(_paidAt),
-                          onTap: _pickDate,
+                        _CashDayNotice(
+                          openCashDay: widget.openCashDay,
+                          errorText: _cashDayError,
                         ),
 
                         const SizedBox(height: 14),
@@ -984,42 +969,75 @@ class _MethodOption extends StatelessWidget {
 // DATE FIELD
 // =============================================================================
 
-class _DateField extends StatelessWidget {
-  const _DateField({required this.value, required this.onTap});
+class _CashDayNotice extends StatelessWidget {
+  const _CashDayNotice({required this.openCashDay, this.errorText});
 
-  final String value;
-  final VoidCallback onTap;
+  final SalaryOpenCashDay? openCashDay;
+  final String? errorText;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(7),
-        child: InputDecorator(
-          decoration: _fieldDecoration(),
-          child: Row(
-            children: [
-              const Icon(
-                Icons.calendar_today_outlined,
-                color: slateText,
-                size: 16,
-              ),
+    final open = openCashDay != null;
+    final color = errorText != null || !open ? _salaryRed : _salaryBlue;
+    final background = errorText != null || !open
+        ? const Color(0xFFFFF5F5)
+        : _salaryBlueSoft;
+    final border = errorText != null || !open
+        ? const Color(0xFFF2C7C7)
+        : _salaryBlueBorder;
 
-              const SizedBox(width: 10),
+    final title = open
+        ? 'Taken from today’s branch cash'
+        : 'Open the branch day first';
 
-              Text(
-                value,
-                style: const TextStyle(
-                  color: midnightNavy,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
+    final body = errorText ??
+        (open
+            ? 'This payment leaves the till for ${salaryDate(openCashDay!.operationDate)}. Remaining cash: ${salaryMoney(openCashDay!.branchCashRemaining)}.'
+            : 'Salary is paid from the open branch day’s cash, the same way expenses are. Open the day before recording a payment.');
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+      decoration: BoxDecoration(
+        color: background,
+        border: Border.all(color: border),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            open ? Icons.account_balance_wallet_outlined : Icons.info_outline,
+            color: color,
+            size: 18,
           ),
-        ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  body,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 8.5,
+                    height: 1.3,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

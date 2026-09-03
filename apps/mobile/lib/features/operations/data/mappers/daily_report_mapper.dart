@@ -103,6 +103,10 @@ class DailyReportMapper {
           cashPosition['branchExpenses'],
           summary['expenses'],
         ]),
+        salaries: _firstNum([
+          cashPosition['salaries'],
+          summary['salaries'],
+        ]),
         floatIssued: _firstNum([
           cashPosition['floatDistributed'],
           summary['floatDistributed'],
@@ -162,6 +166,7 @@ class DailyReportMapper {
           operation['branchCashExpensesTotal'],
           operation['expensesTotal'],
         ]),
+        salaries: _num(operation['salariesTotal']),
         floatIssued: _num(operation['floatIssued']),
         floatReturned: _num(operation['cashReturnedByAgents']),
         expectedClosingCash: _num(operation['expectedClosingBalance']),

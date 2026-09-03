@@ -18,6 +18,16 @@ class SalaryCycle {
   final DateTime? nextEnd;
 }
 
+class SalaryOpenCashDay {
+  const SalaryOpenCashDay({
+    required this.operationDate,
+    required this.branchCashRemaining,
+  });
+
+  final DateTime? operationDate;
+  final num branchCashRemaining;
+}
+
 class PayrollSummary {
   const PayrollSummary({
     required this.totalPayrollDue,
@@ -53,6 +63,9 @@ class SalaryPayment {
     required this.method,
     required this.paidAt,
     required this.recordedByName,
+    this.operationDate,
+    this.paidFromCash = false,
+    this.canReverse = false,
     this.referenceNote,
     this.reversedAt,
   });
@@ -61,6 +74,9 @@ class SalaryPayment {
   final num amount;
   final String method;
   final DateTime? paidAt;
+  final DateTime? operationDate;
+  final bool paidFromCash;
+  final bool canReverse;
   final String recordedByName;
   final String? referenceNote;
   final DateTime? reversedAt;
@@ -159,11 +175,13 @@ class SalariesDashboard {
     required this.cycle,
     required this.summary,
     required this.employees,
+    this.openCashDay,
   });
 
   final SalaryCycle cycle;
   final PayrollSummary summary;
   final List<SalaryEmployee> employees;
+  final SalaryOpenCashDay? openCashDay;
 }
 
 class SalaryHistoryCycle {

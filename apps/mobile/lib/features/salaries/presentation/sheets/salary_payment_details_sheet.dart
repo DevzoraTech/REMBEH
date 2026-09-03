@@ -164,8 +164,16 @@ class SalaryPaymentDetailsSheet extends StatelessWidget {
                             ),
                             const _DetailDivider(),
                             _DetailRow(
-                              icon: Icons.calendar_today_outlined,
-                              label: 'Payment date',
+                              icon: Icons.event_outlined,
+                              label: 'Cash day',
+                              value: payment.operationDate == null
+                                  ? 'Not linked to a day’s cash'
+                                  : salaryDate(payment.operationDate),
+                            ),
+                            const _DetailDivider(),
+                            _DetailRow(
+                              icon: Icons.schedule_outlined,
+                              label: 'Recorded at',
                               value: _paymentDateLabel(payment.paidAt),
                             ),
                             const _DetailDivider(),
@@ -184,12 +192,6 @@ class SalaryPaymentDetailsSheet extends StatelessWidget {
                                   ? 'Recorded user'
                                   : payment.recordedByName,
                             ),
-                            const _DetailDivider(),
-                            _DetailRow(
-                              icon: Icons.schedule_outlined,
-                              label: 'Recorded on',
-                              value: _paymentDateLabel(payment.paidAt),
-                            ),
                           ],
                         ),
 
@@ -200,7 +202,7 @@ class SalaryPaymentDetailsSheet extends StatelessWidget {
                           const SizedBox(height: 18),
 
                           const _ReversedNotice(),
-                        ] else ...[
+                        ] else if (payment.canReverse) ...[
                           const SizedBox(height: 22),
 
                           const Text(
@@ -240,6 +242,10 @@ class SalaryPaymentDetailsSheet extends StatelessWidget {
                           const SizedBox(height: 14),
 
                           const _CorrectionNotice(),
+                        ] else ...[
+                          const SizedBox(height: 18),
+
+                          const _ClosedDayNotice(),
                         ],
                       ],
                     ),
@@ -585,7 +591,7 @@ class _CorrectionNotice extends StatelessWidget {
                 SizedBox(height: 2),
 
                 Text(
-                  'Use “Reverse this payment” to correct mistakes. A reversal will be recorded as a separate entry.',
+                  'Use “Reverse this payment” to correct a mistake. The amount returns to this day’s branch cash, and only while the day is still open.',
                   style: TextStyle(
                     color: Color(0xFF92400E),
                     fontSize: 8.5,
@@ -605,6 +611,41 @@ class _CorrectionNotice extends StatelessWidget {
 // =============================================================================
 // REVERSED NOTICE
 // =============================================================================
+
+class _ClosedDayNotice extends StatelessWidget {
+  const _ClosedDayNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        border: Border.all(color: const Color(0xFFFFE1C2)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.lock_outline_rounded, color: Color(0xFFD97706), size: 18),
+          SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              'This payment can only be reversed while that branch day is still open. After close it stays in the day’s cash records.',
+              style: TextStyle(
+                color: Color(0xFF92400E),
+                fontSize: 9,
+                height: 1.3,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 class _ReversedNotice extends StatelessWidget {
   const _ReversedNotice();

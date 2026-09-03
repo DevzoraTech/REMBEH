@@ -14,6 +14,7 @@ class SalaryMapper {
           .whereType<Map<String, dynamic>>()
           .map(employeeFromJson)
           .toList(),
+      openCashDay: openCashDayFromJson(json['openCashDay']),
     );
   }
 
@@ -80,12 +81,25 @@ class SalaryMapper {
     );
   }
 
+  static SalaryOpenCashDay? openCashDayFromJson(dynamic value) {
+    if (value is! Map<String, dynamic>) {
+      return null;
+    }
+    return SalaryOpenCashDay(
+      operationDate: _date(value['operationDate']),
+      branchCashRemaining: _num(value['branchCashRemaining']),
+    );
+  }
+
   static SalaryPayment paymentFromJson(Map<String, dynamic> json) {
     return SalaryPayment(
       id: json['id'] as String? ?? '',
       amount: _num(json['amount']),
       method: json['method'] as String? ?? 'CASH',
       paidAt: _dateTime(json['paidAt']),
+      operationDate: _date(json['operationDate']),
+      paidFromCash: json['paidFromCash'] as bool? ?? json['operationDate'] != null,
+      canReverse: json['canReverse'] as bool? ?? false,
       recordedByName: json['recordedByName'] as String? ?? '',
       referenceNote: json['referenceNote'] as String?,
       reversedAt: _dateTime(json['reversedAt']),
@@ -142,12 +156,21 @@ class SalaryMapper {
 
   static DateTime? _date(dynamic value) {
     if (value == null) return null;
-    return DateTime.tryParse(value.toString());
+    final raw = value.toString().trim();
+    final dateOnly = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(raw);
+    if (dateOnly != null) {
+      return DateTime(
+        int.parse(dateOnly.group(1)!),
+        int.parse(dateOnly.group(2)!),
+        int.parse(dateOnly.group(3)!),
+      );
+    }
+    return DateTime.tryParse(raw)?.toLocal();
   }
 
   static DateTime? _dateTime(dynamic value) {
     if (value == null) return null;
-    return DateTime.tryParse(value.toString());
+    return DateTime.tryParse(value.toString())?.toLocal();
   }
 
   static num _num(dynamic value) {

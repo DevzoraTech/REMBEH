@@ -14,6 +14,7 @@ String salaryMoney(num value) {
 
 String salaryDate(DateTime? date) {
   if (date == null) return '-';
+  final local = date.toLocal();
   const months = [
     'Jan',
     'Feb',
@@ -28,11 +29,12 @@ String salaryDate(DateTime? date) {
     'Nov',
     'Dec',
   ];
-  return '${date.day.toString().padLeft(2, '0')} ${months[date.month - 1]} ${date.year}';
+  return '${local.day.toString().padLeft(2, '0')} ${months[local.month - 1]} ${local.year}';
 }
 
 String salaryDateShort(DateTime? date) {
   if (date == null) return '-';
+  final local = date.toLocal();
   const months = [
     'Jan',
     'Feb',
@@ -47,18 +49,19 @@ String salaryDateShort(DateTime? date) {
     'Nov',
     'Dec',
   ];
-  return '${date.day.toString().padLeft(2, '0')} ${months[date.month - 1]}';
+  return '${local.day.toString().padLeft(2, '0')} ${months[local.month - 1]}';
 }
 
 String salaryTime(DateTime? date) {
   if (date == null) return '-';
-  final hour = date.hour == 0
+  final local = date.toLocal();
+  final hour = local.hour == 0
       ? 12
-      : date.hour > 12
-      ? date.hour - 12
-      : date.hour;
-  final minute = date.minute.toString().padLeft(2, '0');
-  final suffix = date.hour >= 12 ? 'PM' : 'AM';
+      : local.hour > 12
+      ? local.hour - 12
+      : local.hour;
+  final minute = local.minute.toString().padLeft(2, '0');
+  final suffix = local.hour >= 12 ? 'PM' : 'AM';
   return '$hour:$minute $suffix';
 }
 

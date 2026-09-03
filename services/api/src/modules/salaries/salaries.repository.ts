@@ -1,5 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
+  BranchOperationExpensePaidFrom,
+  BranchOperationStatus,
   CashShortagePaymentMethod,
   CashShortageStatus,
   EmployeeStatus,
@@ -58,6 +60,7 @@ export class SalariesRepository {
           orderBy: { paidAt: 'desc' },
           include: {
             recordedBy: { select: { displayName: true } },
+            operation: { select: { id: true, operationDate: true, status: true } },
           },
         },
       },
@@ -93,6 +96,7 @@ export class SalariesRepository {
           orderBy: { paidAt: 'desc' },
           include: {
             recordedBy: { select: { displayName: true } },
+            operation: { select: { id: true, operationDate: true, status: true } },
           },
         },
       },
@@ -232,10 +236,17 @@ export class SalariesRepository {
     };
   }) {
     return this.prisma.$transaction(async (tx) => {
+      const cashDay = await this.lockOpenCashDay(tx, {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        amount: input.amount,
+      });
+
       const payment = await tx.salaryPayment.create({
         data: {
           tenantId: input.tenantId,
           branchId: input.branchId,
+          operationId: cashDay.operationId,
           employeeId: input.employeeId,
           cycleStart: input.cycleStart,
           cycleEnd: input.cycleEnd,
@@ -247,6 +258,7 @@ export class SalariesRepository {
         },
         include: {
           recordedBy: { select: { displayName: true } },
+          operation: { select: { id: true, operationDate: true, status: true } },
         },
       });
 
@@ -261,6 +273,149 @@ export class SalariesRepository {
 
       return payment;
     });
+  }
+
+  private async lockOpenCashDay(
+    tx: Prisma.TransactionClient,
+    input: {
+      tenantId: string;
+      branchId: string | null;
+      amount: number;
+    },
+  ) {
+    if (!input.branchId) {
+      throw new BadRequestException(
+        'Assign this employee to a branch before paying salary. Salary is taken from that branch day’s cash.',
+      );
+    }
+
+    const operation = await tx.branchDailyOperation.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        status: BranchOperationStatus.OPEN,
+      },
+      orderBy: { operationDate: 'desc' },
+    });
+
+    if (!operation) {
+      throw new BadRequestException(
+        'Open the branch day before paying salary. Salary is taken from that day’s cash, the same way expenses are.',
+      );
+    }
+
+    await tx.$queryRaw(
+      Prisma.sql`
+        SELECT id
+        FROM branch_daily_operations
+        WHERE id = ${operation.id}::uuid
+        FOR UPDATE
+      `,
+    );
+
+    const locked = await tx.branchDailyOperation.findUnique({
+      where: { id: operation.id },
+    });
+
+    if (!locked || locked.status !== BranchOperationStatus.OPEN) {
+      throw new BadRequestException(
+        'Open the branch day before paying salary. Salary is taken from that day’s cash, the same way expenses are.',
+      );
+    }
+
+    const remaining = await this.remainingTill(tx, locked);
+
+    if (input.amount > remaining + 0.001) {
+      throw new BadRequestException(
+        `Salary exceeds remaining branch cash for ${this.formatDateLabel(operation.operationDate)}. Available: ${remaining}.`,
+      );
+    }
+
+    return {
+      operationId: operation.id,
+      operationDate: operation.operationDate,
+      remaining,
+    };
+  }
+
+  private async remainingTill(
+    db: Prisma.TransactionClient | PrismaService,
+    operation: {
+      id: string;
+      tenantId: string;
+      branchId: string;
+      operationDate: Date;
+      previousClosingBalance: Prisma.Decimal | number;
+      cashAddedToday: Prisma.Decimal | number | null;
+      openingFloatAvailable: Prisma.Decimal | number | null;
+    },
+  ) {
+    const [floatAgg, expensesAgg, returnedAgg, salariesAgg] = await Promise.all(
+      [
+        db.agentDailyFloat.aggregate({
+          where: {
+            tenantId: operation.tenantId,
+            branchId: operation.branchId,
+            floatDate: operation.operationDate,
+          },
+          _sum: { amountGiven: true },
+        }),
+        db.branchOperationExpense.aggregate({
+          where: {
+            tenantId: operation.tenantId,
+            operationId: operation.id,
+            voidedAt: null,
+            paidFrom: BranchOperationExpensePaidFrom.BRANCH_CASH,
+          },
+          _sum: { amount: true },
+        }),
+        db.agentDailyFloat.aggregate({
+          where: {
+            tenantId: operation.tenantId,
+            branchId: operation.branchId,
+            floatDate: operation.operationDate,
+            amountReturned: { not: null },
+          },
+          _sum: { amountReturned: true },
+        }),
+        db.salaryPayment.aggregate({
+          where: {
+            tenantId: operation.tenantId,
+            operationId: operation.id,
+            reversedAt: null,
+          },
+          _sum: { amount: true },
+        }),
+      ],
+    );
+
+    const openingBalance = Number(operation.previousClosingBalance);
+    const cashAddedToday = Number(operation.cashAddedToday ?? 0);
+    const legacyAvailable = Number(operation.openingFloatAvailable ?? 0);
+    const computedOpening =
+      Math.round((openingBalance + cashAddedToday) * 100) / 100;
+    const cashAvailableAtOpening =
+      computedOpening > 0 || legacyAvailable === 0
+        ? computedOpening
+        : legacyAvailable;
+
+    return (
+      Math.round(
+        (cashAvailableAtOpening -
+          Number(floatAgg._sum.amountGiven ?? 0) -
+          Number(expensesAgg._sum.amount ?? 0) -
+          Number(salariesAgg._sum.amount ?? 0) +
+          Number(returnedAgg._sum.amountReturned ?? 0)) *
+          100,
+      ) / 100
+    );
+  }
+
+  private formatDateLabel(value: Date) {
+    const year = value.getUTCFullYear();
+    const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(value.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   private async recordShortageSettlement(
@@ -345,6 +500,7 @@ export class SalariesRepository {
       orderBy: { paidAt: 'desc' },
       include: {
         recordedBy: { select: { displayName: true } },
+        operation: { select: { id: true, operationDate: true, status: true } },
       },
     });
   }
@@ -360,6 +516,9 @@ export class SalariesRepository {
         tenantId: input.tenantId,
         ...(input.branchId ? { branchId: input.branchId } : {}),
       },
+      include: {
+        operation: { select: { id: true, operationDate: true, status: true } },
+      },
     });
   }
 
@@ -369,18 +528,86 @@ export class SalariesRepository {
     paymentId: string;
     reason?: string | null;
   }) {
-    return this.prisma.salaryPayment.updateMany({
-      where: {
-        id: input.paymentId,
-        tenantId: input.tenantId,
-        ...(input.branchId ? { branchId: input.branchId } : {}),
-        reversedAt: null,
-      },
-      data: {
-        reversedAt: new Date(),
-        reversalReason: input.reason?.trim() || null,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const payment = await tx.salaryPayment.findFirst({
+        where: {
+          id: input.paymentId,
+          tenantId: input.tenantId,
+          ...(input.branchId ? { branchId: input.branchId } : {}),
+          reversedAt: null,
+        },
+        include: {
+          operation: { select: { id: true, status: true } },
+        },
+      });
+
+      if (!payment) {
+        return { count: 0 };
+      }
+
+      if (!payment.operationId || !payment.operation) {
+        throw new BadRequestException(
+          'This salary payment was recorded before salaries were taken from the day’s cash. It cannot be reversed from here.',
+        );
+      }
+
+      await tx.$queryRaw(
+        Prisma.sql`
+          SELECT id
+          FROM branch_daily_operations
+          WHERE id = ${payment.operationId}::uuid
+          FOR UPDATE
+        `,
+      );
+
+      const operation = await tx.branchDailyOperation.findUnique({
+        where: { id: payment.operationId },
+        select: { status: true },
+      });
+
+      if (!operation || operation.status !== BranchOperationStatus.OPEN) {
+        throw new BadRequestException(
+          'Salary payments can only be reversed while that branch day is still open. The amount stays in the day’s cash records.',
+        );
+      }
+
+      return tx.salaryPayment.updateMany({
+        where: {
+          id: payment.id,
+          tenantId: input.tenantId,
+          reversedAt: null,
+        },
+        data: {
+          reversedAt: new Date(),
+          reversalReason: input.reason?.trim() || null,
+        },
+      });
     });
+  }
+
+  async peekOpenCashDay(input: { tenantId: string; branchId: string | null }) {
+    if (!input.branchId) {
+      return null;
+    }
+
+    const operation = await this.prisma.branchDailyOperation.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        status: BranchOperationStatus.OPEN,
+      },
+      orderBy: { operationDate: 'desc' },
+    });
+
+    if (!operation) {
+      return null;
+    }
+
+    const remaining = await this.remainingTill(this.prisma, operation);
+    return {
+      operationDate: operation.operationDate,
+      branchCashRemaining: remaining,
+    };
   }
 
   async outstandingShortagesByUser(input: {

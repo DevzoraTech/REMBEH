@@ -136,6 +136,8 @@ export type DailyReportDocumentModel = {
   processingFeesTotal: number;
   expensesTotal: number;
   expensesCount: number;
+  salariesTotal?: number;
+  salariesCount?: number;
   expenses: Array<{
     id: string;
     category: string;
@@ -469,14 +471,16 @@ function SummaryDocument({
   );
 
   // Authoritative expected-close formula (same as API):
-  // opening + top-ups + repayments + fees − loans − expenses
+  // opening + top-ups + repayments + fees − loans − expenses − salaries
+  const salariesTotal = document.salariesTotal ?? 0;
   const movementExpected = Math.round(
     document.openingBalance +
       topUpsTotal +
       document.collectionsReceived +
       document.processingFeesTotal -
       document.loansIssuedPrincipal -
-      document.expensesTotal,
+      document.expensesTotal -
+      salariesTotal,
   );
   // Prefer API expected; they must match — if they don't, show computed from movements
   // so the table never contradicts its own rows.
@@ -634,6 +638,14 @@ function SummaryDocument({
                 "Cash Out",
                 signed(document.expensesTotal, "out"),
               ],
+              [
+                "Salaries paid from day’s cash",
+                (document.salariesCount ?? 0) > 0
+                  ? String(document.salariesCount)
+                  : "N/A",
+                "Cash Out",
+                signed(document.salariesTotal ?? 0, "out"),
+              ],
             ]}
             footer={[
               "Expected closing cash",
@@ -646,7 +658,7 @@ function SummaryDocument({
           />
           <p className="mt-1.5 text-[11px] italic text-slate-500">
             Expected closing cash = opening + top-ups + repayments + fees −
-            loans − expenses. Float and field officer returns net out when
+            loans − expenses − salaries. Float and field officer returns net out when
             handovers balance.
           </p>
         </Section>
@@ -1867,6 +1879,8 @@ type OperationLike = {
   processingFeesTotal: number;
   expensesTotal: number;
   expensesCount: number;
+  salariesTotal?: number;
+  salariesCount?: number;
   closingNotes: string | null;
   topUps: Array<{
     id: string;
@@ -2016,6 +2030,8 @@ export function buildDailyReportDocumentFromOperation(
     processingFeesTotal: operation.processingFeesTotal,
     expensesTotal: operation.expensesTotal,
     expensesCount: operation.expensesCount,
+    salariesTotal: operation.salariesTotal ?? 0,
+    salariesCount: operation.salariesCount ?? 0,
     expenses: operation.expenses,
     agentReturns: operation.agentReturns,
     closingNotes: operation.closingNotes,
@@ -2297,6 +2313,8 @@ export function buildDailyReportDocumentFromSnapshot(
     processingFeesTotal: report.processingFeesTotal,
     expensesTotal: report.expensesTotal,
     expensesCount: expenses.length,
+    salariesTotal: numberValue(summary.salaries),
+    salariesCount: numberValue(summary.salariesCount),
     expenses: expenses.map((row, index) => {
       const item = objectValue(row);
       return {

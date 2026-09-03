@@ -15,9 +15,17 @@ export type SalaryPaymentContract = {
   amount: number;
   method: SalaryPaymentMethod;
   paidAt: string;
+  operationDate: string | null;
+  paidFromCash: boolean;
+  canReverse: boolean;
   referenceNote: string | null;
   recordedByName: string;
   reversedAt: string | null;
+};
+
+export type SalaryOpenCashDayContract = {
+  operationDate: string;
+  branchCashRemaining: number;
 };
 
 export type SalaryEmployeeContract = {
@@ -79,6 +87,7 @@ export type SalariesDashboardContract = {
   cycle: SalaryCycleContract;
   summary: PayrollSummaryContract;
   employees: SalaryEmployeeContract[];
+  openCashDay: SalaryOpenCashDayContract | null;
 };
 
 export type SalaryHistoryCycleContract = {

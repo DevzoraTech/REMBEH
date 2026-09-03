@@ -294,7 +294,8 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
       document.collectionsReceived +
       document.processingFeesTotal -
       document.loansIssuedPrincipal -
-      document.expensesTotal,
+      document.expensesTotal -
+      (document.salariesTotal ?? 0),
   );
   const varianceShown =
     counted == null ? null : Math.round(counted - expectedShown);
@@ -400,6 +401,14 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
               : "N/A",
             "Cash Out",
             moneyOut(document.expensesTotal),
+          ],
+          [
+            "Salaries paid from day’s cash",
+            (document.salariesCount ?? 0) > 0
+              ? String(document.salariesCount)
+              : "N/A",
+            "Cash Out",
+            moneyOut(document.salariesTotal ?? 0),
           ],
         ],
         {

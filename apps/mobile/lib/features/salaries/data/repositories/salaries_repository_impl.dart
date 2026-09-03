@@ -52,7 +52,7 @@ class SalariesRepositoryImpl implements SalariesRepository {
   }
 
   @override
-  Future<SalaryEmployee> getEmployee({
+  Future<({SalaryEmployee employee, SalaryOpenCashDay? openCashDay})> getEmployee({
     required RembehSession session,
     required String employeeId,
     String? cycleStart,
@@ -62,8 +62,11 @@ class SalariesRepositoryImpl implements SalariesRepository {
       employeeId: employeeId,
       cycleStart: cycleStart,
     );
-    return SalaryMapper.employeeFromJson(
-      body['employee'] as Map<String, dynamic>? ?? const {},
+    return (
+      employee: SalaryMapper.employeeFromJson(
+        body['employee'] as Map<String, dynamic>? ?? const {},
+      ),
+      openCashDay: SalaryMapper.openCashDayFromJson(body['openCashDay']),
     );
   }
 

@@ -249,13 +249,9 @@ Color _detailColor(_DetailTone tone) {
 }
 
 String _salaryDueLabel(SalaryCycle cycle) {
-  final paymentWindowStart = cycle.paymentWindowStart;
-  final paymentWindowEnd = cycle.paymentWindowEnd;
-
-  if (paymentWindowStart == null || paymentWindowEnd == null) {
-    return 'Due: current cycle';
+  if (cycle.start == null || cycle.end == null) {
+    return 'Cycle: 22nd – 21st';
   }
 
-  return 'Due: ${salaryDateShort(paymentWindowStart)} – '
-      '${salaryDateShort(paymentWindowEnd)}';
+  return 'Cycle: ${salaryDateShort(cycle.start)} – ${salaryDate(cycle.end)}';
 }

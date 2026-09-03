@@ -83,6 +83,11 @@ class CashPositionCard extends StatelessWidget {
             amount: operation.expenses,
             negative: true,
           ),
+          _CashLine(
+            label: 'Salaries',
+            amount: operation.salaries,
+            negative: true,
+          ),
           const SizedBox(height: 4),
           const Divider(height: 1, color: Color(0xFFE8ECE9)),
           const SizedBox(height: 9),

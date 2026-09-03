@@ -662,7 +662,7 @@ class _InformationBanner extends StatelessWidget {
 
           Expanded(
             child: Text(
-              'Only completed cycles with salary due or payment activity are shown.',
+              'Only cycles with recorded salary payments are shown. Amounts are what actually left the till.',
               style: TextStyle(
                 color: Color(0xFF15438C),
                 fontSize: 9,
@@ -698,7 +698,7 @@ class _HistorySummary extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            'Summary (All completed cycles)',
+            'Summary (Recorded payments)',
             style: TextStyle(
               color: midnightNavy,
               fontSize: 11,
@@ -735,7 +735,7 @@ class _HistorySummary extends StatelessWidget {
 
               Expanded(
                 child: _SummaryMetric(
-                  label: 'Total due',
+                  label: 'Total recorded',
                   value: salaryMoney(history?.totalDue ?? 0),
                   icon: Icons.receipt_long_outlined,
                   color: midnightNavy,
@@ -1004,7 +1004,7 @@ class _HistoryCycleRow extends StatelessWidget {
           Expanded(
             flex: 14,
             child: _HistoryValue(
-              label: 'Due',
+              label: 'Recorded',
               value: salaryMoney(cycle.salaryDue),
             ),
           ),

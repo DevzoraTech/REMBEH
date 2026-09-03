@@ -2065,6 +2065,36 @@ updateExpense(input: {
     });
   }
 
+  sumSalariesForOperation(input: { tenantId: string; operationId: string }) {
+    return this.prisma.salaryPayment.aggregate({
+      where: {
+        tenantId: input.tenantId,
+        operationId: input.operationId,
+        reversedAt: null,
+      },
+      _sum: {
+        amount: true,
+      },
+      _count: {
+        _all: true,
+      },
+    });
+  }
+
+  listSalariesForOperation(input: { tenantId: string; operationId: string }) {
+    return this.prisma.salaryPayment.findMany({
+      where: {
+        tenantId: input.tenantId,
+        operationId: input.operationId,
+      },
+      include: {
+        employee: { select: { id: true, fullName: true } },
+        recordedBy: { select: { displayName: true } },
+      },
+      orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }],
+    });
+  }
+
   private formatDateLabel(value: Date) {
     const year = value.getUTCFullYear();
     const month = String(value.getUTCMonth() + 1).padStart(2, '0');

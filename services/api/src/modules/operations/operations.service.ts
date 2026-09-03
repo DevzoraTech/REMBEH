@@ -51,6 +51,7 @@ import {
   DailyOperationExpenseContract,
   DailyOperationReportContract,
   DailyOperationResponseContract,
+  DailyOperationSalaryContract,
   OwnerBranchDailyStatusResponseContract,
   OwnerOperationReportDetailResponseContract,
   OwnerOperationReportListItemContract,
@@ -851,7 +852,7 @@ export class OperationsService {
         amount: dto.amount,
       });
     } else {
-      const [floatAgg, expensesAgg, returnedAgg] = await Promise.all([
+      const [floatAgg, expensesAgg, returnedAgg, salariesAgg] = await Promise.all([
         this.repository.sumFloatIssued({
           tenantId: user.tenantId,
           branchId: branch.id,
@@ -867,12 +868,17 @@ export class OperationsService {
           branchId: branch.id,
           floatDate: operation.operationDate,
         }),
+        this.repository.sumSalariesForOperation({
+          tenantId: user.tenantId,
+          operationId: operation.id,
+        }),
       ]);
 
       const remainingBeforeExpense = this.roundMoney(
         this.cashAvailableAtOpening(operation) -
           this.decimalToNumber(floatAgg._sum.amountGiven) -
-          this.decimalToNumber(expensesAgg._sum.amount) +
+          this.decimalToNumber(expensesAgg._sum.amount) -
+          this.decimalToNumber(salariesAgg._sum.amount) +
           this.decimalToNumber(returnedAgg._sum.amountReturned),
       );
 
@@ -2101,7 +2107,7 @@ export class OperationsService {
       throw new BadRequestException('Open the branch before assigning float.');
     }
 
-    const [floatAgg, existingFloat, expensesAgg, returnedAgg] =
+    const [floatAgg, existingFloat, expensesAgg, returnedAgg, salariesAgg] =
       await Promise.all([
         this.repository.sumFloatIssued({
           tenantId: input.tenantId,
@@ -2123,6 +2129,10 @@ export class OperationsService {
           tenantId: input.tenantId,
           branchId: input.branchId,
           floatDate: operation.operationDate,
+        }),
+        this.repository.sumSalariesForOperation({
+          tenantId: input.tenantId,
+          operationId: operation.id,
         }),
       ]);
 
@@ -2152,6 +2162,8 @@ export class OperationsService {
 
     const expensesTotal = this.decimalToNumber(expensesAgg._sum.amount);
 
+    const salariesTotal = this.decimalToNumber(salariesAgg._sum.amount);
+
     const cashReturnedByAgents = this.decimalToNumber(
       returnedAgg._sum.amountReturned,
     );
@@ -2161,6 +2173,7 @@ export class OperationsService {
       this.roundMoney(
         cashAvailableAtOpening -
           expensesTotal -
+          salariesTotal -
           totalAlreadyIssued +
           cashReturnedByAgents,
       ),
@@ -2273,6 +2286,8 @@ export class OperationsService {
       collectionsWithProduct,
       cashShortages,
       previousClosed,
+      salariesAgg,
+      salaryPayments,
     ] = await Promise.all([
       this.repository.sumFloatIssued({
         tenantId: operation.tenantId,
@@ -2367,6 +2382,16 @@ export class OperationsService {
         branchId: operation.branchId,
         beforeDate: operation.operationDate,
       }),
+
+      this.repository.sumSalariesForOperation({
+        tenantId: operation.tenantId,
+        operationId: operation.id,
+      }),
+
+      this.repository.listSalariesForOperation({
+        tenantId: operation.tenantId,
+        operationId: operation.id,
+      }),
     ]);
 
     const previousReport =
@@ -2437,6 +2462,11 @@ export class OperationsService {
       agentFloatExpensesAgg._sum.amount,
     );
 
+    const salariesTotal = this.decimalToNumber(salariesAgg._sum.amount);
+    const salaries = salaryPayments.map((payment) =>
+      this.toSalaryContract(payment),
+    );
+
     const loansIssuedPrincipal = this.decimalToNumber(
       cashDisbursementsAgg._sum.amount,
     );
@@ -2479,7 +2509,8 @@ export class OperationsService {
     const branchCashRemaining = this.roundMoney(
       cashAvailableAtOpening -
         floatIssued -
-        branchCashExpensesTotal +
+        branchCashExpensesTotal -
+        salariesTotal +
         cashReturnedByAgents,
     );
 
@@ -2490,7 +2521,8 @@ export class OperationsService {
         loansIssuedPrincipal +
         processingFeesTotal +
         collectionsReceived -
-        branchCashExpensesTotal,
+        branchCashExpensesTotal -
+        salariesTotal,
     );
 
     const closingBalance =
@@ -2603,6 +2635,10 @@ export class OperationsService {
       agentFloatExpensesTotal,
 
       expenses: expenses.map((expense) => this.toExpenseContract(expense)),
+
+      salariesCount: salariesAgg._count._all,
+      salariesTotal,
+      salaries,
 
       branchCashRemaining,
 
@@ -2768,7 +2804,7 @@ export class OperationsService {
     operation: DailyOperationContract,
   ): Prisma.InputJsonObject {
     return {
-      version: 3,
+      version: 4,
       reportType: 'daily_operations_close',
 
       operation: {
@@ -2792,6 +2828,8 @@ export class OperationsService {
         expenses: operation.expensesTotal,
         branchCashExpenses: operation.branchCashExpensesTotal,
         agentFloatExpenses: operation.agentFloatExpensesTotal,
+        salaries: operation.salariesTotal,
+        salariesCount: operation.salariesCount,
         cashReturnedByAgents: operation.cashReturnedByAgents,
         loansIssuedCount: operation.loansIssuedCount,
         loansIssuedPrincipal: operation.loansIssuedPrincipal,
@@ -2813,6 +2851,7 @@ export class OperationsService {
       cashPosition: {
         floatDistributed: operation.floatIssued,
         branchExpenses: operation.branchCashExpensesTotal,
+        salaries: operation.salariesTotal,
         cashReturnedByAgents: operation.cashReturnedByAgents,
         branchRepayments: operation.collectionsReceived,
         loanProcessingFees: operation.processingFeesTotal,
@@ -2827,6 +2866,8 @@ export class OperationsService {
       topUps: operation.topUps,
 
       expenses: operation.expenses,
+
+      salaries: operation.salaries,
 
       loansByProduct: operation.loansByProduct,
 
@@ -3747,6 +3788,28 @@ export class OperationsService {
       voidedAt: expense.voidedAt?.toISOString() ?? null,
       voidedByName: expense.voidedBy?.displayName ?? null,
       voidReason: expense.voidReason,
+    };
+  }
+
+  private toSalaryContract(payment: {
+    id: string;
+    employeeId: string;
+    employee: { fullName: string };
+    amount: Prisma.Decimal | number;
+    method: string;
+    paidAt: Date;
+    recordedBy: { displayName: string };
+    reversedAt: Date | null;
+  }): DailyOperationSalaryContract {
+    return {
+      id: payment.id,
+      employeeId: payment.employeeId,
+      employeeName: payment.employee.fullName,
+      amount: this.decimalToNumber(payment.amount) ?? 0,
+      method: payment.method,
+      paidAt: payment.paidAt.toISOString(),
+      recordedByName: payment.recordedBy.displayName,
+      reversedAt: payment.reversedAt?.toISOString() ?? null,
     };
   }
 

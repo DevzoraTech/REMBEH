@@ -7,7 +7,7 @@ class GetSalaryEmployee {
 
   final SalariesRepository repository;
 
-  Future<SalaryEmployee> call({
+  Future<({SalaryEmployee employee, SalaryOpenCashDay? openCashDay})> call({
     required RembehSession session,
     required String employeeId,
     String? cycleStart,

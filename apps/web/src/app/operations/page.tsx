@@ -99,6 +99,9 @@ type DailyOperation = {
   branchCashExpensesTotal?: number;
   agentFloatExpensesTotal?: number;
   expenses: DailyOperationExpense[];
+  salariesCount?: number;
+  salariesTotal?: number;
+  salaries?: DailyOperationSalary[];
   branchCashRemaining: number;
   expectedClosingBalance: number;
   closingBalance: number | null;
@@ -189,6 +192,17 @@ type DailyOperationExpense = {
   recordedByName: string;
   approvedAt: string | null;
   approvedByName: string | null;
+};
+
+type DailyOperationSalary = {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  amount: number;
+  method: string;
+  paidAt: string;
+  recordedByName: string;
+  reversedAt: string | null;
 };
 
 type DailyOperationTopUp = {
@@ -1213,6 +1227,7 @@ export default function OperationsPage() {
           operation.processingFeesTotal,
         operation.floatIssued +
           branchCashExpenseTotal(operation) +
+          salaryTotal(operation) +
           operation.loansIssuedPrincipal,
         operation.expectedClosingBalance,
         formatVariance(operation.closingVariance),
@@ -2091,6 +2106,13 @@ function OpenOperationView({
             <>
               {operation.loansIssuedCount} loans ·{" "}
               <Money value={operation.expensesTotal} currency="UGX" /> expenses
+              {salaryTotal(operation) > 0 ? (
+                <>
+                  {" "}
+                  · <Money value={salaryTotal(operation)} currency="UGX" />{" "}
+                  salaries
+                </>
+              ) : null}
             </>
           }
           tooltip="Cash in received today, with loans issued and expenses recorded."
@@ -2337,7 +2359,7 @@ function ComputerisedReportView({
 }) {
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-2 lg:grid-cols-6">
+      <div className="grid grid-cols-3 gap-2 lg:grid-cols-7">
         <ReportMetric
           label="Opening Cash"
           value={
@@ -2357,6 +2379,11 @@ function ComputerisedReportView({
         <ReportMetric
           label="Expenses"
           value={<Money value={operation.expensesTotal} currency="UGX" />}
+          danger
+        />
+        <ReportMetric
+          label="Salaries"
+          value={<Money value={salaryTotal(operation)} currency="UGX" />}
           danger
         />
         <ReportMetric
@@ -2631,6 +2658,7 @@ function ExcelReportView({
               value={
                 operation.floatIssued +
                 branchCashExpenseTotal(operation) +
+                salaryTotal(operation) +
                 operation.loansIssuedPrincipal
               }
               tone="out"
@@ -3230,6 +3258,13 @@ function CashMovementCard({ operation }: { operation: DailyOperation }) {
       label: "Expenses",
       detail: `${operation.expensesCount} logged`,
       amount: branchCashExpenseTotal(operation),
+      signed: "minus" as const,
+      tone: "rose" as const,
+    },
+    {
+      label: "Salaries",
+      detail: `${operation.salariesCount ?? operation.salaries?.length ?? 0} paid`,
+      amount: salaryTotal(operation),
       signed: "minus" as const,
       tone: "rose" as const,
     },
@@ -5381,6 +5416,7 @@ function buildExcelRows(operation: DailyOperation) {
   const afterFloat = afterTopUps - operation.floatIssued;
   const afterReturns = afterFloat + operation.cashReturnedByAgents;
   const afterExpenses = afterReturns - branchCashExpenseTotal(operation);
+  const afterSalaries = afterExpenses - salaryTotal(operation);
 
   return [
     {
@@ -5427,6 +5463,15 @@ function buildExcelRows(operation: DailyOperation) {
       cashOut: branchCashExpenseTotal(operation),
       balance: afterExpenses,
       note: "Branch operating expenses",
+    },
+    {
+      section: "Salaries",
+      description: "Salaries paid from today’s cash",
+      count: operation.salariesCount ?? operation.salaries?.length ?? 0,
+      cashIn: null,
+      cashOut: salaryTotal(operation),
+      balance: afterSalaries,
+      note: "Taken from the open branch day’s cash",
     },
     {
       section: "Loans",
@@ -5557,6 +5602,10 @@ function expenseDisplayName(
 
 function branchCashExpenseTotal(operation: DailyOperation) {
   return operation.branchCashExpensesTotal ?? operation.expensesTotal;
+}
+
+function salaryTotal(operation: DailyOperation) {
+  return operation.salariesTotal ?? 0;
 }
 
 function remainingExpectedAgentReturn(operation: DailyOperation) {
