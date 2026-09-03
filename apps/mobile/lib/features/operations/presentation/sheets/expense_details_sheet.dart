@@ -15,6 +15,7 @@ class ExpenseDetailsSheet extends StatefulWidget {
     required this.expense,
     required this.dayOpen,
     this.branchId,
+    this.remainingCash,
   });
 
   final RembehSession session;
@@ -23,6 +24,7 @@ class ExpenseDetailsSheet extends StatefulWidget {
 
   final Map<String, dynamic> expense;
   final bool dayOpen;
+  final num? remainingCash;
 
   @override
   State<ExpenseDetailsSheet> createState() => _ExpenseDetailsSheetState();
@@ -54,6 +56,10 @@ class _ExpenseDetailsSheetState extends State<ExpenseDetailsSheet> {
           date: widget.date,
           branchId: widget.branchId,
           initialExpense: widget.expense,
+          remainingCash: widget.remainingCash == null
+              ? null
+              : widget.remainingCash! +
+                  (_num(widget.expense['amount'])),
         );
       },
     );

@@ -3855,7 +3855,7 @@ function OperationActionDrawer({
     expenseForm.amount !== "" &&
     Number.isFinite(expenseAmount) &&
     expenseAmount > 0 &&
-    expenseAmount <= operation.branchCashRemaining;
+    expenseAmount <= operation.expectedClosingBalance;
   const topUpAmount = Number(topUpForm.amount);
   const validTopUp =
     canRecordTopUp &&
@@ -4019,7 +4019,7 @@ function OperationActionDrawer({
                   }
                 />
                 {expenseForm.amount !== "" &&
-                expenseAmount > operation.branchCashRemaining ? (
+                expenseAmount > operation.expectedClosingBalance ? (
                   <DrawerAlert tone="red">
                     Expense is more than remaining branch cash.
                   </DrawerAlert>
@@ -4310,13 +4310,18 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
     },
     expense: {
       title: "Record expense",
-      subtitle: "Log day costs against cash on hand.",
+      subtitle: "Log day costs against today’s cash, including collections.",
       cta: "Save expense",
       icon: <ReceiptText className="size-5" />,
       stats: (operation: DailyOperation) => [
         {
-          label: "Cash Left",
-          value: <Money value={operation.branchCashRemaining} currency="UGX" />,
+          label: "Cash today",
+          value: (
+            <Money
+              value={operation.expectedClosingBalance}
+              currency="UGX"
+            />
+          ),
         },
         {
           label: "Expenses",
@@ -5184,7 +5189,7 @@ function ExpenseFormCard({
         </p>
         <p className="mt-0.5 inline-flex flex-wrap items-baseline gap-1 text-xs text-slate-500">
           <span>Remaining cash:</span>
-          <Money value={operation.branchCashRemaining} currency="UGX" />
+          <Money value={operation.expectedClosingBalance} currency="UGX" />
         </p>
       </header>
       <div className="space-y-3 p-4">

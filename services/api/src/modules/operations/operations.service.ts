@@ -852,34 +852,9 @@ export class OperationsService {
         amount: dto.amount,
       });
     } else {
-      const [floatAgg, expensesAgg, returnedAgg, salariesAgg] = await Promise.all([
-        this.repository.sumFloatIssued({
-          tenantId: user.tenantId,
-          branchId: branch.id,
-          floatDate: operation.operationDate,
-        }),
-        this.repository.sumExpensesForOperation({
-          tenantId: user.tenantId,
-          operationId: operation.id,
-          paidFrom: BranchOperationExpensePaidFrom.BRANCH_CASH,
-        }),
-        this.repository.sumFloatReturned({
-          tenantId: user.tenantId,
-          branchId: branch.id,
-          floatDate: operation.operationDate,
-        }),
-        this.repository.sumSalariesForOperation({
-          tenantId: user.tenantId,
-          operationId: operation.id,
-        }),
-      ]);
-
-      const remainingBeforeExpense = this.roundMoney(
-        this.cashAvailableAtOpening(operation) -
-          this.decimalToNumber(floatAgg._sum.amountGiven) -
-          this.decimalToNumber(expensesAgg._sum.amount) -
-          this.decimalToNumber(salariesAgg._sum.amount) +
-          this.decimalToNumber(returnedAgg._sum.amountReturned),
+      const remainingBeforeExpense = await this.remainingDayCashForBranchExpense(
+        operation,
+        bounds,
       );
 
       if (dto.amount > remainingBeforeExpense) {
@@ -1559,21 +1534,35 @@ export class OperationsService {
       throw new BadRequestException('A voided expense cannot be edited.');
     }
 
-    if (
-      dto.amount !== undefined &&
-      expense.paidFrom === BranchOperationExpensePaidFrom.AGENT_FLOAT
-    ) {
+    if (dto.amount !== undefined) {
       const bounds = this.parseDayBounds(
         this.formatDateLabel(expense.operation.operationDate),
       );
-      await this.assertAgentExpenseFitsFloat({
-        user,
-        branchId: branch.id,
-        operation: expense.operation,
-        bounds,
-        amount: dto.amount,
-        excludeExpenseId: expense.id,
-      });
+
+      if (expense.paidFrom === BranchOperationExpensePaidFrom.AGENT_FLOAT) {
+        await this.assertAgentExpenseFitsFloat({
+          user,
+          branchId: branch.id,
+          operation: expense.operation,
+          bounds,
+          amount: dto.amount,
+          excludeExpenseId: expense.id,
+        });
+      } else {
+        const remaining = await this.remainingDayCashForBranchExpense(
+          expense.operation,
+          bounds,
+        );
+        const available = this.roundMoney(
+          remaining + this.decimalToNumber(expense.amount),
+        );
+
+        if (dto.amount > available) {
+          throw new BadRequestException(
+            `Expense exceeds remaining branch cash. Available: ${available}.`,
+          );
+        }
+      }
     }
 
     await this.repository.updateExpense({
@@ -2518,14 +2507,14 @@ export class OperationsService {
 
     const floatRemaining = Math.max(branchCashRemaining, 0);
 
-    const expectedClosingBalance = this.roundMoney(
-      cashAvailableAtOpening -
-        loansIssuedPrincipal +
-        processingFeesTotal +
-        collectionsReceived -
-        branchCashExpensesTotal -
-        salariesTotal,
-    );
+    const expectedClosingBalance = this.remainingDayCashForOutflows({
+      cashAvailableAtOpening,
+      loansIssuedPrincipal,
+      processingFeesTotal,
+      collectionsReceived,
+      branchCashExpensesTotal,
+      salariesTotal,
+    });
 
     const closingBalance =
       operation.closingBalance == null
@@ -2709,6 +2698,88 @@ export class OperationsService {
     const computed = this.roundMoney(openingBalance + cashAddedToday);
 
     return computed > 0 || legacyAvailable === 0 ? computed : legacyAvailable;
+  }
+
+  /**
+   * Cash the branch can still spend today (expenses, salaries).
+   * Matches expected closing: opening + collections + fees − loans − expenses − salaries.
+   * Float still with officers is not held back — it remains the branch’s money.
+   */
+  private remainingDayCashForOutflows(input: {
+    cashAvailableAtOpening: number;
+    loansIssuedPrincipal: number;
+    processingFeesTotal: number;
+    collectionsReceived: number;
+    branchCashExpensesTotal: number;
+    salariesTotal: number;
+  }) {
+    return this.roundMoney(
+      input.cashAvailableAtOpening -
+        input.loansIssuedPrincipal +
+        input.processingFeesTotal +
+        input.collectionsReceived -
+        input.branchCashExpensesTotal -
+        input.salariesTotal,
+    );
+  }
+
+  private async remainingDayCashForBranchExpense(
+    operation: {
+      id: string;
+      tenantId: string;
+      branchId: string;
+      previousClosingBalance: Prisma.Decimal | number | null;
+      cashAddedToday?: Prisma.Decimal | number | null;
+      openingFloatAvailable: Prisma.Decimal | number | null;
+    },
+    bounds: { dayStart: Date; dayEnd: Date },
+  ) {
+    const [
+      loansAgg,
+      cashDisbursementsAgg,
+      collectionsAgg,
+      expensesAgg,
+      salariesAgg,
+    ] = await Promise.all([
+      this.repository.sumLoansIssued({
+        tenantId: operation.tenantId,
+        branchId: operation.branchId,
+        dayStart: bounds.dayStart,
+        dayEnd: bounds.dayEnd,
+      }),
+      this.repository.sumLoanDisbursements({
+        tenantId: operation.tenantId,
+        branchId: operation.branchId,
+        dayStart: bounds.dayStart,
+        dayEnd: bounds.dayEnd,
+      }),
+      this.repository.sumCollections({
+        tenantId: operation.tenantId,
+        branchId: operation.branchId,
+        dayStart: bounds.dayStart,
+        dayEnd: bounds.dayEnd,
+      }),
+      this.repository.sumExpensesForOperation({
+        tenantId: operation.tenantId,
+        operationId: operation.id,
+        paidFrom: BranchOperationExpensePaidFrom.BRANCH_CASH,
+      }),
+      this.repository.sumSalariesForOperation({
+        tenantId: operation.tenantId,
+        operationId: operation.id,
+      }),
+    ]);
+
+    return this.remainingDayCashForOutflows({
+      cashAvailableAtOpening: this.cashAvailableAtOpening(operation),
+      loansIssuedPrincipal: this.decimalToNumber(
+        cashDisbursementsAgg._sum.amount,
+      ),
+      processingFeesTotal: this.decimalToNumber(loansAgg._sum.processingFee),
+      collectionsReceived: this.decimalToNumber(collectionsAgg._sum.amount),
+      branchCashExpensesTotal: this.decimalToNumber(expensesAgg._sum.amount),
+      salariesTotal: this.decimalToNumber(salariesAgg._sum.amount),
+    });
   }
 
   private floatSetAsideAmount(operation: {

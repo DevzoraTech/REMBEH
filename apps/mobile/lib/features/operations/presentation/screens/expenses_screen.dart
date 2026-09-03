@@ -98,6 +98,14 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     }
   }
 
+  num? get _remainingDayCash {
+    final raw = _operation?['expectedClosingBalance'];
+    if (raw == null) {
+      return null;
+    }
+    return _num(raw);
+  }
+
   Future<void> _recordExpense() async {
     if (!widget.dayOpen) {
       setState(() {
@@ -117,6 +125,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           session: widget.session,
           date: widget.date,
           branchId: widget.branchId,
+          remainingCash: _remainingDayCash,
         );
       },
     );
@@ -139,6 +148,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           branchId: widget.branchId,
           expense: expense,
           dayOpen: widget.dayOpen,
+          remainingCash: _remainingDayCash,
         );
       },
     );
