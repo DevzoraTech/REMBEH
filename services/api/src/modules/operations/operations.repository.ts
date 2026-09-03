@@ -1836,12 +1836,32 @@ updateExpense(input: {
     tenantId: string;
     branchId: string;
     operationDate: Date;
+    dayStart: Date;
+    dayEnd: Date;
   }) {
     return this.prisma.cashShortage.findMany({
       where: {
         tenantId: input.tenantId,
         branchId: input.branchId,
-        operationDate: input.operationDate,
+        OR: [
+          { operationDate: input.operationDate },
+          {
+            clearedAt: {
+              gte: input.dayStart,
+              lte: input.dayEnd,
+            },
+          },
+          {
+            payments: {
+              some: {
+                paidAt: {
+                  gte: input.dayStart,
+                  lte: input.dayEnd,
+                },
+              },
+            },
+          },
+        ],
       },
       include: {
         responsibleUser: {
@@ -1858,8 +1878,16 @@ updateExpense(input: {
           },
         },
         payments: {
-          select: {
-            amount: true,
+          orderBy: {
+            paidAt: 'desc',
+          },
+          take: 1,
+          include: {
+            recordedBy: {
+              select: {
+                displayName: true,
+              },
+            },
           },
         },
       },

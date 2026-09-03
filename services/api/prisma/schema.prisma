@@ -33,6 +33,11 @@ enum OAuthExchangeTicketKind {
   ONBOARDING
 }
 
+enum SmsSupportContactSource {
+  OWNER
+  MANAGER
+}
+
 enum LoanStatus {
   DRAFT
   SUBMITTED
@@ -559,6 +564,8 @@ model TenantSmsNotificationSettings {
   paymentConfirmationEnabled Boolean  @default(true) @map("payment_confirmation_enabled")
   paymentReminderEnabled     Boolean  @default(true) @map("payment_reminder_enabled")
   overdueNoticeEnabled       Boolean  @default(true) @map("overdue_notice_enabled")
+  supportContactSource       SmsSupportContactSource @default(MANAGER) @map("support_contact_source")
+  supportContactLocked       Boolean  @default(false) @map("support_contact_locked")
   updatedByUserId            String?  @map("updated_by_user_id") @db.Uuid
   createdAt                  DateTime @default(now()) @map("created_at")
   updatedAt                  DateTime @updatedAt @map("updated_at")
@@ -1183,7 +1190,7 @@ model Customer {
   wallets          ClientWallet[]
   loanApplications LoanApplication[]
 
-  @@unique([tenantId, phone])
+  @@unique([tenantId, branchId, phone])
   @@index([tenantId, branchId])
   @@index([tenantId, nationalId])
   @@index([tenantId, voidedAt])

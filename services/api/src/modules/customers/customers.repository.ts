@@ -140,13 +140,18 @@ export type CustomerListRecord = Prisma.CustomerGetPayload<{
 export class CustomersRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  findByTenantAndPhone(input: { tenantId: string; phone: string }) {
+  findByTenantAndPhone(input: {
+    tenantId: string;
+    phone: string;
+    branchId?: string | null;
+  }) {
     return this.prisma.customer.findFirst({
       where: {
         tenantId: input.tenantId,
         phone: input.phone,
+        ...(input.branchId ? { branchId: input.branchId } : {}),
       },
-      select: { id: true },
+      select: { id: true, branchId: true },
     });
   }
 
@@ -158,7 +163,14 @@ export class CustomersRepository {
     return this.prisma.customer.findMany({
       where: {
         tenantId: input.tenantId,
-        ...(input.branchId ? { branchId: input.branchId } : {}),
+        ...(input.branchId
+          ? {
+              OR: [
+                { branchId: input.branchId },
+                { loans: { some: { branchId: input.branchId } } },
+              ],
+            }
+          : {}),
       },
       include: customerListInclude,
       orderBy: { createdAt: 'desc' },
@@ -179,7 +191,14 @@ export class CustomersRepository {
       where: {
         id: input.customerId,
         tenantId: input.tenantId,
-        ...(input.branchId ? { branchId: input.branchId } : {}),
+        ...(input.branchId
+          ? {
+              OR: [
+                { branchId: input.branchId },
+                { loans: { some: { branchId: input.branchId } } },
+              ],
+            }
+          : {}),
       },
       include: customerDetailInclude,
     });

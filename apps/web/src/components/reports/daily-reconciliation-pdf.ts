@@ -420,7 +420,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
             `<strong>${moneyPlain(expectedShown)}</strong>`,
           ],
         },
-      )}<p class="note">Expected closing cash = opening + top-ups + repayments + fees − loans − expenses. Float and field officer returns net out when handovers balance.</p>`,
+      )}<p class="note">Expected closing cash = opening + top-ups + repayments + fees − loans − expenses − salaries. Float and field officer returns net out when handovers balance.</p>`,
     ),
   );
 

@@ -6,10 +6,12 @@ import '../../../../services/api_client.dart';
 import '../../../../services/session_store.dart';
 import '../../../../theme.dart';
 import '../../application/list_cash_shortages.dart';
+import '../../application/settle_employee_shortage.dart';
 import '../../data/repositories/cash_shortages_repository_impl.dart';
 import '../../domain/models/cash_shortage.dart';
 import '../controllers/shortages_controller.dart';
 import '../utils/shortage_formatters.dart';
+import '../sheets/clear_employee_shortage_sheet.dart';
 import '../widgets/shortage_filter_tabs.dart';
 import '../widgets/shortage_list_row.dart';
 import '../widgets/shortage_messages.dart';
@@ -97,6 +99,37 @@ class _ShortagesScreenState extends State<ShortagesScreen> {
     await _load(quiet: true);
   }
 
+  Future<void> _openClearByEmployee() async {
+    final employees = _controller.employeesWithOpenShortages;
+    if (employees.isEmpty) {
+      _controller.setNotice('There is no open shortage to clear.');
+      return;
+    }
+
+    final recorded = await showModalBottomSheet<bool>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return ClearEmployeeShortageSheet(
+          session: widget.session,
+          employees: employees,
+          settleEmployee: SettleEmployeeShortage(
+            CashShortagesRepositoryImpl(apiClient: ApiClient(SessionStore())),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || recorded != true) {
+      return;
+    }
+
+    _controller.setNotice('Shortage clearance recorded.');
+    await _load(quiet: true);
+  }
+
   String _emptyMessage(ShortageListFilter filter) {
     return switch (filter) {
       ShortageListFilter.open => 'No open shortages.',
@@ -140,6 +173,14 @@ class _ShortagesScreenState extends State<ShortagesScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: 'Clear shortage',
+            onPressed: () => unawaited(_openClearByEmployee()),
+            icon: const Icon(
+              Icons.person_search_rounded,
+              color: midnightNavy,
+            ),
+          ),
           IconButton(
             tooltip: 'Refresh',
             onPressed: () => unawaited(_load()),
@@ -193,6 +234,23 @@ class _ShortagesScreenState extends State<ShortagesScreen> {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: () => unawaited(_openClearByEmployee()),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: forestEmerald,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(46),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  icon: const Icon(Icons.person_search_rounded, size: 18),
+                  label: const Text(
+                    'Clear shortage by employee',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 ShortageFilterTabs(

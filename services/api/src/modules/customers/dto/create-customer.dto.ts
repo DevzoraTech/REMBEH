@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import {
   IsEmail,
   IsOptional,
@@ -5,14 +6,20 @@ import {
   Length,
   Matches,
 } from 'class-validator';
+import { normalizeInternationalPhoneNumber } from '../../../common/security/identity-normalization';
 
 export class CreateCustomerDto {
   @IsString()
   @Length(2, 120)
   fullName!: string;
 
+  @Transform(({ value }) =>
+    typeof value === 'string'
+      ? normalizeInternationalPhoneNumber(value)
+      : value,
+  )
   @IsString()
-  @Matches(/^\+[0-9 ()-]{8,24}$/, {
+  @Matches(/^\+[1-9]\d{7,14}$/, {
     message: 'phone must be a valid international phone number',
   })
   phone!: string;

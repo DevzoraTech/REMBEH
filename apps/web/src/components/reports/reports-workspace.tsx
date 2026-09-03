@@ -989,6 +989,16 @@ function ReportSummaryView({
             }
             danger={numberValue(summary.expenses) > 0}
           />
+          <LineRow
+            label="Salaries"
+            value={
+              <Money
+                value={numberValue(summary.salaries)}
+                currency={currency}
+              />
+            }
+            danger={numberValue(summary.salaries) > 0}
+          />
         </Panel>
       </section>
 
@@ -1725,6 +1735,7 @@ function LedgerTable({
                   value={
                     numberValue(snapshot.summary.floatDistributed) +
                     numberValue(snapshot.summary.expenses) +
+                    numberValue(snapshot.summary.salaries) +
                     numberValue(snapshot.summary.loansIssuedPrincipal)
                   }
                   tone="out"
@@ -2168,6 +2179,15 @@ function buildExcelRows(report: OwnerReport, snapshot: ReportSnapshot) {
       cashOut: numberValue(snapshot.summary.expenses),
       balance: null,
       note: "Approved daily expenses",
+    },
+    {
+      section: "Salaries",
+      description: "Salaries paid from day’s cash",
+      count: formatNumber(numberValue(snapshot.summary.salariesCount)),
+      cashIn: null,
+      cashOut: numberValue(snapshot.summary.salaries),
+      balance: null,
+      note: "Taken from the open branch day’s cash",
     },
     {
       section: "Closing",

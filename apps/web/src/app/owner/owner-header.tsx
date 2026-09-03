@@ -47,7 +47,8 @@ export function OwnerHeader({
   reportsHref?: string;
   notificationScope?: "owner" | "manager";
 }) {
-  const { items: notifications } = useOwnerNotifications(notificationScope);
+  const { items: notifications, loading: notificationsLoading } =
+    useOwnerNotifications(notificationScope);
   const { enabled: tooltipsEnabled, setTooltipsEnabled } = useTooltipsEnabled();
   const branchScope = useOwnerBranchScope();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -135,6 +136,7 @@ export function OwnerHeader({
           <NotificationOverlay
             open={notificationsOpen}
             items={notifications}
+            loading={notificationsLoading}
             onClose={() => setNotificationsOpen(false)}
             scope={notificationScope}
           />
@@ -244,11 +246,13 @@ export function Tooltip({
 function NotificationOverlay({
   open,
   items,
+  loading = false,
   onClose,
   scope = "owner",
 }: {
   open: boolean;
   items: OwnerNotificationItem[];
+  loading?: boolean;
   onClose: () => void;
   scope?: "owner" | "manager";
 }) {
@@ -273,7 +277,19 @@ function NotificationOverlay({
           {formatNumber(items.length)}
         </span>
       </div>
-      {items.length === 0 ? (
+      {loading ? (
+        <div className="px-5 py-7 text-center">
+          <span className="mx-auto grid size-11 place-items-center rounded-2xl bg-emerald-50 text-[var(--forest-emerald)]">
+            <Bell className="size-5" />
+          </span>
+          <h3 className="mt-3 text-sm font-bold text-[#0b1220]">
+            Loading notifications
+          </h3>
+          <p className="mx-auto mt-1 max-w-[250px] text-xs font-medium leading-5 text-slate-500">
+            Checking the latest items that need attention.
+          </p>
+        </div>
+      ) : items.length === 0 ? (
         <div className="px-5 py-7 text-center">
           <span className="mx-auto grid size-11 place-items-center rounded-2xl bg-emerald-50 text-[var(--forest-emerald)]">
             <Bell className="size-5" />

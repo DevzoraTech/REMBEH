@@ -110,6 +110,10 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
     useState<(typeof METHOD_OPTIONS)[number]["id"]>("CASH");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [settleUserId, setSettleUserId] = useState("");
+  const [settleAmount, setSettleAmount] = useState("");
+  const [settleNotes, setSettleNotes] = useState("");
+  const [settleSaving, setSettleSaving] = useState(false);
 
   const canRecordPayment = Boolean(
     session?.permissions.includes("operation.close") ||
@@ -285,6 +289,36 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
     [filtered, page, pageSize],
   );
 
+  const employeesWithOpenShortages = useMemo(() => {
+    const byUser = new Map<
+      string,
+      { userId: string; name: string; outstanding: number }
+    >();
+    for (const row of shortages) {
+      if (row.status === "CLEARED" || row.amountOutstanding <= 0) continue;
+      const existing = byUser.get(row.responsibleUserId);
+      byUser.set(row.responsibleUserId, {
+        userId: row.responsibleUserId,
+        name: row.responsibleName || existing?.name || "Employee",
+        outstanding:
+          (existing?.outstanding ?? 0) + Number(row.amountOutstanding),
+      });
+    }
+    return Array.from(byUser.values()).sort((left, right) =>
+      left.name.localeCompare(right.name),
+    );
+  }, [shortages]);
+
+  useEffect(() => {
+    if (
+      settleUserId &&
+      !employeesWithOpenShortages.some((row) => row.userId === settleUserId)
+    ) {
+      setSettleUserId("");
+      setSettleAmount("");
+    }
+  }, [employeesWithOpenShortages, settleUserId]);
+
   async function recordPayment() {
     if (!session || !selected) return;
     const value = Number(amount);
@@ -338,6 +372,66 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function settleEmployee() {
+    if (!session) return;
+    const selectedEmployee = employeesWithOpenShortages.find(
+      (row) => row.userId === settleUserId,
+    );
+    if (!selectedEmployee) {
+      setError("Select the employee whose shortage is being cleared.");
+      return;
+    }
+    const value = Number(settleAmount);
+    if (!(value > 0)) {
+      setError("Enter a valid clearance amount.");
+      return;
+    }
+    setSettleSaving(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/cash-shortages/settle-employee`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `${session.tokenType} ${session.accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            responsibleUserId: selectedEmployee.userId,
+            amount: value,
+            method: "CASH",
+            notes: settleNotes.trim() || undefined,
+          }),
+        },
+      );
+      const payload = await readApiJson<{
+        shortage?: CashShortageRow;
+        message?: string | string[];
+      }>(response);
+      if (!response.ok) {
+        throw new Error(formatApiError(payload.message));
+      }
+      setNotice(`Shortage cleared by ${selectedEmployee.name}.`);
+      setSettleNotes("");
+      setSettleAmount("");
+      if (payload.shortage) {
+        setSelectedId(payload.shortage.id);
+        setSelected(payload.shortage);
+      }
+      await load(session, isOwner ? branchId : (branch?.id ?? branchId));
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not record shortage clearance.",
+      );
+    } finally {
+      setSettleSaving(false);
     }
   }
 
@@ -416,6 +510,84 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
             tone="good"
           />
         </section>
+
+        {canRecordPayment ? (
+          <section className="rounded-[16px] border border-[#e6ebf0] bg-white p-4 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+            <p className="text-[15px] font-semibold text-[#0b1220]">
+              Clear shortage by employee
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Record a cash clearance even if the employee’s salary date is
+              not due. It will show as “shortage cleared by” that employee on
+              the balancing summary.
+            </p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <label className="block sm:col-span-2 xl:col-span-1">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+                  Employee
+                </span>
+                <select
+                  value={settleUserId}
+                  onChange={(event) => {
+                    const userId = event.target.value;
+                    setSettleUserId(userId);
+                    const employee = employeesWithOpenShortages.find(
+                      (row) => row.userId === userId,
+                    );
+                    setSettleAmount(
+                      employee ? String(employee.outstanding) : "",
+                    );
+                  }}
+                  className="mt-1 h-10 w-full rounded-xl border border-[#e6ebf0] px-3 text-sm font-semibold text-[#0b1220] outline-none"
+                >
+                  <option value="">Select employee</option>
+                  {employeesWithOpenShortages.map((employee) => (
+                    <option key={employee.userId} value={employee.userId}>
+                      {employee.name} · UGX{" "}
+                      {formatMoneyAmount(employee.outstanding)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+                  Amount cleared
+                </span>
+                <input
+                  type="number"
+                  min={0.01}
+                  step="0.01"
+                  value={settleAmount}
+                  onChange={(event) => setSettleAmount(event.target.value)}
+                  className="mt-1 h-10 w-full rounded-xl border border-[#e6ebf0] px-3 text-sm font-semibold text-[#0b1220] outline-none"
+                />
+              </label>
+              <label className="block sm:col-span-2 xl:col-span-1">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+                  Note
+                </span>
+                <input
+                  value={settleNotes}
+                  onChange={(event) => setSettleNotes(event.target.value)}
+                  placeholder="Optional"
+                  className="mt-1 h-10 w-full rounded-xl border border-[#e6ebf0] px-3 text-sm font-semibold text-[#0b1220] outline-none"
+                />
+              </label>
+              <div className="flex items-end">
+                <button
+                  type="button"
+                  onClick={() => void settleEmployee()}
+                  disabled={
+                    settleSaving || employeesWithOpenShortages.length === 0
+                  }
+                  className="h-10 w-full rounded-xl bg-[var(--forest-emerald)] px-3 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {settleSaving ? "Recording…" : "Record clearance"}
+                </button>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         <section className="rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <div className="relative z-20 flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-3.5">

@@ -291,6 +291,8 @@ class DailyReportMapper {
       outstandingAmount: _nullableNum(row['outstandingAmount']),
       status: _string(row['status']) ?? '',
       notes: _string(row['notes']),
+      clearedByName: _string(row['clearedByName']),
+      clearedAt: _date(row['clearedAt']),
       occurredAt: _date(row['occurredAt']),
     );
   }

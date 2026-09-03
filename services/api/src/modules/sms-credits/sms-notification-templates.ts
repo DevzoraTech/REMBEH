@@ -4,12 +4,25 @@ export type SmsNotificationKind =
   | 'payment_reminder'
   | 'overdue_notice';
 
+export type SmsSupportContactSource = 'OWNER' | 'MANAGER';
+
 export type SmsNotificationSettingsContract = {
   enabled: boolean;
   loanRecordedEnabled: boolean;
   paymentConfirmationEnabled: boolean;
   paymentReminderEnabled: boolean;
   overdueNoticeEnabled: boolean;
+  supportContactSource: SmsSupportContactSource;
+  supportContactLocked: boolean;
+  supportContact: {
+    ownerName: string | null;
+    ownerPhone: string | null;
+    managerName: string | null;
+    managerPhone: string | null;
+    resolvedPhone: string;
+    canEditSource: boolean;
+    canLock: boolean;
+  };
   templates: {
     loanRecorded: string;
     paymentConfirmation: string;
@@ -39,6 +52,17 @@ export const DEFAULT_SMS_NOTIFICATION_SETTINGS: Omit<
   paymentConfirmationEnabled: true,
   paymentReminderEnabled: true,
   overdueNoticeEnabled: true,
+  supportContactSource: 'MANAGER',
+  supportContactLocked: false,
+  supportContact: {
+    ownerName: null,
+    ownerPhone: null,
+    managerName: null,
+    managerPhone: null,
+    resolvedPhone: '',
+    canEditSource: false,
+    canLock: false,
+  },
   templates: { ...SMS_NOTIFICATION_TEMPLATES },
 };
 

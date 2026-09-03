@@ -1,4 +1,5 @@
-import { IsBoolean, IsOptional } from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional } from 'class-validator';
+import { SmsSupportContactSource } from '@prisma/client';
 
 export class UpdateSmsNotificationSettingsDto {
   @IsOptional()
@@ -20,4 +21,12 @@ export class UpdateSmsNotificationSettingsDto {
   @IsOptional()
   @IsBoolean()
   overdueNoticeEnabled?: boolean;
+
+  @IsOptional()
+  @IsEnum(SmsSupportContactSource)
+  supportContactSource?: SmsSupportContactSource;
+
+  @IsOptional()
+  @IsBoolean()
+  supportContactLocked?: boolean;
 }

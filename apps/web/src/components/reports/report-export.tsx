@@ -180,6 +180,17 @@ export async function exportOwnedReport(
     "",
   ]);
   worksheet.addRow([
+    "Salaries",
+    "Salaries paid from day’s cash",
+    numberValue(snapshot.summary.salariesCount) > 0
+      ? formatNumber(numberValue(snapshot.summary.salariesCount))
+      : "-",
+    "",
+    numberValue(snapshot.summary.salaries),
+    "",
+    "",
+  ]);
+  worksheet.addRow([
     "Closing",
     "Expected closing balance",
     "-",

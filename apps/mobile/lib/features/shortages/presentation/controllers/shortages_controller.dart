@@ -35,6 +35,32 @@ class ShortagesController extends ChangeNotifier {
       .where((shortage) => shortage.isOpen)
       .fold<num>(0, (sum, shortage) => sum + shortage.amountOutstanding);
 
+  List<ShortageEmployeeOption> get employeesWithOpenShortages {
+    final byUser = <String, ShortageEmployeeOption>{};
+
+    for (final shortage in _shortages.where((row) => row.isOpen)) {
+      final userId = shortage.responsibleUserId;
+      if (userId == null || userId.isEmpty) {
+        continue;
+      }
+
+      final existing = byUser[userId];
+      byUser[userId] = ShortageEmployeeOption(
+        userId: userId,
+        name: shortage.responsibleName ?? existing?.name ?? 'Employee',
+        outstanding:
+            (existing?.outstanding ?? 0) + shortage.amountOutstanding,
+      );
+    }
+
+    final rows = byUser.values.toList();
+    rows.sort(
+      (left, right) =>
+          left.name.toLowerCase().compareTo(right.name.toLowerCase()),
+    );
+    return rows;
+  }
+
   List<CashShortage> get visibleShortages {
     final rows = switch (_filter) {
       ShortageListFilter.open => _shortages.where((row) => row.isOpen),

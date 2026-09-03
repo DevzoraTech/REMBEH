@@ -3,7 +3,29 @@ export function normalizeEmailAddress(value: string): string {
 }
 
 export function normalizeInternationalPhoneNumber(value: string): string {
-  return value.trim().replace(/[\s()-]/g, '');
+  const compact = value.trim().replace(/[\s()-]/g, '');
+  if (!compact) return compact;
+
+  const digits = compact.replace(/\D/g, '');
+
+  // Uganda local 07xxxxxxxx / 0xxxxxxxxx
+  if (/^0\d{9}$/.test(digits)) {
+    return `+256${digits.slice(1)}`;
+  }
+  // Uganda national mobile 7xxxxxxxx
+  if (/^7\d{8}$/.test(digits)) {
+    return `+256${digits}`;
+  }
+  if (/^256\d{9}$/.test(digits)) {
+    return `+${digits}`;
+  }
+  if (compact.startsWith('+')) {
+    return compact;
+  }
+  if (digits.length >= 8 && digits.length <= 15) {
+    return `+${digits}`;
+  }
+  return compact;
 }
 
 export function isInternationalPhoneNumber(value: string): boolean {

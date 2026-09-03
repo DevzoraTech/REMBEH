@@ -1,7 +1,42 @@
 import {
+  isInternationalPhoneNumber,
   looksLikePhoneQuery,
+  normalizeInternationalPhoneNumber,
   phoneSearchVariants,
 } from './identity-normalization';
+
+describe('normalizeInternationalPhoneNumber', () => {
+  it('converts Uganda local 07 numbers to +256', () => {
+    expect(normalizeInternationalPhoneNumber('0760347636')).toBe(
+      '+256760347636',
+    );
+    expect(normalizeInternationalPhoneNumber('0760 347 636')).toBe(
+      '+256760347636',
+    );
+  });
+
+  it('converts 9-digit national mobiles to +256', () => {
+    expect(normalizeInternationalPhoneNumber('760347636')).toBe(
+      '+256760347636',
+    );
+  });
+
+  it('keeps E.164 numbers', () => {
+    expect(normalizeInternationalPhoneNumber('+256760347636')).toBe(
+      '+256760347636',
+    );
+  });
+});
+
+describe('isInternationalPhoneNumber', () => {
+  it('accepts normalized Uganda mobiles', () => {
+    expect(
+      isInternationalPhoneNumber(
+        normalizeInternationalPhoneNumber('0760347636'),
+      ),
+    ).toBe(true);
+  });
+});
 
 describe('phoneSearchVariants', () => {
   it('expands Uganda local numbers to E.164 variants', () => {

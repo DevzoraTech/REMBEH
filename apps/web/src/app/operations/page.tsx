@@ -2071,8 +2071,8 @@ function OpenOperationView({
           value={
             <Money value={operation.expectedClosingBalance} currency="UGX" />
           }
-          hint="Target after loans, cash in, fees, and expenses"
-          tooltip="Expected closing balance after opening, capital received, cash in, processing fees, loans, and branch expenses."
+          hint="Target after loans, cash in, fees, expenses, and salaries"
+          tooltip="Expected closing balance after opening, capital received, cash in, processing fees, loans, branch expenses, and salaries."
           tone="green"
         />
         <DayTopStat
@@ -2115,7 +2115,7 @@ function OpenOperationView({
               ) : null}
             </>
           }
-          tooltip="Cash in received today, with loans issued and expenses recorded."
+          tooltip="Cash in received today, with loans issued, expenses, and salaries recorded."
           tone="violet"
           className="sm:col-span-2 xl:col-span-1"
         />

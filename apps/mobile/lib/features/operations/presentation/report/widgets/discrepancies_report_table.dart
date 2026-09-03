@@ -147,8 +147,8 @@ class DiscrepanciesReportTable extends StatelessWidget {
         strong: true,
       ),
       ReportTableText(
-        variance.notes?.trim().isNotEmpty == true
-            ? variance.notes!
+        variance.displayNotes.isNotEmpty
+            ? variance.displayNotes
             : '—',
       ),
     ];

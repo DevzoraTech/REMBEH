@@ -154,12 +154,13 @@ export class CustomersService {
 
     const existing = await this.customersRepository.findByTenantAndPhone({
       tenantId: user.tenantId,
+      branchId: user.branchId,
       phone,
     });
 
     if (existing) {
       throw new ConflictException(
-        'A customer with this phone already exists in this account.',
+        'A customer with this phone already exists at this branch.',
       );
     }
 

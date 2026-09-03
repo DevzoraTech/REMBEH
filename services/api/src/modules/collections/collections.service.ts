@@ -863,15 +863,22 @@ export class CollectionsService {
         const duplicate = await tx.customer.findFirst({
           where: {
             tenantId: loan.tenantId,
+            branchId: loan.branchId,
             phone: nextPhone,
             id: { not: loan.customerId },
           },
-          select: { id: true },
+          select: {
+            id: true,
+            fullName: true,
+            branch: { select: { name: true } },
+          },
         });
 
         if (duplicate) {
           throw new ConflictException(
-            'Another customer in this organization already uses this phone.',
+            duplicate.fullName
+              ? `This phone is already used by ${duplicate.fullName} at this branch.`
+              : 'Another customer at this branch already uses this phone.',
           );
         }
       }

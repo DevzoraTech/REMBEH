@@ -1,3 +1,15 @@
+class ShortageEmployeeOption {
+  const ShortageEmployeeOption({
+    required this.userId,
+    required this.name,
+    required this.outstanding,
+  });
+
+  final String userId;
+  final String name;
+  final num outstanding;
+}
+
 class CashShortagePayment {
   const CashShortagePayment({
     required this.id,

@@ -739,8 +739,9 @@ async function importLegacyLoans(prisma, input) {
 
     const existingCustomer = await prisma.customer.findUnique({
       where: {
-        tenantId_phone: {
+        tenantId_branchId_phone: {
           tenantId: input.tenantId,
+          branchId: input.branchId,
           phone: placeholderPhone,
         },
       },
@@ -749,8 +750,9 @@ async function importLegacyLoans(prisma, input) {
 
     const customer = await prisma.customer.upsert({
       where: {
-        tenantId_phone: {
+        tenantId_branchId_phone: {
           tenantId: input.tenantId,
+          branchId: input.branchId,
           phone: placeholderPhone,
         },
       },

@@ -32,6 +32,7 @@ class ManagerOwnerHomeTab extends StatefulWidget {
     // Finance
     this.collectedToday = 0,
     this.expensesToday = 0,
+    this.salariesToday = 0,
     this.shortagesAmount = 0,
     this.expectedClosingCash = 0,
 
@@ -78,6 +79,7 @@ class ManagerOwnerHomeTab extends StatefulWidget {
   // Finance
   final int collectedToday;
   final int expensesToday;
+  final int salariesToday;
   final int shortagesAmount;
   final int expectedClosingCash;
 
@@ -261,6 +263,12 @@ class _ManagerOwnerHomeTabState extends State<ManagerOwnerHomeTab> {
                   iconColor: forestEmerald,
                   label: 'Expenses',
                   value: 'UGX ${formatMoney(widget.expensesToday)}',
+                ),
+                SupportingMetric(
+                  icon: Icons.payments_outlined,
+                  iconColor: midnightNavy,
+                  label: 'Salaries',
+                  value: 'UGX ${formatMoney(widget.salariesToday)}',
                 ),
                 SupportingMetric(
                   icon: Icons.warning_amber_rounded,

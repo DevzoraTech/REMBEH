@@ -13,6 +13,8 @@ class DailyReportVariance {
     this.shortageAmount,
     this.outstandingAmount,
     this.notes,
+    this.clearedByName,
+    this.clearedAt,
     this.occurredAt,
   });
 
@@ -35,7 +37,19 @@ class DailyReportVariance {
 
   final String? notes;
 
+  final String? clearedByName;
+
+  final DateTime? clearedAt;
+
   final DateTime? occurredAt;
+
+  String get displayNotes {
+    final by = clearedByName?.trim();
+    if (by != null && by.isNotEmpty) {
+      return 'Shortage cleared by $by';
+    }
+    return notes?.trim() ?? '';
+  }
 
   bool get isShortage => variance < 0;
 

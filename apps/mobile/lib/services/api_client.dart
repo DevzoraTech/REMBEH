@@ -491,6 +491,35 @@ class ApiClient {
     throw ApiException('Shortage settlement could not be recorded.');
   }
 
+  Future<Map<String, dynamic>> settleEmployeeCashShortage({
+    required RembehSession session,
+    required String responsibleUserId,
+    required num amount,
+    String method = 'CASH',
+    String? notes,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/cash-shortages/settle-employee');
+    final response = await http.post(
+      uri,
+      headers: {..._authHeaders(session), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'responsibleUserId': responsibleUserId,
+        'amount': amount,
+        'method': method,
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+      }),
+    );
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+    final shortage = body['shortage'];
+    if (shortage is Map<String, dynamic>) {
+      return shortage;
+    }
+    throw ApiException('Shortage clearance could not be recorded.');
+  }
+
   Future<AgentDayStatus> getAgentDayStatus(RembehSession session) async {
     final uri = Uri.parse('$rembehApiBaseUrl/operations/agent-today');
     final response = await http.get(uri, headers: _authHeaders(session));

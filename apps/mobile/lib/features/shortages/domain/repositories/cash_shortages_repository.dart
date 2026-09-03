@@ -21,4 +21,12 @@ abstract interface class CashShortagesRepository {
     String method,
     String? notes,
   });
+
+  Future<CashShortage> settleEmployee({
+    required RembehSession session,
+    required String responsibleUserId,
+    required num amount,
+    String method,
+    String? notes,
+  });
 }

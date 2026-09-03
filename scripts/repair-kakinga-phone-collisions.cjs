@@ -141,7 +141,11 @@ async function main() {
       for (let attempt = 0; attempt < 20; attempt += 1) {
         const taken = await prisma.customer.findUnique({
           where: {
-            tenantId_phone: { tenantId: row.tenantId, phone },
+            tenantId_branchId_phone: {
+              tenantId: row.tenantId,
+              branchId: KAKINGA,
+              phone,
+            },
           },
           select: { id: true },
         });

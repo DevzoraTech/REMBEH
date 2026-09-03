@@ -1,13 +1,18 @@
 String normalizePhoneForApi(String raw) {
-  final digits = raw.trim().replaceAll(RegExp(r'[\s()-]'), '');
-  if (digits.startsWith('+')) return digits;
-  if (digits.startsWith('0') && digits.length >= 9) {
+  final compact = raw.trim().replaceAll(RegExp(r'[\s()-]'), '');
+  if (compact.isEmpty) return compact;
+  final digits = compact.replaceAll(RegExp(r'\D'), '');
+  if (RegExp(r'^0\d{9}$').hasMatch(digits)) {
     return '+256${digits.substring(1)}';
   }
-  if (digits.startsWith('256')) {
+  if (RegExp(r'^7\d{8}$').hasMatch(digits)) {
+    return '+256$digits';
+  }
+  if (RegExp(r'^256\d{9}$').hasMatch(digits)) {
     return '+$digits';
   }
-  return digits.startsWith('+') ? digits : '+$digits';
+  if (compact.startsWith('+')) return compact;
+  return digits.isEmpty ? compact : '+$digits';
 }
 
 bool looksLikePhoneQuery(String raw) {

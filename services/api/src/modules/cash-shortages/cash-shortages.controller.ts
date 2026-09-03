@@ -43,6 +43,26 @@ class RecordShortagePaymentDto {
   notes?: string;
 }
 
+class SettleEmployeeShortageDto {
+  @IsUUID()
+  responsibleUserId!: string;
+
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(10_000_000_000)
+  @Type(() => Number)
+  amount!: number;
+
+  @IsOptional()
+  @IsEnum(CashShortagePaymentMethod)
+  method?: CashShortagePaymentMethod;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 500)
+  notes?: string;
+}
+
 @Controller('cash-shortages')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class CashShortagesController {
@@ -60,6 +80,14 @@ export class CashShortagesController {
       userId,
       status,
     });
+  }
+
+  @Post('settle-employee')
+  settleEmployee(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: SettleEmployeeShortageDto,
+  ) {
+    return this.shortagesService.settleForEmployee(user, dto);
   }
 
   @Get(':shortageId')

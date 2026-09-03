@@ -2375,6 +2375,8 @@ export class OperationsService {
         tenantId: operation.tenantId,
         branchId: operation.branchId,
         operationDate: operation.operationDate,
+        dayStart,
+        dayEnd,
       }),
 
       this.repository.findLatestClosedBefore({
@@ -3043,7 +3045,13 @@ export class OperationsService {
 
         status: shortage?.status ?? agentReturn.status,
 
-        notes: shortage?.notes ?? agentReturn.notes,
+        notes: this.shortageVarianceNotes(
+          shortage,
+          agentReturn.notes,
+          this.shortageClearedByName(shortage),
+        ),
+        clearedByName: this.shortageClearedByName(shortage),
+        clearedAt: this.shortageClearedAt(shortage),
 
         occurredAt:
           agentReturn.returnedAt ??
@@ -3084,7 +3092,13 @@ export class OperationsService {
 
         status: shortage?.status ?? (branchVariance < 0 ? 'SHORT' : 'OVER'),
 
-        notes: shortage?.notes ?? input.operation.closingNotes,
+        notes: this.shortageVarianceNotes(
+          shortage,
+          input.operation.closingNotes,
+          this.shortageClearedByName(shortage),
+        ),
+        clearedByName: this.shortageClearedByName(shortage),
+        clearedAt: this.shortageClearedAt(shortage),
 
         occurredAt:
           input.operation.closedAt?.toISOString() ??
@@ -3108,12 +3122,65 @@ export class OperationsService {
         shortageAmount: this.decimalToNumber(shortage.amountOriginal),
         outstandingAmount: this.decimalToNumber(shortage.amountOutstanding),
         status: shortage.status,
-        notes: shortage.notes,
+        notes: this.shortageVarianceNotes(
+          shortage,
+          shortage.notes,
+          this.shortageClearedByName(shortage),
+        ),
+        clearedByName: this.shortageClearedByName(shortage),
+        clearedAt: this.shortageClearedAt(shortage),
         occurredAt: shortage.createdAt.toISOString(),
       });
     }
 
     return rows.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+  }
+
+  private shortageClearedByName(
+    shortage?: {
+      status: string;
+      responsibleUser: { displayName: string };
+    } | null,
+  ) {
+    if (!shortage || shortage.status !== 'CLEARED') {
+      return null;
+    }
+    return shortage.responsibleUser.displayName;
+  }
+
+  private shortageClearedAt(
+    shortage?: {
+      status: string;
+      clearedAt: Date | null;
+      payments?: Array<{ paidAt: Date }>;
+    } | null,
+  ) {
+    if (!shortage || shortage.status !== 'CLEARED') {
+      return shortage?.clearedAt?.toISOString() ?? null;
+    }
+    return (
+      shortage.clearedAt?.toISOString() ??
+      shortage.payments?.[0]?.paidAt.toISOString() ??
+      null
+    );
+  }
+
+  private shortageVarianceNotes(
+    shortage: { notes: string | null } | null | undefined,
+    fallback: string | null | undefined,
+    clearedByName: string | null,
+  ) {
+    if (clearedByName) {
+      const extra = shortage?.notes?.trim();
+      if (
+        extra &&
+        !extra.toLowerCase().includes('shortage cleared by')
+      ) {
+        return `Shortage cleared by ${clearedByName}. ${extra}`;
+      }
+      return `Shortage cleared by ${clearedByName}`;
+    }
+    return shortage?.notes ?? fallback ?? null;
   }
 
   private shortageSourceLabel(sourceType: CashShortageSource) {

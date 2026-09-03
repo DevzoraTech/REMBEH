@@ -122,6 +122,8 @@ export type DailyReportDocumentModel = {
     outstandingAmount: number | null;
     status: string;
     notes: string | null;
+    clearedByName?: string | null;
+    clearedAt?: string | null;
     occurredAt: string;
   }>;
   floatIssued: number;
@@ -922,7 +924,9 @@ function SummaryDocument({
                     : amt(row.variance)}
                 </span>,
                 titleCase(row.status.replaceAll("_", " ")),
-                row.notes || "—",
+                row.clearedByName
+                  ? `Shortage cleared by ${row.clearedByName}`
+                  : row.notes || "—",
               ])}
               footer={[
                 "",
@@ -1836,6 +1840,18 @@ function buildLedgerRows(document: DailyReportDocumentModel) {
       note: "Operating expenses",
     },
     {
+      section: "Salaries",
+      description: "Salaries paid from day’s cash",
+      count:
+        (document.salariesCount ?? 0) > 0
+          ? String(document.salariesCount)
+          : "-",
+      cashIn: null,
+      cashOut: document.salariesTotal ?? 0,
+      balance: null,
+      note: "Taken from the open branch day’s cash",
+    },
+    {
       section: "Closing",
       description: "Expected closing balance",
       count: "-",
@@ -2164,6 +2180,9 @@ export function buildDailyReportDocumentFromSnapshot(
           : numberValue(item.outstandingAmount),
       status: stringValue(item.status) || "Recorded",
       notes: typeof item.notes === "string" ? item.notes : null,
+      clearedByName:
+        typeof item.clearedByName === "string" ? item.clearedByName : null,
+      clearedAt: typeof item.clearedAt === "string" ? item.clearedAt : null,
       occurredAt: stringValue(item.occurredAt) || report.generatedAt,
     };
   });
@@ -2181,6 +2200,8 @@ export function buildDailyReportDocumentFromSnapshot(
       outstandingAmount: null,
       status: snapshotVariance < 0 ? "Short" : "Excess",
       notes: typeof root.closingNotes === "string" ? root.closingNotes : null,
+      clearedByName: null,
+      clearedAt: null,
       occurredAt: report.generatedAt,
     });
   }

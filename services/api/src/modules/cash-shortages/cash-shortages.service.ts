@@ -301,6 +301,100 @@ export class CashShortagesService {
     return this.getOne(user, shortage.id);
   }
 
+  async settleForEmployee(
+    user: AuthenticatedUser,
+    input: {
+      responsibleUserId: string;
+      amount: number;
+      method?: CashShortagePaymentMethod;
+      notes?: string;
+    },
+  ) {
+    this.assertCanWrite(user);
+    const canSeeAll = user.permissions.includes(BRANCH_PERMISSIONS.create);
+    if (!canSeeAll && !user.branchId) {
+      throw new ForbiddenException('Branch access is required.');
+    }
+
+    const amount = Math.round(Number(input.amount) * 100) / 100;
+    if (!(amount > 0)) {
+      throw new BadRequestException('Enter a valid payment amount.');
+    }
+
+    const shortages = await this.prisma.cashShortage.findMany({
+      where: {
+        tenantId: user.tenantId!,
+        responsibleUserId: input.responsibleUserId,
+        ...(!canSeeAll ? { branchId: user.branchId! } : {}),
+        status: {
+          in: [CashShortageStatus.OPEN, CashShortageStatus.PARTIALLY_PAID],
+        },
+        amountOutstanding: { gt: 0 },
+      },
+      orderBy: [{ operationDate: 'asc' }, { createdAt: 'asc' }],
+    });
+
+    if (shortages.length === 0) {
+      throw new BadRequestException(
+        'This employee has no open shortage to clear.',
+      );
+    }
+
+    const outstandingTotal = shortages.reduce(
+      (sum, row) => sum + Number(row.amountOutstanding),
+      0,
+    );
+    if (amount > outstandingTotal + 0.001) {
+      throw new BadRequestException(
+        `Payment exceeds outstanding shortage (${Math.round(outstandingTotal * 100) / 100}).`,
+      );
+    }
+
+    const method = input.method ?? CashShortagePaymentMethod.CASH;
+    const notes =
+      input.notes?.trim() ||
+      'Shortage cleared without waiting for the salary cycle.';
+    let remaining = amount;
+    let lastShortageId = shortages[0].id;
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const shortage of shortages) {
+        if (remaining <= 0) break;
+        const outstanding = Number(shortage.amountOutstanding);
+        const applied = Math.round(Math.min(remaining, outstanding) * 100) / 100;
+        const nextOutstanding = Math.round((outstanding - applied) * 100) / 100;
+        const status =
+          nextOutstanding <= 0
+            ? CashShortageStatus.CLEARED
+            : CashShortageStatus.PARTIALLY_PAID;
+
+        await tx.cashShortagePayment.create({
+          data: {
+            tenantId: user.tenantId!,
+            shortageId: shortage.id,
+            amount: new Prisma.Decimal(applied),
+            method,
+            notes,
+            recordedByUserId: user.userId,
+          },
+        });
+        await tx.cashShortage.update({
+          where: { id: shortage.id },
+          data: {
+            amountOutstanding: new Prisma.Decimal(Math.max(0, nextOutstanding)),
+            status,
+            clearedAt: status === CashShortageStatus.CLEARED ? new Date() : null,
+          },
+        });
+
+        lastShortageId = shortage.id;
+        remaining = Math.round((remaining - applied) * 100) / 100;
+      }
+    });
+
+    return this.getOne(user, lastShortageId);
+  }
+
   async outstandingForUsers(input: { tenantId: string; userIds: string[] }) {
     if (input.userIds.length === 0) return new Map<string, number>();
     const rows = await this.prisma.cashShortage.groupBy({

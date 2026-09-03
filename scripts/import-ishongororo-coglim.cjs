@@ -328,8 +328,9 @@ async function main() {
       });
       const existingByPhone = await prisma.customer.findUnique({
         where: {
-          tenantId_phone: {
+          tenantId_branchId_phone: {
             tenantId: branch.tenantId,
+            branchId: branch.id,
             phone: row.phone,
           },
         },

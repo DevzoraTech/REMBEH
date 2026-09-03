@@ -3,6 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { SmsSupportContactSource } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { PrismaService } from '../../database/prisma.service';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
@@ -11,6 +12,7 @@ import {
   SMS_NOTIFICATION_TEMPLATES,
   type SmsNotificationKind,
   type SmsNotificationSettingsContract,
+  type SmsSupportContactSource as SupportSource,
 } from './sms-notification-templates';
 
 @Injectable()
@@ -21,7 +23,8 @@ export class SmsNotificationSettingsService {
     user: AuthenticatedUser,
   ): Promise<SmsNotificationSettingsContract> {
     this.assertCanRead(user);
-    return this.getOrCreate(user.tenantId!);
+    const settings = await this.getOrCreate(user.tenantId!);
+    return this.withSupportContact(user, settings);
   }
 
   async updateSettings(
@@ -32,6 +35,8 @@ export class SmsNotificationSettingsService {
       paymentConfirmationEnabled?: boolean;
       paymentReminderEnabled?: boolean;
       overdueNoticeEnabled?: boolean;
+      supportContactSource?: SmsSupportContactSource;
+      supportContactLocked?: boolean;
     },
   ): Promise<SmsNotificationSettingsContract> {
     this.assertCanWrite(user);
@@ -41,6 +46,25 @@ export class SmsNotificationSettingsService {
         where: { tenantId },
       },
     );
+    const isOwner = this.isOwner(user);
+    const locked = existing?.supportContactLocked ?? false;
+
+    if (!isOwner && locked) {
+      if (
+        input.supportContactSource != null ||
+        input.supportContactLocked != null
+      ) {
+        throw new ForbiddenException(
+          'The organisation owner has locked the support contact. Managers cannot change it.',
+        );
+      }
+    }
+
+    if (!isOwner && input.supportContactLocked != null) {
+      throw new ForbiddenException(
+        'Only the organisation owner can lock the support contact.',
+      );
+    }
 
     const data = {
       enabled: input.enabled ?? existing?.enabled ?? true,
@@ -56,6 +80,13 @@ export class SmsNotificationSettingsService {
         true,
       overdueNoticeEnabled:
         input.overdueNoticeEnabled ?? existing?.overdueNoticeEnabled ?? true,
+      supportContactSource:
+        input.supportContactSource ??
+        existing?.supportContactSource ??
+        SmsSupportContactSource.MANAGER,
+      supportContactLocked: isOwner
+        ? (input.supportContactLocked ?? existing?.supportContactLocked ?? false)
+        : (existing?.supportContactLocked ?? false),
       updatedByUserId: user.userId,
     };
 
@@ -68,7 +99,7 @@ export class SmsNotificationSettingsService {
           data: { tenantId, ...data },
         });
 
-    return this.toContract(row);
+    return this.withSupportContact(user, this.toRowContract(row));
   }
 
   /** Internal: check whether a borrower SMS kind is allowed for the tenant. */
@@ -95,35 +126,104 @@ export class SmsNotificationSettingsService {
   async resolveSupportPhone(branchId: string): Promise<string> {
     const branch = await this.prisma.branch.findUnique({
       where: { id: branchId },
-      select: {
-        phone: true,
-        name: true,
-        users: {
-          where: {
-            status: 'ACTIVE',
-            roles: {
-              some: {
-                role: {
-                  name: { in: ['Branch Manager', 'Cashier'] },
+      select: { tenantId: true },
+    });
+    if (!branch) return '';
+    const settings = await this.getOrCreate(branch.tenantId);
+    const contacts = await this.loadContacts(branch.tenantId, branchId);
+    if (settings.supportContactSource === 'OWNER') {
+      return contacts.ownerPhone || contacts.managerPhone || '';
+    }
+    return contacts.managerPhone || contacts.ownerPhone || '';
+  }
+
+  private async withSupportContact(
+    user: AuthenticatedUser,
+    settings: Omit<SmsNotificationSettingsContract, 'supportContact'> & {
+      supportContact?: SmsNotificationSettingsContract['supportContact'];
+    },
+  ): Promise<SmsNotificationSettingsContract> {
+    const contacts = await this.loadContacts(
+      user.tenantId!,
+      user.branchId ?? null,
+    );
+    const isOwner = this.isOwner(user);
+    const locked = settings.supportContactLocked;
+    const resolvedPhone =
+      settings.supportContactSource === 'OWNER'
+        ? contacts.ownerPhone || contacts.managerPhone || ''
+        : contacts.managerPhone || contacts.ownerPhone || '';
+
+    return {
+      ...settings,
+      supportContact: {
+        ownerName: contacts.ownerName,
+        ownerPhone: contacts.ownerPhone,
+        managerName: contacts.managerName,
+        managerPhone: contacts.managerPhone,
+        resolvedPhone,
+        canEditSource: isOwner || !locked,
+        canLock: isOwner,
+      },
+    };
+  }
+
+  private async loadContacts(tenantId: string, branchId: string | null) {
+    const owner = await this.prisma.user.findFirst({
+      where: {
+        tenantId,
+        status: 'ACTIVE',
+        roles: { some: { role: { name: 'Account Owner' } } },
+      },
+      select: { displayName: true, phone: true },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    let managerName: string | null = null;
+    let managerPhone = '';
+    if (branchId) {
+      const branch = await this.prisma.branch.findUnique({
+        where: { id: branchId },
+        select: {
+          phone: true,
+          users: {
+            where: {
+              status: 'ACTIVE',
+              roles: {
+                some: {
+                  role: { name: { in: ['Branch Manager', 'Cashier'] } },
                 },
               },
             },
+            select: { displayName: true, phone: true },
+            take: 5,
+            orderBy: { createdAt: 'asc' },
           },
-          select: { phone: true },
-          take: 5,
-          orderBy: { createdAt: 'asc' },
         },
-      },
-    });
-    if (!branch) return '';
-    const managerPhone =
-      branch.users.map((user) => user.phone?.trim()).find(Boolean) ?? '';
-    return (branch.phone?.trim() || managerPhone || '').trim();
+      });
+      const manager = branch?.users.find((row) => row.phone?.trim()) ??
+        branch?.users[0] ??
+        null;
+      managerName = manager?.displayName ?? null;
+      managerPhone =
+        (manager?.phone?.trim() || branch?.phone?.trim() || '').trim();
+    }
+
+    return {
+      ownerName: owner?.displayName ?? null,
+      ownerPhone: owner?.phone?.trim() || '',
+      managerName,
+      managerPhone,
+    };
   }
 
   private async getOrCreate(
     tenantId: string,
-  ): Promise<SmsNotificationSettingsContract> {
+  ): Promise<
+    Omit<SmsNotificationSettingsContract, 'supportContact'> & {
+      supportContact?: SmsNotificationSettingsContract['supportContact'];
+    }
+  > {
     if (!tenantId.trim()) {
       throw new NotFoundException('Account was not found.');
     }
@@ -132,7 +232,7 @@ export class SmsNotificationSettingsService {
         where: { tenantId },
       },
     );
-    if (existing) return this.toContract(existing);
+    if (existing) return this.toRowContract(existing);
 
     try {
       const created = await this.prisma.tenantSmsNotificationSettings.create({
@@ -145,12 +245,14 @@ export class SmsNotificationSettingsService {
           overdueNoticeEnabled: true,
         },
       });
-      return this.toContract(created);
+      return this.toRowContract(created);
     } catch {
-      const raced = await this.prisma.tenantSmsNotificationSettings.findUnique({
-        where: { tenantId },
-      });
-      if (raced) return this.toContract(raced);
+      const raced = await this.prisma.tenantSmsNotificationSettings.findUnique(
+        {
+          where: { tenantId },
+        },
+      );
+      if (raced) return this.toRowContract(raced);
       return {
         ...DEFAULT_SMS_NOTIFICATION_SETTINGS,
         updatedAt: null,
@@ -158,23 +260,31 @@ export class SmsNotificationSettingsService {
     }
   }
 
-  private toContract(row: {
+  private toRowContract(row: {
     enabled: boolean;
     loanRecordedEnabled: boolean;
     paymentConfirmationEnabled: boolean;
     paymentReminderEnabled: boolean;
     overdueNoticeEnabled: boolean;
+    supportContactSource: SmsSupportContactSource;
+    supportContactLocked: boolean;
     updatedAt: Date;
-  }): SmsNotificationSettingsContract {
+  }): Omit<SmsNotificationSettingsContract, 'supportContact'> {
     return {
       enabled: row.enabled,
       loanRecordedEnabled: row.loanRecordedEnabled,
       paymentConfirmationEnabled: row.paymentConfirmationEnabled,
       paymentReminderEnabled: row.paymentReminderEnabled,
       overdueNoticeEnabled: row.overdueNoticeEnabled,
+      supportContactSource: row.supportContactSource as SupportSource,
+      supportContactLocked: row.supportContactLocked,
       templates: { ...SMS_NOTIFICATION_TEMPLATES },
       updatedAt: row.updatedAt.toISOString(),
     };
+  }
+
+  private isOwner(user: AuthenticatedUser) {
+    return user.permissions.includes(BRANCH_PERMISSIONS.create);
   }
 
   private assertCanRead(user: AuthenticatedUser) {

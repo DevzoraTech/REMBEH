@@ -23,6 +23,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { AppShell } from "../app/app-shell";
@@ -247,9 +248,11 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const currency = state.workspace?.currency ?? "UGX";
+  const loadGeneration = useRef(0);
 
   const loadData = useCallback(async () => {
     if (!state.session) return;
+    const generation = ++loadGeneration.current;
     setLoading(true);
     setError(null);
     try {
@@ -282,6 +285,7 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
           { statuses: [] },
         ),
       ]);
+      if (generation !== loadGeneration.current) return;
       const nextBranches = branchPayload.branches ?? [];
       setBranches(nextBranches);
       setLoans(loanPayload.loans ?? []);
@@ -295,15 +299,18 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
         setActivityBranchId(lockedBranchId);
       }
     } catch (caught) {
+      if (generation !== loadGeneration.current) return;
       setError(
         caught instanceof Error
           ? caught.message
           : "Could not load overview.",
       );
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration.current) {
+        setLoading(false);
+      }
     }
-  }, [isManager, selectedBranchId, state.branch, state.session]);
+  }, [isManager, state.branch, state.session]);
 
   useEffect(() => {
     const boot = window.setTimeout(() => {
@@ -528,6 +535,9 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
           </p>
         ) : null}
 
+        {loading && loans.length === 0 && borrowers.length === 0 ? (
+          <KpiSkeleton compact={isManager} />
+        ) : (
         <section
           className={`grid grid-cols-1 gap-2.5 sm:grid-cols-2 ${
             isManager ? "xl:grid-cols-4" : "xl:grid-cols-5"
@@ -574,8 +584,9 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
             />
           ) : null}
         </section>
+        )}
 
-        {loading ? (
+        {loading && loans.length === 0 && borrowers.length === 0 ? (
           <OverviewSkeleton />
         ) : isManager ? (
           <>
@@ -661,6 +672,31 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
         )}
       </div>
     </AppShell>
+  );
+}
+
+function KpiSkeleton({ compact }: { compact: boolean }) {
+  const count = compact ? 4 : 5;
+  return (
+    <section
+      className={`grid grid-cols-1 gap-2.5 sm:grid-cols-2 ${
+        compact ? "xl:grid-cols-4" : "xl:grid-cols-5"
+      }`}
+    >
+      {Array.from({ length: count }).map((_, index) => (
+        <div
+          key={index}
+          className="flex min-h-[88px] items-center gap-2.5 rounded-[13px] border border-[#e6ebf0] bg-white px-3 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)]"
+        >
+          <SkeletonBlock className="size-10 shrink-0 rounded-xl" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <SkeletonBlock className="h-3 w-24" />
+            <SkeletonBlock className="h-5 w-28" />
+            <SkeletonBlock className="h-3 w-16" />
+          </div>
+        </div>
+      ))}
+    </section>
   );
 }
 

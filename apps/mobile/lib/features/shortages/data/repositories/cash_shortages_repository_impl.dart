@@ -57,4 +57,23 @@ class CashShortagesRepositoryImpl implements CashShortagesRepository {
 
     return CashShortageMapper.fromJson(row);
   }
+
+  @override
+  Future<CashShortage> settleEmployee({
+    required RembehSession session,
+    required String responsibleUserId,
+    required num amount,
+    String method = 'CASH',
+    String? notes,
+  }) async {
+    final row = await apiClient.settleEmployeeCashShortage(
+      session: session,
+      responsibleUserId: responsibleUserId,
+      amount: amount,
+      method: method,
+      notes: notes,
+    );
+
+    return CashShortageMapper.fromJson(row);
+  }
 }

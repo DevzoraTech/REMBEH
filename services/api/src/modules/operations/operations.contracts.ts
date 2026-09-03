@@ -150,6 +150,8 @@ export type DailyOperationVarianceContract = {
   outstandingAmount: number | null;
   status: string;
   notes: string | null;
+  clearedByName: string | null;
+  clearedAt: string | null;
   occurredAt: string;
 };
 

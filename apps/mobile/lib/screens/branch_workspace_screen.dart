@@ -2485,6 +2485,8 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
       expensesToday: _num(_operation?['expensesTotal']).round(),
 
+      salariesToday: _num(_operation?['salariesTotal']).round(),
+
       shortagesAmount: _sumMoney(
         _shortages.where(_shortageOpen),
         'amountOutstanding',

@@ -144,6 +144,8 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
     'expensesTotal',
   ]);
 
+  num get _salaries => _num(_operation?['salariesTotal']);
+
   bool get _hasPendingAgentReturns {
     return _agentReturns.any((row) {
       final expected = _num(row['expectedReturn']);
@@ -608,6 +610,7 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
                     processingFees: _processingFees,
                     loansDisbursed: _loansDisbursed,
                     expenses: _expenses,
+                    salaries: _salaries,
                     onUpdateCount: _updateCount,
                   ),
 
@@ -774,6 +777,7 @@ class _CashReconciliationSummary extends StatelessWidget {
     required this.processingFees,
     required this.loansDisbursed,
     required this.expenses,
+    required this.salaries,
     required this.onUpdateCount,
   });
 
@@ -787,6 +791,7 @@ class _CashReconciliationSummary extends StatelessWidget {
   final num processingFees;
   final num loansDisbursed;
   final num expenses;
+  final num salaries;
 
   final VoidCallback onUpdateCount;
 
@@ -876,6 +881,7 @@ class _CashReconciliationSummary extends StatelessWidget {
             negative: true,
           ),
           _CashRow(label: 'Expenses', value: expenses, negative: true),
+          _CashRow(label: 'Salaries', value: salaries, negative: true),
 
           const SizedBox(height: 8),
           const Divider(height: 1, color: line),
@@ -1300,8 +1306,7 @@ class _DiscrepanciesCard extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          _string(row['notes']) ??
-                              'Variance between expected and counted closing balance',
+                          _varianceNotes(row),
                           style: const TextStyle(color: slateText, fontSize: 9),
                         ),
                       ],
@@ -1646,11 +1651,24 @@ num _firstAvailableMoney(Map<String, dynamic>? values, List<String> keys) {
 }
 
 String? _string(Object? value) {
+  if (value == null) {
+    return null;
+  }
+
   if (value is String && value.trim().isNotEmpty) {
     return value.trim();
   }
 
   return null;
+}
+
+String _varianceNotes(Map<String, dynamic> row) {
+  final clearedBy = _string(row['clearedByName']);
+  if (clearedBy != null) {
+    return 'Shortage cleared by $clearedBy';
+  }
+  return _string(row['notes']) ??
+      'Variance between expected and counted closing balance';
 }
 
 String _initials(String value) {
