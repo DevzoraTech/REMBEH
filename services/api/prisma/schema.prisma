@@ -1572,6 +1572,19 @@ model ControlCenterAdmin {
   @@map("control_center_admins")
 }
 
+model ControlCenterOperatorSmsContact {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  phone     String   @unique
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([active, sortOrder])
+  @@map("control_center_operator_sms_contacts")
+}
+
 model SubscriptionPriceOverride {
   id               String    @id @default(uuid()) @db.Uuid
   tenantId         String    @map("tenant_id") @db.Uuid

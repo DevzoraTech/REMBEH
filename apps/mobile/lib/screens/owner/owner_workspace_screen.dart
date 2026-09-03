@@ -12,6 +12,7 @@ import '../../services/api_client.dart';
 import '../../services/session_activity.dart';
 import '../../services/session_cleanup.dart';
 import '../../services/session_store.dart';
+import '../../services/update_prompt.dart';
 import '../../theme.dart';
 import '../../utils/friendly_errors.dart';
 import '../../utils/money.dart';
@@ -68,6 +69,10 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
     _activity = SessionActivityController(
       sessionStore: _store,
       onSessionCleared: _signOut,
+      onResumed: () async {
+        if (!mounted) return;
+        await promptAppUpdateIfNeeded(context);
+      },
     );
     _activity.start();
     _repayStore.addListener(_onStoreChanged);

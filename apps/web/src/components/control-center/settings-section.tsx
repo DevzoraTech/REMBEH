@@ -11,9 +11,11 @@ import {
   KeyRound,
   Mail,
   MessageSquareText,
+  Plus,
   ServerCog,
   ShieldCheck,
   Smartphone,
+  Trash2,
   UserRoundCog,
   Users,
   WalletCards,
@@ -34,6 +36,7 @@ import { controlCenterFetch } from "../../lib/control-center-api";
 import type { ControlCenterSession } from "../../lib/control-center-session";
 
 import type {
+  ControlCenterOperatorSmsContact,
   ControlCenterSettings,
   ControlCenterSettingsTemplate,
 } from "./types";
@@ -80,14 +83,12 @@ export function SettingsSection({
 
   const loadSettings =
     useCallback(
-      async () => {
-        setLoading(
-          true,
-        );
+      async (silent = false) => {
+        if (!silent) {
+          setLoading(true);
+        }
 
-        setError(
-          null,
-        );
+        setError(null);
 
         try {
           const response =
@@ -96,26 +97,20 @@ export function SettingsSection({
               session,
             );
 
-          setSettings(
-            response,
-          );
-        } catch (
-          caughtError
-        ) {
+          setSettings(response);
+        } catch (caughtError) {
           setError(
             caughtError instanceof Error
               ? caughtError.message
               : "Could not load control center settings.",
           );
         } finally {
-          setLoading(
-            false,
-          );
+          if (!silent) {
+            setLoading(false);
+          }
         }
       },
-      [
-        session,
-      ],
+      [session],
     );
 
   useEffect(() => {
@@ -225,8 +220,8 @@ export function SettingsSection({
                 0,
 
               communications:
-                settings?.templates.length ??
-                0,
+                (settings?.operatorSmsContacts?.length ?? 0) +
+                (settings?.templates.length ?? 0),
 
               billing:
                 settings?.billing.providers.length ??
@@ -258,6 +253,8 @@ export function SettingsSection({
           ) : tab ===
             "COMMUNICATIONS" ? (
             <CommunicationsView
+              session={session}
+              contacts={settings?.operatorSmsContacts ?? []}
               templates={
                 settings?.templates ??
                 []
@@ -265,6 +262,7 @@ export function SettingsSection({
               onEdit={
                 setSelectedTemplate
               }
+              onContactsChanged={() => loadSettings(true)}
             />
           ) : tab ===
             "BILLING" ? (
@@ -395,7 +393,7 @@ function SettingsTabs({
       value:
         "COMMUNICATIONS",
       label:
-        "Communication templates",
+        "Communications",
       count:
         counts.communications,
     },
@@ -714,33 +712,28 @@ function AdministratorsView({
 }
 
 function CommunicationsView({
+  session,
+  contacts,
   templates,
   onEdit,
+  onContactsChanged,
 }: {
-  templates:
-    ControlCenterSettingsTemplate[];
-
-  onEdit:
-    (
-      template:
-        ControlCenterSettingsTemplate,
-    ) => void;
+  session: ControlCenterSession;
+  contacts: ControlCenterOperatorSmsContact[];
+  templates: ControlCenterSettingsTemplate[];
+  onEdit: (template: ControlCenterSettingsTemplate) => void;
+  onContactsChanged: () => Promise<void>;
 }) {
-  if (
-    !templates.length
-  ) {
-    return (
-      <EmptyState
-        icon={Mail}
-        title="No communication templates"
-        description="No Control Center email or SMS templates are available."
-      />
-    );
-  }
-
   return (
     <div className="border-t border-[#edf1f4]">
-      <div className="grid gap-3 p-4 lg:grid-cols-2">
+      <OperatorSmsContactsPanel
+        session={session}
+        contacts={contacts}
+        onChanged={onContactsChanged}
+      />
+
+      {templates.length ? (
+      <div className="grid gap-3 border-t border-[#edf1f4] p-4 lg:grid-cols-2">
         {templates.map(
           (
             template,
@@ -841,6 +834,290 @@ function CommunicationsView({
             </article>
           ),
         )}
+      </div>
+      ) : (
+        <EmptyState
+          icon={Mail}
+          title="No communication templates"
+          description="No Control Center email or SMS templates are available."
+        />
+      )}
+    </div>
+  );
+}
+
+function OperatorSmsContactsPanel({
+  session,
+  contacts,
+  onChanged,
+}: {
+  session: ControlCenterSession;
+  contacts: ControlCenterOperatorSmsContact[];
+  onChanged: () => Promise<void>;
+}) {
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function addContact() {
+    const nextName = name.trim();
+    const nextPhone = phone.trim();
+    if (!nextName || !nextPhone) {
+      setError("Enter a name and a Ugandan mobile number.");
+      return;
+    }
+
+    setBusyId("new");
+    setError(null);
+    try {
+      await controlCenterFetch(
+        "/settings/operator-sms-contacts",
+        session,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name: nextName,
+            phone: nextPhone,
+            active: true,
+          }),
+        },
+      );
+      setName("");
+      setPhone("");
+      await onChanged();
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not add that contact.",
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div className="border-b border-[#edf1f4] p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-[11px] font-semibold text-[#15223a]">
+            Payment alert SMS
+          </p>
+          <p className="mt-1 max-w-[620px] text-[9.5px] font-normal text-[#69768f]">
+            Hamza, Bonny, and anyone you add receive one platform SMS when a
+            plan or SMS pack is submitted or confirmed. These are billed to
+            Pahappa, not organisation wallets. Each person can be renamed or
+            replaced.
+          </p>
+        </div>
+        <span className="rounded-full bg-[#eaf6ee] px-2 py-0.5 text-[9px] font-semibold text-[#168650]">
+          {contacts.filter((row) => row.active).length} active
+        </span>
+      </div>
+
+      {error ? (
+        <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-[10px] font-medium text-red-700">
+          {error}
+        </p>
+      ) : null}
+
+      <div className="mt-3 divide-y divide-[#edf1f4] overflow-hidden rounded-lg border border-[#dfe5eb]">
+        {contacts.length ? (
+          contacts.map((contact) => (
+            <OperatorSmsContactRow
+              key={contact.id}
+              session={session}
+              contact={contact}
+              busy={busyId === contact.id}
+              onBusy={setBusyId}
+              onError={setError}
+              onChanged={onChanged}
+            />
+          ))
+        ) : (
+          <p className="px-4 py-6 text-center text-[10px] text-[#6b7890]">
+            No operator numbers yet. Add Hamza, Bonny, or anyone else below.
+          </p>
+        )}
+      </div>
+
+      <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,160px)_minmax(0,1fr)_auto]">
+        <input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          placeholder="Name, e.g. Hamza"
+          maxLength={40}
+          className="h-10 rounded-[7px] border border-[#dfe5eb] px-3 text-[10px] text-[#26344d] outline-none focus:border-[#87bfa1]"
+        />
+        <input
+          value={phone}
+          onChange={(event) => setPhone(event.target.value)}
+          placeholder="Number, e.g. 0777823011"
+          maxLength={20}
+          className="h-10 rounded-[7px] border border-[#dfe5eb] px-3 text-[10px] text-[#26344d] outline-none focus:border-[#87bfa1]"
+        />
+        <button
+          type="button"
+          onClick={() => void addContact()}
+          disabled={busyId !== null}
+          className="inline-flex h-10 items-center justify-center gap-1.5 rounded-md bg-[#168650] px-3 text-[10px] font-semibold text-white hover:bg-[#147a48] disabled:opacity-60"
+        >
+          <Plus className="size-3.5" />
+          Add person
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function OperatorSmsContactRow({
+  session,
+  contact,
+  busy,
+  onBusy,
+  onError,
+  onChanged,
+}: {
+  session: ControlCenterSession;
+  contact: ControlCenterOperatorSmsContact;
+  busy: boolean;
+  onBusy: (id: string | null) => void;
+  onError: (message: string | null) => void;
+  onChanged: () => Promise<void>;
+}) {
+  const [name, setName] = useState(contact.name);
+  const [phone, setPhone] = useState(contact.phoneDisplay);
+
+  useEffect(() => {
+    setName(contact.name);
+    setPhone(contact.phoneDisplay);
+  }, [contact.name, contact.phoneDisplay]);
+  const dirty =
+    name.trim() !== contact.name || phone.trim() !== contact.phoneDisplay;
+
+  async function save() {
+    onBusy(contact.id);
+    onError(null);
+    try {
+      await controlCenterFetch(
+        `/settings/operator-sms-contacts/${contact.id}`,
+        session,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: name.trim(),
+            phone: phone.trim(),
+          }),
+        },
+      );
+      await onChanged();
+    } catch (caught) {
+      onError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not update that contact.",
+      );
+    } finally {
+      onBusy(null);
+    }
+  }
+
+  async function toggleActive() {
+    onBusy(contact.id);
+    onError(null);
+    try {
+      await controlCenterFetch(
+        `/settings/operator-sms-contacts/${contact.id}`,
+        session,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ active: !contact.active }),
+        },
+      );
+      await onChanged();
+    } catch (caught) {
+      onError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not update that contact.",
+      );
+    } finally {
+      onBusy(null);
+    }
+  }
+
+  async function remove() {
+    onBusy(contact.id);
+    onError(null);
+    try {
+      await controlCenterFetch(
+        `/settings/operator-sms-contacts/${contact.id}`,
+        session,
+        {
+          method: "DELETE",
+        },
+      );
+      await onChanged();
+    } catch (caught) {
+      onError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not remove that contact.",
+      );
+    } finally {
+      onBusy(null);
+    }
+  }
+
+  return (
+    <div className="grid gap-2 px-3 py-3 sm:grid-cols-[minmax(0,160px)_minmax(0,1fr)_auto] sm:items-center">
+      <input
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        disabled={busy}
+        maxLength={40}
+        className="h-9 rounded-[7px] border border-[#dfe5eb] px-3 text-[10px] font-semibold text-[#17233c] outline-none focus:border-[#87bfa1] disabled:opacity-60"
+      />
+      <input
+        value={phone}
+        onChange={(event) => setPhone(event.target.value)}
+        disabled={busy}
+        maxLength={20}
+        className="h-9 rounded-[7px] border border-[#dfe5eb] px-3 font-mono text-[10px] text-[#26344d] outline-none focus:border-[#87bfa1] disabled:opacity-60"
+      />
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
+        <button
+          type="button"
+          onClick={() => void toggleActive()}
+          disabled={busy}
+          className={`h-8 rounded-md px-2.5 text-[9.5px] font-semibold ${
+            contact.active
+              ? "bg-[#eaf6ee] text-[#168650]"
+              : "bg-[#f1f3f6] text-[#6b7890]"
+          }`}
+        >
+          {contact.active ? "Active" : "Paused"}
+        </button>
+        {dirty ? (
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={busy}
+            className="h-8 rounded-md bg-[#168650] px-2.5 text-[9.5px] font-semibold text-white disabled:opacity-60"
+          >
+            Save
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => void remove()}
+          disabled={busy}
+          className="grid size-8 place-items-center rounded-md text-[#df4545] hover:bg-[#fff0f0] disabled:opacity-60"
+          aria-label={`Remove ${contact.name}`}
+        >
+          <Trash2 className="size-3.5" />
+        </button>
       </div>
     </div>
   );

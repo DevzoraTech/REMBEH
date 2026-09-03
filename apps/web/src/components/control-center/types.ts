@@ -206,6 +206,17 @@ export type ControlCenterSettingsPlan = {
   updatedAt: string;
 };
 
+export type ControlCenterOperatorSmsContact = {
+  id: string;
+  name: string;
+  phone: string;
+  phoneDisplay: string;
+  active: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type ControlCenterSettings = {
   administrators: ControlCenterSettingsAdmin[];
 
@@ -219,6 +230,8 @@ export type ControlCenterSettings = {
 
   plans: ControlCenterSettingsPlan[];
 
+  operatorSmsContacts?: ControlCenterOperatorSmsContact[];
+
   billing: {
     providers: Array<{
       provider: "MTN_MOMO" | "AIRTEL_MONEY";
@@ -228,6 +241,20 @@ export type ControlCenterSettings = {
       configured: boolean;
     }>;
   };
+};
+
+export type ControlCenterSmsEconomics = {
+  providerCostPerSms: number;
+  soldUnits: number;
+  creditedPurchases: number;
+  revenueUgx: number;
+  providerCostUgx: number;
+  reserveUgx: number;
+  sellRate: number;
+  walletAvailable: number;
+  walletReserved: number;
+  lifetimeUsed: number;
+  lifetimePurchased: number;
 };
 
 export type ControlCenterDashboard = {
@@ -306,6 +333,7 @@ export type ControlCenterPaymentsResponse = {
     completedRevenue: number;
     completedPayments: number;
   };
+  smsEconomics?: ControlCenterSmsEconomics;
   payments: ControlCenterPaymentRecord[];
 };
 
@@ -368,6 +396,7 @@ export type ControlCenterSubscriptionsResponse = {
   };
   plans: ControlCenterPlan[];
   smsBundles: ControlCenterSmsBundle[];
+  smsEconomics?: ControlCenterSmsEconomics;
   payments: ControlCenterPaymentRecord[];
   subscriptions: ControlCenterSubscriptionRecord[];
 };
@@ -384,6 +413,9 @@ export type ControlCenterSmsBundle = {
   activeFrom: string;
   activeTo: string | null;
   effectiveRate: number;
+  providerCostPerSms?: number;
+  reservePerSms?: number;
+  reserveUgx?: number;
 };
 
 export type ControlCenterClientDetail = {

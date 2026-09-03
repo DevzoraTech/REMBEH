@@ -50,6 +50,7 @@ import {
 import { PesapalClient } from './pesapal.client';
 import { ConfigService } from '@nestjs/config';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OperatorAlertService } from '../notifications/operator-alert.service';
 import { SmsService } from '../notifications/sms.service';
 import { FcmPushService } from '../notifications/fcm-push.service';
 import { SmsCreditsService } from '../sms-credits/sms-credits.service';
@@ -179,6 +180,7 @@ export class BillingService implements OnModuleInit {
     private readonly configService: ConfigService,
     private readonly notificationsService: NotificationsService,
     private readonly smsService: SmsService,
+    private readonly operatorAlerts: OperatorAlertService,
     private readonly fcmPushService: FcmPushService,
     private readonly realtime: RealtimeGateway,
     @Inject(forwardRef(() => SmsCreditsService))
@@ -921,6 +923,20 @@ export class BillingService implements OnModuleInit {
         orderTrackingId: order.order_tracking_id ?? null,
         rawPayload: order,
       },
+    });
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: user.tenantId },
+      select: { name: true },
+    });
+    this.notifyOperatorsPayment({
+      kind: 'plan',
+      stage: 'submitted',
+      organizationName: tenant?.name ?? 'Unknown organization',
+      branchName: branch.name,
+      amountUgx: Number(effectivePrice.amount),
+      reference: merchantReference,
+      paymentMethod: 'Pesapal',
     });
 
     return {
@@ -2049,6 +2065,27 @@ export class BillingService implements OnModuleInit {
       `Branch ${payment.branchId} subscription activated until ${periodEnd.toISOString()}`,
     );
 
+    const [tenant, branch] = await Promise.all([
+      this.prisma.tenant.findUnique({
+        where: { id: payment.tenantId },
+        select: { name: true },
+      }),
+      this.prisma.branch.findUnique({
+        where: { id: payment.branchId },
+        select: { name: true },
+      }),
+    ]);
+    this.notifyOperatorsPayment({
+      kind: 'plan',
+      stage: 'confirmed',
+      organizationName: tenant?.name ?? 'Unknown organization',
+      branchName: branch?.name ?? 'Unknown branch',
+      amountUgx: Number(payment.amount),
+      reference:
+        status.confirmation_code?.trim() ||
+        payment.merchantReference,
+    });
+
     if (isFirstPlanPurchase) {
       try {
         const welcome = await this.smsCreditsService.grantProWelcomeSmsCredits({
@@ -2218,6 +2255,16 @@ export class BillingService implements OnModuleInit {
         return { delivered: false, error: detail };
       });
 
+    this.notifyOperatorsPayment({
+      kind: 'plan',
+      stage: 'submitted',
+      organizationName: tenant?.name ?? 'Unknown organization',
+      branchName: payment.branch.name,
+      amountUgx: Number(payment.amount),
+      reference: input.transactionId,
+      paymentMethod: input.paymentMethod,
+    });
+
     const rawPayload = {
       ...(this.payloadObject(payment.rawPayload) ?? {}),
       admin_alert_recipients: recipients,
@@ -2231,6 +2278,26 @@ export class BillingService implements OnModuleInit {
       where: { id: payment.id },
       data: { rawPayload },
       include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
+    });
+  }
+
+  private notifyOperatorsPayment(input: {
+    kind: 'plan' | 'sms';
+    stage: 'submitted' | 'confirmed';
+    organizationName: string;
+    branchName: string;
+    amountUgx: number;
+    smsUnits?: number;
+    reserveUgx?: number;
+    reference?: string | null;
+    paymentMethod?: string | null;
+  }) {
+    void this.operatorAlerts.notifyPayment(input).catch((error) => {
+      this.logger.warn(
+        `Operator payment SMS failed: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
     });
   }
 
@@ -2275,6 +2342,17 @@ export class BillingService implements OnModuleInit {
         this.logger.warn(`SMS payment verification alert failed: ${detail}`);
         return { delivered: false, error: detail };
       });
+
+    this.notifyOperatorsPayment({
+      kind: 'sms',
+      stage: 'submitted',
+      organizationName: tenant?.name ?? 'Unknown organization',
+      branchName: purchase.branch.name,
+      amountUgx: purchase.amountExpected,
+      smsUnits: purchase.smsUnitsExpected,
+      reference: input.transactionId,
+      paymentMethod: input.paymentMethod,
+    });
 
     const rawPayload = {
       ...(this.payloadObject(purchase.rawPayload) ?? {}),
@@ -2743,6 +2821,18 @@ export class BillingService implements OnModuleInit {
       include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
     });
     this.emitSubscriptionPaymentUpdate(updated);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: payment.tenantId },
+      select: { name: true },
+    });
+    this.notifyOperatorsPayment({
+      kind: 'plan',
+      stage: 'confirmed',
+      organizationName: tenant?.name ?? 'Unknown organization',
+      branchName: payment.branch.name,
+      amountUgx: Number(payment.amount),
+      reference: input.merchantTransactionId,
+    });
     return updated;
   }
 

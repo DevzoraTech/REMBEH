@@ -3,6 +3,13 @@
  * Frontend must never send price or unit counts on purchase.
  */
 
+/** Pahappa/provider cost per billed SMS. Orgs pay a higher bundle rate; the gap is reserve. */
+export const PLATFORM_SMS_PROVIDER_COST_UGX = 35;
+
+export function smsPurchaseReserveUgx(amountUgx: number, smsUnits: number) {
+  return Math.round(amountUgx - smsUnits * PLATFORM_SMS_PROVIDER_COST_UGX);
+}
+
 /** One-time SMS credits granted on a branch's first Pro plan purchase. */
 export const PRO_PLAN_WELCOME_SMS_CREDITS = 140;
 

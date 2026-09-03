@@ -18,6 +18,7 @@ import {
   Search,
   ShieldCheck,
   TriangleAlert,
+  Wallet,
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -30,6 +31,7 @@ import type {
   ControlCenterPaymentRecord,
   ControlCenterPaymentsResponse,
   ControlCenterPaymentStatus,
+  ControlCenterSmsEconomics,
 } from "./types";
 import { ccMoney, ccNumber } from "./formatters";
 
@@ -285,6 +287,9 @@ export function PaymentsSection({
     data?.stats.completedPayments ??
     counts.completed;
 
+  const smsEconomics: ControlCenterSmsEconomics | undefined =
+    data?.smsEconomics;
+
   function changeView(
     next: PaymentView,
   ) {
@@ -503,6 +508,39 @@ export function PaymentsSection({
             }`}
           />
         </div>
+
+        {smsEconomics ? (
+          <div className="mt-3.5 grid gap-3.5 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              icon={MessageSquareText}
+              tone="blue"
+              label="SMS sold"
+              value={ccNumber(smsEconomics.soldUnits)}
+              secondary={`${ccNumber(smsEconomics.creditedPurchases)} credited packs`}
+            />
+            <MetricCard
+              icon={CreditCard}
+              tone="purple"
+              label="SMS revenue"
+              value={ccMoney(smsEconomics.revenueUgx)}
+              secondary={`${ccMoney(smsEconomics.sellRate)} sell · ${ccMoney(smsEconomics.providerCostPerSms)} cost`}
+            />
+            <MetricCard
+              icon={Landmark}
+              tone="amber"
+              label="SMS cost"
+              value={ccMoney(smsEconomics.providerCostUgx)}
+              secondary={`${ccNumber(smsEconomics.lifetimeUsed)} sent`}
+            />
+            <MetricCard
+              icon={Wallet}
+              tone="green"
+              label="SMS reserve"
+              value={ccMoney(smsEconomics.reserveUgx)}
+              secondary="Not billed from organisation wallets"
+            />
+          </div>
+        ) : null}
 
         <section className="mt-4 overflow-hidden rounded-[10px] border border-[#dfe5eb] bg-white">
           <PaymentNavigation
@@ -2012,6 +2050,7 @@ type IconTone =
   | "green"
   | "blue"
   | "amber"
+  | "purple"
   | "red";
 
 function LargeIcon({
@@ -2075,6 +2114,12 @@ function iconTone(
     tone === "red"
   ) {
     return "bg-[#fff0f0] text-[#df4545]";
+  }
+
+  if (
+    tone === "purple"
+  ) {
+    return "bg-[#f3efff] text-[#6d4ecb]";
   }
 
   return "bg-[#eaf6ee] text-[#198b55]";

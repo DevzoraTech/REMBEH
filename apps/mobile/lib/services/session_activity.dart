@@ -14,12 +14,14 @@ class SessionActivityController with WidgetsBindingObserver {
     required this.sessionStore,
     required this.onSessionCleared,
     this.onAccountBlocked,
+    this.onResumed,
     this.tickInterval = const Duration(seconds: 15),
   });
 
   final SessionStore sessionStore;
   final Future<void> Function() onSessionCleared;
   final Future<void> Function(String message)? onAccountBlocked;
+  final Future<void> Function()? onResumed;
   final Duration tickInterval;
 
   Timer? _timer;
@@ -64,6 +66,10 @@ class SessionActivityController with WidgetsBindingObserver {
     final last = await sessionStore.readLastActivityAt() ?? _lastActivity;
     _lastActivity = last;
     await touch(refreshIfNeeded: true);
+    final resumed = onResumed;
+    if (resumed != null) {
+      await resumed();
+    }
   }
 
   Future<void> _checkSession() async {

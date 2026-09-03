@@ -16,6 +16,7 @@ import '../services/offline_cache_store.dart';
 import '../services/session_cleanup.dart';
 import '../services/session_activity.dart';
 import '../services/session_store.dart';
+import '../services/update_prompt.dart';
 import '../theme.dart';
 import '../utils/money.dart';
 import 'account_locked_screen.dart';
@@ -61,6 +62,10 @@ class _AgentShellState extends State<AgentShell> {
       sessionStore: _sessionStore,
       onSessionCleared: _handleSessionCleared,
       onAccountBlocked: _handleAccountBlocked,
+      onResumed: () async {
+        if (!mounted) return;
+        await promptAppUpdateIfNeeded(context);
+      },
     );
     _dayStore.addListener(_onDayChanged);
     _network.addListener(_onNetworkChanged);

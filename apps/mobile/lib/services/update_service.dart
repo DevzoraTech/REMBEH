@@ -210,8 +210,11 @@ class UpdateService {
       final currentVersion = packageInfo.version;
       final platform = Platform.isAndroid ? 'android' : 'ios';
       final session = await SessionStore().read();
-      final tenantId = session?.tenantId?.trim();
       final accessToken = session?.accessToken.trim();
+      var tenantId = session?.tenantId?.trim();
+      if (tenantId == null || tenantId.isEmpty) {
+        tenantId = tenantIdFromAccessToken(accessToken ?? '');
+      }
 
       final uri = Uri.parse('$rembehApiBaseUrl/app/check-update').replace(
         queryParameters: {

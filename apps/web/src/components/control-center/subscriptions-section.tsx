@@ -18,6 +18,7 @@ import {
   ReceiptText,
   Search,
   ShieldCheck,
+  Wallet,
   X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -30,6 +31,7 @@ import type {
   ControlCenterPaymentRecord,
   ControlCenterPlan,
   ControlCenterSmsBundle,
+  ControlCenterSmsEconomics,
   ControlCenterSubscriptionLifecycleStatus,
   ControlCenterSubscriptionRecord,
   ControlCenterSubscriptionsResponse,
@@ -226,6 +228,8 @@ export function SubscriptionsSection({
   const paymentRows = data?.payments ?? [];
   const subscriptionPlans = data?.plans ?? [];
   const smsBundles = data?.smsBundles ?? [];
+  const smsEconomics: ControlCenterSmsEconomics | undefined =
+    data?.smsEconomics;
 
   const paymentCounts = useMemo(() => {
     const stats = data?.paymentStats;
@@ -506,9 +510,9 @@ export function SubscriptionsSection({
                 (bundle) => bundle.status === "ACTIVE",
               ).length,
             )}
-            secondary={`${ccNumber(
+            secondary={`${ccMoney(
               paymentCounts.completedSmsRevenue,
-            )} UGX verified SMS revenue`}
+            )} verified SMS revenue`}
           />
 
           <MetricCard
@@ -525,6 +529,39 @@ export function SubscriptionsSection({
             }
           />
         </div>
+
+        {smsEconomics ? (
+          <div className="mt-3.5 grid gap-3.5 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              icon={MessageSquareText}
+              tone="blue"
+              label="SMS sold"
+              value={ccNumber(smsEconomics.soldUnits)}
+              secondary={`${ccNumber(smsEconomics.creditedPurchases)} credited packs · ${ccMoney(smsEconomics.sellRate)} / SMS`}
+            />
+            <MetricCard
+              icon={CreditCard}
+              tone="purple"
+              label="SMS revenue"
+              value={ccMoney(smsEconomics.revenueUgx)}
+              secondary={`Provider ${ccMoney(smsEconomics.providerCostPerSms)} / SMS`}
+            />
+            <MetricCard
+              icon={ReceiptText}
+              tone="amber"
+              label="SMS cost"
+              value={ccMoney(smsEconomics.providerCostUgx)}
+              secondary={`${ccNumber(smsEconomics.lifetimeUsed)} sent · ${ccNumber(smsEconomics.walletAvailable)} unused`}
+            />
+            <MetricCard
+              icon={Wallet}
+              tone="green"
+              label="SMS reserve"
+              value={ccMoney(smsEconomics.reserveUgx)}
+              secondary="Kept after UGX 35 provider cost"
+            />
+          </div>
+        ) : null}
 
         <section className="mt-4 overflow-hidden rounded-[10px] border border-[#dfe5eb] bg-white">
           <SubscriptionNavigation
@@ -1600,7 +1637,7 @@ function SmsBundleCatalogue({
         </p>
 
         <p className="mt-1 text-[9.5px] font-normal text-[#69768f]">
-          Bundles branches can buy for repayment reminders and campaign messages.
+          Orgs pay the sell rate. Pahappa costs UGX 35 per SMS; the gap is reserve and is not taken from organisation wallets.
         </p>
       </div>
 
@@ -1631,13 +1668,18 @@ function SmsBundleCatalogue({
                   </div>
 
                   <p className="mt-0.5 text-[9px] font-normal text-[#68768f]">
-                    {ccNumber(bundle.smsUnits)} SMS · {ccMoney(bundle.effectiveRate, bundle.currency)} per SMS
+                    {ccNumber(bundle.smsUnits)} SMS · sell {ccMoney(bundle.effectiveRate, bundle.currency)} · cost {ccMoney(bundle.providerCostPerSms ?? 35, bundle.currency)} · reserve {ccMoney(bundle.reservePerSms ?? bundle.effectiveRate - 35, bundle.currency)} per SMS
                   </p>
                 </div>
               </div>
 
-              <p className="text-[12px] font-bold text-[#17233c]">
-                {ccMoney(bundle.priceUgx, bundle.currency)}
+              <p className="text-right">
+                <span className="block text-[12px] font-bold text-[#17233c]">
+                  {ccMoney(bundle.priceUgx, bundle.currency)}
+                </span>
+                <span className="mt-0.5 block text-[9px] font-medium text-[#168650]">
+                  Reserve {ccMoney(bundle.reserveUgx ?? 0, bundle.currency)}
+                </span>
               </p>
             </div>
           ))}
@@ -2278,6 +2320,7 @@ type IconTone =
   | "green"
   | "blue"
   | "amber"
+  | "purple"
   | "red";
 
 function LargeIcon({
@@ -2335,6 +2378,10 @@ function iconTone(
 
   if (tone === "red") {
     return "bg-[#fff0f0] text-[#df4545]";
+  }
+
+  if (tone === "purple") {
+    return "bg-[#f3efff] text-[#6d4ecb]";
   }
 
   return "bg-[#eaf6ee] text-[#198b55]";

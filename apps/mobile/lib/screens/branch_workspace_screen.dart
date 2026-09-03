@@ -34,6 +34,7 @@ import '../services/offline_cache_store.dart';
 import '../services/session_activity.dart';
 import '../services/session_cleanup.dart';
 import '../services/session_store.dart';
+import '../services/update_prompt.dart';
 import '../theme.dart';
 import '../utils/account_access.dart';
 import '../utils/friendly_errors.dart';
@@ -123,6 +124,10 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       sessionStore: _store,
       onSessionCleared: _handleSessionCleared,
       onAccountBlocked: _handleAccountBlocked,
+      onResumed: () async {
+        if (!mounted) return;
+        await promptAppUpdateIfNeeded(context);
+      },
     );
 
     _activity.start();

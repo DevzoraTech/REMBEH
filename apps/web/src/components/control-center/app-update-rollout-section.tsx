@@ -348,6 +348,8 @@ export function ControlCenterAppUpdateRolloutSection({
                       <p className="mt-1.5 text-[11px] font-medium text-slate-500">
                         {tenantIds.length} selected. Those organisations are
                         asked the next time a signed-in phone opens REMBEH.
+                        If the app is already open, log out and log in, or
+                        fully close it and open it again.
                       </p>
                     </div>
                   ) : (

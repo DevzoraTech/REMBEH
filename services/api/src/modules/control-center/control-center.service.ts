@@ -22,13 +22,23 @@ import {
   SubscriptionPaymentStatus,
   UserStatus,
 } from '@prisma/client';
-import { ControlCenterUpdateMessageTemplateDto } from './dto/control-center-settings.dto';
+import {
+  ControlCenterCreateOperatorSmsContactDto,
+  ControlCenterUpdateMessageTemplateDto,
+  ControlCenterUpdateOperatorSmsContactDto,
+} from './dto/control-center-settings.dto';
 import { ControlCenterAuditQueryDto } from './dto/control-center-audit-query.dto';
 import { ControlCenterReportQueryDto } from './dto/control-center-report-query.dto';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { isPrismaUniqueConstraintError } from '../../common/database/prisma-errors';
 import { PasswordService } from '../../common/security/password.service';
 import { PrismaService } from '../../database/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import {
+  displayOperatorSmsPhone,
+  normalizeOperatorSmsPhone,
+  OperatorAlertService,
+} from '../notifications/operator-alert.service';
 import { SmsService } from '../notifications/sms.service';
 import { BillingService } from '../billing/billing.service';
 import type { ControlCenterAdminContext } from './control-center-admin';
@@ -43,6 +53,7 @@ import { ControlCenterSendMessageDto } from './dto/control-center-message.dto';
 import { ControlCenterSavePricingDto } from './dto/control-center-pricing.dto';
 import { ControlCenterUpdateUserStatusDto } from './dto/control-center-users.dto';
 import { DEFAULT_CONTROL_CENTER_MESSAGE_TEMPLATES } from './control-center-message-templates';
+import { PLATFORM_SMS_PROVIDER_COST_UGX } from '../sms-credits/sms-credits.constants';
 
 const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 365 * 10;
 
@@ -77,6 +88,7 @@ export class ControlCenterService implements OnModuleInit {
     private readonly configService: ConfigService,
     private readonly passwordService: PasswordService,
     private readonly notificationsService: NotificationsService,
+    private readonly operatorAlerts: OperatorAlertService,
     private readonly smsService: SmsService,
     private readonly billingService: BillingService,
   ) {}
@@ -84,6 +96,7 @@ export class ControlCenterService implements OnModuleInit {
   async onModuleInit() {
     await this.ensureAllowedAdmins();
     await this.ensureMessageTemplates();
+    await this.operatorAlerts.ensureDefaultContacts();
   }
 
   async authStatus(email?: string) {
@@ -104,8 +117,9 @@ export class ControlCenterService implements OnModuleInit {
   }
   async controlCenterSettings() {
     const allowedEmails = this.allowedEmails();
+    await this.operatorAlerts.ensureDefaultContacts();
 
-    const [admins, templates, plans] = await Promise.all([
+    const [admins, templates, plans, operatorSmsContacts] = await Promise.all([
       this.prisma.controlCenterAdmin.findMany({
         orderBy: [
           {
@@ -142,6 +156,9 @@ export class ControlCenterService implements OnModuleInit {
         orderBy: {
           createdAt: 'asc',
         },
+      }),
+      this.prisma.controlCenterOperatorSmsContact.findMany({
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
       }),
     ]);
 
@@ -245,6 +262,10 @@ export class ControlCenterService implements OnModuleInit {
 
         updatedAt: plan.updatedAt.toISOString(),
       })),
+
+      operatorSmsContacts: operatorSmsContacts.map((contact) =>
+        this.toOperatorSmsContact(contact),
+      ),
 
       billing: {
         providers: [
@@ -354,6 +375,149 @@ export class ControlCenterService implements OnModuleInit {
 
         updatedAt: updated.updatedAt.toISOString(),
       },
+    };
+  }
+
+  async createOperatorSmsContact(
+    admin: ControlCenterAdminContext,
+    dto: ControlCenterCreateOperatorSmsContactDto,
+  ) {
+    const name = dto.name.trim();
+    const phone = this.requireOperatorSmsPhone(dto.phone);
+    const last = await this.prisma.controlCenterOperatorSmsContact.findFirst({
+      orderBy: { sortOrder: 'desc' },
+      select: { sortOrder: true },
+    });
+
+    try {
+      const created = await this.prisma.controlCenterOperatorSmsContact.create({
+        data: {
+          name,
+          phone,
+          active: dto.active ?? true,
+          sortOrder: (last?.sortOrder ?? -1) + 1,
+        },
+      });
+      await this.audit(
+        admin.adminId,
+        'control_center.operator_sms_contact.created',
+        'ControlCenterOperatorSmsContact',
+        created.id,
+        null,
+        this.toOperatorSmsContact(created),
+      );
+      return { contact: this.toOperatorSmsContact(created) };
+    } catch (error) {
+      this.throwOperatorSmsPhoneConflict(error);
+      throw error;
+    }
+  }
+
+  async updateOperatorSmsContact(
+    admin: ControlCenterAdminContext,
+    contactId: string,
+    dto: ControlCenterUpdateOperatorSmsContactDto,
+  ) {
+    const existing =
+      await this.prisma.controlCenterOperatorSmsContact.findUnique({
+        where: { id: contactId },
+      });
+    if (!existing) {
+      throw new NotFoundException('Operator SMS contact not found.');
+    }
+
+    const name = dto.name?.trim();
+    const phone =
+      dto.phone !== undefined
+        ? this.requireOperatorSmsPhone(dto.phone)
+        : undefined;
+
+    try {
+      const updated = await this.prisma.controlCenterOperatorSmsContact.update({
+        where: { id: contactId },
+        data: {
+          ...(name ? { name } : {}),
+          ...(phone ? { phone } : {}),
+          ...(dto.active !== undefined ? { active: dto.active } : {}),
+        },
+      });
+      await this.audit(
+        admin.adminId,
+        'control_center.operator_sms_contact.updated',
+        'ControlCenterOperatorSmsContact',
+        updated.id,
+        this.toOperatorSmsContact(existing),
+        this.toOperatorSmsContact(updated),
+      );
+      return { contact: this.toOperatorSmsContact(updated) };
+    } catch (error) {
+      this.throwOperatorSmsPhoneConflict(error);
+      throw error;
+    }
+  }
+
+  async deleteOperatorSmsContact(
+    admin: ControlCenterAdminContext,
+    contactId: string,
+  ) {
+    const existing =
+      await this.prisma.controlCenterOperatorSmsContact.findUnique({
+        where: { id: contactId },
+      });
+    if (!existing) {
+      throw new NotFoundException('Operator SMS contact not found.');
+    }
+
+    await this.prisma.controlCenterOperatorSmsContact.delete({
+      where: { id: contactId },
+    });
+    await this.audit(
+      admin.adminId,
+      'control_center.operator_sms_contact.deleted',
+      'ControlCenterOperatorSmsContact',
+      existing.id,
+      this.toOperatorSmsContact(existing),
+      null,
+    );
+    return { ok: true };
+  }
+
+  private requireOperatorSmsPhone(value: string) {
+    const phone = normalizeOperatorSmsPhone(value);
+    if (!phone) {
+      throw new BadRequestException(
+        'Enter a valid Ugandan mobile number, for example 0777823011.',
+      );
+    }
+    return phone;
+  }
+
+  private throwOperatorSmsPhoneConflict(error: unknown) {
+    if (isPrismaUniqueConstraintError(error)) {
+      throw new ConflictException(
+        'That phone number is already on the operator SMS list.',
+      );
+    }
+  }
+
+  private toOperatorSmsContact(contact: {
+    id: string;
+    name: string;
+    phone: string;
+    active: boolean;
+    sortOrder: number;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    return {
+      id: contact.id,
+      name: contact.name,
+      phone: contact.phone,
+      phoneDisplay: displayOperatorSmsPhone(contact.phone),
+      active: contact.active,
+      sortOrder: contact.sortOrder,
+      createdAt: contact.createdAt.toISOString(),
+      updatedAt: contact.updatedAt.toISOString(),
     };
   }
 
@@ -1712,6 +1876,7 @@ export class ControlCenterService implements OnModuleInit {
       newBorrowersThisMonth,
       applicationsThisMonth,
       tenantActivity,
+      smsEconomics,
     ] = await Promise.all([
       this.prisma.authSession.findMany({
         where: {
@@ -1797,6 +1962,7 @@ export class ControlCenterService implements OnModuleInit {
           tenant: { select: { name: true } },
         },
       }),
+      this.smsEconomics(),
     ]);
 
     return {
@@ -1832,6 +1998,14 @@ export class ControlCenterService implements OnModuleInit {
         newOrganizationsThisMonth: newOrgsThisMonth,
         newBorrowersThisMonth,
         applicationsThisMonth,
+        smsProviderCostPerSms: PLATFORM_SMS_PROVIDER_COST_UGX,
+        smsSoldUnits: smsEconomics.soldUnits,
+        smsSoldRevenue: smsEconomics.revenueUgx,
+        smsProviderCost: smsEconomics.providerCostUgx,
+        smsReserve: smsEconomics.reserveUgx,
+        smsSellRate: smsEconomics.sellRate,
+        smsWalletAvailable: smsEconomics.walletAvailable,
+        smsLifetimeUsed: smsEconomics.lifetimeUsed,
       },
 
       recentPayments: recentPayments.map((payment) => ({
@@ -1887,6 +2061,7 @@ export class ControlCenterService implements OnModuleInit {
       paymentRows,
       plans,
       smsBundles,
+      smsEconomics,
     ] =
       await Promise.all([
         this.prisma.branch.findMany({
@@ -1947,6 +2122,7 @@ export class ControlCenterService implements OnModuleInit {
           where: { status: { not: SmsBundleStatus.ARCHIVED } },
           orderBy: [{ status: 'asc' }, { priceUgx: 'asc' }],
         }),
+        this.smsEconomics(),
       ]);
 
     const completedByBranch = new Map(
@@ -2063,24 +2239,39 @@ export class ControlCenterService implements OnModuleInit {
       payments: paymentRows,
       paymentStats: this.controlCenterPaymentStats(paymentRows),
       plans: plans.map((plan) => this.toPlan(plan)),
-      smsBundles: smsBundles.map((bundle) => ({
-        id: bundle.id,
-        code: bundle.code,
-        name: bundle.name,
-        priceUgx: bundle.priceUgx,
-        smsUnits: bundle.smsUnits,
-        currency: 'UGX',
-        status: bundle.status,
-        version: bundle.version,
-        activeFrom: bundle.activeFrom.toISOString(),
-        activeTo: bundle.activeTo?.toISOString() ?? null,
-        effectiveRate: this.decimal(bundle.effectiveRate),
-      })),
+      smsBundles: smsBundles.map((bundle) => {
+        const sellRate =
+          bundle.smsUnits > 0
+            ? this.decimal(bundle.effectiveRate) ||
+              bundle.priceUgx / bundle.smsUnits
+            : 0;
+        return {
+          id: bundle.id,
+          code: bundle.code,
+          name: bundle.name,
+          priceUgx: bundle.priceUgx,
+          smsUnits: bundle.smsUnits,
+          currency: 'UGX',
+          status: bundle.status,
+          version: bundle.version,
+          activeFrom: bundle.activeFrom.toISOString(),
+          activeTo: bundle.activeTo?.toISOString() ?? null,
+          effectiveRate: sellRate,
+          providerCostPerSms: PLATFORM_SMS_PROVIDER_COST_UGX,
+          reservePerSms: Math.round(sellRate - PLATFORM_SMS_PROVIDER_COST_UGX),
+          reserveUgx:
+            bundle.priceUgx - bundle.smsUnits * PLATFORM_SMS_PROVIDER_COST_UGX,
+        };
+      }),
+      smsEconomics,
     };
   }
 
   async listPayments() {
-    const payments = await this.listControlCenterPaymentRows(500);
+    const [payments, smsEconomics] = await Promise.all([
+      this.listControlCenterPaymentRows(500),
+      this.smsEconomics(),
+    ]);
     const stats = this.controlCenterPaymentStats(payments);
 
     return {
@@ -2092,6 +2283,7 @@ export class ControlCenterService implements OnModuleInit {
         completedRevenue: stats.completedRevenue,
         completedPayments: stats.completedPayments,
       },
+      smsEconomics,
       payments,
     };
   }
@@ -4672,6 +4864,48 @@ export class ControlCenterService implements OnModuleInit {
         ...(newValue === null ? {} : { newValue }),
       },
     });
+  }
+
+  private async smsEconomics() {
+    const [purchases, wallets] = await Promise.all([
+      this.prisma.smsPurchase.aggregate({
+        where: { status: SmsPurchaseStatus.CREDITED },
+        _sum: {
+          amountExpected: true,
+          smsUnitsExpected: true,
+        },
+        _count: { _all: true },
+      }),
+      this.prisma.branchSmsWallet.aggregate({
+        _sum: {
+          availableUnits: true,
+          reservedUnits: true,
+          lifetimeUsed: true,
+          lifetimePurchased: true,
+        },
+      }),
+    ]);
+
+    const soldUnits = purchases._sum.smsUnitsExpected ?? 0;
+    const revenueUgx = purchases._sum.amountExpected ?? 0;
+    const providerCostUgx = soldUnits * PLATFORM_SMS_PROVIDER_COST_UGX;
+    const reserveUgx = revenueUgx - providerCostUgx;
+    const sellRate =
+      soldUnits > 0 ? Math.round((revenueUgx / soldUnits) * 100) / 100 : 0;
+
+    return {
+      providerCostPerSms: PLATFORM_SMS_PROVIDER_COST_UGX,
+      soldUnits,
+      creditedPurchases: purchases._count._all,
+      revenueUgx,
+      providerCostUgx,
+      reserveUgx,
+      sellRate,
+      walletAvailable: wallets._sum.availableUnits ?? 0,
+      walletReserved: wallets._sum.reservedUnits ?? 0,
+      lifetimeUsed: wallets._sum.lifetimeUsed ?? 0,
+      lifetimePurchased: wallets._sum.lifetimePurchased ?? 0,
+    };
   }
 
   private decimal(value: Prisma.Decimal | number | null | undefined) {

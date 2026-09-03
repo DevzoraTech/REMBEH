@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -9,7 +10,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { ControlCenterAdminContext } from './control-center-admin';
-import { ControlCenterUpdateMessageTemplateDto } from './dto/control-center-settings.dto';
+import {
+  ControlCenterCreateOperatorSmsContactDto,
+  ControlCenterUpdateMessageTemplateDto,
+  ControlCenterUpdateOperatorSmsContactDto,
+} from './dto/control-center-settings.dto';
 import { ControlCenterAuditQueryDto } from './dto/control-center-audit-query.dto';
 import { ControlCenterReportQueryDto } from './dto/control-center-report-query.dto';
 import { ControlCenterMessageQueryDto } from './dto/control-center-message-query.dto';
@@ -117,6 +122,38 @@ export class ControlCenterController {
       templateId,
       body,
     );
+  }
+
+  @Post('settings/operator-sms-contacts')
+  @UseGuards(ControlCenterAuthGuard)
+  createOperatorSmsContact(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Body() body: ControlCenterCreateOperatorSmsContactDto,
+  ) {
+    return this.controlCenterService.createOperatorSmsContact(admin, body);
+  }
+
+  @Patch('settings/operator-sms-contacts/:contactId')
+  @UseGuards(ControlCenterAuthGuard)
+  updateOperatorSmsContact(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Param('contactId') contactId: string,
+    @Body() body: ControlCenterUpdateOperatorSmsContactDto,
+  ) {
+    return this.controlCenterService.updateOperatorSmsContact(
+      admin,
+      contactId,
+      body,
+    );
+  }
+
+  @Delete('settings/operator-sms-contacts/:contactId')
+  @UseGuards(ControlCenterAuthGuard)
+  deleteOperatorSmsContact(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Param('contactId') contactId: string,
+  ) {
+    return this.controlCenterService.deleteOperatorSmsContact(admin, contactId);
   }
 
   @Get('clients')

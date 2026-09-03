@@ -4,12 +4,23 @@ import { DatabaseModule } from '../../database/database.module';
 import { FcmPushService } from './fcm-push.service';
 import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
+import { OperatorAlertService } from './operator-alert.service';
 import { SmsService } from './sms.service';
 
 @Module({
   imports: [AuthContextModule, DatabaseModule],
   controllers: [NotificationsController],
-  providers: [NotificationsService, SmsService, FcmPushService],
-  exports: [NotificationsService, SmsService, FcmPushService],
+  providers: [
+    NotificationsService,
+    SmsService,
+    FcmPushService,
+    OperatorAlertService,
+  ],
+  exports: [
+    NotificationsService,
+    SmsService,
+    FcmPushService,
+    OperatorAlertService,
+  ],
 })
 export class NotificationsModule {}

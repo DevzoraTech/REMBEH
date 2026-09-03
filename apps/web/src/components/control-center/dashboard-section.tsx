@@ -12,10 +12,12 @@ import {
   Landmark,
   LockKeyhole,
   MessageCircleWarning,
+  MessageSquareText,
   MoreVertical,
   Smartphone,
   Tag,
   Users,
+  Wallet,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type {
@@ -246,6 +248,37 @@ export function ControlCenterDashboardSection({
           label="Set-aside borrowers"
           value={ccNumber(stats.voidedBorrowers)}
           secondary="Abandoned / voided"
+        />
+      </div>
+
+      <div className="mt-3.5 grid gap-3.5 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          icon={MessageSquareText}
+          tone="blue"
+          label="SMS sold"
+          value={ccNumber(stats.smsSoldUnits)}
+          secondary={`Sold at ${ccMoney(stats.smsSellRate)} / SMS`}
+        />
+        <MetricCard
+          icon={CreditCard}
+          tone="purple"
+          label="SMS revenue"
+          value={ccMoney(stats.smsSoldRevenue)}
+          secondary={`Provider ${ccMoney(stats.smsProviderCostPerSms)} / SMS`}
+        />
+        <MetricCard
+          icon={Banknote}
+          tone="amber"
+          label="SMS cost"
+          value={ccMoney(stats.smsProviderCost)}
+          secondary={`${ccNumber(stats.smsLifetimeUsed)} sent · ${ccNumber(stats.smsWalletAvailable)} unused`}
+        />
+        <MetricCard
+          icon={Wallet}
+          tone="green"
+          label="SMS reserve"
+          value={ccMoney(stats.smsReserve)}
+          secondary="Revenue minus UGX 35 provider cost"
         />
       </div>
 

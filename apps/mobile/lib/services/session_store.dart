@@ -260,6 +260,25 @@ class RembehSession {
   }
 }
 
+String? tenantIdFromAccessToken(String token) {
+  final parts = token.split('.');
+  if (parts.length < 2) return null;
+  try {
+    var segment = parts[1].replaceAll('-', '+').replaceAll('_', '/');
+    final pad = (4 - segment.length % 4) % 4;
+    if (pad != 0) {
+      segment = '$segment${'=' * pad}';
+    }
+    final payload = jsonDecode(utf8.decode(base64Decode(segment)));
+    if (payload is! Map) return null;
+    final value = payload['tenantId']?.toString().trim();
+    if (value == null || value.isEmpty) return null;
+    return value;
+  } catch (_) {
+    return null;
+  }
+}
+
 class SessionStore {
   static const _profileKey = 'rembeh_mobile_session_profile';
   static const _legacyKey = 'rembeh_mobile_session';
@@ -325,11 +344,20 @@ class SessionStore {
     try {
       final profile = jsonDecode(profileRaw) as Map<String, dynamic>;
       final refreshToken = await _secure.read(key: _refreshTokenKey);
-      return RembehSession.fromJson({
+      final session = RembehSession.fromJson({
         ...profile,
         'accessToken': accessToken,
         'refreshToken': refreshToken,
       });
+      final storedTenant = session.tenantId?.trim();
+      if (storedTenant != null && storedTenant.isNotEmpty) {
+        return session;
+      }
+      final tokenTenant = tenantIdFromAccessToken(session.accessToken);
+      if (tokenTenant == null) return session;
+      final hydrated = session.copyWith(tenantId: tokenTenant);
+      await save(hydrated);
+      return hydrated;
     } catch (_) {
       await clear();
       return null;

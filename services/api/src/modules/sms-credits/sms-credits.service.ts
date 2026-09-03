@@ -28,6 +28,7 @@ import { BILLING_PERMISSIONS } from '../billing/billing.permissions';
 import { PesapalClient } from '../billing/pesapal.client';
 import { FcmPushService } from '../notifications/fcm-push.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OperatorAlertService } from '../notifications/operator-alert.service';
 import { SmsService } from '../notifications/sms.service';
 import type { SmsProviderRequestLogPayload } from '../notifications/sms.service';
 import {
@@ -38,6 +39,7 @@ import {
   SMS_RETRYABLE_STATUSES,
   SMS_UNCERTAIN_RESERVATION_TTL_MS,
   SMS_WELCOME_GRANT_REFERENCE_TYPE,
+  smsPurchaseReserveUgx,
 } from './sms-credits.constants';
 import type {
   SmsBalanceContract,
@@ -61,6 +63,7 @@ export class SmsCreditsService {
     private readonly pesapal: PesapalClient,
     private readonly smsService: SmsService,
     private readonly notificationsService: NotificationsService,
+    private readonly operatorAlerts: OperatorAlertService,
     private readonly fcmPushService: FcmPushService,
   ) {}
 
@@ -345,6 +348,29 @@ export class SmsCreditsService {
         status: SmsPurchaseStatus.AWAITING_PAYMENT,
       },
     });
+
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: user.tenantId },
+      select: { name: true },
+    });
+    void this.operatorAlerts
+      .notifyPayment({
+        kind: 'sms',
+        stage: 'submitted',
+        organizationName: tenant?.name ?? 'Unknown organization',
+        branchName: branch.name,
+        amountUgx: bundle.priceUgx,
+        smsUnits: bundle.smsUnits,
+        reference: merchantReference,
+        paymentMethod: 'Pesapal',
+      })
+      .catch((error) => {
+        this.logger.warn(
+          `Operator SMS pack checkout alert failed: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
+      });
 
     return {
       redirectUrl: order.redirect_url,
@@ -1507,6 +1533,33 @@ export class SmsCreditsService {
         this.configService.get<string>('SMS_ADMIN_ALERT_EMAIL')?.trim() ||
         this.configService.get<string>('EMAIL_FROM')?.trim() ||
         undefined;
+
+      const tenant = await this.prisma.tenant.findUnique({
+        where: { id: purchase.tenantId },
+        select: { name: true },
+      });
+      void this.operatorAlerts
+        .notifyPayment({
+          kind: 'sms',
+          stage: 'confirmed',
+          organizationName: tenant?.name ?? 'Unknown organization',
+          branchName: purchase.branch.name,
+          amountUgx: purchase.amountExpected,
+          smsUnits: purchase.smsUnitsExpected,
+          reserveUgx: smsPurchaseReserveUgx(
+            purchase.amountExpected,
+            purchase.smsUnitsExpected,
+          ),
+          reference:
+            purchase.externalTransactionId || purchase.merchantReference,
+        })
+        .catch((error) => {
+          this.logger.warn(
+            `Operator SMS credit alert failed: ${
+              error instanceof Error ? error.message : error
+            }`,
+          );
+        });
 
       if (adminEmail) {
         await this.notificationsService.sendSmsPurchaseAdminAlertEmail({
