@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  BranchOperationStatus,
   CashShortagePaymentMethod,
   CashShortageReason,
   CashShortageSource,
@@ -16,14 +17,39 @@ import { PrismaService } from '../../database/prisma.service';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import { OPERATIONS_PERMISSIONS } from '../operations/operations.permissions';
 
+const shortageInclude = {
+  branch: {
+    select: { id: true, name: true },
+  },
+  responsibleUser: {
+    select: { id: true, displayName: true, publicId: true },
+  },
+  employee: {
+    select: { id: true, fullName: true },
+  },
+  createdBy: {
+    select: { id: true, displayName: true },
+  },
+  payments: {
+    orderBy: { paidAt: 'desc' as const },
+    take: 100,
+    include: {
+      recordedBy: {
+        select: { id: true, displayName: true },
+      },
+    },
+  },
+};
+
 @Injectable()
 export class CashShortagesService {
   constructor(private readonly prisma: PrismaService) {}
 
-    async createShortage(input: {
+  async createShortage(input: {
     tenantId: string;
     branchId: string;
-    responsibleUserId: string;
+    responsibleUserId?: string | null;
+    employeeId?: string | null;
     createdByUserId: string;
     sourceType: CashShortageSource;
     sourceId?: string | null;
@@ -46,27 +72,84 @@ export class CashShortagesService {
       : null;
     if (existing) return existing;
 
-  return this.prisma.cashShortage.create({
-  data: {
-    tenantId: input.tenantId,
-    branchId: input.branchId,
-    responsibleUserId:
-      input.responsibleUserId,
-    createdByUserId:
-      input.createdByUserId,
-    sourceType: input.sourceType,
-    sourceId: input.sourceId ?? null,
-    reason: input.reason ?? null,
-    operationDate: input.operationDate,
-    amountOriginal:
-      new Prisma.Decimal(amount),
-    amountOutstanding:
-      new Prisma.Decimal(amount),
-    status: CashShortageStatus.OPEN,
-    notes:
-      input.notes?.trim() || null,
-  },
-});
+    let employeeId = input.employeeId ?? null;
+    if (!employeeId && input.responsibleUserId) {
+      const employee = await this.prisma.employee.findFirst({
+        where: {
+          tenantId: input.tenantId,
+          userId: input.responsibleUserId,
+        },
+        select: { id: true },
+      });
+      employeeId = employee?.id ?? null;
+    }
+
+    if (!input.responsibleUserId && !employeeId) {
+      throw new BadRequestException(
+        'Link this shortage to an employee or staff account.',
+      );
+    }
+
+    return this.prisma.cashShortage.create({
+      data: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        responsibleUserId: input.responsibleUserId ?? null,
+        employeeId,
+        createdByUserId: input.createdByUserId,
+        sourceType: input.sourceType,
+        sourceId: input.sourceId ?? null,
+        reason: input.reason ?? null,
+        operationDate: input.operationDate,
+        amountOriginal: new Prisma.Decimal(amount),
+        amountOutstanding: new Prisma.Decimal(amount),
+        status: CashShortageStatus.OPEN,
+        notes: input.notes?.trim() || null,
+      },
+    });
+  }
+
+  async recordOpeningShortage(
+    user: AuthenticatedUser,
+    input: {
+      employeeId: string;
+      amount: number;
+      notes?: string;
+      operationDate?: string;
+    },
+  ) {
+    this.assertCanWrite(user);
+    const employee = await this.findEmployeeInScope(user, input.employeeId);
+    if (!employee.branchId) {
+      throw new BadRequestException(
+        'Assign this employee to a branch before recording a shortage.',
+      );
+    }
+
+    const amount = Math.round(Number(input.amount) * 100) / 100;
+    if (!(amount > 0)) {
+      throw new BadRequestException('Enter a valid shortage amount.');
+    }
+
+    const operationDate = this.parseDate(input.operationDate);
+    const shortage = await this.createShortage({
+      tenantId: user.tenantId!,
+      branchId: employee.branchId,
+      responsibleUserId: employee.userId,
+      employeeId: employee.id,
+      createdByUserId: user.userId,
+      sourceType: CashShortageSource.MANUAL,
+      reason: CashShortageReason.OTHER,
+      operationDate,
+      amount,
+      notes:
+        input.notes?.trim() ||
+        'Opening shortage carried from the previous system.',
+    });
+    if (!shortage) {
+      throw new BadRequestException('Enter a valid shortage amount.');
+    }
+    return this.getOne(user, shortage.id);
   }
 
   async listForScope(
@@ -92,26 +175,7 @@ export class CashShortagesService {
           ? { status: options.status as CashShortageStatus }
           : {}),
       },
-      include: {
-        branch: {
-          select: { id: true, name: true },
-        },
-        responsibleUser: {
-          select: { id: true, displayName: true, publicId: true },
-        },
-        createdBy: {
-          select: { id: true, displayName: true },
-        },
-        payments: {
-          orderBy: { paidAt: 'desc' },
-          take: 100,
-          include: {
-            recordedBy: {
-              select: { id: true, displayName: true },
-            },
-          },
-        },
-      },
+      include: shortageInclude,
       orderBy: [{ status: 'asc' }, { operationDate: 'desc' }],
       take: 500,
     });
@@ -145,26 +209,7 @@ export class CashShortagesService {
         tenantId: user.tenantId!,
         ...branchScope,
       },
-      include: {
-        branch: {
-          select: { id: true, name: true },
-        },
-        responsibleUser: {
-          select: { id: true, displayName: true, publicId: true },
-        },
-        createdBy: {
-          select: { id: true, displayName: true },
-        },
-        payments: {
-          orderBy: { paidAt: 'desc' },
-          take: 100,
-          include: {
-            recordedBy: {
-              select: { id: true, displayName: true },
-            },
-          },
-        },
-      },
+      include: shortageInclude,
     });
     if (!row) throw new NotFoundException('Shortage was not found.');
     return { shortage: this.toContract(row) };
@@ -173,7 +218,8 @@ export class CashShortagesService {
   private toContract(row: {
     id: string;
     branchId: string;
-    responsibleUserId: string;
+    responsibleUserId: string | null;
+    employeeId?: string | null;
     sourceType: CashShortageSource;
     sourceId: string | null;
     reason: CashShortageReason | null;
@@ -189,7 +235,8 @@ export class CashShortagesService {
       id: string;
       displayName: string;
       publicId: string | null;
-    };
+    } | null;
+    employee?: { id: string; fullName: string } | null;
     createdBy: { id: string; displayName: string };
     payments: Array<{
       id: string;
@@ -205,8 +252,12 @@ export class CashShortagesService {
       branchId: row.branchId,
       branchName: row.branch.name,
       responsibleUserId: row.responsibleUserId,
-      responsibleName: row.responsibleUser.displayName,
-      responsiblePublicId: row.responsibleUser.publicId,
+      employeeId: row.employeeId ?? row.employee?.id ?? null,
+      responsibleName:
+        row.responsibleUser?.displayName ??
+        row.employee?.fullName ??
+        'Employee',
+      responsiblePublicId: row.responsibleUser?.publicId ?? null,
       createdByName: row.createdBy.displayName,
       sourceType: row.sourceType,
       sourceId: row.sourceId,
@@ -276,14 +327,24 @@ export class CashShortagesService {
       nextOutstanding <= 0
         ? CashShortageStatus.CLEARED
         : CashShortageStatus.PARTIALLY_PAID;
+    const method = input.method ?? CashShortagePaymentMethod.CASH;
 
     await this.prisma.$transaction(async (tx) => {
+      const operationId =
+        method === CashShortagePaymentMethod.CASH
+          ? await this.lockOpenCashDay(tx, {
+              tenantId: user.tenantId!,
+              branchId: shortage.branchId,
+            })
+          : null;
+
       await tx.cashShortagePayment.create({
         data: {
           tenantId: user.tenantId!,
           shortageId: shortage.id,
+          operationId,
           amount: new Prisma.Decimal(amount),
-          method: input.method ?? CashShortagePaymentMethod.CASH,
+          method,
           notes: input.notes?.trim() || null,
           recordedByUserId: user.userId,
         },
@@ -304,7 +365,8 @@ export class CashShortagesService {
   async settleForEmployee(
     user: AuthenticatedUser,
     input: {
-      responsibleUserId: string;
+      responsibleUserId?: string;
+      employeeId?: string;
       amount: number;
       method?: CashShortagePaymentMethod;
       notes?: string;
@@ -321,11 +383,31 @@ export class CashShortagesService {
       throw new BadRequestException('Enter a valid payment amount.');
     }
 
+    let responsibleUserId = input.responsibleUserId ?? null;
+    let employeeId = input.employeeId ?? null;
+    let branchId = !canSeeAll ? user.branchId! : null;
+
+    if (employeeId) {
+      const employee = await this.findEmployeeInScope(user, employeeId);
+      employeeId = employee.id;
+      responsibleUserId = responsibleUserId ?? employee.userId;
+      branchId = employee.branchId ?? branchId;
+    }
+
+    if (!responsibleUserId && !employeeId) {
+      throw new BadRequestException(
+        'Select the employee whose shortage is being cleared.',
+      );
+    }
+
     const shortages = await this.prisma.cashShortage.findMany({
       where: {
         tenantId: user.tenantId!,
-        responsibleUserId: input.responsibleUserId,
-        ...(!canSeeAll ? { branchId: user.branchId! } : {}),
+        ...(branchId ? { branchId } : {}),
+        OR: [
+          ...(responsibleUserId ? [{ responsibleUserId }] : []),
+          ...(employeeId ? [{ employeeId }] : []),
+        ],
         status: {
           in: [CashShortageStatus.OPEN, CashShortageStatus.PARTIALLY_PAID],
         },
@@ -358,11 +440,21 @@ export class CashShortagesService {
     let lastShortageId = shortages[0].id;
 
     await this.prisma.$transaction(async (tx) => {
+      const operationId =
+        method === CashShortagePaymentMethod.CASH
+          ? await this.lockOpenCashDay(tx, {
+              tenantId: user.tenantId!,
+              branchId: shortages[0].branchId,
+            })
+          : null;
+
       for (const shortage of shortages) {
         if (remaining <= 0) break;
         const outstanding = Number(shortage.amountOutstanding);
-        const applied = Math.round(Math.min(remaining, outstanding) * 100) / 100;
-        const nextOutstanding = Math.round((outstanding - applied) * 100) / 100;
+        const applied =
+          Math.round(Math.min(remaining, outstanding) * 100) / 100;
+        const nextOutstanding =
+          Math.round((outstanding - applied) * 100) / 100;
         const status =
           nextOutstanding <= 0
             ? CashShortageStatus.CLEARED
@@ -372,6 +464,7 @@ export class CashShortagesService {
           data: {
             tenantId: user.tenantId!,
             shortageId: shortage.id,
+            operationId,
             amount: new Prisma.Decimal(applied),
             method,
             notes,
@@ -381,9 +474,15 @@ export class CashShortagesService {
         await tx.cashShortage.update({
           where: { id: shortage.id },
           data: {
-            amountOutstanding: new Prisma.Decimal(Math.max(0, nextOutstanding)),
+            amountOutstanding: new Prisma.Decimal(
+              Math.max(0, nextOutstanding),
+            ),
             status,
-            clearedAt: status === CashShortageStatus.CLEARED ? new Date() : null,
+            clearedAt:
+              status === CashShortageStatus.CLEARED ? new Date() : null,
+            ...(!shortage.employeeId && employeeId
+              ? { employeeId }
+              : {}),
           },
         });
 
@@ -409,10 +508,74 @@ export class CashShortagesService {
       _sum: { amountOutstanding: true },
     });
     return new Map(
-      rows.map((row) => [
-        row.responsibleUserId,
-        Number(row._sum.amountOutstanding ?? 0),
-      ]),
+      rows
+        .filter((row) => row.responsibleUserId)
+        .map((row) => [
+          row.responsibleUserId as string,
+          Number(row._sum.amountOutstanding ?? 0),
+        ]),
+    );
+  }
+
+  private async findEmployeeInScope(user: AuthenticatedUser, employeeId: string) {
+    const canSeeAll = user.permissions.includes(BRANCH_PERMISSIONS.create);
+    const employee = await this.prisma.employee.findFirst({
+      where: {
+        id: employeeId,
+        tenantId: user.tenantId!,
+        ...(!canSeeAll && user.branchId ? { branchId: user.branchId } : {}),
+      },
+      select: { id: true, userId: true, branchId: true, fullName: true },
+    });
+    if (!employee) {
+      throw new NotFoundException('Employee was not found.');
+    }
+    return employee;
+  }
+
+  private async lockOpenCashDay(
+    tx: Prisma.TransactionClient,
+    input: { tenantId: string; branchId: string },
+  ) {
+    const operation = await tx.branchDailyOperation.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        status: BranchOperationStatus.OPEN,
+      },
+      orderBy: { operationDate: 'desc' },
+    });
+    if (!operation) {
+      throw new BadRequestException(
+        'Open the branch day before recording a cash shortage recovery.',
+      );
+    }
+
+    await tx.$queryRaw(
+      Prisma.sql`
+        SELECT id
+        FROM branch_daily_operations
+        WHERE id = ${operation.id}::uuid
+        FOR UPDATE
+      `,
+    );
+
+    return operation.id;
+  }
+
+  private parseDate(value?: string) {
+    if (!value?.trim()) {
+      const today = new Date();
+      return new Date(
+        Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()),
+      );
+    }
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+    if (!match) {
+      throw new BadRequestException('Use a date in YYYY-MM-DD format.');
+    }
+    return new Date(
+      Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])),
     );
   }
 

@@ -6,6 +6,9 @@ import '../../../../../services/api_client.dart';
 import '../../../../../services/session_store.dart';
 import '../../../../../theme.dart';
 import '../../../../../utils/friendly_errors.dart';
+import '../../../shortages/application/record_opening_shortage.dart';
+import '../../../shortages/application/settle_employee_shortage.dart';
+import '../../../shortages/data/repositories/cash_shortages_repository_impl.dart';
 import '../../application/get_salary_employee.dart';
 import '../../application/record_salary_payment.dart';
 import '../../application/reverse_salary_payment.dart';
@@ -13,7 +16,9 @@ import '../../application/save_salary_employee.dart';
 import '../../data/repositories/salaries_repository_impl.dart';
 import '../../domain/models/salary_models.dart';
 import '../sheets/record_employee_sheet.dart';
+import '../sheets/record_opening_shortage_sheet.dart';
 import '../sheets/record_salary_payment_sheet.dart';
+import '../sheets/record_shortage_payoff_sheet.dart';
 import '../sheets/salary_payment_details_sheet.dart';
 import '../utils/salary_formatters.dart';
 import '../widgets/salary_avatar.dart';
@@ -47,6 +52,8 @@ class _SalaryDetailsScreenState extends State<SalaryDetailsScreen> {
   late final SaveSalaryEmployee _saveEmployee;
   late final RecordSalaryPayment _recordPayment;
   late final ReverseSalaryPayment _reversePayment;
+  late final RecordOpeningShortage _recordOpeningShortage;
+  late final SettleEmployeeShortage _settleEmployeeShortage;
 
   late SalaryEmployee _employee;
   SalaryCycle? _cycle;
@@ -59,14 +66,18 @@ class _SalaryDetailsScreenState extends State<SalaryDetailsScreen> {
   void initState() {
     super.initState();
 
-    final repository = SalariesRepositoryImpl(
-      apiClient: ApiClient(SessionStore()),
+    final apiClient = ApiClient(SessionStore());
+    final repository = SalariesRepositoryImpl(apiClient: apiClient);
+    final shortagesRepository = CashShortagesRepositoryImpl(
+      apiClient: apiClient,
     );
 
     _getEmployee = GetSalaryEmployee(repository);
     _saveEmployee = SaveSalaryEmployee(repository);
     _recordPayment = RecordSalaryPayment(repository);
     _reversePayment = ReverseSalaryPayment(repository);
+    _recordOpeningShortage = RecordOpeningShortage(shortagesRepository);
+    _settleEmployeeShortage = SettleEmployeeShortage(shortagesRepository);
 
     _employee = widget.employee;
     _cycle = widget.cycle;
@@ -324,6 +335,114 @@ class _SalaryDetailsScreenState extends State<SalaryDetailsScreen> {
     }
   }
 
+  Future<void> _recordPriorShortage() async {
+    final input = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (_) {
+        return RecordOpeningShortageSheet(employee: _employee);
+      },
+    );
+
+    if (input == null || !mounted) {
+      return;
+    }
+
+    try {
+      await _recordOpeningShortage(
+        session: widget.session,
+        employeeId: _employee.id,
+        amount: input['amount'] as num,
+        notes: (input['notes'] as String?)?.trim(),
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      await _refreshEmployee();
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Prior shortage recorded.')),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
+    }
+  }
+
+  Future<void> _recordShortagePayoff() async {
+    final input = await showModalBottomSheet<Map<String, dynamic>>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (_) {
+        return RecordShortagePayoffSheet(
+          employee: _employee,
+          openCashDayLabel: _openCashDay?.operationDate == null
+              ? null
+              : salaryDate(_openCashDay!.operationDate),
+        );
+      },
+    );
+
+    if (input == null || !mounted) {
+      return;
+    }
+
+    try {
+      await _settleEmployeeShortage(
+        session: widget.session,
+        employeeId: _employee.id,
+        responsibleUserId: _employee.userId,
+        amount: input['amount'] as num,
+        notes: (input['notes'] as String?)?.trim(),
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      await _refreshEmployee();
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Shortage payoff recorded as today’s cash in.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
+    }
+  }
+
   Future<void> _openHistory() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -438,7 +557,7 @@ class _SalaryDetailsScreenState extends State<SalaryDetailsScreen> {
         titleSpacing: 2,
 
         title: const Text(
-          'Salary Details',
+          'Employee',
           style: TextStyle(
             color: midnightNavy,
             fontSize: 20,
@@ -498,7 +617,17 @@ class _SalaryDetailsScreenState extends State<SalaryDetailsScreen> {
 
             const SizedBox(height: 12),
 
-            _ShortageCard(employee: _employee),
+            _ShortageCard(
+              employee: _employee,
+              onRecordPrior: () {
+                unawaited(_recordPriorShortage());
+              },
+              onRecordPayoff: _employee.shortageOutstanding > 0
+                  ? () {
+                      unawaited(_recordShortagePayoff());
+                    }
+                  : null,
+            ),
 
             const SizedBox(height: 18),
 
@@ -919,9 +1048,15 @@ class _DetailsCard extends StatelessWidget {
 // =============================================================================
 
 class _ShortageCard extends StatelessWidget {
-  const _ShortageCard({required this.employee});
+  const _ShortageCard({
+    required this.employee,
+    required this.onRecordPrior,
+    this.onRecordPayoff,
+  });
 
   final SalaryEmployee employee;
+  final VoidCallback onRecordPrior;
+  final VoidCallback? onRecordPayoff;
 
   @override
   Widget build(BuildContext context) {
@@ -1033,6 +1168,30 @@ class _ShortageCard extends StatelessWidget {
                   ),
               ],
             ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: onRecordPrior,
+                  child: const Text('Record prior shortage'),
+                ),
+              ),
+              if (onRecordPayoff != null) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: onRecordPayoff,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: forestEmerald,
+                      foregroundColor: Colors.white,
+                    ),
+                    child: const Text('Cash payoff'),
+                  ),
+                ),
+              ],
+            ],
           ),
         ],
       ),

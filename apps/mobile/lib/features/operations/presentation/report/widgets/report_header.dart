@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../../theme.dart';
 import '../../../domain/models/report/daily_report_data.dart';
+import 'report_typography.dart';
 
 class ReportHeader extends StatelessWidget {
   const ReportHeader({
@@ -30,12 +31,12 @@ class ReportHeader extends StatelessWidget {
           color: forestEmerald,
         ),
         const SizedBox(height: 11),
-        const Text(
+        Text(
           'DAILY RECONCILIATION REPORT',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: forestEmerald,
-            fontSize: 12,
+            fontSize: ReportType.heading(context),
             fontWeight: FontWeight.w900,
             letterSpacing: 0.2,
           ),
@@ -93,9 +94,9 @@ class _OrganizationIdentity extends StatelessWidget {
         Text(
           organizationName.toUpperCase(),
           textAlign: TextAlign.center,
-          style: const TextStyle(
+          style: TextStyle(
             color: forestEmerald,
-            fontSize: 13,
+            fontSize: ReportType.title(context),
             fontWeight: FontWeight.w900,
             letterSpacing: 0.15,
           ),
@@ -104,9 +105,9 @@ class _OrganizationIdentity extends StatelessWidget {
         Text(
           branchName,
           textAlign: TextAlign.center,
-          style: const TextStyle(
+          style: TextStyle(
             color: midnightNavy,
-            fontSize: 9.5,
+            fontSize: ReportType.body(context),
             fontWeight: FontWeight.w800,
           ),
         ),
@@ -115,9 +116,9 @@ class _OrganizationIdentity extends StatelessWidget {
           Text(
             branchAddress!.trim(),
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               color: slateText,
-              fontSize: 8,
+              fontSize: ReportType.secondary(context),
               height: 1.25,
               fontWeight: FontWeight.w500,
             ),
@@ -177,9 +178,9 @@ class _ContactItem extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           value,
-          style: const TextStyle(
+          style: TextStyle(
             color: midnightNavy,
-            fontSize: 7.5,
+            fontSize: ReportType.secondary(context),
             fontWeight:
                 FontWeight.w600,
           ),
@@ -279,22 +280,22 @@ class _MetadataRow extends StatelessWidget {
           CrossAxisAlignment.start,
       children: [
         SizedBox(
-          width: 66,
+          width: 88,
           child: Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               color: slateText,
-              fontSize: 7.5,
+              fontSize: ReportType.secondary(context),
               fontWeight:
                   FontWeight.w700,
             ),
           ),
         ),
-        const Text(
+        Text(
           ':',
           style: TextStyle(
             color: slateText,
-            fontSize: 7.5,
+            fontSize: ReportType.secondary(context),
             fontWeight:
                 FontWeight.w700,
           ),
@@ -306,9 +307,9 @@ class _MetadataRow extends StatelessWidget {
               Text(
                 value ?? '—',
                 style:
-                    const TextStyle(
+                    TextStyle(
                   color: midnightNavy,
-                  fontSize: 7.7,
+                  fontSize: ReportType.body(context),
                   height: 1.25,
                   fontWeight:
                       FontWeight.w700,
@@ -414,7 +415,7 @@ class _ReportStatusBadge extends StatelessWidget {
           config.$1,
           style: TextStyle(
             color: config.$2,
-            fontSize: 7,
+            fontSize: ReportType.caption(context),
             fontWeight:
                 FontWeight.w800,
           ),

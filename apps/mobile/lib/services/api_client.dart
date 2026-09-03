@@ -491,9 +491,40 @@ class ApiClient {
     throw ApiException('Shortage settlement could not be recorded.');
   }
 
+  Future<Map<String, dynamic>> createOpeningCashShortage({
+    required RembehSession session,
+    required String employeeId,
+    required num amount,
+    String? notes,
+    String? operationDate,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/cash-shortages/opening');
+    final response = await http.post(
+      uri,
+      headers: {..._authHeaders(session), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'employeeId': employeeId,
+        'amount': amount,
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+        if (operationDate != null && operationDate.trim().isNotEmpty)
+          'operationDate': operationDate.trim(),
+      }),
+    );
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+    final shortage = body['shortage'];
+    if (shortage is Map<String, dynamic>) {
+      return shortage;
+    }
+    throw ApiException('Opening shortage could not be recorded.');
+  }
+
   Future<Map<String, dynamic>> settleEmployeeCashShortage({
     required RembehSession session,
-    required String responsibleUserId,
+    String? responsibleUserId,
+    String? employeeId,
     required num amount,
     String method = 'CASH',
     String? notes,
@@ -503,7 +534,10 @@ class ApiClient {
       uri,
       headers: {..._authHeaders(session), 'Content-Type': 'application/json'},
       body: jsonEncode({
-        'responsibleUserId': responsibleUserId,
+        if (responsibleUserId != null && responsibleUserId.isNotEmpty)
+          'responsibleUserId': responsibleUserId,
+        if (employeeId != null && employeeId.isNotEmpty)
+          'employeeId': employeeId,
         'amount': amount,
         'method': method,
         if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),

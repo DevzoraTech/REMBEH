@@ -53,6 +53,16 @@ export type DailyOperationSalaryContract = {
   reversedAt: string | null;
 };
 
+export type DailyOperationShortageRecoveryContract = {
+  id: string;
+  shortageId: string;
+  employeeName: string;
+  amount: number;
+  notes: string | null;
+  paidAt: string;
+  recordedByName: string;
+};
+
 export type DailyOperationTopUpContract = {
   id: string;
   amount: number;
@@ -236,6 +246,10 @@ export type DailyOperationContract = {
   salariesCount: number;
   salariesTotal: number;
   salaries: DailyOperationSalaryContract[];
+
+  shortageRecoveriesCount: number;
+  shortageRecoveriesTotal: number;
+  shortageRecoveries: DailyOperationShortageRecoveryContract[];
 
   branchCashRemaining: number;
   expectedClosingBalance: number;

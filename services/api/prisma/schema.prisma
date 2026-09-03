@@ -936,9 +936,10 @@ model BranchDailyOperation {
   openedBy User   @relation("BranchDailyOperationOpenedBy", fields: [openedByUserId], references: [id])
   closedBy User?  @relation("BranchDailyOperationClosedBy", fields: [closedByUserId], references: [id])
 
-  expenses       BranchOperationExpense[]
-  salaryPayments SalaryPayment[]
-  topUps         BranchOperationTopUp[]
+  expenses          BranchOperationExpense[]
+  salaryPayments    SalaryPayment[]
+  shortagePayments  CashShortagePayment[]
+  topUps            BranchOperationTopUp[]
   report         BranchOperationReport?
   reconciliation BranchOperationReconciliation?
 
@@ -2228,7 +2229,8 @@ model CashShortage {
   id                String              @id @default(uuid()) @db.Uuid
   tenantId          String              @map("tenant_id") @db.Uuid
   branchId          String              @map("branch_id") @db.Uuid
-  responsibleUserId String              @map("responsible_user_id") @db.Uuid
+  responsibleUserId String?             @map("responsible_user_id") @db.Uuid
+  employeeId        String?             @map("employee_id") @db.Uuid
   sourceType        CashShortageSource  @map("source_type")
   sourceId          String?             @map("source_id") @db.Uuid
   reason            CashShortageReason? @map("reason")
@@ -2242,15 +2244,17 @@ model CashShortage {
   updatedAt         DateTime            @updatedAt @map("updated_at")
   clearedAt         DateTime?           @map("cleared_at")
 
-  tenant          Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  branch          Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  responsibleUser User   @relation("CashShortageResponsible", fields: [responsibleUserId], references: [id])
-  createdBy       User   @relation("CashShortageCreatedBy", fields: [createdByUserId], references: [id])
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  branch          Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  responsibleUser User?     @relation("CashShortageResponsible", fields: [responsibleUserId], references: [id])
+  employee        Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  createdBy       User      @relation("CashShortageCreatedBy", fields: [createdByUserId], references: [id])
 
   payments CashShortagePayment[]
 
   @@index([tenantId, branchId, status])
   @@index([tenantId, responsibleUserId, status])
+  @@index([tenantId, employeeId, status])
   @@index([tenantId, operationDate])
   @@index([sourceType, sourceId])
   @@map("cash_shortages")
@@ -2260,6 +2264,7 @@ model CashShortagePayment {
   id               String                    @id @default(uuid()) @db.Uuid
   tenantId         String                    @map("tenant_id") @db.Uuid
   shortageId       String                    @map("shortage_id") @db.Uuid
+  operationId      String?                   @map("operation_id") @db.Uuid
   amount           Decimal                   @db.Decimal(18, 2)
   method           CashShortagePaymentMethod @default(CASH)
   notes            String?
@@ -2267,12 +2272,14 @@ model CashShortagePayment {
   recordedByUserId String                    @map("recorded_by_user_id") @db.Uuid
   createdAt        DateTime                  @default(now()) @map("created_at")
 
-  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  shortage   CashShortage @relation(fields: [shortageId], references: [id], onDelete: Cascade)
-  recordedBy User         @relation("CashShortagePaymentRecordedBy", fields: [recordedByUserId], references: [id])
+  tenant     Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  shortage   CashShortage           @relation(fields: [shortageId], references: [id], onDelete: Cascade)
+  operation  BranchDailyOperation?  @relation(fields: [operationId], references: [id], onDelete: SetNull)
+  recordedBy User                   @relation("CashShortagePaymentRecordedBy", fields: [recordedByUserId], references: [id])
 
   @@index([shortageId, paidAt])
   @@index([tenantId, paidAt])
+  @@index([operationId])
   @@map("cash_shortage_payments")
 }
 
@@ -2304,6 +2311,7 @@ model Employee {
   createdBy User    @relation("EmployeeCreatedBy", fields: [createdByUserId], references: [id])
 
   salaryPayments SalaryPayment[]
+  cashShortages  CashShortage[]
 
   @@unique([tenantId, userId])
   @@index([tenantId, branchId, status])

@@ -246,11 +246,6 @@ export class SalariesService {
       );
     }
     if (shortageSettlementAmount > 0) {
-      if (!current.employee.userId) {
-        throw new BadRequestException(
-          'Shortage settlement is only available for employees linked to a field officer account.',
-        );
-      }
       if (
         shortageSettlementAmount >
         current.employee.shortageOutstanding + 0.001
@@ -274,10 +269,11 @@ export class SalariesService {
       paidAt,
       referenceNote: this.clean(dto.referenceNote),
       recordedByUserId: user.userId,
-      ...(shortageSettlementAmount > 0 && current.employee.userId
+      ...(shortageSettlementAmount > 0
         ? {
             shortageSettlement: {
               responsibleUserId: current.employee.userId,
+              employeeId,
               amount: shortageSettlementAmount,
               paidAt,
               notes:
@@ -392,7 +388,7 @@ export class SalariesService {
   private async toEmployeeContract(
     row: SalaryEmployeeRow,
     cycle: CycleBounds,
-    shortageByUser: Map<string, number>,
+    shortageByEmployee: Map<string, number>,
   ): Promise<SalaryEmployeeContract> {
     const salary = this.salaryDueFor(
       Number(row.monthlySalary),
@@ -403,7 +399,7 @@ export class SalariesService {
     const paid = this.sumActivePayments(row.salaryPayments);
     const outstanding = this.roundMoney(Math.max(0, salary.salaryDue - paid));
     const userId = row.userId ?? row.user?.id ?? null;
-    const shortageOutstanding = userId ? (shortageByUser.get(userId) ?? 0) : 0;
+    const shortageOutstanding = shortageByEmployee.get(row.id) ?? 0;
 
     return {
       id: row.id,
@@ -487,7 +483,38 @@ export class SalariesService {
     const userIds = rows
       .map((row) => row.userId ?? row.user?.id)
       .filter((id): id is string => Boolean(id));
-    return this.repository.outstandingShortagesByUser({ tenantId, userIds });
+    const employeeIds = rows.map((row) => row.id);
+    const shortages = await this.repository.listOpenShortagesForEmployees({
+      tenantId,
+      userIds,
+      employeeIds,
+    });
+    const employeeByUserId = new Map(
+      rows
+        .map((row) => {
+          const userId = row.userId ?? row.user?.id;
+          return userId ? ([userId, row.id] as const) : null;
+        })
+        .filter((entry): entry is readonly [string, string] => entry != null),
+    );
+    const byEmployee = new Map<string, number>();
+    for (const shortage of shortages) {
+      const employeeId =
+        shortage.employeeId ??
+        (shortage.responsibleUserId
+          ? employeeByUserId.get(shortage.responsibleUserId)
+          : null);
+      if (!employeeId) continue;
+      byEmployee.set(
+        employeeId,
+        Math.round(
+          ((byEmployee.get(employeeId) ?? 0) +
+            Number(shortage.amountOutstanding)) *
+            100,
+        ) / 100,
+      );
+    }
+    return byEmployee;
   }
 
   private sumActivePayments(payments: SalaryPaymentRow[]) {

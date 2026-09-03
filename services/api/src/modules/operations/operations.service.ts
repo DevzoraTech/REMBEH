@@ -52,6 +52,7 @@ import {
   DailyOperationReportContract,
   DailyOperationResponseContract,
   DailyOperationSalaryContract,
+  DailyOperationShortageRecoveryContract,
   OwnerBranchDailyStatusResponseContract,
   OwnerOperationReportDetailResponseContract,
   OwnerOperationReportListItemContract,
@@ -385,10 +386,10 @@ export class OperationsService {
     const amountCollected = this.decimalToNumber(collectionsAgg._sum.amount);
 
     const unusedFloat = this.roundMoney(
-      amountReceived - assignedFloatDisbursed,
+      Math.max(0, amountReceived - assignedFloatDisbursed),
     );
     const collectedRepaymentsAvailable = this.roundMoney(
-      amountCollected - collectedRepaymentsDisbursed,
+      Math.max(0, amountCollected - collectedRepaymentsDisbursed),
     );
 
     const expensesTotal = this.decimalToNumber(expensesAgg._sum.amount);
@@ -397,10 +398,13 @@ export class OperationsService {
       .map((row) => this.toExpenseContract(row));
 
     const expectedHandover = this.roundMoney(
-      unusedFloat +
-        collectedRepaymentsAvailable +
-        processingFees -
-        expensesTotal,
+      Math.max(
+        0,
+        unusedFloat +
+          collectedRepaymentsAvailable +
+          processingFees -
+          expensesTotal,
+      ),
     );
 
     const returnedAt = float?.returnedAt?.toISOString() ?? null;
@@ -2138,8 +2142,14 @@ export class OperationsService {
       throw new BadRequestException('Open the branch before assigning float.');
     }
 
-    const [floatAgg, existingFloat, expensesAgg, returnedAgg, salariesAgg] =
-      await Promise.all([
+    const [
+      floatAgg,
+      existingFloat,
+      expensesAgg,
+      returnedAgg,
+      salariesAgg,
+      shortageRecoveriesAgg,
+    ] = await Promise.all([
         this.repository.sumFloatIssued({
           tenantId: input.tenantId,
           branchId: input.branchId,
@@ -2162,6 +2172,10 @@ export class OperationsService {
           floatDate: operation.operationDate,
         }),
         this.repository.sumSalariesForOperation({
+          tenantId: input.tenantId,
+          operationId: operation.id,
+        }),
+        this.repository.sumShortageRecoveriesForOperation({
           tenantId: input.tenantId,
           operationId: operation.id,
         }),
@@ -2194,6 +2208,9 @@ export class OperationsService {
     const expensesTotal = this.decimalToNumber(expensesAgg._sum.amount);
 
     const salariesTotal = this.decimalToNumber(salariesAgg._sum.amount);
+    const shortageRecoveriesTotal = this.decimalToNumber(
+      shortageRecoveriesAgg._sum.amount,
+    );
 
     const cashReturnedByAgents = this.decimalToNumber(
       returnedAgg._sum.amountReturned,
@@ -2206,7 +2223,8 @@ export class OperationsService {
           expensesTotal -
           salariesTotal -
           totalAlreadyIssued +
-          cashReturnedByAgents,
+          cashReturnedByAgents +
+          shortageRecoveriesTotal,
       ),
     );
 
@@ -2319,6 +2337,8 @@ export class OperationsService {
       previousClosed,
       salariesAgg,
       salaryPayments,
+      shortageRecoveriesAgg,
+      shortageRecoveryPayments,
     ] = await Promise.all([
       this.repository.sumFloatIssued({
         tenantId: operation.tenantId,
@@ -2425,6 +2445,16 @@ export class OperationsService {
         tenantId: operation.tenantId,
         operationId: operation.id,
       }),
+
+      this.repository.sumShortageRecoveriesForOperation({
+        tenantId: operation.tenantId,
+        operationId: operation.id,
+      }),
+
+      this.repository.listShortageRecoveriesForOperation({
+        tenantId: operation.tenantId,
+        operationId: operation.id,
+      }),
     ]);
 
     const previousReport =
@@ -2499,6 +2529,12 @@ export class OperationsService {
     const salaries = salaryPayments.map((payment) =>
       this.toSalaryContract(payment),
     );
+    const shortageRecoveriesTotal = this.decimalToNumber(
+      shortageRecoveriesAgg._sum.amount,
+    );
+    const shortageRecoveries = shortageRecoveryPayments.map((payment) =>
+      this.toShortageRecoveryContract(payment),
+    );
 
     const loansIssuedPrincipal = this.decimalToNumber(
       cashDisbursementsAgg._sum.amount,
@@ -2544,7 +2580,8 @@ export class OperationsService {
         floatIssued -
         branchCashExpensesTotal -
         salariesTotal +
-        cashReturnedByAgents,
+        cashReturnedByAgents +
+        shortageRecoveriesTotal,
     );
 
     const floatRemaining = Math.max(branchCashRemaining, 0);
@@ -2556,6 +2593,7 @@ export class OperationsService {
       collectionsReceived,
       expensesTotal,
       salariesTotal,
+      shortageRecoveriesTotal,
     });
 
     const closingBalance =
@@ -2673,6 +2711,10 @@ export class OperationsService {
       salariesTotal,
       salaries,
 
+      shortageRecoveriesCount: shortageRecoveriesAgg._count._all,
+      shortageRecoveriesTotal,
+      shortageRecoveries,
+
       branchCashRemaining,
 
       expectedClosingBalance,
@@ -2744,7 +2786,7 @@ export class OperationsService {
 
   /**
    * Cash the branch can still spend today (expenses, salaries).
-   * Matches expected closing: opening + collections + fees − loans − expenses − salaries.
+   * Matches expected closing: opening + collections + fees + shortage recoveries − loans − expenses − salaries.
    * Float still with officers is not held back — it remains the branch’s money
    * until the officer spends it. Field expenses leave the business, so they
    * reduce this total the same way branch-cash expenses do.
@@ -2756,12 +2798,14 @@ export class OperationsService {
     collectionsReceived: number;
     expensesTotal: number;
     salariesTotal: number;
+    shortageRecoveriesTotal?: number;
   }) {
     return this.roundMoney(
       input.cashAvailableAtOpening -
         input.loansIssuedPrincipal +
         input.processingFeesTotal +
-        input.collectionsReceived -
+        input.collectionsReceived +
+        (input.shortageRecoveriesTotal ?? 0) -
         input.expensesTotal -
         input.salariesTotal,
     );
@@ -2784,6 +2828,7 @@ export class OperationsService {
       collectionsAgg,
       expensesAgg,
       salariesAgg,
+      shortageRecoveriesAgg,
     ] = await Promise.all([
       this.repository.sumLoansIssued({
         tenantId: operation.tenantId,
@@ -2811,6 +2856,10 @@ export class OperationsService {
         tenantId: operation.tenantId,
         operationId: operation.id,
       }),
+      this.repository.sumShortageRecoveriesForOperation({
+        tenantId: operation.tenantId,
+        operationId: operation.id,
+      }),
     ]);
 
     return this.remainingDayCashForOutflows({
@@ -2822,6 +2871,9 @@ export class OperationsService {
       collectionsReceived: this.decimalToNumber(collectionsAgg._sum.amount),
       expensesTotal: this.decimalToNumber(expensesAgg._sum.amount),
       salariesTotal: this.decimalToNumber(salariesAgg._sum.amount),
+      shortageRecoveriesTotal: this.decimalToNumber(
+        shortageRecoveriesAgg._sum.amount,
+      ),
     });
   }
 
@@ -2946,6 +2998,8 @@ export class OperationsService {
         agentFloatExpenses: operation.agentFloatExpensesTotal,
         salaries: operation.salariesTotal,
         salariesCount: operation.salariesCount,
+        shortageRecoveries: operation.shortageRecoveriesTotal,
+        shortageRecoveriesCount: operation.shortageRecoveriesCount,
         cashReturnedByAgents: operation.cashReturnedByAgents,
         loansIssuedCount: operation.loansIssuedCount,
         loansIssuedPrincipal: operation.loansIssuedPrincipal,
@@ -2968,6 +3022,7 @@ export class OperationsService {
         floatDistributed: operation.floatIssued,
         branchExpenses: operation.branchCashExpensesTotal,
         salaries: operation.salariesTotal,
+        shortageRecoveries: operation.shortageRecoveriesTotal,
         cashReturnedByAgents: operation.cashReturnedByAgents,
         branchRepayments: operation.collectionsReceived,
         loanProcessingFees: operation.processingFeesTotal,
@@ -2984,6 +3039,8 @@ export class OperationsService {
       expenses: operation.expenses,
 
       salaries: operation.salaries,
+
+      shortageRecoveries: operation.shortageRecoveries,
 
       loansByProduct: operation.loansByProduct,
 
@@ -3228,8 +3285,11 @@ export class OperationsService {
       rows.push({
         id: `shortage-${shortage.id}`,
         source: this.shortageSourceLabel(shortage.sourceType),
-        personName: shortage.responsibleUser.displayName,
-        personPublicId: shortage.responsibleUser.publicId,
+        personName:
+          shortage.responsibleUser?.displayName ??
+          shortage.employee?.fullName ??
+          'Employee',
+        personPublicId: shortage.responsibleUser?.publicId ?? null,
         expectedAmount: null,
         actualAmount: null,
         variance: -this.decimalToNumber(shortage.amountOriginal),
@@ -3253,13 +3313,18 @@ export class OperationsService {
   private shortageClearedByName(
     shortage?: {
       status: string;
-      responsibleUser: { displayName: string };
+      responsibleUser?: { displayName: string } | null;
+      employee?: { fullName: string } | null;
     } | null,
   ) {
     if (!shortage || shortage.status !== 'CLEARED') {
       return null;
     }
-    return shortage.responsibleUser.displayName;
+    return (
+      shortage.responsibleUser?.displayName ??
+      shortage.employee?.fullName ??
+      null
+    );
   }
 
   private shortageClearedAt(
@@ -3578,12 +3643,15 @@ export class OperationsService {
     processingFees: number;
     expensesTotal: number;
   }) {
+    const unusedFloat = Math.max(0, input.amountGiven - input.amountDisbursed);
     return this.roundMoney(
-      input.amountGiven -
-        input.amountDisbursed +
-        input.amountCollected +
-        input.processingFees -
-        input.expensesTotal,
+      Math.max(
+        0,
+        unusedFloat +
+          input.amountCollected +
+          input.processingFees -
+          input.expensesTotal,
+      ),
     );
   }
 
@@ -3996,6 +4064,32 @@ export class OperationsService {
     };
   }
 
+  private toShortageRecoveryContract(payment: {
+    id: string;
+    shortageId: string;
+    amount: Prisma.Decimal | number;
+    notes: string | null;
+    paidAt: Date;
+    recordedBy: { displayName: string };
+    shortage: {
+      employee: { fullName: string } | null;
+      responsibleUser: { displayName: string } | null;
+    };
+  }): DailyOperationShortageRecoveryContract {
+    return {
+      id: payment.id,
+      shortageId: payment.shortageId,
+      employeeName:
+        payment.shortage.employee?.fullName ??
+        payment.shortage.responsibleUser?.displayName ??
+        'Employee',
+      amount: this.decimalToNumber(payment.amount) ?? 0,
+      notes: payment.notes,
+      paidAt: payment.paidAt.toISOString(),
+      recordedByName: payment.recordedBy.displayName,
+    };
+  }
+
   private async assertAgentExpenseFitsFloat(input: {
     user: AuthenticatedUser;
     branchId: string;
@@ -4048,12 +4142,18 @@ export class OperationsService {
     }
 
     const unusedFloat = this.roundMoney(
-      this.decimalToNumber(float?.amountGiven) -
-        this.decimalToNumber(disbursementsAgg._sum.assignedFloatAmount),
+      Math.max(
+        0,
+        this.decimalToNumber(float?.amountGiven) -
+          this.decimalToNumber(disbursementsAgg._sum.assignedFloatAmount),
+      ),
     );
     const collectedRepaymentsAvailable = this.roundMoney(
-      this.decimalToNumber(collectionsAgg._sum.amount) -
-        this.decimalToNumber(disbursementsAgg._sum.collectedRepaymentsAmount),
+      Math.max(
+        0,
+        this.decimalToNumber(collectionsAgg._sum.amount) -
+          this.decimalToNumber(disbursementsAgg._sum.collectedRepaymentsAmount),
+      ),
     );
     const processingFees = this.decimalToNumber(loansAgg._sum.processingFee);
     let existingExpenses = this.decimalToNumber(expensesAgg._sum.amount);

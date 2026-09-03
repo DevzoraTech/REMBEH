@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../core/auth/offline_auth_service.dart';
+import '../../core/database/local_database.dart';
 import '../../services/api_client.dart';
+import '../../services/offline_cache_store.dart';
 import '../../services/session_cleanup.dart';
 import '../../services/session_store.dart';
 import '../../theme.dart';
@@ -20,6 +23,9 @@ class AgentProfileScreen extends StatefulWidget {
 
 class _AgentProfileScreenState extends State<AgentProfileScreen> {
   String _versionLabel = '';
+  String? _databasePath;
+  DateTime? _cacheSavedAt;
+  int _pendingWrites = 0;
   bool _fieldExpensesEnabled = true;
   bool _fieldExpensesLoading = false;
   bool _fieldExpensesSaving = false;
@@ -34,8 +40,40 @@ class _AgentProfileScreenState extends State<AgentProfileScreen> {
   void initState() {
     super.initState();
     _loadVersion();
+    _loadStorageInfo();
     if (_canManageFieldExpenses) {
       _loadFieldExpenseSettings();
+    }
+  }
+
+  Future<void> _loadStorageInfo() async {
+    try {
+      final path = await LocalDatabase.instance.filePath;
+      final tenantId = widget.session.tenantId;
+      final branchId = widget.session.branchId;
+      DateTime? savedAt;
+      var pending = 0;
+      if (tenantId != null && tenantId.isNotEmpty) {
+        if (branchId != null && branchId.isNotEmpty) {
+          savedAt = await OfflineCacheStore.instance.savedAt(
+            OfflineCacheKeys.customers(tenantId, branchId),
+          );
+        }
+        final pendingPayload = await OfflineCacheStore.instance.getPayload(
+          OfflineCacheKeys.pendingWrites(tenantId),
+        );
+        if (pendingPayload is List) {
+          pending = pendingPayload.length;
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _databasePath = path;
+        _cacheSavedAt = savedAt;
+        _pendingWrites = pending;
+      });
+    } catch (_) {
+      // Storage details are informational only.
     }
   }
 
@@ -109,6 +147,15 @@ class _AgentProfileScreenState extends State<AgentProfileScreen> {
         _fieldExpensesError = friendlyErrorMessage(error);
       });
     }
+  }
+
+  String _formatSavedAt(DateTime value) {
+    final local = value.toLocal();
+    final month = local.month.toString().padLeft(2, '0');
+    final day = local.day.toString().padLeft(2, '0');
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
+    return '${local.year}-$month-$day $hour:$minute';
   }
 
   Future<void> _confirmSignOut() async {
@@ -267,6 +314,61 @@ class _AgentProfileScreenState extends State<AgentProfileScreen> {
                       ),
                     ),
                 ],
+                const SizedBox(height: 22),
+                _SectionLabel('On this phone'),
+                _SettingsGroup(
+                  children: [
+                    _InfoTile(
+                      icon: Icons.storage_rounded,
+                      label: 'Local database',
+                      value: _databasePath ?? LocalDatabase.databaseFileName,
+                    ),
+                    _InfoTile(
+                      icon: Icons.offline_pin_outlined,
+                      label: 'Offline cache',
+                      value: _cacheSavedAt == null
+                          ? 'SharedPreferences · rembeh_offline_v1_*'
+                          : 'Last saved ${_formatSavedAt(_cacheSavedAt!)}',
+                    ),
+                    _InfoTile(
+                      icon: Icons.sync_outlined,
+                      label: 'Waiting to sync',
+                      value: _pendingWrites == 0
+                          ? 'Nothing queued'
+                          : '$_pendingWrites repayment${_pendingWrites == 1 ? '' : 's'}',
+                      showDivider: false,
+                    ),
+                  ],
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+                  child: Text(
+                    'Android and iOS keep the database and caches inside the app sandbox. A file manager at the app folder cannot see them. Copy the path if you need it for support.',
+                    style: TextStyle(
+                      color: slateText.withValues(alpha: 0.72),
+                      fontSize: 12,
+                      height: 1.35,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                if (_databasePath != null)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () async {
+                        await Clipboard.setData(
+                          ClipboardData(text: _databasePath!),
+                        );
+                        if (!context.mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Database path copied.')),
+                        );
+                      },
+                      icon: const Icon(Icons.copy_rounded, size: 16),
+                      label: const Text('Copy database path'),
+                    ),
+                  ),
                 const SizedBox(height: 22),
                 _SectionLabel('Security'),
                 _SettingsGroup(

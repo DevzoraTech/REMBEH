@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:lottie/lottie.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -26,6 +28,7 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
   int? _totalBytes;
   String? _downloadedPath;
   String _statusText = '';
+  DateTime? _lastBarUpdate;
 
   bool get _isBlocking => widget.onSkip == null;
 
@@ -98,14 +101,7 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
         }
         return next?.apkUrl;
       },
-      onProgress: (progress, received, total) {
-        if (!mounted) return;
-        setState(() {
-          _progress = progress;
-          _receivedBytes = received;
-          _totalBytes = total ?? _totalBytes;
-        });
-      },
+      onProgress: _applyDownloadProgress,
     );
 
     if (!mounted) return;
@@ -126,6 +122,27 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
     });
 
     await _openInstaller();
+  }
+
+  void _applyDownloadProgress(double progress, int received, int? total) {
+    if (!mounted) return;
+
+    final next = progress.isFinite ? progress.clamp(0.0, 1.0) : _progress;
+    final now = DateTime.now();
+    final movedForward = next > _progress + 0.004 || received > _receivedBytes;
+    final due =
+        _lastBarUpdate == null ||
+        now.difference(_lastBarUpdate!) >= const Duration(milliseconds: 80);
+    if (!movedForward && !due) {
+      return;
+    }
+
+    _lastBarUpdate = now;
+    setState(() {
+      _progress = max(_progress, next);
+      _receivedBytes = max(_receivedBytes, received);
+      _totalBytes = total ?? _totalBytes;
+    });
   }
 
   Future<void> _openInstaller() async {
@@ -708,12 +725,22 @@ class _ProgressCard extends StatelessWidget {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
-            child: LinearProgressIndicator(
-              value: progress <= 0 ? null : progress,
-              minHeight: 8,
-              backgroundColor: const Color(0xFFE5E7EB),
-              valueColor: AlwaysStoppedAnimation(
-                failed ? const Color(0xFFDC2626) : forestEmerald,
+            child: SizedBox(
+              height: 8,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  const ColoredBox(color: Color(0xFFE5E7EB)),
+                  FractionallySizedBox(
+                    alignment: Alignment.centerLeft,
+                    widthFactor: progress.clamp(0.0, 1.0),
+                    child: ColoredBox(
+                      color: failed
+                          ? const Color(0xFFDC2626)
+                          : forestEmerald,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

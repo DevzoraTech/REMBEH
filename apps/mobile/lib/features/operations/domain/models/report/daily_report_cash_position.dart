@@ -7,6 +7,8 @@ class DailyReportCashPosition {
     required this.totalCashAvailable,
     required this.repaymentsCollected,
     required this.processingFees,
+    this.shortageRecoveries = 0,
+    this.recoveryLines = const [],
     required this.expenses,
     required this.salaries,
     required this.floatIssued,
@@ -22,6 +24,8 @@ class DailyReportCashPosition {
 
   final num repaymentsCollected;
   final num processingFees;
+  final num shortageRecoveries;
+  final List<DailyReportShortageRecovery> recoveryLines;
 
   final num expenses;
   final num salaries;
@@ -40,4 +44,14 @@ class DailyReportCashPosition {
   bool get hasShortage => countedCash != null && (variance ?? 0) < 0;
 
   bool get hasExcess => countedCash != null && (variance ?? 0) > 0;
+}
+
+class DailyReportShortageRecovery {
+  const DailyReportShortageRecovery({
+    required this.employeeName,
+    required this.amount,
+  });
+
+  final String employeeName;
+  final num amount;
 }

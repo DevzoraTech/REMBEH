@@ -24,9 +24,18 @@ abstract interface class CashShortagesRepository {
 
   Future<CashShortage> settleEmployee({
     required RembehSession session,
-    required String responsibleUserId,
+    String? responsibleUserId,
+    String? employeeId,
     required num amount,
     String method,
     String? notes,
+  });
+
+  Future<CashShortage> recordOpeningShortage({
+    required RembehSession session,
+    required String employeeId,
+    required num amount,
+    String? notes,
+    String? operationDate,
   });
 }

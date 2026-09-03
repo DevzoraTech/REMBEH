@@ -103,6 +103,9 @@ type DailyOperation = {
   salariesCount?: number;
   salariesTotal?: number;
   salaries?: DailyOperationSalary[];
+  shortageRecoveriesCount?: number;
+  shortageRecoveriesTotal?: number;
+  shortageRecoveries?: DailyOperationShortageRecovery[];
   branchCashRemaining: number;
   expectedClosingBalance: number;
   closingBalance: number | null;
@@ -205,6 +208,16 @@ type DailyOperationSalary = {
   paidAt: string;
   recordedByName: string;
   reversedAt: string | null;
+};
+
+type DailyOperationShortageRecovery = {
+  id: string;
+  shortageId: string;
+  employeeName: string;
+  amount: number;
+  notes: string | null;
+  paidAt: string;
+  recordedByName: string;
 };
 
 type DailyOperationTopUp = {
@@ -1268,7 +1281,8 @@ export default function OperationsPage() {
         "",
         operation.cashReturnedByAgents +
           operation.collectionsReceived +
-          operation.processingFeesTotal,
+          operation.processingFeesTotal +
+          shortageRecoveryTotal(operation),
         operation.floatIssued +
           branchCashExpenseTotal(operation) +
           salaryTotal(operation) +
@@ -2430,6 +2444,17 @@ function ComputerisedReportView({
           value={<Money value={salaryTotal(operation)} currency="UGX" />}
           danger
         />
+        {shortageRecoveryTotal(operation) > 0 ? (
+          <ReportMetric
+            label="Shortage recoveries"
+            value={
+              <Money
+                value={shortageRecoveryTotal(operation)}
+                currency="UGX"
+              />
+            }
+          />
+        ) : null}
         <ReportMetric
           label="Expected closing balance"
           value={
@@ -2693,7 +2718,8 @@ function ExcelReportView({
               value={
                 operation.cashReturnedByAgents +
                 operation.collectionsReceived +
-                operation.processingFeesTotal
+                operation.processingFeesTotal +
+                shortageRecoveryTotal(operation)
               }
               tone="in"
               total
@@ -3291,6 +3317,22 @@ function CashMovementCard({ operation }: { operation: DailyOperation }) {
       signed: "plus" as const,
       tone: "green" as const,
     },
+    ...(shortageRecoveryTotal(operation) > 0
+      ? [
+          {
+            label: "Shortage recoveries",
+            detail:
+              (operation.shortageRecoveries ?? [])
+                .map((row) => row.employeeName)
+                .filter(Boolean)
+                .join(", ") ||
+              `${operation.shortageRecoveriesCount ?? 0} paid`,
+            amount: shortageRecoveryTotal(operation),
+            signed: "plus" as const,
+            tone: "green" as const,
+          },
+        ]
+      : []),
     {
       label: "Loans issued",
       detail: `${operation.loansIssuedCount} disbursed`,
@@ -5466,6 +5508,7 @@ function buildExcelRows(operation: DailyOperation) {
   const afterReturns = afterFloat + operation.cashReturnedByAgents;
   const afterExpenses = afterReturns - branchCashExpenseTotal(operation);
   const afterSalaries = afterExpenses - salaryTotal(operation);
+  const afterRecoveries = afterSalaries + shortageRecoveryTotal(operation);
 
   return [
     {
@@ -5521,6 +5564,18 @@ function buildExcelRows(operation: DailyOperation) {
       cashOut: salaryTotal(operation),
       balance: afterSalaries,
       note: "Taken from the open branch day’s cash",
+    },
+    {
+      section: "Shortage",
+      description:
+        (operation.shortageRecoveries ?? [])
+          .map((row) => `Shortage recovery · ${row.employeeName}`)
+          .join("; ") || "Shortage recoveries paid in cash",
+      count: operation.shortageRecoveriesCount ?? 0,
+      cashIn: shortageRecoveryTotal(operation),
+      cashOut: null,
+      balance: afterRecoveries,
+      note: "Employee shortage paid off as cash in",
     },
     {
       section: "Loans",
@@ -5655,6 +5710,10 @@ function branchCashExpenseTotal(operation: DailyOperation) {
 
 function salaryTotal(operation: DailyOperation) {
   return operation.salariesTotal ?? 0;
+}
+
+function shortageRecoveryTotal(operation: DailyOperation) {
+  return operation.shortageRecoveriesTotal ?? 0;
 }
 
 function remainingExpectedAgentReturn(operation: DailyOperation) {

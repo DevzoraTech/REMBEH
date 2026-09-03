@@ -99,6 +99,13 @@ class DailyReportMapper {
           cashPosition['loanProcessingFees'],
           summary['processingFees'],
         ]),
+        shortageRecoveries: _firstNum([
+          cashPosition['shortageRecoveries'],
+          summary['shortageRecoveries'],
+        ]),
+        recoveryLines: _list(
+          snapshot['shortageRecoveries'],
+        ).map(_shortageRecovery).toList(),
         expenses: _firstNum([
           cashPosition['branchExpenses'],
           summary['expenses'],
@@ -162,6 +169,10 @@ class DailyReportMapper {
         totalCashAvailable: _num(operation['cashAvailableAtOpening']),
         repaymentsCollected: _num(operation['collectionsReceived']),
         processingFees: _num(operation['processingFeesTotal']),
+        shortageRecoveries: _num(operation['shortageRecoveriesTotal']),
+        recoveryLines: _list(
+          operation['shortageRecoveries'],
+        ).map(_shortageRecovery).toList(),
         expenses: _firstNum([
           operation['branchCashExpensesTotal'],
           operation['expensesTotal'],
@@ -205,6 +216,15 @@ class DailyReportMapper {
       officerPublicId: _string(row['officerPublicId']),
       durationDays: _int(row['durationDays']),
       purpose: _string(row['purpose']),
+    );
+  }
+
+  static DailyReportShortageRecovery _shortageRecovery(
+    Map<String, dynamic> row,
+  ) {
+    return DailyReportShortageRecovery(
+      employeeName: _string(row['employeeName']) ?? 'Employee',
+      amount: _num(row['amount']),
     );
   }
 

@@ -292,7 +292,8 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
     document.openingBalance +
       topUpsTotal +
       document.collectionsReceived +
-      document.processingFeesTotal -
+      document.processingFeesTotal +
+      (document.shortageRecoveriesTotal ?? 0) -
       document.loansIssuedPrincipal -
       document.expensesTotal -
       (document.salariesTotal ?? 0),
@@ -409,6 +410,16 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
               : "N/A",
             "Cash Out",
             moneyOut(document.salariesTotal ?? 0),
+          ],
+          [
+            (document.shortageRecoveries ?? []).length === 1
+              ? `Shortage recovery · ${document.shortageRecoveries?.[0]?.employeeName}`
+              : "Shortage recoveries",
+            (document.shortageRecoveriesCount ?? 0) > 0
+              ? String(document.shortageRecoveriesCount)
+              : "N/A",
+            "Inflow",
+            moneyIn(document.shortageRecoveriesTotal ?? 0),
           ],
         ],
         {
@@ -715,7 +726,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
     h1 {
       margin: 0 0 12px;
       text-align: center;
-      font-size: 14px;
+      font-size: 16px;
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
@@ -723,7 +734,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
     h3 {
       margin: 0 0 8px;
       color: #0f8f68;
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 700;
     }
     .section { margin: 0 0 16px; page-break-inside: avoid; }
@@ -745,13 +756,13 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
     .meta-grid span {
       background: #f4f7f6;
       padding: 8px 10px;
-      font-size: 10px;
+      font-size: 12px;
       font-weight: 600;
       color: #64748b;
     }
     .meta-grid strong {
       padding: 8px 10px;
-      font-size: 12px;
+      font-size: 13px;
       font-weight: 600;
     }
     .cash-grid {
@@ -767,7 +778,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
     }
     .cash-card label {
       display: block;
-      font-size: 10px;
+      font-size: 12px;
       font-weight: 600;
       letter-spacing: 0.04em;
       text-transform: uppercase;
@@ -779,7 +790,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
       font-weight: 700;
     }
     .cash-card small {
-      font-size: 10px;
+      font-size: 12px;
       font-weight: 600;
       color: #64748b;
       margin-right: 4px;
@@ -788,7 +799,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
       display: block;
       margin-top: 4px;
       font-style: normal;
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 600;
     }
     .table-wrap {
@@ -799,12 +810,12 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
     table {
       width: 100%;
       border-collapse: collapse;
-      font-size: 11px;
+      font-size: 13px;
     }
     th {
       background: #e8edf2;
       color: #475569;
-      font-size: 10px;
+      font-size: 12px;
       font-weight: 700;
       letter-spacing: 0.03em;
       text-transform: uppercase;
@@ -823,7 +834,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
     }
     .num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
     .empty { text-align: center; color: #64748b; padding: 16px 10px; }
-    .note { margin: 6px 0 0; font-size: 11px; color: #64748b; font-style: italic; }
+    .note { margin: 6px 0 0; font-size: 12px; color: #64748b; font-style: italic; }
     .in { color: #0f8f68; font-weight: 600; }
     .out { color: #dc2626; font-weight: 600; }
     .good { color: #0f8f68; }

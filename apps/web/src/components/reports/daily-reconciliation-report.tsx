@@ -140,6 +140,12 @@ export type DailyReportDocumentModel = {
   expensesCount: number;
   salariesTotal?: number;
   salariesCount?: number;
+  shortageRecoveriesTotal?: number;
+  shortageRecoveriesCount?: number;
+  shortageRecoveries?: Array<{
+    employeeName: string;
+    amount: number;
+  }>;
   expenses: Array<{
     id: string;
     category: string;
@@ -398,7 +404,7 @@ function StatusBadge({ status, label }: { status: string; label: string }) {
         : "bg-amber-50 text-amber-700 ring-amber-100";
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1 ring-inset ${tone}`}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-bold ring-1 ring-inset ${tone}`}
     >
       <CheckCircle2 className="size-3.5" />
       {label}
@@ -473,13 +479,14 @@ function SummaryDocument({
   );
 
   // Authoritative expected-close formula (same as API):
-  // opening + top-ups + repayments + fees − loans − expenses − salaries
+  // opening + top-ups + repayments + fees + shortage recoveries − loans − expenses − salaries
   const salariesTotal = document.salariesTotal ?? 0;
   const movementExpected = Math.round(
     document.openingBalance +
       topUpsTotal +
       document.collectionsReceived +
-      document.processingFeesTotal -
+      document.processingFeesTotal +
+      (document.shortageRecoveriesTotal ?? 0) -
       document.loansIssuedPrincipal -
       document.expensesTotal -
       salariesTotal,
@@ -518,7 +525,7 @@ function SummaryDocument({
     document.variances.length > 0 || Math.round(varianceShown ?? 0) !== 0;
 
   return (
-    <article className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+    <article className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white text-[12px] shadow-[0_14px_34px_rgba(15,23,42,0.05)] sm:text-[13px]">
       <div className="space-y-4 px-4 py-4 sm:px-5">
         <div>
           <h2 className="text-center text-[13px] font-bold uppercase tracking-[0.08em] text-[#0b1220]">
@@ -570,15 +577,15 @@ function SummaryDocument({
               currency={currency}
               badge={
                 varianceShown == null || varianceShown === 0 ? (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--forest-emerald)]">
+                  <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--forest-emerald)]">
                     Balanced <Info className="size-3" />
                   </span>
                 ) : varianceShown > 0 ? (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[var(--forest-emerald)]">
+                  <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--forest-emerald)]">
                     Excess <Info className="size-3" />
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600">
+                  <span className="inline-flex items-center gap-1 text-[12px] font-semibold text-red-600">
                     Shortage — assign & track until cleared{" "}
                     <Info className="size-3" />
                   </span>
@@ -648,6 +655,16 @@ function SummaryDocument({
                 "Cash Out",
                 signed(document.salariesTotal ?? 0, "out"),
               ],
+              [
+                (document.shortageRecoveries ?? []).length === 1
+                  ? `Shortage recovery · ${document.shortageRecoveries?.[0]?.employeeName}`
+                  : "Shortage recoveries",
+                (document.shortageRecoveriesCount ?? 0) > 0
+                  ? String(document.shortageRecoveriesCount)
+                  : "N/A",
+                "Inflow",
+                signed(document.shortageRecoveriesTotal ?? 0, "in"),
+              ],
             ]}
             footer={[
               "Expected closing cash",
@@ -658,7 +675,7 @@ function SummaryDocument({
               </span>,
             ]}
           />
-          <p className="mt-1.5 text-[11px] italic text-slate-500">
+          <p className="mt-1.5 text-[12px] italic text-slate-500">
             Expected closing cash = opening + top-ups + repayments + fees −
             loans − expenses − salaries. Float and field officer returns net out when
             handovers balance.
@@ -884,7 +901,7 @@ function SummaryDocument({
             ]}
           />
           {agentsPending > 0 ? (
-            <p className="mt-1.5 text-[11px] text-slate-500">
+            <p className="mt-1.5 text-[12px] text-slate-500">
               {agentsPending} agent{agentsPending === 1 ? "" : "s"} still
               pending handover.
             </p>
@@ -1291,12 +1308,12 @@ function LedgerTab({ document }: { document: DailyReportDocumentModel }) {
   const rows = buildLedgerRows(document);
   return (
     <article className="overflow-hidden rounded-[16px] border border-[#d7e3de] bg-[#f3f7f5] shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
-      <div className="border-b border-[#d7e3de] bg-[#eef3f0] px-4 py-2.5 text-[11px] font-semibold text-slate-600">
+      <div className="border-b border-[#d7e3de] bg-[#eef3f0] px-4 py-2.5 text-[12px] font-semibold text-slate-600 sm:text-[13px]">
         {document.reportNumber} / {document.branchName} /{" "}
         {formatDate(document.operationDate)}
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] border-collapse text-left text-[11px]">
+        <table className="w-full min-w-[720px] border-collapse text-left text-[12px] sm:text-[13px]">
           <thead>
             <tr className="bg-[var(--forest-emerald)] text-white">
               {[
@@ -1463,10 +1480,10 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 function MetaCell({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="grid grid-cols-[120px_minmax(0,1fr)] border-b border-[#edf1f5] sm:border-r sm:odd:border-r sm:[&:nth-child(2n)]:border-r-0">
-      <dt className="bg-[#f4f7f6] px-2.5 py-2 text-[10px] font-semibold text-slate-500">
+      <dt className="bg-[#f4f7f6] px-2.5 py-2 text-[12px] font-semibold text-slate-500">
         {label}
       </dt>
-      <dd className="px-2.5 py-2 text-xs font-semibold text-[#0b1220]">
+      <dd className="px-2.5 py-2 text-[13px] font-semibold text-[#0b1220]">
         {value}
       </dd>
     </div>
@@ -1490,12 +1507,12 @@ function CashCard({
     <div className="rounded-xl border border-[#e6ebf0] bg-[#f8faf9] px-3 py-2.5">
       <div className="flex items-center gap-2 text-[var(--forest-emerald)]">
         {icon}
-        <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-slate-500">
+        <p className="text-[12px] font-semibold uppercase tracking-[0.04em] text-slate-500">
           {label}
         </p>
       </div>
-      <p className="mt-1.5 text-base font-bold tabular-nums text-[#0b1220]">
-        <span className="mr-1 text-[10px] font-semibold text-slate-500">
+      <p className="mt-1.5 text-lg font-bold tabular-nums text-[#0b1220]">
+        <span className="mr-1 text-[12px] font-semibold text-slate-500">
           {currency}
         </span>
         {value}
@@ -1520,9 +1537,9 @@ function ReportTable({
 }) {
   return (
     <div className="overflow-x-auto rounded-xl border border-[#e6ebf0]">
-      <table className="w-full min-w-[560px] border-collapse text-left text-xs">
+      <table className="w-full min-w-[560px] border-collapse text-left text-[12px] sm:text-[13px]">
         <thead>
-          <tr className="bg-[#e8edf2] text-[10px] font-bold uppercase tracking-[0.03em] text-slate-600">
+          <tr className="bg-[#e8edf2] text-[12px] font-bold uppercase tracking-[0.03em] text-slate-600">
             {columns.map((column, index) => (
               <th
                 key={column}
@@ -1538,7 +1555,7 @@ function ReportTable({
             <tr>
               <td
                 colSpan={columns.length}
-                className="px-2.5 py-4 text-center text-[11px] font-medium text-slate-500"
+                className="px-2.5 py-4 text-center text-[12px] font-medium text-slate-500"
               >
                 {empty ?? "No records."}
               </td>
@@ -1604,8 +1621,8 @@ function CheckItem({
         <CheckCircle2 className="size-3" />
       </span>
       <div className="min-w-0">
-        <p className="text-xs font-bold text-[#0b1220]">{title}</p>
-        <p className="text-[11px] text-slate-500">{detail}</p>
+        <p className="text-[13px] font-bold text-[#0b1220]">{title}</p>
+        <p className="text-[12px] text-slate-500">{detail}</p>
       </div>
     </li>
   );
@@ -1852,6 +1869,21 @@ function buildLedgerRows(document: DailyReportDocumentModel) {
       note: "Taken from the open branch day’s cash",
     },
     {
+      section: "Shortage",
+      description:
+        (document.shortageRecoveries ?? [])
+          .map((row) => `Shortage recovery · ${row.employeeName}`)
+          .join("; ") || "Shortage recoveries paid in cash",
+      count:
+        (document.shortageRecoveriesCount ?? 0) > 0
+          ? String(document.shortageRecoveriesCount)
+          : "-",
+      cashIn: document.shortageRecoveriesTotal ?? 0,
+      cashOut: null,
+      balance: null,
+      note: "Employee shortage paid off as cash in",
+    },
+    {
       section: "Closing",
       description: "Expected closing balance",
       count: "-",
@@ -1897,6 +1929,12 @@ type OperationLike = {
   expensesCount: number;
   salariesTotal?: number;
   salariesCount?: number;
+  shortageRecoveriesTotal?: number;
+  shortageRecoveriesCount?: number;
+  shortageRecoveries?: Array<{
+    employeeName: string;
+    amount: number;
+  }>;
   closingNotes: string | null;
   topUps: Array<{
     id: string;
@@ -2048,6 +2086,9 @@ export function buildDailyReportDocumentFromOperation(
     expensesCount: operation.expensesCount,
     salariesTotal: operation.salariesTotal ?? 0,
     salariesCount: operation.salariesCount ?? 0,
+    shortageRecoveriesTotal: operation.shortageRecoveriesTotal ?? 0,
+    shortageRecoveriesCount: operation.shortageRecoveriesCount ?? 0,
+    shortageRecoveries: operation.shortageRecoveries ?? [],
     expenses: operation.expenses,
     agentReturns: operation.agentReturns,
     closingNotes: operation.closingNotes,
@@ -2336,6 +2377,15 @@ export function buildDailyReportDocumentFromSnapshot(
     expensesCount: expenses.length,
     salariesTotal: numberValue(summary.salaries),
     salariesCount: numberValue(summary.salariesCount),
+    shortageRecoveriesTotal: numberValue(summary.shortageRecoveries),
+    shortageRecoveriesCount: numberValue(summary.shortageRecoveriesCount),
+    shortageRecoveries: arrayValue(root.shortageRecoveries).map((row) => {
+      const item = objectValue(row);
+      return {
+        employeeName: stringValue(item.employeeName) || "Employee",
+        amount: numberValue(item.amount),
+      };
+    }),
     expenses: expenses.map((row, index) => {
       const item = objectValue(row);
       return {

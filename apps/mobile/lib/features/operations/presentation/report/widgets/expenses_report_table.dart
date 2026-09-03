@@ -4,6 +4,7 @@ import '../../../../../utils/money.dart';
 import '../../../domain/models/report/daily_report_expense.dart';
 import 'report_section.dart';
 import 'report_table.dart';
+import 'report_typography.dart';
 
 class ExpensesReportTable extends StatelessWidget {
   const ExpensesReportTable({
@@ -33,11 +34,11 @@ class ExpensesReportTable extends StatelessWidget {
           ? null
           : Text(
               'Total expenses:  UGX ${formatMoney(total)}',
-              style: const TextStyle(
-                color: Color(
+              style: TextStyle(
+                color: const Color(
                   0xFFB42318,
                 ),
-                fontSize: 8,
+                fontSize: ReportType.secondary(context),
                 fontWeight:
                     FontWeight.w800,
               ),

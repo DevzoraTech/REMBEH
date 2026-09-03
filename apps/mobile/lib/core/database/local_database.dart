@@ -14,8 +14,14 @@ class LocalDatabase {
   /// Current database schema version
   static const int _currentVersion = 5;
 
-  /// Database file name
-  static const String _databaseName = 'rembeh_local.db';
+  /// Database file name. On a phone this lives in the app sandbox,
+  /// not in a folder a file manager can browse.
+  static const String databaseFileName = 'rembeh_local.db';
+  static const String _databaseName = databaseFileName;
+
+  Future<String> get filePath async {
+    return join(await getDatabasesPath(), _databaseName);
+  }
 
   Future<Database> get database async {
     if (_database != null) return _database!;

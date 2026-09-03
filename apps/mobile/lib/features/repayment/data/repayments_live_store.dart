@@ -583,6 +583,19 @@ class RepaymentsLiveStore extends ChangeNotifier {
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
+  bool _looksLikeNetworkError(Object error) {
+    final message = error.toString().toLowerCase();
+    return message.contains('could not connect') ||
+        message.contains('socket') ||
+        message.contains('network') ||
+        message.contains('connection') ||
+        message.contains('timed out') ||
+        message.contains('timeout') ||
+        message.contains('host lookup') ||
+        message.contains('failed host') ||
+        message.contains('clientexception');
+  }
+
   Future<({FieldRepayment repayment, ClientLoanDetail detail})>
   recordRepayment({
     required String loanId,
@@ -592,7 +605,7 @@ class RepaymentsLiveStore extends ChangeNotifier {
     DateTime? paidAt,
   }) async {
     final network = NetworkStatusStore.instance;
-    if (network.isOffline && !await network.checkNow()) {
+    if (network.isOffline) {
       return _queueOfflineRepayment(
         loanId: loanId,
         amount: amount,
@@ -613,7 +626,9 @@ class RepaymentsLiveStore extends ChangeNotifier {
       await refresh();
       return result;
     } catch (error) {
-      if (NetworkStatusStore.instance.isOffline) {
+      if (NetworkStatusStore.instance.isOffline ||
+          _looksLikeNetworkError(error)) {
+        NetworkStatusStore.instance.markOffline();
         return _queueOfflineRepayment(
           loanId: loanId,
           amount: amount,

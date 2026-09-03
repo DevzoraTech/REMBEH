@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../../theme.dart';
 import '../../../../../utils/money.dart';
 import '../../../domain/models/report/daily_report_cash_position.dart';
+import 'report_typography.dart';
 
 class CashMovementReportTable extends StatelessWidget {
   const CashMovementReportTable({super.key, required this.cash});
@@ -11,7 +12,10 @@ class CashMovementReportTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final totalAdditions = cash.repaymentsCollected + cash.processingFees;
+    final totalAdditions =
+        cash.repaymentsCollected +
+        cash.processingFees +
+        cash.shortageRecoveries;
 
     final netDeductions =
         cash.expenses + cash.salaries + cash.floatIssued - cash.floatReturned;
@@ -28,8 +32,9 @@ class CashMovementReportTable extends StatelessWidget {
             color: Colors.white,
             border: Border.all(color: line),
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: IntrinsicHeight(
+            child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Expanded(
                 child: Padding(
@@ -59,6 +64,14 @@ class CashMovementReportTable extends StatelessWidget {
                         value: cash.processingFees,
                         positive: true,
                       ),
+                      if (cash.shortageRecoveries != 0)
+                        _CashLine(
+                          label: cash.recoveryLines.length == 1
+                              ? 'Shortage recovery · ${cash.recoveryLines.first.employeeName}'
+                              : 'Shortage recoveries',
+                          value: cash.shortageRecoveries,
+                          positive: true,
+                        ),
                       _CashLine(
                         label: 'Total additions',
                         value: totalAdditions,
@@ -70,7 +83,7 @@ class CashMovementReportTable extends StatelessWidget {
                 ),
               ),
 
-              Container(width: 1, height: 162, color: line),
+              Container(width: 1, color: line),
 
               Expanded(
                 child: Padding(
@@ -111,6 +124,7 @@ class CashMovementReportTable extends StatelessWidget {
                 ),
               ),
             ],
+            ),
           ),
         ),
 
@@ -151,11 +165,11 @@ class CashMovementReportTable extends StatelessWidget {
 
         const SizedBox(height: 5),
 
-        const Text(
+        Text(
           'Counted and confirmed by the manager.',
           style: TextStyle(
             color: slateText,
-            fontSize: 7,
+            fontSize: ReportType.caption(context),
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -176,18 +190,18 @@ class _SectionTitle extends StatelessWidget {
       children: [
         Text(
           number,
-          style: const TextStyle(
+          style: TextStyle(
             color: forestEmerald,
-            fontSize: 10,
+            fontSize: ReportType.section(context),
             fontWeight: FontWeight.w900,
           ),
         ),
         const SizedBox(width: 4),
         Text(
           title,
-          style: const TextStyle(
+          style: TextStyle(
             color: forestEmerald,
-            fontSize: 10,
+            fontSize: ReportType.section(context),
             fontWeight: FontWeight.w900,
             letterSpacing: 0.1,
           ),
@@ -236,7 +250,7 @@ class _CashLine extends StatelessWidget {
               label,
               style: TextStyle(
                 color: midnightNavy,
-                fontSize: 7.6,
+                fontSize: ReportType.body(context),
                 fontWeight: strong ? FontWeight.w800 : FontWeight.w500,
               ),
             ),
@@ -249,7 +263,7 @@ class _CashLine extends StatelessWidget {
             textAlign: TextAlign.right,
             style: TextStyle(
               color: valueColor,
-              fontSize: 7.6,
+              fontSize: ReportType.body(context),
               fontWeight: strong || positive || negative
                   ? FontWeight.w800
                   : FontWeight.w600,
@@ -283,9 +297,9 @@ class _ClosingMetric extends StatelessWidget {
           Text(
             label,
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               color: slateText,
-              fontSize: 7.3,
+              fontSize: ReportType.caption(context),
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -298,7 +312,7 @@ class _ClosingMetric extends StatelessWidget {
               value == null ? '—' : 'UGX ${formatMoney(value!)}',
               style: TextStyle(
                 color: color,
-                fontSize: 11,
+                fontSize: ReportType.money(context),
                 fontWeight: FontWeight.w900,
               ),
             ),
@@ -356,7 +370,7 @@ class _VarianceMetric extends StatelessWidget {
             textAlign: TextAlign.center,
             style: TextStyle(
               color: color,
-              fontSize: 7.3,
+              fontSize: ReportType.caption(context),
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -369,7 +383,7 @@ class _VarianceMetric extends StatelessWidget {
               '${prefix}UGX ${formatMoney(value.abs())}',
               style: TextStyle(
                 color: color,
-                fontSize: 11,
+                fontSize: ReportType.money(context),
                 fontWeight: FontWeight.w900,
               ),
             ),

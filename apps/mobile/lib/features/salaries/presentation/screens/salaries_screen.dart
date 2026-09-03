@@ -356,7 +356,7 @@ class _SalaryHeader extends StatelessWidget {
 
                   const Expanded(
                     child: Text(
-                      'Salaries',
+                      'Employees',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -1123,7 +1123,7 @@ class _PayrollInformationStrip extends StatelessWidget {
 
           Expanded(
             child: Text(
-              'Salaries are calculated on the 22nd–21st cycle and paid from that day’s open branch cash.',
+              'Employees covers payroll, prior shortages, and cash payoffs from the open branch day.',
               style: TextStyle(
                 color: forestEmerald,
                 fontSize: 7.8,

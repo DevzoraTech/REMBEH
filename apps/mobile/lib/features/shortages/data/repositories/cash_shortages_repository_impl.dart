@@ -61,7 +61,8 @@ class CashShortagesRepositoryImpl implements CashShortagesRepository {
   @override
   Future<CashShortage> settleEmployee({
     required RembehSession session,
-    required String responsibleUserId,
+    String? responsibleUserId,
+    String? employeeId,
     required num amount,
     String method = 'CASH',
     String? notes,
@@ -69,9 +70,29 @@ class CashShortagesRepositoryImpl implements CashShortagesRepository {
     final row = await apiClient.settleEmployeeCashShortage(
       session: session,
       responsibleUserId: responsibleUserId,
+      employeeId: employeeId,
       amount: amount,
       method: method,
       notes: notes,
+    );
+
+    return CashShortageMapper.fromJson(row);
+  }
+
+  @override
+  Future<CashShortage> recordOpeningShortage({
+    required RembehSession session,
+    required String employeeId,
+    required num amount,
+    String? notes,
+    String? operationDate,
+  }) async {
+    final row = await apiClient.createOpeningCashShortage(
+      session: session,
+      employeeId: employeeId,
+      amount: amount,
+      notes: notes,
+      operationDate: operationDate,
     );
 
     return CashShortageMapper.fromJson(row);

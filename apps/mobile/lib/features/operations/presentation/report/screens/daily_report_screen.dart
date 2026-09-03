@@ -15,6 +15,7 @@ import '../widgets/processing_fees_report_table.dart';
 import '../widgets/repayments_report_table.dart';
 import '../widgets/report_header.dart';
 import '../widgets/report_notes_section.dart';
+import '../widgets/report_typography.dart';
 
 class DailyReportScreen extends StatefulWidget {
   const DailyReportScreen({
@@ -347,7 +348,7 @@ class _ReadOnlyNotice
           rembehRadiusMd,
         ),
       ),
-      child: const Row(
+      child: Row(
         crossAxisAlignment:
             CrossAxisAlignment.start,
         children: [
@@ -372,7 +373,7 @@ class _ReadOnlyNotice
                       TextStyle(
                     color:
                         midnightNavy,
-                    fontSize: 10,
+                    fontSize: ReportType.body(context),
                     fontWeight:
                         FontWeight.w800,
                   ),
@@ -386,7 +387,7 @@ class _ReadOnlyNotice
                       TextStyle(
                     color:
                         slateText,
-                    fontSize: 9,
+                    fontSize: ReportType.secondary(context),
                     height: 1.3,
                   ),
                 ),

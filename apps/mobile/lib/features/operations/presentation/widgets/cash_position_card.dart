@@ -73,6 +73,12 @@ class CashPositionCard extends StatelessWidget {
             amount: operation.processingFees,
             positive: true,
           ),
+          if (operation.shortageRecoveries != 0)
+            _CashLine(
+              label: 'Shortage recoveries',
+              amount: operation.shortageRecoveries,
+              positive: true,
+            ),
           _CashLine(
             label: 'Loans disbursed',
             amount: operation.loansDisbursed,

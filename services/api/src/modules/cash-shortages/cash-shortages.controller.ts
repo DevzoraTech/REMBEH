@@ -44,8 +44,13 @@ class RecordShortagePaymentDto {
 }
 
 class SettleEmployeeShortageDto {
+  @IsOptional()
   @IsUUID()
-  responsibleUserId!: string;
+  responsibleUserId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  employeeId?: string;
 
   @IsNumber({ maxDecimalPlaces: 2 })
   @Min(0.01)
@@ -61,6 +66,27 @@ class SettleEmployeeShortageDto {
   @IsString()
   @Length(0, 500)
   notes?: string;
+}
+
+class RecordOpeningShortageDto {
+  @IsUUID()
+  employeeId!: string;
+
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  @Max(10_000_000_000)
+  @Type(() => Number)
+  amount!: number;
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 500)
+  notes?: string;
+
+  @IsOptional()
+  @IsString()
+  @Length(10, 10)
+  operationDate?: string;
 }
 
 @Controller('cash-shortages')
@@ -88,6 +114,14 @@ export class CashShortagesController {
     @Body() dto: SettleEmployeeShortageDto,
   ) {
     return this.shortagesService.settleForEmployee(user, dto);
+  }
+
+  @Post('opening')
+  recordOpening(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: RecordOpeningShortageDto,
+  ) {
+    return this.shortagesService.recordOpeningShortage(user, dto);
   }
 
   @Get(':shortageId')

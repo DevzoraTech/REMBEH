@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../../theme.dart';
 import '../../../domain/models/report/daily_report_data.dart';
 import 'report_section.dart';
+import 'report_typography.dart';
 
 class ReportNotesSection extends StatelessWidget {
   const ReportNotesSection({super.key, required this.report});
@@ -31,9 +32,9 @@ class ReportNotesSection extends StatelessWidget {
           ),
           child: Text(
             notes,
-            style: const TextStyle(
+            style: TextStyle(
               color: midnightNavy,
-              fontSize: 10.5,
+              fontSize: ReportType.body(context),
               height: 1.5,
               fontWeight: FontWeight.w500,
             ),

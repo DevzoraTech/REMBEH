@@ -191,6 +191,17 @@ export async function exportOwnedReport(
     "",
   ]);
   worksheet.addRow([
+    "Shortage",
+    "Shortage recoveries paid in cash",
+    numberValue(snapshot.summary.shortageRecoveriesCount) > 0
+      ? formatNumber(numberValue(snapshot.summary.shortageRecoveriesCount))
+      : "-",
+    numberValue(snapshot.summary.shortageRecoveries),
+    "",
+    "",
+    "",
+  ]);
+  worksheet.addRow([
     "Closing",
     "Expected closing balance",
     "-",

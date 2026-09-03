@@ -6,6 +6,7 @@ class OperationDashboardData {
     required this.capitalReceived,
     required this.collections,
     required this.processingFees,
+    this.shortageRecoveries = 0,
     required this.loansDisbursed,
     required this.expenses,
     required this.salaries,
@@ -22,6 +23,7 @@ class OperationDashboardData {
   final num capitalReceived;
   final num collections;
   final num processingFees;
+  final num shortageRecoveries;
   final num loansDisbursed;
   final num expenses;
   final num salaries;

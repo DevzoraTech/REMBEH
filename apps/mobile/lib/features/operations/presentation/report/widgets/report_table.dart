@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../../theme.dart';
+import 'report_typography.dart';
 
 class ReportTableColumn {
   const ReportTableColumn({
@@ -149,10 +150,10 @@ class _ReportTableHeader extends StatelessWidget {
                       column.headerAlignment ??
                           column.alignment,
                     ),
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: midnightNavy,
-                      fontSize: 7.8,
-                      height: 1.15,
+                      fontSize: ReportType.secondary(context),
+                      height: 1.2,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 0.05,
                     ),
@@ -251,9 +252,9 @@ class _EmptyTableRow extends StatelessWidget {
       child: Text(
         message,
         textAlign: TextAlign.center,
-        style: const TextStyle(
+        style: TextStyle(
           color: slateText,
-          fontSize: 9,
+          fontSize: ReportType.body(context),
           height: 1.35,
           fontWeight: FontWeight.w500,
         ),
@@ -289,8 +290,8 @@ class ReportTableText extends StatelessWidget {
       textAlign: textAlign,
       style: TextStyle(
         color: color ?? midnightNavy,
-        fontSize: 8,
-        height: 1.22,
+        fontSize: ReportType.body(context),
+        height: 1.25,
         fontWeight: strong
             ? FontWeight.w800
             : FontWeight.w600,
@@ -340,8 +341,8 @@ class ReportTableMoney extends StatelessWidget {
         textAlign: TextAlign.right,
         style: TextStyle(
           color: color ?? midnightNavy,
-          fontSize: 8,
-          height: 1.15,
+          fontSize: ReportType.money(context),
+          height: 1.2,
           fontWeight: strong
               ? FontWeight.w800
               : FontWeight.w600,
@@ -396,8 +397,8 @@ class ReportTableStackedText extends StatelessWidget {
             color:
                 primaryColor ??
                 midnightNavy,
-            fontSize: 8,
-            height: 1.2,
+            fontSize: ReportType.body(context),
+            height: 1.25,
             fontWeight:
                 FontWeight.w800,
           ),
@@ -414,10 +415,10 @@ class ReportTableStackedText extends StatelessWidget {
             overflow:
                 TextOverflow.ellipsis,
             textAlign: textAlign,
-            style: const TextStyle(
+            style: TextStyle(
               color: slateText,
-              fontSize: 6.8,
-              height: 1.15,
+              fontSize: ReportType.caption(context),
+              height: 1.2,
               fontWeight:
                   FontWeight.w500,
             ),

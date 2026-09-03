@@ -1510,6 +1510,11 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         'feesCollected',
       ]),
 
+      shortageRecoveries: _firstAvailableMoney(operation, const [
+        'shortageRecoveriesTotal',
+        'shortageRecoveries',
+      ]),
+
       loansDisbursed: loansDisbursed,
 
       expenses: _firstAvailableMoney(operation, const [

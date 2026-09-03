@@ -229,7 +229,8 @@ export class SalariesRepository {
     referenceNote?: string | null;
     recordedByUserId: string;
     shortageSettlement?: {
-      responsibleUserId: string;
+      responsibleUserId?: string | null;
+      employeeId?: string | null;
       amount: number;
       paidAt: Date;
       notes?: string | null;
@@ -423,19 +424,30 @@ export class SalariesRepository {
     input: {
       tenantId: string;
       branchId: string | null;
-      responsibleUserId: string;
+      responsibleUserId?: string | null;
+      employeeId?: string | null;
       amount: number;
       paidAt: Date;
       notes?: string | null;
       recordedByUserId: string;
     },
   ) {
+    if (!input.responsibleUserId && !input.employeeId) {
+      throw new BadRequestException(
+        'Select the employee whose shortage is being cleared.',
+      );
+    }
     let remaining = Math.round(input.amount * 100) / 100;
     const shortages = await tx.cashShortage.findMany({
       where: {
         tenantId: input.tenantId,
-        responsibleUserId: input.responsibleUserId,
         ...(input.branchId ? { branchId: input.branchId } : {}),
+        OR: [
+          ...(input.responsibleUserId
+            ? [{ responsibleUserId: input.responsibleUserId }]
+            : []),
+          ...(input.employeeId ? [{ employeeId: input.employeeId }] : []),
+        ],
         status: {
           in: [CashShortageStatus.OPEN, CashShortageStatus.PARTIALLY_PAID],
         },
@@ -630,10 +642,45 @@ export class SalariesRepository {
     });
 
     return new Map(
-      rows.map((row) => [
-        row.responsibleUserId,
-        Number(row._sum.amountOutstanding ?? 0),
-      ]),
+      rows
+        .filter((row) => row.responsibleUserId)
+        .map((row) => [
+          row.responsibleUserId as string,
+          Number(row._sum.amountOutstanding ?? 0),
+        ]),
     );
+  }
+
+  listOpenShortagesForEmployees(input: {
+    tenantId: string;
+    userIds: string[];
+    employeeIds: string[];
+  }) {
+    if (input.userIds.length === 0 && input.employeeIds.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.prisma.cashShortage.findMany({
+      where: {
+        tenantId: input.tenantId,
+        status: {
+          in: [CashShortageStatus.OPEN, CashShortageStatus.PARTIALLY_PAID],
+        },
+        amountOutstanding: { gt: 0 },
+        OR: [
+          ...(input.userIds.length > 0
+            ? [{ responsibleUserId: { in: input.userIds } }]
+            : []),
+          ...(input.employeeIds.length > 0
+            ? [{ employeeId: { in: input.employeeIds } }]
+            : []),
+        ],
+      },
+      select: {
+        id: true,
+        employeeId: true,
+        responsibleUserId: true,
+        amountOutstanding: true,
+      },
+    });
   }
 }

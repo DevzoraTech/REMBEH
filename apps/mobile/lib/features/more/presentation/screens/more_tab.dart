@@ -51,8 +51,8 @@ class MoreTab extends StatelessWidget {
               ),
               _MoreMenuItem(
                 icon: Icons.payments_outlined,
-                title: 'Salaries',
-                subtitle: 'Manage salaries and view payment history',
+                title: 'Employees',
+                subtitle: 'Payroll, shortages and employee records',
                 onTap: onSalariesTap,
               ),
               _MoreMenuItem(

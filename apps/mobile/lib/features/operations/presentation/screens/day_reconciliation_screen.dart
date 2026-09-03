@@ -146,6 +146,9 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
 
   num get _salaries => _num(_operation?['salariesTotal']);
 
+  num get _shortageRecoveries =>
+      _num(_operation?['shortageRecoveriesTotal']);
+
   bool get _hasPendingAgentReturns {
     return _agentReturns.any((row) {
       final expected = _num(row['expectedReturn']);
@@ -611,6 +614,7 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
                     loansDisbursed: _loansDisbursed,
                     expenses: _expenses,
                     salaries: _salaries,
+                    shortageRecoveries: _shortageRecoveries,
                     onUpdateCount: _updateCount,
                   ),
 
@@ -778,6 +782,7 @@ class _CashReconciliationSummary extends StatelessWidget {
     required this.loansDisbursed,
     required this.expenses,
     required this.salaries,
+    this.shortageRecoveries = 0,
     required this.onUpdateCount,
   });
 
@@ -792,6 +797,7 @@ class _CashReconciliationSummary extends StatelessWidget {
   final num loansDisbursed;
   final num expenses;
   final num salaries;
+  final num shortageRecoveries;
 
   final VoidCallback onUpdateCount;
 
@@ -875,6 +881,12 @@ class _CashReconciliationSummary extends StatelessWidget {
             value: processingFees,
             positive: true,
           ),
+          if (shortageRecoveries != 0)
+            _CashRow(
+              label: 'Shortage recoveries',
+              value: shortageRecoveries,
+              positive: true,
+            ),
           _CashRow(
             label: 'Loans disbursed',
             value: loansDisbursed,

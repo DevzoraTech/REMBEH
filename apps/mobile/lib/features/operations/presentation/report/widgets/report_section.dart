@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../../../theme.dart';
+import 'report_typography.dart';
 
 class ReportSection extends StatelessWidget {
   const ReportSection({
@@ -46,7 +47,7 @@ class ReportSection extends StatelessWidget {
                 heading,
                 style: TextStyle(
                   color: forestEmerald,
-                  fontSize: sectionNumber == null ? 10 : 9.5,
+                  fontSize: ReportType.section(context),
                   height: 1.2,
                   fontWeight: FontWeight.w900,
                 ),
@@ -60,9 +61,9 @@ class ReportSection extends StatelessWidget {
           const SizedBox(height: 3),
           Text(
             subtitle!,
-            style: const TextStyle(
+            style: TextStyle(
               color: slateText,
-              fontSize: 7.5,
+              fontSize: ReportType.secondary(context),
               height: 1.3,
               fontWeight: FontWeight.w500,
             ),

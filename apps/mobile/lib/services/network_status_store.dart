@@ -64,12 +64,7 @@ class NetworkStatusStore extends ChangeNotifier {
       await http.get(uri).timeout(const Duration(seconds: 4));
       _setOnline(true);
     } catch (_) {
-      /*
-       * A transport probe can fail on networks that still allow ordinary app
-       * requests shortly after reconnecting. Do not leave the app pinned in
-       * offline mode when the OS reports usable connectivity.
-       */
-      _setOnline(true);
+      _setOnline(false);
     } finally {
       _checking = false;
     }

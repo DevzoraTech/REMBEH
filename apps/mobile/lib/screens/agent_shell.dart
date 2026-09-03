@@ -366,6 +366,7 @@ class _AgentShellState extends State<AgentShell> {
                   status: dayStatus,
                   loading: _dayStore.loading,
                   onRefresh: _refreshDayStatus,
+                  onSignOut: _signOut,
                 ),
                 Expanded(
                   child: IndexedStack(
@@ -601,11 +602,13 @@ class _BrowseOnlyBanner extends StatelessWidget {
     required this.status,
     required this.loading,
     required this.onRefresh,
+    required this.onSignOut,
   });
 
   final AgentDayStatus status;
   final bool loading;
   final Future<void> Function() onRefresh;
+  final Future<void> Function() onSignOut;
 
   @override
   Widget build(BuildContext context) {
@@ -669,6 +672,11 @@ class _BrowseOnlyBanner extends StatelessWidget {
                         ),
                       )
                     : const Icon(Icons.refresh, color: forestEmerald, size: 20),
+              ),
+              IconButton(
+                tooltip: 'Sign out',
+                onPressed: loading ? null : onSignOut,
+                icon: const Icon(Icons.logout, color: midnightNavy, size: 20),
               ),
             ],
           ),

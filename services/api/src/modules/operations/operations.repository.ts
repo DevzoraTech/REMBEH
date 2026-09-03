@@ -3,6 +3,7 @@ import {
   BranchOperationExpensePaidFrom,
   BranchOperationReportStatus,
   BranchOperationStatus,
+  CashShortagePaymentMethod,
   LoanApplicationStatus,
   Prisma,
 } from '@prisma/client';
@@ -1886,6 +1887,12 @@ updateExpense(input: {
             publicId: true,
           },
         },
+        employee: {
+          select: {
+            id: true,
+            fullName: true,
+          },
+        },
         createdBy: {
           select: {
             id: true,
@@ -2133,6 +2140,48 @@ updateExpense(input: {
       include: {
         employee: { select: { id: true, fullName: true } },
         recordedBy: { select: { displayName: true } },
+      },
+      orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }],
+    });
+  }
+
+  sumShortageRecoveriesForOperation(input: {
+    tenantId: string;
+    operationId: string;
+  }) {
+    return this.prisma.cashShortagePayment.aggregate({
+      where: {
+        tenantId: input.tenantId,
+        operationId: input.operationId,
+        method: CashShortagePaymentMethod.CASH,
+      },
+      _sum: {
+        amount: true,
+      },
+      _count: {
+        _all: true,
+      },
+    });
+  }
+
+  listShortageRecoveriesForOperation(input: {
+    tenantId: string;
+    operationId: string;
+  }) {
+    return this.prisma.cashShortagePayment.findMany({
+      where: {
+        tenantId: input.tenantId,
+        operationId: input.operationId,
+        method: CashShortagePaymentMethod.CASH,
+      },
+      include: {
+        recordedBy: { select: { displayName: true } },
+        shortage: {
+          select: {
+            employee: { select: { fullName: true } },
+            responsibleUser: { select: { displayName: true } },
+          },
+        },
       },
       orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }],
     });

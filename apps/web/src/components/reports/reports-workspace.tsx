@@ -999,6 +999,17 @@ function ReportSummaryView({
             }
             danger={numberValue(summary.salaries) > 0}
           />
+          {numberValue(summary.shortageRecoveries) > 0 ? (
+            <LineRow
+              label="Shortage recoveries"
+              value={
+                <Money
+                  value={numberValue(summary.shortageRecoveries)}
+                  currency={currency}
+                />
+              }
+            />
+          ) : null}
         </Panel>
       </section>
 
@@ -1317,12 +1328,12 @@ function LineRow({
   return (
     <div className="flex items-center justify-between gap-3 border-b border-[#edf1f5] py-1.5 last:border-b-0 last:pb-0 first:pt-0">
       <span
-        className={`text-[11px] ${strong ? "font-semibold text-[#0b1220]" : "font-medium text-slate-600"}`}
+        className={`text-[12px] sm:text-[13px] ${strong ? "font-semibold text-[#0b1220]" : "font-medium text-slate-600"}`}
       >
         {label}
       </span>
       <span
-        className={`shrink-0 text-[11px] font-bold tabular-nums ${
+        className={`shrink-0 text-[12px] font-bold tabular-nums sm:text-[13px] ${
           danger ? "text-red-700" : "text-[#0b1220]"
         }`}
       >
@@ -2188,6 +2199,15 @@ function buildExcelRows(report: OwnerReport, snapshot: ReportSnapshot) {
       cashOut: numberValue(snapshot.summary.salaries),
       balance: null,
       note: "Taken from the open branch day’s cash",
+    },
+    {
+      section: "Shortage",
+      description: "Shortage recoveries paid in cash",
+      count: formatNumber(numberValue(snapshot.summary.shortageRecoveriesCount)),
+      cashIn: numberValue(snapshot.summary.shortageRecoveries),
+      cashOut: null,
+      balance: null,
+      note: "Employee shortage paid off as cash in",
     },
     {
       section: "Closing",

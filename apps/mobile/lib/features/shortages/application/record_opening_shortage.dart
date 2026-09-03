@@ -2,26 +2,24 @@ import '../../../services/session_store.dart';
 import '../domain/models/cash_shortage.dart';
 import '../domain/repositories/cash_shortages_repository.dart';
 
-class SettleEmployeeShortage {
-  const SettleEmployeeShortage(this.repository);
+class RecordOpeningShortage {
+  const RecordOpeningShortage(this.repository);
 
   final CashShortagesRepository repository;
 
   Future<CashShortage> call({
     required RembehSession session,
-    String? responsibleUserId,
-    String? employeeId,
+    required String employeeId,
     required num amount,
-    String method = 'CASH',
     String? notes,
+    String? operationDate,
   }) {
-    return repository.settleEmployee(
+    return repository.recordOpeningShortage(
       session: session,
-      responsibleUserId: responsibleUserId,
       employeeId: employeeId,
       amount: amount,
-      method: method,
       notes: notes,
+      operationDate: operationDate,
     );
   }
 }
