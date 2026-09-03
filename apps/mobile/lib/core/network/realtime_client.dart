@@ -79,6 +79,22 @@ class RealtimeClient {
         'operation.float_returned',
         (data) => _dispatch('operation.float_returned', data),
       )
+      ..on(
+        'operation.expense_recorded',
+        (data) => _dispatch('operation.expense_recorded', data),
+      )
+      ..on(
+        'operation.expense_updated',
+        (data) => _dispatch('operation.expense_updated', data),
+      )
+      ..on(
+        'operation.expense_voided',
+        (data) => _dispatch('operation.expense_voided', data),
+      )
+      ..on(
+        'operation.cash_topup_recorded',
+        (data) => _dispatch('operation.cash_topup_recorded', data),
+      )
       ..connect();
   }
 

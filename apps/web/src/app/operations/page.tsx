@@ -43,6 +43,7 @@ import { exportDailyReconciliationPdf } from "../../components/reports/daily-rec
 import { formatMoney } from "../owner/owner-common";
 import { OwnerHeader, Tooltip } from "../owner/owner-header";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
+import { connectRealtime } from "../../lib/realtime";
 import {
   RembehBranch,
   RembehSession,
@@ -189,6 +190,7 @@ type DailyOperationExpense = {
   agentId?: string | null;
   agentName?: string | null;
   incurredAt: string;
+  recordedByUserId?: string | null;
   recordedByName: string;
   approvedAt: string | null;
   approvedByName: string | null;
@@ -554,9 +556,12 @@ export default function OperationsPage() {
       activeSession: RembehSession,
       selectedDate: string,
       branchId?: string,
+      options?: { silent?: boolean },
     ) => {
-      setLoading(true);
-      setError(null);
+      if (!options?.silent) {
+        setLoading(true);
+        setError(null);
+      }
       try {
         const params = new URLSearchParams({ date: selectedDate });
         if (branchId) params.set("branchId", branchId);
@@ -583,13 +588,17 @@ export default function OperationsPage() {
           );
         }
       } catch (caught) {
-        setError(
-          caught instanceof Error
-            ? caught.message
-            : "Could not load daily operations.",
-        );
+        if (!options?.silent) {
+          setError(
+            caught instanceof Error
+              ? caught.message
+              : "Could not load daily operations.",
+          );
+        }
       } finally {
-        setLoading(false);
+        if (!options?.silent) {
+          setLoading(false);
+        }
       }
     },
     [],
@@ -669,6 +678,41 @@ export default function OperationsPage() {
     loadAgentsForDay,
     loadBranchesForReports,
   ]);
+
+  useEffect(() => {
+    if (!session?.accessToken) {
+      return;
+    }
+
+    const socket = connectRealtime(session.accessToken);
+    const branchId = selectedBranchId || branch?.id || undefined;
+
+    const onExpenseEvent = (payload: {
+      branchId?: string;
+      operationDate?: string;
+    }) => {
+      if (payload.branchId && branchId && payload.branchId !== branchId) {
+        return;
+      }
+      if (payload.operationDate && payload.operationDate !== date) {
+        return;
+      }
+      void loadOperation(session, date, selectedBranchId || undefined, {
+        silent: true,
+      });
+    };
+
+    socket.on("operation.expense_recorded", onExpenseEvent);
+    socket.on("operation.expense_updated", onExpenseEvent);
+    socket.on("operation.expense_voided", onExpenseEvent);
+
+    return () => {
+      socket.off("operation.expense_recorded", onExpenseEvent);
+      socket.off("operation.expense_updated", onExpenseEvent);
+      socket.off("operation.expense_voided", onExpenseEvent);
+      socket.disconnect();
+    };
+  }, [session, date, selectedBranchId, branch?.id, loadOperation]);
 
   const pendingAgentReturns = useMemo(
     () =>
@@ -2072,7 +2116,7 @@ function OpenOperationView({
             <Money value={operation.expectedClosingBalance} currency="UGX" />
           }
           hint="Target after loans, cash in, fees, expenses, and salaries"
-          tooltip="Expected closing balance after opening, capital received, cash in, processing fees, loans, branch expenses, and salaries."
+          tooltip="Expected closing balance after opening, capital received, cash in, processing fees, loans, expenses (branch cash and field float), and salaries."
           tone="green"
         />
         <DayTopStat
@@ -3257,7 +3301,7 @@ function CashMovementCard({ operation }: { operation: DailyOperation }) {
     {
       label: "Expenses",
       detail: `${operation.expensesCount} logged`,
-      amount: branchCashExpenseTotal(operation),
+      amount: operation.expensesTotal,
       signed: "minus" as const,
       tone: "rose" as const,
     },

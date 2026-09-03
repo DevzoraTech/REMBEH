@@ -46,6 +46,9 @@ class AgentDayStatusStore extends ChangeNotifier {
       ..on('operation.branch_closed', _onDayEvent)
       ..on('operation.float_updated', _onDayEvent)
       ..on('operation.float_returned', _onDayEvent)
+      ..on('operation.expense_recorded', _onDayEvent)
+      ..on('operation.expense_updated', _onDayEvent)
+      ..on('operation.expense_voided', _onDayEvent)
       ..on('payment.made', _onDayEvent)
       ..on('loan_application.submitted', _onDayEvent)
       ..on('loan_application.updated', _onDayEvent);
@@ -86,6 +89,9 @@ class AgentDayStatusStore extends ChangeNotifier {
       ..off('operation.branch_closed', _onDayEvent)
       ..off('operation.float_updated', _onDayEvent)
       ..off('operation.float_returned', _onDayEvent)
+      ..off('operation.expense_recorded', _onDayEvent)
+      ..off('operation.expense_updated', _onDayEvent)
+      ..off('operation.expense_voided', _onDayEvent)
       ..off('payment.made', _onDayEvent)
       ..off('loan_application.submitted', _onDayEvent)
       ..off('loan_application.updated', _onDayEvent);

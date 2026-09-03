@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config.dart';
+import '../core/network/realtime_client.dart';
 import '../core/sync/sync_service.dart';
 import '../features/applications_list/data/applications_live_store.dart';
 import '../features/more/presentation/screens/more_tab.dart';
@@ -95,6 +96,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   bool _saving = false;
   bool _showingCachedData = false;
   bool _backgroundRefreshing = false;
+  bool _listeningOperationEvents = false;
 
   String? _error;
   String? _notice;
@@ -148,6 +150,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   void dispose() {
     _cacheRecoveryTimer?.cancel();
     _network.removeListener(_onNetworkChanged);
+    _stopOperationLiveEvents();
     _activity.dispose();
     _syncService.dispose();
     super.dispose();
@@ -465,10 +468,60 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         ApplicationsLiveStore.instance.start(widget.session),
         RepaymentsLiveStore.instance.start(widget.session),
       ]);
+      await RealtimeClient.instance.connect(widget.session);
+      _startOperationLiveEvents();
     } catch (_) {
       // Management data continues
       // loading independently.
     }
+  }
+
+  void _startOperationLiveEvents() {
+    if (_listeningOperationEvents) {
+      return;
+    }
+    _listeningOperationEvents = true;
+    final client = RealtimeClient.instance;
+    client
+      ..on('operation.expense_recorded', _onOperationLiveEvent)
+      ..on('operation.expense_updated', _onOperationLiveEvent)
+      ..on('operation.expense_voided', _onOperationLiveEvent)
+      ..on('operation.cash_topup_recorded', _onOperationLiveEvent)
+      ..on('operation.float_updated', _onOperationLiveEvent)
+      ..on('operation.float_returned', _onOperationLiveEvent);
+  }
+
+  void _stopOperationLiveEvents() {
+    if (!_listeningOperationEvents) {
+      return;
+    }
+    final client = RealtimeClient.instance;
+    client
+      ..off('operation.expense_recorded', _onOperationLiveEvent)
+      ..off('operation.expense_updated', _onOperationLiveEvent)
+      ..off('operation.expense_voided', _onOperationLiveEvent)
+      ..off('operation.cash_topup_recorded', _onOperationLiveEvent)
+      ..off('operation.float_updated', _onOperationLiveEvent)
+      ..off('operation.float_returned', _onOperationLiveEvent);
+    _listeningOperationEvents = false;
+  }
+
+  void _onOperationLiveEvent(Map<String, dynamic> payload) {
+    final payloadTenant = payload['tenantId'] as String?;
+    final payloadBranch = payload['branchId'] as String?;
+    final payloadDate = payload['operationDate'] as String?;
+    if (payloadTenant != null && payloadTenant != widget.session.tenantId) {
+      return;
+    }
+    if (payloadBranch != null &&
+        widget.session.branchId != null &&
+        payloadBranch != widget.session.branchId) {
+      return;
+    }
+    if (payloadDate != null && payloadDate != _date) {
+      return;
+    }
+    unawaited(_load(date: _date, showLoading: false, allowCacheFallback: false));
   }
 
   Future<void> _loadManagementData() async {
@@ -1230,12 +1283,20 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         _HomeActivityEntry(
           occurredAt: occurredAt,
           item: ActivityItem(
-            initials: 'EX',
+            initials: _getInitials(
+              _string(expense['recordedByName']) ??
+                  _string(expense['agentName']) ??
+                  'EX',
+            ),
             initialsBackgroundColor: const Color(0xFFFFF1E5),
             name:
-                _string(expense['description']) ??
-                _label(_string(expense['description']) ?? 'Expense'),
-            activityType: 'Expense',
+                _string(expense['recordedByName']) ??
+                _string(expense['agentName']) ??
+                'Expense',
+            activityType:
+                _string(expense['description'])?.trim().isNotEmpty == true
+                ? 'Expense · ${_string(expense['description'])}'
+                : 'Expense',
             time: operationTime(occurredAt),
             amount: _num(expense['amount']).round(),
             isIncome: false,
@@ -1452,8 +1513,8 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       loansDisbursed: loansDisbursed,
 
       expenses: _firstAvailableMoney(operation, const [
-        'branchCashExpensesTotal',
         'expensesTotal',
+        'branchCashExpensesTotal',
         'expenses',
       ]),
 
@@ -1706,9 +1767,10 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           occurredAt: occurredAt,
           item: OperationActivity(
             title: 'Expense recorded',
-            description:
-                _string(expense['description']) ??
-                _label(_string(expense['description']) ?? 'Expense'),
+            description: [
+              _string(expense['description']) ?? 'Expense',
+              _string(expense['recordedByName']),
+            ].whereType<String>().where((part) => part.trim().isNotEmpty).join(' · '),
             time: operationTime(occurredAt),
             amount: _num(expense['amount']),
             isIncome: false,

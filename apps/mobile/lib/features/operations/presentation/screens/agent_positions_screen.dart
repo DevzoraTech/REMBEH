@@ -755,6 +755,39 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
       );
     }
 
+    for (final row in _listPayload(operation['expenses'])) {
+      if (!_rowMatchesOfficer(
+        row,
+        nameKeys: const ['recordedByName', 'agentName'],
+      )) {
+        continue;
+      }
+
+      final occurredAt = _dateFromFields(row, const [
+        'incurredAt',
+        'recordedAt',
+        'createdAt',
+      ]);
+
+      if (occurredAt == null) {
+        continue;
+      }
+
+      final voided = row['voidedAt'] != null;
+      entries.add(
+        _OfficerActivityEntry(
+          type: _OfficerActivityFilter.expenses,
+          label: voided ? 'Expense voided' : 'Expense recorded',
+          client:
+              _string(row['description']) ??
+              _string(row['recordedByName']) ??
+              'Expense',
+          amount: -_num(row['amount']),
+          occurredAt: occurredAt,
+        ),
+      );
+    }
+
     entries.sort((a, b) => b.occurredAt.compareTo(a.occurredAt));
 
     if (_activityFilter == _OfficerActivityFilter.all) {
@@ -770,6 +803,15 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
     Map<String, dynamic> row, {
     required List<String> nameKeys,
   }) {
+    final officerId =
+        _string(_position?['agentId']) ?? _string(widget.agent['id']);
+    if (officerId != null &&
+        (_string(row['agentId']) == officerId ||
+            _string(row['recordedByUserId']) == officerId ||
+            _string(row['officerUserId']) == officerId)) {
+      return true;
+    }
+
     final publicId = _agentPublicId;
 
     if (publicId != null &&
@@ -4015,7 +4057,8 @@ enum _AgentBalanceStatus { noFloat, pending, balanced, shortage, excess }
 enum _OfficerActivityFilter {
   all('All'),
   repayments('Repayments'),
-  loans('Loans');
+  loans('Loans'),
+  expenses('Expenses');
 
   const _OfficerActivityFilter(this.label);
 

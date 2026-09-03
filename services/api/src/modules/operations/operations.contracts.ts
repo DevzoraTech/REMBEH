@@ -31,6 +31,7 @@ export type DailyOperationExpenseContract = {
   agentId: string | null;
   agentName: string | null;
   incurredAt: string;
+  recordedByUserId: string | null;
   recordedByName: string;
 
   approvedAt: string | null;

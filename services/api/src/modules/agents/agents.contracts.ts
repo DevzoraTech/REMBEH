@@ -149,6 +149,8 @@ export type AgentActivityCollectionContract = {
 export type AgentOtherActivityType =
   | 'FLOAT_RECEIVED'
   | 'RECONCILIATION_COMPLETED'
+  | 'EXPENSE_RECORDED'
+  | 'EXPENSE_VOIDED'
   | 'ACCOUNT_SUSPENDED'
   | 'ACCOUNT_ACTIVATED';
 

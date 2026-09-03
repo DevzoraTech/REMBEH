@@ -3165,6 +3165,12 @@ IconData _otherActivityIcon(String type) {
     case 'FLOAT_RECEIVED':
       return Icons.account_balance_wallet_outlined;
 
+    case 'EXPENSE_RECORDED':
+      return Icons.receipt_long_outlined;
+
+    case 'EXPENSE_VOIDED':
+      return Icons.remove_circle_outline_rounded;
+
     case 'RECONCILIATION_COMPLETED':
       return Icons.task_alt_rounded;
 
@@ -3182,7 +3188,11 @@ IconData _otherActivityIcon(String type) {
 Color _otherActivityColor(String type) {
   switch (type.trim().toUpperCase()) {
     case 'ACCOUNT_SUSPENDED':
+    case 'EXPENSE_VOIDED':
       return _dangerRed;
+
+    case 'EXPENSE_RECORDED':
+      return const Color(0xFFC62828);
 
     case 'FLOAT_RECEIVED':
     case 'RECONCILIATION_COMPLETED':

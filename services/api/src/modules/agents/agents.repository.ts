@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { LoanApplicationStatus, Prisma, UserStatus } from '@prisma/client';
+import {
+  BranchOperationExpensePaidFrom,
+  LoanApplicationStatus,
+  Prisma,
+  UserStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 
 const FIELD_AGENT_ROLES = [
@@ -435,6 +440,41 @@ export class AgentsRepository {
         returnedBy: { select: { displayName: true } },
       },
       orderBy: { createdAt: 'desc' },
+      take: input.take ?? 100,
+    });
+  }
+
+  listExpensesForAgent(input: {
+    tenantId: string;
+    agentId: string;
+    from?: Date;
+    to?: Date;
+    take?: number;
+  }) {
+    const incurredAt =
+      input.from || input.to
+        ? {
+            ...(input.from ? { gte: input.from } : {}),
+            ...(input.to ? { lte: input.to } : {}),
+          }
+        : undefined;
+
+    return this.prisma.branchOperationExpense.findMany({
+      where: {
+        tenantId: input.tenantId,
+        OR: [
+          { agentId: input.agentId },
+          {
+            recordedByUserId: input.agentId,
+            paidFrom: BranchOperationExpensePaidFrom.AGENT_FLOAT,
+          },
+        ],
+        ...(incurredAt ? { incurredAt } : {}),
+      },
+      include: {
+        recordedBy: { select: { displayName: true } },
+      },
+      orderBy: { incurredAt: 'desc' },
       take: input.take ?? 100,
     });
   }

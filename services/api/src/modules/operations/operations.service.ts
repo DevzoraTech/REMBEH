@@ -864,7 +864,7 @@ export class OperationsService {
       }
     }
 
-    await this.repository.recordExpense({
+    const expense = await this.repository.recordExpense({
       tenantId: user.tenantId,
       branchId: branch.id,
       operationId: operation.id,
@@ -879,6 +879,22 @@ export class OperationsService {
       recordedByUserId: user.userId,
       operationDate: operation.operationDate,
       status: operation.status,
+    });
+
+    this.broadcastExpenseEvent(OPERATIONS_EVENTS.expenseRecorded, {
+      operationId: operation.id,
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateLabel,
+      status: operation.status,
+      expenseId: expense.id,
+      paidFrom,
+      agentId:
+        paidFrom === BranchOperationExpensePaidFrom.AGENT_FLOAT
+          ? user.userId
+          : null,
+      recordedByUserId: user.userId,
+      amount: dto.amount,
     });
 
     if (paidFrom === BranchOperationExpensePaidFrom.AGENT_FLOAT) {
@@ -1577,6 +1593,19 @@ export class OperationsService {
           : dto.description.trim() || null,
     });
 
+    this.broadcastExpenseEvent(OPERATIONS_EVENTS.expenseUpdated, {
+      operationId: expense.operation.id,
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: this.formatDateLabel(expense.operation.operationDate),
+      status: expense.operation.status,
+      expenseId: expense.id,
+      paidFrom: expense.paidFrom,
+      agentId: expense.agentId,
+      recordedByUserId: expense.recordedByUserId,
+      amount: dto.amount ?? this.decimalToNumber(expense.amount),
+    });
+
     if (expense.paidFrom === BranchOperationExpensePaidFrom.AGENT_FLOAT) {
       return this.getAgentToday(user);
     }
@@ -1625,6 +1654,19 @@ export class OperationsService {
       expenseId: expense.id,
       actorUserId: user.userId,
       reason: dto.reason,
+    });
+
+    this.broadcastExpenseEvent(OPERATIONS_EVENTS.expenseVoided, {
+      operationId: expense.operation.id,
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: this.formatDateLabel(expense.operation.operationDate),
+      status: expense.operation.status,
+      expenseId: expense.id,
+      paidFrom: expense.paidFrom,
+      agentId: expense.agentId,
+      recordedByUserId: expense.recordedByUserId,
+      amount: this.decimalToNumber(expense.amount),
     });
 
     if (expense.paidFrom === BranchOperationExpensePaidFrom.AGENT_FLOAT) {
@@ -2512,7 +2554,7 @@ export class OperationsService {
       loansIssuedPrincipal,
       processingFeesTotal,
       collectionsReceived,
-      branchCashExpensesTotal,
+      expensesTotal,
       salariesTotal,
     });
 
@@ -2703,14 +2745,16 @@ export class OperationsService {
   /**
    * Cash the branch can still spend today (expenses, salaries).
    * Matches expected closing: opening + collections + fees − loans − expenses − salaries.
-   * Float still with officers is not held back — it remains the branch’s money.
+   * Float still with officers is not held back — it remains the branch’s money
+   * until the officer spends it. Field expenses leave the business, so they
+   * reduce this total the same way branch-cash expenses do.
    */
   private remainingDayCashForOutflows(input: {
     cashAvailableAtOpening: number;
     loansIssuedPrincipal: number;
     processingFeesTotal: number;
     collectionsReceived: number;
-    branchCashExpensesTotal: number;
+    expensesTotal: number;
     salariesTotal: number;
   }) {
     return this.roundMoney(
@@ -2718,7 +2762,7 @@ export class OperationsService {
         input.loansIssuedPrincipal +
         input.processingFeesTotal +
         input.collectionsReceived -
-        input.branchCashExpensesTotal -
+        input.expensesTotal -
         input.salariesTotal,
     );
   }
@@ -2762,7 +2806,6 @@ export class OperationsService {
       this.repository.sumExpensesForOperation({
         tenantId: operation.tenantId,
         operationId: operation.id,
-        paidFrom: BranchOperationExpensePaidFrom.BRANCH_CASH,
       }),
       this.repository.sumSalariesForOperation({
         tenantId: operation.tenantId,
@@ -2777,7 +2820,7 @@ export class OperationsService {
       ),
       processingFeesTotal: this.decimalToNumber(loansAgg._sum.processingFee),
       collectionsReceived: this.decimalToNumber(collectionsAgg._sum.amount),
-      branchCashExpensesTotal: this.decimalToNumber(expensesAgg._sum.amount),
+      expensesTotal: this.decimalToNumber(expensesAgg._sum.amount),
       salariesTotal: this.decimalToNumber(salariesAgg._sum.amount),
     });
   }
@@ -3900,7 +3943,8 @@ export class OperationsService {
     agentId?: string | null;
     agent?: { displayName: string } | null;
     incurredAt: Date;
-    recordedBy: { displayName: string };
+    recordedByUserId?: string | null;
+    recordedBy: { id?: string; displayName: string };
     approvedAt: Date | null;
     approvedBy?: { displayName: string } | null;
     voidedAt: Date | null;
@@ -3920,6 +3964,7 @@ export class OperationsService {
       agentId: expense.agentId ?? null,
       agentName: expense.agent?.displayName ?? null,
       incurredAt: expense.incurredAt.toISOString(),
+      recordedByUserId: expense.recordedByUserId ?? expense.recordedBy.id ?? null,
       recordedByName: expense.recordedBy.displayName,
       approvedAt: expense.approvedAt?.toISOString() ?? null,
       approvedByName: expense.approvedBy?.displayName ?? null,
@@ -4128,6 +4173,24 @@ export class OperationsService {
     if (!user.tenantId?.trim()) {
       throw new ForbiddenException('Tenant scope is required.');
     }
+  }
+
+  private broadcastExpenseEvent(
+    event: string,
+    payload: {
+      operationId: string;
+      tenantId: string;
+      branchId: string;
+      operationDate: string;
+      status: string;
+      expenseId: string;
+      paidFrom: BranchOperationExpensePaidFrom;
+      agentId?: string | null;
+      recordedByUserId: string;
+      amount: number;
+    },
+  ) {
+    this.broadcastOperationEvent(event, payload);
   }
 
   private broadcastOperationEvent(

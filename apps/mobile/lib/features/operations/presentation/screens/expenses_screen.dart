@@ -48,6 +48,14 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
     _operation = widget.operation;
   }
 
+  @override
+  void didUpdateWidget(ExpensesScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.operation != oldWidget.operation) {
+      _operation = widget.operation;
+    }
+  }
+
   List<Map<String, dynamic>> get _expenses {
     final raw = _operation?['expenses'];
 
@@ -452,7 +460,7 @@ class _ExpenseRow extends StatelessWidget {
                     Text(
                       '${_timeLabel(incurredAt)}'
                       '${recordedBy.isEmpty ? '' : '  •  $recordedBy'}'
-                      '${_string(expense['paidFrom']) == 'AGENT_FLOAT' ? '  •  Field float' : ''}',
+                      '${_string(expense['paidFrom']) == 'AGENT_FLOAT' ? '  •  Field float' : '  •  Branch cash'}',
                       style: const TextStyle(
                         color: slateText,
                         fontSize: 9,

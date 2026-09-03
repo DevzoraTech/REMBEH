@@ -140,8 +140,8 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
   }
 
   num get _expenses => _firstAvailableMoney(_operation ?? const {}, const [
-    'branchCashExpensesTotal',
     'expensesTotal',
+    'branchCashExpensesTotal',
   ]);
 
   num get _salaries => _num(_operation?['salariesTotal']);

@@ -363,6 +363,9 @@ export class OperationsRepository {
           branchId: input.branchId,
           operationDate: this.formatDateLabel(input.operationDate),
           amount: input.amount.toString(),
+          paidFrom: input.paidFrom,
+          agentId: input.agentId,
+          recordedByUserId: input.recordedByUserId,
           status: input.status,
         },
       },
@@ -372,7 +375,10 @@ export class OperationsRepository {
       data: {
         tenantId: input.tenantId,
         actorUserId: input.recordedByUserId,
-        action: OPERATIONS_PERMISSIONS.expenseCreate,
+        action:
+          input.paidFrom === BranchOperationExpensePaidFrom.AGENT_FLOAT
+            ? OPERATIONS_PERMISSIONS.agentExpenseCreate
+            : OPERATIONS_PERMISSIONS.expenseCreate,
         entityType: 'branch_operation_expense',
         entityId: expense.id,
         newValue: {
@@ -381,6 +387,9 @@ export class OperationsRepository {
           operationDate: this.formatDateLabel(input.operationDate),
           amount: input.amount.toString(),
           description: input.description,
+          paidFrom: input.paidFrom,
+          agentId: input.agentId,
+          recordedByUserId: input.recordedByUserId,
         },
       },
     });
@@ -1086,6 +1095,8 @@ updateExpense(input: {
         newValue: {
           amount: expense.amount.toString(),
           description: expense.description,
+          paidFrom: expense.paidFrom,
+          agentId: expense.agentId,
         },
       },
     });
@@ -1136,6 +1147,10 @@ updateExpense(input: {
           newValue: {
             voidedAt: expense.voidedAt?.toISOString(),
             voidReason: expense.voidReason,
+            paidFrom: expense.paidFrom,
+            agentId: expense.agentId,
+            amount: expense.amount.toString(),
+            description: expense.description,
           },
         },
       });
@@ -2031,7 +2046,7 @@ updateExpense(input: {
       where: {
         tenantId: input.tenantId,
         operationId: input.operationId,
-        ...(input.agentId ? { agentId: input.agentId } : {}),
+        ...(input.agentId ? this.agentExpenseOwnerWhere(input.agentId) : {}),
       },
       include: {
         recordedBy: {
@@ -2082,7 +2097,7 @@ updateExpense(input: {
         operationId: input.operationId,
         voidedAt: null,
         ...(input.paidFrom ? { paidFrom: input.paidFrom } : {}),
-        ...(input.agentId ? { agentId: input.agentId } : {}),
+        ...(input.agentId ? this.agentExpenseOwnerWhere(input.agentId) : {}),
       },
       _sum: {
         amount: true,
@@ -2121,6 +2136,18 @@ updateExpense(input: {
       },
       orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }],
     });
+  }
+
+  private agentExpenseOwnerWhere(agentId: string): Prisma.BranchOperationExpenseWhereInput {
+    return {
+      OR: [
+        { agentId },
+        {
+          recordedByUserId: agentId,
+          paidFrom: BranchOperationExpensePaidFrom.AGENT_FLOAT,
+        },
+      ],
+    };
   }
 
   private formatDateLabel(value: Date) {

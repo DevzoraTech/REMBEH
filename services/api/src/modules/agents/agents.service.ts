@@ -469,7 +469,7 @@ export class AgentsService {
     const range = this.normalizeRange(options?.range);
     const bounds = this.rangeBounds(range, options?.date);
 
-    const [applications, repayments, floats, statusAudits] = await Promise.all([
+    const [applications, repayments, floats, expenses, statusAudits] = await Promise.all([
       this.repository.listApplications({
         tenantId: scope.tenantId,
         agentId,
@@ -488,6 +488,12 @@ export class AgentsService {
         from: bounds.from,
         to: bounds.to,
       }),
+      this.repository.listExpensesForAgent({
+        tenantId: scope.tenantId,
+        agentId,
+        from: bounds.from,
+        to: bounds.to,
+      }),
       this.repository.listAgentStatusAudits({
         tenantId: scope.tenantId,
         agentId,
@@ -498,6 +504,7 @@ export class AgentsService {
 
     const otherActivity = this.buildOtherActivity(
       floats,
+      expenses,
       statusAudits,
       bounds.from,
       bounds.to,
@@ -1076,6 +1083,14 @@ export class AgentsService {
       returnedAt: Date | null;
       recordedBy: { displayName: string };
     }>,
+    expenses: Array<{
+      id: string;
+      amount: Prisma.Decimal;
+      description: string | null;
+      incurredAt: Date;
+      voidedAt: Date | null;
+      recordedBy: { displayName: string };
+    }>,
     statusAudits: Array<{
       id: string;
       action: string;
@@ -1116,6 +1131,33 @@ export class AgentsService {
               ? `UGX ${Math.round(returned).toLocaleString('en-UG')} returned and confirmed`
               : 'No cash difference recorded',
           occurredAt: float.returnedAt.toISOString(),
+        });
+      }
+    }
+
+    for (const expense of expenses) {
+      const amount = this.decimalToNumber(expense.amount) ?? 0;
+      const description = expense.description?.trim() || 'Field expense';
+      const recordedBy = expense.recordedBy.displayName;
+      const amountLabel = `UGX ${Math.round(amount).toLocaleString('en-UG')}`;
+
+      if (inRange(expense.incurredAt)) {
+        items.push({
+          id: `expense-${expense.id}`,
+          type: 'EXPENSE_RECORDED',
+          title: 'Expense recorded',
+          detail: `${amountLabel} · ${description} · recorded by ${recordedBy}`,
+          occurredAt: expense.incurredAt.toISOString(),
+        });
+      }
+
+      if (expense.voidedAt && inRange(expense.voidedAt)) {
+        items.push({
+          id: `expense-voided-${expense.id}`,
+          type: 'EXPENSE_VOIDED',
+          title: 'Expense voided',
+          detail: `${amountLabel} · ${description}`,
+          occurredAt: expense.voidedAt.toISOString(),
         });
       }
     }
