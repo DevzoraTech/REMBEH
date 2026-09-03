@@ -1,5 +1,6 @@
 import {
   computeLoanPricing,
+  contractualPaidTowardDebt,
   resolveBaseRepayable,
 } from './loan-pricing';
 
@@ -238,3 +239,15 @@ describe(
     );
   },
 );
+
+describe('contractualPaidTowardDebt', () => {
+  it('uses outstanding, not inflated statement totals', () => {
+    expect(
+      contractualPaidTowardDebt({
+        baseRepayable: 240_000,
+        balance: 15_000,
+        finesTotal: 0,
+      }),
+    ).toBe(225_000);
+  });
+});

@@ -32,6 +32,7 @@ import {
 } from '../../common/security/identity-normalization';
 import {
   computeLoanPricing,
+  contractualPaidTowardDebt,
   resolveBaseRepayable,
 } from '../loan-products/loan-pricing';
 import { REALTIME_EVENTS } from '../realtime/realtime.events';
@@ -3580,11 +3581,11 @@ export class CollectionsService {
     );
 
     /*
-     * Actual repayments are the source of truth.
-     *
-     * Do not infer repayments from processing fees or pricing differences.
+     * Outstanding is the source of truth for remaining debt.
+     * Imported statement rows can include earlier cycles on the same
+     * borrower, so paid-to-date is derived from repayable minus balance.
      */
-    const recordedPaidAmount = this.roundMoney(
+    const recordedPaidFromRows = this.roundMoney(
       repayments.reduce(
         (sum, row) => sum + (this.decimalToNumber(row.amount) ?? 0),
         0,
@@ -3607,10 +3608,16 @@ export class CollectionsService {
 
       principal: pricing.principalAmount,
 
-      paidAmount: recordedPaidAmount,
+      paidAmount: openingBalance == null ? recordedPaidFromRows : undefined,
 
       balance,
 
+      finesTotal,
+    });
+
+    const recordedPaidAmount = contractualPaidTowardDebt({
+      baseRepayable,
+      balance,
       finesTotal,
     });
 

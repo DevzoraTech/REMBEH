@@ -16,6 +16,7 @@ import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import { resolveListBranchId } from '../../common/auth/branch-scope';
 import {
   computeLoanPricing,
+  contractualPaidTowardDebt,
   resolveBaseRepayable,
 } from '../loan-products/loan-pricing';
 import { ObjectStorageService } from '../storage/object-storage.service';
@@ -361,7 +362,7 @@ export class CustomersService {
       parish: addressSource?.parish?.trim() || null,
       village: addressSource?.village?.trim() || null,
       loans: customer.loans.map((loan) => {
-        const paidAmount = this.roundMoney(
+        const paidFromRows = this.roundMoney(
           loan.repayments.reduce(
             (sum, repayment) =>
               sum + (this.decimalToNumber(repayment.amount) ?? 0),
@@ -389,7 +390,12 @@ export class CustomersService {
           openingBalance,
           pricedTotal: priced.totalRepayable,
           principal,
-          paidAmount,
+          paidAmount: openingBalance == null ? paidFromRows : undefined,
+          balance,
+          finesTotal,
+        });
+        const paidAmount = contractualPaidTowardDebt({
+          baseRepayable,
           balance,
           finesTotal,
         });

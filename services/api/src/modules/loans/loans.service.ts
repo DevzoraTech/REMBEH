@@ -18,6 +18,7 @@ import { LoanApplicationsService } from '../loan-applications/loan-applications.
 import { OPERATIONS_PERMISSIONS } from '../operations/operations.permissions';
 import {
   computeLoanPricing,
+  contractualPaidTowardDebt,
   resolveBaseRepayable,
 } from '../loan-products/loan-pricing';
 import { LoanRemindersService } from './loan-reminders.service';
@@ -281,7 +282,7 @@ export class LoansService {
     const durationDays = loan.application?.durationDays ?? null;
     const principal = this.decimalToNumber(loan.principal) ?? 0;
     const balance = this.decimalToNumber(loan.balance) ?? 0;
-    const paidAmount = this.roundMoney(
+    const paidFromRows = this.roundMoney(
       loan.repayments.reduce(
         (sum, repayment) => sum + (this.decimalToNumber(repayment.amount) ?? 0),
         0,
@@ -324,7 +325,12 @@ export class LoansService {
       openingBalance,
       pricedTotal: priced.totalRepayable,
       principal,
-      paidAmount,
+      paidAmount: openingBalance == null ? paidFromRows : undefined,
+      balance,
+      finesTotal,
+    });
+    const paidAmount = contractualPaidTowardDebt({
+      baseRepayable,
       balance,
       finesTotal,
     });

@@ -24,6 +24,7 @@ import { computeCollectionSchedule } from '../collections/collection-schedule';
 
 import {
   computeLoanPricing,
+  contractualPaidTowardDebt,
   resolveBaseRepayable,
 } from '../loan-products/loan-pricing';
 
@@ -1940,7 +1941,7 @@ export class LoanRemindersService {
         loan.balance,
       );
 
-    const paidAmount =
+    const paidFromRows =
       loan.repayments.reduce(
         (
           sum,
@@ -2015,12 +2016,21 @@ export class LoanRemindersService {
 
         principal,
 
-        paidAmount,
+        paidAmount:
+          openingBalance == null
+            ? paidFromRows
+            : undefined,
 
         balance,
 
         finesTotal,
       });
+
+    const paidAmount = contractualPaidTowardDebt({
+      baseRepayable,
+      balance,
+      finesTotal,
+    });
 
     /*
      * CRITICAL:

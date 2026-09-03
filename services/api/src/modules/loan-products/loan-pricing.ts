@@ -186,3 +186,20 @@ export function resolveBaseRepayable(input: {
    */
   return opening;
 }
+
+/**
+ * Amount already paid toward the current debt, derived from outstanding.
+ *
+ * Repayment row totals can include earlier loan cycles on the same
+ * imported borrower. Outstanding (`balance`) is the source of truth.
+ */
+export function contractualPaidTowardDebt(input: {
+  baseRepayable: number;
+  balance: number;
+  finesTotal?: number;
+}) {
+  const repayable = roundMoney(Math.max(0, input.baseRepayable));
+  const fines = roundMoney(Math.max(0, input.finesTotal ?? 0));
+  const outstanding = roundMoney(Math.max(0, input.balance));
+  return roundMoney(Math.max(0, repayable + fines - outstanding));
+}
