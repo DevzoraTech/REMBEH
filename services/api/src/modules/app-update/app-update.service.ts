@@ -476,19 +476,27 @@ export class AppUpdateService {
   }
 
   async promoteReleaseToAll(id: string) {
-    const release = await this.prisma.appRelease.findUnique({ where: { id } });
-    if (!release) throw new NotFoundException('Release not found.');
+    return this.sendRelease(id, { audience: 'ALL', forceUpdate: true });
+  }
 
-    return this.toAdminRelease(
-      await this.prisma.appRelease.update({
-        where: { id },
-        data: {
-          audience: AppReleaseAudience.ALL,
-          tenants: { deleteMany: {} },
-        },
-        include: RELEASE_ADMIN_INCLUDE,
-      }),
-    );
+  async sendRelease(
+    id: string,
+    dto: {
+      audience: 'ALL' | 'SELECTED';
+      tenantIds?: string[];
+      forceUpdate?: boolean;
+    },
+  ) {
+    return this.updateRelease(id, {
+      audience: dto.audience,
+      tenantIds: dto.audience === 'SELECTED' ? dto.tenantIds : [],
+      forceUpdate: dto.forceUpdate ?? true,
+      isActive: true,
+    });
+  }
+
+  async pauseRelease(id: string) {
+    return this.updateRelease(id, { isActive: false });
   }
 
   async listReleases(appName?: string, platform?: string) {

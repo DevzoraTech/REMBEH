@@ -116,6 +116,20 @@ export class UpdateReleaseDto {
   tenantIds?: string[];
 }
 
+export class SendReleaseDto {
+  @IsIn(['ALL', 'SELECTED'])
+  audience!: 'ALL' | 'SELECTED';
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  tenantIds?: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  forceUpdate?: boolean;
+}
+
 export class UploadUrlDto {
   @IsString()
   appName!: string;

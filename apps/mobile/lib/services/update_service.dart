@@ -209,7 +209,9 @@ class UpdateService {
       final currentBuild = int.tryParse(packageInfo.buildNumber) ?? 1;
       final currentVersion = packageInfo.version;
       final platform = Platform.isAndroid ? 'android' : 'ios';
-      final tenantId = (await SessionStore().read())?.tenantId?.trim();
+      final session = await SessionStore().read();
+      final tenantId = session?.tenantId?.trim();
+      final accessToken = session?.accessToken.trim();
 
       final uri = Uri.parse('$rembehApiBaseUrl/app/check-update').replace(
         queryParameters: {
@@ -222,7 +224,15 @@ class UpdateService {
         },
       );
 
-      final response = await http.get(uri).timeout(const Duration(seconds: 8));
+      final response = await http
+          .get(
+            uri,
+            headers: {
+              if (accessToken != null && accessToken.isNotEmpty)
+                'Authorization': 'Bearer $accessToken',
+            },
+          )
+          .timeout(const Duration(seconds: 8));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as Map<String, dynamic>;

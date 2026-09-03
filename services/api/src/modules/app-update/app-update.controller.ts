@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   ParseIntPipe,
   Patch,
@@ -14,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
+import { JwtTokenService } from '../../common/auth/jwt-token.service';
 import { PermissionsGuard } from '../../common/auth/permissions.guard';
 import { RequirePermissions } from '../../common/auth/permissions.decorator';
 import {
@@ -26,7 +28,10 @@ import { AppUpdateService } from './app-update.service';
 
 @Controller('app')
 export class AppUpdateController {
-  constructor(private readonly appUpdateService: AppUpdateService) {}
+  constructor(
+    private readonly appUpdateService: AppUpdateService,
+    private readonly jwtTokenService: JwtTokenService,
+  ) {}
 
   @Get('check-update')
   async checkUpdate(
@@ -36,13 +41,14 @@ export class AppUpdateController {
     @Query('platform') platform?: string,
     @Query('currentReleaseEpoch') currentReleaseEpoch?: string,
     @Query('tenantId') tenantId?: string,
+    @Headers('authorization') authorization?: string,
   ) {
     return this.appUpdateService.checkUpdate(
       app || appName || 'mobile',
       currentBuild,
       platform || 'android',
       parseOptionalPositiveInt(currentReleaseEpoch, 1),
-      parseOptionalUuid(tenantId),
+      this.resolveCheckUpdateTenant(tenantId, authorization),
     );
   }
 
@@ -154,6 +160,23 @@ export class AppUpdateController {
       audience: undefined,
       tenantIds: undefined,
     });
+  }
+
+  private resolveCheckUpdateTenant(
+    queryTenantId?: string,
+    authorization?: string,
+  ) {
+    if (authorization?.startsWith('Bearer ')) {
+      try {
+        const payload = this.jwtTokenService.verifyAccessToken(
+          authorization.slice('Bearer '.length).trim(),
+        );
+        if (payload.tenantId) return payload.tenantId;
+      } catch {
+        /* Public endpoint: a missing or expired token still checks the all-organisations track. */
+      }
+    }
+    return parseOptionalUuid(queryTenantId);
   }
 }
 

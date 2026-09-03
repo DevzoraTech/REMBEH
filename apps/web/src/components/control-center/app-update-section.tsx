@@ -1,26 +1,12 @@
 "use client";
 
-import {
-  FileText,
-  ImagePlus,
-  Plus,
-  RefreshCw,
-  Save,
-  Smartphone,
-  Trash2,
-  Video,
-} from "lucide-react";
+import { FileText, Plus, Save, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 
 import type { ControlCenterSession } from "../../lib/control-center-session";
 import { controlCenterFetch } from "../../lib/control-center-api";
 import { ControlCenterAppUpdateRolloutSection } from "./app-update-rollout-section";
-import {
-  IconBadge,
-  Panel,
-  SectionTitle,
-  SelectControl,
-} from "./control-center-primitives";
+import { Panel, SectionTitle, SelectControl } from "./control-center-primitives";
 
 type WhatsNewItem = {
   title: string;
@@ -297,55 +283,61 @@ export function ControlCenterAppUpdateSection({
     <div>
       <SectionTitle
         title="App update"
-        subtitle="Choose which organisations receive a mobile build, then set the What's new copy and promo shown on the phone."
-        action={
-          <button
-            type="button"
-            onClick={() => void load()}
-            className="inline-flex h-10 items-center gap-2 rounded-xl border border-[#dfe5eb] bg-white px-3 text-sm font-semibold text-slate-700"
-          >
-            <RefreshCw className="size-4" />
-            Refresh
-          </button>
-        }
+        subtitle="Send a build to phones, then set the copy they see on the update screen."
       />
 
       <ControlCenterAppUpdateRolloutSection session={session} />
 
-      <p className="mb-4 mt-2 text-sm font-semibold text-[#17233c]">
-        What's new on the phone
-      </p>
-
       {error ? (
-        <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
         </p>
       ) : null}
       {notice ? (
-        <p className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+        <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
           {notice}
         </p>
       ) : null}
 
       {loading ? (
         <Panel>
-          <p className="px-5 py-8 text-sm text-slate-500">Loading…</p>
+          <p className="px-4 py-6 text-sm text-slate-500">Loading…</p>
         </Panel>
       ) : (
-        <form onSubmit={(event) => void save(event)} className="space-y-4">
+        <form onSubmit={(event) => void save(event)}>
           <Panel>
-            <div className="flex items-start gap-3 border-b border-[#edf1f4] px-5 py-4">
-              <IconBadge icon={Smartphone} />
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f4] px-4 py-3">
               <div>
                 <p className="text-sm font-semibold text-[#17233c]">
-                  Messages on the phone
+                  Phone screen
                 </p>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  Shown above the What's new list.
+                <p className="text-[11px] font-medium text-slate-500">
+                  Copy shown when a phone is asked to update.
                 </p>
               </div>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={form.isActive}
+                    onChange={(event) =>
+                      update("isActive", event.target.checked)
+                    }
+                  />
+                  Show on phones
+                </label>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-[#003f35] px-3 text-xs font-semibold text-white disabled:opacity-60"
+                >
+                  <Save className="size-3.5" />
+                  {saving ? "Saving…" : "Save screen"}
+                </button>
+              </div>
             </div>
-            <div className="grid gap-4 p-5 md:grid-cols-2">
+
+            <div className="grid gap-3 border-b border-[#edf1f4] p-4 md:grid-cols-2">
               <label className="block text-xs font-semibold text-slate-600">
                 Ready message
                 <input
@@ -353,7 +345,7 @@ export function ControlCenterAppUpdateSection({
                   onChange={(event) =>
                     update("readyMessage", event.target.value)
                   }
-                  className="mt-1.5 h-11 w-full rounded-xl border border-[#dfe5eb] px-3 text-sm"
+                  className="mt-1 h-9 w-full rounded-lg border border-[#dfe5eb] px-3 text-sm"
                 />
               </label>
               <label className="block text-xs font-semibold text-slate-600">
@@ -363,82 +355,43 @@ export function ControlCenterAppUpdateSection({
                   onChange={(event) =>
                     update("requiredMessage", event.target.value)
                   }
-                  className="mt-1.5 h-11 w-full rounded-xl border border-[#dfe5eb] px-3 text-sm"
-                />
-              </label>
-            </div>
-          </Panel>
-
-          <Panel>
-            <div className="flex items-start gap-3 border-b border-[#edf1f4] px-5 py-4">
-              <IconBadge
-                icon={
-                  form.mediaType === "VIDEO"
-                    ? Video
-                    : form.mediaType === "IMAGE"
-                      ? ImagePlus
-                      : FileText
-                }
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-[#17233c]">
-                  What's new picker
-                </p>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  This picker sets the What's new text on the phone, and the
-                  video or image shown with it. Load a .txt file, type the
-                  points, and optionally attach media.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid gap-4 border-b border-[#edf1f4] p-5 md:grid-cols-2">
-              <label className="block text-xs font-semibold text-slate-600">
-                Content type
-                <SelectControl
-                  ariaLabel="Content type"
-                  className="mt-1.5 w-full"
-                  value={form.mediaType}
-                  onChange={(value) =>
-                    update("mediaType", value as ScreenForm["mediaType"])
-                  }
-                  options={[
-                    { value: "NONE", label: "Text only" },
-                    { value: "IMAGE", label: "Image + text" },
-                    { value: "VIDEO", label: "Video + text" },
-                  ]}
+                  className="mt-1 h-9 w-full rounded-lg border border-[#dfe5eb] px-3 text-sm"
                 />
               </label>
               <label className="block text-xs font-semibold text-slate-600">
-                Pick What's new text, image, or video
+                Stay connected title
                 <input
-                  type="file"
-                  accept="image/*,video/*,.txt,.md,text/plain"
-                  onChange={(event) => {
-                    onContentFile(event.target.files?.[0] ?? null);
-                    event.target.value = "";
-                  }}
-                  className="mt-1.5 block w-full text-sm"
+                  value={form.stayConnectedTitle}
+                  onChange={(event) =>
+                    update("stayConnectedTitle", event.target.value)
+                  }
+                  className="mt-1 h-9 w-full rounded-lg border border-[#dfe5eb] px-3 text-sm"
                 />
-                <span className="mt-1 block text-[11px] font-medium text-slate-400">
-                  .txt fills What's new. Images and videos fill the promo card.
-                </span>
+              </label>
+              <label className="block text-xs font-semibold text-slate-600">
+                Stay connected text
+                <input
+                  value={form.stayConnectedBody}
+                  onChange={(event) =>
+                    update("stayConnectedBody", event.target.value)
+                  }
+                  className="mt-1 h-9 w-full rounded-lg border border-[#dfe5eb] px-3 text-sm"
+                />
               </label>
             </div>
 
-            <div className="space-y-3 border-b border-[#edf1f4] p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="space-y-2.5 border-b border-[#edf1f4] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <p className="text-sm font-semibold text-[#17233c]">
-                    What's new text
+                    What's new
                   </p>
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    One point per line, or title then body with a blank line
-                    between points.
+                  <p className="text-[11px] font-medium text-slate-500">
+                    One point per line, or title then body with a blank line.
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-xl border border-[#dfe5eb] bg-white px-3 text-xs font-semibold">
+                  <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-[#dfe5eb] bg-white px-2.5 text-xs font-semibold">
                     <FileText className="size-3.5" />
                     Load .txt
                     <input
@@ -464,27 +417,27 @@ export function ControlCenterAppUpdateSection({
                         { title: "", body: "" },
                       ])
                     }
-                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[#dfe5eb] bg-white px-3 text-xs font-semibold"
+                    className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#dfe5eb] bg-white px-2.5 text-xs font-semibold"
                   >
                     <Plus className="size-3.5" />
-                    Add point
+                    Add
                   </button>
                 </div>
               </div>
-              <label className="block text-xs font-semibold text-slate-600">
+              <label className="block max-w-md text-xs font-semibold text-slate-600">
                 Section title
                 <input
                   value={form.whatsNewTitle}
                   onChange={(event) =>
                     update("whatsNewTitle", event.target.value)
                   }
-                  className="mt-1.5 h-11 w-full max-w-md rounded-xl border border-[#dfe5eb] px-3 text-sm"
+                  className="mt-1 h-9 w-full rounded-lg border border-[#dfe5eb] px-3 text-sm"
                 />
               </label>
               {form.whatsNewItems.map((item, index) => (
                 <div
                   key={index}
-                  className="grid gap-2 rounded-xl border border-[#edf1f4] bg-[#fbfdfc] p-3 md:grid-cols-[1fr_1.2fr_auto]"
+                  className="grid gap-2 md:grid-cols-[1fr_1.2fr_auto]"
                 >
                   <input
                     value={item.title}
@@ -494,7 +447,7 @@ export function ControlCenterAppUpdateSection({
                       next[index] = { ...item, title: event.target.value };
                       update("whatsNewItems", next);
                     }}
-                    className="h-11 rounded-xl border border-[#dfe5eb] bg-white px-3 text-sm"
+                    className="h-9 rounded-lg border border-[#dfe5eb] bg-white px-3 text-sm"
                   />
                   <input
                     value={item.body}
@@ -504,7 +457,7 @@ export function ControlCenterAppUpdateSection({
                       next[index] = { ...item, body: event.target.value };
                       update("whatsNewItems", next);
                     }}
-                    className="h-11 rounded-xl border border-[#dfe5eb] bg-white px-3 text-sm"
+                    className="h-9 rounded-lg border border-[#dfe5eb] bg-white px-3 text-sm"
                   />
                   <button
                     type="button"
@@ -514,117 +467,98 @@ export function ControlCenterAppUpdateSection({
                         form.whatsNewItems.filter((_, i) => i !== index),
                       )
                     }
-                    className="grid size-11 place-items-center rounded-xl border border-[#dfe5eb] text-slate-500"
+                    className="grid size-9 place-items-center rounded-lg border border-[#dfe5eb] text-slate-500"
                     aria-label="Remove point"
                   >
-                    <Trash2 className="size-4" />
+                    <Trash2 className="size-3.5" />
                   </button>
                 </div>
               ))}
             </div>
 
-            {form.mediaType !== "NONE" ? (
-              <div className="grid gap-4 p-5 md:grid-cols-2">
-                <label className="block text-xs font-semibold text-slate-600 md:col-span-2">
-                  Or paste a media URL
-                  <input
-                    value={form.mediaUrl}
-                    onChange={(event) => update("mediaUrl", event.target.value)}
-                    placeholder="https://"
-                    className="mt-1.5 h-11 w-full rounded-xl border border-[#dfe5eb] px-3 text-sm"
-                  />
-                </label>
-                <label className="block text-xs font-semibold text-slate-600">
-                  Card title
-                  <input
-                    value={form.mediaTitle}
-                    onChange={(event) =>
-                      update("mediaTitle", event.target.value)
-                    }
-                    className="mt-1.5 h-11 w-full rounded-xl border border-[#dfe5eb] px-3 text-sm"
-                  />
-                </label>
-                <label className="block text-xs font-semibold text-slate-600">
-                  Button label
-                  <input
-                    value={form.mediaCtaLabel}
-                    onChange={(event) =>
-                      update("mediaCtaLabel", event.target.value)
-                    }
-                    className="mt-1.5 h-11 w-full rounded-xl border border-[#dfe5eb] px-3 text-sm"
-                  />
-                </label>
-                <label className="block text-xs font-semibold text-slate-600 md:col-span-2">
-                  Card description
-                  <textarea
-                    value={form.mediaBody}
-                    onChange={(event) =>
-                      update("mediaBody", event.target.value)
-                    }
-                    rows={3}
-                    className="mt-1.5 w-full rounded-xl border border-[#dfe5eb] px-3 py-2 text-sm"
-                  />
-                </label>
-                {previewUrl || mediaFile ? (
-                  <p className="text-xs text-emerald-700 md:col-span-2">
-                    {mediaFile
-                      ? `Ready to upload ${mediaFile.name}`
-                      : "Current media is live on the update screen."}
-                  </p>
-                ) : null}
-              </div>
-            ) : (
-              <p className="px-5 py-4 text-xs text-slate-500">
-                Text only — phones will show the What's new list without a
-                video or image card.
-              </p>
-            )}
-          </Panel>
-
-          <Panel>
-            <div className="grid gap-4 p-5 md:grid-cols-2">
+            <div className="grid gap-3 p-4 md:grid-cols-2">
               <label className="block text-xs font-semibold text-slate-600">
-                Stay connected title
-                <input
-                  value={form.stayConnectedTitle}
-                  onChange={(event) =>
-                    update("stayConnectedTitle", event.target.value)
+                Promo
+                <SelectControl
+                  ariaLabel="Content type"
+                  className="mt-1 w-full"
+                  value={form.mediaType}
+                  onChange={(value) =>
+                    update("mediaType", value as ScreenForm["mediaType"])
                   }
-                  className="mt-1.5 h-11 w-full rounded-xl border border-[#dfe5eb] px-3 text-sm"
+                  options={[
+                    { value: "NONE", label: "Text only" },
+                    { value: "IMAGE", label: "Image + text" },
+                    { value: "VIDEO", label: "Video + text" },
+                  ]}
                 />
               </label>
-              <label className="flex items-center gap-2 pt-6 text-sm font-semibold text-slate-700">
+              <label className="block text-xs font-semibold text-slate-600">
+                File
                 <input
-                  type="checkbox"
-                  checked={form.isActive}
-                  onChange={(event) => update("isActive", event.target.checked)}
-                />
-                Show this content on phones
-              </label>
-              <label className="block text-xs font-semibold text-slate-600 md:col-span-2">
-                Stay connected text
-                <textarea
-                  value={form.stayConnectedBody}
-                  onChange={(event) =>
-                    update("stayConnectedBody", event.target.value)
-                  }
-                  rows={2}
-                  className="mt-1.5 w-full rounded-xl border border-[#dfe5eb] px-3 py-2 text-sm"
+                  type="file"
+                  accept="image/*,video/*,.txt,.md,text/plain"
+                  onChange={(event) => {
+                    onContentFile(event.target.files?.[0] ?? null);
+                    event.target.value = "";
+                  }}
+                  className="mt-1 block w-full text-sm"
                 />
               </label>
+              {form.mediaType !== "NONE" ? (
+                <>
+                  <label className="block text-xs font-semibold text-slate-600 md:col-span-2">
+                    Media URL
+                    <input
+                      value={form.mediaUrl}
+                      onChange={(event) =>
+                        update("mediaUrl", event.target.value)
+                      }
+                      placeholder="https://"
+                      className="mt-1 h-9 w-full rounded-lg border border-[#dfe5eb] px-3 text-sm"
+                    />
+                  </label>
+                  <label className="block text-xs font-semibold text-slate-600">
+                    Card title
+                    <input
+                      value={form.mediaTitle}
+                      onChange={(event) =>
+                        update("mediaTitle", event.target.value)
+                      }
+                      className="mt-1 h-9 w-full rounded-lg border border-[#dfe5eb] px-3 text-sm"
+                    />
+                  </label>
+                  <label className="block text-xs font-semibold text-slate-600">
+                    Button label
+                    <input
+                      value={form.mediaCtaLabel}
+                      onChange={(event) =>
+                        update("mediaCtaLabel", event.target.value)
+                      }
+                      className="mt-1 h-9 w-full rounded-lg border border-[#dfe5eb] px-3 text-sm"
+                    />
+                  </label>
+                  <label className="block text-xs font-semibold text-slate-600 md:col-span-2">
+                    Card description
+                    <input
+                      value={form.mediaBody}
+                      onChange={(event) =>
+                        update("mediaBody", event.target.value)
+                      }
+                      className="mt-1 h-9 w-full rounded-lg border border-[#dfe5eb] px-3 text-sm"
+                    />
+                  </label>
+                  {previewUrl || mediaFile ? (
+                    <p className="text-xs text-emerald-700 md:col-span-2">
+                      {mediaFile
+                        ? `Ready to upload ${mediaFile.name}`
+                        : "Current media is live on the update screen."}
+                    </p>
+                  ) : null}
+                </>
+              ) : null}
             </div>
           </Panel>
-
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={saving}
-              className="inline-flex h-11 items-center gap-2 rounded-xl bg-[#003f35] px-5 text-sm font-semibold text-white disabled:opacity-60"
-            >
-              <Save className="size-4" />
-              {saving ? "Saving…" : "Save update screen"}
-            </button>
-          </div>
         </form>
       )}
     </div>

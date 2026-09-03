@@ -33,6 +33,7 @@ import { MarketingService } from '../marketing/marketing.service';
 import { AppUpdateService } from '../app-update/app-update.service';
 import {
   AppUpdateScreenMediaPresignDto,
+  SendReleaseDto,
   UpdateAppUpdateScreenDto,
   UpdateReleaseDto,
 } from '../app-update/app-update.dto';
@@ -348,6 +349,18 @@ export class ControlCenterController {
   @UseGuards(ControlCenterAuthGuard)
   updateAppRelease(@Param('id') id: string, @Body() body: UpdateReleaseDto) {
     return this.appUpdateService.updateRelease(id, body);
+  }
+
+  @Post('app-releases/:id/send')
+  @UseGuards(ControlCenterAuthGuard)
+  sendAppRelease(@Param('id') id: string, @Body() body: SendReleaseDto) {
+    return this.appUpdateService.sendRelease(id, body);
+  }
+
+  @Post('app-releases/:id/pause')
+  @UseGuards(ControlCenterAuthGuard)
+  pauseAppRelease(@Param('id') id: string) {
+    return this.appUpdateService.pauseRelease(id);
   }
 
   @Post('app-releases/:id/promote')
