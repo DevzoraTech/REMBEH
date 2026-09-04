@@ -222,13 +222,55 @@ function moneyPlain(value: number) {
   return escapeHtml(amt(value));
 }
 
+function movementLine(
+  label: string,
+  value: number,
+  tone: "plain" | "in" | "out",
+) {
+  const amount =
+    tone === "in" ? moneyIn(value) : tone === "out" ? moneyOut(value) : moneyPlain(value);
+  return `<div class="move-line"><span>${escapeHtml(label)}</span><strong>${amount}</strong></div>`;
+}
+
+function movementSummaryHtml(
+  document: DailyReportDocumentModel,
+  currency: string,
+  topUpsTotal: number,
+) {
+  const shortageCleared = document.shortageRecoveriesTotal ?? 0;
+  const totalAdditions =
+    document.collectionsReceived +
+    document.processingFeesTotal +
+    shortageCleared;
+  const totalCashouts = document.expensesTotal + (document.salariesTotal ?? 0);
+
+  return `
+    <div class="move-grid">
+      <div class="move-block in">
+        <p class="move-title">ADDITIONS</p>
+        ${movementLine("Opening Balance", document.openingBalance, "plain")}
+        ${movementLine("Capital received", topUpsTotal, "plain")}
+        ${movementLine("Cash in", document.collectionsReceived, "in")}
+        ${movementLine("Processing fees", document.processingFeesTotal, "in")}
+        ${movementLine("Shortage cleared", shortageCleared, "in")}
+        <div class="move-total in"><span>Total Additions</span><strong>${escapeHtml(currency)} ${moneyPlain(totalAdditions)}</strong></div>
+      </div>
+      <div class="move-block out">
+        <p class="move-title">CASHOUTS</p>
+        ${movementLine("Total Expenses", document.expensesTotal, "out")}
+        ${movementLine("Salary", document.salariesTotal ?? 0, "out")}
+        <div class="move-total out"><span>Total Cashouts</span><strong>${escapeHtml(currency)} ${moneyPlain(totalCashouts)}</strong></div>
+      </div>
+    </div>
+  `;
+}
+
 function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
   const currency = document.currency;
   const reportCode =
     document.displayReportNumber ??
     dailyReportCode(document.operationDate) ??
     document.reportNumber;
-  const prevDate = document.previousReportReference?.operationDate;
   const counted = document.countedCash;
 
   const agentsPending = document.agentReturns.filter(
@@ -250,8 +292,6 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
     document.topUpsTotal ||
       document.topUps.reduce((sum, row) => sum + row.amount, 0),
   );
-  const topUpEntries = document.topUps.length;
-
   const repaymentsRows = reconcileProductRows(
     document.repaymentsByProduct.map((row) => ({
       product: row.product,
@@ -355,83 +395,8 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
 
   parts.push(
     section(
-      "Cash Movement Summary",
-      `${table(
-        ["Cash Movement", "Entries", "Type", `Amount (${currency})`],
-        [
-          [
-            escapeHtml(
-              `Balance carried forward${prevDate ? ` from ${formatDate(prevDate)}` : ""}`,
-            ),
-            "N/A",
-            "Inflow",
-            moneyIn(document.openingBalance),
-          ],
-          [
-            "Capital top-ups added during the day",
-            topUpEntries > 0 ? String(topUpEntries) : "N/A",
-            "Inflow",
-            moneyIn(topUpsTotal),
-          ],
-          [
-            "Repayments collected",
-            document.collectionsCount > 0
-              ? String(document.collectionsCount)
-              : "N/A",
-            "Inflow",
-            moneyIn(document.collectionsReceived),
-          ],
-          [
-            "Processing fees received",
-            feesEntryCount > 0 ? String(feesEntryCount) : "N/A",
-            "Inflow",
-            moneyIn(document.processingFeesTotal),
-          ],
-          [
-            "Loans issued",
-            document.loansIssuedCount > 0
-              ? String(document.loansIssuedCount)
-              : "N/A",
-            "Cash Out",
-            moneyOut(document.loansIssuedPrincipal),
-          ],
-          [
-            "Expenses recorded",
-            document.expensesCount > 0
-              ? String(document.expensesCount)
-              : "N/A",
-            "Cash Out",
-            moneyOut(document.expensesTotal),
-          ],
-          [
-            "Salaries paid from day’s cash",
-            (document.salariesCount ?? 0) > 0
-              ? String(document.salariesCount)
-              : "N/A",
-            "Cash Out",
-            moneyOut(document.salariesTotal ?? 0),
-          ],
-          [
-            (document.shortageRecoveries ?? []).length === 1
-              ? `Shortage recovery · ${document.shortageRecoveries?.[0]?.employeeName}`
-              : "Shortage recoveries",
-            (document.shortageRecoveriesCount ?? 0) > 0
-              ? String(document.shortageRecoveriesCount)
-              : "N/A",
-            "Inflow",
-            moneyIn(document.shortageRecoveriesTotal ?? 0),
-          ],
-        ],
-        {
-          alignRight: [1, 3],
-          footer: [
-            "Expected closing cash",
-            "N/A",
-            "Balance",
-            `<strong>${moneyPlain(expectedShown)}</strong>`,
-          ],
-        },
-      )}<p class="note">Expected closing cash = opening + top-ups + repayments + fees − loans − expenses − salaries. Float and field officer returns net out when handovers balance.</p>`,
+      "Cash Position Summary",
+      `${movementSummaryHtml(document, currency, topUpsTotal)}<p class="note">Expected closing balance = Opening Balance + Capital received + Cash in + Processing fees + Shortage cleared − Total Expenses − Salary. Loans and unused float are balanced on field-officer handover and are not shown here.</p>`,
     ),
   );
 
@@ -764,6 +729,49 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
       padding: 8px 10px;
       font-size: 13px;
       font-weight: 600;
+    }
+    .move-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .move-block {
+      border: 1px solid #e6ebf0;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .move-block.in { border-color: #d7efe3; }
+    .move-block.out { border-color: #f8d5d0; }
+    .move-title {
+      margin: 0;
+      padding: 10px 12px 4px;
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+    .move-block.in .move-title { color: #0f8f68; }
+    .move-block.out .move-title { color: #dc2626; }
+    .move-line {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 4px 12px;
+      font-size: 12px;
+    }
+    .move-line span { color: #475569; }
+    .move-total {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 6px;
+      padding: 8px 12px;
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .move-total.in { background: #eff8f2; color: #0f8f68; }
+    .move-total.out { background: #fff0ec; color: #dc2626; }
+    @media (max-width: 720px) {
+      .move-grid { grid-template-columns: 1fr; }
     }
     .cash-grid {
       display: grid;

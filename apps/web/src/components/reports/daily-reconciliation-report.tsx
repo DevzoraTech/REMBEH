@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  ArrowDown,
+  ArrowUp,
   Banknote,
   CheckCircle2,
   ChevronLeft,
@@ -422,7 +424,6 @@ function SummaryDocument({
   reportCode: string;
 }) {
   const currency = document.currency;
-  const prevDate = document.previousReportReference?.operationDate;
   const counted = document.countedCash;
 
   const agentsPending = document.agentReturns.filter(
@@ -442,8 +443,6 @@ function SummaryDocument({
     document.topUpsTotal ||
       document.topUps.reduce((sum, row) => sum + row.amount, 0),
   );
-  const topUpEntries = document.topUps.length;
-
   const repaymentsRows = reconcileProductRows(
     document.repaymentsByProduct.map((row) => ({
       product: row.product,
@@ -597,90 +596,67 @@ function SummaryDocument({
           </div>
         </Section>
 
-        <Section title="Cash Movement Summary">
-          <ReportTable
-            columns={[
-              "Cash Movement",
-              "Entries",
-              "Type",
-              `Amount (${currency})`,
-            ]}
-            align={[false, true, false, true]}
-            rows={[
-              [
-                `Balance carried forward${prevDate ? ` from ${formatDate(prevDate)}` : ""}`,
-                "N/A",
-                "Inflow",
-                signed(document.openingBalance, "in"),
-              ],
-              [
-                "Capital top-ups added during the day",
-                topUpEntries > 0 ? String(topUpEntries) : "N/A",
-                "Inflow",
-                signed(topUpsTotal, "in"),
-              ],
-              [
-                "Repayments collected",
-                document.collectionsCount > 0
-                  ? String(document.collectionsCount)
-                  : "N/A",
-                "Inflow",
-                signed(document.collectionsReceived, "in"),
-              ],
-              [
-                "Processing fees received",
-                feesEntryCount > 0 ? String(feesEntryCount) : "N/A",
-                "Inflow",
-                signed(document.processingFeesTotal, "in"),
-              ],
-              [
-                "Loans issued",
-                document.loansIssuedCount > 0
-                  ? String(document.loansIssuedCount)
-                  : "N/A",
-                "Cash Out",
-                signed(document.loansIssuedPrincipal, "out"),
-              ],
-              [
-                "Expenses recorded",
-                document.expensesCount > 0
-                  ? String(document.expensesCount)
-                  : "N/A",
-                "Cash Out",
-                signed(document.expensesTotal, "out"),
-              ],
-              [
-                "Salaries paid from day’s cash",
-                (document.salariesCount ?? 0) > 0
-                  ? String(document.salariesCount)
-                  : "N/A",
-                "Cash Out",
-                signed(document.salariesTotal ?? 0, "out"),
-              ],
-              [
-                (document.shortageRecoveries ?? []).length === 1
-                  ? `Shortage recovery · ${document.shortageRecoveries?.[0]?.employeeName}`
-                  : "Shortage recoveries",
-                (document.shortageRecoveriesCount ?? 0) > 0
-                  ? String(document.shortageRecoveriesCount)
-                  : "N/A",
-                "Inflow",
-                signed(document.shortageRecoveriesTotal ?? 0, "in"),
-              ],
-            ]}
-            footer={[
-              "Expected closing cash",
-              "N/A",
-              "Balance",
-              <span key="bal" className="font-bold tabular-nums text-[#0b1220]">
-                {amt(expectedShown)}
-              </span>,
-            ]}
-          />
+        <Section title="Cash Position Summary">
+          <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
+            <ReportMovementBlock
+              title="ADDITIONS"
+              icon={<ArrowUp className="size-3.5" />}
+              tone="green"
+              rows={[
+                { label: "Opening Balance", amount: document.openingBalance },
+                { label: "Capital received", amount: topUpsTotal },
+                {
+                  label: "Cash in",
+                  amount: document.collectionsReceived,
+                  signed: "plus",
+                },
+                {
+                  label: "Processing fees",
+                  amount: document.processingFeesTotal,
+                  signed: "plus",
+                },
+                {
+                  label: "Shortage cleared",
+                  amount: document.shortageRecoveriesTotal ?? 0,
+                  signed: "plus",
+                },
+              ]}
+              totalLabel="Total Additions"
+              totalAmount={
+                document.collectionsReceived +
+                document.processingFeesTotal +
+                (document.shortageRecoveriesTotal ?? 0)
+              }
+              currency={currency}
+            />
+            <ReportMovementBlock
+              title="CASHOUTS"
+              icon={<ArrowDown className="size-3.5" />}
+              tone="rose"
+              rows={[
+                {
+                  label: "Total Expenses",
+                  amount: document.expensesTotal,
+                  signed: "minus",
+                },
+                {
+                  label: "Salary",
+                  amount: document.salariesTotal ?? 0,
+                  signed: "minus",
+                },
+              ]}
+              totalLabel="Total Cashouts"
+              totalAmount={
+                document.expensesTotal + (document.salariesTotal ?? 0)
+              }
+              currency={currency}
+            />
+          </div>
           <p className="mt-1.5 text-[12px] italic text-slate-500">
-            Expected closing cash = opening + top-ups + repayments + fees −
-            loans − expenses − salaries. Float and field officer returns net out when
-            handovers balance.
+            Expected closing balance = Opening Balance + Capital received +
+            Cash in + Processing fees + Shortage cleared − Total Expenses −
+            Salary. Loans and unused float are balanced on field-officer
+            handover and are not shown here.
           </p>
         </Section>
 
@@ -1492,6 +1468,84 @@ function MetaCell({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
+function ReportMovementBlock({
+  title,
+  icon,
+  tone,
+  rows,
+  totalLabel,
+  totalAmount,
+  currency,
+}: {
+  title: string;
+  icon: ReactNode;
+  tone: "green" | "rose";
+  rows: Array<{
+    label: string;
+    amount: number;
+    signed?: "plus" | "minus";
+  }>;
+  totalLabel: string;
+  totalAmount: number;
+  currency: string;
+}) {
+  const accent =
+    tone === "green" ? "text-[var(--forest-emerald)]" : "text-red-600";
+  const ring = tone === "green" ? "border-emerald-100" : "border-red-100";
+  const iconWrap = tone === "green" ? "bg-emerald-50" : "bg-red-50";
+  const footer = tone === "green" ? "bg-[#eff8f2]" : "bg-[#fff0ec]";
+
+  return (
+    <div className={`overflow-hidden rounded-xl border ${ring}`}>
+      <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
+        <span
+          className={`grid size-6 place-items-center rounded-full ${iconWrap} ${accent}`}
+        >
+          {icon}
+        </span>
+        <p className={`text-[12px] font-black tracking-[0.04em] ${accent}`}>
+          {title}
+        </p>
+      </div>
+      <div className="space-y-1 px-3 pb-2">
+        {rows.map((row) => (
+          <div
+            key={row.label}
+            className="flex items-center justify-between gap-3"
+          >
+            <p className="min-w-0 text-[12px] font-medium text-slate-600">
+              {row.label}
+            </p>
+            <p
+              className={`shrink-0 text-[12px] font-bold tabular-nums ${
+                row.signed === "plus"
+                  ? "text-[var(--forest-emerald)]"
+                  : row.signed === "minus"
+                    ? "text-red-600"
+                    : "text-[#0b1220]"
+              }`}
+            >
+              {row.signed === "plus"
+                ? `+${currency} ${amt(row.amount)}`
+                : row.signed === "minus"
+                  ? `-${currency} ${amt(row.amount)}`
+                  : `${currency} ${amt(row.amount)}`}
+            </p>
+          </div>
+        ))}
+      </div>
+      <div
+        className={`flex items-center justify-between gap-3 px-3 py-2 ${footer}`}
+      >
+        <p className={`text-[12px] font-black ${accent}`}>{totalLabel}</p>
+        <p className={`text-[12px] font-black tabular-nums ${accent}`}>
+          {currency} {amt(totalAmount)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function CashCard({
   icon,
   label,
@@ -1632,21 +1686,6 @@ function CheckItem({
 
 function amt(value: number) {
   return formatMoneyAmount(value);
-}
-
-function signed(value: number, tone: "in" | "out") {
-  if (tone === "in") {
-    return (
-      <span className="font-semibold tabular-nums text-[var(--forest-emerald)]">
-        +{amt(value)}
-      </span>
-    );
-  }
-  return (
-    <span className="font-semibold tabular-nums text-red-600">
-      -{amt(value)}
-    </span>
-  );
 }
 
 function formatDateTime(value: string) {
@@ -1874,8 +1913,8 @@ function buildLedgerRows(document: DailyReportDocumentModel) {
       section: "Shortage",
       description:
         (document.shortageRecoveries ?? [])
-          .map((row) => `Shortage recovery · ${row.employeeName}`)
-          .join("; ") || "Shortage recoveries paid in cash",
+          .map((row) => `Shortage cleared · ${row.employeeName}`)
+          .join("; ") || "Shortage cleared",
       count:
         (document.shortageRecoveriesCount ?? 0) > 0
           ? String(document.shortageRecoveriesCount)

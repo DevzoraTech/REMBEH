@@ -1287,22 +1287,22 @@ class _ActiveOfficerTable extends StatelessWidget {
           padding: EdgeInsets.fromLTRB(0, 10, 0, 9),
           child: Row(
             children: [
-              Expanded(flex: 34, child: _ActiveHeaderCell('Name')),
+              Expanded(flex: 28, child: _ActiveHeaderCell('Name')),
               Expanded(
                 flex: 17,
                 child: _ActiveHeaderCell('Cash in', alignEnd: true),
               ),
               Expanded(
-                flex: 17,
+                flex: 14,
                 child: _ActiveHeaderCell('Loans', alignEnd: true),
               ),
               Expanded(
                 flex: 20,
-                child: _ActiveHeaderCell('Processing fees', alignEnd: true),
+                child: _ActiveHeaderCell('Processing\nfees', alignEnd: true),
               ),
               Expanded(
-                flex: 22,
-                child: _ActiveHeaderCell('Expected handover', alignEnd: true),
+                flex: 23,
+                child: _ActiveHeaderCell('Expected\nhandover', alignEnd: true),
               ),
               SizedBox(width: 14),
             ],
@@ -1347,7 +1347,7 @@ class _ActiveOfficerRow extends StatelessWidget {
           child: Row(
             children: [
               Expanded(
-                flex: 34,
+                flex: 28,
                 child: Row(
                   children: [
                     _Avatar(
@@ -1391,13 +1391,13 @@ class _ActiveOfficerRow extends StatelessWidget {
                 flex: 17,
                 child: _ActiveMoneyCell(officer.repaymentsCollected),
               ),
-              Expanded(flex: 17, child: _ActiveMoneyCell(officer.loansIssued)),
+              Expanded(flex: 14, child: _ActiveMoneyCell(officer.loansIssued)),
               Expanded(
                 flex: 20,
                 child: _ActiveMoneyCell(officer.processingFees),
               ),
               Expanded(
-                flex: 22,
+                flex: 23,
                 child: _ActiveMoneyCell(officer.expectedHandover, green: true),
               ),
               const SizedBox(width: 2),
@@ -1422,16 +1422,20 @@ class _ActiveHeaderCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      label,
-      textAlign: alignEnd ? TextAlign.end : TextAlign.start,
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      style: const TextStyle(
-        color: midnightNavy,
-        fontSize: 7.4,
-        height: 1.15,
-        fontWeight: FontWeight.w800,
+    return Padding(
+      padding: EdgeInsets.only(left: alignEnd ? 8 : 0, right: alignEnd ? 0 : 6),
+      child: Text(
+        label,
+        textAlign: alignEnd ? TextAlign.end : TextAlign.start,
+        maxLines: 2,
+        softWrap: true,
+        overflow: TextOverflow.visible,
+        style: const TextStyle(
+          color: midnightNavy,
+          fontSize: 8,
+          height: 1.2,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
@@ -1445,18 +1449,21 @@ class _ActiveMoneyCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Text(
-          formatMoney(amount),
-          textAlign: TextAlign.end,
-          maxLines: 1,
-          style: TextStyle(
-            color: green ? forestEmerald : midnightNavy,
-            fontSize: 9.5,
-            fontWeight: FontWeight.w900,
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            formatMoney(amount),
+            textAlign: TextAlign.end,
+            maxLines: 1,
+            style: TextStyle(
+              color: green ? forestEmerald : midnightNavy,
+              fontSize: 9.5,
+              fontWeight: FontWeight.w900,
+            ),
           ),
         ),
       ),

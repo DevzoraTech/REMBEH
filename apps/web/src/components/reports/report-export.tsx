@@ -192,7 +192,7 @@ export async function exportOwnedReport(
   ]);
   worksheet.addRow([
     "Shortage",
-    "Shortage recoveries paid in cash",
+    "Shortage cleared",
     numberValue(snapshot.summary.shortageRecoveriesCount) > 0
       ? formatNumber(numberValue(snapshot.summary.shortageRecoveriesCount))
       : "-",

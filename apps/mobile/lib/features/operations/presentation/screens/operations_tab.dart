@@ -32,6 +32,7 @@ class OperationsTab extends StatelessWidget {
     required this.onAllocateFloat,
     required this.onCloseDay,
     required this.onViewActivity,
+    this.onRecordShortagePaid,
     this.pendingClosureMessage,
     this.awaitingReportMessage,
     this.openDayBlockedMessage,
@@ -68,6 +69,7 @@ class OperationsTab extends StatelessWidget {
   final VoidCallback onAllocateFloat;
   final VoidCallback onCloseDay;
   final VoidCallback onViewActivity;
+  final VoidCallback? onRecordShortagePaid;
 
   final String? pendingClosureMessage;
   final String? awaitingReportMessage;
@@ -170,7 +172,12 @@ class OperationsTab extends StatelessWidget {
 
           const SizedBox(height: 10),
 
-          CashPositionCard(operation: data),
+          CashPositionCard(
+            operation: data,
+            onRecordShortagePaid: dayOpen && canRecordCashMovements
+                ? onRecordShortagePaid
+                : null,
+          ),
 
           /*
            * Do not hide this section merely because no float has

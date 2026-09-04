@@ -935,7 +935,7 @@ function ReportSummaryView({
       </section>
 
       <section className="grid gap-2.5 lg:grid-cols-2">
-        <Panel title="Opening cash" icon={<ArrowRightLeft className="size-3.5" />}>
+        <Panel title="Opening Balance" icon={<ArrowRightLeft className="size-3.5" />}>
           <LineRow
             label="Previous closing balance"
             value={
@@ -988,14 +988,14 @@ function ReportSummaryView({
             }
           />
           <LineRow
-            label="Expenses"
+            label="Total Expenses"
             value={
               <Money value={numberValue(summary.expenses)} currency={currency} />
             }
             danger={numberValue(summary.expenses) > 0}
           />
           <LineRow
-            label="Salaries"
+            label="Salary"
             value={
               <Money
                 value={numberValue(summary.salaries)}
@@ -1006,13 +1006,14 @@ function ReportSummaryView({
           />
           {numberValue(summary.shortageRecoveries) > 0 ? (
             <LineRow
-              label="Shortage recoveries"
+              label="Shortage cleared"
               value={
                 <Money
                   value={numberValue(summary.shortageRecoveries)}
                   currency={currency}
                 />
               }
+              positive
             />
           ) : null}
         </Panel>
@@ -1324,11 +1325,13 @@ function LineRow({
   value,
   strong,
   danger,
+  positive,
 }: {
   label: string;
   value: ReactNode;
   strong?: boolean;
   danger?: boolean;
+  positive?: boolean;
 }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-[#edf1f5] py-1.5 last:border-b-0 last:pb-0 first:pt-0">
@@ -1339,7 +1342,11 @@ function LineRow({
       </span>
       <span
         className={`shrink-0 text-[12px] font-bold tabular-nums sm:text-[13px] ${
-          danger ? "text-red-700" : "text-[#0b1220]"
+          danger
+            ? "text-red-700"
+            : positive
+              ? "text-emerald-700"
+              : "text-[#0b1220]"
         }`}
       >
         {value}
@@ -2207,7 +2214,7 @@ function buildExcelRows(report: OwnerReport, snapshot: ReportSnapshot) {
     },
     {
       section: "Shortage",
-      description: "Shortage recoveries paid in cash",
+      description: "Shortage cleared",
       count: formatNumber(numberValue(snapshot.summary.shortageRecoveriesCount)),
       cashIn: numberValue(snapshot.summary.shortageRecoveries),
       cashOut: null,

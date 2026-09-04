@@ -12,6 +12,7 @@ type Props = {
   session: RembehSession;
   branchId: string | null;
   canRecordPayment: boolean;
+  onPaymentRecorded?: () => void;
 };
 
 const METHOD_OPTIONS = [
@@ -24,6 +25,7 @@ export function CashShortagesPanel({
   session,
   branchId,
   canRecordPayment,
+  onPaymentRecorded,
 }: Props) {
   const [shortages, setShortages] = useState<CashShortageRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -112,8 +114,9 @@ export function CashShortagesPanel({
       setAmount("");
       setNotes("");
       setMethod("CASH");
-      setNotice("Shortage payment recorded.");
+      setNotice("Shortage paid recorded as today’s cash in.");
       await load();
+      onPaymentRecorded?.();
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -131,7 +134,10 @@ export function CashShortagesPanel({
   );
 
   return (
-    <section className="rounded-[14px] border border-[#e6ebf0] bg-white px-3.5 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+    <section
+      id="ops-cash-shortages"
+      className="rounded-[14px] border border-[#e6ebf0] bg-white px-3.5 py-3 shadow-[0_8px_18px_rgba(15,23,42,0.04)]"
+    >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#0a6b55]">
@@ -230,7 +236,7 @@ export function CashShortagesPanel({
                         }}
                       >
                         <Wallet className="size-3.5" />
-                        Record payment
+                        Record shortage paid
                       </button>
                     ) : (
                       <div className="space-y-2 rounded-xl border border-[#e6ebf0] bg-white p-2.5">

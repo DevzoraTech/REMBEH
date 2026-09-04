@@ -2615,6 +2615,10 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         unawaited(_openExpenses());
       },
 
+      onRecordShortagePaid: () {
+        unawaited(_openShortagesList());
+      },
+
       onAllocateFloat: () {
         unawaited(_showFloatSheet(addMore: false));
       },

@@ -97,7 +97,7 @@ class _RecordShortagePayoffSheetState extends State<RecordShortagePayoffSheet> {
               Text(
                 widget.openCashDayLabel == null
                     ? 'Open the branch day first. Cash paid against this shortage is today’s income.'
-                    : 'This cash-in is recorded on ${widget.openCashDayLabel} as shortage recovery from ${widget.employee.fullName}.',
+                    : 'This cash-in is recorded on ${widget.openCashDayLabel} as Shortage paid by ${widget.employee.fullName}.',
                 style: const TextStyle(
                   color: slateText,
                   fontSize: 12,

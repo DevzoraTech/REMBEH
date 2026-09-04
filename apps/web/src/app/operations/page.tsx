@@ -2,7 +2,9 @@
 
 import {
   AlertTriangle,
+  ArrowDown,
   ArrowRight,
+  ArrowUp,
   Banknote,
   Building2,
   CalendarDays,
@@ -1642,6 +1644,11 @@ export default function OperationsPage() {
                   session={session}
                   branchId={activeBranch.id}
                   canRecordPayment={canClose}
+                  onPaymentRecorded={() => {
+                    void loadOperation(session, date, selectedBranchId || undefined, {
+                      silent: true,
+                    });
+                  }}
                 />
               </div>
             ) : null}
@@ -2131,8 +2138,8 @@ function OpenOperationView({
           value={
             <Money value={operation.expectedClosingBalance} currency="UGX" />
           }
-          hint="Target after loans, cash in, fees, expenses, and salaries"
-          tooltip="Expected closing balance after opening, capital received, cash in, processing fees, loans, expenses (branch cash and field float), and salaries."
+          hint="Target after cash in, fees, shortage cleared, expenses, and salary"
+          tooltip="Expected closing balance after Opening Balance, Capital received, Cash in, Processing fees, Shortage cleared, Total Expenses, and Salary. Loans and unused float are balanced on field-officer handover."
           tone="green"
         />
         <DayTopStat
@@ -2182,7 +2189,10 @@ function OpenOperationView({
       </section>
 
       <section className="grid gap-3 xl:grid-cols-[0.95fr_1.35fr]">
-        <CashMovementCard operation={operation} />
+        <CashMovementCard
+          operation={operation}
+          canRecordShortagePaid={canOperateBranch && editable}
+        />
         <AgentFloatBoard
           operation={operation}
           onIssueFloat={
@@ -2421,7 +2431,7 @@ function ComputerisedReportView({
     <div className="space-y-4">
       <div className="grid grid-cols-3 gap-2 lg:grid-cols-7">
         <ReportMetric
-          label="Opening Cash"
+          label="Opening Balance"
           value={
             <Money value={operation.cashAvailableAtOpening} currency="UGX" />
           }
@@ -2442,13 +2452,13 @@ function ComputerisedReportView({
           danger
         />
         <ReportMetric
-          label="Salaries"
+          label="Salary"
           value={<Money value={salaryTotal(operation)} currency="UGX" />}
           danger
         />
         {shortageRecoveryTotal(operation) > 0 ? (
           <ReportMetric
-            label="Shortage recoveries"
+            label="Shortage cleared"
             value={
               <Money
                 value={shortageRecoveryTotal(operation)}
@@ -2471,7 +2481,7 @@ function ComputerisedReportView({
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <ReportBlock title="Opening Cash">
+        <ReportBlock title="Opening Balance">
           <StatementRow
             label="Previous closing balance"
             value={<Money value={operation.openingBalance} currency="UGX" />}
@@ -3289,134 +3299,163 @@ function DayTopStat({
   );
 }
 
-function CashMovementCard({ operation }: { operation: DailyOperation }) {
-  const rows = [
-    {
-      label: "Previous close",
-      detail: "Opening Cash",
-      amount: operation.openingBalance,
-      signed: "neutral" as const,
-      tone: "slate" as const,
-    },
-    {
-      label: "Capital received",
-      detail: `${operation.topUpsCount} recorded`,
-      amount: operation.topUpsTotal ?? operation.cashAddedToday,
-      signed: "plus" as const,
-      tone: "green" as const,
-    },
-    {
-      label: "Cash in",
-      detail: `${operation.collectionsCount} received`,
-      amount: operation.collectionsReceived,
-      signed: "plus" as const,
-      tone: "blue" as const,
-    },
-    {
-      label: "Processing fees",
-      detail: `${operation.loansIssuedCount} loans`,
-      amount: operation.processingFeesTotal,
-      signed: "plus" as const,
-      tone: "green" as const,
-    },
-    ...(shortageRecoveryTotal(operation) > 0
-      ? [
-          {
-            label: "Shortage recoveries",
-            detail:
-              (operation.shortageRecoveries ?? [])
-                .map((row) => row.employeeName)
-                .filter(Boolean)
-                .join(", ") ||
-              `${operation.shortageRecoveriesCount ?? 0} paid`,
-            amount: shortageRecoveryTotal(operation),
-            signed: "plus" as const,
-            tone: "green" as const,
-          },
-        ]
-      : []),
-    {
-      label: "Loans issued",
-      detail: `${operation.loansIssuedCount} disbursed`,
-      amount: operation.loansIssuedPrincipal,
-      signed: "minus" as const,
-      tone: "amber" as const,
-    },
-    {
-      label: "Expenses",
-      detail: `${operation.expensesCount} logged`,
-      amount: operation.expensesTotal,
-      signed: "minus" as const,
-      tone: "rose" as const,
-    },
-    {
-      label: "Salaries",
-      detail: `${operation.salariesCount ?? operation.salaries?.length ?? 0} paid`,
-      amount: salaryTotal(operation),
-      signed: "minus" as const,
-      tone: "rose" as const,
-    },
-  ];
-
-  const dot = {
-    slate: "bg-slate-300",
-    green: "bg-[#19a876]",
-    amber: "bg-amber-500",
-    blue: "bg-sky-500",
-    rose: "bg-rose-500",
-  } as const;
-  const amountTone = {
-    slate: "text-[#0b1220]",
-    green: "text-[var(--forest-emerald)]",
-    amber: "text-amber-700",
-    blue: "text-sky-700",
-    rose: "text-rose-700",
-  } as const;
+function CashMovementCard({
+  operation,
+  canRecordShortagePaid = false,
+}: {
+  operation: DailyOperation;
+  canRecordShortagePaid?: boolean;
+}) {
+  const shortageCleared = shortageRecoveryTotal(operation);
+  const totalAdditions =
+    operation.collectionsReceived +
+    operation.processingFeesTotal +
+    shortageCleared;
+  const totalCashouts = operation.expensesTotal + salaryTotal(operation);
 
   return (
     <section className="rounded-[14px] border border-[#e6ebf0] bg-white p-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-sm font-bold text-[#0b1220]">Cash movement</p>
-          <p className="mt-0.5 truncate text-[10px] font-medium text-slate-500">
+          <p className="text-sm font-bold text-[#0b1220]">Cash position</p>
+          <p className="mt-0.5 truncate text-[12px] font-medium text-slate-500">
             {operation.openedByName} · {formatDateTime(operation.openedAt)}
           </p>
         </div>
         <div className="rounded-lg border border-emerald-100 bg-emerald-50 px-2 py-1 text-right">
           <p className="text-[9px] font-semibold uppercase tracking-[0.04em] text-[#0c6b4f]">
-            Close
+            Expected close
           </p>
-          <p className="text-[11px] font-bold tabular-nums text-[var(--forest-emerald)]">
+          <p className="text-[12px] font-bold tabular-nums text-[var(--forest-emerald)]">
             <Money value={operation.expectedClosingBalance} currency="UGX" />
           </p>
         </div>
       </div>
 
-      <div className="mt-2.5 -mx-1 grid grid-cols-[1fr_88px] gap-2 border-b border-[#dfe5eb] bg-[#e8edf2] px-2 py-1.5 text-[10px] font-semibold text-slate-600">
-        <span>Line item</span>
-        <span className="text-right">Amount</span>
+      <div className="mt-3 grid grid-cols-1 gap-2.5 lg:grid-cols-2">
+        <MovementBlock
+          title="ADDITIONS"
+          icon={<ArrowUp className="size-3.5" />}
+          tone="green"
+          rows={[
+            { label: "Opening Balance", amount: operation.openingBalance },
+            {
+              label: "Capital received",
+              amount: operation.topUpsTotal ?? operation.cashAddedToday,
+            },
+            {
+              label: "Cash in",
+              amount: operation.collectionsReceived,
+              signed: "plus",
+            },
+            {
+              label: "Processing fees",
+              amount: operation.processingFeesTotal,
+              signed: "plus",
+            },
+            ...(shortageCleared !== 0
+              ? [
+                  {
+                    label: "Shortage cleared",
+                    amount: shortageCleared,
+                    signed: "plus" as const,
+                  },
+                ]
+              : []),
+          ]}
+          totalLabel="Total Additions"
+          totalAmount={totalAdditions}
+        />
+        <MovementBlock
+          title="CASHOUTS"
+          icon={<ArrowDown className="size-3.5" />}
+          tone="rose"
+          rows={[
+            {
+              label: "Total Expenses",
+              amount: operation.expensesTotal,
+              signed: "minus",
+            },
+            {
+              label: "Salary",
+              amount: salaryTotal(operation),
+              signed: "minus",
+            },
+          ]}
+          totalLabel="Total Cashouts"
+          totalAmount={totalCashouts}
+        />
       </div>
-      <div className="divide-y divide-[#edf1f5]">
+      {canRecordShortagePaid ? (
+        <a
+          href="#ops-cash-shortages"
+          className="mt-2.5 inline-flex text-[12px] font-bold text-[#0a6b55] hover:underline"
+        >
+          Record shortage paid →
+        </a>
+      ) : null}
+    </section>
+  );
+}
+
+function MovementBlock({
+  title,
+  icon,
+  tone,
+  rows,
+  totalLabel,
+  totalAmount,
+}: {
+  title: string;
+  icon: ReactNode;
+  tone: "green" | "rose";
+  rows: Array<{
+    label: string;
+    amount: number;
+    signed?: "plus" | "minus";
+  }>;
+  totalLabel: string;
+  totalAmount: number;
+}) {
+  const accent =
+    tone === "green"
+      ? "text-[var(--forest-emerald)]"
+      : "text-red-600";
+  const ring =
+    tone === "green"
+      ? "border-emerald-100 bg-white"
+      : "border-red-100 bg-white";
+  const iconWrap =
+    tone === "green" ? "bg-emerald-50" : "bg-red-50";
+  const footer =
+    tone === "green" ? "bg-[#eff8f2]" : "bg-[#fff0ec]";
+
+  return (
+    <div className={`overflow-hidden rounded-xl border ${ring}`}>
+      <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
+        <span
+          className={`grid size-6 place-items-center rounded-full ${iconWrap} ${accent}`}
+        >
+          {icon}
+        </span>
+        <p className={`text-[12px] font-black tracking-[0.04em] ${accent}`}>
+          {title}
+        </p>
+      </div>
+      <div className="space-y-1 px-3 pb-2">
         {rows.map((row) => (
-          <div
-            key={row.label}
-            className="grid grid-cols-[1fr_88px] items-center gap-2 py-1.5"
-          >
-            <div className="flex min-w-0 items-center gap-2">
-              <span
-                className={`size-1.5 shrink-0 rounded-full ${dot[row.tone]}`}
-              />
-              <div className="min-w-0">
-                <p className="truncate text-[11px] font-semibold text-[#0b1220]">
-                  {row.label}
-                </p>
-                <p className="truncate text-[10px] font-medium text-slate-500">
-                  {row.detail}
-                </p>
-              </div>
-            </div>
+          <div key={row.label} className="flex items-center justify-between gap-3">
+            <p className="min-w-0 text-[12px] font-medium text-slate-600">
+              {row.label}
+            </p>
             <p
-              className={`text-right text-[11px] font-bold tabular-nums ${amountTone[row.tone]}`}
+              className={`shrink-0 text-[12px] font-bold tabular-nums ${
+                row.signed === "plus"
+                  ? "text-[var(--forest-emerald)]"
+                  : row.signed === "minus"
+                    ? "text-red-600"
+                    : "text-[#0b1220]"
+              }`}
             >
               <Money
                 value={row.amount}
@@ -3433,7 +3472,15 @@ function CashMovementCard({ operation }: { operation: DailyOperation }) {
           </div>
         ))}
       </div>
-    </section>
+      <div
+        className={`flex items-center justify-between gap-3 px-3 py-2 ${footer}`}
+      >
+        <p className={`text-[12px] font-black ${accent}`}>{totalLabel}</p>
+        <p className={`text-[12px] font-black tabular-nums ${accent}`}>
+          <Money value={totalAmount} currency="UGX" />
+        </p>
+      </div>
+    </div>
   );
 }
 
@@ -5571,8 +5618,8 @@ function buildExcelRows(operation: DailyOperation) {
       section: "Shortage",
       description:
         (operation.shortageRecoveries ?? [])
-          .map((row) => `Shortage recovery · ${row.employeeName}`)
-          .join("; ") || "Shortage recoveries paid in cash",
+          .map((row) => `Shortage cleared · ${row.employeeName}`)
+          .join("; ") || "Shortage cleared",
       count: operation.shortageRecoveriesCount ?? 0,
       cashIn: shortageRecoveryTotal(operation),
       cashOut: null,

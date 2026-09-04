@@ -547,7 +547,7 @@ export class CashShortagesService {
     });
     if (!operation) {
       throw new BadRequestException(
-        'Open the branch day before recording a cash shortage recovery.',
+        'Open the branch day before recording shortage paid as cash in.',
       );
     }
 

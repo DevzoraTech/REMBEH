@@ -109,36 +109,6 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
 
   num get _processingFees => _num(_operation?['processingFeesTotal']);
 
-  num get _loansDisbursed {
-    final explicit = _firstAvailableMoney(_operation, const [
-      'loansIssuedPrincipal',
-      'loansDisbursed',
-      'loansDisbursedTotal',
-      'amountDisbursed',
-      'amountDisbursedTotal',
-      'amountDisbursedToday',
-      'loanDisbursementsTotal',
-    ]);
-
-    if (explicit > 0) {
-      return explicit;
-    }
-
-    final loans = _operation?['loansIssued'];
-    if (loans is! List) {
-      return 0;
-    }
-
-    return loans.whereType<Map>().fold<num>(0, (total, row) {
-      return total +
-          _firstAvailableMoney(Map<String, dynamic>.from(row), const [
-            'amountDisbursed',
-            'principalAmount',
-            'amount',
-          ]);
-    });
-  }
-
   num get _expenses => _firstAvailableMoney(_operation ?? const {}, const [
     'expensesTotal',
     'branchCashExpensesTotal',
@@ -611,7 +581,6 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
                     capitalReceived: _capitalReceived,
                     collections: _collections,
                     processingFees: _processingFees,
-                    loansDisbursed: _loansDisbursed,
                     expenses: _expenses,
                     salaries: _salaries,
                     shortageRecoveries: _shortageRecoveries,
@@ -779,7 +748,6 @@ class _CashReconciliationSummary extends StatelessWidget {
     required this.capitalReceived,
     required this.collections,
     required this.processingFees,
-    required this.loansDisbursed,
     required this.expenses,
     required this.salaries,
     this.shortageRecoveries = 0,
@@ -794,7 +762,6 @@ class _CashReconciliationSummary extends StatelessWidget {
   final num capitalReceived;
   final num collections;
   final num processingFees;
-  final num loansDisbursed;
   final num expenses;
   final num salaries;
   final num shortageRecoveries;
@@ -873,36 +840,45 @@ class _CashReconciliationSummary extends StatelessWidget {
           const Divider(height: 1, color: line),
           const SizedBox(height: 10),
 
-          _CashRow(label: 'Opening cash', value: openingCash),
-          _CashRow(label: 'Capital received', value: capitalReceived),
-          _CashRow(label: 'Cash in', value: collections, positive: true),
-          _CashRow(
-            label: 'Processing fees',
-            value: processingFees,
-            positive: true,
+          _MovementBlock(
+            title: 'ADDITIONS',
+            icon: Icons.arrow_upward_rounded,
+            accent: forestEmerald,
+            fill: const Color(0xFFEFF8F2),
+            totalLabel: 'Total Additions',
+            totalAmount: collections + processingFees + shortageRecoveries,
+            children: [
+              _CashRow(label: 'Opening Balance', value: openingCash),
+              _CashRow(label: 'Capital received', value: capitalReceived),
+              _CashRow(label: 'Cash in', value: collections, positive: true),
+              _CashRow(
+                label: 'Processing fees',
+                value: processingFees,
+                positive: true,
+              ),
+              _CashRow(
+                label: 'Shortage cleared',
+                value: shortageRecoveries,
+                positive: true,
+              ),
+            ],
           ),
-          if (shortageRecoveries != 0)
-            _CashRow(
-              label: 'Shortage recoveries',
-              value: shortageRecoveries,
-              positive: true,
-            ),
-          _CashRow(
-            label: 'Loans disbursed',
-            value: loansDisbursed,
-            negative: true,
-          ),
-          _CashRow(label: 'Expenses', value: expenses, negative: true),
-          _CashRow(label: 'Salaries', value: salaries, negative: true),
-
-          const SizedBox(height: 8),
-          const Divider(height: 1, color: line),
           const SizedBox(height: 10),
-
-          _CashRow(
-            label: 'Expected closing balance',
-            value: expected,
-            emphasized: true,
+          _MovementBlock(
+            title: 'CASHOUTS',
+            icon: Icons.arrow_downward_rounded,
+            accent: const Color(0xFFC62828),
+            fill: const Color(0xFFFFF0EC),
+            totalLabel: 'Total Cashouts',
+            totalAmount: expenses + salaries,
+            children: [
+              _CashRow(
+                label: 'Total Expenses',
+                value: expenses,
+                negative: true,
+              ),
+              _CashRow(label: 'Salary', value: salaries, negative: true),
+            ],
           ),
 
           const SizedBox(height: 12),
@@ -1018,26 +994,26 @@ class _AgentReturnsCard extends StatelessWidget {
                   padding: EdgeInsets.fromLTRB(0, 10, 0, 9),
                   child: Row(
                     children: [
-                      Expanded(flex: 31, child: _OfficerHeaderCell('Name')),
+                      Expanded(flex: 28, child: _OfficerHeaderCell('Name')),
                       Expanded(
-                        flex: 19,
+                        flex: 17,
                         child: _OfficerHeaderCell('Cash in', alignEnd: true),
                       ),
                       Expanded(
-                        flex: 17,
+                        flex: 14,
                         child: _OfficerHeaderCell('Loans', alignEnd: true),
                       ),
                       Expanded(
-                        flex: 21,
+                        flex: 20,
                         child: _OfficerHeaderCell(
-                          'Processing fees',
+                          'Processing\nfees',
                           alignEnd: true,
                         ),
                       ),
                       Expanded(
-                        flex: 24,
+                        flex: 23,
                         child: _OfficerHeaderCell(
-                          'Expected handover',
+                          'Expected\nhandover',
                           alignEnd: true,
                         ),
                       ),
@@ -1130,7 +1106,7 @@ class _OfficerReturnRow extends StatelessWidget {
           child: Row(
             children: [
               Expanded(
-                flex: 31,
+                flex: 28,
                 child: Row(
                   children: [
                     CircleAvatar(
@@ -1162,16 +1138,16 @@ class _OfficerReturnRow extends StatelessWidget {
                 ),
               ),
               Expanded(
-                flex: 19,
+                flex: 17,
                 child: _OfficerMoneyCell(officer.repaymentsCollected),
               ),
-              Expanded(flex: 17, child: _OfficerMoneyCell(officer.loansIssued)),
+              Expanded(flex: 14, child: _OfficerMoneyCell(officer.loansIssued)),
               Expanded(
-                flex: 21,
+                flex: 20,
                 child: _OfficerMoneyCell(officer.processingFees),
               ),
               Expanded(
-                flex: 24,
+                flex: 23,
                 child: _OfficerMoneyCell(officer.expectedHandover, green: true),
               ),
               const SizedBox(width: 2),
@@ -1196,16 +1172,20 @@ class _OfficerHeaderCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      label,
-      textAlign: alignEnd ? TextAlign.end : TextAlign.start,
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      style: const TextStyle(
-        color: midnightNavy,
-        fontSize: 7.4,
-        height: 1.15,
-        fontWeight: FontWeight.w800,
+    return Padding(
+      padding: EdgeInsets.only(left: alignEnd ? 8 : 0, right: alignEnd ? 0 : 6),
+      child: Text(
+        label,
+        textAlign: alignEnd ? TextAlign.end : TextAlign.start,
+        maxLines: 2,
+        softWrap: true,
+        overflow: TextOverflow.visible,
+        style: const TextStyle(
+          color: midnightNavy,
+          fontSize: 8,
+          height: 1.2,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
@@ -1219,18 +1199,21 @@ class _OfficerMoneyCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Text(
-          formatMoney(amount),
-          textAlign: TextAlign.end,
-          maxLines: 1,
-          style: TextStyle(
-            color: green ? forestEmerald : midnightNavy,
-            fontSize: 9.5,
-            fontWeight: FontWeight.w900,
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            formatMoney(amount),
+            textAlign: TextAlign.end,
+            maxLines: 1,
+            style: TextStyle(
+              color: green ? forestEmerald : midnightNavy,
+              fontSize: 9.5,
+              fontWeight: FontWeight.w900,
+            ),
           ),
         ),
       ),
@@ -1509,26 +1492,117 @@ class _SummaryMetric extends StatelessWidget {
   }
 }
 
+class _MovementBlock extends StatelessWidget {
+  const _MovementBlock({
+    required this.title,
+    required this.icon,
+    required this.accent,
+    required this.fill,
+    required this.totalLabel,
+    required this.totalAmount,
+    required this.children,
+  });
+
+  final String title;
+  final IconData icon;
+  final Color accent;
+  final Color fill;
+  final String totalLabel;
+  final num totalAmount;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: accent.withValues(alpha: 0.16)),
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+            child: Row(
+              children: [
+                Container(
+                  width: 22,
+                  height: 22,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, size: 13, color: accent),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 6),
+            child: Column(children: children),
+          ),
+          Container(
+            width: double.infinity,
+            color: fill,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    totalLabel,
+                    style: TextStyle(
+                      color: accent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                Text(
+                  'UGX ${formatMoney(totalAmount)}',
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _CashRow extends StatelessWidget {
   const _CashRow({
     required this.label,
     required this.value,
     this.positive = false,
     this.negative = false,
-    this.emphasized = false,
   });
 
   final String label;
   final num value;
   final bool positive;
   final bool negative;
-  final bool emphasized;
 
   @override
   Widget build(BuildContext context) {
     final valueColor = negative
         ? const Color(0xFFB42318)
-        : positive || emphasized
+        : positive
         ? forestEmerald
         : midnightNavy;
     final amountText = positive
@@ -1545,9 +1619,9 @@ class _CashRow extends StatelessWidget {
             child: Text(
               label,
               style: TextStyle(
-                color: emphasized ? midnightNavy : slateText,
-                fontSize: 10,
-                fontWeight: emphasized ? FontWeight.w800 : FontWeight.w600,
+                color: slateText,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -1555,8 +1629,8 @@ class _CashRow extends StatelessWidget {
             amountText,
             style: TextStyle(
               color: valueColor,
-              fontSize: 10,
-              fontWeight: emphasized ? FontWeight.w900 : FontWeight.w700,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],

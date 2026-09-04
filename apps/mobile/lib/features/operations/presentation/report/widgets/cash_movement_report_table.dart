@@ -16,118 +16,84 @@ class CashMovementReportTable extends StatelessWidget {
         cash.repaymentsCollected +
         cash.processingFees +
         cash.shortageRecoveries;
+    final totalCashouts = cash.expenses + cash.salaries;
+    final stack = MediaQuery.sizeOf(context).width < 640;
 
-    final netDeductions =
-        cash.expenses + cash.salaries + cash.floatIssued - cash.floatReturned;
+    final additions = _MovementBlock(
+      title: 'ADDITIONS',
+      icon: Icons.arrow_upward_rounded,
+      accent: forestEmerald,
+      fill: const Color(0xFFEFF8F2),
+      totalLabel: 'Total Additions',
+      totalAmount: totalAdditions,
+      children: [
+        _CashLine(label: 'Opening Balance', value: cash.openingCash),
+        _CashLine(label: 'Capital received', value: cash.capitalReceived),
+        _CashLine(
+          label: 'Cash in',
+          value: cash.repaymentsCollected,
+          positive: true,
+        ),
+        _CashLine(
+          label: 'Processing fees',
+          value: cash.processingFees,
+          positive: true,
+        ),
+        _CashLine(
+          label: 'Shortage cleared',
+          value: cash.shortageRecoveries,
+          positive: true,
+        ),
+      ],
+    );
+
+    final cashouts = _MovementBlock(
+      title: 'CASHOUTS',
+      icon: Icons.arrow_downward_rounded,
+      accent: const Color(0xFFB42318),
+      fill: const Color(0xFFFFF0EC),
+      totalLabel: 'Total Cashouts',
+      totalAmount: totalCashouts,
+      children: [
+        _CashLine(
+          label: 'Total Expenses',
+          value: cash.expenses,
+          negative: true,
+        ),
+        _CashLine(label: 'Salary', value: cash.salaries, negative: true),
+      ],
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const _SectionTitle(number: '1.', title: 'CASH POSITION SUMMARY'),
-
         const SizedBox(height: 8),
-
         Container(
           decoration: BoxDecoration(
             color: Colors.white,
             border: Border.all(color: line),
           ),
-          child: IntrinsicHeight(
-            child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
-                  child: Column(
+          child: stack
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    additions,
+                    Container(height: 1, color: line),
+                    cashouts,
+                  ],
+                )
+              : IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _CashLine(label: 'Opening cash', value: cash.openingCash),
-                      _CashLine(
-                        label: 'Capital received',
-                        value: cash.capitalReceived,
-                      ),
-                      _CashLine(
-                        label: 'Total cash available',
-                        value: cash.totalCashAvailable,
-                        strong: true,
-                      ),
-
-                      const SizedBox(height: 8),
-
-                      _CashLine(
-                        label: 'Cash in',
-                        value: cash.repaymentsCollected,
-                        positive: true,
-                      ),
-                      _CashLine(
-                        label: 'Loan processing fees',
-                        value: cash.processingFees,
-                        positive: true,
-                      ),
-                      if (cash.shortageRecoveries != 0)
-                        _CashLine(
-                          label: cash.recoveryLines.length == 1
-                              ? 'Shortage recovery · ${cash.recoveryLines.first.employeeName}'
-                              : 'Shortage recoveries',
-                          value: cash.shortageRecoveries,
-                          positive: true,
-                        ),
-                      _CashLine(
-                        label: 'Total additions',
-                        value: totalAdditions,
-                        strong: true,
-                        positive: true,
-                      ),
+                      Expanded(child: additions),
+                      Container(width: 1, color: line),
+                      Expanded(child: cashouts),
                     ],
                   ),
                 ),
-              ),
-
-              Container(width: 1, color: line),
-
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
-                  child: Column(
-                    children: [
-                      _CashLine(
-                        label: 'Expenses',
-                        value: cash.expenses,
-                        negative: true,
-                      ),
-                      _CashLine(
-                        label: 'Salaries',
-                        value: cash.salaries,
-                        negative: true,
-                      ),
-                      _CashLine(
-                        label: 'Float issued to field officers',
-                        value: cash.floatIssued,
-                        negative: true,
-                      ),
-                      _CashLine(
-                        label: 'Float returned',
-                        value: cash.floatReturned,
-                        positive: true,
-                      ),
-
-                      const SizedBox(height: 8),
-
-                      _CashLine(
-                        label: 'Net deductions',
-                        value: netDeductions,
-                        strong: true,
-                        negative: netDeductions > 0,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-            ),
-          ),
         ),
-
         Container(
           decoration: const BoxDecoration(
             color: Colors.white,
@@ -146,25 +112,19 @@ class CashMovementReportTable extends StatelessWidget {
                   color: forestEmerald,
                 ),
               ),
-
               const _MetricDivider(),
-
               Expanded(
                 child: _ClosingMetric(
                   label: 'Counted closing balance',
                   value: cash.countedCash,
                 ),
               ),
-
               const _MetricDivider(),
-
               Expanded(child: _VarianceMetric(variance: cash.variance)),
             ],
           ),
         ),
-
         const SizedBox(height: 5),
-
         Text(
           'Counted and confirmed by the manager.',
           style: TextStyle(
@@ -211,11 +171,96 @@ class _SectionTitle extends StatelessWidget {
   }
 }
 
+class _MovementBlock extends StatelessWidget {
+  const _MovementBlock({
+    required this.title,
+    required this.icon,
+    required this.accent,
+    required this.fill,
+    required this.totalLabel,
+    required this.totalAmount,
+    required this.children,
+  });
+
+  final String title;
+  final IconData icon;
+  final Color accent;
+  final Color fill;
+  final String totalLabel;
+  final num totalAmount;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 9, 10, 4),
+          child: Row(
+            children: [
+              Container(
+                width: 22,
+                height: 22,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 13, color: accent),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: TextStyle(
+                  color: accent,
+                  fontSize: ReportType.body(context),
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 0, 10, 6),
+          child: Column(children: children),
+        ),
+        Container(
+          color: fill,
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  totalLabel,
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: ReportType.body(context),
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              Text(
+                'UGX ${formatMoney(totalAmount)}',
+                style: TextStyle(
+                  color: accent,
+                  fontSize: ReportType.body(context),
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _CashLine extends StatelessWidget {
   const _CashLine({
     required this.label,
     required this.value,
-    this.strong = false,
     this.positive = false,
     this.negative = false,
   });
@@ -223,7 +268,6 @@ class _CashLine extends StatelessWidget {
   final String label;
   final num value;
 
-  final bool strong;
   final bool positive;
   final bool negative;
 
@@ -251,20 +295,18 @@ class _CashLine extends StatelessWidget {
               style: TextStyle(
                 color: midnightNavy,
                 fontSize: ReportType.body(context),
-                fontWeight: strong ? FontWeight.w800 : FontWeight.w500,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ),
-
           const SizedBox(width: 6),
-
           Text(
             '${prefix}UGX ${formatMoney(value.abs())}',
             textAlign: TextAlign.right,
             style: TextStyle(
               color: valueColor,
               fontSize: ReportType.body(context),
-              fontWeight: strong || positive || negative
+              fontWeight: positive || negative
                   ? FontWeight.w800
                   : FontWeight.w600,
             ),
@@ -303,9 +345,7 @@ class _ClosingMetric extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
-
           const SizedBox(height: 4),
-
           FittedBox(
             fit: BoxFit.scaleDown,
             child: Text(
@@ -337,21 +377,17 @@ class _VarianceMetric extends StatelessWidget {
     }
 
     final isShortage = value < 0;
-
     final isExcess = value > 0;
-
     final color = isShortage
         ? const Color(0xFFB42318)
         : isExcess
         ? const Color(0xFFB54708)
         : forestEmerald;
-
     final label = isShortage
         ? 'Variance (Shortage)'
         : isExcess
         ? 'Variance (Excess)'
         : 'Variance';
-
     final prefix = value < 0
         ? '- '
         : value > 0
@@ -374,9 +410,7 @@ class _VarianceMetric extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
-
           const SizedBox(height: 4),
-
           FittedBox(
             fit: BoxFit.scaleDown,
             child: Text(

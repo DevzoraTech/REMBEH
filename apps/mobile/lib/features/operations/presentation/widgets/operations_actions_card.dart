@@ -68,7 +68,7 @@ class OperationsActionsCard extends StatelessWidget {
               Expanded(
                 child: _Action(
                   icon: Icons.receipt_long_outlined,
-                  label: 'Record\nexpense',
+                  label: 'Expenses',
                   enabled: canRecordExpense,
                   onTap: onRecordExpense,
                 ),

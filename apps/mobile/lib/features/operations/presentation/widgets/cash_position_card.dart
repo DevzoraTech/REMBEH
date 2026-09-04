@@ -7,12 +7,24 @@ import 'ops_icon.dart';
 import 'ops_surface.dart';
 
 class CashPositionCard extends StatelessWidget {
-  const CashPositionCard({super.key, required this.operation});
+  const CashPositionCard({
+    super.key,
+    required this.operation,
+    this.onRecordShortagePaid,
+  });
 
   final OperationDashboardData operation;
+  final VoidCallback? onRecordShortagePaid;
 
   @override
   Widget build(BuildContext context) {
+    final shortageCleared = operation.shortageRecoveries;
+    final totalAdditions =
+        operation.collections +
+        operation.processingFees +
+        shortageCleared;
+    final totalCashouts = operation.expenses + operation.salaries;
+
     return OpsSurface(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       child: Column(
@@ -53,48 +65,64 @@ class CashPositionCard extends StatelessWidget {
             'Expected closing balance',
             style: TextStyle(
               color: slateText,
-              fontSize: 10.5,
+              fontSize: 12,
               fontWeight: FontWeight.w500,
             ),
           ),
+          const SizedBox(height: 12),
+          _MovementBlock(
+            title: 'ADDITIONS',
+            icon: Icons.arrow_upward_rounded,
+            accent: forestEmerald,
+            fill: const Color(0xFFEFF8F2),
+            totalLabel: 'Total Additions',
+            totalAmount: totalAdditions,
+            children: [
+              _CashLine(label: 'Opening Balance', amount: operation.openingCash),
+              _CashLine(
+                label: 'Capital received',
+                amount: operation.capitalReceived,
+              ),
+              _CashLine(
+                label: 'Cash in',
+                amount: operation.collections,
+                positive: true,
+              ),
+              _CashLine(
+                label: 'Processing fees',
+                amount: operation.processingFees,
+                positive: true,
+              ),
+              if (shortageCleared != 0)
+                _CashLine(
+                  label: 'Shortage cleared',
+                  amount: shortageCleared,
+                  positive: true,
+                ),
+            ],
+          ),
           const SizedBox(height: 10),
-          _CashLine(label: 'Opening cash', amount: operation.openingCash),
-          _CashLine(
-            label: 'Capital received',
-            amount: operation.capitalReceived,
+          _MovementBlock(
+            title: 'CASHOUTS',
+            icon: Icons.arrow_downward_rounded,
+            accent: const Color(0xFFC62828),
+            fill: const Color(0xFFFFF0EC),
+            totalLabel: 'Total Cashouts',
+            totalAmount: totalCashouts,
+            children: [
+              _CashLine(
+                label: 'Total Expenses',
+                amount: operation.expenses,
+                negative: true,
+              ),
+              _CashLine(
+                label: 'Salary',
+                amount: operation.salaries,
+                negative: true,
+              ),
+            ],
           ),
-          _CashLine(
-            label: 'Cash in',
-            amount: operation.collections,
-            positive: true,
-          ),
-          _CashLine(
-            label: 'Processing fees',
-            amount: operation.processingFees,
-            positive: true,
-          ),
-          if (operation.shortageRecoveries != 0)
-            _CashLine(
-              label: 'Shortage recoveries',
-              amount: operation.shortageRecoveries,
-              positive: true,
-            ),
-          _CashLine(
-            label: 'Loans disbursed',
-            amount: operation.loansDisbursed,
-            negative: true,
-          ),
-          _CashLine(
-            label: 'Expenses',
-            amount: operation.expenses,
-            negative: true,
-          ),
-          _CashLine(
-            label: 'Salaries',
-            amount: operation.salaries,
-            negative: true,
-          ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 10),
           const Divider(height: 1, color: Color(0xFFE8ECE9)),
           const SizedBox(height: 9),
           Row(
@@ -104,7 +132,7 @@ class CashPositionCard extends StatelessWidget {
                   'Expected closing balance',
                   style: TextStyle(
                     color: midnightNavy,
-                    fontSize: 10.5,
+                    fontSize: 12,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -116,12 +144,122 @@ class CashPositionCard extends StatelessWidget {
                   'UGX ${formatMoney(operation.expectedClosingCash)}',
                   style: const TextStyle(
                     color: forestEmerald,
-                    fontSize: 12.5,
+                    fontSize: 13,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
             ],
+          ),
+          if (onRecordShortagePaid != null) ...[
+            const SizedBox(height: 10),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: GestureDetector(
+                onTap: onRecordShortagePaid,
+                child: const Text(
+                  'Record shortage paid ›',
+                  style: TextStyle(
+                    color: forestEmerald,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _MovementBlock extends StatelessWidget {
+  const _MovementBlock({
+    required this.title,
+    required this.icon,
+    required this.accent,
+    required this.fill,
+    required this.totalLabel,
+    required this.totalAmount,
+    required this.children,
+  });
+
+  final String title;
+  final IconData icon;
+  final Color accent;
+  final Color fill;
+  final String totalLabel;
+  final num totalAmount;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: accent.withValues(alpha: 0.16)),
+        borderRadius: rembehBorderRadius(rembehRadiusMd),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+            child: Row(
+              children: [
+                Container(
+                  width: 22,
+                  height: 22,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, size: 13, color: accent),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 6),
+            child: Column(children: children),
+          ),
+          Container(
+            width: double.infinity,
+            color: fill,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    totalLabel,
+                    style: TextStyle(
+                      color: accent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                Text(
+                  'UGX ${formatMoney(totalAmount)}',
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -166,7 +304,7 @@ class _CashLine extends StatelessWidget {
               label,
               style: const TextStyle(
                 color: Color(0xFF4D5258),
-                fontSize: 10.5,
+                fontSize: 12,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -175,7 +313,7 @@ class _CashLine extends StatelessWidget {
             '${prefix}UGX ${formatMoney(amount)}',
             style: TextStyle(
               color: valueColor,
-              fontSize: 10.5,
+              fontSize: 12,
               fontWeight: positive || negative
                   ? FontWeight.w800
                   : FontWeight.w600,

@@ -103,16 +103,16 @@ class _OfficerTableHeader extends StatelessWidget {
       padding: EdgeInsets.fromLTRB(14, 2, 14, 7),
       child: Row(
         children: [
-          Expanded(flex: 28, child: _HeaderCell('Name')),
-          Expanded(flex: 19, child: _HeaderCell('Cash in', alignEnd: true)),
-          Expanded(flex: 17, child: _HeaderCell('Loans', alignEnd: true)),
+          Expanded(flex: 26, child: _HeaderCell('Name')),
+          Expanded(flex: 17, child: _HeaderCell('Cash in', alignEnd: true)),
+          Expanded(flex: 14, child: _HeaderCell('Loans', alignEnd: true)),
           Expanded(
-            flex: 21,
-            child: _HeaderCell('Processing fees', alignEnd: true),
+            flex: 20,
+            child: _HeaderCell('Processing\nfees', alignEnd: true),
           ),
           Expanded(
-            flex: 24,
-            child: _HeaderCell('Expected handover', alignEnd: true),
+            flex: 23,
+            child: _HeaderCell('Expected\nhandover', alignEnd: true),
           ),
           SizedBox(width: 14),
         ],
@@ -138,7 +138,7 @@ class _OfficerTableRow extends StatelessWidget {
           child: Row(
             children: [
               Expanded(
-                flex: 28,
+                flex: 26,
                 child: Row(
                   children: [
                     Container(
@@ -174,11 +174,11 @@ class _OfficerTableRow extends StatelessWidget {
                   ],
                 ),
               ),
-              Expanded(flex: 19, child: _MoneyCell(agent.repaymentsCollected)),
-              Expanded(flex: 17, child: _MoneyCell(agent.loansIssued)),
-              Expanded(flex: 21, child: _MoneyCell(agent.processingFees)),
+              Expanded(flex: 17, child: _MoneyCell(agent.repaymentsCollected)),
+              Expanded(flex: 14, child: _MoneyCell(agent.loansIssued)),
+              Expanded(flex: 20, child: _MoneyCell(agent.processingFees)),
               Expanded(
-                flex: 24,
+                flex: 23,
                 child: _MoneyCell(agent.expectedHandover, success: true),
               ),
               const SizedBox(width: 2),
@@ -203,16 +203,20 @@ class _HeaderCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      label,
-      textAlign: alignEnd ? TextAlign.end : TextAlign.start,
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      style: const TextStyle(
-        color: midnightNavy,
-        fontSize: 7.4,
-        height: 1.18,
-        fontWeight: FontWeight.w700,
+    return Padding(
+      padding: EdgeInsets.only(left: alignEnd ? 8 : 0, right: alignEnd ? 0 : 6),
+      child: Text(
+        label,
+        textAlign: alignEnd ? TextAlign.end : TextAlign.start,
+        maxLines: 2,
+        softWrap: true,
+        overflow: TextOverflow.visible,
+        style: const TextStyle(
+          color: midnightNavy,
+          fontSize: 8,
+          height: 1.2,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -226,18 +230,21 @@ class _MoneyCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.centerRight,
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        child: Text(
-          formatMoney(amount),
-          textAlign: TextAlign.end,
-          maxLines: 1,
-          style: TextStyle(
-            color: success ? forestEmerald : midnightNavy,
-            fontSize: 8.8,
-            fontWeight: FontWeight.w900,
+    return Padding(
+      padding: const EdgeInsets.only(left: 8),
+      child: Align(
+        alignment: Alignment.centerRight,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            formatMoney(amount),
+            textAlign: TextAlign.end,
+            maxLines: 1,
+            style: TextStyle(
+              color: success ? forestEmerald : midnightNavy,
+              fontSize: 8.8,
+              fontWeight: FontWeight.w900,
+            ),
           ),
         ),
       ),
