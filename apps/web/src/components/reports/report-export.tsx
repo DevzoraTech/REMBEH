@@ -96,6 +96,10 @@ export async function exportOwnedReport(
   report: OwnerReport,
   currency: string,
   format: "excel" | "pdf",
+  branding?: {
+    organizationName?: string | null;
+    branchLocation?: string | null;
+  },
 ) {
   const snapshot = readReportSnapshot(report);
   if (format === "pdf") {
@@ -111,6 +115,8 @@ export async function exportOwnedReport(
         returnedAt: report.returnedAt ?? null,
         returnedByName: report.returnedByName ?? null,
         returnNotes: report.returnNotes ?? null,
+        organizationName: branding?.organizationName,
+        branchLocation: branding?.branchLocation,
       },
     );
     await exportDailyReconciliationPdf(document);

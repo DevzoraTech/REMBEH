@@ -5,15 +5,17 @@ import {
   ArrowRight,
   Bell,
   Building2,
+  CheckCircle2,
   ChevronDown,
   ClipboardCheck,
   Folder,
   MessageCircleQuestion,
+  Search,
   Settings,
 } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BranchSubscriptionMenu } from "../../components/app/branch-subscription-menu";
 import { SmsCreditsHeaderBadge } from "../../components/app/sms-credits-header-badge";
 import { formatNumber } from "./owner-common";
@@ -22,7 +24,7 @@ import {
   useOwnerNotifications,
   type OwnerNotificationItem,
 } from "./owner-notifications";
-import { useTooltipsEnabled } from "./owner-tooltip-prefs";
+import { useTooltipsEnabled, writeTooltipsEnabled } from "./owner-tooltip-prefs";
 
 export type { OwnerNotificationItem };
 
@@ -53,10 +55,16 @@ export function OwnerHeader({
   const branchScope = useOwnerBranchScope();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const notificationsRef = useRef<HTMLDivElement | null>(null);
-  const smsManageHref =
-    notificationScope === "manager"
-      ? "/subscription?tab=sms"
-      : "/owner/subscription?tab=sms";
+  const isOwner = notificationScope === "owner";
+  const smsManageHref = isOwner
+    ? "/owner/subscription?tab=sms"
+    : "/subscription?tab=sms";
+
+  useEffect(() => {
+    if (isOwner) {
+      writeTooltipsEnabled(false);
+    }
+  }, [isOwner]);
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
@@ -69,54 +77,36 @@ export function OwnerHeader({
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, []);
 
-  return (
-    <header className="flex flex-wrap items-start justify-between gap-3">
-      <div className="min-w-0 pt-1">
-        {subtitle ? (
-          <p className="text-xs font-medium text-slate-600">{subtitle}</p>
-        ) : eyebrow ? (
-          <p className="text-xs font-semibold text-[var(--forest-emerald)]">
-            {eyebrow}
-          </p>
-        ) : null}
-        <h1 className="mt-0.5 text-[clamp(1.18rem,1.35vw,1.48rem)] font-bold leading-tight tracking-[-0.02em] text-[#070b18]">
-          {title}
-        </h1>
-      </div>
-      <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
-        {notificationScope === "owner" && branchScope.branches.length > 0 ? (
-          <label className="flex h-9 min-w-[180px] items-center gap-2 rounded-xl border border-[#e6ebf0] bg-white px-3 text-xs font-semibold text-[#0b1220] shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
-            <Building2 className="size-3.5 shrink-0 text-[var(--forest-emerald)]" />
-            <select
-              value={branchScope.selectedBranchId ?? ""}
-              aria-label="Branch"
-              onChange={(event) =>
-                branchScope.setSelectedBranchId(event.target.value || null)
-              }
-              className="min-w-0 flex-1 appearance-none bg-transparent outline-none"
-            >
-              <option value="">All branches</option>
-              {branchScope.branches.map((branch) => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
-
-        <SmsCreditsHeaderBadge manageHref={smsManageHref} />
-
-        {notificationScope === "manager" ? (
+  const rightActions = (
+    <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+      {!isOwner ? (
+        <>
+          <SmsCreditsHeaderBadge manageHref={smsManageHref} />
           <BranchSubscriptionMenu manageHref="/subscription" />
-        ) : null}
+          <TooltipToggle
+            enabled={tooltipsEnabled}
+            onChange={setTooltipsEnabled}
+          />
+        </>
+      ) : null}
 
-        <TooltipToggle
-          enabled={tooltipsEnabled}
-          onChange={setTooltipsEnabled}
-        />
-
-        <div ref={notificationsRef} className="relative">
+      <div ref={notificationsRef} className="relative">
+        {isOwner ? (
+          <button
+            type="button"
+            className="relative grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:border-emerald-200 hover:bg-emerald-50"
+            aria-label="Notifications"
+            aria-expanded={notificationsOpen}
+            onClick={() => setNotificationsOpen((open) => !open)}
+          >
+            <Bell className="size-4" />
+            {notifications.length > 0 ? (
+              <span className="absolute -right-1 -top-1 grid size-5 place-items-center rounded-full bg-[#18a76f] text-[10px] font-semibold text-white">
+                {Math.min(notifications.length, 9)}
+              </span>
+            ) : null}
+          </button>
+        ) : (
           <Tooltip label="Open live notifications and items needing attention.">
             <button
               type="button"
@@ -133,14 +123,24 @@ export function OwnerHeader({
               ) : null}
             </button>
           </Tooltip>
-          <NotificationOverlay
-            open={notificationsOpen}
-            items={notifications}
-            loading={notificationsLoading}
-            onClose={() => setNotificationsOpen(false)}
-            scope={notificationScope}
-          />
-        </div>
+        )}
+        <NotificationOverlay
+          open={notificationsOpen}
+          items={notifications}
+          loading={notificationsLoading}
+          onClose={() => setNotificationsOpen(false)}
+          scope={notificationScope}
+        />
+      </div>
+      {isOwner ? (
+        <Link
+          href={settingsHref}
+          className="grid size-9 place-items-center rounded-xl border border-[#e6ebf0] bg-white text-[#013f35] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:border-emerald-200 hover:bg-emerald-50"
+          aria-label="Settings"
+        >
+          <Settings className="size-4" />
+        </Link>
+      ) : (
         <Tooltip label="Open settings.">
           <Link
             href={settingsHref}
@@ -150,7 +150,17 @@ export function OwnerHeader({
             <Settings className="size-4" />
           </Link>
         </Tooltip>
-        {showReportsButton ? (
+      )}
+      {showReportsButton ? (
+        isOwner ? (
+          <Link
+            href={reportsHref}
+            className="flex h-9 items-center gap-2 rounded-xl bg-[#003f35] px-3.5 text-xs font-medium text-white shadow-[0_10px_20px_rgba(0,63,53,0.2)]"
+          >
+            Reports
+            <ChevronDown className="size-4" />
+          </Link>
+        ) : (
           <Tooltip label="Open the report review page.">
             <Link
               href={reportsHref}
@@ -160,10 +170,202 @@ export function OwnerHeader({
               <ChevronDown className="size-4" />
             </Link>
           </Tooltip>
+        )
+      ) : null}
+      {actions}
+    </div>
+  );
+
+  if (isOwner) {
+    return (
+      <header className="grid grid-cols-1 items-center gap-3 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+        <div className="min-w-0 lg:justify-self-start">
+          {subtitle ? (
+            <p className="text-xs font-medium text-slate-600">{subtitle}</p>
+          ) : eyebrow ? (
+            <p className="text-xs font-semibold text-[var(--forest-emerald)]">
+              {eyebrow}
+            </p>
+          ) : null}
+          <h1 className="mt-0.5 text-[clamp(1.18rem,1.35vw,1.48rem)] font-bold leading-tight tracking-[-0.02em] text-[#070b18]">
+            {title}
+          </h1>
+        </div>
+
+        <div className="min-w-0 justify-self-stretch lg:justify-self-center">
+          {branchScope.branches.length > 0 ? (
+            <OwnerBranchViewerMenu />
+          ) : null}
+        </div>
+
+        <div className="min-w-0 lg:justify-self-end">{rightActions}</div>
+      </header>
+    );
+  }
+
+  return (
+    <header className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0 pt-1">
+        {subtitle ? (
+          <p className="text-xs font-medium text-slate-600">{subtitle}</p>
+        ) : eyebrow ? (
+          <p className="text-xs font-semibold text-[var(--forest-emerald)]">
+            {eyebrow}
+          </p>
         ) : null}
-        {actions}
+        <h1 className="mt-0.5 text-[clamp(1.18rem,1.35vw,1.48rem)] font-bold leading-tight tracking-[-0.02em] text-[#070b18]">
+          {title}
+        </h1>
       </div>
+      {rightActions}
     </header>
+  );
+}
+
+/** Global owner branch scope control — one selection for the whole owner app. */
+function OwnerBranchViewerMenu() {
+  const branchScope = useOwnerBranchScope();
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return branchScope.branches;
+    return branchScope.branches.filter((branch) =>
+      branch.name.toLowerCase().includes(needle),
+    );
+  }, [branchScope.branches, query]);
+
+  const label = branchScope.selectedBranchId
+    ? `Viewing: ${branchScope.selectedBranchName}`
+    : "Viewing: All Branches";
+
+  return (
+    <div ref={rootRef} className="relative mx-auto w-full max-w-[320px]">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onClick={() => setOpen((value) => !value)}
+        className="inline-flex h-10 w-full items-center gap-2 rounded-full border border-[#e6ebf0] bg-white px-3.5 text-left text-xs font-bold text-[#0b1220] shadow-[0_8px_18px_rgba(15,23,42,0.045)] transition hover:border-emerald-200 hover:bg-[#f8fbf9]"
+      >
+        <span className="grid size-6 shrink-0 place-items-center rounded-full bg-emerald-50 text-[var(--forest-emerald)]">
+          <Building2 className="size-3.5" />
+        </span>
+        <span className="min-w-0 flex-1 truncate">{label}</span>
+        <ChevronDown
+          className={`size-4 shrink-0 text-slate-500 transition ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {open ? (
+        <div className="absolute left-1/2 top-[calc(100%+8px)] z-50 w-[min(calc(100vw-2rem),340px)] -translate-x-1/2 overflow-hidden rounded-2xl border border-[#e4ece8] bg-white shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
+          <div className="border-b border-[#edf2ef] p-2.5">
+            <label className="flex h-9 items-center gap-2 rounded-xl border border-[#e6ebf0] bg-[#f8faf9] px-3">
+              <Search className="size-3.5 shrink-0 text-slate-400" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search branches"
+                className="min-w-0 flex-1 bg-transparent text-xs font-medium text-[#0b1220] outline-none placeholder:text-slate-400"
+              />
+            </label>
+          </div>
+          <div
+            role="listbox"
+            className="max-h-[280px] overflow-y-auto p-1.5"
+          >
+            <button
+              type="button"
+              role="option"
+              aria-selected={!branchScope.selectedBranchId}
+              onClick={() => {
+                branchScope.setSelectedBranchId(null);
+                setOpen(false);
+                setQuery("");
+              }}
+              className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left transition ${
+                !branchScope.selectedBranchId
+                  ? "bg-emerald-50 text-[var(--forest-emerald)]"
+                  : "text-[#0b1220] hover:bg-[#f7fbf9]"
+              }`}
+            >
+              <Building2 className="size-3.5 shrink-0" />
+              <span className="min-w-0 flex-1 text-xs font-bold">
+                All Branches
+              </span>
+              {!branchScope.selectedBranchId ? (
+                <CheckCircle2 className="size-3.5 shrink-0" />
+              ) : null}
+            </button>
+            {filtered.map((branch) => {
+              const selected = branchScope.selectedBranchId === branch.id;
+              return (
+                <button
+                  key={branch.id}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  onClick={() => {
+                    branchScope.setSelectedBranchId(branch.id);
+                    setOpen(false);
+                    setQuery("");
+                  }}
+                  className={`flex w-full items-center gap-2 rounded-xl px-3 py-2.5 text-left transition ${
+                    selected
+                      ? "bg-emerald-50 text-[var(--forest-emerald)]"
+                      : "text-[#0b1220] hover:bg-[#f7fbf9]"
+                  }`}
+                >
+                  <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-white text-[var(--forest-emerald)] ring-1 ring-[#e6ebf0]">
+                    <Building2 className="size-3.5" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-bold">
+                      {branch.name}
+                    </span>
+                    {branch.managerName ? (
+                      <span className="mt-0.5 block truncate text-[10px] font-medium text-slate-500">
+                        {branch.managerName}
+                      </span>
+                    ) : null}
+                  </span>
+                  {selected ? (
+                    <CheckCircle2 className="size-3.5 shrink-0" />
+                  ) : null}
+                </button>
+              );
+            })}
+            {filtered.length === 0 ? (
+              <p className="px-3 py-4 text-center text-xs font-medium text-slate-500">
+                No branches match that search.
+              </p>
+            ) : null}
+          </div>
+          <div className="border-t border-[#edf2ef] bg-[#fbfdfc] p-2">
+            <Link
+              href="/owner/branches"
+              onClick={() => setOpen(false)}
+              className="flex h-9 items-center justify-center gap-2 rounded-xl px-3 text-xs font-semibold text-[#013f35] transition hover:bg-white"
+            >
+              <Settings className="size-3.5" />
+              Manage branches
+            </Link>
+          </div>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -227,6 +429,7 @@ export function Tooltip({
     right: "right-0",
   }[align];
 
+  // Owners no longer use tips — UI is self-explanatory.
   return (
     <span
       className={`group/tooltip relative min-w-0 ${block ? "flex w-full" : "inline-flex"}`}

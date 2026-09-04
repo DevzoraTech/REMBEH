@@ -98,12 +98,19 @@ type AlertItem = {
   href?: string;
 };
 
+type BranchReportStatusKind = "received" | "pending" | "overdue";
+
 type BranchPerformance = {
   branch: OwnerBranch;
   loanTotal: number;
   collectedToday: number;
   overdueAmount: number;
   overdueLoanCount: number;
+  reportStatus: {
+    kind: BranchReportStatusKind;
+    label: string;
+    detail: string;
+  };
 };
 
 type PerformancePeriod = "7d" | "14d" | "30d" | "month" | "2m" | "3m";
@@ -527,8 +534,15 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
     todaySettledLoans,
   ]);
   const branchPerformance = useMemo(
-    () => buildBranchPerformance(scopedBranches, scopedLoans, todayRepayments, loanById),
-    [scopedBranches, scopedLoans, todayRepayments, loanById],
+    () =>
+      buildBranchPerformance(
+        scopedBranches,
+        scopedLoans,
+        todayRepayments,
+        loanById,
+        scopedDailyStatuses,
+      ),
+    [loanById, scopedBranches, scopedDailyStatuses, scopedLoans, todayRepayments],
   );
   const branchAnalytics = useMemo(
     () =>
@@ -573,6 +587,7 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
 
   if (!state.ready || !state.session) return <AppBootSkeleton />;
 
+  const isBranchScoped = Boolean(!isManager && selectedBranchId);
   const branchScopeHint = isManager
     ? "This branch"
     : selectedBranchId
@@ -621,7 +636,7 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
         >
           <TopStatCard
             icon={<WalletCards className="size-5" />}
-            label="Total Loan Balance"
+            label={isBranchScoped ? "Loan Balance" : "Total Loan Balance"}
             value={<Money value={totalLoanBalance} currency={currency} />}
             hint={branchScopeHint}
             change={loanBalanceChange}
@@ -664,7 +679,7 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
 
         {loading && loans.length === 0 && borrowers.length === 0 ? (
           <OverviewSkeleton />
-        ) : isManager ? (
+        ) : isManager || isBranchScoped ? (
           <>
             <section className="grid min-w-0 items-stretch gap-3 xl:grid-cols-3">
               <div className="min-w-0">
@@ -675,7 +690,11 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
                   view={performanceView}
                   onPeriodChange={setPerformancePeriod}
                   onViewChange={setPerformanceView}
-                  title="Performance"
+                  title={
+                    isBranchScoped
+                      ? `${selectedBranchName} Performance`
+                      : "Performance"
+                  }
                   collectionsLabel="Repayments"
                 />
               </div>
@@ -686,7 +705,7 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
                   collections={todayActivity.collections.length}
                   newBorrowers={todayActivity.newBorrowers.length}
                   fullySettled={todayActivity.fullySettled.length}
-                  branches={branches}
+                  branches={isBranchScoped ? scopedBranches : branches}
                   branchId={activityBranchId}
                   onBranchChange={setActivityBranchId}
                   lockBranch
@@ -950,14 +969,26 @@ function BranchPerformanceCard({
   variant?: "owner" | "manager";
 }) {
   const isManager = variant === "manager";
+  const gridClass = isManager
+    ? "grid-cols-[1fr_80px_86px_86px]"
+    : "grid-cols-[minmax(0,1.1fr)_minmax(0,0.85fr)_minmax(0,0.85fr)_minmax(0,0.85fr)_minmax(0,1fr)]";
   return (
     <section className="rounded-[14px] border border-[#e6ebf0] bg-white p-3.5 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
       <PanelHeader title={title} href={href} />
-      <div className="mt-3 -mx-1 grid grid-cols-[1fr_80px_86px_86px] gap-2 border-b border-[#dfe5eb] bg-[#e8edf2] px-2 py-2 text-[10px] font-semibold text-slate-600">
+      <div
+        className={`mt-3 -mx-1 grid ${gridClass} gap-2 border-b border-[#dfe5eb] bg-[#e8edf2] px-2 py-2 text-[10px] font-semibold text-slate-600`}
+      >
         <span>{isManager ? "Focus" : "Branch"}</span>
-        <span className="block w-full text-right">Loan ({currency})</span>
-        <span className="block w-full text-right">Collected</span>
+        <span className="block w-full text-right">
+          {isManager ? `Loan (${currency})` : "Loan Portfolio"}
+        </span>
+        <span className="block w-full text-right">
+          {isManager ? "Collected" : "Collected Today"}
+        </span>
         <span className="block w-full text-right">Overdue</span>
+        {!isManager ? (
+          <span className="block w-full text-right">Report Status</span>
+        ) : null}
       </div>
       <div className="divide-y divide-[#edf1f5]">
         {rows.length === 0 ? (
@@ -974,14 +1005,14 @@ function BranchPerformanceCard({
           rows.slice(0, 5).map((row) => (
             <div
               key={row.branch.id}
-              className="grid w-full grid-cols-[1fr_80px_86px_86px] items-center gap-2 py-2"
+              className={`grid w-full ${gridClass} items-center gap-2 py-2.5`}
             >
               <div className="flex min-w-0 items-center gap-2">
                 <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-emerald-50 text-[var(--forest-emerald)]">
                   <Building2 className="size-3.5" />
                 </span>
                 <div className="min-w-0">
-                  <p className="truncate text-[11px] font-medium text-[#101827]">
+                  <p className="truncate text-[11px] font-semibold text-[#101827]">
                     {isManager ? "Your branch" : row.branch.name}
                   </p>
                   <p className="truncate text-[10px] font-normal text-slate-500">
@@ -1005,16 +1036,63 @@ function BranchPerformanceCard({
                 <p className="max-w-full break-words text-[11px] font-medium tabular-nums text-[#111827]">
                   <Money value={row.overdueAmount} currency={currency} />
                 </p>
-                <p className="mt-0.5 truncate text-[10px] font-medium text-slate-500">
-                  {formatNumber(row.overdueLoanCount)}{" "}
-                  {row.overdueLoanCount === 1 ? "loan" : "loans"}
-                </p>
+                {isManager ? (
+                  <p className="mt-0.5 truncate text-[10px] font-medium text-slate-500">
+                    {formatNumber(row.overdueLoanCount)}{" "}
+                    {row.overdueLoanCount === 1 ? "loan" : "loans"}
+                  </p>
+                ) : null}
               </div>
+              {!isManager ? (
+                <div className="flex min-w-0 justify-end">
+                  <BranchReportStatusBadge status={row.reportStatus} />
+                </div>
+              ) : null}
             </div>
           ))
         )}
       </div>
+      {!isManager && rows.length > 0 ? (
+        <div className="mt-3 flex items-center justify-between gap-3 border-t border-[#edf1f5] pt-2.5 text-[10px] font-medium text-slate-500">
+          <span>
+            {formatNumber(rows.length)}{" "}
+            {rows.length === 1 ? "branch" : "branches"}
+          </span>
+          <span>All amounts in {currency}</span>
+        </div>
+      ) : null}
     </section>
+  );
+}
+
+function BranchReportStatusBadge({
+  status,
+}: {
+  status: BranchPerformance["reportStatus"];
+}) {
+  const tone =
+    status.kind === "received"
+      ? "text-[#0c9b6d]"
+      : status.kind === "overdue"
+        ? "text-red-600"
+        : "text-amber-600";
+  const Icon =
+    status.kind === "received"
+      ? CheckCircle2
+      : status.kind === "overdue"
+        ? AlertTriangle
+        : Clock3;
+
+  return (
+    <div className={`flex max-w-full flex-col items-end text-right ${tone}`}>
+      <span className="inline-flex max-w-full items-center gap-1 text-[11px] font-semibold">
+        <Icon className="size-3.5 shrink-0" />
+        <span className="truncate">{status.label}</span>
+      </span>
+      <span className="mt-0.5 truncate text-[10px] font-medium text-slate-500">
+        {status.detail}
+      </span>
+    </div>
   );
 }
 
@@ -1992,7 +2070,11 @@ function buildBranchPerformance(
   loans: OwnerLoan[],
   todayRepayments: OwnerRepayment[],
   loanById: Map<string, OwnerLoan>,
+  dailyStatuses: OwnerBranchDailyStatus[],
 ): BranchPerformance[] {
+  const statusByBranch = new Map(
+    dailyStatuses.map((status) => [status.branchId, status]),
+  );
   return branches
     .map((branch) => {
       const branchLoans = loans.filter((loan) => loan.branchId === branch.id);
@@ -2011,9 +2093,73 @@ function buildBranchPerformance(
         collectedToday,
         overdueAmount,
         overdueLoanCount: overdue.length,
+        reportStatus: resolveBranchReportStatus(statusByBranch.get(branch.id)),
       };
     })
     .sort((a, b) => b.loanTotal - a.loanTotal);
+}
+
+function resolveBranchReportStatus(
+  status: OwnerBranchDailyStatus | undefined,
+): BranchPerformance["reportStatus"] {
+  if (
+    status?.reportStatus &&
+    RECEIVED_REPORT_STATUSES.has(status.reportStatus)
+  ) {
+    const receivedAt = status.managerReviewedAt ?? status.reportGeneratedAt;
+    return {
+      kind: "received",
+      label: "Received",
+      detail: receivedAt ? formatClockTime(receivedAt) : "Today",
+    };
+  }
+
+  const operationDate = status?.operationDate ?? null;
+  const overdueDay =
+    operationDate != null &&
+    !isSameCalendarDay(operationDate, new Date()) &&
+    new Date(operationDate).getTime() < startOfDay(new Date()).getTime();
+
+  if (overdueDay) {
+    return {
+      kind: "overdue",
+      label: "Overdue",
+      detail: `Due ${formatShortDay(operationDate)}`,
+    };
+  }
+
+  return {
+    kind: "pending",
+    label: "Pending",
+    detail: "Due by 6:00 PM",
+  };
+}
+
+function formatClockTime(value: string) {
+  return new Date(value).toLocaleTimeString(undefined, {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatShortDay(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  if (isYesterday(value)) return "yesterday";
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function isSameCalendarDay(value: string, day: Date) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return (
+    date.getFullYear() === day.getFullYear() &&
+    date.getMonth() === day.getMonth() &&
+    date.getDate() === day.getDate()
+  );
 }
 
 function buildPortfolioSeries(

@@ -78,6 +78,8 @@ class DailyReportMapper {
       generatedAt: _date(report['generatedAt'] ?? snapshot['generatedAt']),
       managerNotes:
           _string(report['managerNotes']) ?? _string(snapshot['closingNotes']),
+      ownerNotes: _string(report['ownerNotes']),
+      ownerApprovedByName: _string(report['ownerApprovedByName']),
       cashPosition: DailyReportCashPosition(
         openingCash: _firstNum([
           openingCash['previousClosingBalance'],

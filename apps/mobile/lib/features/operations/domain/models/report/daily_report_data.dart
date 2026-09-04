@@ -28,6 +28,8 @@ class DailyReportData {
     this.branchEmail,
     this.generatedAt,
     this.managerNotes,
+    this.ownerNotes,
+    this.ownerApprovedByName,
   });
 
   final String reportNumber;
@@ -62,6 +64,10 @@ class DailyReportData {
   final List<DailyReportVariance> variances;
 
   final String? managerNotes;
+
+  final String? ownerNotes;
+
+  final String? ownerApprovedByName;
 
   int get loansIssuedCount => loans.length;
 

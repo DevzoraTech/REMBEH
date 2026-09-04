@@ -34,7 +34,9 @@ export type DailyReportStatus =
 export type DailyReportDocumentModel = {
   reportNumber: string;
   displayReportNumber?: string;
+  organizationName: string;
   branchName: string;
+  branchLocation?: string | null;
   operationDate: string;
   status: DailyReportStatus;
   preparedBy: string;
@@ -2027,6 +2029,10 @@ export function buildDailyReportDocumentFromOperation(
   operation: OperationLike,
   report: ReportLike,
   currency: string,
+  branding?: {
+    organizationName?: string | null;
+    branchLocation?: string | null;
+  },
 ): DailyReportDocumentModel {
   const topUpsSum = operation.topUps.reduce((sum, row) => sum + row.amount, 0);
   const topUpsTotal =
@@ -2038,7 +2044,9 @@ export function buildDailyReportDocumentFromOperation(
   return {
     reportNumber: report.reportNumber,
     displayReportNumber: dailyReportCode(report.operationDate),
+    organizationName: branding?.organizationName?.trim() || "REMBEH",
     branchName: operation.branchName,
+    branchLocation: branding?.branchLocation?.trim() || null,
     operationDate: report.operationDate,
     status: report.status,
     preparedBy: operation.closedByName ?? operation.openedByName,
@@ -2145,6 +2153,8 @@ export function buildDailyReportDocumentFromSnapshot(
     returnedAt?: string | null;
     returnedByName?: string | null;
     returnNotes?: string | null;
+    organizationName?: string | null;
+    branchLocation?: string | null;
   },
 ): DailyReportDocumentModel {
   const root =
@@ -2265,7 +2275,13 @@ export function buildDailyReportDocumentFromSnapshot(
   return {
     reportNumber: report.reportNumber,
     displayReportNumber: dailyReportCode(report.operationDate),
+    organizationName: extras?.organizationName?.trim() || "REMBEH",
     branchName: report.branchName,
+    branchLocation:
+      extras?.branchLocation?.trim() ||
+      stringValue(operation.branchAddress) ||
+      stringValue(operation.branchLocation) ||
+      null,
     operationDate: report.operationDate,
     status: report.status,
     preparedBy:

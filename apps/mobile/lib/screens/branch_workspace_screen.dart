@@ -22,6 +22,8 @@ import '../features/marketing/domain/models/mobile_marketing_campaign.dart';
 import '../features/marketing/presentation/sheets/mobile_marketing_campaign_sheet.dart';
 import '../features/repayment/data/repayments_live_store.dart';
 import '../features/salaries/presentation/screens/salaries_screen.dart';
+import '../features/shortages/data/mappers/cash_shortage_mapper.dart';
+import '../features/shortages/data/shortages_list_cache.dart';
 import '../features/shortages/presentation/screens/shortages_screen.dart';
 import '../features/workspace/presentation/widgets/branch_header.dart';
 import '../features/workspace/presentation/widgets/workspace_bottom_navigation.dart';
@@ -98,6 +100,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   bool _backgroundRefreshing = false;
   bool _listeningOperationEvents = false;
   bool _openingReports = false;
+  bool _openingShortages = false;
 
   String? _error;
   String? _notice;
@@ -727,6 +730,13 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       await _offlineCache.putJson(_managerCacheKey('repayments'), repayments);
       await _offlineCache.putJson(_managerCacheKey('reports'), reports);
       await _offlineCache.putJson(_managerCacheKey('shortages'), shortages);
+      await ShortagesListCache.instance.write(
+        ShortagesListCache.key(
+          tenantId: (widget.session.tenantId ?? 'tenant').trim(),
+          branchId: (widget.session.branchId ?? '').trim(),
+        ),
+        shortages,
+      );
       await _offlineCache.putJson(
         _managerCacheKey('pendingDisbursements'),
         pendingDisbursements.map(_pendingDisbursementToJson).toList(),
@@ -1101,22 +1111,77 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   }
 
   Future<void> _openShortagesList() async {
-    await _loadManagementData();
-
-    if (!mounted) {
+    if (_openingShortages) {
       return;
     }
+    _openingShortages = true;
 
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => ShortagesScreen(
-          session: widget.session,
-          branchId: widget.session.branchId,
+    try {
+      // Open immediately — never block More → Shortages on the full
+      // management refresh (customers, loans, repayments, reports…).
+      var rows = List<Map<String, dynamic>>.from(_shortages);
+      if (rows.isEmpty) {
+        final cached = await _readManagementCache();
+        rows = List<Map<String, dynamic>>.from(
+          cached.shortages ?? const [],
+        );
+        if (rows.isNotEmpty && mounted) {
+          setState(() => _shortages = rows);
+        }
+      }
+
+      if (rows.isEmpty) {
+        final cacheKey = ShortagesListCache.key(
+          tenantId: (widget.session.tenantId ?? 'tenant').trim(),
+          branchId: (widget.session.branchId ?? '').trim(),
+        );
+        final disk = await ShortagesListCache.instance.read(cacheKey);
+        if (disk != null && disk.isNotEmpty) {
+          rows = List<Map<String, dynamic>>.from(disk);
+        }
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => ShortagesScreen(
+            session: widget.session,
+            branchId: widget.session.branchId,
+            initialShortages: CashShortageMapper.listFromJson(rows),
+          ),
         ),
-      ),
-    );
+      );
 
-    await _loadManagementData();
+      // Quietly refresh home badge data after returning — shortages only.
+      unawaited(_refreshShortagesQuietly());
+    } finally {
+      _openingShortages = false;
+    }
+  }
+
+  Future<void> _refreshShortagesQuietly() async {
+    try {
+      final fresh = await _api.listCashShortages(
+        session: widget.session,
+        branchId: widget.session.branchId,
+      );
+      final cacheKey = ShortagesListCache.key(
+        tenantId: (widget.session.tenantId ?? 'tenant').trim(),
+        branchId: (widget.session.branchId ?? '').trim(),
+      );
+      await ShortagesListCache.instance.write(cacheKey, fresh);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _shortages = fresh;
+      });
+    } catch (_) {
+      // Keep the last good list.
+    }
   }
 
   Future<void> _openPendingDisbursements() async {

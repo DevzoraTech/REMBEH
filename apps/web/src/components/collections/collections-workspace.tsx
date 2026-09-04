@@ -149,7 +149,8 @@ function useCollectionsSession(mode: CollectionsMode): CollectionsSession {
 export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
   const state = useCollectionsSession(mode);
   const isManager = mode === "manager";
-  const { matchesBranch, selectedBranchId } = useOwnerBranchScope();
+  const { matchesBranch, selectedBranchId, selectedBranchName } =
+    useOwnerBranchScope();
   const [repayments, setRepayments] = useState<OwnerRepayment[]>([]);
   const [filter, setFilter] = useState<PaymentFilter>("all");
   const [methodFilter, setMethodFilter] = useState<MethodFilter>("all");
@@ -484,7 +485,9 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
         <p className="-mt-2 text-sm font-medium text-slate-500">
           {isManager
             ? "Track repayments, review payment activity, and manage cash coming in at your branch."
-            : "Track repayments, review payment activity, and manage cash coming in across branches."}
+            : selectedBranchId
+              ? `Track repayments and payment activity for ${selectedBranchName}.`
+              : "Track repayments, review payment activity, and manage cash coming in across branches."}
         </p>
 
         {error ? (
@@ -590,7 +593,11 @@ export function CollectionsWorkspace({ mode }: { mode: CollectionsMode }) {
         <section className="overflow-hidden rounded-[16px] border border-[#e6ebf0] bg-white shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f5] px-4 py-4">
             <h2 className="text-[15px] font-semibold text-[#0b1220]">
-              {isManager ? "Branch Payments" : "All Payments"}
+              {isManager
+                ? "Branch Payments"
+                : selectedBranchId
+                  ? `${selectedBranchName} Payments`
+                  : "All Payments"}
             </h2>
             <button
               type="button"

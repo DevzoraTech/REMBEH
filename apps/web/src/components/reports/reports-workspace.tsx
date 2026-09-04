@@ -165,7 +165,8 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
   const state = useReportsSession(mode);
   const router = useRouter();
   const isManager = mode === "manager";
-  const { selectedBranchId } = useOwnerBranchScope();
+  const { selectedBranchId, matchesBranch, selectedBranchName } =
+    useOwnerBranchScope();
   const [branches, setBranches] = useState<OwnerBranch[]>([]);
   const [reports, setReports] = useState<OwnerReport[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -250,10 +251,11 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
   useOwnerLiveReload(loadReports, Boolean(state.ready && state.session));
 
   const scopedReports = useMemo(() => {
-    return reports.filter((report) =>
-      reportMatchesDate(report.operationDate, advancedFilters),
-    );
-  }, [advancedFilters, reports]);
+    return reports.filter((report) => {
+      if (!isManager && !matchesBranch(report.branchId)) return false;
+      return reportMatchesDate(report.operationDate, advancedFilters);
+    });
+  }, [advancedFilters, isManager, matchesBranch, reports]);
 
   const filteredReports = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -344,7 +346,11 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
       <div className="mx-auto max-w-[1440px] space-y-5 animate-rise">
         <OwnerHeader
           title="Daily Reports"
-          subtitle="Review reconciled branch operations, submit reports for approval, and track cash differences."
+          subtitle={
+            !isManager && selectedBranchId
+              ? `Review reconciled operations and cash differences for ${selectedBranchName}.`
+              : "Review reconciled branch operations, submit reports for approval, and track cash differences."
+          }
           showReportsButton={false}
           settingsHref={isManager ? "/settings" : "/owner/settings"}
           reportsHref={isManager ? "/reports" : "/owner/reports"}
@@ -667,6 +673,7 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
                   currency,
                   "excel",
                   setExportingId,
+                  state.workspace?.name ?? null,
                 );
               }}
             >
@@ -691,6 +698,7 @@ export function ReportsWorkspace({ mode }: { mode: ReportsMode }) {
                   currency,
                   "pdf",
                   setExportingId,
+                  state.workspace?.name ?? null,
                 );
               }}
             >
@@ -2435,6 +2443,7 @@ async function exportReport(
   currency: string,
   format: "excel" | "pdf",
   setExportingId: (id: string | null) => void,
+  organizationName?: string | null,
 ) {
   setExportingId(report.id);
   try {
@@ -2451,6 +2460,7 @@ async function exportReport(
           returnedAt: report.returnedAt ?? null,
           returnedByName: report.returnedByName ?? null,
           returnNotes: report.returnNotes ?? null,
+          organizationName,
         },
       );
       await exportDailyReconciliationPdf(document);

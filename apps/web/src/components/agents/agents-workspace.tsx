@@ -462,29 +462,6 @@ export function AgentsWorkspace() {
     );
   }
 
-  const summaryStats = useMemo(() => {
-    const activeToday = agents.filter(
-      (agent) =>
-        agent.collectionsToday > 0 ||
-        agent.applicationsToday > 0 ||
-        agent.amountCollectedToday > 0 ||
-        agent.amountDisbursedToday > 0 ||
-        isActiveToday(agent.lastActiveAt),
-    ).length;
-    return {
-      all: counts?.total ?? agents.length,
-      activeToday,
-      active: counts?.active ?? agents.filter((a) => a.status === "ACTIVE").length,
-      suspended:
-        counts?.suspended ??
-        agents.filter((a) => a.status === "SUSPENDED").length,
-    };
-  }, [agents, counts]);
-
-  const actionMenuAgent = actionMenu
-    ? (agents.find((agent) => agent.id === actionMenu.agentId) ?? null)
-    : null;
-
   const filteredAgents = useMemo(() => {
     const scoped = isOwner
       ? agents.filter((agent) => matchesBranch(agent.branchId))
@@ -512,6 +489,33 @@ export function AgentsWorkspace() {
       return false;
     });
   }, [agents, isOwner, matchesBranch, search]);
+
+  const summaryStats = useMemo(() => {
+    const pool = isOwner ? filteredAgents : agents;
+    const activeToday = pool.filter(
+      (agent) =>
+        agent.collectionsToday > 0 ||
+        agent.applicationsToday > 0 ||
+        agent.amountCollectedToday > 0 ||
+        agent.amountDisbursedToday > 0 ||
+        isActiveToday(agent.lastActiveAt),
+    ).length;
+    return {
+      all: isOwner ? pool.length : (counts?.total ?? agents.length),
+      activeToday,
+      active: isOwner
+        ? pool.filter((a) => a.status === "ACTIVE").length
+        : (counts?.active ?? agents.filter((a) => a.status === "ACTIVE").length),
+      suspended: isOwner
+        ? pool.filter((a) => a.status === "SUSPENDED").length
+        : (counts?.suspended ??
+          agents.filter((a) => a.status === "SUSPENDED").length),
+    };
+  }, [agents, counts, filteredAgents, isOwner]);
+
+  const actionMenuAgent = actionMenu
+    ? (agents.find((agent) => agent.id === actionMenu.agentId) ?? null)
+    : null;
 
   const pagedAgents = useMemo(
     () => paginateItems(filteredAgents, page, pageSize),
@@ -564,7 +568,9 @@ export function AgentsWorkspace() {
         />
         <p className="-mt-2 text-sm font-medium text-slate-500">
           {isOwner
-            ? "Managers, cashiers, and field staff for the selected branch. Transfer keeps the same login and drops the previous branch."
+            ? selectedBranchId
+              ? `Managers, cashiers, and field staff for ${selectedBranchName}. Transfer keeps the same login and drops the previous branch.`
+              : "Managers, cashiers, and field staff across branches. Transfer keeps the same login and drops the previous branch."
             : "Browse branch field officers, review access status, and manage who can work in the field."}
         </p>
 
@@ -972,21 +978,32 @@ export function AgentsWorkspace() {
             </div>
             <form className="space-y-3.5 px-5 py-4" onSubmit={handleInviteAgent}>
               {isOwner ? (
-                <SelectField
-                  label="Branch"
-                  value={inviteForm.branchId}
-                  onChange={(value) =>
-                    setInviteForm((current) => ({
-                      ...current,
-                      branchId: value,
-                    }))
-                  }
-                  options={scopeBranches.map((item) => ({
-                    value: item.id,
-                    label: item.name,
-                  }))}
-                  required
-                />
+                selectedBranchId ? (
+                  <div className="rounded-xl border border-[#e6ebf0] bg-[#f8faf9] px-3 py-2.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                      Branch
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-[#0b1220]">
+                      {selectedBranchName}
+                    </p>
+                  </div>
+                ) : (
+                  <SelectField
+                    label="Branch"
+                    value={inviteForm.branchId}
+                    onChange={(value) =>
+                      setInviteForm((current) => ({
+                        ...current,
+                        branchId: value,
+                      }))
+                    }
+                    options={scopeBranches.map((item) => ({
+                      value: item.id,
+                      label: item.name,
+                    }))}
+                    required
+                  />
+                )
               ) : null}
               <SelectField
                 label="Role"

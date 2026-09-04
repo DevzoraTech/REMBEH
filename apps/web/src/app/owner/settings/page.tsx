@@ -401,7 +401,7 @@ function OwnerSettingsContent() {
                       href="/owner/portfolio"
                       icon={<WalletCards className="size-4" />}
                       title="Portfolio"
-                      text="See loans across all branches."
+                      text="Browse the loan portfolio."
                     />
                     <OpsLink
                       href="/owner/borrowers"

@@ -1218,6 +1218,10 @@ export default function OperationsPage() {
           operation,
           report,
           workspace?.currency ?? "UGX",
+          {
+            organizationName: workspace?.name ?? null,
+            branchLocation: branch?.address ?? null,
+          },
         );
         await exportDailyReconciliationPdf(document);
         setNotice("PDF downloaded.");
@@ -1607,6 +1611,8 @@ export default function OperationsPage() {
             <OpenOperationView
               operation={operation}
               currency={workspace?.currency ?? "UGX"}
+              organizationName={workspace?.name ?? null}
+              branchLocation={branch?.address ?? activeBranch?.address ?? null}
               canOperateBranch={canOperateBranch}
               editable={canFinishOpenOperation}
               canRecordTopUp={canRecordTopUp}
@@ -1872,6 +1878,8 @@ function OwnerOperationEmptyView({
 function OpenOperationView({
   operation,
   currency,
+  organizationName,
+  branchLocation,
   canOperateBranch,
   editable,
   canRecordTopUp,
@@ -1903,6 +1911,8 @@ function OpenOperationView({
 }: {
   operation: DailyOperation;
   currency: string;
+  organizationName?: string | null;
+  branchLocation?: string | null;
   canOperateBranch: boolean;
   editable: boolean;
   canRecordTopUp: boolean;
@@ -1945,6 +1955,10 @@ function OpenOperationView({
       operation,
       report,
       currency,
+      {
+        organizationName,
+        branchLocation,
+      },
     );
     const mode = canApproveReport
       ? "owner"

@@ -179,7 +179,10 @@ export function ReportDetailPage({
     setExporting(true);
     setError(null);
     try {
-      await exportOwnedReport(report, currency, format);
+      await exportOwnedReport(report, currency, format, {
+        organizationName: state.workspace?.name ?? null,
+        branchLocation: state.branch?.address ?? null,
+      });
       setNotice(
         format === "pdf"
           ? "PDF downloaded."
@@ -248,6 +251,8 @@ export function ReportDetailPage({
       returnedAt: report.returnedAt ?? null,
       returnedByName: report.returnedByName ?? null,
       returnNotes: report.returnNotes ?? null,
+      organizationName: state.workspace?.name ?? null,
+      branchLocation: state.branch?.address ?? null,
     },
   );
 

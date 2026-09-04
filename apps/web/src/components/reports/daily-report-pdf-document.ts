@@ -14,7 +14,7 @@ export const REMBEH_BRAND_NAME = "REMBEH";
 /** Public Rembeh mark used on generated PDFs. */
 export const REMBEH_MARK_URL = "/assets/brand/rembeh-mark.png";
 /** Bump when PDF chrome changes so in-memory caches regenerate. */
-export const DAILY_REPORT_PDF_LAYOUT_VERSION = "v2-rembeh-brand";
+export const DAILY_REPORT_PDF_LAYOUT_VERSION = "v3-org-header-owner-notes";
 
 const EMERALD: [number, number, number] = [6, 91, 36];
 const NAVY: [number, number, number] = [20, 33, 61];
@@ -86,6 +86,9 @@ export function dailyReportPdfFingerprint(document: DailyReportDocumentModel) {
     document.generatedAt,
     document.operationDate,
     document.branchName,
+    document.organizationName,
+    document.ownerNotes ?? "",
+    document.managerNotes ?? "",
   ].join("|");
 }
 
@@ -186,24 +189,24 @@ export async function buildDailyReconciliationPdfBlob(
     y = drawVariancesTable(doc, autoTable, document, margin, y);
   }
 
-  const notes =
+  const managerNotes =
     document.closingNotes?.trim() || document.managerNotes?.trim() || "";
-  if (notes) {
+  const ownerNotes = document.ownerNotes?.trim() || "";
+  if (managerNotes || ownerNotes) {
     sectionTitle(
       document.variances.length > 0
         ? "8. RECONCILIATION NOTES"
         : "7. RECONCILIATION NOTES",
     );
-    ensureSpace(48);
-    doc.setFillColor(...HEADER_FILL);
-    doc.setDrawColor(...LINE);
-    doc.roundedRect(margin, y, contentWidth, 40, 4, 4, "FD");
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.setTextColor(...SLATE);
-    const lines = doc.splitTextToSize(notes, contentWidth - 16);
-    doc.text(lines, margin + 8, y + 14);
-    y += Math.max(40, lines.length * 12 + 16);
+    if (managerNotes) {
+      y = drawNoteCard(doc, margin, contentWidth, y, "Manager notes", managerNotes);
+    }
+    if (ownerNotes) {
+      const ownerLabel = document.ownerApprovedByName?.trim()
+        ? `Owner approval comment · ${document.ownerApprovedByName.trim()}`
+        : "Owner approval comment";
+      y = drawNoteCard(doc, margin, contentWidth, y, ownerLabel, ownerNotes);
+    }
   }
 
   // Footer on all pages
@@ -296,15 +299,27 @@ function drawTitleBlock(
   }
 
   doc.setTextColor(...EMERALD);
-  doc.setFontSize(14);
+  doc.setFontSize(13);
   doc.setFont("helvetica", "bold");
-  doc.text(REMBEH_BRAND_NAME, center, y, { align: "center" });
+  doc.text((document.organizationName || REMBEH_BRAND_NAME).toUpperCase(), center, y, {
+    align: "center",
+  });
   y += 14;
-  doc.setTextColor(...SLATE);
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "bold");
-  doc.text(document.branchName.toUpperCase(), center, y, { align: "center" });
-  y += 12;
+
+  const locationLine = [
+    document.branchName.trim(),
+    document.branchLocation?.trim() || "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  if (locationLine) {
+    doc.setTextColor(...SLATE);
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.text(locationLine.toUpperCase(), center, y, { align: "center" });
+    y += 12;
+  }
+
   doc.setDrawColor(...EMERALD);
   doc.setLineWidth(1.2);
   doc.line(margin + 40, y, margin + contentWidth - 40, y);
@@ -342,6 +357,34 @@ function drawTitleBlock(
     doc.text(value!, x, y + 11, { align: "center" });
   });
   return y + 28;
+}
+
+function drawNoteCard(
+  doc: JsPdfDoc,
+  margin: number,
+  contentWidth: number,
+  startY: number,
+  label: string,
+  body: string,
+) {
+  const lines = doc.splitTextToSize(body, contentWidth - 16) as string[];
+  const height = Math.max(40, lines.length * 12 + 28);
+  if (startY + height > doc.internal.pageSize.getHeight() - 42) {
+    doc.addPage();
+    startY = 36;
+  }
+  doc.setFillColor(...HEADER_FILL);
+  doc.setDrawColor(...LINE);
+  doc.roundedRect(margin, startY, contentWidth, height, 4, 4, "FD");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(...EMERALD);
+  doc.text(label, margin + 8, startY + 14);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(...SLATE);
+  doc.text(lines, margin + 8, startY + 28);
+  return startY + height + 10;
 }
 
 async function loadRembehMark(doc: JsPdfDoc): Promise<string | null> {

@@ -113,6 +113,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
           generatedAt: _string(listMeta?['generatedAt']),
           status: _string(listMeta?['status']),
           operationDate: _string(listMeta?['operationDate']),
+          ownerNotes: _string(listMeta?['ownerNotes']),
         );
 
         final cached = await _cache.find(
@@ -141,6 +142,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
           generatedAt: data.generatedAt?.toIso8601String(),
           status: data.status,
           operationDate: data.operationDate,
+          ownerNotes: data.ownerNotes,
         );
 
         final stillCached = await _cache.find(
@@ -184,6 +186,8 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
           operationDate:
               _string(widget.reportPayload?['operationDate']) ??
               data.operationDate,
+          ownerNotes:
+              _string(widget.reportPayload?['ownerNotes']) ?? data.ownerNotes,
         );
         file = await _cache.save(
           reportId: reportId,

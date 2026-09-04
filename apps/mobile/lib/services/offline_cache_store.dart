@@ -60,4 +60,6 @@ class OfflineCacheKeys {
   static String pendingDisbursements(String tenantId, String branchId) =>
       'pending_disbursements_${tenantId}_$branchId';
   static String pendingWrites(String tenantId) => 'pending_writes_$tenantId';
+  static String shortages(String tenantId, String branchId, String scope) =>
+      'shortages_${tenantId}_${branchId}_$scope';
 }

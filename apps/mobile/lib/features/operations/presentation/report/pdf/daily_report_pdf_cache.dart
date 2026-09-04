@@ -22,6 +22,7 @@ class DailyReportPdfCache {
     String? generatedAt,
     String? status,
     String? operationDate,
+    String? ownerNotes,
   }) {
     final generated = _normalizeInstant(generatedAt);
     final raw = [
@@ -30,6 +31,7 @@ class DailyReportPdfCache {
       generated,
       (status ?? '').trim().toUpperCase(),
       (operationDate ?? '').trim(),
+      (ownerNotes ?? '').trim(),
     ].join('|');
     return sha1.convert(raw.codeUnits).toString().substring(0, 16);
   }

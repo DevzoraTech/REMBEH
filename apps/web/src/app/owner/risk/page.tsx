@@ -59,7 +59,8 @@ const TABS: Array<{ id: ListTab; label: string }> = [
 
 export default function OwnerRiskPage() {
   const state = useOwnerSession("/owner/risk");
-  const { matchesBranch, selectedBranchId } = useOwnerBranchScope();
+  const { matchesBranch, selectedBranchId, selectedBranchName } =
+    useOwnerBranchScope();
   const [entries, setEntries] = useState<RiskEntry[]>([]);
   const [search, setSearch] = useState("");
   const [tab, setTab] = useState<ListTab>("all");
@@ -105,19 +106,22 @@ export default function OwnerRiskPage() {
 
   useOwnerLiveReload(loadEntries, Boolean(state.ready && state.session));
 
+  const scopedEntries = useMemo(
+    () => entries.filter((entry) => matchesBranch(entry.branchId)),
+    [entries, matchesBranch],
+  );
   const blacklisted = useMemo(
-    () => entries.filter((entry) => entry.type === "BLACKLISTED"),
-    [entries],
+    () => scopedEntries.filter((entry) => entry.type === "BLACKLISTED"),
+    [scopedEntries],
   );
   const watchlisted = useMemo(
-    () => entries.filter((entry) => entry.type === "WATCHLIST"),
-    [entries],
+    () => scopedEntries.filter((entry) => entry.type === "WATCHLIST"),
+    [scopedEntries],
   );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return entries.filter((entry) => {
-      if (!matchesBranch(entry.branchId)) return false;
+    return scopedEntries.filter((entry) => {
       if (tab !== "all" && entry.type !== tab) return false;
       if (!q) return true;
       return [
@@ -128,7 +132,7 @@ export default function OwnerRiskPage() {
         entry.type,
       ].some((value) => value.toLowerCase().includes(q));
     });
-  }, [entries, matchesBranch, search, tab]);
+  }, [scopedEntries, search, tab]);
 
   const paged = useMemo(
     () => paginateItems(filtered, page, pageSize),
@@ -227,9 +231,13 @@ export default function OwnerRiskPage() {
     >
       <div className="mx-auto max-w-[1400px] space-y-5 animate-rise">
         <OwnerHeader
-          eyebrow="Risk"
+          eyebrow={selectedBranchId ? selectedBranchName : "Risk"}
           title="Risk register"
-          subtitle="Voided clients are set aside from daily collections. Blacklist blocks new loans; warning is a caution flag."
+          subtitle={
+            selectedBranchId
+              ? `Voided clients for ${selectedBranchName}. Blacklist blocks new loans; warning is a caution flag.`
+              : "Voided clients are set aside from daily collections. Blacklist blocks new loans; warning is a caution flag."
+          }
           showReportsButton={false}
           actions={
             <>
@@ -281,7 +289,7 @@ export default function OwnerRiskPage() {
           <StatCard
             icon={<ShieldAlert className="size-4" />}
             label="Total entries"
-            value={formatNumber(entries.length)}
+            value={formatNumber(scopedEntries.length)}
             detail="On the register"
             tone="slate"
             active={tab === "all"}

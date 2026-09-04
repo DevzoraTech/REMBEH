@@ -82,7 +82,15 @@ class _ShortagesScreenState extends State<ShortagesScreen> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        unawaited(_load());
+        // Open first; pull after the frame. Prefer cache, then quiet network.
+        unawaited(
+          _controller.load(
+            session: widget.session,
+            branchId: widget.branchId,
+            userId: widget.userId,
+            quiet: widget.initialShortages.isNotEmpty,
+          ),
+        );
       }
     });
   }
@@ -99,6 +107,7 @@ class _ShortagesScreenState extends State<ShortagesScreen> {
       branchId: widget.branchId,
       userId: widget.userId,
       quiet: quiet,
+      forceNetwork: true,
     );
   }
 
@@ -146,6 +155,7 @@ class _ShortagesScreenState extends State<ShortagesScreen> {
     }
 
     _showSnackBar('Shortage clearance recorded.');
+    await _controller.invalidateActiveCache();
     await _load(quiet: true);
   }
 
@@ -202,6 +212,7 @@ class _ShortagesScreenState extends State<ShortagesScreen> {
       }
 
       _showSnackBar('Prior shortage recorded.');
+      await _controller.invalidateActiveCache();
       await _load(quiet: true);
     } catch (error) {
       if (!mounted) {
@@ -271,6 +282,7 @@ class _ShortagesScreenState extends State<ShortagesScreen> {
       }
 
       _showSnackBar('Shortage payoff recorded as today’s cash in.');
+      await _controller.invalidateActiveCache();
       await _load(quiet: true);
     } catch (error) {
       if (!mounted) {
@@ -538,6 +550,16 @@ class _ShortagesScreenState extends State<ShortagesScreen> {
                   ),
                 ],
                 const SizedBox(height: 12),
+                if (_controller.isRefreshing &&
+                    _controller.shortages.isNotEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 8),
+                    child: LinearProgressIndicator(
+                      minHeight: 2,
+                      color: forestEmerald,
+                      backgroundColor: Color(0xFFE8F5EF),
+                    ),
+                  ),
                 if (_controller.isLoading && _controller.shortages.isEmpty)
                   const Padding(
                     padding: EdgeInsets.only(top: 80),

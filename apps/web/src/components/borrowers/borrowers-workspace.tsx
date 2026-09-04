@@ -128,6 +128,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
   const isManager = mode === "manager";
   const { matchesBranch, selectedBranchName, selectedBranchId } =
     useOwnerBranchScope();
+  const showBranchColumn = !isManager && !selectedBranchId;
   const [borrowers, setBorrowers] = useState<OwnerBorrower[]>([]);
   const [search, setSearch] = useState("");
   const [advancedFilters, setAdvancedFilters] = useState<BorrowersAdvancedFilters>(
@@ -485,9 +486,9 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
                       <th className="w-[26%] px-3 py-2.5">Borrower</th>
                       <th className="w-[18%] px-3 py-2.5">Contact</th>
                       <th className="w-[12%] px-3 py-2.5">National ID</th>
-                      {!isManager ? (
+                      {!showBranchColumn ? null : (
                         <th className="w-[12%] px-3 py-2.5">Branch</th>
-                      ) : null}
+                      )}
                       <th className="w-[8%] px-3 py-2.5">Loans</th>
                       <th className="w-[12%] px-3 py-2.5">Verification</th>
                       <th className="w-[12%] px-3 py-2.5">Joined</th>
@@ -555,13 +556,13 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
                         <td className="px-3 py-3 text-[11px] font-medium tabular-nums text-[#0b1220]">
                           {borrower.nationalId ?? "—"}
                         </td>
-                        {!isManager ? (
+                        {!showBranchColumn ? null : (
                           <td className="px-3 py-3 text-[11px] font-medium text-[#0b1220]">
                             <span className="truncate">
                               {borrower.branchName ?? "—"}
                             </span>
                           </td>
-                        ) : null}
+                        )}
                         <td className="px-3 py-3 text-[11px] font-medium tabular-nums text-[#0b1220]">
                           {formatNumber(borrower.loanCount)}
                         </td>

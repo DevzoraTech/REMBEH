@@ -14,10 +14,9 @@ class DailyReportPdfBuilder {
   const DailyReportPdfBuilder();
 
   /// Bump when PDF chrome/layout changes so local caches regenerate.
-  static const layoutVersion = 'v2-rembeh-brand';
+  static const layoutVersion = 'v3-org-header-owner-notes';
 
-  static const _brandName = 'REMBEH';
-  static const _markAsset = 'assets/rembeh-mark.png';
+  static const _brandMarkAsset = 'assets/rembeh-mark.png';
 
   static const _emerald = PdfColor.fromInt(0xFF065B24);
   static const _navy = PdfColor.fromInt(0xFF14213D);
@@ -31,12 +30,12 @@ class DailyReportPdfBuilder {
   static const _cardFill = PdfColor.fromInt(0xFFF8FAF9);
 
   Future<List<int>> build(DailyReportData report) async {
-    final markBytes = await rootBundle.load(_markAsset);
+    final markBytes = await rootBundle.load(_brandMarkAsset);
     final mark = pw.MemoryImage(markBytes.buffer.asUint8List());
 
     final doc = pw.Document(
       title: 'Daily Reconciliation — ${_displayDate(report.operationDate)}',
-      author: _brandName,
+      author: 'REMBEH',
     );
 
     doc.addPage(
@@ -110,7 +109,7 @@ class DailyReportPdfBuilder {
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
           pw.Text(
-            _brandName,
+            'REMBEH',
             style: pw.TextStyle(
               color: _emerald,
               fontSize: 8,
@@ -152,10 +151,10 @@ class DailyReportPdfBuilder {
   }
 
   pw.Widget _titleBlock(DailyReportData report, pw.MemoryImage mark) {
-    final location = [
+    final locationLine = [
       report.branchName.trim(),
       if (_has(report.branchAddress)) report.branchAddress!.trim(),
-    ].where((p) => p.isNotEmpty).join('  ·  ');
+    ].where((p) => p.isNotEmpty).join(' · ');
 
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.center,
@@ -173,25 +172,25 @@ class DailyReportPdfBuilder {
         ),
         pw.SizedBox(height: 8),
         pw.Text(
-          _brandName,
+          report.organizationName.toUpperCase(),
           textAlign: pw.TextAlign.center,
           style: pw.TextStyle(
             color: _emerald,
-            fontSize: 14,
+            fontSize: 13,
             fontWeight: pw.FontWeight.bold,
-            letterSpacing: 0.8,
+            letterSpacing: 0.35,
           ),
         ),
-        if (location.isNotEmpty) ...[
-          pw.SizedBox(height: 3),
+        if (locationLine.isNotEmpty) ...[
+          pw.SizedBox(height: 4),
           pw.Text(
-            location.toUpperCase(),
+            locationLine.toUpperCase(),
             textAlign: pw.TextAlign.center,
             style: pw.TextStyle(
               color: _slate,
               fontSize: 8.5,
               fontWeight: pw.FontWeight.bold,
-              letterSpacing: 0.3,
+              letterSpacing: 0.25,
             ),
           ),
         ],
@@ -693,6 +692,32 @@ class DailyReportPdfBuilder {
   }
 
   pw.Widget _notesBlock(DailyReportData report) {
+    final manager = report.managerNotes?.trim();
+    final owner = report.ownerNotes?.trim();
+    final ownerBy = report.ownerApprovedByName?.trim();
+
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+      children: [
+        if (manager != null && manager.isNotEmpty)
+          _noteCard(label: 'Manager notes', body: manager),
+        if (manager != null &&
+            manager.isNotEmpty &&
+            owner != null &&
+            owner.isNotEmpty)
+          pw.SizedBox(height: 8),
+        if (owner != null && owner.isNotEmpty)
+          _noteCard(
+            label: ownerBy == null || ownerBy.isEmpty
+                ? 'Owner approval comment'
+                : 'Owner approval comment · $ownerBy',
+            body: owner,
+          ),
+      ],
+    );
+  }
+
+  pw.Widget _noteCard({required String label, required String body}) {
     return pw.Container(
       width: double.infinity,
       padding: const pw.EdgeInsets.all(10),
@@ -701,9 +726,23 @@ class DailyReportPdfBuilder {
         borderRadius: pw.BorderRadius.circular(6),
         border: pw.Border.all(color: _line, width: 0.7),
       ),
-      child: pw.Text(
-        report.managerNotes!.trim(),
-        style: const pw.TextStyle(color: _slate, fontSize: 9, lineSpacing: 2),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            label,
+            style: pw.TextStyle(
+              color: _emerald,
+              fontSize: 8,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+          pw.SizedBox(height: 4),
+          pw.Text(
+            body,
+            style: const pw.TextStyle(color: _slate, fontSize: 9, lineSpacing: 2),
+          ),
+        ],
       ),
     );
   }
@@ -828,8 +867,12 @@ class _MoveLine {
 
 bool _has(String? value) => value != null && value.trim().isNotEmpty;
 
-bool _hasNotes(DailyReportData report) =>
-    report.managerNotes != null && report.managerNotes!.trim().isNotEmpty;
+bool _hasNotes(DailyReportData report) {
+  final manager = report.managerNotes?.trim();
+  final owner = report.ownerNotes?.trim();
+  return (manager != null && manager.isNotEmpty) ||
+      (owner != null && owner.isNotEmpty);
+}
 
 String _displayDate(String raw) {
   final parsed = DateTime.tryParse(raw);

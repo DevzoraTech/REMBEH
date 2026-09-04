@@ -103,7 +103,7 @@ function OwnerBranchesPageContent() {
   const state = useOwnerSession("/owner/branches");
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { selectedBranchId } = useOwnerBranchScope();
+  const { selectedBranchId, selectedBranchName } = useOwnerBranchScope();
   const [branches, setBranches] = useState<OwnerBranch[]>([]);
   const [loans, setLoans] = useState<OwnerLoan[]>([]);
   const [borrowers, setBorrowers] = useState<OwnerBorrower[]>([]);
@@ -586,7 +586,11 @@ function OwnerBranchesPageContent() {
             icon={<Users className="size-5" />}
             label="Active Staff"
             value={formatNumber(activeStaff)}
-            detail="Across all branches"
+            detail={
+              selectedBranchId
+                ? selectedBranchName
+                : "Across all branches"
+            }
             tone="blue"
           />
           <BranchStatCard
@@ -613,7 +617,9 @@ function OwnerBranchesPageContent() {
                   <h2 className="text-[15px] font-semibold text-[#0b1220]">
                     {listMode === "attention"
                       ? "Needs attention"
-                      : "All Branches"}
+                      : selectedBranchId
+                        ? selectedBranchName
+                        : "All Branches"}
                   </h2>
                   {listMode === "attention" ? (
                     <Tooltip label={ATTENTION_TABLE_TOOLTIP} align="left">
@@ -627,7 +633,9 @@ function OwnerBranchesPageContent() {
                 <p className="mt-1 text-xs font-semibold text-slate-500">
                   {listMode === "attention"
                     ? "Branches with repayment, overdue, or daily-close issues"
-                    : "Manage and monitor all your branches"}
+                    : selectedBranchId
+                      ? "Focused branch details and monitoring"
+                      : "Manage and monitor all your branches"}
                 </p>
               </div>
               {listMode === "attention" ? (

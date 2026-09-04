@@ -47,6 +47,7 @@ import {
 import { resolveOperatorRole } from "../../lib/roles";
 import { formatDate, formatMoney } from "../../app/owner/owner-common";
 import { OwnerHeader } from "../../app/owner/owner-header";
+import { useOwnerBranchScope } from "../../app/owner/owner-branch-scope";
 import { PaymentMethodBadge } from "./payment-method-badge";
 import {
   connectRealtime,
@@ -750,6 +751,7 @@ export function SubscriptionWorkspace({ mode }: { mode: "owner" | "manager" }) {
 function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { selectedBranchId: globalBranchId } = useOwnerBranchScope();
   const [session, setSession] = useState<RembehSession | null>(null);
   const [workspace, setWorkspace] = useState<RembehWorkspace | null>(null);
   const [user, setUser] = useState<RembehUser | null>(null);
@@ -973,6 +975,13 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
   useEffect(() => {
     if (!summary?.branches.length) return;
     setFocusedBranchId((current) => {
+      if (
+        mode === "owner" &&
+        globalBranchId &&
+        summary.branches.some((b) => b.branchId === globalBranchId)
+      ) {
+        return globalBranchId;
+      }
       if (current && summary.branches.some((b) => b.branchId === current)) {
         return current;
       }
@@ -983,7 +992,14 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
       const checkoutable = summary.branches.find((b) => b.canCheckout);
       return checkoutable?.branchId ?? summary.branches[0]?.branchId ?? null;
     });
-  }, [summary, searchParams]);
+  }, [summary, searchParams, mode, globalBranchId]);
+
+  useEffect(() => {
+    if (mode !== "owner" || !globalBranchId || !summary?.branches.length) return;
+    if (summary.branches.some((b) => b.branchId === globalBranchId)) {
+      setFocusedBranchId(globalBranchId);
+    }
+  }, [globalBranchId, mode, summary]);
 
   useEffect(() => {
     if (!summary) return;
@@ -1817,12 +1833,18 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
   }
 
   const showOwnerBranchSelect =
-    mode === "owner" && (summary?.branches.length ?? 0) > 1;
+    mode === "owner" &&
+    !globalBranchId &&
+    (summary?.branches.length ?? 0) > 1;
   const pageSubtitle =
     mode === "owner"
       ? activeTab === "sms"
-        ? `Manage SMS credits across ${workspace.name}. Choose a branch only when buying credits.`
-        : `Manage plans and billing across ${workspace.name}.`
+        ? globalBranchId
+          ? `Manage SMS credits for the selected branch.`
+          : `Manage SMS credits across ${workspace.name}. Choose a branch only when buying credits.`
+        : globalBranchId
+          ? `Manage plan and billing for the selected branch.`
+          : `Manage plans and billing across ${workspace.name}.`
       : activeTab === "sms"
         ? `Manage prepaid SMS credits for ${branchName}.`
         : `Manage the plan and billing for ${branchName}.`;

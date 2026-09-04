@@ -1,12 +1,10 @@
 "use client";
 
 import {
-  createContext,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
-  useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
@@ -18,6 +16,7 @@ const STORAGE_KEY = "rembehOwnerBranchScope";
 export type OwnerScopeBranch = {
   id: string;
   name: string;
+  managerName?: string | null;
 };
 
 type OwnerBranchScopeValue = {
@@ -29,9 +28,27 @@ type OwnerBranchScopeValue = {
   ready: boolean;
 };
 
-const OwnerBranchScopeContext = createContext<OwnerBranchScopeValue | null>(
-  null,
-);
+type ScopeSnapshot = {
+  selectedBranchId: string | null;
+  branches: OwnerScopeBranch[];
+  ready: boolean;
+};
+
+/**
+ * Module store so branch selection works even when pages call
+ * useOwnerBranchScope() *outside* AppShell (provider only wraps children).
+ */
+let snapshot: ScopeSnapshot = {
+  selectedBranchId: null,
+  branches: [],
+  ready: false,
+};
+let hydrated = false;
+const listeners = new Set<() => void>();
+
+function emit() {
+  listeners.forEach((listener) => listener());
+}
 
 function readStoredBranchId() {
   if (typeof window === "undefined") return null;
@@ -46,7 +63,8 @@ function readStoredBranchId() {
 }
 
 export function readStoredOwnerBranchId() {
-  return readStoredBranchId();
+  ensureHydrated();
+  return snapshot.selectedBranchId;
 }
 
 function persistBranchId(branchId: string | null) {
@@ -58,6 +76,61 @@ function persistBranchId(branchId: string | null) {
   }
 }
 
+function ensureHydrated() {
+  if (hydrated || typeof window === "undefined") return;
+  hydrated = true;
+  snapshot = {
+    ...snapshot,
+    selectedBranchId: readStoredBranchId(),
+  };
+}
+
+function getSnapshot() {
+  ensureHydrated();
+  return snapshot;
+}
+
+function getServerSnapshot(): ScopeSnapshot {
+  return {
+    selectedBranchId: null,
+    branches: [],
+    ready: false,
+  };
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+function writeSnapshot(next: ScopeSnapshot) {
+  snapshot = next;
+  emit();
+}
+
+export function setOwnerSelectedBranchId(branchId: string | null) {
+  ensureHydrated();
+  const next = branchId && branchId.length > 0 ? branchId : null;
+  persistBranchId(next);
+  writeSnapshot({
+    ...snapshot,
+    selectedBranchId: next,
+  });
+}
+
+function setOwnerScopeBranches(
+  branches: OwnerScopeBranch[],
+  selectedBranchId: string | null,
+) {
+  writeSnapshot({
+    selectedBranchId,
+    branches,
+    ready: true,
+  });
+}
+
 export function OwnerBranchScopeProvider({
   session,
   children,
@@ -65,14 +138,9 @@ export function OwnerBranchScopeProvider({
   session: RembehSession;
   children: ReactNode;
 }) {
-  const [branches, setBranches] = useState<OwnerScopeBranch[]>([]);
-  const [selectedBranchId, setSelectedBranchIdState] = useState<string | null>(
-    null,
-  );
-  const [ready, setReady] = useState(false);
-
   useEffect(() => {
     let cancelled = false;
+    ensureHydrated();
     const boot = window.setTimeout(() => {
       void (async () => {
         try {
@@ -84,7 +152,11 @@ export function OwnerBranchScopeProvider({
               cache: "no-store",
             });
             const body = await readApiJson<{
-              branches?: Array<{ id?: string; name?: string }>;
+              branches?: Array<{
+                id?: string;
+                name?: string;
+                manager?: { name?: string | null } | null;
+              }>;
               message?: string | string[];
             }>(response);
             if (!response.ok) {
@@ -97,26 +169,32 @@ export function OwnerBranchScopeProvider({
             .map((branch) => ({
               id: branch.id ?? "",
               name: branch.name ?? "Branch",
+              managerName: branch.manager?.name ?? null,
             }))
             .filter((branch) => branch.id.length > 0)
             .sort((a, b) => a.name.localeCompare(b.name));
           const stored = readStoredBranchId();
+          const current = snapshot.selectedBranchId;
+          const validCurrent =
+            current && next.some((branch) => branch.id === current)
+              ? current
+              : null;
           const validStored =
             stored && next.some((branch) => branch.id === stored)
               ? stored
               : null;
-          if (stored && !validStored) {
+          const nextSelected = validCurrent ?? validStored;
+          if ((current || stored) && !nextSelected) {
             persistBranchId(null);
+          } else if (nextSelected !== stored) {
+            persistBranchId(nextSelected);
           }
-          setBranches(next);
-          setSelectedBranchIdState(validStored);
+          setOwnerScopeBranches(next, nextSelected);
         } catch {
           if (!cancelled) {
-            persistBranchId(null);
-            setSelectedBranchIdState(null);
+            // Keep the user's selection; only clear branches list.
+            setOwnerScopeBranches([], snapshot.selectedBranchId);
           }
-        } finally {
-          if (!cancelled) setReady(true);
         }
       })();
     }, 0);
@@ -127,63 +205,38 @@ export function OwnerBranchScopeProvider({
     };
   }, [session.accessToken, session.tokenType]);
 
+  return children;
+}
+
+export function useOwnerBranchScope(): OwnerBranchScopeValue {
+  const snap = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+
   const setSelectedBranchId = useCallback((branchId: string | null) => {
-    const next = branchId && branchId.length > 0 ? branchId : null;
-    setSelectedBranchIdState(next);
-    persistBranchId(next);
+    setOwnerSelectedBranchId(branchId);
   }, []);
 
   const selectedBranchName = useMemo(() => {
-    if (!selectedBranchId) return "All branches";
+    if (!snap.selectedBranchId) return "All Branches";
     return (
-      branches.find((branch) => branch.id === selectedBranchId)?.name ??
-      "All branches"
+      snap.branches.find((branch) => branch.id === snap.selectedBranchId)
+        ?.name ?? "All Branches"
     );
-  }, [branches, selectedBranchId]);
+  }, [snap.branches, snap.selectedBranchId]);
 
   const matchesBranch = useCallback(
     (branchId: string | null | undefined) => {
-      if (!selectedBranchId) return true;
-      return branchId === selectedBranchId;
+      if (!snap.selectedBranchId) return true;
+      return branchId === snap.selectedBranchId;
     },
-    [selectedBranchId],
+    [snap.selectedBranchId],
   );
 
-  const value = useMemo<OwnerBranchScopeValue>(
-    () => ({
-      selectedBranchId,
-      selectedBranchName,
-      branches,
-      setSelectedBranchId,
-      matchesBranch,
-      ready,
-    }),
-    [
-      branches,
-      matchesBranch,
-      ready,
-      selectedBranchId,
-      selectedBranchName,
-      setSelectedBranchId,
-    ],
-  );
-
-  return (
-    <OwnerBranchScopeContext.Provider value={value}>
-      {children}
-    </OwnerBranchScopeContext.Provider>
-  );
-}
-
-const fallbackScope: OwnerBranchScopeValue = {
-  selectedBranchId: null,
-  selectedBranchName: "All branches",
-  branches: [],
-  setSelectedBranchId: () => undefined,
-  matchesBranch: () => true,
-  ready: true,
-};
-
-export function useOwnerBranchScope() {
-  return useContext(OwnerBranchScopeContext) ?? fallbackScope;
+  return {
+    selectedBranchId: snap.selectedBranchId,
+    selectedBranchName,
+    branches: snap.branches,
+    setSelectedBranchId,
+    matchesBranch,
+    ready: snap.ready,
+  };
 }

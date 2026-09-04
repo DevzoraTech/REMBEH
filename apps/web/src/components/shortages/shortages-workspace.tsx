@@ -130,7 +130,11 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
     session?.permissions.includes("operation.float.return"),
   );
   const isOwner = mode === "owner";
-  const { selectedBranchId } = useOwnerBranchScope();
+  const {
+    selectedBranchId,
+    selectedBranchName,
+    matchesBranch,
+  } = useOwnerBranchScope();
 
   useEffect(() => {
     if (!isOwner) return;
@@ -277,6 +281,7 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
     return shortages.filter((row) => {
+      if (isOwner && !matchesBranch(row.branchId)) return false;
       if (statusFilter === "open" && row.status === "CLEARED") return false;
       if (statusFilter === "cleared" && row.status !== "CLEARED") return false;
       if (!needle) return true;
@@ -288,7 +293,9 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
         sourceLabel(row.sourceType).toLowerCase().includes(needle)
       );
     });
-  }, [shortages, statusFilter, search]);
+  }, [isOwner, matchesBranch, shortages, statusFilter, search]);
+
+  const showBranchColumn = isOwner && !selectedBranchId;
 
   const paged = useMemo(
     () => paginateItems(filtered, page, pageSize),
@@ -465,7 +472,7 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
     >
       <div className="mx-auto max-w-[1400px] space-y-5 animate-rise">
         <OwnerHeader
-          eyebrow={isOwner ? "All Branches" : undefined}
+          eyebrow={isOwner ? selectedBranchName : undefined}
           title="Shortages"
           showReportsButton={false}
           settingsHref={isOwner ? "/owner/settings" : "/settings"}
@@ -673,7 +680,9 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
                 <thead className="border-b border-[#dfe5eb] bg-[#e8edf2] text-[10px] font-semibold text-slate-600">
                   <tr>
                     <th className="px-3 py-2.5">Officer</th>
-                    {isOwner ? <th className="px-2 py-2.5">Branch</th> : null}
+                    {showBranchColumn ? (
+                      <th className="px-2 py-2.5">Branch</th>
+                    ) : null}
                     <th className="px-2 py-2.5">Date</th>
                     <th className="px-2 py-2.5">Source</th>
                     <th className="px-2 py-2.5 text-right">Original</th>
@@ -706,7 +715,7 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
                           {row.responsiblePublicId ?? "—"}
                         </p>
                       </td>
-                      {isOwner ? (
+                      {showBranchColumn ? (
                         <td className="px-2 py-2.5 align-top text-slate-600">
                           {row.branchName ?? "—"}
                         </td>
