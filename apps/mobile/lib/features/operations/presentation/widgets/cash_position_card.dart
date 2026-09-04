@@ -10,20 +10,21 @@ class CashPositionCard extends StatelessWidget {
   const CashPositionCard({
     super.key,
     required this.operation,
-    this.onRecordShortagePaid,
   });
 
   final OperationDashboardData operation;
-  final VoidCallback? onRecordShortagePaid;
 
   @override
   Widget build(BuildContext context) {
     final shortageCleared = operation.shortageRecoveries;
-    final totalAdditions =
+    final additionsTotal =
+        operation.openingCash +
+        operation.capitalReceived +
         operation.collections +
         operation.processingFees +
         shortageCleared;
-    final totalCashouts = operation.expenses + operation.salaries;
+    final cashoutsTotal =
+        operation.expenses + operation.salaries + operation.loansDisbursed;
 
     return OpsSurface(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
@@ -75,8 +76,8 @@ class CashPositionCard extends StatelessWidget {
             icon: Icons.arrow_upward_rounded,
             accent: forestEmerald,
             fill: const Color(0xFFEFF8F2),
-            totalLabel: 'Total Additions',
-            totalAmount: totalAdditions,
+            totalLabel: 'TOTAL',
+            totalAmount: additionsTotal,
             children: [
               _CashLine(label: 'Opening Balance', amount: operation.openingCash),
               _CashLine(
@@ -107,8 +108,8 @@ class CashPositionCard extends StatelessWidget {
             icon: Icons.arrow_downward_rounded,
             accent: const Color(0xFFC62828),
             fill: const Color(0xFFFFF0EC),
-            totalLabel: 'Total Cashouts',
-            totalAmount: totalCashouts,
+            totalLabel: 'TOTAL',
+            totalAmount: cashoutsTotal,
             children: [
               _CashLine(
                 label: 'Total Expenses',
@@ -118,6 +119,11 @@ class CashPositionCard extends StatelessWidget {
               _CashLine(
                 label: 'Salary',
                 amount: operation.salaries,
+                negative: true,
+              ),
+              _CashLine(
+                label: 'Loans issued',
+                amount: operation.loansDisbursed,
                 negative: true,
               ),
             ],
@@ -151,23 +157,6 @@ class CashPositionCard extends StatelessWidget {
               ),
             ],
           ),
-          if (onRecordShortagePaid != null) ...[
-            const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: GestureDetector(
-                onTap: onRecordShortagePaid,
-                child: const Text(
-                  'Record shortage paid ›',
-                  style: TextStyle(
-                    color: forestEmerald,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -283,16 +272,13 @@ class _CashLine extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     var valueColor = midnightNavy;
-    var prefix = '';
 
     if (positive && amount != 0) {
       valueColor = forestEmerald;
-      prefix = '+ ';
     }
 
     if (negative && amount != 0) {
       valueColor = const Color(0xFFC62828);
-      prefix = '− ';
     }
 
     return Padding(
@@ -310,7 +296,7 @@ class _CashLine extends StatelessWidget {
             ),
           ),
           Text(
-            '${prefix}UGX ${formatMoney(amount)}',
+            'UGX ${formatMoney(amount)}',
             style: TextStyle(
               color: valueColor,
               fontSize: 12,

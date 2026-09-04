@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../../utils/money.dart';
 import '../../../domain/models/report/daily_report_processing_fee.dart';
+import '../../../domain/utils/operation_formatters.dart';
 import 'report_section.dart';
 import 'report_table.dart';
 
@@ -28,24 +29,15 @@ class ProcessingFeesReportTable extends StatelessWidget {
         columns: const [
           ReportTableColumn(
             label: 'Borrower',
-            flex: 28,
-          ),
-          ReportTableColumn(
-            label: 'Loan ID',
-            flex: 24,
-          ),
-          ReportTableColumn(
-            label: 'Amount',
-            flex: 20,
-            alignment: Alignment.centerRight,
+            flex: 40,
           ),
           ReportTableColumn(
             label: 'Officer',
-            flex: 22,
+            flex: 32,
           ),
           ReportTableColumn(
-            label: 'Time',
-            flex: 16,
+            label: 'Amount',
+            flex: 28,
             alignment: Alignment.centerRight,
           ),
         ],
@@ -67,20 +59,11 @@ class ProcessingFeesReportTable extends StatelessWidget {
         row.borrowerName,
       ),
       ReportTableText(
-        row.loanId ?? '—',
+        reportPersonShortName(row.officerName),
       ),
       ReportTableMoney(
         formatMoney(row.amount),
         strong: true,
-      ),
-      ReportTableText(
-        row.officerName,
-      ),
-      ReportTableText(
-        _displayTime(
-          row.receivedAt,
-        ),
-        textAlign: TextAlign.right,
       ),
     ];
   }
@@ -103,43 +86,21 @@ class _FeeTotal extends StatelessWidget {
       child: Row(
         children: [
           const Expanded(
-            flex: 52,
+            flex: 72,
             child: ReportTableText(
               'Total',
               strong: true,
             ),
           ),
           Expanded(
-            flex: 20,
+            flex: 28,
             child: ReportTableMoney(
               formatMoney(total),
               strong: true,
             ),
           ),
-          const Expanded(
-            flex: 38,
-            child: SizedBox.shrink(),
-          ),
         ],
       ),
     );
   }
-}
-
-String _displayTime(DateTime? value) {
-  if (value == null) return '—';
-
-  final local = value.toLocal();
-
-  final hour = local.hour == 0
-      ? 12
-      : local.hour > 12
-          ? local.hour - 12
-          : local.hour;
-
-  final minute =
-      local.minute.toString().padLeft(2, '0');
-
-  return '$hour:$minute '
-      '${local.hour >= 12 ? 'PM' : 'AM'}';
 }

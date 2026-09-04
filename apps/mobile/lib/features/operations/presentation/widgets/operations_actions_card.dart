@@ -13,15 +13,19 @@ class OperationsActionsCard extends StatelessWidget {
     required this.onReceiveCapital,
     required this.onAllocateFloat,
     required this.onRecordExpense,
+    this.canOpenShortages = false,
+    this.onOpenShortages,
   });
 
   final bool canReceiveCapital;
   final bool canAllocateFloat;
   final bool canRecordExpense;
+  final bool canOpenShortages;
 
   final VoidCallback onReceiveCapital;
   final VoidCallback onAllocateFloat;
   final VoidCallback onRecordExpense;
+  final VoidCallback? onOpenShortages;
 
   @override
   Widget build(BuildContext context) {
@@ -73,6 +77,17 @@ class OperationsActionsCard extends StatelessWidget {
                   onTap: onRecordExpense,
                 ),
               ),
+              if (onOpenShortages != null) ...[
+                const SizedBox(width: 7),
+                Expanded(
+                  child: _Action(
+                    icon: Icons.account_balance_outlined,
+                    label: 'Shortage',
+                    enabled: canOpenShortages,
+                    onTap: onOpenShortages,
+                  ),
+                ),
+              ],
             ],
           ),
         ],

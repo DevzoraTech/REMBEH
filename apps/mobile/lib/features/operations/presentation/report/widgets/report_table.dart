@@ -49,13 +49,21 @@ class ReportTable extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final availableWidth = constraints.maxWidth;
+        final availableWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : MediaQuery.sizeOf(context).width;
 
-        final requestedWidth = minimumWidth ?? availableWidth;
+        // Keep columns readable: scroll horizontally rather than
+        // letting cells crush into each other on narrow screens.
+        final contentMinWidth = minimumWidth ??
+            columns.fold<double>(
+              0,
+              (sum, column) => sum + (column.flex * 5.2).clamp(56.0, 120.0),
+            );
 
-        final tableWidth = requestedWidth > availableWidth
-            ? requestedWidth
-            : availableWidth;
+        final tableWidth = availableWidth > contentMinWidth
+            ? availableWidth
+            : contentMinWidth;
 
         final table = SizedBox(
           width: tableWidth,
@@ -89,7 +97,10 @@ class ReportTable extends StatelessWidget {
                   thickness: 1,
                   color: line,
                 ),
-                footer!,
+                ColoredBox(
+                  color: const Color(0xFFEFF8F2),
+                  child: footer!,
+                ),
               ],
             ],
           ),
@@ -132,31 +143,25 @@ class _ReportTableHeader extends StatelessWidget {
           for (final column in columns)
             Expanded(
               flex: column.flex,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 3,
-                ),
-                child: Align(
-                  alignment:
-                      column.headerAlignment ??
-                      column.alignment,
-                  child: Text(
-                    column.label,
-                    maxLines: 2,
-                    softWrap: true,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign:
-                        _textAlignForAlignment(
-                      column.headerAlignment ??
-                          column.alignment,
-                    ),
-                    style: TextStyle(
-                      color: midnightNavy,
-                      fontSize: ReportType.secondary(context),
-                      height: 1.2,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.05,
-                    ),
+              child: _ReportTableCell(
+                alignment:
+                    column.headerAlignment ??
+                    column.alignment,
+                child: Text(
+                  column.label,
+                  maxLines: 2,
+                  softWrap: true,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: _textAlignForAlignment(
+                    column.headerAlignment ??
+                        column.alignment,
+                  ),
+                  style: TextStyle(
+                    color: midnightNavy,
+                    fontSize: ReportType.secondary(context),
+                    height: 1.2,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.05,
                   ),
                 ),
               ),
@@ -213,19 +218,39 @@ class _ReportTableRow extends StatelessWidget {
           )
             Expanded(
               flex: columns[index].flex,
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(
-                  horizontal: 3,
-                ),
-                child: Align(
-                  alignment:
-                      columns[index].alignment,
-                  child: cells[index],
-                ),
+              child: _ReportTableCell(
+                alignment: columns[index].alignment,
+                child: cells[index],
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// Keeps each column's content clipped inside its flex slot.
+class _ReportTableCell extends StatelessWidget {
+  const _ReportTableCell({
+    required this.alignment,
+    required this.child,
+  });
+
+  final Alignment alignment;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 5),
+      child: ClipRect(
+        child: SizedBox(
+          width: double.infinity,
+          child: Align(
+            alignment: alignment,
+            child: child,
+          ),
+        ),
       ),
     );
   }
@@ -282,19 +307,22 @@ class ReportTableText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      value,
-      maxLines: maxLines,
-      softWrap: true,
-      overflow: TextOverflow.ellipsis,
-      textAlign: textAlign,
-      style: TextStyle(
-        color: color ?? midnightNavy,
-        fontSize: ReportType.body(context),
-        height: 1.25,
-        fontWeight: strong
-            ? FontWeight.w800
-            : FontWeight.w600,
+    return SizedBox(
+      width: double.infinity,
+      child: Text(
+        value,
+        maxLines: maxLines,
+        softWrap: true,
+        overflow: TextOverflow.ellipsis,
+        textAlign: textAlign,
+        style: TextStyle(
+          color: color ?? midnightNavy,
+          fontSize: ReportType.body(context),
+          height: 1.25,
+          fontWeight: strong
+              ? FontWeight.w800
+              : FontWeight.w600,
+        ),
       ),
     );
   }
@@ -331,21 +359,24 @@ class ReportTableMoney extends StatelessWidget {
         ? value
         : '${prefix!.trim()} $value';
 
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      alignment: Alignment.centerRight,
-      child: Text(
-        formatted,
-        maxLines: 1,
-        softWrap: false,
-        textAlign: TextAlign.right,
-        style: TextStyle(
-          color: color ?? midnightNavy,
-          fontSize: ReportType.money(context),
-          height: 1.2,
-          fontWeight: strong
-              ? FontWeight.w800
-              : FontWeight.w600,
+    return SizedBox(
+      width: double.infinity,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerRight,
+        child: Text(
+          formatted,
+          maxLines: 1,
+          softWrap: false,
+          textAlign: TextAlign.right,
+          style: TextStyle(
+            color: color ?? midnightNavy,
+            fontSize: ReportType.money(context),
+            height: 1.2,
+            fontWeight: strong
+                ? FontWeight.w800
+                : FontWeight.w600,
+          ),
         ),
       ),
     );
@@ -383,48 +414,51 @@ class ReportTableStackedText extends StatelessWidget {
           _ => TextAlign.left,
         };
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: alignment,
-      children: [
-        Text(
-          primary,
-          maxLines: 2,
-          softWrap: true,
-          overflow: TextOverflow.ellipsis,
-          textAlign: textAlign,
-          style: TextStyle(
-            color:
-                primaryColor ??
-                midnightNavy,
-            fontSize: ReportType.body(context),
-            height: 1.25,
-            fontWeight:
-                FontWeight.w800,
-          ),
-        ),
-
-        if (secondary != null &&
-            secondary!.trim().isNotEmpty) ...[
-          const SizedBox(height: 2),
-
+    return SizedBox(
+      width: double.infinity,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: alignment,
+        children: [
           Text(
-            secondary!,
-            maxLines: 1,
-            softWrap: false,
-            overflow:
-                TextOverflow.ellipsis,
+            primary,
+            maxLines: 2,
+            softWrap: true,
+            overflow: TextOverflow.ellipsis,
             textAlign: textAlign,
             style: TextStyle(
-              color: slateText,
-              fontSize: ReportType.caption(context),
-              height: 1.2,
+              color:
+                  primaryColor ??
+                  midnightNavy,
+              fontSize: ReportType.body(context),
+              height: 1.25,
               fontWeight:
-                  FontWeight.w500,
+                  FontWeight.w800,
             ),
           ),
+
+          if (secondary != null &&
+              secondary!.trim().isNotEmpty) ...[
+            const SizedBox(height: 2),
+
+            Text(
+              secondary!,
+              maxLines: 1,
+              softWrap: false,
+              overflow:
+                  TextOverflow.ellipsis,
+              textAlign: textAlign,
+              style: TextStyle(
+                color: slateText,
+                fontSize: ReportType.caption(context),
+                height: 1.2,
+                fontWeight:
+                    FontWeight.w500,
+              ),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }

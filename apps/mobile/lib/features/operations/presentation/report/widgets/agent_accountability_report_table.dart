@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../../../theme.dart';
 import '../../../../../utils/money.dart';
 import '../../../domain/models/report/daily_report_agent_return.dart';
+import '../../../domain/utils/operation_formatters.dart';
 import 'report_section.dart';
 import 'report_table.dart';
 
@@ -98,11 +99,12 @@ class AgentAccountabilityReportTable extends StatelessWidget {
 
   List<Widget> _buildRow(DailyReportAgentReturn row) {
     final variance = row.variance ?? 0;
+    final varianceLabel = _varianceLabel(row, variance);
 
     return [
-      ReportTableStackedText(
-        primary: row.agentName,
-        secondary: row.agentPublicId,
+      ReportTableText(
+        reportPersonShortName(row.agentName),
+        strong: true,
       ),
       ReportTableMoney(formatMoney(row.amountGiven)),
       ReportTableMoney(formatMoney(row.amountDisbursed)),
@@ -111,33 +113,37 @@ class AgentAccountabilityReportTable extends StatelessWidget {
       row.amountReturned == null
           ? const ReportTableText('Pending', textAlign: TextAlign.right)
           : ReportTableMoney(formatMoney(row.amountReturned!)),
-      ReportTableStackedText(
-        primary: _signedAmount(variance),
-        secondary: _status(row),
-        primaryColor: variance < 0
-            ? const Color(0xFFB42318)
-            : variance > 0
-            ? const Color(0xFFB54708)
-            : forestEmerald,
-        alignment: CrossAxisAlignment.end,
-      ),
+      if (varianceLabel == null)
+        ReportTableMoney(
+          formatMoney(variance),
+          color: forestEmerald,
+        )
+      else
+        ReportTableStackedText(
+          primary: formatMoney(variance.abs()),
+          secondary: varianceLabel,
+          primaryColor: variance < 0
+              ? const Color(0xFFB42318)
+              : const Color(0xFFB54708),
+          alignment: CrossAxisAlignment.end,
+        ),
     ];
   }
 
-  String _status(DailyReportAgentReturn row) {
+  String? _varianceLabel(DailyReportAgentReturn row, num variance) {
     if (!row.hasReturned) {
       return 'Pending';
     }
-
-    if (row.isShort) {
+    if (variance == 0) {
+      return null;
+    }
+    if (row.isShort || variance < 0) {
       return 'Shortage';
     }
-
-    if (row.isOver) {
+    if (row.isOver || variance > 0) {
       return 'Excess';
     }
-
-    return 'Balanced';
+    return null;
   }
 }
 
@@ -191,7 +197,7 @@ class _TotalsRow extends StatelessWidget {
           Expanded(
             flex: 12,
             child: ReportTableMoney(
-              _signedAmount(variance),
+              formatMoney(variance),
               strong: true,
               color: variance < 0 ? const Color(0xFFB42318) : forestEmerald,
             ),
@@ -200,12 +206,4 @@ class _TotalsRow extends StatelessWidget {
       ),
     );
   }
-}
-
-String _signedAmount(num value) {
-  if (value == 0) {
-    return '0';
-  }
-
-  return '${value < 0 ? '-' : '+'}${formatMoney(value.abs())}';
 }

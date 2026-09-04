@@ -13,10 +13,13 @@ class CashMovementReportTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final totalAdditions =
+        cash.openingCash +
+        cash.capitalReceived +
         cash.repaymentsCollected +
         cash.processingFees +
         cash.shortageRecoveries;
-    final totalCashouts = cash.expenses + cash.salaries;
+    final totalCashouts =
+        cash.expenses + cash.salaries + cash.loansIssued;
     final stack = MediaQuery.sizeOf(context).width < 640;
 
     final additions = _MovementBlock(
@@ -24,7 +27,7 @@ class CashMovementReportTable extends StatelessWidget {
       icon: Icons.arrow_upward_rounded,
       accent: forestEmerald,
       fill: const Color(0xFFEFF8F2),
-      totalLabel: 'Total Additions',
+      totalLabel: 'TOTAL',
       totalAmount: totalAdditions,
       children: [
         _CashLine(label: 'Opening Balance', value: cash.openingCash),
@@ -52,7 +55,7 @@ class CashMovementReportTable extends StatelessWidget {
       icon: Icons.arrow_downward_rounded,
       accent: const Color(0xFFB42318),
       fill: const Color(0xFFFFF0EC),
-      totalLabel: 'Total Cashouts',
+      totalLabel: 'TOTAL',
       totalAmount: totalCashouts,
       children: [
         _CashLine(
@@ -61,6 +64,11 @@ class CashMovementReportTable extends StatelessWidget {
           negative: true,
         ),
         _CashLine(label: 'Salary', value: cash.salaries, negative: true),
+        _CashLine(
+          label: 'Loans issued',
+          value: cash.loansIssued,
+          negative: true,
+        ),
       ],
     );
 
@@ -279,12 +287,6 @@ class _CashLine extends StatelessWidget {
         ? const Color(0xFFB42318)
         : midnightNavy;
 
-    final prefix = positive
-        ? '+ '
-        : negative
-        ? '- '
-        : '';
-
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3.3),
       child: Row(
@@ -301,7 +303,7 @@ class _CashLine extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           Text(
-            '${prefix}UGX ${formatMoney(value.abs())}',
+            'UGX ${formatMoney(value)}',
             textAlign: TextAlign.right,
             style: TextStyle(
               color: valueColor,

@@ -23,6 +23,30 @@ String operationInitials(String name) {
   return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
 }
 
+/// Surname + first letter of given name, e.g. "KAMUKAMA J.".
+///
+/// Report names are stored as SURNAME GIVEN [MIDDLE...].
+String reportPersonShortName(String fullName) {
+  final parts = fullName
+      .trim()
+      .split(RegExp(r'\s+'))
+      .where((part) => part.isNotEmpty)
+      .toList();
+
+  if (parts.isEmpty) {
+    return '—';
+  }
+
+  if (parts.length == 1) {
+    return parts.first.toUpperCase();
+  }
+
+  final surname = parts.first.toUpperCase();
+  final given = parts.last;
+  final initial = given.isEmpty ? '' : given[0].toUpperCase();
+  return '$surname $initial.';
+}
+
 String operationTime(DateTime? value) {
   if (value == null) {
     return '';

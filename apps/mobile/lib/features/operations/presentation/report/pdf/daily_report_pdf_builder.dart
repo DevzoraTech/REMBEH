@@ -1,0 +1,907 @@
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+
+import '../../../../../utils/money.dart';
+import '../../../domain/models/report/daily_report_data.dart';
+import '../../../domain/utils/operation_formatters.dart';
+
+/// Builds a professional A4 daily reconciliation PDF from [DailyReportData].
+///
+/// Tables keep full operational columns — PDF layout can hold more detail
+/// than the old packed on-screen Flutter tables.
+class DailyReportPdfBuilder {
+  const DailyReportPdfBuilder();
+
+  static const _emerald = PdfColor.fromInt(0xFF065B24);
+  static const _navy = PdfColor.fromInt(0xFF14213D);
+  static const _slate = PdfColor.fromInt(0xFF27303F);
+  static const _line = PdfColor.fromInt(0xFFD5DDD8);
+  static const _muted = PdfColor.fromInt(0xFF6B7280);
+  static const _greenFill = PdfColor.fromInt(0xFFEFF8F2);
+  static const _redFill = PdfColor.fromInt(0xFFFEF3F2);
+  static const _red = PdfColor.fromInt(0xFFB42318);
+  static const _headerFill = PdfColor.fromInt(0xFFF7F8FA);
+  static const _cardFill = PdfColor.fromInt(0xFFF8FAF9);
+
+  Future<List<int>> build(DailyReportData report) async {
+    final doc = pw.Document(
+      title: 'Daily Reconciliation — ${_displayDate(report.operationDate)}',
+      author: report.organizationName,
+    );
+
+    doc.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.fromLTRB(28, 28, 28, 32),
+        header: (context) => _pageHeader(report, context),
+        footer: (context) => _pageFooter(report, context),
+        build: (context) => [
+          _titleBlock(report),
+          pw.SizedBox(height: 14),
+          _closingCards(report),
+          pw.SizedBox(height: 16),
+          _sectionTitle('1. CASH POSITION SUMMARY'),
+          pw.SizedBox(height: 8),
+          _cashMovement(report),
+          pw.SizedBox(height: 16),
+          _sectionTitle('2. FIELD OFFICER ACCOUNTABILITY'),
+          pw.SizedBox(height: 6),
+          _agentTable(report),
+          pw.SizedBox(height: 16),
+          _sectionTitle('3. LOANS ISSUED TODAY'),
+          pw.SizedBox(height: 6),
+          _loansTable(report),
+          pw.SizedBox(height: 16),
+          _sectionTitle('4. REPAYMENTS COLLECTED'),
+          pw.SizedBox(height: 6),
+          _repaymentsTable(report),
+          pw.SizedBox(height: 16),
+          _sectionTitle('5. PROCESSING FEES'),
+          pw.SizedBox(height: 6),
+          _feesTable(report),
+          pw.SizedBox(height: 16),
+          _sectionTitle('6. EXPENSES'),
+          pw.SizedBox(height: 6),
+          _expensesTable(report),
+          if (report.variances.isNotEmpty) ...[
+            pw.SizedBox(height: 16),
+            _sectionTitle('7. DISCREPANCIES'),
+            pw.SizedBox(height: 6),
+            _variancesTable(report),
+          ],
+          if (_hasNotes(report)) ...[
+            pw.SizedBox(height: 16),
+            _sectionTitle(
+              report.variances.isNotEmpty
+                  ? '8. RECONCILIATION NOTES'
+                  : '7. RECONCILIATION NOTES',
+            ),
+            pw.SizedBox(height: 6),
+            _notesBlock(report),
+          ],
+        ],
+      ),
+    );
+
+    return doc.save();
+  }
+
+  pw.Widget _pageHeader(DailyReportData report, pw.Context context) {
+    if (context.pageNumber == 1) {
+      return pw.SizedBox();
+    }
+    return pw.Container(
+      margin: const pw.EdgeInsets.only(bottom: 10),
+      padding: const pw.EdgeInsets.only(bottom: 6),
+      decoration: const pw.BoxDecoration(
+        border: pw.Border(bottom: pw.BorderSide(color: _line, width: 0.6)),
+      ),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(
+            report.organizationName.toUpperCase(),
+            style: pw.TextStyle(
+              color: _emerald,
+              fontSize: 8,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+          pw.Text(
+            '${report.branchName} · ${_displayDate(report.operationDate)}',
+            style: const pw.TextStyle(color: _muted, fontSize: 8),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _pageFooter(DailyReportData report, pw.Context context) {
+    return pw.Container(
+      margin: const pw.EdgeInsets.only(top: 8),
+      padding: const pw.EdgeInsets.only(top: 6),
+      decoration: const pw.BoxDecoration(
+        border: pw.Border(top: pw.BorderSide(color: _line, width: 0.6)),
+      ),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(
+            'Confidential · ${report.branchName}',
+            style: const pw.TextStyle(color: _muted, fontSize: 7.5),
+          ),
+          pw.Text(
+            'Page ${context.pageNumber} of ${context.pagesCount}',
+            style: const pw.TextStyle(color: _muted, fontSize: 7.5),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _titleBlock(DailyReportData report) {
+    final location = [
+      report.branchName.trim(),
+      if (_has(report.branchAddress)) report.branchAddress!.trim(),
+    ].where((p) => p.isNotEmpty).join('  ·  ');
+
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.center,
+      children: [
+        pw.Container(
+          width: 22,
+          height: 22,
+          alignment: pw.Alignment.center,
+          decoration: pw.BoxDecoration(
+            color: const PdfColor.fromInt(0x1A065B24),
+            borderRadius: pw.BorderRadius.circular(5),
+          ),
+          child: pw.Text(
+            '■',
+            style: const pw.TextStyle(color: _emerald, fontSize: 9),
+          ),
+        ),
+        pw.SizedBox(height: 6),
+        pw.Text(
+          report.organizationName.toUpperCase(),
+          textAlign: pw.TextAlign.center,
+          style: pw.TextStyle(
+            color: _emerald,
+            fontSize: 13,
+            fontWeight: pw.FontWeight.bold,
+            letterSpacing: 0.4,
+          ),
+        ),
+        if (location.isNotEmpty) ...[
+          pw.SizedBox(height: 3),
+          pw.Text(
+            location.toUpperCase(),
+            textAlign: pw.TextAlign.center,
+            style: pw.TextStyle(
+              color: _slate,
+              fontSize: 8.5,
+              fontWeight: pw.FontWeight.bold,
+              letterSpacing: 0.3,
+            ),
+          ),
+        ],
+        pw.SizedBox(height: 10),
+        pw.Container(height: 1.2, color: _emerald),
+        pw.SizedBox(height: 10),
+        pw.Text(
+          'DAILY RECONCILIATION REPORT',
+          textAlign: pw.TextAlign.center,
+          style: pw.TextStyle(
+            color: _emerald,
+            fontSize: 11.5,
+            fontWeight: pw.FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
+        ),
+        pw.SizedBox(height: 10),
+        pw.Text(
+          'Report Date',
+          style: const pw.TextStyle(color: _muted, fontSize: 8),
+        ),
+        pw.SizedBox(height: 2),
+        pw.Text(
+          _displayDate(report.operationDate),
+          style: pw.TextStyle(
+            color: _navy,
+            fontSize: 12,
+            fontWeight: pw.FontWeight.bold,
+          ),
+        ),
+        pw.SizedBox(height: 10),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.center,
+          children: [
+            _metaChip('Manager', report.managerName),
+            pw.SizedBox(width: 18),
+            _metaChip('Status', _statusLabel(report.status)),
+            pw.SizedBox(width: 18),
+            _metaChip(
+              'Generated',
+              report.generatedAt == null
+                  ? '—'
+                  : _displayDateTime(report.generatedAt!),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  pw.Widget _metaChip(String label, String value) {
+    return pw.Column(
+      children: [
+        pw.Text(
+          label,
+          style: const pw.TextStyle(color: _muted, fontSize: 7.5),
+        ),
+        pw.SizedBox(height: 2),
+        pw.Text(
+          value,
+          style: pw.TextStyle(
+            color: _navy,
+            fontSize: 8.5,
+            fontWeight: pw.FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+  }
+
+  pw.Widget _closingCards(DailyReportData report) {
+    final cash = report.cashPosition;
+    final variance = cash.variance;
+    final varianceColor = variance == null
+        ? _navy
+        : variance < 0
+            ? _red
+            : variance > 0
+                ? _emerald
+                : _navy;
+
+    return pw.Row(
+      children: [
+        pw.Expanded(
+          child: _metricCard(
+            'Expected closing',
+            'UGX ${formatMoney(cash.expectedClosingCash)}',
+            _navy,
+          ),
+        ),
+        pw.SizedBox(width: 8),
+        pw.Expanded(
+          child: _metricCard(
+            'Counted closing',
+            cash.countedCash == null
+                ? '—'
+                : 'UGX ${formatMoney(cash.countedCash!)}',
+            _navy,
+          ),
+        ),
+        pw.SizedBox(width: 8),
+        pw.Expanded(
+          child: _metricCard(
+            'Variance',
+            variance == null ? '—' : 'UGX ${formatMoney(variance)}',
+            varianceColor,
+          ),
+        ),
+      ],
+    );
+  }
+
+  pw.Widget _metricCard(String label, String value, PdfColor valueColor) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      decoration: pw.BoxDecoration(
+        color: _cardFill,
+        borderRadius: pw.BorderRadius.circular(6),
+        border: pw.Border.all(color: _line, width: 0.7),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.Text(
+            label,
+            style: const pw.TextStyle(color: _muted, fontSize: 7.5),
+          ),
+          pw.SizedBox(height: 4),
+          pw.Text(
+            value,
+            style: pw.TextStyle(
+              color: valueColor,
+              fontSize: 10,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _cashMovement(DailyReportData report) {
+    final cash = report.cashPosition;
+    final additionsTotal = cash.openingCash +
+        cash.capitalReceived +
+        cash.repaymentsCollected +
+        cash.processingFees +
+        cash.shortageRecoveries;
+    final cashoutsTotal =
+        cash.expenses + cash.salaries + cash.loansIssued;
+
+    return pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        pw.Expanded(
+          child: _movementBlock(
+            title: 'ADDITIONS',
+            titleColor: _emerald,
+            fill: _greenFill,
+            lines: [
+              _MoveLine('Opening Balance', cash.openingCash, plain: true),
+              _MoveLine('Capital received', cash.capitalReceived, plain: true),
+              _MoveLine('Cash in', cash.repaymentsCollected, positive: true),
+              _MoveLine('Processing fees', cash.processingFees, positive: true),
+              _MoveLine(
+                'Shortage cleared',
+                cash.shortageRecoveries,
+                positive: true,
+              ),
+            ],
+            totalLabel: 'TOTAL',
+            totalValue: additionsTotal,
+            totalColor: _emerald,
+          ),
+        ),
+        pw.SizedBox(width: 10),
+        pw.Expanded(
+          child: _movementBlock(
+            title: 'CASHOUTS',
+            titleColor: _red,
+            fill: _redFill,
+            lines: [
+              _MoveLine('Total Expenses', cash.expenses, negative: true),
+              _MoveLine('Salary', cash.salaries, negative: true),
+              _MoveLine('Loans issued', cash.loansIssued, negative: true),
+            ],
+            totalLabel: 'TOTAL',
+            totalValue: cashoutsTotal,
+            totalColor: _red,
+          ),
+        ),
+      ],
+    );
+  }
+
+  pw.Widget _movementBlock({
+    required String title,
+    required PdfColor titleColor,
+    required PdfColor fill,
+    required List<_MoveLine> lines,
+    required String totalLabel,
+    required num totalValue,
+    required PdfColor totalColor,
+  }) {
+    return pw.Container(
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: _line, width: 0.7),
+        borderRadius: pw.BorderRadius.circular(6),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: [
+          pw.Padding(
+            padding: const pw.EdgeInsets.fromLTRB(10, 8, 10, 6),
+            child: pw.Text(
+              title,
+              style: pw.TextStyle(
+                color: titleColor,
+                fontSize: 9,
+                fontWeight: pw.FontWeight.bold,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ),
+          for (final line in lines)
+            pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 3.5,
+              ),
+              child: pw.Row(
+                children: [
+                  pw.Expanded(
+                    child: pw.Text(
+                      line.label,
+                      style: const pw.TextStyle(color: _slate, fontSize: 8.5),
+                    ),
+                  ),
+                  pw.Text(
+                    'UGX ${formatMoney(line.value)}',
+                    style: pw.TextStyle(
+                      color: line.positive
+                          ? _emerald
+                          : line.negative
+                              ? _red
+                              : _navy,
+                      fontSize: 8.5,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          pw.Container(
+            color: fill,
+            padding: const pw.EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 7,
+            ),
+            child: pw.Row(
+              children: [
+                pw.Expanded(
+                  child: pw.Text(
+                    totalLabel,
+                    style: pw.TextStyle(
+                      color: totalColor,
+                      fontSize: 9,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ),
+                pw.Text(
+                  'UGX ${formatMoney(totalValue)}',
+                  style: pw.TextStyle(
+                    color: totalColor,
+                    fontSize: 9,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _agentTable(DailyReportData report) {
+    final rows = report.agentReturns;
+    if (rows.isEmpty) {
+      return _empty('No field officer float activity for this day.');
+    }
+
+    return _dataTable(
+      headers: const [
+        'Field officer',
+        'Float issued',
+        'Loans issued',
+        'Cash in',
+        'Expenses',
+        'Returned',
+        'Variance',
+      ],
+      alignRight: const {1, 2, 3, 4, 5, 6},
+      rows: [
+        for (final row in rows)
+          [
+            reportPersonShortName(row.agentName),
+            formatMoney(row.amountGiven),
+            formatMoney(row.amountDisbursed),
+            formatMoney(row.amountCollected),
+            formatMoney(row.expensesTotal),
+            row.amountReturned == null
+                ? '—'
+                : formatMoney(row.amountReturned!),
+            row.variance == null ? '—' : formatMoney(row.variance!),
+          ],
+      ],
+      footer: [
+        'Total',
+        formatMoney(rows.fold<num>(0, (t, r) => t + r.amountGiven)),
+        formatMoney(rows.fold<num>(0, (t, r) => t + r.amountDisbursed)),
+        formatMoney(rows.fold<num>(0, (t, r) => t + r.amountCollected)),
+        formatMoney(rows.fold<num>(0, (t, r) => t + r.expensesTotal)),
+        formatMoney(
+          rows.fold<num>(0, (t, r) => t + (r.amountReturned ?? 0)),
+        ),
+        formatMoney(rows.fold<num>(0, (t, r) => t + (r.variance ?? 0))),
+      ],
+    );
+  }
+
+  pw.Widget _loansTable(DailyReportData report) {
+    final rows = report.loans;
+    if (rows.isEmpty) {
+      return _empty('No loans were issued during this business day.');
+    }
+
+    return _dataTable(
+      headers: const [
+        'Borrower',
+        'Product',
+        'Duration',
+        'Issued by',
+        'Time',
+        'Principal',
+      ],
+      alignRight: const {5},
+      rows: [
+        for (final row in rows)
+          [
+            row.borrowerName,
+            row.product?.trim().isNotEmpty == true ? row.product! : '—',
+            row.durationDays == null ? '—' : '${row.durationDays} days',
+            reportPersonShortName(row.officerName),
+            _displayTime(row.issuedAt),
+            formatMoney(row.principalAmount),
+          ],
+      ],
+      footer: [
+        'Total',
+        '',
+        '',
+        '',
+        '',
+        formatMoney(report.totalLoansIssued),
+      ],
+    );
+  }
+
+  pw.Widget _repaymentsTable(DailyReportData report) {
+    final rows = report.repayments;
+    if (rows.isEmpty) {
+      return _empty('No repayments were recorded during this business day.');
+    }
+
+    return _dataTable(
+      headers: const [
+        'Borrower',
+        'Collected by',
+        'Role',
+        'Time',
+        'Method',
+        'Amount',
+      ],
+      alignRight: const {5},
+      rows: [
+        for (final row in rows)
+          [
+            row.borrowerName,
+            reportPersonShortName(row.recordedByName),
+            'Field Officer',
+            _displayTime(row.paidAt),
+            _methodLabel(row.method),
+            formatMoney(row.amount),
+          ],
+      ],
+      footer: [
+        'Total',
+        '',
+        '',
+        '',
+        '',
+        formatMoney(report.totalRepayments),
+      ],
+    );
+  }
+
+  pw.Widget _feesTable(DailyReportData report) {
+    final rows = report.processingFees;
+    if (rows.isEmpty) {
+      return _empty('No processing fees were recorded during this business day.');
+    }
+
+    return _dataTable(
+      headers: const [
+        'Borrower',
+        'Officer',
+        'Time',
+        'Amount',
+      ],
+      alignRight: const {3},
+      rows: [
+        for (final row in rows)
+          [
+            row.borrowerName,
+            reportPersonShortName(row.officerName),
+            _displayTime(row.receivedAt),
+            formatMoney(row.amount),
+          ],
+      ],
+      footer: [
+        'Total',
+        '',
+        '',
+        formatMoney(report.totalProcessingFees),
+      ],
+    );
+  }
+
+  pw.Widget _expensesTable(DailyReportData report) {
+    final rows = report.expenses.where((e) => !e.isVoided).toList();
+    if (rows.isEmpty) {
+      return _empty('No expenses were recorded during this business day.');
+    }
+
+    return _dataTable(
+      headers: const [
+        'Time',
+        'Type',
+        'Description',
+        'Paid by',
+        'Amount',
+      ],
+      alignRight: const {4},
+      rows: [
+        for (final row in rows)
+          [
+            _displayTime(row.incurredAt),
+            _categoryLabel(row.category),
+            row.description?.trim().isNotEmpty == true
+                ? row.description!
+                : '—',
+            reportPersonShortName(row.recordedByName),
+            formatMoney(row.amount),
+          ],
+      ],
+      footer: [
+        'Total',
+        '',
+        '',
+        '',
+        formatMoney(report.totalExpenses),
+      ],
+    );
+  }
+
+  pw.Widget _variancesTable(DailyReportData report) {
+    return _dataTable(
+      headers: const [
+        'Source',
+        'Person',
+        'Status',
+        'Variance',
+      ],
+      alignRight: const {3},
+      rows: [
+        for (final row in report.variances)
+          [
+            row.source.replaceAll('_', ' '),
+            row.personName?.trim().isNotEmpty == true
+                ? reportPersonShortName(row.personName!)
+                : '—',
+            row.status.replaceAll('_', ' '),
+            formatMoney(row.variance),
+          ],
+      ],
+    );
+  }
+
+  pw.Widget _notesBlock(DailyReportData report) {
+    return pw.Container(
+      width: double.infinity,
+      padding: const pw.EdgeInsets.all(10),
+      decoration: pw.BoxDecoration(
+        color: _headerFill,
+        borderRadius: pw.BorderRadius.circular(6),
+        border: pw.Border.all(color: _line, width: 0.7),
+      ),
+      child: pw.Text(
+        report.managerNotes!.trim(),
+        style: const pw.TextStyle(color: _slate, fontSize: 9, lineSpacing: 2),
+      ),
+    );
+  }
+
+  pw.Widget _sectionTitle(String title) {
+    return pw.Text(
+      title,
+      style: pw.TextStyle(
+        color: _emerald,
+        fontSize: 10,
+        fontWeight: pw.FontWeight.bold,
+        letterSpacing: 0.3,
+      ),
+    );
+  }
+
+  pw.Widget _empty(String message) {
+    return pw.Container(
+      width: double.infinity,
+      padding: const pw.EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: _line, width: 0.7),
+        borderRadius: pw.BorderRadius.circular(6),
+      ),
+      child: pw.Text(
+        message,
+        textAlign: pw.TextAlign.center,
+        style: const pw.TextStyle(color: _muted, fontSize: 8.5),
+      ),
+    );
+  }
+
+  pw.Widget _dataTable({
+    required List<String> headers,
+    required List<List<String>> rows,
+    List<String>? footer,
+    Set<int> alignRight = const {},
+  }) {
+    pw.Alignment align(int i) =>
+        alignRight.contains(i) ? pw.Alignment.centerRight : pw.Alignment.centerLeft;
+
+    pw.Widget cell(
+      String text, {
+      required int index,
+      bool header = false,
+      bool strong = false,
+    }) {
+      return pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 5),
+        child: pw.Align(
+          alignment: align(index),
+          child: pw.Text(
+            text,
+            maxLines: 2,
+            style: pw.TextStyle(
+              color: header ? _navy : _slate,
+              fontSize: header ? 7.5 : 8,
+              fontWeight: header || strong
+                  ? pw.FontWeight.bold
+                  : pw.FontWeight.normal,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return pw.Table(
+      border: const pw.TableBorder(
+        horizontalInside: pw.BorderSide(color: _line, width: 0.5),
+        top: pw.BorderSide(color: _line, width: 0.7),
+        bottom: pw.BorderSide(color: _line, width: 0.7),
+        left: pw.BorderSide(color: _line, width: 0.7),
+        right: pw.BorderSide(color: _line, width: 0.7),
+      ),
+      columnWidths: {
+        for (var i = 0; i < headers.length; i++)
+          i: const pw.FlexColumnWidth(1),
+      },
+      children: [
+        pw.TableRow(
+          decoration: const pw.BoxDecoration(color: _headerFill),
+          children: [
+            for (var i = 0; i < headers.length; i++)
+              cell(headers[i], index: i, header: true),
+          ],
+        ),
+        for (final row in rows)
+          pw.TableRow(
+            children: [
+              for (var i = 0; i < row.length; i++)
+                cell(row[i], index: i),
+            ],
+          ),
+        if (footer != null)
+          pw.TableRow(
+            decoration: const pw.BoxDecoration(color: _greenFill),
+            children: [
+              for (var i = 0; i < footer.length; i++)
+                cell(footer[i], index: i, strong: true),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+class _MoveLine {
+  const _MoveLine(
+    this.label,
+    this.value, {
+    this.plain = false,
+    this.positive = false,
+    this.negative = false,
+  });
+
+  final String label;
+  final num value;
+  final bool plain;
+  final bool positive;
+  final bool negative;
+}
+
+bool _has(String? value) => value != null && value.trim().isNotEmpty;
+
+bool _hasNotes(DailyReportData report) =>
+    report.managerNotes != null && report.managerNotes!.trim().isNotEmpty;
+
+String _displayDate(String raw) {
+  final parsed = DateTime.tryParse(raw);
+  if (parsed == null) return raw;
+  const months = [
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+  ];
+  return '${parsed.day} ${months[parsed.month - 1]} ${parsed.year}';
+}
+
+String _displayDateTime(DateTime value) {
+  final local = value.toLocal();
+  return '${_displayDate(local.toIso8601String().split('T').first)} · ${_displayTime(local)}';
+}
+
+String _displayTime(DateTime? value) {
+  if (value == null) return '—';
+  final local = value.toLocal();
+  final hour = local.hour == 0
+      ? 12
+      : local.hour > 12
+          ? local.hour - 12
+          : local.hour;
+  final minute = local.minute.toString().padLeft(2, '0');
+  return '$hour:$minute ${local.hour >= 12 ? 'PM' : 'AM'}';
+}
+
+String _statusLabel(String raw) {
+  switch (raw.trim().toUpperCase()) {
+    case 'MANAGER_REVIEW':
+      return 'Manager review';
+    case 'OWNER_REVIEW':
+      return 'Owner review';
+    case 'OWNER_APPROVED':
+      return 'Approved';
+    case 'RETURNED':
+      return 'Returned';
+    default:
+      return raw.replaceAll('_', ' ').toLowerCase().split(' ').map((w) {
+        if (w.isEmpty) return w;
+        return '${w[0].toUpperCase()}${w.substring(1)}';
+      }).join(' ');
+  }
+}
+
+String _methodLabel(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return 'Cash';
+  return raw
+      .trim()
+      .toLowerCase()
+      .split('_')
+      .map(
+        (word) => word.isEmpty
+            ? word
+            : '${word[0].toUpperCase()}${word.substring(1)}',
+      )
+      .join(' ');
+}
+
+String _categoryLabel(String raw) {
+  final normalized = raw.trim().toUpperCase();
+  if (normalized == 'FIELD_FLOAT') return 'Field float';
+  if (normalized == 'OTHER') return 'Expense';
+  return raw
+      .trim()
+      .toLowerCase()
+      .split('_')
+      .map(
+        (word) => word.isEmpty
+            ? word
+            : '${word[0].toUpperCase()}${word.substring(1)}',
+      )
+      .join(' ');
+}

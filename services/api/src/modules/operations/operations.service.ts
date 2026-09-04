@@ -3021,7 +3021,9 @@ export class OperationsService {
 
       cashPosition: {
         floatDistributed: operation.floatIssued,
+        expenses: operation.expensesTotal,
         branchExpenses: operation.branchCashExpensesTotal,
+        agentFloatExpenses: operation.agentFloatExpensesTotal,
         salaries: operation.salariesTotal,
         shortageRecoveries: operation.shortageRecoveriesTotal,
         cashReturnedByAgents: operation.cashReturnedByAgents,

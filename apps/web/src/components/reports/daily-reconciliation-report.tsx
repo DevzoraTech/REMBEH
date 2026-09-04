@@ -630,18 +630,25 @@ function SummaryDocument({
                   amount: document.salariesTotal ?? 0,
                   signed: "minus",
                 },
+                {
+                  label: "Loans issued",
+                  amount: document.loansIssuedPrincipal,
+                  signed: "minus",
+                },
               ]}
               totalLabel="Total Cashouts"
               totalAmount={
-                document.expensesTotal + (document.salariesTotal ?? 0)
+                document.expensesTotal +
+                (document.salariesTotal ?? 0) +
+                document.loansIssuedPrincipal
               }
               currency={currency}
             />
           </div>
           <p className="mt-1.5 text-[12px] italic text-slate-500">
-            Loans and unused float are balanced on field-officer handover and
-            are not listed in this summary. Expected closing balance is the
-            day’s cash position after those handovers.
+            Total Expenses includes cashier and field-officer expenses for the
+            day. Unused float is balanced on field-officer handover and is not
+            listed here.
           </p>
         </Section>
 
@@ -1819,7 +1826,9 @@ function buildLedgerRows(document: DailyReportDocumentModel) {
     document.processingFeesTotal +
     shortageCleared;
   const totalCashouts =
-    document.expensesTotal + (document.salariesTotal ?? 0);
+    document.expensesTotal +
+    (document.salariesTotal ?? 0) +
+    document.loansIssuedPrincipal;
 
   return [
     {
@@ -1889,7 +1898,7 @@ function buildLedgerRows(document: DailyReportDocumentModel) {
       cashIn: null,
       cashOut: document.expensesTotal,
       balance: null,
-      note: "Operating expenses",
+      note: "Cashier and field-officer expenses",
     },
     {
       section: "CASHOUTS",
@@ -1905,12 +1914,21 @@ function buildLedgerRows(document: DailyReportDocumentModel) {
     },
     {
       section: "CASHOUTS",
+      description: "Loans issued",
+      count: String(document.loansIssuedCount),
+      cashIn: null,
+      cashOut: document.loansIssuedPrincipal,
+      balance: null,
+      note: "Principal disbursed to borrowers",
+    },
+    {
+      section: "CASHOUTS",
       description: "Total Cashouts",
       count: "-",
       cashIn: null,
       cashOut: totalCashouts,
       balance: null,
-      note: "Total Expenses + Salary",
+      note: "Total Expenses + Salary + Loans issued",
     },
     {
       section: "Closing",

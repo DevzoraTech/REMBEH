@@ -97,6 +97,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   bool _showingCachedData = false;
   bool _backgroundRefreshing = false;
   bool _listeningOperationEvents = false;
+  bool _openingReports = false;
 
   String? _error;
   String? _notice;
@@ -610,7 +611,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     }
 
     if (results[4] is List) {
-      reports = (results[4] as List).whereType<Map<String, dynamic>>().toList();
+      reports = _reportListSummaries(results[4] as List);
     }
 
     if (results[5] is List) {
@@ -753,7 +754,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       customers: _mapListPayload(payloads[0]),
       loans: _mapListPayload(payloads[1]),
       repayments: _mapListPayload(payloads[2]),
-      reports: _mapListPayload(payloads[3]),
+      reports: _reportListSummaries(_mapListPayload(payloads[3])),
       shortages: _mapListPayload(payloads[4]),
       pendingDisbursements: (_mapListPayload(payloads[5]) ?? const [])
           .map(PendingDisbursement.fromJson)
@@ -1017,24 +1018,86 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   }
 
   Future<void> _openReportsList() async {
-    await _loadManagementData();
-
-    if (!mounted) {
+    if (_openingReports) {
       return;
     }
+    _openingReports = true;
 
-    if (_reports.isEmpty) {
-      _setNotice('No daily reports found for this branch yet.');
+    try {
+      // Open from cache immediately so managers are not blocked on a
+      // full management refresh (customers, loans, repayments, etc.).
+      var reports = List<Map<String, dynamic>>.from(_reports);
+      if (reports.isEmpty) {
+        final cached = await _readManagementCache();
+        reports = List<Map<String, dynamic>>.from(cached.reports ?? const []);
+        if (reports.isNotEmpty && mounted) {
+          setState(() => _reports = reports);
+        }
+      }
 
+      if (!mounted) {
+        return;
+      }
+
+      if (reports.isEmpty) {
+        // First open with no cache: fetch reports only, not the whole bundle.
+        try {
+          final fresh = await _api.listOperationReports(
+            session: widget.session,
+            branchId: widget.session.branchId,
+          );
+          reports = _reportListSummaries(fresh);
+          if (mounted) {
+            setState(() => _reports = reports);
+          }
+        } catch (_) {
+          // Keep empty; show notice below.
+        }
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      if (reports.isEmpty) {
+        _setNotice('No daily reports found for this branch yet.');
+        return;
+      }
+
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => _ReportsListScreen(
+            session: widget.session,
+            reports: reports,
+          ),
+        ),
+      );
+
+      // Refresh quietly after returning so the list stays current.
+      unawaited(_refreshReportsQuietly());
+    } finally {
+      _openingReports = false;
+    }
+  }
+
+  Future<void> _refreshReportsQuietly() async {
+    if (!widget.session.hasPermission('operation.read')) {
       return;
     }
-
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) =>
-            _ReportsListScreen(session: widget.session, reports: _reports),
-      ),
-    );
+    try {
+      final fresh = await _api.listOperationReports(
+        session: widget.session,
+        branchId: widget.session.branchId,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _reports = _reportListSummaries(fresh);
+      });
+    } catch (_) {
+      // Keep the last good list.
+    }
   }
 
   Future<void> _openShortagesList() async {
@@ -2784,11 +2847,43 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   }
 }
 
-class _ReportsListScreen extends StatelessWidget {
+class _ReportsListScreen extends StatefulWidget {
   const _ReportsListScreen({required this.session, required this.reports});
 
   final RembehSession session;
   final List<Map<String, dynamic>> reports;
+
+  @override
+  State<_ReportsListScreen> createState() => _ReportsListScreenState();
+}
+
+class _ReportsListScreenState extends State<_ReportsListScreen> {
+  bool _openingReport = false;
+
+  Future<void> _openReport(Map<String, dynamic> report) async {
+    if (_openingReport) {
+      return;
+    }
+    final reportId = _string(report['id']);
+    if (reportId == null) {
+      return;
+    }
+    _openingReport = true;
+    try {
+      await Navigator.of(context).push<void>(
+        MaterialPageRoute(
+          builder: (_) => DailyReportScreen(
+            session: widget.session,
+            reportId: reportId,
+            // Metadata only — snapshot is stripped from the list cache.
+            reportPayload: report,
+          ),
+        ),
+      );
+    } finally {
+      _openingReport = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2802,34 +2897,26 @@ class _ReportsListScreen extends StatelessWidget {
       ),
       body: ListView.separated(
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 28),
-        itemCount: reports.length,
+        itemCount: widget.reports.length,
         separatorBuilder: (_, _) => const SizedBox(height: 10),
         itemBuilder: (context, index) {
-          final report = reports[index];
+          final report = widget.reports[index];
           final reportId = _string(report['id']);
           final status = _string(report['status']) ?? 'MANAGER_REVIEW';
+          final dateLabel = _dateLabel(report['operationDate']);
 
           return _MoreDataTile(
-            icon: Icons.description_outlined,
-            title: _string(report['reportNumber']) ?? 'Report ${index + 1}',
-            subtitle:
-                '${_dateLabel(report['operationDate'])} • '
-                '${_label(status)}',
+            icon: Icons.picture_as_pdf_outlined,
+            title: dateLabel,
+            subtitle: _label(status),
             trailing: _moneyOrDash(
               report['closingBalance'] ?? report['expectedClosingBalance'],
             ),
             tone: _reportStatusColor(status),
-            onTap: reportId == null
+            onTap: reportId == null || _openingReport
                 ? null
                 : () {
-                    Navigator.of(context).push<void>(
-                      MaterialPageRoute(
-                        builder: (_) => DailyReportScreen(
-                          session: session,
-                          reportId: reportId,
-                        ),
-                      ),
-                    );
+                    unawaited(_openReport(report));
                   },
           );
         },
@@ -3254,6 +3341,20 @@ List<Map<String, dynamic>>? _mapListPayload(Object? value) {
 
   return value.whereType<Map>().map((item) {
     return item.map((key, entry) => MapEntry(key.toString(), entry));
+  }).toList();
+}
+
+/// Keep report history list light — drop embedded snapshots so the
+/// More → Reports screen only holds names/status/balances.
+List<Map<String, dynamic>> _reportListSummaries(Object? value) {
+  if (value is! List) {
+    return const [];
+  }
+
+  return value.whereType<Map>().map((item) {
+    final map = item.map((key, entry) => MapEntry(key.toString(), entry));
+    map.remove('snapshot');
+    return map;
   }).toList();
 }
 

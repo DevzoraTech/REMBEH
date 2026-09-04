@@ -152,7 +152,8 @@ export async function exportOwnedReport(
   const totalAdditions = cashIn + processingFees + shortageCleared;
   const totalExpenses = report.expensesTotal;
   const salary = numberValue(snapshot.summary.salaries);
-  const totalCashouts = totalExpenses + salary;
+  const loansIssued = report.loansIssuedPrincipal;
+  const totalCashouts = totalExpenses + salary + loansIssued;
 
   worksheet.addRow([
     "ADDITIONS",
@@ -217,7 +218,7 @@ export async function exportOwnedReport(
     "",
     totalExpenses,
     "",
-    "Operating expenses",
+    "Cashier and field-officer expenses",
   ]);
   worksheet.addRow([
     "CASHOUTS",
@@ -232,12 +233,21 @@ export async function exportOwnedReport(
   ]);
   worksheet.addRow([
     "CASHOUTS",
+    "Loans issued",
+    formatNumber(report.loansIssuedCount),
+    "",
+    loansIssued,
+    "",
+    "Principal disbursed to borrowers",
+  ]);
+  worksheet.addRow([
+    "CASHOUTS",
     "Total Cashouts",
     "-",
     "",
     totalCashouts,
     "",
-    "Total Expenses + Salary",
+    "Total Expenses + Salary + Loans issued",
   ]);
   worksheet.addRow([
     "Closing",

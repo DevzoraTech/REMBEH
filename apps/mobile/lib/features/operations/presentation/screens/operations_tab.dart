@@ -172,12 +172,7 @@ class OperationsTab extends StatelessWidget {
 
           const SizedBox(height: 10),
 
-          CashPositionCard(
-            operation: data,
-            onRecordShortagePaid: dayOpen && canRecordCashMovements
-                ? onRecordShortagePaid
-                : null,
-          ),
+          CashPositionCard(operation: data),
 
           /*
            * Do not hide this section merely because no float has
@@ -210,9 +205,11 @@ class OperationsTab extends StatelessWidget {
             canReceiveCapital: canReceiveCapital,
             canAllocateFloat: canAllocateFloat,
             canRecordExpense: canRecordExpense,
+            canOpenShortages: dayOpen && canRecordCashMovements,
             onReceiveCapital: onReceiveCapital,
             onAllocateFloat: onAllocateFloat,
             onRecordExpense: onRecordExpense,
+            onOpenShortages: onRecordShortagePaid,
           ),
 
           if (activities.isNotEmpty) ...[

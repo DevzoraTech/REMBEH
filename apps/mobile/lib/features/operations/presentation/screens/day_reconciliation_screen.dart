@@ -116,6 +116,11 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
 
   num get _salaries => _num(_operation?['salariesTotal']);
 
+  num get _loansIssued => _firstAvailableMoney(_operation ?? const {}, const [
+    'loansIssuedPrincipal',
+    'loansDisbursed',
+  ]);
+
   num get _shortageRecoveries =>
       _num(_operation?['shortageRecoveriesTotal']);
 
@@ -583,6 +588,7 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
                     processingFees: _processingFees,
                     expenses: _expenses,
                     salaries: _salaries,
+                    loansIssued: _loansIssued,
                     shortageRecoveries: _shortageRecoveries,
                     onUpdateCount: _updateCount,
                   ),
@@ -750,6 +756,7 @@ class _CashReconciliationSummary extends StatelessWidget {
     required this.processingFees,
     required this.expenses,
     required this.salaries,
+    this.loansIssued = 0,
     this.shortageRecoveries = 0,
     required this.onUpdateCount,
   });
@@ -764,6 +771,7 @@ class _CashReconciliationSummary extends StatelessWidget {
   final num processingFees;
   final num expenses;
   final num salaries;
+  final num loansIssued;
   final num shortageRecoveries;
 
   final VoidCallback onUpdateCount;
@@ -845,8 +853,13 @@ class _CashReconciliationSummary extends StatelessWidget {
             icon: Icons.arrow_upward_rounded,
             accent: forestEmerald,
             fill: const Color(0xFFEFF8F2),
-            totalLabel: 'Total Additions',
-            totalAmount: collections + processingFees + shortageRecoveries,
+            totalLabel: 'TOTAL',
+            totalAmount:
+                openingCash +
+                capitalReceived +
+                collections +
+                processingFees +
+                shortageRecoveries,
             children: [
               _CashRow(label: 'Opening Balance', value: openingCash),
               _CashRow(label: 'Capital received', value: capitalReceived),
@@ -869,8 +882,8 @@ class _CashReconciliationSummary extends StatelessWidget {
             icon: Icons.arrow_downward_rounded,
             accent: const Color(0xFFC62828),
             fill: const Color(0xFFFFF0EC),
-            totalLabel: 'Total Cashouts',
-            totalAmount: expenses + salaries,
+            totalLabel: 'TOTAL',
+            totalAmount: expenses + salaries + loansIssued,
             children: [
               _CashRow(
                 label: 'Total Expenses',
@@ -878,6 +891,11 @@ class _CashReconciliationSummary extends StatelessWidget {
                 negative: true,
               ),
               _CashRow(label: 'Salary', value: salaries, negative: true),
+              _CashRow(
+                label: 'Loans issued',
+                value: loansIssued,
+                negative: true,
+              ),
             ],
           ),
 
@@ -1605,11 +1623,6 @@ class _CashRow extends StatelessWidget {
         : positive
         ? forestEmerald
         : midnightNavy;
-    final amountText = positive
-        ? '+ UGX ${formatMoney(value.abs())}'
-        : negative
-        ? '- UGX ${formatMoney(value.abs())}'
-        : 'UGX ${formatMoney(value)}';
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
@@ -1626,7 +1639,7 @@ class _CashRow extends StatelessWidget {
             ),
           ),
           Text(
-            amountText,
+            'UGX ${formatMoney(value)}',
             style: TextStyle(
               color: valueColor,
               fontSize: 12,

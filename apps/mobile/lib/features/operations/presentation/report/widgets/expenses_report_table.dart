@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../../utils/money.dart';
 import '../../../domain/models/report/daily_report_expense.dart';
+import '../../../domain/utils/operation_formatters.dart';
 import 'report_section.dart';
 import 'report_table.dart';
 import 'report_typography.dart';
@@ -48,26 +49,22 @@ class ExpensesReportTable extends StatelessWidget {
             'No expenses were recorded during this business day.',
         columns: const [
           ReportTableColumn(
-            label: 'Time',
-            flex: 14,
-          ),
-          ReportTableColumn(
             label: 'Expense type',
-            flex: 20,
+            flex: 22,
           ),
           ReportTableColumn(
             label: 'Description',
-            flex: 29,
-          ),
-          ReportTableColumn(
-            label: 'Amount',
-            flex: 18,
-            alignment:
-                Alignment.centerRight,
+            flex: 34,
           ),
           ReportTableColumn(
             label: 'Paid by',
-            flex: 19,
+            flex: 24,
+          ),
+          ReportTableColumn(
+            label: 'Amount',
+            flex: 20,
+            alignment:
+                Alignment.centerRight,
           ),
         ],
         rows: active.map(_buildRow).toList(),
@@ -85,12 +82,6 @@ class ExpensesReportTable extends StatelessWidget {
   ) {
     return [
       ReportTableText(
-        _displayTime(
-          expense.incurredAt,
-        ),
-        maxLines: 1,
-      ),
-      ReportTableText(
         _categoryLabel(
           expense.category,
         ),
@@ -100,13 +91,13 @@ class ExpensesReportTable extends StatelessWidget {
         expense.description ?? '—',
         maxLines: 2,
       ),
+      ReportTableText(
+        reportPersonShortName(expense.recordedByName),
+      ),
       ReportTableMoney(
         formatMoney(
           expense.amount,
         ),
-      ),
-      ReportTableText(
-        expense.recordedByName,
       ),
     ];
   }
@@ -130,22 +121,18 @@ class _ExpenseTotal
       child: Row(
         children: [
           const Expanded(
-            flex: 63,
+            flex: 80,
             child: ReportTableText(
               'Total',
               strong: true,
             ),
           ),
           Expanded(
-            flex: 18,
+            flex: 20,
             child: ReportTableMoney(
               formatMoney(total),
               strong: true,
             ),
-          ),
-          const Expanded(
-            flex: 19,
-            child: SizedBox.shrink(),
           ),
         ],
       ),
@@ -171,22 +158,4 @@ String _categoryLabel(String raw) {
             : '${word[0].toUpperCase()}${word.substring(1)}',
       )
       .join(' ');
-}
-
-String _displayTime(DateTime? value) {
-  if (value == null) return '—';
-
-  final local = value.toLocal();
-
-  final hour = local.hour == 0
-      ? 12
-      : local.hour > 12
-          ? local.hour - 12
-          : local.hour;
-
-  final minute =
-      local.minute.toString().padLeft(2, '0');
-
-  return '$hour:$minute '
-      '${local.hour >= 12 ? 'PM' : 'AM'}';
 }

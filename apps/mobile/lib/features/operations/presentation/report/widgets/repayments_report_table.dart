@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../../utils/money.dart';
 import '../../../domain/models/report/daily_report_repayment.dart';
+import '../../../domain/utils/operation_formatters.dart';
 import 'report_section.dart';
 import 'report_table.dart';
 
@@ -19,17 +20,15 @@ class RepaymentsReportTable extends StatelessWidget {
       child: ReportTable(
         emptyMessage: 'No repayments were recorded during this business day.',
         columns: const [
-          ReportTableColumn(label: 'Time', flex: 13),
-          ReportTableColumn(label: 'Loan ID', flex: 20),
-          ReportTableColumn(label: 'Borrower', flex: 24),
-          ReportTableColumn(label: 'Paid by', flex: 14),
+          ReportTableColumn(label: 'Borrower', flex: 28),
+          ReportTableColumn(label: 'Collected by', flex: 22),
+          ReportTableColumn(label: 'Role', flex: 16),
+          ReportTableColumn(label: 'Method', flex: 14),
           ReportTableColumn(
             label: 'Amount',
-            flex: 17,
+            flex: 20,
             alignment: Alignment.centerRight,
           ),
-          ReportTableColumn(label: 'Collected by', flex: 20),
-          ReportTableColumn(label: 'Method', flex: 13),
         ],
         rows: repayments.map(_buildRow).toList(),
         footer: repayments.isEmpty ? null : _RepaymentTotal(total: total),
@@ -39,13 +38,11 @@ class RepaymentsReportTable extends StatelessWidget {
 
   List<Widget> _buildRow(DailyReportRepayment row) {
     return [
-      ReportTableText(_displayTime(row.paidAt), maxLines: 1),
-      ReportTableText(row.loanId ?? '—'),
       ReportTableText(row.borrowerName),
+      ReportTableText(reportPersonShortName(row.recordedByName)),
       const ReportTableText('Field Officer'),
-      ReportTableMoney(formatMoney(row.amount)),
-      ReportTableText(row.recordedByName),
       ReportTableText(_methodLabel(row.method)),
+      ReportTableMoney(formatMoney(row.amount)),
     ];
   }
 }
@@ -62,37 +59,17 @@ class _RepaymentTotal extends StatelessWidget {
       child: Row(
         children: [
           const Expanded(
-            flex: 71,
+            flex: 80,
             child: ReportTableText('Total', strong: true),
           ),
           Expanded(
-            flex: 17,
+            flex: 20,
             child: ReportTableMoney(formatMoney(total), strong: true),
           ),
-          const Expanded(flex: 33, child: SizedBox.shrink()),
         ],
       ),
     );
   }
-}
-
-String _displayTime(DateTime? value) {
-  if (value == null) {
-    return '—';
-  }
-
-  final local = value.toLocal();
-
-  final hour = local.hour == 0
-      ? 12
-      : local.hour > 12
-      ? local.hour - 12
-      : local.hour;
-
-  final minute = local.minute.toString().padLeft(2, '0');
-
-  return '$hour:$minute '
-      '${local.hour >= 12 ? 'PM' : 'AM'}';
 }
 
 String _methodLabel(String? raw) {

@@ -244,6 +244,9 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
     if (!state.session) return;
     const generation = ++loadGeneration.current;
     const branchId = isManager ? (state.branch?.id ?? null) : selectedBranchId;
+    // Owner-only endpoint — managers do not get operation.approve.
+    const canLoadOwnerDailyStatus =
+      state.session.permissions.includes("operation.approve");
     const dailyStatusPath = `/operations/owner-daily-status?date=${previousDateLabel()}`;
     const repaymentPath = "/collections/repayments?filter=thisWeek";
 
@@ -267,9 +270,11 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
       "/operations/reports",
       branchId,
     );
-    const cachedStatuses = peekOwnerFetch<{
-      statuses?: OwnerBranchDailyStatus[];
-    }>(dailyStatusPath, branchId);
+    const cachedStatuses = canLoadOwnerDailyStatus
+      ? peekOwnerFetch<{
+          statuses?: OwnerBranchDailyStatus[];
+        }>(dailyStatusPath, branchId)
+      : undefined;
 
     const hasCached =
       Boolean(cachedBranches) ||
@@ -283,6 +288,7 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
     if (cachedRepayments) setRepayments(cachedRepayments.repayments ?? []);
     if (cachedReports) setReports(cachedReports.reports ?? []);
     if (cachedStatuses) setDailyStatuses(cachedStatuses.statuses ?? []);
+    if (!canLoadOwnerDailyStatus) setDailyStatuses([]);
 
     if (!opts?.silent && !hasCached) {
       setLoading(true);
@@ -315,33 +321,39 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
           "/operations/reports",
           fetchOpts,
         ),
-        ownerFetch<{ statuses?: OwnerBranchDailyStatus[] }>(
-          state.session,
-          dailyStatusPath,
-          fetchOpts,
-        ),
+        canLoadOwnerDailyStatus
+          ? ownerFetch<{ statuses?: OwnerBranchDailyStatus[] }>(
+              state.session,
+              dailyStatusPath,
+              fetchOpts,
+            )
+          : Promise.resolve({ statuses: [] as OwnerBranchDailyStatus[] }),
       ]);
 
     if (generation !== loadGeneration.current) return;
 
-    const failures: string[] = [];
-    function take<T>(
+    const coreFailures: string[] = [];
+    function takeCore<T>(
       result: PromiseSettledResult<T>,
       label: string,
     ): T | null {
       if (result.status === "fulfilled") return result.value;
-      failures.push(
+      coreFailures.push(
         result.reason instanceof Error ? result.reason.message : label,
       );
       return null;
     }
 
-    const branchPayload = take(branchResult, "branches");
-    const loanPayload = take(loanResult, "loans");
-    const borrowerPayload = take(borrowerResult, "borrowers");
-    const repaymentPayload = take(repaymentResult, "collections");
-    const reportPayload = take(reportResult, "reports");
-    const dailyStatusPayload = take(dailyStatusResult, "daily status");
+    const branchPayload = takeCore(branchResult, "branches");
+    const loanPayload = takeCore(loanResult, "loans");
+    const borrowerPayload = takeCore(borrowerResult, "borrowers");
+    const repaymentPayload = takeCore(repaymentResult, "collections");
+    const reportPayload =
+      reportResult.status === "fulfilled" ? reportResult.value : null;
+    const dailyStatusPayload =
+      dailyStatusResult.status === "fulfilled"
+        ? dailyStatusResult.value
+        : null;
 
     if (branchPayload) setBranches(branchPayload.branches ?? []);
     if (loanPayload) setLoans(loanPayload.loans ?? []);
@@ -363,10 +375,12 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
       Boolean(borrowerPayload) ||
       Boolean(repaymentPayload) ||
       hasCached;
+    // Only surface core KPI failures — optional report/status enrichments
+    // must not paint a red banner over a working dashboard.
     if (!loadedAny) {
-      setError(failures[0] ?? "Could not load overview.");
-    } else if (failures.length > 0 && !hasCached) {
-      setError(failures[0] ?? null);
+      setError(coreFailures[0] ?? "Could not load overview.");
+    } else {
+      setError(null);
     }
 
     setLoading(false);

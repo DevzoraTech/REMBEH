@@ -2530,12 +2530,9 @@ function ComputerisedReportView({
           <StatementRow
             label="Total Expenses"
             value={
-              <Money
-                value={branchCashExpenseTotal(operation)}
-                currency="UGX"
-              />
+              <Money value={operation.expensesTotal} currency="UGX" />
             }
-            danger={branchCashExpenseTotal(operation) > 0}
+            danger={operation.expensesTotal > 0}
           />
           <StatementRow
             label="Salary"
@@ -2543,11 +2540,23 @@ function ComputerisedReportView({
             danger={salaryTotal(operation) > 0}
           />
           <StatementRow
+            label="Loans issued"
+            value={
+              <Money
+                value={operation.loansIssuedPrincipal}
+                currency="UGX"
+              />
+            }
+            danger={operation.loansIssuedPrincipal > 0}
+          />
+          <StatementRow
             label="Total Cashouts"
             value={
               <Money
                 value={
-                  branchCashExpenseTotal(operation) + salaryTotal(operation)
+                  operation.expensesTotal +
+                  salaryTotal(operation) +
+                  operation.loansIssuedPrincipal
                 }
                 currency="UGX"
               />
@@ -3367,7 +3376,10 @@ function CashMovementCard({
     operation.collectionsReceived +
     operation.processingFeesTotal +
     shortageCleared;
-  const totalCashouts = operation.expensesTotal + salaryTotal(operation);
+  const totalCashouts =
+    operation.expensesTotal +
+    salaryTotal(operation) +
+    operation.loansIssuedPrincipal;
 
   return (
     <section className="rounded-[14px] border border-[#e6ebf0] bg-white p-3 shadow-[0_8px_18px_rgba(15,23,42,0.045)]">
@@ -3435,6 +3447,11 @@ function CashMovementCard({
             {
               label: "Salary",
               amount: salaryTotal(operation),
+              signed: "minus",
+            },
+            {
+              label: "Loans issued",
+              amount: operation.loansIssuedPrincipal,
               signed: "minus",
             },
           ]}
@@ -5613,9 +5630,10 @@ function buildExcelRows(operation: DailyOperation) {
   const processingFees = operation.processingFeesTotal;
   const shortageCleared = shortageRecoveryTotal(operation);
   const totalAdditions = cashIn + processingFees + shortageCleared;
-  const totalExpenses = branchCashExpenseTotal(operation);
+  const totalExpenses = operation.expensesTotal;
   const salary = salaryTotal(operation);
-  const totalCashouts = totalExpenses + salary;
+  const loansIssued = operation.loansIssuedPrincipal;
+  const totalCashouts = totalExpenses + salary + loansIssued;
 
   return [
     {
@@ -5682,7 +5700,7 @@ function buildExcelRows(operation: DailyOperation) {
       cashIn: null,
       cashOut: totalExpenses,
       balance: null,
-      note: "Branch operating expenses",
+      note: "Cashier and field-officer expenses",
     },
     {
       section: "CASHOUTS",
@@ -5695,12 +5713,21 @@ function buildExcelRows(operation: DailyOperation) {
     },
     {
       section: "CASHOUTS",
+      description: "Loans issued",
+      count: operation.loansIssuedCount,
+      cashIn: null,
+      cashOut: loansIssued,
+      balance: null,
+      note: "Principal disbursed to borrowers",
+    },
+    {
+      section: "CASHOUTS",
       description: "Total Cashouts",
       count: "-",
       cashIn: null,
       cashOut: totalCashouts,
       balance: null,
-      note: "Total Expenses + Salary",
+      note: "Total Expenses + Salary + Loans issued",
     },
     {
       section: "Closing",

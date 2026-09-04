@@ -242,7 +242,10 @@ function movementSummaryHtml(
     document.collectionsReceived +
     document.processingFeesTotal +
     shortageCleared;
-  const totalCashouts = document.expensesTotal + (document.salariesTotal ?? 0);
+  const totalCashouts =
+    document.expensesTotal +
+    (document.salariesTotal ?? 0) +
+    document.loansIssuedPrincipal;
 
   return `
     <div class="move-grid">
@@ -259,6 +262,7 @@ function movementSummaryHtml(
         <p class="move-title">CASHOUTS</p>
         ${movementLine("Total Expenses", document.expensesTotal, "out")}
         ${movementLine("Salary", document.salariesTotal ?? 0, "out")}
+        ${movementLine("Loans issued", document.loansIssuedPrincipal, "out")}
         <div class="move-total out"><span>Total Cashouts</span><strong>${escapeHtml(currency)} ${moneyPlain(totalCashouts)}</strong></div>
       </div>
     </div>
@@ -387,7 +391,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
   parts.push(
     section(
       "Cash Position Summary",
-      `${movementSummaryHtml(document, currency, topUpsTotal)}<p class="note">Loans and unused float are balanced on field-officer handover and are not listed in this summary. Expected closing balance is the day’s cash position after those handovers.</p>`,
+      `${movementSummaryHtml(document, currency, topUpsTotal)}<p class="note">Total Expenses includes cashier and field-officer expenses for the day. Unused float is balanced on field-officer handover and is not listed here.</p>`,
     ),
   );
 

@@ -107,12 +107,18 @@ class DailyReportMapper {
           snapshot['shortageRecoveries'],
         ).map(_shortageRecovery).toList(),
         expenses: _firstNum([
-          cashPosition['branchExpenses'],
           summary['expenses'],
+          cashPosition['expenses'],
+          // Older snapshots only stored cashier expenses here.
+          cashPosition['branchExpenses'],
         ]),
         salaries: _firstNum([
           cashPosition['salaries'],
           summary['salaries'],
+        ]),
+        loansIssued: _firstNum([
+          cashPosition['loansIssued'],
+          summary['loansIssuedPrincipal'],
         ]),
         floatIssued: _firstNum([
           cashPosition['floatDistributed'],
@@ -174,10 +180,14 @@ class DailyReportMapper {
           operation['shortageRecoveries'],
         ).map(_shortageRecovery).toList(),
         expenses: _firstNum([
-          operation['branchCashExpensesTotal'],
           operation['expensesTotal'],
+          operation['branchCashExpensesTotal'],
         ]),
         salaries: _num(operation['salariesTotal']),
+        loansIssued: _firstNum([
+          operation['loansIssuedPrincipal'],
+          operation['loansDisbursed'],
+        ]),
         floatIssued: _num(operation['floatIssued']),
         floatReturned: _num(operation['cashReturnedByAgents']),
         expectedClosingCash: _num(operation['expectedClosingBalance']),

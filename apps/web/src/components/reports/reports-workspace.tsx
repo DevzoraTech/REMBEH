@@ -1026,12 +1026,23 @@ function ReportSummaryView({
             danger={numberValue(summary.salaries) > 0}
           />
           <LineRow
+            label="Loans issued"
+            value={
+              <Money
+                value={numberValue(summary.loansIssuedPrincipal)}
+                currency={currency}
+              />
+            }
+            danger={numberValue(summary.loansIssuedPrincipal) > 0}
+          />
+          <LineRow
             label="Total Cashouts"
             value={
               <Money
                 value={
                   numberValue(summary.expenses) +
-                  numberValue(summary.salaries)
+                  numberValue(summary.salaries) +
+                  numberValue(summary.loansIssuedPrincipal)
                 }
                 currency={currency}
               />
@@ -2166,7 +2177,8 @@ function buildExcelRows(report: OwnerReport, snapshot: ReportSnapshot) {
   const totalAdditions = cashIn + processingFees + shortageCleared;
   const totalExpenses = numberValue(snapshot.summary.expenses);
   const salary = numberValue(snapshot.summary.salaries);
-  const totalCashouts = totalExpenses + salary;
+  const loansIssued = numberValue(snapshot.summary.loansIssuedPrincipal);
+  const totalCashouts = totalExpenses + salary + loansIssued;
 
   return [
     {
@@ -2230,7 +2242,7 @@ function buildExcelRows(report: OwnerReport, snapshot: ReportSnapshot) {
       cashIn: null,
       cashOut: totalExpenses,
       balance: null,
-      note: "Approved daily expenses",
+      note: "Cashier and field-officer expenses",
     },
     {
       section: "CASHOUTS",
@@ -2243,12 +2255,21 @@ function buildExcelRows(report: OwnerReport, snapshot: ReportSnapshot) {
     },
     {
       section: "CASHOUTS",
+      description: "Loans issued",
+      count: formatNumber(numberValue(snapshot.summary.loansIssuedCount)),
+      cashIn: null,
+      cashOut: loansIssued,
+      balance: null,
+      note: "Principal disbursed to borrowers",
+    },
+    {
+      section: "CASHOUTS",
       description: "Total Cashouts",
       count: "-",
       cashIn: null,
       cashOut: totalCashouts,
       balance: null,
-      note: "Total Expenses + Salary",
+      note: "Total Expenses + Salary + Loans issued",
     },
     {
       section: "Closing",
