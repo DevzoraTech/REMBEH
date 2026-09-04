@@ -139,67 +139,105 @@ export async function exportOwnedReport(
     "Balance",
     "Notes",
   ]);
-  const opening = numberValue(snapshot.openingCash.previousClosingBalance);
-  const topUps = numberValue(snapshot.summary.topUpsAdded);
-  worksheet.addRow(["Opening", "Previous closing balance", "-", "", "", opening, ""]);
-  worksheet.addRow(["Opening", "Capital top-ups today", "-", topUps, "", "", ""]);
+  const opening =
+    numberValue(snapshot.openingCash.totalOpeningBalance) ||
+    numberValue(snapshot.openingCash.previousClosingBalance) ||
+    numberValue(snapshot.summary.openingCash);
+  const capitalReceived =
+    numberValue(snapshot.summary.topUpsAdded) ||
+    numberValue(snapshot.openingCash.cashAddedToday);
+  const cashIn = report.collectionsReceived;
+  const processingFees = report.processingFeesTotal;
+  const shortageCleared = numberValue(snapshot.summary.shortageRecoveries);
+  const totalAdditions = cashIn + processingFees + shortageCleared;
+  const totalExpenses = report.expensesTotal;
+  const salary = numberValue(snapshot.summary.salaries);
+  const totalCashouts = totalExpenses + salary;
+
   worksheet.addRow([
-    "Field",
-    "Loans issued",
-    formatNumber(report.loansIssuedCount),
-    "",
-    report.loansIssuedPrincipal,
+    "ADDITIONS",
+    "Opening Balance",
+    "-",
     "",
     "",
+    opening,
+    "Carried into the day",
   ]);
   worksheet.addRow([
-    "Field",
-    "Repayments received",
+    "ADDITIONS",
+    "Capital received",
+    "-",
+    capitalReceived,
+    "",
+    "",
+    "Capital added during the day",
+  ]);
+  worksheet.addRow([
+    "ADDITIONS",
+    "Cash in",
     formatNumber(numberValue(snapshot.summary.collectionsCount)),
-    report.collectionsReceived,
+    cashIn,
     "",
     "",
-    "",
+    "Borrower repayments",
   ]);
   worksheet.addRow([
-    "Field",
+    "ADDITIONS",
     "Processing fees",
     "-",
-    report.processingFeesTotal,
+    processingFees,
     "",
     "",
-    "",
+    "Fees collected on issued loans",
   ]);
   worksheet.addRow([
-    "Expenses",
-    "Branch expenses",
-    formatNumber(snapshot.expenses.length),
-    "",
-    report.expensesTotal,
-    "",
-    "",
-  ]);
-  worksheet.addRow([
-    "Salaries",
-    "Salaries paid from day’s cash",
-    numberValue(snapshot.summary.salariesCount) > 0
-      ? formatNumber(numberValue(snapshot.summary.salariesCount))
-      : "-",
-    "",
-    numberValue(snapshot.summary.salaries),
-    "",
-    "",
-  ]);
-  worksheet.addRow([
-    "Shortage",
+    "ADDITIONS",
     "Shortage cleared",
     numberValue(snapshot.summary.shortageRecoveriesCount) > 0
       ? formatNumber(numberValue(snapshot.summary.shortageRecoveriesCount))
       : "-",
-    numberValue(snapshot.summary.shortageRecoveries),
+    shortageCleared,
     "",
     "",
+    "Employee shortage paid off as cash in",
+  ]);
+  worksheet.addRow([
+    "ADDITIONS",
+    "Total Additions",
+    "-",
+    totalAdditions,
     "",
+    "",
+    "Cash in + Processing fees + Shortage cleared",
+  ]);
+  worksheet.addRow([
+    "CASHOUTS",
+    "Total Expenses",
+    formatNumber(snapshot.expenses.length),
+    "",
+    totalExpenses,
+    "",
+    "Operating expenses",
+  ]);
+  worksheet.addRow([
+    "CASHOUTS",
+    "Salary",
+    numberValue(snapshot.summary.salariesCount) > 0
+      ? formatNumber(numberValue(snapshot.summary.salariesCount))
+      : "-",
+    "",
+    salary,
+    "",
+    "Taken from the open branch day’s cash",
+  ]);
+  worksheet.addRow([
+    "CASHOUTS",
+    "Total Cashouts",
+    "-",
+    "",
+    totalCashouts,
+    "",
+    "Total Expenses + Salary",
   ]);
   worksheet.addRow([
     "Closing",
@@ -208,16 +246,16 @@ export async function exportOwnedReport(
     "",
     "",
     report.expectedClosingBalance,
-    "",
+    "Day’s cash position after officer handovers",
   ]);
   worksheet.addRow([
     "Closing",
-    "Counted cash",
+    "Counted closing balance",
     "-",
     "",
     "",
     report.closingBalance ?? 0,
-    "",
+    "Cash counted at closing",
   ]);
   worksheet.columns = [
     { width: 16 },

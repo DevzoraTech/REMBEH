@@ -2481,9 +2481,9 @@ function ComputerisedReportView({
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <ReportBlock title="Opening Balance">
+        <ReportBlock title="ADDITIONS">
           <StatementRow
-            label="Previous closing balance"
+            label="Opening Balance"
             value={<Money value={operation.openingBalance} currency="UGX" />}
           />
           <StatementRow
@@ -2491,14 +2491,70 @@ function ComputerisedReportView({
             value={<Money value={operation.topUpsTotal} currency="UGX" />}
           />
           <StatementRow
-            label="Opening capital"
+            label="Cash in"
             value={
-              <Money value={operation.cashAvailableAtOpening} currency="UGX" />
+              <Money value={operation.collectionsReceived} currency="UGX" />
+            }
+          />
+          <StatementRow
+            label="Processing fees"
+            value={
+              <Money value={operation.processingFeesTotal} currency="UGX" />
+            }
+          />
+          <StatementRow
+            label="Shortage cleared"
+            value={
+              <Money
+                value={shortageRecoveryTotal(operation)}
+                currency="UGX"
+              />
+            }
+          />
+          <StatementRow
+            label="Total Additions"
+            value={
+              <Money
+                value={
+                  operation.collectionsReceived +
+                  operation.processingFeesTotal +
+                  shortageRecoveryTotal(operation)
+                }
+                currency="UGX"
+              />
             }
             strong
           />
         </ReportBlock>
-        <ReportBlock title="Closing Result">
+        <ReportBlock title="CASHOUTS">
+          <StatementRow
+            label="Total Expenses"
+            value={
+              <Money
+                value={branchCashExpenseTotal(operation)}
+                currency="UGX"
+              />
+            }
+            danger={branchCashExpenseTotal(operation) > 0}
+          />
+          <StatementRow
+            label="Salary"
+            value={<Money value={salaryTotal(operation)} currency="UGX" />}
+            danger={salaryTotal(operation) > 0}
+          />
+          <StatementRow
+            label="Total Cashouts"
+            value={
+              <Money
+                value={
+                  branchCashExpenseTotal(operation) + salaryTotal(operation)
+                }
+                currency="UGX"
+              />
+            }
+            strong
+            danger
+          />
           <StatementRow
             label="Expected closing balance"
             value={
@@ -5221,7 +5277,7 @@ function CloseDayCard({
           <Money value={operation.expectedClosingBalance} currency="UGX" />
         </p>
         <p className="mt-0.5 inline-flex flex-wrap items-baseline gap-1 text-xs text-slate-500">
-          <span>Loan processing fees:</span>
+          <span>Processing fees:</span>
           <Money value={operation.processingFeesTotal} currency="UGX" />
         </p>
       </header>
@@ -5552,106 +5608,99 @@ function OperationsSkeleton() {
 
 function buildExcelRows(operation: DailyOperation) {
   const openingBalance = operation.openingBalance;
-  const afterTopUps = operation.cashAvailableAtOpening;
-  const afterFloat = afterTopUps - operation.floatIssued;
-  const afterReturns = afterFloat + operation.cashReturnedByAgents;
-  const afterExpenses = afterReturns - branchCashExpenseTotal(operation);
-  const afterSalaries = afterExpenses - salaryTotal(operation);
-  const afterRecoveries = afterSalaries + shortageRecoveryTotal(operation);
+  const capitalReceived = operation.topUpsTotal;
+  const cashIn = operation.collectionsReceived;
+  const processingFees = operation.processingFeesTotal;
+  const shortageCleared = shortageRecoveryTotal(operation);
+  const totalAdditions = cashIn + processingFees + shortageCleared;
+  const totalExpenses = branchCashExpenseTotal(operation);
+  const salary = salaryTotal(operation);
+  const totalCashouts = totalExpenses + salary;
 
   return [
     {
-      section: "Opening",
-      description: "Previous closing balance",
+      section: "ADDITIONS",
+      description: "Opening Balance",
       count: "-",
-      cashIn: openingBalance,
-      cashOut: null,
+      cashIn: null as number | null,
+      cashOut: null as number | null,
       balance: openingBalance,
-      note: "Previous day closing cash",
+      note: "Carried into the day",
     },
     {
-      section: "Opening",
-      description: "Capital top-ups today",
+      section: "ADDITIONS",
+      description: "Capital received",
       count: operation.topUpsCount,
-      cashIn: operation.topUpsTotal,
+      cashIn: capitalReceived,
       cashOut: null,
-      balance: afterTopUps,
+      balance: null,
       note: "Capital added at opening or during the day",
     },
     {
-      section: "Float",
-      description: "Float distributed to field officers",
-      count: operation.agentsWithFloatCount,
-      cashIn: null,
-      cashOut: operation.floatIssued,
-      balance: afterFloat,
-      note: "Cash issued to field officers",
-    },
-    {
-      section: "Field",
-      description: "Cash returned by field officers",
-      count: operation.agentsReturnedCount,
-      cashIn: operation.cashReturnedByAgents,
+      section: "ADDITIONS",
+      description: "Cash in",
+      count: operation.collectionsCount,
+      cashIn: cashIn,
       cashOut: null,
-      balance: afterReturns,
-      note: "Officer handover received",
+      balance: null,
+      note: "Borrower repayments",
     },
     {
-      section: "Expenses",
-      description: "Expenses recorded",
-      count: operation.expensesCount,
-      cashIn: null,
-      cashOut: branchCashExpenseTotal(operation),
-      balance: afterExpenses,
-      note: "Branch operating expenses",
+      section: "ADDITIONS",
+      description: "Processing fees",
+      count: "-",
+      cashIn: processingFees,
+      cashOut: null,
+      balance: null,
+      note: "Fees collected on issued loans",
     },
     {
-      section: "Salaries",
-      description: "Salaries paid from today’s cash",
-      count: operation.salariesCount ?? operation.salaries?.length ?? 0,
-      cashIn: null,
-      cashOut: salaryTotal(operation),
-      balance: afterSalaries,
-      note: "Taken from the open branch day’s cash",
-    },
-    {
-      section: "Shortage",
+      section: "ADDITIONS",
       description:
         (operation.shortageRecoveries ?? [])
           .map((row) => `Shortage cleared · ${row.employeeName}`)
           .join("; ") || "Shortage cleared",
       count: operation.shortageRecoveriesCount ?? 0,
-      cashIn: shortageRecoveryTotal(operation),
+      cashIn: shortageCleared,
       cashOut: null,
-      balance: afterRecoveries,
+      balance: null,
       note: "Employee shortage paid off as cash in",
     },
     {
-      section: "Loans",
-      description: "Principal issued",
-      count: operation.loansIssuedCount,
-      cashIn: null,
-      cashOut: operation.loansIssuedPrincipal,
-      balance: null,
-      note: "Principal issued to borrowers",
-    },
-    {
-      section: "Repayments",
-      description: "Repayments received",
-      count: operation.collectionsCount,
-      cashIn: operation.collectionsReceived,
-      cashOut: null,
-      balance: null,
-      note: "Repayments recorded",
-    },
-    {
-      section: "Fees",
-      description: "Processing fees received",
+      section: "ADDITIONS",
+      description: "Total Additions",
       count: "-",
-      cashIn: operation.processingFeesTotal,
+      cashIn: totalAdditions,
       cashOut: null,
       balance: null,
-      note: "Loan processing fees recorded",
+      note: "Cash in + Processing fees + Shortage cleared",
+    },
+    {
+      section: "CASHOUTS",
+      description: "Total Expenses",
+      count: operation.expensesCount,
+      cashIn: null,
+      cashOut: totalExpenses,
+      balance: null,
+      note: "Branch operating expenses",
+    },
+    {
+      section: "CASHOUTS",
+      description: "Salary",
+      count: operation.salariesCount ?? operation.salaries?.length ?? 0,
+      cashIn: null,
+      cashOut: salary,
+      balance: null,
+      note: "Taken from the open branch day’s cash",
+    },
+    {
+      section: "CASHOUTS",
+      description: "Total Cashouts",
+      count: "-",
+      cashIn: null,
+      cashOut: totalCashouts,
+      balance: null,
+      note: "Total Expenses + Salary",
     },
     {
       section: "Closing",
@@ -5660,11 +5709,11 @@ function buildExcelRows(operation: DailyOperation) {
       cashIn: null,
       cashOut: null,
       balance: operation.expectedClosingBalance,
-      note: "Expected cash after all movement",
+      note: "Day’s cash position after officer handovers",
     },
     {
       section: "Closing",
-      description: "Counted cash",
+      description: "Counted closing balance",
       count: "-",
       cashIn: null,
       cashOut: null,

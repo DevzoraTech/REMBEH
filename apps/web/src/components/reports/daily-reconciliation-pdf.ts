@@ -308,7 +308,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
       transactions: row.transactions,
       amount: row.amount,
     })),
-    "Loan processing fees",
+    "Processing fees",
     document.feesByProduct.reduce((sum, row) => sum + row.transactions, 0) ||
       (document.processingFeesTotal > 0 ? document.loansIssuedCount : 0),
     document.processingFeesTotal,
@@ -328,16 +328,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
     0,
   );
 
-  const expectedShown = Math.round(
-    document.openingBalance +
-      topUpsTotal +
-      document.collectionsReceived +
-      document.processingFeesTotal +
-      (document.shortageRecoveriesTotal ?? 0) -
-      document.loansIssuedPrincipal -
-      document.expensesTotal -
-      (document.salariesTotal ?? 0),
-  );
+  const expectedShown = Math.round(document.expectedClosingBalance);
   const varianceShown =
     counted == null ? null : Math.round(counted - expectedShown);
   const varianceBadge =
@@ -396,7 +387,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
   parts.push(
     section(
       "Cash Position Summary",
-      `${movementSummaryHtml(document, currency, topUpsTotal)}<p class="note">Expected closing balance = Opening Balance + Capital received + Cash in + Processing fees + Shortage cleared − Total Expenses − Salary. Loans and unused float are balanced on field-officer handover and are not shown here.</p>`,
+      `${movementSummaryHtml(document, currency, topUpsTotal)}<p class="note">Loans and unused float are balanced on field-officer handover and are not listed in this summary. Expected closing balance is the day’s cash position after those handovers.</p>`,
     ),
   );
 

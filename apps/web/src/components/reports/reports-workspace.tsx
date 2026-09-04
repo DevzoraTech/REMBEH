@@ -935,58 +935,79 @@ function ReportSummaryView({
       </section>
 
       <section className="grid gap-2.5 lg:grid-cols-2">
-        <Panel title="Opening Balance" icon={<ArrowRightLeft className="size-3.5" />}>
+        <Panel title="ADDITIONS" icon={<ArrowRightLeft className="size-3.5" />}>
           <LineRow
-            label="Previous closing balance"
-            value={
-              <Money
-                value={numberValue(opening.previousClosingBalance)}
-                currency={currency}
-              />
-            }
-          />
-          <LineRow
-            label="Capital top-ups today"
-            value={
-              <Money
-                value={numberValue(opening.cashAddedToday)}
-                currency={currency}
-              />
-            }
-          />
-          <LineRow
-            label="Opening capital"
+            label="Opening Balance"
             value={
               <Money
                 value={
                   numberValue(opening.totalOpeningBalance) ||
+                  numberValue(opening.previousClosingBalance) ||
                   numberValue(summary.openingCash)
                 }
                 currency={currency}
               />
             }
+          />
+          <LineRow
+            label="Capital received"
+            value={
+              <Money
+                value={
+                  numberValue(opening.cashAddedToday) ||
+                  numberValue(summary.topUpsAdded)
+                }
+                currency={currency}
+              />
+            }
+          />
+          <LineRow
+            label="Cash in"
+            value={
+              <Money
+                value={numberValue(summary.collectionsReceived)}
+                currency={currency}
+              />
+            }
+            positive={numberValue(summary.collectionsReceived) > 0}
+          />
+          <LineRow
+            label="Processing fees"
+            value={
+              <Money
+                value={numberValue(summary.processingFees)}
+                currency={currency}
+              />
+            }
+            positive={numberValue(summary.processingFees) > 0}
+          />
+          <LineRow
+            label="Shortage cleared"
+            value={
+              <Money
+                value={numberValue(summary.shortageRecoveries)}
+                currency={currency}
+              />
+            }
+            positive={numberValue(summary.shortageRecoveries) > 0}
+          />
+          <LineRow
+            label="Total Additions"
+            value={
+              <Money
+                value={
+                  numberValue(summary.collectionsReceived) +
+                  numberValue(summary.processingFees) +
+                  numberValue(summary.shortageRecoveries)
+                }
+                currency={currency}
+              />
+            }
             strong
+            positive
           />
         </Panel>
-        <Panel title="Day movement" icon={<HandCoins className="size-3.5" />}>
-          <LineRow
-            label="Float distributed"
-            value={
-              <Money
-                value={numberValue(summary.floatDistributed)}
-                currency={currency}
-              />
-            }
-          />
-          <LineRow
-            label="Cash returned by field officers"
-            value={
-              <Money
-                value={numberValue(summary.cashReturnedByAgents)}
-                currency={currency}
-              />
-            }
-          />
+        <Panel title="CASHOUTS" icon={<HandCoins className="size-3.5" />}>
           <LineRow
             label="Total Expenses"
             value={
@@ -1004,18 +1025,20 @@ function ReportSummaryView({
             }
             danger={numberValue(summary.salaries) > 0}
           />
-          {numberValue(summary.shortageRecoveries) > 0 ? (
-            <LineRow
-              label="Shortage cleared"
-              value={
-                <Money
-                  value={numberValue(summary.shortageRecoveries)}
-                  currency={currency}
-                />
-              }
-              positive
-            />
-          ) : null}
+          <LineRow
+            label="Total Cashouts"
+            value={
+              <Money
+                value={
+                  numberValue(summary.expenses) +
+                  numberValue(summary.salaries)
+                }
+                currency={currency}
+              />
+            }
+            strong
+            danger
+          />
         </Panel>
       </section>
 
@@ -2130,96 +2153,102 @@ function readReportSnapshot(report: OwnerReport): ReportSnapshot {
 }
 
 function buildExcelRows(report: OwnerReport, snapshot: ReportSnapshot) {
+  const opening =
+    numberValue(snapshot.openingCash.totalOpeningBalance) ||
+    numberValue(snapshot.openingCash.previousClosingBalance) ||
+    numberValue(snapshot.summary.openingCash);
+  const capitalReceived =
+    numberValue(snapshot.openingCash.cashAddedToday) ||
+    numberValue(snapshot.summary.topUpsAdded);
+  const cashIn = numberValue(snapshot.summary.collectionsReceived);
+  const processingFees = numberValue(snapshot.summary.processingFees);
+  const shortageCleared = numberValue(snapshot.summary.shortageRecoveries);
+  const totalAdditions = cashIn + processingFees + shortageCleared;
+  const totalExpenses = numberValue(snapshot.summary.expenses);
+  const salary = numberValue(snapshot.summary.salaries);
+  const totalCashouts = totalExpenses + salary;
+
   return [
     {
-      section: "Opening",
-      description: "Previous closing balance",
+      section: "ADDITIONS",
+      description: "Opening Balance",
       count: "-",
       cashIn: null as number | null,
       cashOut: null as number | null,
-      balance: numberValue(snapshot.openingCash.previousClosingBalance),
-      note: "Carried from previous close",
+      balance: opening,
+      note: "Carried into the day",
     },
     {
-      section: "Opening",
-      description: "Capital top-ups today",
+      section: "ADDITIONS",
+      description: "Capital received",
       count: "-",
-      cashIn: numberValue(snapshot.openingCash.cashAddedToday),
+      cashIn: capitalReceived,
       cashOut: null,
       balance: null,
-      note: "Capital added at opening or during the day",
+      note: "Capital added during the day",
     },
     {
-      section: "Float",
-      description: "Float distributed",
-      count: `${snapshot.agentReturns.length}`,
-      cashIn: null,
-      cashOut: numberValue(snapshot.summary.floatDistributed),
-      balance: null,
-      note: "Issued to field officers",
-    },
-    {
-      section: "Field",
-      description: "Loans issued",
-      count: formatNumber(numberValue(snapshot.summary.loansIssuedCount)),
-      cashIn: null,
-      cashOut: numberValue(snapshot.summary.loansIssuedPrincipal),
-      balance: null,
-      note: "Principal disbursed",
-    },
-    {
-      section: "Field",
-      description: "Repayments received",
+      section: "ADDITIONS",
+      description: "Cash in",
       count: formatNumber(numberValue(snapshot.summary.collectionsCount)),
-      cashIn: numberValue(snapshot.summary.collectionsReceived),
+      cashIn: cashIn,
       cashOut: null,
       balance: null,
       note: "Borrower repayments",
     },
     {
-      section: "Field",
+      section: "ADDITIONS",
       description: "Processing fees",
       count: "-",
-      cashIn: numberValue(snapshot.summary.processingFees),
+      cashIn: processingFees,
       cashOut: null,
       balance: null,
       note: "Fees collected on issued loans",
     },
     {
-      section: "Returns",
-      description: "Cash returned by field officers",
-      count: `${snapshot.agentReturns.filter((row) => row.amountReturned != null).length}/${snapshot.agentReturns.length}`,
-      cashIn: numberValue(snapshot.summary.cashReturnedByAgents),
+      section: "ADDITIONS",
+      description: "Shortage cleared",
+      count: formatNumber(numberValue(snapshot.summary.shortageRecoveriesCount)),
+      cashIn: shortageCleared,
       cashOut: null,
       balance: null,
-      note: "Recorded handovers",
+      note: "Employee shortage paid off as cash in",
     },
     {
-      section: "Expenses",
-      description: "Branch expenses",
+      section: "ADDITIONS",
+      description: "Total Additions",
+      count: "-",
+      cashIn: totalAdditions,
+      cashOut: null,
+      balance: null,
+      note: "Cash in + Processing fees + Shortage cleared",
+    },
+    {
+      section: "CASHOUTS",
+      description: "Total Expenses",
       count: formatNumber(snapshot.expenses.length),
       cashIn: null,
-      cashOut: numberValue(snapshot.summary.expenses),
+      cashOut: totalExpenses,
       balance: null,
       note: "Approved daily expenses",
     },
     {
-      section: "Salaries",
-      description: "Salaries paid from day’s cash",
+      section: "CASHOUTS",
+      description: "Salary",
       count: formatNumber(numberValue(snapshot.summary.salariesCount)),
       cashIn: null,
-      cashOut: numberValue(snapshot.summary.salaries),
+      cashOut: salary,
       balance: null,
       note: "Taken from the open branch day’s cash",
     },
     {
-      section: "Shortage",
-      description: "Shortage cleared",
-      count: formatNumber(numberValue(snapshot.summary.shortageRecoveriesCount)),
-      cashIn: numberValue(snapshot.summary.shortageRecoveries),
-      cashOut: null,
+      section: "CASHOUTS",
+      description: "Total Cashouts",
+      count: "-",
+      cashIn: null,
+      cashOut: totalCashouts,
       balance: null,
-      note: "Employee shortage paid off as cash in",
+      note: "Total Expenses + Salary",
     },
     {
       section: "Closing",
@@ -2228,11 +2257,11 @@ function buildExcelRows(report: OwnerReport, snapshot: ReportSnapshot) {
       cashIn: null,
       cashOut: null,
       balance: report.expectedClosingBalance,
-      note: "System expected close",
+      note: "Day’s cash position after officer handovers",
     },
     {
       section: "Closing",
-      description: "Counted cash",
+      description: "Counted closing balance",
       count: "-",
       cashIn: null,
       cashOut: null,

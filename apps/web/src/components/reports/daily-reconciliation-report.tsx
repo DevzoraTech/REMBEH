@@ -459,7 +459,7 @@ function SummaryDocument({
       transactions: row.transactions,
       amount: row.amount,
     })),
-    "Loan processing fees",
+    "Processing fees",
     document.feesByProduct.reduce((sum, row) => sum + row.transactions, 0) ||
       (document.processingFeesTotal > 0 ? document.loansIssuedCount : 0),
     document.processingFeesTotal,
@@ -479,23 +479,9 @@ function SummaryDocument({
     0,
   );
 
-  // Authoritative expected-close formula (same as API):
-  // opening + top-ups + repayments + fees + shortage recoveries − loans − expenses − salaries
-  const salariesTotal = document.salariesTotal ?? 0;
-  const movementExpected = Math.round(
-    document.openingBalance +
-      topUpsTotal +
-      document.collectionsReceived +
-      document.processingFeesTotal +
-      (document.shortageRecoveriesTotal ?? 0) -
-      document.loansIssuedPrincipal -
-      document.expensesTotal -
-      salariesTotal,
-  );
-  // Prefer API expected; they must match — if they don't, show computed from movements
-  // so the table never contradicts its own rows.
-  const closingFromMovement = movementExpected;
-  const expectedShown = closingFromMovement;
+  // Use the API expected close (includes officer handovers / loans netting).
+  // The Additions / Cashouts summary intentionally omits float and loans.
+  const expectedShown = Math.round(document.expectedClosingBalance);
   const varianceShown =
     counted == null ? null : Math.round(counted - expectedShown);
 
@@ -653,10 +639,9 @@ function SummaryDocument({
             />
           </div>
           <p className="mt-1.5 text-[12px] italic text-slate-500">
-            Expected closing balance = Opening Balance + Capital received +
-            Cash in + Processing fees + Shortage cleared − Total Expenses −
-            Salary. Loans and unused float are balanced on field-officer
-            handover and are not shown here.
+            Loans and unused float are balanced on field-officer handover and
+            are not listed in this summary. Expected closing balance is the
+            day’s cash position after those handovers.
           </p>
         </Section>
 
@@ -1824,46 +1809,40 @@ function buildReviewHistory(document: DailyReportDocumentModel): ReactNode[][] {
 }
 
 function buildLedgerRows(document: DailyReportDocumentModel) {
+  const capitalReceived = document.topUps.reduce(
+    (sum, row) => sum + row.amount,
+    0,
+  );
+  const shortageCleared = document.shortageRecoveriesTotal ?? 0;
+  const totalAdditions =
+    document.collectionsReceived +
+    document.processingFeesTotal +
+    shortageCleared;
+  const totalCashouts =
+    document.expensesTotal + (document.salariesTotal ?? 0);
+
   return [
     {
-      section: "Opening",
-      description: "Previous closing balance",
+      section: "ADDITIONS",
+      description: "Opening Balance",
       count: "-",
       cashIn: null as number | null,
       cashOut: null as number | null,
       balance: document.openingBalance,
-      note: "Carried from previous close",
+      note: "Carried into the day",
     },
     {
-      section: "Opening",
-      description: "Capital top-ups today",
+      section: "ADDITIONS",
+      description: "Capital received",
       count: String(document.topUps.length),
-      cashIn: document.topUps.reduce((sum, row) => sum + row.amount, 0),
+      cashIn: capitalReceived,
       cashOut: null,
       balance: null,
       note: "Capital added during the day",
     },
     {
-      section: "Float",
-      description: "Float distributed",
-      count: String(document.agentsWithFloatCount),
-      cashIn: null,
-      cashOut: document.floatIssued,
-      balance: null,
-      note: "Issued to agents",
-    },
-    {
-      section: "Field",
-      description: "Loans issued",
-      count: String(document.loansIssuedCount),
-      cashIn: null,
-      cashOut: document.loansIssuedPrincipal,
-      balance: null,
-      note: "Principal disbursed",
-    },
-    {
-      section: "Field",
-      description: "Repayments received",
+      section: "ADDITIONS",
+      description: "Cash in",
       count: String(document.collectionsCount),
       cashIn: document.collectionsReceived,
       cashOut: null,
@@ -1871,26 +1850,41 @@ function buildLedgerRows(document: DailyReportDocumentModel) {
       note: "Borrower repayments",
     },
     {
-      section: "Field",
+      section: "ADDITIONS",
       description: "Processing fees",
       count: "-",
       cashIn: document.processingFeesTotal,
       cashOut: null,
       balance: null,
-      note: "Loan processing fees",
+      note: "Fees collected on issued loans",
     },
     {
-      section: "Returns",
-      description: "Field officer cash returned",
-      count: String(document.agentsReturnedCount),
-      cashIn: document.cashReturnedByAgents,
+      section: "ADDITIONS",
+      description:
+        (document.shortageRecoveries ?? [])
+          .map((row) => `Shortage cleared · ${row.employeeName}`)
+          .join("; ") || "Shortage cleared",
+      count:
+        (document.shortageRecoveriesCount ?? 0) > 0
+          ? String(document.shortageRecoveriesCount)
+          : "-",
+      cashIn: shortageCleared,
       cashOut: null,
       balance: null,
-      note: "Handover cash",
+      note: "Employee shortage paid off as cash in",
     },
     {
-      section: "Expenses",
-      description: "Branch expenses",
+      section: "ADDITIONS",
+      description: "Total Additions",
+      count: "-",
+      cashIn: totalAdditions,
+      cashOut: null,
+      balance: null,
+      note: "Cash in + Processing fees + Shortage cleared",
+    },
+    {
+      section: "CASHOUTS",
+      description: "Total Expenses",
       count: String(document.expensesCount),
       cashIn: null,
       cashOut: document.expensesTotal,
@@ -1898,8 +1892,8 @@ function buildLedgerRows(document: DailyReportDocumentModel) {
       note: "Operating expenses",
     },
     {
-      section: "Salaries",
-      description: "Salaries paid from day’s cash",
+      section: "CASHOUTS",
+      description: "Salary",
       count:
         (document.salariesCount ?? 0) > 0
           ? String(document.salariesCount)
@@ -1910,19 +1904,13 @@ function buildLedgerRows(document: DailyReportDocumentModel) {
       note: "Taken from the open branch day’s cash",
     },
     {
-      section: "Shortage",
-      description:
-        (document.shortageRecoveries ?? [])
-          .map((row) => `Shortage cleared · ${row.employeeName}`)
-          .join("; ") || "Shortage cleared",
-      count:
-        (document.shortageRecoveriesCount ?? 0) > 0
-          ? String(document.shortageRecoveriesCount)
-          : "-",
-      cashIn: document.shortageRecoveriesTotal ?? 0,
-      cashOut: null,
+      section: "CASHOUTS",
+      description: "Total Cashouts",
+      count: "-",
+      cashIn: null,
+      cashOut: totalCashouts,
       balance: null,
-      note: "Employee shortage paid off as cash in",
+      note: "Total Expenses + Salary",
     },
     {
       section: "Closing",
@@ -1931,11 +1919,11 @@ function buildLedgerRows(document: DailyReportDocumentModel) {
       cashIn: null,
       cashOut: null,
       balance: document.expectedClosingBalance,
-      note: "Expected cash after movement",
+      note: "Day’s cash position after officer handovers",
     },
     {
       section: "Closing",
-      description: "Counted cash",
+      description: "Counted closing balance",
       count: "-",
       cashIn: null,
       cashOut: null,
