@@ -1219,8 +1219,8 @@ export default function OperationsPage() {
           report,
           workspace?.currency ?? "UGX",
         );
-        exportDailyReconciliationPdf(document);
-        setNotice("PDF ready — use Print to save the document.");
+        await exportDailyReconciliationPdf(document);
+        setNotice("PDF downloaded.");
         return;
       }
 
@@ -3414,24 +3414,24 @@ function CashMovementCard({
             {
               label: "Cash in",
               amount: operation.collectionsReceived,
-              signed: "plus",
+              tone: "plus",
             },
             {
               label: "Processing fees",
               amount: operation.processingFeesTotal,
-              signed: "plus",
+              tone: "plus",
             },
             ...(shortageCleared !== 0
               ? [
                   {
                     label: "Shortage cleared",
                     amount: shortageCleared,
-                    signed: "plus" as const,
+                    tone: "plus" as const,
                   },
                 ]
               : []),
           ]}
-          totalLabel="Total Additions"
+          totalLabel="TOTAL"
           totalAmount={totalAdditions}
         />
         <MovementBlock
@@ -3442,20 +3442,20 @@ function CashMovementCard({
             {
               label: "Total Expenses",
               amount: operation.expensesTotal,
-              signed: "minus",
+              tone: "minus",
             },
             {
               label: "Salary",
               amount: salaryTotal(operation),
-              signed: "minus",
+              tone: "minus",
             },
             {
               label: "Loans issued",
               amount: operation.loansIssuedPrincipal,
-              signed: "minus",
+              tone: "minus",
             },
           ]}
-          totalLabel="Total Cashouts"
+          totalLabel="TOTAL"
           totalAmount={totalCashouts}
         />
       </div>
@@ -3485,7 +3485,7 @@ function MovementBlock({
   rows: Array<{
     label: string;
     amount: number;
-    signed?: "plus" | "minus";
+    tone?: "plus" | "minus";
   }>;
   totalLabel: string;
   totalAmount: number;
@@ -3523,24 +3523,14 @@ function MovementBlock({
             </p>
             <p
               className={`shrink-0 text-[12px] font-bold tabular-nums ${
-                row.signed === "plus"
+                row.tone === "plus"
                   ? "text-[var(--forest-emerald)]"
-                  : row.signed === "minus"
+                  : row.tone === "minus"
                     ? "text-red-600"
                     : "text-[#0b1220]"
               }`}
             >
-              <Money
-                value={row.amount}
-                currency="UGX"
-                sign={
-                  row.signed === "plus"
-                    ? "+"
-                    : row.signed === "minus"
-                      ? "−"
-                      : undefined
-                }
-              />
+              <Money value={row.amount} currency="UGX" />
             </p>
           </div>
         ))}
@@ -5042,7 +5032,7 @@ function TopUpList({ operation }: { operation: DailyOperation }) {
                 </p>
               </div>
               <p className="shrink-0 text-xs font-bold tabular-nums text-[var(--forest-emerald)]">
-                <Money value={topUp.amount} currency="UGX" sign="+" />
+                <Money value={topUp.amount} currency="UGX" />
               </p>
             </div>
           ))}

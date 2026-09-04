@@ -182,7 +182,7 @@ export function ReportDetailPage({
       await exportOwnedReport(report, currency, format);
       setNotice(
         format === "pdf"
-          ? "PDF ready — use Print to save the document."
+          ? "PDF downloaded."
           : "Excel report downloaded.",
       );
     } catch (caught) {

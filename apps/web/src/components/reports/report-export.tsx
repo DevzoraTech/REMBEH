@@ -113,7 +113,7 @@ export async function exportOwnedReport(
         returnNotes: report.returnNotes ?? null,
       },
     );
-    exportDailyReconciliationPdf(document);
+    await exportDailyReconciliationPdf(document);
     return;
   }
 

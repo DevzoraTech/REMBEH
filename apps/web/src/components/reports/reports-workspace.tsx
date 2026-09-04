@@ -2453,7 +2453,7 @@ async function exportReport(
           returnNotes: report.returnNotes ?? null,
         },
       );
-      exportDailyReconciliationPdf(document);
+      await exportDailyReconciliationPdf(document);
       return;
     }
 

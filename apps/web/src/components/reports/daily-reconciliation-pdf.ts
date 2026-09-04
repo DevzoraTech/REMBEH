@@ -862,8 +862,13 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
 }
 
 /** Export the on-screen Daily Reconciliation Report design as a print/PDF document. */
-export function exportDailyReconciliationPdf(
+export async function exportDailyReconciliationPdf(
   document: DailyReportDocumentModel,
 ) {
-  openPrintDocument(buildDailyReconciliationPdfHtml(document));
+  const { dailyReportPdfFileName, downloadPdfBlob } = await import(
+    "./daily-report-pdf-document"
+  );
+  const { getOrBuildDailyReportPdf } = await import("./daily-report-pdf-cache");
+  const blob = await getOrBuildDailyReportPdf(document);
+  downloadPdfBlob(blob, dailyReportPdfFileName(document));
 }

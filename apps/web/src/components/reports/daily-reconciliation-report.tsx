@@ -22,6 +22,7 @@ import {
   formatNumber,
   titleCase,
 } from "../../app/owner/owner-common";
+import { DailyReportPdfViewer } from "./daily-report-pdf-viewer";
 import { dailyReportCode } from "./reports-filters";
 
 export type DailyReportViewTab =
@@ -226,10 +227,6 @@ export function DailyReconciliationReport({
   className?: string;
 }) {
   const [exportOpen, setExportOpen] = useState(false);
-  const reportCode =
-    document.displayReportNumber ??
-    dailyReportCode(document.operationDate) ??
-    document.reportNumber;
   const canManagerSend =
     mode === "manager" &&
     (document.status === "MANAGER_REVIEW" ||
@@ -241,6 +238,9 @@ export function DailyReconciliationReport({
     : canOwnerApprove
       ? "Approve Report"
       : null;
+
+  void tab;
+  void onTabChange;
 
   return (
     <div className={`space-y-3 ${className}`}>
@@ -340,47 +340,9 @@ export function DailyReconciliationReport({
         </div>
       </header>
 
-      <nav className="flex gap-5 overflow-x-auto border-b border-[#e6ebf0]">
-        {(
-          [
-            ["summary", "Summary"],
-            ["ledger", "Ledger"],
-            ["agent-handover", "Officer handover"],
-            ["expenses", "Expenses"],
-            ["review-history", "Review History"],
-          ] as const
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => onTabChange(id)}
-            className={`relative shrink-0 pb-3 text-sm font-semibold transition ${
-              tab === id
-                ? "text-[var(--forest-emerald)]"
-                : "text-slate-500 hover:text-[#0b1220]"
-            }`}
-          >
-            {label}
-            {tab === id ? (
-              <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-[var(--forest-emerald)]" />
-            ) : null}
-          </button>
-        ))}
-      </nav>
-
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="min-w-0">
-          {tab === "summary" ? (
-            <SummaryDocument document={document} reportCode={reportCode} />
-          ) : null}
-          {tab === "ledger" ? <LedgerTab document={document} /> : null}
-          {tab === "agent-handover" ? (
-            <AgentHandoverTab document={document} />
-          ) : null}
-          {tab === "expenses" ? <ExpensesTab document={document} /> : null}
-          {tab === "review-history" ? (
-            <ReviewHistoryTab document={document} />
-          ) : null}
+          <DailyReportPdfViewer document={document} />
         </div>
 
         <ReviewSidebar

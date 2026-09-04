@@ -4,6 +4,8 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'daily_report_pdf_builder.dart';
+
 /// Local on-device cache for generated daily-report PDFs.
 ///
 /// Keyed by report id + content fingerprint so a regenerated report
@@ -23,6 +25,7 @@ class DailyReportPdfCache {
   }) {
     final generated = _normalizeInstant(generatedAt);
     final raw = [
+      DailyReportPdfBuilder.layoutVersion,
       reportId.trim(),
       generated,
       (status ?? '').trim().toUpperCase(),
