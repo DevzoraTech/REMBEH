@@ -224,11 +224,23 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
   const state = useOverviewSession(mode);
   const links = OVERVIEW_LINKS[mode];
   const isManager = mode === "manager";
+  // Owner global selector must never affect manager dashboards.
   const {
-    selectedBranchId,
-    selectedBranchName,
-    matchesBranch,
+    selectedBranchId: ownerSelectedBranchId,
+    selectedBranchName: ownerSelectedBranchName,
+    matchesBranch: ownerMatchesBranch,
   } = useOwnerBranchScope();
+  const selectedBranchId = isManager ? null : ownerSelectedBranchId;
+  const selectedBranchName = isManager
+    ? "This branch"
+    : ownerSelectedBranchName;
+  const matchesScopeBranch = useCallback(
+    (branchId: string | null | undefined) => {
+      if (isManager) return true;
+      return ownerMatchesBranch(branchId);
+    },
+    [isManager, ownerMatchesBranch],
+  );
   const [branches, setBranches] = useState<OwnerBranch[]>([]);
   const [loans, setLoans] = useState<OwnerLoan[]>([]);
   const [borrowers, setBorrowers] = useState<OwnerBorrower[]>([]);
@@ -414,36 +426,40 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
     () =>
       loans.filter(
         (loan) =>
-          matchesBranch(loan.branchId) && !loan.customerVoidedAt,
+          matchesScopeBranch(loan.branchId) && !loan.customerVoidedAt,
       ),
-    [loans, matchesBranch],
+    [loans, matchesScopeBranch],
   );
   const scopedBorrowers = useMemo(
     () =>
       borrowers.filter(
-        (borrower) => matchesBranch(borrower.branchId) && !borrower.voidedAt,
+        (borrower) =>
+          matchesScopeBranch(borrower.branchId) && !borrower.voidedAt,
       ),
-    [borrowers, matchesBranch],
+    [borrowers, matchesScopeBranch],
   );
   const scopedRepayments = useMemo(
-    () => repayments.filter((item) => matchesBranch(item.branchId)),
-    [matchesBranch, repayments],
+    () => repayments.filter((item) => matchesScopeBranch(item.branchId)),
+    [matchesScopeBranch, repayments],
   );
   const scopedReports = useMemo(
-    () => reports.filter((report) => matchesBranch(report.branchId)),
-    [matchesBranch, reports],
+    () => reports.filter((report) => matchesScopeBranch(report.branchId)),
+    [matchesScopeBranch, reports],
   );
   const scopedDailyStatuses = useMemo(
-    () => dailyStatuses.filter((row) => matchesBranch(row.branchId)),
-    [dailyStatuses, matchesBranch],
+    () => dailyStatuses.filter((row) => matchesScopeBranch(row.branchId)),
+    [dailyStatuses, matchesScopeBranch],
   );
-  const scopedBranches = useMemo(
-    () =>
-      selectedBranchId
-        ? branches.filter((branch) => branch.id === selectedBranchId)
-        : branches,
-    [branches, selectedBranchId],
-  );
+  const scopedBranches = useMemo(() => {
+    if (isManager) {
+      const managerBranchId = state.branch?.id;
+      if (!managerBranchId) return branches;
+      return branches.filter((branch) => branch.id === managerBranchId);
+    }
+    return selectedBranchId
+      ? branches.filter((branch) => branch.id === selectedBranchId)
+      : branches;
+  }, [branches, isManager, selectedBranchId, state.branch?.id]);
 
   const activeLoans = useMemo(
     () => scopedLoans.filter((loan) => ACTIVE_STATUSES.has(loan.status)),
@@ -510,23 +526,26 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
     [scopedLoans],
   );
   const todayActivity = useMemo(() => {
-    const matchesBranch = (branchId: string | null | undefined) =>
-      activityBranchId === "all" || branchId === activityBranchId;
+    const inActivityScope = (branchId: string | null | undefined) =>
+      isManager ||
+      activityBranchId === "all" ||
+      branchId === activityBranchId;
 
     return {
-      loansIssued: todayLoans.filter((loan) => matchesBranch(loan.branchId)),
+      loansIssued: todayLoans.filter((loan) => inActivityScope(loan.branchId)),
       collections: todayRepayments.filter((repayment) =>
-        matchesBranch(loanById.get(repayment.loanId)?.branchId),
+        inActivityScope(loanById.get(repayment.loanId)?.branchId),
       ),
       newBorrowers: todayBorrowers.filter((borrower) =>
-        matchesBranch(borrower.branchId),
+        inActivityScope(borrower.branchId),
       ),
       fullySettled: todaySettledLoans.filter((loan) =>
-        matchesBranch(loan.branchId),
+        inActivityScope(loan.branchId),
       ),
     };
   }, [
     activityBranchId,
+    isManager,
     loanById,
     todayBorrowers,
     todayLoans,

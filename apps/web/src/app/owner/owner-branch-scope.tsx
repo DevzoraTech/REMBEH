@@ -37,6 +37,7 @@ type ScopeSnapshot = {
 /**
  * Module store so branch selection works even when pages call
  * useOwnerBranchScope() *outside* AppShell (provider only wraps children).
+ * Manager UIs must ignore this store — it is owner-only viewing scope.
  */
 let snapshot: ScopeSnapshot = {
   selectedBranchId: null,

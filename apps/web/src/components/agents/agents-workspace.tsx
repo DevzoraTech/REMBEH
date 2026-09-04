@@ -178,11 +178,12 @@ export function AgentsWorkspace() {
     : branch?.id ?? "";
   const pendingInvites = useMemo(
     () =>
-      agents.filter(
-        (agent) =>
-          canResendStaffInvite(agent) && matchesBranch(agent.branchId),
-      ),
-    [agents, matchesBranch],
+      agents.filter((agent) => {
+        if (!canResendStaffInvite(agent)) return false;
+        if (!isOwner) return true;
+        return matchesBranch(agent.branchId);
+      }),
+    [agents, isOwner, matchesBranch],
   );
 
   function openInvite() {
