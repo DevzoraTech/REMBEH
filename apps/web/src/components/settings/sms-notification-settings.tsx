@@ -7,6 +7,7 @@ import {
   FileText,
   Loader2,
   MessageSquareText,
+  Phone,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
@@ -18,6 +19,18 @@ type SmsNotificationSettings = {
   paymentConfirmationEnabled: boolean;
   paymentReminderEnabled: boolean;
   overdueNoticeEnabled: boolean;
+  supportPhone: string | null;
+  supportContact: {
+    ownerName: string | null;
+    ownerPhone: string | null;
+    managerName: string | null;
+    managerPhone: string | null;
+    resolvedPhone: string;
+    usingCustomPhone: boolean;
+    canEditSource: boolean;
+    canEditPhone: boolean;
+    canLock: boolean;
+  };
   templates: {
     loanRecorded: string;
     paymentConfirmation: string;
@@ -72,6 +85,7 @@ export function SmsNotificationSettingsPanel({ session, canEdit }: Props) {
   const [savingKey, setSavingKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [phoneDraft, setPhoneDraft] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -92,6 +106,11 @@ export function SmsNotificationSettingsPanel({ session, canEdit }: Props) {
         throw new Error(formatApiError(payload.message));
       }
       setSettings(payload);
+      setPhoneDraft(
+        payload.supportPhone?.trim() ||
+          payload.supportContact.ownerPhone?.trim() ||
+          "",
+      );
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -108,15 +127,14 @@ export function SmsNotificationSettingsPanel({ session, canEdit }: Props) {
   }, [load]);
 
   async function patch(
-    key: keyof Omit<SmsNotificationSettings, "templates" | "updatedAt">,
-    value: boolean,
+    body: Record<string, boolean | string | null>,
+    key = Object.keys(body)[0] ?? "save",
   ) {
     if (!settings || !canEdit) return;
     setSavingKey(key);
     setError(null);
     setNotice(null);
     const previous = settings;
-    setSettings({ ...settings, [key]: value });
     try {
       const response = await fetch(
         `${apiBaseUrl}/sms-credits/notification-settings`,
@@ -126,7 +144,7 @@ export function SmsNotificationSettingsPanel({ session, canEdit }: Props) {
             Authorization: `${session.tokenType} ${session.accessToken}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ [key]: value }),
+          body: JSON.stringify(body),
         },
       );
       const payload = await readApiJson<
@@ -136,6 +154,11 @@ export function SmsNotificationSettingsPanel({ session, canEdit }: Props) {
         throw new Error(formatApiError(payload.message));
       }
       setSettings(payload);
+      setPhoneDraft(
+        payload.supportPhone?.trim() ||
+          payload.supportContact.ownerPhone?.trim() ||
+          "",
+      );
       setNotice("SMS settings saved.");
     } catch (caught) {
       setSettings(previous);
@@ -147,6 +170,10 @@ export function SmsNotificationSettingsPanel({ session, canEdit }: Props) {
     } finally {
       setSavingKey(null);
     }
+  }
+
+  async function saveSupportPhone(next: string | null) {
+    await patch({ supportPhone: next }, "supportPhone");
   }
 
   if (loading) {
@@ -204,6 +231,11 @@ export function SmsNotificationSettingsPanel({ session, canEdit }: Props) {
   ];
 
   const masterOff = !settings.enabled;
+  const canEditPhone = canEdit && settings.supportContact.canEditPhone;
+  const ownerPhone = settings.supportContact.ownerPhone?.trim() || "";
+  const phoneDirty =
+    phoneDraft.trim() !==
+    (settings.supportPhone?.trim() || ownerPhone);
 
   return (
     <div className="space-y-4">
@@ -212,7 +244,8 @@ export function SmsNotificationSettingsPanel({ session, canEdit }: Props) {
           SMS Notification Settings
         </h2>
         <p className="mt-1 text-sm text-slate-500">
-          Choose which SMS notifications are sent to borrowers.
+          Choose which SMS notifications are sent to borrowers, and which
+          number they should call for support.
         </p>
       </div>
 
@@ -226,6 +259,82 @@ export function SmsNotificationSettingsPanel({ session, canEdit }: Props) {
           {notice}
         </p>
       ) : null}
+
+      <div className="rounded-2xl border border-[#e6ebf0] bg-white p-4 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+        <div className="flex items-start gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-sky-50 text-sky-700">
+            <Phone className="size-5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-[#0b1220]">
+              Support number in client messages
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+              This number is inserted into loan, payment, and reminder SMS.
+              By default it uses the organisation owner&apos;s phone
+              {ownerPhone ? ` (${ownerPhone})` : ""}.
+            </p>
+            <label
+              htmlFor="sms-support-phone"
+              className="mt-3 block text-[11px] font-semibold text-slate-600"
+            >
+              Number shown to clients
+            </label>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              <input
+                id="sms-support-phone"
+                type="tel"
+                inputMode="tel"
+                value={phoneDraft}
+                disabled={!canEditPhone || savingKey === "supportPhone"}
+                onChange={(event) => setPhoneDraft(event.target.value)}
+                placeholder={ownerPhone || "e.g. 07XX XXX XXX"}
+                className="h-10 min-w-[220px] flex-1 rounded-xl border border-[#dfe5eb] bg-white px-3 text-sm font-semibold text-[#0b1220] outline-none focus:border-[#0a6b55] disabled:bg-slate-50 disabled:text-slate-400"
+              />
+              <button
+                type="button"
+                disabled={
+                  !canEditPhone ||
+                  !phoneDirty ||
+                  savingKey === "supportPhone"
+                }
+                onClick={() => void saveSupportPhone(phoneDraft.trim() || null)}
+                className="inline-flex h-10 items-center rounded-xl bg-[#0a6b55] px-3.5 text-xs font-bold text-white transition hover:bg-[#085c49] disabled:opacity-50"
+              >
+                {savingKey === "supportPhone" ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  "Save number"
+                )}
+              </button>
+              {settings.supportContact.usingCustomPhone ? (
+                <button
+                  type="button"
+                  disabled={!canEditPhone || savingKey === "supportPhone"}
+                  onClick={() => void saveSupportPhone(null)}
+                  className="inline-flex h-10 items-center rounded-xl border border-[#dfe5eb] bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Use owner number
+                </button>
+              ) : null}
+            </div>
+            <p className="mt-2 text-[11px] font-medium text-slate-500">
+              Currently used:{" "}
+              <span className="font-bold text-[#0b1220]">
+                {settings.supportContact.resolvedPhone || "Not set"}
+              </span>
+              {settings.supportContact.usingCustomPhone
+                ? " · custom"
+                : " · owner default"}
+            </p>
+            {!canEditPhone ? (
+              <p className="mt-2 text-[11px] font-medium text-amber-700">
+                Only the organisation owner can change this number.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </div>
 
       <div className="flex items-center gap-3 rounded-2xl border border-[#e6ebf0] bg-white px-4 py-3.5 shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
         <span className="grid size-10 place-items-center rounded-xl bg-emerald-50 text-[#0a6b55]">
@@ -243,7 +352,7 @@ export function SmsNotificationSettingsPanel({ session, canEdit }: Props) {
           checked={settings.enabled}
           disabled={!canEdit || savingKey === "enabled"}
           label="Allow SMS Notifications"
-          onChange={(next) => void patch("enabled", next)}
+          onChange={(next) => void patch({ enabled: next })}
         />
       </div>
 
@@ -280,7 +389,7 @@ export function SmsNotificationSettingsPanel({ session, canEdit }: Props) {
                     !canEdit || masterOff || savingKey === card.key
                   }
                   label={card.title}
-                  onChange={(next) => void patch(card.key, next)}
+                  onChange={(next) => void patch({ [card.key]: next })}
                 />
               </div>
               <div className="mt-3 rounded-xl bg-[#f4f7f6] px-3 py-2.5">

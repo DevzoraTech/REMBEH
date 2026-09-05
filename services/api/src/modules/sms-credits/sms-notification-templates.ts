@@ -14,13 +14,17 @@ export type SmsNotificationSettingsContract = {
   overdueNoticeEnabled: boolean;
   supportContactSource: SmsSupportContactSource;
   supportContactLocked: boolean;
+  /** Custom number for borrower SMS. Null/empty means use the owner phone. */
+  supportPhone: string | null;
   supportContact: {
     ownerName: string | null;
     ownerPhone: string | null;
     managerName: string | null;
     managerPhone: string | null;
     resolvedPhone: string;
+    usingCustomPhone: boolean;
     canEditSource: boolean;
+    canEditPhone: boolean;
     canLock: boolean;
   };
   templates: {
@@ -52,15 +56,18 @@ export const DEFAULT_SMS_NOTIFICATION_SETTINGS: Omit<
   paymentConfirmationEnabled: true,
   paymentReminderEnabled: true,
   overdueNoticeEnabled: true,
-  supportContactSource: 'MANAGER',
+  supportContactSource: 'OWNER',
   supportContactLocked: false,
+  supportPhone: null,
   supportContact: {
     ownerName: null,
     ownerPhone: null,
     managerName: null,
     managerPhone: null,
     resolvedPhone: '',
+    usingCustomPhone: false,
     canEditSource: false,
+    canEditPhone: false,
     canLock: false,
   },
   templates: { ...SMS_NOTIFICATION_TEMPLATES },

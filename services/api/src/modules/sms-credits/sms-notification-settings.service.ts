@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -37,6 +38,7 @@ export class SmsNotificationSettingsService {
       overdueNoticeEnabled?: boolean;
       supportContactSource?: SmsSupportContactSource;
       supportContactLocked?: boolean;
+      supportPhone?: string | null;
     },
   ): Promise<SmsNotificationSettingsContract> {
     this.assertCanWrite(user);
@@ -48,11 +50,16 @@ export class SmsNotificationSettingsService {
     );
     const isOwner = this.isOwner(user);
     const locked = existing?.supportContactLocked ?? false;
+    const phoneTouched = Object.prototype.hasOwnProperty.call(
+      input,
+      'supportPhone',
+    );
 
     if (!isOwner && locked) {
       if (
         input.supportContactSource != null ||
-        input.supportContactLocked != null
+        input.supportContactLocked != null ||
+        phoneTouched
       ) {
         throw new ForbiddenException(
           'The organisation owner has locked the support contact. Managers cannot change it.',
@@ -60,11 +67,15 @@ export class SmsNotificationSettingsService {
       }
     }
 
-    if (!isOwner && input.supportContactLocked != null) {
+    if (!isOwner && (input.supportContactLocked != null || phoneTouched)) {
       throw new ForbiddenException(
-        'Only the organisation owner can lock the support contact.',
+        'Only the organisation owner can change the support number.',
       );
     }
+
+    const nextSupportPhone = phoneTouched
+      ? this.normalizeSupportPhone(input.supportPhone)
+      : (existing?.supportPhone ?? null);
 
     const data = {
       enabled: input.enabled ?? existing?.enabled ?? true,
@@ -83,10 +94,11 @@ export class SmsNotificationSettingsService {
       supportContactSource:
         input.supportContactSource ??
         existing?.supportContactSource ??
-        SmsSupportContactSource.MANAGER,
+        SmsSupportContactSource.OWNER,
       supportContactLocked: isOwner
         ? (input.supportContactLocked ?? existing?.supportContactLocked ?? false)
         : (existing?.supportContactLocked ?? false),
+      supportPhone: nextSupportPhone,
       updatedByUserId: user.userId,
     };
 
@@ -131,7 +143,23 @@ export class SmsNotificationSettingsService {
     if (!branch) return '';
     const settings = await this.getOrCreate(branch.tenantId);
     const contacts = await this.loadContacts(branch.tenantId, branchId);
-    if (settings.supportContactSource === 'OWNER') {
+    return this.resolvePhone(settings.supportPhone, settings.supportContactSource, contacts);
+  }
+
+  private resolvePhone(
+    supportPhone: string | null | undefined,
+    source: SupportSource | SmsSupportContactSource,
+    contacts: {
+      ownerPhone: string;
+      managerPhone: string;
+    },
+  ) {
+    const custom = supportPhone?.trim() || '';
+    if (custom) return custom;
+    const preferOwner =
+      source === 'OWNER' ||
+      String(source) === String(SmsSupportContactSource.OWNER);
+    if (preferOwner) {
       return contacts.ownerPhone || contacts.managerPhone || '';
     }
     return contacts.managerPhone || contacts.ownerPhone || '';
@@ -149,20 +177,24 @@ export class SmsNotificationSettingsService {
     );
     const isOwner = this.isOwner(user);
     const locked = settings.supportContactLocked;
-    const resolvedPhone =
-      settings.supportContactSource === 'OWNER'
-        ? contacts.ownerPhone || contacts.managerPhone || ''
-        : contacts.managerPhone || contacts.ownerPhone || '';
+    const custom = settings.supportPhone?.trim() || '';
+    const resolvedPhone = this.resolvePhone(
+      settings.supportPhone,
+      settings.supportContactSource,
+      contacts,
+    );
 
     return {
       ...settings,
       supportContact: {
         ownerName: contacts.ownerName,
-        ownerPhone: contacts.ownerPhone,
+        ownerPhone: contacts.ownerPhone || null,
         managerName: contacts.managerName,
-        managerPhone: contacts.managerPhone,
+        managerPhone: contacts.managerPhone || null,
         resolvedPhone,
+        usingCustomPhone: Boolean(custom),
         canEditSource: isOwner || !locked,
+        canEditPhone: isOwner,
         canLock: isOwner,
       },
     };
@@ -243,6 +275,7 @@ export class SmsNotificationSettingsService {
           paymentConfirmationEnabled: true,
           paymentReminderEnabled: true,
           overdueNoticeEnabled: true,
+          supportContactSource: SmsSupportContactSource.OWNER,
         },
       });
       return this.toRowContract(created);
@@ -268,6 +301,7 @@ export class SmsNotificationSettingsService {
     overdueNoticeEnabled: boolean;
     supportContactSource: SmsSupportContactSource;
     supportContactLocked: boolean;
+    supportPhone: string | null;
     updatedAt: Date;
   }): Omit<SmsNotificationSettingsContract, 'supportContact'> {
     return {
@@ -278,9 +312,29 @@ export class SmsNotificationSettingsService {
       overdueNoticeEnabled: row.overdueNoticeEnabled,
       supportContactSource: row.supportContactSource as SupportSource,
       supportContactLocked: row.supportContactLocked,
+      supportPhone: row.supportPhone?.trim() || null,
       templates: { ...SMS_NOTIFICATION_TEMPLATES },
       updatedAt: row.updatedAt.toISOString(),
     };
+  }
+
+  private normalizeSupportPhone(value: string | null | undefined) {
+    if (value == null) return null;
+    const cleaned = value.trim().replace(/\s+/g, ' ');
+    if (!cleaned) return null;
+    if (cleaned.length > 32) {
+      throw new BadRequestException('Support phone is too long.');
+    }
+    if (!/^[\d+\s()-]+$/.test(cleaned)) {
+      throw new BadRequestException(
+        'Support phone may only contain digits and phone punctuation.',
+      );
+    }
+    const digits = cleaned.replace(/\D/g, '');
+    if (digits.length < 9) {
+      throw new BadRequestException('Enter a valid support phone number.');
+    }
+    return cleaned;
   }
 
   private isOwner(user: AuthenticatedUser) {

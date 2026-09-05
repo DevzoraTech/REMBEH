@@ -11,6 +11,7 @@ import '../../services/session_store.dart';
 import '../../theme.dart';
 import '../../utils/friendly_errors.dart';
 import '../login_screen.dart';
+import 'sms_support_number_settings_card.dart';
 
 class AgentProfileScreen extends StatefulWidget {
   const AgentProfileScreen({super.key, required this.session});
@@ -313,6 +314,11 @@ class _AgentProfileScreenState extends State<AgentProfileScreen> {
                         ),
                       ),
                     ),
+                ],
+                if (widget.session.isOrganisationOwner) ...[
+                  const SizedBox(height: 22),
+                  _SectionLabel('Client messages'),
+                  SmsSupportNumberSettingsCard(session: widget.session),
                 ],
                 const SizedBox(height: 22),
                 _SectionLabel('On this phone'),

@@ -564,8 +564,10 @@ model TenantSmsNotificationSettings {
   paymentConfirmationEnabled Boolean  @default(true) @map("payment_confirmation_enabled")
   paymentReminderEnabled     Boolean  @default(true) @map("payment_reminder_enabled")
   overdueNoticeEnabled       Boolean  @default(true) @map("overdue_notice_enabled")
-  supportContactSource       SmsSupportContactSource @default(MANAGER) @map("support_contact_source")
+  supportContactSource       SmsSupportContactSource @default(OWNER) @map("support_contact_source")
   supportContactLocked       Boolean  @default(false) @map("support_contact_locked")
+  /// Optional override shown in borrower SMS. Null/empty = use the owner phone.
+  supportPhone               String?  @map("support_phone")
   updatedByUserId            String?  @map("updated_by_user_id") @db.Uuid
   createdAt                  DateTime @default(now()) @map("created_at")
   updatedAt                  DateTime @updatedAt @map("updated_at")

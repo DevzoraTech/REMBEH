@@ -953,6 +953,46 @@ class ApiClient {
     );
   }
 
+  Future<Map<String, dynamic>> getSmsNotificationSettings({
+    required RembehSession session,
+  }) {
+    return _getJson(
+      session: session,
+      path: '/sms-credits/notification-settings',
+    );
+  }
+
+  Future<Map<String, dynamic>> updateSmsNotificationSettings({
+    required RembehSession session,
+    bool? enabled,
+    bool? loanRecordedEnabled,
+    bool? paymentConfirmationEnabled,
+    bool? paymentReminderEnabled,
+    bool? overdueNoticeEnabled,
+    String? supportPhone,
+    bool clearSupportPhone = false,
+  }) {
+    return _patchJson(
+      session: session,
+      path: '/sms-credits/notification-settings',
+      body: {
+        if (enabled != null) 'enabled': enabled,
+        if (loanRecordedEnabled != null)
+          'loanRecordedEnabled': loanRecordedEnabled,
+        if (paymentConfirmationEnabled != null)
+          'paymentConfirmationEnabled': paymentConfirmationEnabled,
+        if (paymentReminderEnabled != null)
+          'paymentReminderEnabled': paymentReminderEnabled,
+        if (overdueNoticeEnabled != null)
+          'overdueNoticeEnabled': overdueNoticeEnabled,
+        if (clearSupportPhone)
+          'supportPhone': null
+        else if (supportPhone != null)
+          'supportPhone': supportPhone,
+      },
+    );
+  }
+
   Future<Map<String, dynamic>> openBranchOperation({
     required RembehSession session,
     String? branchId,
