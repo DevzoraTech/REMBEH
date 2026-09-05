@@ -1857,6 +1857,8 @@ model TenantBilling {
   tenantId            String   @unique @map("tenant_id") @db.Uuid
   trialStartsAt       DateTime @map("trial_starts_at")
   trialEndsAt         DateTime @map("trial_ends_at")
+  /// When set, overrides the platform default trial length for this organisation.
+  trialDurationDays   Int?     @map("trial_duration_days")
   pesapalCustomerHint String?  @map("pesapal_customer_hint")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")

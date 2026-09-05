@@ -28,6 +28,62 @@ export type ControlCenterFeatureAccess = {
   } | null;
 };
 
+export type ControlCenterTenantTrial = {
+  durationDays: number;
+  isCustom: boolean;
+  defaultDays: number;
+  startsAt: string;
+  endsAt: string;
+};
+
+export type ControlCenterBranchUsage = {
+  branch: { id: string; name: string; address: string };
+  today: {
+    collected: number;
+    repaymentCount: number;
+    loansIssued: number;
+    principalIssued: number;
+    newBorrowers: number;
+    operationStatus: string | null;
+    reportStatus: string | null;
+  };
+  week: {
+    days: Array<{
+      date: string;
+      collected: number;
+      repaymentCount: number;
+      loansIssued: number;
+      principalIssued: number;
+      operationOpened: boolean;
+      operationClosed: boolean;
+      operationStatus: string | null;
+      reportSubmitted: boolean;
+      reportStatus: string | null;
+    }>;
+    totals: {
+      collected: number;
+      repaymentCount: number;
+      loansIssued: number;
+      activeDays: number;
+      closedDays: number;
+    };
+    usageLevel: "healthy" | "light" | "idle" | "inactive";
+    usageReason: string;
+  };
+  recentActivity: Array<{
+    id: string;
+    type: "repayment" | "loan" | "report";
+    title: string;
+    detail: string;
+    amount: number | null;
+    at: string;
+  }>;
+  lastUsedAt: string | null;
+  lastUsedBy: string | null;
+  lastUsedDevice: string | null;
+  lastUsedPlatform: string | null;
+};
+
 export type ControlCenterClientsResponse = {
   stats: {
     totalClients: number;
@@ -440,6 +496,7 @@ export type ControlCenterClientDetail = {
       totalUsers: number;
     };
     dataCorrectionAccess: ControlCenterFeatureAccess;
+    trial?: ControlCenterTenantTrial;
   };
   branches: ControlCenterBranch[];
   subscriptions: Array<{

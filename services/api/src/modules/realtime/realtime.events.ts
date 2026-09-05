@@ -5,6 +5,7 @@ export const REALTIME_EVENTS = {
   paymentMade: 'payment.made',
   subscriptionPaymentUpdated: 'subscription_payment.updated',
   loanFined: 'loan.fined',
+  shortageUpdated: 'shortage.updated',
 } as const;
 
 export type LoanApplicationRealtimePayload = {

@@ -492,7 +492,8 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       ..on('operation.expense_voided', _onOperationLiveEvent)
       ..on('operation.cash_topup_recorded', _onOperationLiveEvent)
       ..on('operation.float_updated', _onOperationLiveEvent)
-      ..on('operation.float_returned', _onOperationLiveEvent);
+      ..on('operation.float_returned', _onOperationLiveEvent)
+      ..on('shortage.updated', _onShortageLiveEvent);
   }
 
   void _stopOperationLiveEvents() {
@@ -506,8 +507,23 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       ..off('operation.expense_voided', _onOperationLiveEvent)
       ..off('operation.cash_topup_recorded', _onOperationLiveEvent)
       ..off('operation.float_updated', _onOperationLiveEvent)
-      ..off('operation.float_returned', _onOperationLiveEvent);
+      ..off('operation.float_returned', _onOperationLiveEvent)
+      ..off('shortage.updated', _onShortageLiveEvent);
     _listeningOperationEvents = false;
+  }
+
+  void _onShortageLiveEvent(Map<String, dynamic> payload) {
+    final payloadTenant = payload['tenantId'] as String?;
+    final payloadBranch = payload['branchId'] as String?;
+    if (payloadTenant != null && payloadTenant != widget.session.tenantId) {
+      return;
+    }
+    if (payloadBranch != null &&
+        widget.session.branchId != null &&
+        payloadBranch != widget.session.branchId) {
+      return;
+    }
+    unawaited(_refreshShortagesQuietly());
   }
 
   void _onOperationLiveEvent(Map<String, dynamic> payload) {

@@ -37,6 +37,7 @@ import { AppBootSkeleton, TableSkeleton } from "../app/skeleton";
 import { TableSearchField } from "../app/table-search-field";
 import { apiBaseUrl, formatApiError, readApiJson } from "../../lib/api";
 import { invalidateLiveQueries } from "../../lib/live-query-cache";
+import { connectRealtime } from "../../lib/realtime";
 import {
   RembehBranch,
   RembehSession,
@@ -218,7 +219,7 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
       await load(
         session,
         isOwner ? branchId : (branch?.id ?? branchId),
-        opts,
+        { silent: opts?.silent, fresh: true },
       );
     },
     [branch?.id, branchId, isOwner, load, session],
@@ -231,6 +232,32 @@ export function ShortagesWorkspace({ mode = "manager" }: Props) {
 
   useOwnerLiveReload(reloadShortages, Boolean(session));
 
+  useEffect(() => {
+    if (!session) return;
+
+    const socket = connectRealtime(session.accessToken);
+    const onShortageEvent = () => {
+      void reloadShortages({ silent: true });
+    };
+
+    socket.on("shortage.updated", onShortageEvent);
+    socket.on("operation.float_returned", onShortageEvent);
+    socket.on("operation.branch_closed", onShortageEvent);
+
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void reloadShortages({ silent: true });
+      }
+    }, 25_000);
+
+    return () => {
+      window.clearInterval(poll);
+      socket.off("shortage.updated", onShortageEvent);
+      socket.off("operation.float_returned", onShortageEvent);
+      socket.off("operation.branch_closed", onShortageEvent);
+      socket.disconnect();
+    };
+  }, [reloadShortages, session]);
   useEffect(() => {
     if (!session || !selectedId) {
       setSelected(null);

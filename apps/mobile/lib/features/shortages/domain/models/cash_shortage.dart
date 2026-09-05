@@ -1,11 +1,15 @@
 class ShortageEmployeeOption {
   const ShortageEmployeeOption({
-    required this.userId,
+    required this.key,
     required this.name,
     required this.outstanding,
+    this.userId,
+    this.employeeId,
   });
 
-  final String userId;
+  final String key;
+  final String? userId;
+  final String? employeeId;
   final String name;
   final num outstanding;
 }
@@ -39,6 +43,7 @@ class CashShortage {
     this.branchId,
     this.branchName,
     this.responsibleUserId,
+    this.employeeId,
     this.responsibleName,
     this.responsiblePublicId,
     this.responsiblePhotoUrl,
@@ -56,6 +61,7 @@ class CashShortage {
   final String? branchId;
   final String? branchName;
   final String? responsibleUserId;
+  final String? employeeId;
   final String? responsibleName;
   final String? responsiblePublicId;
   final String? responsiblePhotoUrl;
@@ -82,4 +88,12 @@ class CashShortage {
   }
 
   bool get isClosed => !isOpen;
+
+  String? get personKey {
+    final employee = employeeId?.trim();
+    if (employee != null && employee.isNotEmpty) return employee;
+    final user = responsibleUserId?.trim();
+    if (user != null && user.isNotEmpty) return user;
+    return null;
+  }
 }

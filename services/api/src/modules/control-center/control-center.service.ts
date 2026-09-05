@@ -49,6 +49,7 @@ import {
 } from './dto/control-center-auth.dto';
 import { ControlCenterMessageQueryDto } from './dto/control-center-message-query.dto';
 import { ControlCenterFeatureAccessDto } from './dto/control-center-feature-access.dto';
+import { ControlCenterUpdateTrialDto } from './dto/control-center-trial.dto';
 import { ControlCenterSendMessageDto } from './dto/control-center-message.dto';
 import { ControlCenterSavePricingDto } from './dto/control-center-pricing.dto';
 import { ControlCenterUpdateUserStatusDto } from './dto/control-center-users.dto';
@@ -2522,6 +2523,7 @@ export class ControlCenterService implements OnModuleInit {
       subscriptionPayments,
       latestActivity,
       dataCorrectionAccess,
+      trialInfo,
     ] = await Promise.all([
       this.prisma.repayment.groupBy({
         by: ['branchId'],
@@ -2551,6 +2553,7 @@ export class ControlCenterService implements OnModuleInit {
         include: { actor: { select: { displayName: true, email: true } } },
       }),
       this.buildDataCorrectionAccess(tenantId, tenant.branches),
+      this.billingService.resolveTenantTrialDays(tenantId),
     ]);
 
     const repaymentsByBranch = new Map(
@@ -2592,6 +2595,13 @@ export class ControlCenterService implements OnModuleInit {
           totalUsers: tenant.users.length,
         },
         dataCorrectionAccess: dataCorrectionAccess.organization,
+        trial: {
+          durationDays: trialInfo.durationDays,
+          isCustom: trialInfo.isCustom,
+          defaultDays: trialInfo.defaultDays,
+          startsAt: trialInfo.billing.trialStartsAt.toISOString(),
+          endsAt: trialInfo.billing.trialEndsAt.toISOString(),
+        },
       },
       branches: tenant.branches.map((branch) => {
         const repayment = repaymentsByBranch.get(branch.id);
@@ -2690,6 +2700,392 @@ export class ControlCenterService implements OnModuleInit {
         actorName: row.actor?.displayName ?? row.actor?.email ?? 'System',
         createdAt: row.createdAt.toISOString(),
       })),
+    };
+  }
+
+  async updateTenantTrial(
+    admin: ControlCenterAdminContext,
+    tenantId: string,
+    dto: ControlCenterUpdateTrialDto,
+  ) {
+    await this.assertTenant(tenantId);
+    const before = await this.billingService.resolveTenantTrialDays(tenantId);
+    const updated = await this.billingService.setTenantTrialDuration(
+      tenantId,
+      dto.durationDays,
+    );
+
+    await this.audit(
+      admin.adminId,
+      'control_center.tenant.trial_duration.updated',
+      'TenantBilling',
+      updated.billing.id,
+      {
+        durationDays: before.durationDays,
+        isCustom: before.isCustom,
+        endsAt: before.billing.trialEndsAt.toISOString(),
+      },
+      {
+        durationDays: updated.durationDays,
+        isCustom: updated.isCustom,
+        endsAt: updated.billing.trialEndsAt.toISOString(),
+        reason: this.cleanOptionalText(dto.reason),
+      },
+    );
+
+    return {
+      trial: {
+        durationDays: updated.durationDays,
+        isCustom: updated.isCustom,
+        defaultDays: updated.defaultDays,
+        startsAt: updated.billing.trialStartsAt.toISOString(),
+        endsAt: updated.billing.trialEndsAt.toISOString(),
+      },
+    };
+  }
+
+  async getBranchUsage(tenantId: string, branchId: string) {
+    const branch = await this.assertBranch(tenantId, branchId);
+    const now = new Date();
+    const todayStart = this.startOfUtcDay(now);
+    const tomorrowStart = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
+    const weekStart = new Date(
+      todayStart.getTime() - 6 * 24 * 60 * 60 * 1000,
+    );
+
+    const [
+      todayRepayments,
+      todayLoans,
+      todayBorrowers,
+      weekRepayments,
+      weekLoans,
+      weekOperations,
+      weekReports,
+      recentRepayments,
+      recentLoans,
+      recentReports,
+      lastSession,
+    ] = await Promise.all([
+      this.prisma.repayment.aggregate({
+        where: {
+          tenantId,
+          branchId,
+          paidAt: { gte: todayStart, lt: tomorrowStart },
+        },
+        _sum: { amount: true },
+        _count: { _all: true },
+      }),
+      this.prisma.loan.aggregate({
+        where: {
+          tenantId,
+          branchId,
+          OR: [
+            { disbursedAt: { gte: todayStart, lt: tomorrowStart } },
+            {
+              disbursedAt: null,
+              createdAt: { gte: todayStart, lt: tomorrowStart },
+              status: {
+                in: [
+                  LoanStatus.DISBURSED,
+                  LoanStatus.CURRENT,
+                  LoanStatus.IN_ARREARS,
+                  LoanStatus.CLOSED,
+                ],
+              },
+            },
+          ],
+        },
+        _sum: { principal: true },
+        _count: { _all: true },
+      }),
+      this.prisma.customer.count({
+        where: {
+          tenantId,
+          branchId,
+          createdAt: { gte: todayStart, lt: tomorrowStart },
+        },
+      }),
+      this.prisma.repayment.findMany({
+        where: {
+          tenantId,
+          branchId,
+          paidAt: { gte: weekStart, lt: tomorrowStart },
+        },
+        select: { amount: true, paidAt: true },
+      }),
+      this.prisma.loan.findMany({
+        where: {
+          tenantId,
+          branchId,
+          OR: [
+            { disbursedAt: { gte: weekStart, lt: tomorrowStart } },
+            {
+              disbursedAt: null,
+              createdAt: { gte: weekStart, lt: tomorrowStart },
+            },
+          ],
+        },
+        select: {
+          principal: true,
+          disbursedAt: true,
+          createdAt: true,
+          status: true,
+        },
+      }),
+      this.prisma.branchDailyOperation.findMany({
+        where: {
+          tenantId,
+          branchId,
+          operationDate: { gte: weekStart, lt: tomorrowStart },
+        },
+        select: {
+          operationDate: true,
+          status: true,
+          openedAt: true,
+          closedAt: true,
+        },
+      }),
+      this.prisma.branchOperationReport.findMany({
+        where: {
+          tenantId,
+          branchId,
+          operationDate: { gte: weekStart, lt: tomorrowStart },
+        },
+        select: {
+          operationDate: true,
+          status: true,
+          managerReviewedAt: true,
+          generatedAt: true,
+        },
+      }),
+      this.prisma.repayment.findMany({
+        where: { tenantId, branchId },
+        take: 12,
+        orderBy: { paidAt: 'desc' },
+        include: {
+          loan: {
+            select: {
+              customer: { select: { fullName: true } },
+            },
+          },
+        },
+      }),
+      this.prisma.loan.findMany({
+        where: { tenantId, branchId },
+        take: 8,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          customer: { select: { fullName: true } },
+        },
+      }),
+      this.prisma.branchOperationReport.findMany({
+        where: { tenantId, branchId },
+        take: 5,
+        orderBy: { generatedAt: 'desc' },
+        select: {
+          id: true,
+          reportNumber: true,
+          status: true,
+          operationDate: true,
+          generatedAt: true,
+        },
+      }),
+      this.prisma.authSession.findFirst({
+        where: {
+          revokedAt: null,
+          user: { tenantId, branchId },
+        },
+        orderBy: { lastSeenAt: 'desc' },
+        select: {
+          lastSeenAt: true,
+          deviceName: true,
+          platform: true,
+          user: { select: { displayName: true } },
+        },
+      }),
+    ]);
+
+    const todayOp = weekOperations.find(
+      (row) => this.dateKey(row.operationDate) === this.dateKey(todayStart),
+    );
+    const todayReport = weekReports.find(
+      (row) => this.dateKey(row.operationDate) === this.dateKey(todayStart),
+    );
+
+    const days = Array.from({ length: 7 }).map((_, index) => {
+      const day = new Date(weekStart.getTime() + index * 24 * 60 * 60 * 1000);
+      const key = this.dateKey(day);
+      const dayRepayments = weekRepayments.filter(
+        (row) => this.dateKey(row.paidAt) === key,
+      );
+      const collected = dayRepayments.reduce(
+        (sum, row) => sum + this.decimal(row.amount),
+        0,
+      );
+      const loansIssued = weekLoans.filter((row) => {
+        const at = row.disbursedAt ?? row.createdAt;
+        return this.dateKey(at) === key;
+      });
+      const operation = weekOperations.find(
+        (row) => this.dateKey(row.operationDate) === key,
+      );
+      const report = weekReports.find(
+        (row) => this.dateKey(row.operationDate) === key,
+      );
+      return {
+        date: key,
+        collected,
+        repaymentCount: dayRepayments.length,
+        loansIssued: loansIssued.length,
+        principalIssued: loansIssued.reduce(
+          (sum, row) => sum + this.decimal(row.principal),
+          0,
+        ),
+        operationOpened: Boolean(operation?.openedAt),
+        operationClosed: Boolean(operation?.closedAt),
+        operationStatus: operation?.status ?? null,
+        reportSubmitted: Boolean(
+          report &&
+            ['SENT_TO_OWNER', 'OWNER_APPROVED', 'RETURNED_TO_MANAGER'].includes(
+              report.status,
+            ),
+        ),
+        reportStatus: report?.status ?? null,
+      };
+    });
+
+    const weekCollected = days.reduce((sum, day) => sum + day.collected, 0);
+    const weekRepaymentCount = days.reduce(
+      (sum, day) => sum + day.repaymentCount,
+      0,
+    );
+    const weekLoansIssued = days.reduce((sum, day) => sum + day.loansIssued, 0);
+    const activeDays = days.filter(
+      (day) =>
+        day.repaymentCount > 0 || day.loansIssued > 0 || day.operationOpened,
+    ).length;
+    const closedDays = days.filter((day) => day.operationClosed).length;
+    const usage = this.branchUsageLevel({
+      activeDays,
+      weekCollected,
+      weekRepaymentCount,
+      lastUsedAt: lastSession?.lastSeenAt ?? null,
+      now,
+    });
+
+    const recentActivity = [
+      ...recentRepayments.map((row) => ({
+        id: `repayment-${row.id}`,
+        type: 'repayment' as const,
+        title: 'Repayment collected',
+        detail: row.loan.customer?.fullName ?? 'Borrower',
+        amount: this.decimal(row.amount),
+        at: row.paidAt.toISOString(),
+      })),
+      ...recentLoans.map((row) => ({
+        id: `loan-${row.id}`,
+        type: 'loan' as const,
+        title: 'Loan activity',
+        detail: `${row.customer?.fullName ?? 'Borrower'} · ${row.status}`,
+        amount: this.decimal(row.principal),
+        at: (row.disbursedAt ?? row.createdAt).toISOString(),
+      })),
+      ...recentReports.map((row) => ({
+        id: `report-${row.id}`,
+        type: 'report' as const,
+        title: 'Daily report',
+        detail: `${row.reportNumber} · ${row.status}`,
+        amount: null as number | null,
+        at: row.generatedAt.toISOString(),
+      })),
+    ]
+      .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+      .slice(0, 16);
+
+    return {
+      branch: {
+        id: branch.id,
+        name: branch.name,
+        address: branch.address,
+      },
+      today: {
+        collected: this.decimal(todayRepayments._sum.amount),
+        repaymentCount: todayRepayments._count._all,
+        loansIssued: todayLoans._count._all,
+        principalIssued: this.decimal(todayLoans._sum.principal),
+        newBorrowers: todayBorrowers,
+        operationStatus: todayOp?.status ?? null,
+        reportStatus: todayReport?.status ?? null,
+      },
+      week: {
+        days,
+        totals: {
+          collected: weekCollected,
+          repaymentCount: weekRepaymentCount,
+          loansIssued: weekLoansIssued,
+          activeDays,
+          closedDays,
+        },
+        usageLevel: usage.level,
+        usageReason: usage.reason,
+      },
+      recentActivity,
+      lastUsedAt: lastSession?.lastSeenAt?.toISOString() ?? null,
+      lastUsedBy: lastSession?.user.displayName ?? null,
+      lastUsedDevice: lastSession?.deviceName ?? null,
+      lastUsedPlatform: lastSession?.platform ?? null,
+    };
+  }
+
+  private startOfUtcDay(value: Date) {
+    return new Date(
+      Date.UTC(value.getUTCFullYear(), value.getUTCMonth(), value.getUTCDate()),
+    );
+  }
+
+  private dateKey(value: Date) {
+    return value.toISOString().slice(0, 10);
+  }
+
+  private branchUsageLevel(input: {
+    activeDays: number;
+    weekCollected: number;
+    weekRepaymentCount: number;
+    lastUsedAt: Date | null;
+    now: Date;
+  }) {
+    const idleHours = input.lastUsedAt
+      ? (input.now.getTime() - input.lastUsedAt.getTime()) / (60 * 60 * 1000)
+      : null;
+
+    if (input.activeDays >= 5 && input.weekRepaymentCount >= 10) {
+      return {
+        level: 'healthy' as const,
+        reason: 'Strong daily use across the last 7 days.',
+      };
+    }
+    if (input.activeDays >= 3 || input.weekRepaymentCount >= 5) {
+      return {
+        level: 'light' as const,
+        reason: 'Some activity this week, but not every working day.',
+      };
+    }
+    if (
+      input.activeDays > 0 ||
+      input.weekCollected > 0 ||
+      (idleHours != null && idleHours < 72)
+    ) {
+      return {
+        level: 'idle' as const,
+        reason: 'Little operational activity this week — check adoption.',
+      };
+    }
+    return {
+      level: 'inactive' as const,
+      reason:
+        idleHours == null
+          ? 'No recent sign-in or collections recorded.'
+          : `Last sign-in was ${Math.floor(idleHours / 24)} day(s) ago.`,
     };
   }
 
@@ -4239,11 +4635,12 @@ export class ControlCenterService implements OnModuleInit {
   private async assertBranch(tenantId: string, branchId: string) {
     const branch = await this.prisma.branch.findFirst({
       where: { id: branchId, tenantId },
-      select: { id: true },
+      select: { id: true, name: true, address: true },
     });
     if (!branch) {
       throw new NotFoundException('Branch not found for this organization.');
     }
+    return branch;
   }
 
   private toAuthResponse(admin: {

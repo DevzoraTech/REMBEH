@@ -19,9 +19,14 @@ class ShortagesController extends ChangeNotifier {
   ShortageListFilter _filter = ShortageListFilter.open;
   bool _loading = false;
   bool _refreshing = false;
+  bool _pendingReload = false;
+  int _loadGeneration = 0;
   String? _error;
   String? _notice;
   String? _activeCacheKey;
+  RembehSession? _lastSession;
+  String? _lastBranchId;
+  String? _lastUserId;
 
   List<CashShortage> get shortages => _shortages;
 
@@ -43,24 +48,24 @@ class ShortagesController extends ChangeNotifier {
       .fold<num>(0, (sum, shortage) => sum + shortage.amountOutstanding);
 
   List<ShortageEmployeeOption> get employeesWithOpenShortages {
-    final byUser = <String, ShortageEmployeeOption>{};
+    final byPerson = <String, ShortageEmployeeOption>{};
 
     for (final shortage in _shortages.where((row) => row.isOpen)) {
-      final userId = shortage.responsibleUserId;
-      if (userId == null || userId.isEmpty) {
-        continue;
-      }
+      final key = shortage.personKey;
+      if (key == null) continue;
 
-      final existing = byUser[userId];
-      byUser[userId] = ShortageEmployeeOption(
-        userId: userId,
+      final existing = byPerson[key];
+      byPerson[key] = ShortageEmployeeOption(
+        key: key,
+        userId: shortage.responsibleUserId ?? existing?.userId,
+        employeeId: shortage.employeeId ?? existing?.employeeId,
         name: shortage.responsibleName ?? existing?.name ?? 'Employee',
         outstanding:
             (existing?.outstanding ?? 0) + shortage.amountOutstanding,
       );
     }
 
-    final rows = byUser.values.toList();
+    final rows = byPerson.values.toList();
     rows.sort(
       (left, right) =>
           left.name.toLowerCase().compareTo(right.name.toLowerCase()),
@@ -121,7 +126,12 @@ class ShortagesController extends ChangeNotifier {
     bool quiet = false,
     bool forceNetwork = false,
   }) async {
+    _lastSession = session;
+    _lastBranchId = branchId;
+    _lastUserId = userId;
+
     if (_loading || _refreshing) {
+      _pendingReload = true;
       return;
     }
 
@@ -146,17 +156,12 @@ class ShortagesController extends ChangeNotifier {
     final cacheFresh =
         !forceNetwork && ShortagesListCache.instance.isFresh(cacheKey);
 
+    // Only skip network when we already have rows and cache is very fresh.
     if (hasRows && cacheFresh && !forceNetwork) {
-      // Still soft-refresh in the background when the soft TTL is stale.
-      final savedAt = await ShortagesListCache.instance.savedAt(cacheKey);
-      final age = savedAt == null
-          ? ShortagesListCache.softTtl
-          : DateTime.now().toUtc().difference(savedAt);
-      if (age <= ShortagesListCache.softTtl) {
-        return;
-      }
+      return;
     }
 
+    final generation = ++_loadGeneration;
     final showBlockingSpinner = !quiet && !hasRows;
     if (showBlockingSpinner) {
       _loading = true;
@@ -177,25 +182,41 @@ class ShortagesController extends ChangeNotifier {
         branchId: branchId,
         userId: userId,
       );
+      if (generation != _loadGeneration) {
+        return;
+      }
       _shortages = rows;
       _error = null;
-
-      // Persist raw JSON via a second lightweight fetch path is avoided —
-      // re-map through the API client cache write in the use-case layer.
       await _persistMapped(cacheKey, rows);
     } catch (error) {
+      if (generation != _loadGeneration) {
+        return;
+      }
       if (_shortages.isEmpty) {
         _error = friendlyErrorMessage(error);
-      } else {
-        // Keep cached rows; surface a soft notice only on forced refresh.
-        if (forceNetwork) {
-          _notice = friendlyErrorMessage(error);
-        }
+      } else if (forceNetwork) {
+        _notice = friendlyErrorMessage(error);
       }
     } finally {
-      _loading = false;
-      _refreshing = false;
-      notifyListeners();
+      if (generation == _loadGeneration) {
+        _loading = false;
+        _refreshing = false;
+        notifyListeners();
+      }
+    }
+
+    if (_pendingReload && generation == _loadGeneration) {
+      _pendingReload = false;
+      final activeSession = _lastSession;
+      if (activeSession != null) {
+        await load(
+          session: activeSession,
+          branchId: _lastBranchId,
+          userId: _lastUserId,
+          quiet: true,
+          forceNetwork: true,
+        );
+      }
     }
   }
 
@@ -209,45 +230,9 @@ class ShortagesController extends ChangeNotifier {
     String cacheKey,
     List<CashShortage> rows,
   ) async {
-    // Store a JSON-friendly snapshot for the next cold open.
     final payload = rows
-        .map(
-          (row) => <String, dynamic>{
-            'id': row.id,
-            'branchId': row.branchId,
-            'branchName': row.branchName,
-            'responsibleUserId': row.responsibleUserId,
-            'responsibleName': row.responsibleName,
-            'responsiblePublicId': row.responsiblePublicId,
-            'responsiblePhotoUrl': row.responsiblePhotoUrl,
-            'createdByName': row.createdByName,
-            'sourceType': row.sourceType,
-            'sourceId': row.sourceId,
-            'reason': row.reason,
-            'operationDate': row.operationDate?.toIso8601String(),
-            'amountOriginal': row.amountOriginal,
-            'amountOutstanding': row.amountOutstanding,
-            'amountPaid': row.amountPaid,
-            'status': row.status,
-            'notes': row.notes,
-            'createdAt': row.createdAt?.toIso8601String(),
-            'clearedAt': row.clearedAt?.toIso8601String(),
-            'payments': row.payments
-                .map(
-                  (payment) => <String, dynamic>{
-                    'id': payment.id,
-                    'amount': payment.amount,
-                    'method': payment.method,
-                    'notes': payment.notes,
-                    'paidAt': payment.paidAt?.toIso8601String(),
-                    'recordedByName': payment.recordedByName,
-                  },
-                )
-                .toList(),
-          },
-        )
+        .map(CashShortageMapper.toCacheJson)
         .toList(growable: false);
-
     await ShortagesListCache.instance.write(cacheKey, payload);
   }
 }

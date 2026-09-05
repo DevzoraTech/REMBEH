@@ -40,6 +40,7 @@ import { ControlCenterUsersSection } from "./users-section";
 
 import type {
   ControlCenterBranch,
+  ControlCenterBranchUsage,
   ControlCenterClient,
   ControlCenterClientDetail,
   ControlCenterClientsResponse,
@@ -96,6 +97,11 @@ export function ControlCenterWorkspace() {
   const [loadingHistory, setLoadingHistory] = useState(false);
 
   const [savingPricing, setSavingPricing] = useState(false);
+
+  const [branchUsage, setBranchUsage] =
+    useState<ControlCenterBranchUsage | null>(null);
+
+  const [loadingBranchUsage, setLoadingBranchUsage] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -290,6 +296,7 @@ export function ControlCenterWorkspace() {
     setSelectedClientId(tenantId);
 
     setSelectedBranchId(null);
+    setBranchUsage(null);
 
     setClientMode("DETAIL");
 
@@ -298,16 +305,87 @@ export function ControlCenterWorkspace() {
     void loadClient(tenantId);
   }
 
+  const loadBranchUsage = useCallback(
+    async (
+      tenantId: string,
+      branchId: string,
+      activeSession = session,
+    ) => {
+      if (!activeSession) {
+        return;
+      }
+
+      setLoadingBranchUsage(true);
+      setError(null);
+
+      try {
+        const usage = await controlCenterFetch<ControlCenterBranchUsage>(
+          `/clients/${tenantId}/branches/${branchId}/usage`,
+          activeSession,
+        );
+        setBranchUsage(usage);
+      } catch (caughtError) {
+        setBranchUsage(null);
+        setError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Could not load branch usage.",
+        );
+      } finally {
+        setLoadingBranchUsage(false);
+      }
+    },
+    [session],
+  );
+
   function openBranch(branchId: string) {
     if (!branchId || !selectedClientId) {
       return;
     }
 
     setSelectedBranchId(branchId);
-
+    setBranchUsage(null);
     setClientMode("BRANCH_DETAIL");
-
     setActive("clients");
+    void loadBranchUsage(selectedClientId, branchId);
+  }
+
+  async function setTrialDuration(input: {
+    tenantId: string;
+    durationDays: number | null;
+    reason: string;
+  }) {
+    if (!session) {
+      return;
+    }
+
+    setError(null);
+
+    try {
+      await controlCenterFetch(
+        `/clients/${input.tenantId}/trial`,
+        session,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            durationDays: input.durationDays,
+            reason: input.reason,
+          }),
+        },
+      );
+
+      await Promise.all([
+        loadClient(input.tenantId, session),
+        loadCore(session),
+      ]);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Could not update trial duration.",
+      );
+      throw caughtError;
+    }
   }
 
   function openPricing(tenantId: string) {
@@ -438,8 +516,8 @@ export function ControlCenterWorkspace() {
 
     if (section !== "clients") {
       setClientMode("LIST");
-
       setSelectedBranchId(null);
+      setBranchUsage(null);
     }
   }
 
@@ -476,10 +554,12 @@ export function ControlCenterWorkspace() {
         clientDetail,
         pricing,
         pricingHistory,
+        branchUsage,
 
         loadingClient,
         loadingPricing,
         loadingHistory,
+        loadingBranchUsage,
         savingPricing,
 
         openClient,
@@ -493,6 +573,8 @@ export function ControlCenterWorkspace() {
 
         refreshAfterPricing,
         setDataCorrectionAccess,
+        setTrialDuration,
+        loadBranchUsage,
         refreshUsers,
 
         setActive: changeSection,
@@ -526,11 +608,15 @@ function renderSection(input: {
 
   pricingHistory: ControlCenterPricingHistory | null;
 
+  branchUsage: ControlCenterBranchUsage | null;
+
   loadingClient: boolean;
 
   loadingPricing: boolean;
 
   loadingHistory: boolean;
+
+  loadingBranchUsage: boolean;
 
   savingPricing: boolean;
 
@@ -556,6 +642,14 @@ function renderSection(input: {
     enabled: boolean;
     reason: string;
   }) => Promise<void>;
+
+  setTrialDuration: (input: {
+    tenantId: string;
+    durationDays: number | null;
+    reason: string;
+  }) => Promise<void>;
+
+  loadBranchUsage: (tenantId: string, branchId: string) => Promise<void>;
 
   refreshUsers: () => Promise<void>;
 
@@ -592,6 +686,7 @@ function renderSection(input: {
             }}
             onPricingHistory={() => input.openHistory()}
             onSetDataCorrectionAccess={input.setDataCorrectionAccess}
+            onSetTrialDuration={input.setTrialDuration}
           />
         );
       }
@@ -602,6 +697,14 @@ function renderSection(input: {
           tenantId={input.clientDetail.client.id}
           organizationName={input.clientDetail.client.name}
           currency={input.clientDetail.client.currency}
+          usage={input.branchUsage}
+          usageLoading={input.loadingBranchUsage}
+          onRefreshUsage={() => {
+            void input.loadBranchUsage(
+              input.clientDetail!.client.id,
+              input.selectedBranch!.id,
+            );
+          }}
           onBack={() => {
             input.setSelectedBranchId(null);
 
@@ -636,6 +739,7 @@ function renderSection(input: {
           }}
           onPricingHistory={() => input.openHistory()}
           onSetDataCorrectionAccess={input.setDataCorrectionAccess}
+          onSetTrialDuration={input.setTrialDuration}
         />
       );
     }

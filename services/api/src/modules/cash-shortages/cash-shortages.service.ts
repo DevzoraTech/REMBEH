@@ -16,6 +16,7 @@ import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { PrismaService } from '../../database/prisma.service';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import { OPERATIONS_PERMISSIONS } from '../operations/operations.permissions';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 
 const shortageInclude = {
   branch: {
@@ -43,7 +44,10 @@ const shortageInclude = {
 
 @Injectable()
 export class CashShortagesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtime: RealtimeGateway,
+  ) {}
 
   async createShortage(input: {
     tenantId: string;
@@ -90,23 +94,103 @@ export class CashShortagesService {
       );
     }
 
-    return this.prisma.cashShortage.create({
-      data: {
+    const personFilter: Prisma.CashShortageWhereInput = {
+      OR: [
+        ...(input.responsibleUserId
+          ? [{ responsibleUserId: input.responsibleUserId }]
+          : []),
+        ...(employeeId ? [{ employeeId }] : []),
+      ],
+    };
+
+    const openRows = await this.prisma.cashShortage.findMany({
+      where: {
         tenantId: input.tenantId,
         branchId: input.branchId,
-        responsibleUserId: input.responsibleUserId ?? null,
-        employeeId,
-        createdByUserId: input.createdByUserId,
-        sourceType: input.sourceType,
-        sourceId: input.sourceId ?? null,
-        reason: input.reason ?? null,
-        operationDate: input.operationDate,
-        amountOriginal: new Prisma.Decimal(amount),
-        amountOutstanding: new Prisma.Decimal(amount),
-        status: CashShortageStatus.OPEN,
-        notes: input.notes?.trim() || null,
+        status: {
+          in: [CashShortageStatus.OPEN, CashShortageStatus.PARTIALLY_PAID],
+        },
+        amountOutstanding: { gt: 0 },
+        ...personFilter,
       },
+      orderBy: [{ operationDate: 'asc' }, { createdAt: 'asc' }],
     });
+
+    const noteLine = input.notes?.trim() || null;
+    const created = await this.prisma.$transaction(async (tx) => {
+      if (openRows.length === 0) {
+        return tx.cashShortage.create({
+          data: {
+            tenantId: input.tenantId,
+            branchId: input.branchId,
+            responsibleUserId: input.responsibleUserId ?? null,
+            employeeId,
+            createdByUserId: input.createdByUserId,
+            sourceType: input.sourceType,
+            sourceId: input.sourceId ?? null,
+            reason: input.reason ?? null,
+            operationDate: input.operationDate,
+            amountOriginal: new Prisma.Decimal(amount),
+            amountOutstanding: new Prisma.Decimal(amount),
+            status: CashShortageStatus.OPEN,
+            notes: noteLine,
+          },
+        });
+      }
+
+      const primary = openRows[0];
+      const duplicates = openRows.slice(1);
+      let nextOriginal = Number(primary.amountOriginal) + amount;
+      let nextOutstanding = Number(primary.amountOutstanding) + amount;
+
+      for (const duplicate of duplicates) {
+        nextOriginal += Number(duplicate.amountOriginal);
+        nextOutstanding += Number(duplicate.amountOutstanding);
+        await tx.cashShortagePayment.updateMany({
+          where: { shortageId: duplicate.id },
+          data: { shortageId: primary.id },
+        });
+        await tx.cashShortage.delete({ where: { id: duplicate.id } });
+      }
+
+      nextOriginal = Math.round(nextOriginal * 100) / 100;
+      nextOutstanding = Math.round(nextOutstanding * 100) / 100;
+
+      const mergedNotes = [primary.notes?.trim(), noteLine]
+        .filter((value): value is string => Boolean(value))
+        .join(' · ');
+
+      return tx.cashShortage.update({
+        where: { id: primary.id },
+        data: {
+          amountOriginal: new Prisma.Decimal(nextOriginal),
+          amountOutstanding: new Prisma.Decimal(Math.max(0, nextOutstanding)),
+          status:
+            nextOutstanding <= 0
+              ? CashShortageStatus.CLEARED
+              : nextOutstanding < nextOriginal
+                ? CashShortageStatus.PARTIALLY_PAID
+                : CashShortageStatus.OPEN,
+          operationDate: input.operationDate,
+          reason: input.reason ?? primary.reason,
+          responsibleUserId:
+            primary.responsibleUserId ?? input.responsibleUserId ?? null,
+          employeeId: primary.employeeId ?? employeeId,
+          notes: mergedNotes || null,
+          clearedAt: nextOutstanding <= 0 ? new Date() : null,
+          updatedAt: new Date(),
+        },
+      });
+    });
+
+    this.emitShortageChanged({
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      shortageId: created.id,
+      action: openRows.length === 0 ? 'created' : 'updated',
+    });
+
+    return created;
   }
 
   async recordOpeningShortage(
@@ -163,11 +247,36 @@ export class CashShortagesService {
       : (user.branchId ?? undefined);
     if (!canSeeAll && !branchId) return { shortages: [] };
 
+    await this.consolidateOpenDuplicates({
+      tenantId: user.tenantId!,
+      branchId: branchId ?? undefined,
+    });
+
+    let linkedEmployeeId: string | null = null;
+    if (options?.userId?.trim()) {
+      const linked = await this.prisma.employee.findFirst({
+        where: {
+          tenantId: user.tenantId!,
+          userId: options.userId.trim(),
+          ...(branchId ? { branchId } : {}),
+        },
+        select: { id: true },
+      });
+      linkedEmployeeId = linked?.id ?? null;
+    }
+
     const rows = await this.prisma.cashShortage.findMany({
       where: {
         tenantId: user.tenantId!,
         ...(branchId ? { branchId } : {}),
-        ...(options?.userId ? { responsibleUserId: options.userId } : {}),
+        ...(options?.userId?.trim()
+          ? {
+              OR: [
+                { responsibleUserId: options.userId.trim() },
+                ...(linkedEmployeeId ? [{ employeeId: linkedEmployeeId }] : []),
+              ],
+            }
+          : {}),
         ...(options?.status &&
         Object.values(CashShortageStatus).includes(
           options.status as CashShortageStatus,
@@ -359,6 +468,13 @@ export class CashShortagesService {
       });
     });
 
+    this.emitShortageChanged({
+      tenantId: user.tenantId!,
+      branchId: shortage.branchId,
+      shortageId: shortage.id,
+      action: 'payment',
+    });
+
     return this.getOne(user, shortage.id);
   }
 
@@ -491,6 +607,13 @@ export class CashShortagesService {
       }
     });
 
+    this.emitShortageChanged({
+      tenantId: user.tenantId!,
+      branchId: shortages[0].branchId,
+      shortageId: lastShortageId,
+      action: 'settled',
+    });
+
     return this.getOne(user, lastShortageId);
   }
 
@@ -514,6 +637,172 @@ export class CashShortagesService {
           row.responsibleUserId as string,
           Number(row._sum.amountOutstanding ?? 0),
         ]),
+    );
+  }
+
+  private async consolidateOpenDuplicates(input: {
+    tenantId: string;
+    branchId?: string;
+  }) {
+    const openRows = await this.prisma.cashShortage.findMany({
+      where: {
+        tenantId: input.tenantId,
+        ...(input.branchId ? { branchId: input.branchId } : {}),
+        status: {
+          in: [CashShortageStatus.OPEN, CashShortageStatus.PARTIALLY_PAID],
+        },
+        amountOutstanding: { gt: 0 },
+      },
+      orderBy: [{ operationDate: 'asc' }, { createdAt: 'asc' }],
+      select: {
+        id: true,
+        branchId: true,
+        responsibleUserId: true,
+        employeeId: true,
+        amountOriginal: true,
+        amountOutstanding: true,
+        notes: true,
+        reason: true,
+        operationDate: true,
+      },
+    });
+
+    const byBranch = new Map<string, typeof openRows>();
+    for (const row of openRows) {
+      const bucket = byBranch.get(row.branchId) ?? [];
+      bucket.push(row);
+      byBranch.set(row.branchId, bucket);
+    }
+
+    for (const rows of byBranch.values()) {
+      const parent = new Map<string, string>();
+      const find = (id: string): string => {
+        const current = parent.get(id) ?? id;
+        if (current === id) return id;
+        const root = find(current);
+        parent.set(id, root);
+        return root;
+      };
+      const union = (a: string, b: string) => {
+        const rootA = find(a);
+        const rootB = find(b);
+        if (rootA !== rootB) parent.set(rootB, rootA);
+      };
+
+      for (const row of rows) {
+        parent.set(row.id, row.id);
+      }
+
+      const byEmployee = new Map<string, string>();
+      const byUser = new Map<string, string>();
+      for (const row of rows) {
+        if (row.employeeId) {
+          const existing = byEmployee.get(row.employeeId);
+          if (existing) union(existing, row.id);
+          else byEmployee.set(row.employeeId, row.id);
+        }
+        if (row.responsibleUserId) {
+          const existing = byUser.get(row.responsibleUserId);
+          if (existing) union(existing, row.id);
+          else byUser.set(row.responsibleUserId, row.id);
+        }
+      }
+
+      const groups = new Map<string, typeof rows>();
+      for (const row of rows) {
+        const root = find(row.id);
+        const bucket = groups.get(root) ?? [];
+        bucket.push(row);
+        groups.set(root, bucket);
+      }
+
+      for (const group of groups.values()) {
+        if (group.length < 2) continue;
+        group.sort(
+          (left, right) =>
+            left.operationDate.getTime() - right.operationDate.getTime() ||
+            left.id.localeCompare(right.id),
+        );
+        const primary = group[0];
+        const duplicates = group.slice(1);
+        let nextOriginal = Number(primary.amountOriginal);
+        let nextOutstanding = Number(primary.amountOutstanding);
+        const noteParts = [primary.notes?.trim()].filter(Boolean) as string[];
+
+        await this.prisma.$transaction(async (tx) => {
+          for (const duplicate of duplicates) {
+            nextOriginal += Number(duplicate.amountOriginal);
+            nextOutstanding += Number(duplicate.amountOutstanding);
+            if (duplicate.notes?.trim()) {
+              noteParts.push(duplicate.notes.trim());
+            }
+            await tx.cashShortagePayment.updateMany({
+              where: { shortageId: duplicate.id },
+              data: { shortageId: primary.id },
+            });
+            await tx.cashShortage.delete({ where: { id: duplicate.id } });
+          }
+
+          nextOriginal = Math.round(nextOriginal * 100) / 100;
+          nextOutstanding = Math.round(nextOutstanding * 100) / 100;
+
+          await tx.cashShortage.update({
+            where: { id: primary.id },
+            data: {
+              amountOriginal: new Prisma.Decimal(nextOriginal),
+              amountOutstanding: new Prisma.Decimal(
+                Math.max(0, nextOutstanding),
+              ),
+              status:
+                nextOutstanding <= 0
+                  ? CashShortageStatus.CLEARED
+                  : nextOutstanding < nextOriginal
+                    ? CashShortageStatus.PARTIALLY_PAID
+                    : CashShortageStatus.OPEN,
+              responsibleUserId:
+                primary.responsibleUserId ??
+                duplicates.find((row) => row.responsibleUserId)
+                  ?.responsibleUserId ??
+                null,
+              employeeId:
+                primary.employeeId ??
+                duplicates.find((row) => row.employeeId)?.employeeId ??
+                null,
+              notes: noteParts.join(' · ') || null,
+              clearedAt: nextOutstanding <= 0 ? new Date() : null,
+            },
+          });
+        });
+
+        this.emitShortageChanged({
+          tenantId: input.tenantId,
+          branchId: primary.branchId,
+          shortageId: primary.id,
+          action: 'merged',
+        });
+      }
+    }
+  }
+
+  private emitShortageChanged(input: {
+    tenantId: string;
+    branchId: string;
+    shortageId: string;
+    action: 'created' | 'updated' | 'payment' | 'settled' | 'merged';
+  }) {
+    const payload = {
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      shortageId: input.shortageId,
+      action: input.action,
+      at: new Date().toISOString(),
+    };
+    this.realtime.emitToTenant(input.tenantId, 'shortage.updated', payload);
+    this.realtime.emitToBranch(
+      input.tenantId,
+      input.branchId,
+      'shortage.updated',
+      payload,
     );
   }
 

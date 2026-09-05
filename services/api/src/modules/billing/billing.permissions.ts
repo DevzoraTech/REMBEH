@@ -9,10 +9,12 @@ export const PRO_PLAN_CODE = 'PRO';
 export const PRO_3M_PLAN_CODE = 'PRO_3M';
 export const PRO_6M_PLAN_CODE = 'PRO_6M';
 
-export const TRIAL_DAYS = 14;
-/** Original month-long trial kept for Cashboss / Buremba only. */
+export const TRIAL_DAYS = 30;
+/** Kept for explicit month-trial references / legacy Cashboss overrides. */
 export const MONTH_TRIAL_DAYS = 30;
 export const GRACE_DAYS = 2;
+export const MIN_TRIAL_DAYS = 1;
+export const MAX_TRIAL_DAYS = 365;
 
 export function isLegacyMonthTrialWorkspace(input: {
   tenantName?: string | null;
@@ -23,11 +25,27 @@ export function isLegacyMonthTrialWorkspace(input: {
   return /cashboss/i.test(tenant) && /buremba/i.test(branch);
 }
 
+export function clampTrialDays(value: number): number {
+  return Math.min(MAX_TRIAL_DAYS, Math.max(MIN_TRIAL_DAYS, Math.round(value)));
+}
+
 export function trialDaysForWorkspace(input: {
   tenantName?: string | null;
   branchName?: string | null;
+  /** Per-organisation override from TenantBilling.trialDurationDays */
+  trialDurationDays?: number | null;
 }): number {
-  return isLegacyMonthTrialWorkspace(input) ? MONTH_TRIAL_DAYS : TRIAL_DAYS;
+  if (
+    typeof input.trialDurationDays === 'number' &&
+    Number.isFinite(input.trialDurationDays) &&
+    input.trialDurationDays > 0
+  ) {
+    return clampTrialDays(input.trialDurationDays);
+  }
+  if (isLegacyMonthTrialWorkspace(input)) {
+    return MONTH_TRIAL_DAYS;
+  }
+  return TRIAL_DAYS;
 }
 
 export type ProPlanDefinition = {

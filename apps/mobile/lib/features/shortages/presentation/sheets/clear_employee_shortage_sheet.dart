@@ -27,7 +27,7 @@ class ClearEmployeeShortageSheet extends StatefulWidget {
 
 class _ClearEmployeeShortageSheetState
     extends State<ClearEmployeeShortageSheet> {
-  late String? _selectedUserId;
+  late String? _selectedKey;
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _noteController = TextEditingController();
 
@@ -37,8 +37,8 @@ class _ClearEmployeeShortageSheetState
   @override
   void initState() {
     super.initState();
-    _selectedUserId = widget.employees.length == 1
-        ? widget.employees.first.userId
+    _selectedKey = widget.employees.length == 1
+        ? widget.employees.first.key
         : null;
     final selected = _selectedEmployee;
     if (selected != null) {
@@ -54,21 +54,21 @@ class _ClearEmployeeShortageSheetState
   }
 
   ShortageEmployeeOption? get _selectedEmployee {
-    final userId = _selectedUserId;
-    if (userId == null) {
+    final key = _selectedKey;
+    if (key == null) {
       return null;
     }
     for (final employee in widget.employees) {
-      if (employee.userId == userId) {
+      if (employee.key == key) {
         return employee;
       }
     }
     return null;
   }
 
-  void _selectEmployee(String? userId) {
+  void _selectEmployee(String? key) {
     setState(() {
-      _selectedUserId = userId;
+      _selectedKey = key;
       _error = null;
     });
     final selected = _selectedEmployee;
@@ -114,6 +114,7 @@ class _ClearEmployeeShortageSheetState
       await widget.settleEmployee(
         session: widget.session,
         responsibleUserId: employee.userId,
+        employeeId: employee.employeeId,
         amount: amount,
         notes: _noteController.text,
       );
@@ -209,13 +210,13 @@ class _ClearEmployeeShortageSheetState
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<String>(
-                    value: _selectedUserId,
+                    value: _selectedKey,
                     isExpanded: true,
                     hint: const Text('Select employee'),
                     items: [
                       for (final employee in widget.employees)
                         DropdownMenuItem(
-                          value: employee.userId,
+                          value: employee.key,
                           child: Text(
                             '${employee.name} · ${shortageMoney(employee.outstanding)}',
                             overflow: TextOverflow.ellipsis,

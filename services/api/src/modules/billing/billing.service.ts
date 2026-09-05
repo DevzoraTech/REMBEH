@@ -42,6 +42,7 @@ import {
   PRO_PLAN_CATALOGUE,
   PRO_PLAN_CODE,
   TRIAL_DAYS,
+  clampTrialDays,
   defaultProPlanCode,
   monthsForInterval,
   proPlanByCode,
@@ -462,15 +463,16 @@ export class BillingService implements OnModuleInit {
 
     const tenant = await this.prisma.tenant.findUnique({
       where: { id: tenantId },
-      select: { id: true, createdAt: true },
+      select: { id: true, createdAt: true, name: true },
     });
     if (!tenant) {
       throw new NotFoundException('Organisation not found.');
     }
 
+    const days = trialDaysForWorkspace({ tenantName: tenant.name });
     const trialStartsAt = tenant.createdAt;
     const trialEndsAt = new Date(
-      trialStartsAt.getTime() + TRIAL_DAYS * 24 * 60 * 60 * 1000,
+      trialStartsAt.getTime() + days * 24 * 60 * 60 * 1000,
     );
 
     return this.prisma.tenantBilling.create({
@@ -480,6 +482,68 @@ export class BillingService implements OnModuleInit {
         trialEndsAt,
       },
     });
+  }
+
+  /** Platform default or organisation override for trial length. */
+  async resolveTenantTrialDays(tenantId: string) {
+    const [billing, tenant] = await Promise.all([
+      this.ensureTenantBilling(tenantId),
+      this.prisma.tenant.findUnique({
+        where: { id: tenantId },
+        select: { name: true },
+      }),
+    ]);
+    const durationDays = trialDaysForWorkspace({
+      tenantName: tenant?.name,
+      trialDurationDays: billing.trialDurationDays,
+    });
+    return {
+      billing,
+      durationDays,
+      isCustom: billing.trialDurationDays != null,
+      defaultDays: TRIAL_DAYS,
+    };
+  }
+
+  /**
+   * Set or clear a per-organisation trial duration. Recomputes tenant and
+   * branch TRIAL windows so future (and still-active) trials use the value.
+   */
+  async setTenantTrialDuration(
+    tenantId: string,
+    durationDays: number | null,
+  ) {
+    const billing = await this.ensureTenantBilling(tenantId);
+    const nextOverride =
+      durationDays == null ? null : clampTrialDays(durationDays);
+    const tenant = await this.prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { name: true },
+    });
+    const effectiveDays = trialDaysForWorkspace({
+      tenantName: tenant?.name,
+      trialDurationDays: nextOverride,
+    });
+    const trialEndsAt = new Date(
+      billing.trialStartsAt.getTime() + effectiveDays * DAY_MS,
+    );
+
+    const updated = await this.prisma.tenantBilling.update({
+      where: { tenantId },
+      data: {
+        trialDurationDays: nextOverride,
+        trialEndsAt,
+      },
+    });
+
+    await this.syncTenantSubscriptions(tenantId);
+
+    return {
+      billing: updated,
+      durationDays: effectiveDays,
+      isCustom: nextOverride != null,
+      defaultDays: TRIAL_DAYS,
+    };
   }
 
   async ensureProPlans() {
@@ -608,7 +672,12 @@ export class BillingService implements OnModuleInit {
       throw new NotFoundException('Branch not found.');
     }
 
-    const trial = this.branchTrialWindow(branch);
+    const trial = await this.branchTrialWindow({
+      tenantId: input.tenantId,
+      createdAt: branch.createdAt,
+      name: branch.name,
+      tenant: branch.tenant,
+    });
     const now = new Date();
     const inTrial = trial.endsAt.getTime() > now.getTime();
 
@@ -1764,7 +1833,7 @@ export class BillingService implements OnModuleInit {
   }
 
   async syncTenantSubscriptions(tenantId: string) {
-    await this.ensureTenantBilling(tenantId);
+    const billing = await this.ensureTenantBilling(tenantId);
     const plan = await this.ensureProPlan();
     const now = new Date();
 
@@ -1786,10 +1855,12 @@ export class BillingService implements OnModuleInit {
         });
       }
 
-      const trial = this.branchTrialWindow({
+      const trial = await this.branchTrialWindow({
+        tenantId,
         createdAt: branch.createdAt,
         name: branch.name,
         tenant: { name: tenant?.name ?? '' },
+        trialDurationDays: billing.trialDurationDays,
       });
       const trialActive = trial.endsAt.getTime() > now.getTime();
 
@@ -2110,19 +2181,31 @@ export class BillingService implements OnModuleInit {
     return Math.max(0, Math.ceil((value.getTime() - now.getTime()) / DAY_MS));
   }
 
-  private branchTrialWindow(branch: {
+  private async branchTrialWindow(branch: {
+    tenantId?: string;
     createdAt: Date;
     name?: string | null;
     tenant?: { name?: string | null } | null;
+    trialDurationDays?: number | null;
   }) {
+    let overrideDays = branch.trialDurationDays ?? null;
+    if (overrideDays == null && branch.tenantId) {
+      const billing = await this.prisma.tenantBilling.findUnique({
+        where: { tenantId: branch.tenantId },
+        select: { trialDurationDays: true },
+      });
+      overrideDays = billing?.trialDurationDays ?? null;
+    }
+
     const startsAt = branch.createdAt;
     const days = trialDaysForWorkspace({
       tenantName: branch.tenant?.name,
       branchName: branch.name,
+      trialDurationDays: overrideDays,
     });
     const endsAt = new Date(startsAt.getTime() + days * DAY_MS);
 
-    return { startsAt, endsAt };
+    return { startsAt, endsAt, days };
   }
 
   private canSendBillingReminder(lastReminderAt: Date | null, now: Date) {

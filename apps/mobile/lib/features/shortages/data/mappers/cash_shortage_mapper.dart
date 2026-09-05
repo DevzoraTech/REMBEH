@@ -9,6 +9,7 @@ class CashShortageMapper {
       branchId: _string(json['branchId']),
       branchName: _string(json['branchName']),
       responsibleUserId: _string(json['responsibleUserId']),
+      employeeId: _string(json['employeeId']),
       responsibleName:
           _string(json['responsibleName']) ??
           _string(json['responsibleUserName']) ??
@@ -46,6 +47,43 @@ class CashShortageMapper {
 
   static List<CashShortage> listFromJson(List<Map<String, dynamic>> rows) {
     return rows.map(fromJson).where((row) => row.id.isNotEmpty).toList();
+  }
+
+  static Map<String, dynamic> toCacheJson(CashShortage row) {
+    return <String, dynamic>{
+      'id': row.id,
+      'branchId': row.branchId,
+      'branchName': row.branchName,
+      'responsibleUserId': row.responsibleUserId,
+      'employeeId': row.employeeId,
+      'responsibleName': row.responsibleName,
+      'responsiblePublicId': row.responsiblePublicId,
+      'responsiblePhotoUrl': row.responsiblePhotoUrl,
+      'createdByName': row.createdByName,
+      'sourceType': row.sourceType,
+      'sourceId': row.sourceId,
+      'reason': row.reason,
+      'operationDate': row.operationDate?.toIso8601String(),
+      'amountOriginal': row.amountOriginal,
+      'amountOutstanding': row.amountOutstanding,
+      'amountPaid': row.amountPaid,
+      'status': row.status,
+      'notes': row.notes,
+      'createdAt': row.createdAt?.toIso8601String(),
+      'clearedAt': row.clearedAt?.toIso8601String(),
+      'payments': row.payments
+          .map(
+            (payment) => <String, dynamic>{
+              'id': payment.id,
+              'amount': payment.amount,
+              'method': payment.method,
+              'notes': payment.notes,
+              'paidAt': payment.paidAt?.toIso8601String(),
+              'recordedByName': payment.recordedByName,
+            },
+          )
+          .toList(),
+    };
   }
 }
 

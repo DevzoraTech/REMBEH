@@ -232,7 +232,7 @@ const FALLBACK_PLANS: BillingPlanOption[] = [
   },
 ];
 
-const TRIAL_TOTAL_DAYS = 14;
+const TRIAL_TOTAL_DAYS = 30;
 const PERIOD_TOTAL_DAYS = 30;
 const GRACE_TOTAL_DAYS = 2;
 const PAYMENT_SUPPORT_PHONE = "0777823011, 0752039673";

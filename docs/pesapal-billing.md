@@ -4,8 +4,8 @@ REMBEH bills **per branch** after an organisation-wide free trial.
 
 ## Product rules
 
-- New organisations get a **14-day free trial** covering all current and future branches.
-- Cashboss / Buremba keeps its original **30-day** trial.
+- New organisations get a **30-day free trial** covering all current and future branches.
+- Control Center can set a **custom trial length** per organisation (1–365 days) for future and still-active trials.
 - After the trial, each branch needs **Pro**. Billing periods:
   - Monthly **UGX 255,000**
   - 3 months **UGX 725,000** (default / most popular)

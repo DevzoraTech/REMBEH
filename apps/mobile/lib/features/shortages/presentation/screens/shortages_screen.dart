@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../../core/network/realtime_client.dart';
 import '../../../../services/api_client.dart';
 import '../../../../services/session_store.dart';
 import '../../../../theme.dart';
@@ -49,13 +50,17 @@ class ShortagesScreen extends StatefulWidget {
   State<ShortagesScreen> createState() => _ShortagesScreenState();
 }
 
-class _ShortagesScreenState extends State<ShortagesScreen> {
+class _ShortagesScreenState extends State<ShortagesScreen>
+    with WidgetsBindingObserver {
   late final ShortagesController _controller;
   late final LoadSalariesDashboard _loadSalariesDashboard;
   late final RecordOpeningShortage _recordOpeningShortage;
   late final SettleEmployeeShortage _settleEmployeeShortage;
+  late final RealtimeHandler _onShortageUpdated;
+  late final RealtimeHandler _onOpsChanged;
 
   bool _preparingAction = false;
+  Timer? _pollTimer;
 
   bool get _isEmployeeHistory =>
       widget.userId != null && widget.userId!.trim().isNotEmpty;
@@ -63,6 +68,7 @@ class _ShortagesScreenState extends State<ShortagesScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     final apiClient = ApiClient(SessionStore());
     final repository = CashShortagesRepositoryImpl(apiClient: apiClient);
@@ -80,23 +86,62 @@ class _ShortagesScreenState extends State<ShortagesScreen> {
       _controller.seed(widget.initialShortages);
     }
 
+    _onShortageUpdated = (_) {
+      unawaited(_load(quiet: true));
+    };
+    _onOpsChanged = (_) {
+      unawaited(_load(quiet: true));
+    };
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        // Open first; pull after the frame. Prefer cache, then quiet network.
-        unawaited(
-          _controller.load(
-            session: widget.session,
-            branchId: widget.branchId,
-            userId: widget.userId,
-            quiet: widget.initialShortages.isNotEmpty,
-          ),
-        );
-      }
+      if (!mounted) return;
+      unawaited(
+        _controller.load(
+          session: widget.session,
+          branchId: widget.branchId,
+          userId: widget.userId,
+          quiet: widget.initialShortages.isNotEmpty,
+          forceNetwork: true,
+        ),
+      );
+      unawaited(_bindRealtime());
+      _startPolling();
+    });
+  }
+
+  Future<void> _bindRealtime() async {
+    try {
+      await RealtimeClient.instance.connect(widget.session);
+      RealtimeClient.instance.on('shortage.updated', _onShortageUpdated);
+      RealtimeClient.instance.on('operation.float_returned', _onOpsChanged);
+      RealtimeClient.instance.on('operation.branch_closed', _onOpsChanged);
+    } catch (_) {
+      // Polling still covers updates when the socket is unavailable.
+    }
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 25), (_) {
+      if (!mounted) return;
+      unawaited(_load(quiet: true));
     });
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_load(quiet: true));
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _pollTimer?.cancel();
+    RealtimeClient.instance.off('shortage.updated', _onShortageUpdated);
+    RealtimeClient.instance.off('operation.float_returned', _onOpsChanged);
+    RealtimeClient.instance.off('operation.branch_closed', _onOpsChanged);
     _controller.dispose();
     super.dispose();
   }

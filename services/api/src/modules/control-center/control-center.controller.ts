@@ -22,6 +22,7 @@ import { ControlCenterAuthGuard } from './control-center-auth.guard';
 import { ControlCenterService } from './control-center.service';
 import { CurrentControlCenterAdmin } from './current-control-center-admin.decorator';
 import { ControlCenterFeatureAccessDto } from './dto/control-center-feature-access.dto';
+import { ControlCenterUpdateTrialDto } from './dto/control-center-trial.dto';
 import {
   ControlCenterChangePasswordDto,
   ControlCenterLoginDto,
@@ -198,6 +199,25 @@ export class ControlCenterController {
   @UseGuards(ControlCenterAuthGuard)
   client(@Param('tenantId') tenantId: string) {
     return this.controlCenterService.getClient(tenantId);
+  }
+
+  @Patch('clients/:tenantId/trial')
+  @UseGuards(ControlCenterAuthGuard)
+  updateTenantTrial(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Param('tenantId') tenantId: string,
+    @Body() body: ControlCenterUpdateTrialDto,
+  ) {
+    return this.controlCenterService.updateTenantTrial(admin, tenantId, body);
+  }
+
+  @Get('clients/:tenantId/branches/:branchId/usage')
+  @UseGuards(ControlCenterAuthGuard)
+  branchUsage(
+    @Param('tenantId') tenantId: string,
+    @Param('branchId') branchId: string,
+  ) {
+    return this.controlCenterService.getBranchUsage(tenantId, branchId);
   }
 
   @Get('clients/:tenantId/pricing')

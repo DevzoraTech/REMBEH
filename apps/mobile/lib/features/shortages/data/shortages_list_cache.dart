@@ -6,10 +6,10 @@ class ShortagesListCache {
   ShortagesListCache._();
   static final ShortagesListCache instance = ShortagesListCache._();
 
-  /// Fresh enough to skip a network round-trip on open/refresh.
-  static const Duration freshTtl = Duration(seconds: 90);
+  /// Fresh enough to skip a redundant network round-trip.
+  static const Duration freshTtl = Duration(seconds: 12);
 
-  /// Soft ceiling — still shown immediately, then refreshed quietly.
+  /// Soft ceiling for disk paint — still shown immediately, then refreshed.
   static const Duration softTtl = Duration(minutes: 15);
 
   final Map<String, _ShortagesCacheEntry> _memory = {};

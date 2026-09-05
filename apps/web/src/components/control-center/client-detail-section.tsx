@@ -12,13 +12,14 @@ import {
   MapPin,
   ShieldAlert,
   Tag,
+  Timer,
   UnlockKeyhole,
   UserRound,
   Users,
   WalletCards,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type {
   ControlCenterBranch,
@@ -63,6 +64,7 @@ export function ControlCenterClientDetailSection({
   onManagePricing,
   onPricingHistory,
   onSetDataCorrectionAccess,
+  onSetTrialDuration,
 }: {
   detail: ControlCenterClientDetail | null;
   loading: boolean;
@@ -74,6 +76,11 @@ export function ControlCenterClientDetailSection({
     tenantId: string;
     branchId?: string;
     enabled: boolean;
+    reason: string;
+  }) => Promise<void>;
+  onSetTrialDuration?: (input: {
+    tenantId: string;
+    durationDays: number | null;
     reason: string;
   }) => Promise<void>;
 }) {
@@ -139,6 +146,7 @@ export function ControlCenterClientDetailSection({
             onOpenBranch={onOpenBranch}
             onOpenActivity={() => setTab("ACTIVITY")}
             onSetDataCorrectionAccess={onSetDataCorrectionAccess}
+            onSetTrialDuration={onSetTrialDuration}
           />
         ) : tab === "BRANCHES" ? (
           <BranchesTab branches={detail.branches} onOpenBranch={onOpenBranch} />
@@ -313,6 +321,7 @@ function OverviewTab({
   onOpenBranch,
   onOpenActivity,
   onSetDataCorrectionAccess,
+  onSetTrialDuration,
 }: {
   detail: ControlCenterClientDetail;
   onManagePricing: () => void;
@@ -324,6 +333,11 @@ function OverviewTab({
     tenantId: string;
     branchId?: string;
     enabled: boolean;
+    reason: string;
+  }) => Promise<void>;
+  onSetTrialDuration?: (input: {
+    tenantId: string;
+    durationDays: number | null;
     reason: string;
   }) => Promise<void>;
 }) {
@@ -470,6 +484,13 @@ function OverviewTab({
         <RecentActivityPreview
           activities={detail.recentActivity}
           onOpenActivity={onOpenActivity}
+        />
+      </div>
+
+      <div className="mt-4">
+        <TrialSettingsPanel
+          detail={detail}
+          onSetTrial={onSetTrialDuration}
         />
       </div>
 
@@ -1036,6 +1057,165 @@ function RecentActivityPreview({
           No recent activity.
         </div>
       )}
+    </section>
+  );
+}
+
+function TrialSettingsPanel({
+  detail,
+  onSetTrial,
+}: {
+  detail: ControlCenterClientDetail;
+  onSetTrial?: (input: {
+    tenantId: string;
+    durationDays: number | null;
+    reason: string;
+  }) => Promise<void>;
+}) {
+  const trial = detail.client.trial;
+  const [days, setDays] = useState(String(trial?.durationDays ?? 30));
+  const [reason, setReason] = useState(
+    "Custom trial length for this organisation.",
+  );
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setDays(String(trial?.durationDays ?? 30));
+  }, [trial?.durationDays]);
+
+  if (!trial || !onSetTrial) {
+    return null;
+  }
+
+  const setTrial = onSetTrial;
+
+  async function save(nextDays: number | null) {
+    if (saving) return;
+    const cleanReason = reason.trim();
+    if (cleanReason.length < 6) return;
+    setSaving(true);
+    try {
+      await setTrial({
+        tenantId: detail.client.id,
+        durationDays: nextDays,
+        reason: cleanReason,
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="overflow-hidden rounded-[10px] border border-[#d5e8dc] bg-[#f7fbf8]">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#ddeee3] px-4 py-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-white text-[#188653] shadow-sm">
+            <Timer className="size-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold text-[#17233c]">
+              Trial duration
+            </p>
+            <p className="mt-1 max-w-[720px] text-[9.5px] leading-4 text-[#5f6f5f]">
+              Platform default is {trial.defaultDays} days. Set a custom length
+              for this organisation so new and still-active branch trials use
+              that window.
+            </p>
+          </div>
+        </div>
+        <span
+          className={`rounded-full px-2 py-1 text-[9.5px] font-semibold ${
+            trial.isCustom
+              ? "bg-[#e8f5ee] text-[#188653]"
+              : "bg-[#eef1f4] text-[#627289]"
+          }`}
+        >
+          {trial.isCustom
+            ? `Custom ${trial.durationDays} days`
+            : `Default ${trial.defaultDays} days`}
+        </span>
+      </div>
+
+      <div className="grid gap-4 p-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="rounded-[8px] border border-[#dfe5eb] bg-white p-3">
+          <p className="text-[9.5px] font-semibold text-[#627289]">
+            Current window
+          </p>
+          <p className="mt-2 text-[12px] font-bold text-[#17233c]">
+            {trial.durationDays} days
+          </p>
+          <p className="mt-1 text-[9.5px] text-[#718099]">
+            {ccDate(trial.startsAt)} → {ccDate(trial.endsAt)}
+          </p>
+        </div>
+
+        <div className="rounded-[8px] border border-[#dfe5eb] bg-white p-3">
+          <label
+            htmlFor="trial-days"
+            className="text-[9.5px] font-semibold text-[#5f6f5f]"
+          >
+            Days for future / active trials
+          </label>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <input
+              id="trial-days"
+              type="number"
+              min={1}
+              max={365}
+              value={days}
+              onChange={(event) => setDays(event.target.value)}
+              className="h-9 w-24 rounded-md border border-[#dfe5eb] px-3 text-[11px] font-semibold text-[#17233c] outline-none focus:border-[#188653]"
+            />
+            {[7, 14, 30, 45, 60, 90].map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => setDays(String(preset))}
+                className="h-8 rounded-md border border-[#dfe5eb] px-2.5 text-[9.5px] font-semibold text-[#53627a] transition hover:bg-[#f7faf8]"
+              >
+                {preset}d
+              </button>
+            ))}
+          </div>
+          <label
+            htmlFor="trial-reason"
+            className="mt-3 block text-[9.5px] font-semibold text-[#5f6f5f]"
+          >
+            Audit reason
+          </label>
+          <textarea
+            id="trial-reason"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            rows={2}
+            className="mt-2 w-full resize-none rounded-md border border-[#dfe5eb] px-3 py-2 text-[10px] font-medium text-[#17233c] outline-none focus:border-[#188653]"
+          />
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => {
+                const parsed = Number(days);
+                if (!Number.isFinite(parsed)) return;
+                void save(parsed);
+              }}
+              className="inline-flex h-8 items-center rounded-md bg-[#188653] px-3 text-[9.5px] font-semibold text-white transition disabled:opacity-60"
+            >
+              Save trial length
+            </button>
+            {trial.isCustom ? (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void save(null)}
+                className="inline-flex h-8 items-center rounded-md border border-[#dfe5eb] px-3 text-[9.5px] font-semibold text-[#53627a] transition hover:bg-[#f7faf8] disabled:opacity-60"
+              >
+                Reset to default ({trial.defaultDays}d)
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
     </section>
   );
 }
