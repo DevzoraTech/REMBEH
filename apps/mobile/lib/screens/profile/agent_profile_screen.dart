@@ -8,6 +8,7 @@ import '../../services/api_client.dart';
 import '../../services/offline_cache_store.dart';
 import '../../services/session_cleanup.dart';
 import '../../services/session_store.dart';
+import '../../features/workspace/presentation/widgets/sign_out_confirm_dialog.dart';
 import '../../theme.dart';
 import '../../utils/friendly_errors.dart';
 import '../login_screen.dart';
@@ -160,31 +161,8 @@ class _AgentProfileScreenState extends State<AgentProfileScreen> {
   }
 
   Future<void> _confirmSignOut() async {
-    final shouldSignOut = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Sign out?'),
-          content: const Text(
-            'You will need your email and password to sign back in.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFFB42318),
-              ),
-              child: const Text('Sign out'),
-            ),
-          ],
-        );
-      },
-    );
-    if (shouldSignOut != true || !mounted) return;
+    final shouldSignOut = await showSignOutConfirmDialog(context);
+    if (!shouldSignOut || !mounted) return;
     await clearTenantScopedClientState();
     await SessionStore().clear();
     if (!mounted) return;

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../features/operations/presentation/screens/day_reconciliation_screen.dart';
 import '../services/api_client.dart';
 import '../services/session_store.dart';
 import '../theme.dart';
@@ -40,6 +41,9 @@ class _RepaymentCorrectionsScreenState
         (permissions.contains('operation.approve') &&
             permissions.contains('branch.create'));
   }
+
+  bool get _canOwnerAuthorize =>
+      widget.session.permissions.contains('operation.approve');
 
   @override
   void initState() {
@@ -81,6 +85,60 @@ class _RepaymentCorrectionsScreenState
     }
   }
 
+  Future<void> _showReportResubmitModal(Map<String, dynamic>? payload) async {
+    if (payload == null || payload['required'] != true) return;
+    if (!mounted) return;
+
+    final date = _string(payload['operationDate']) ?? 'this day';
+    final title = _string(payload['title']) ?? 'Review report and resubmit.';
+    final message =
+        _string(payload['message']) ??
+        'The reconciliation report for $date has been reverted because a change in figures has been detected. Please review the report, confirm the figure and submit the report again.';
+
+    final go = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: rembehBorderRadius(rembehRadiusLg),
+          ),
+          title: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+          content: Text(
+            message,
+            style: const TextStyle(
+              color: slateText,
+              height: 1.4,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: FilledButton.styleFrom(backgroundColor: forestEmerald),
+              child: const Text('Review report'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (go != true || !mounted) return;
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => DayReconciliationScreen(
+          session: widget.session,
+          branchId: widget.session.branchId ?? _string(payload['branchId']),
+          date: date,
+        ),
+      ),
+    );
+  }
+
   Future<void> _review(
     Map<String, dynamic> request, {
     required bool approve,
@@ -97,7 +155,7 @@ class _RepaymentCorrectionsScreenState
     });
 
     try {
-      await _api.reviewRepaymentCorrectionRequest(
+      final payload = await _api.reviewRepaymentCorrectionRequest(
         session: widget.session,
         requestId: id,
         status: approve ? 'APPROVED' : 'REJECTED',
@@ -116,6 +174,13 @@ class _RepaymentCorrectionsScreenState
       });
 
       await _load();
+      await _showReportResubmitModal(
+        payload['reportResubmitRequired'] is Map
+            ? Map<String, dynamic>.from(
+                payload['reportResubmitRequired'] as Map,
+              )
+            : null,
+      );
     } catch (error) {
       if (!mounted) return;
 
@@ -131,8 +196,70 @@ class _RepaymentCorrectionsScreenState
     }
   }
 
+  Future<void> _forwardToOwner(Map<String, dynamic> request) async {
+    final id = _string(request['id']);
+    if (id == null || _busyId != null) return;
+
+    setState(() {
+      _busyId = id;
+      _error = null;
+      _notice = null;
+    });
+
+    try {
+      await _api.forwardRepaymentCorrectionToOwner(
+        session: widget.session,
+        requestId: id,
+      );
+      if (!mounted) return;
+      setState(() => _notice = 'Forwarded to owner for approval.');
+      await _load();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = friendlyErrorMessage(error));
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
+  Future<void> _ownerAuthorize(Map<String, dynamic> request) async {
+    final id = _string(request['id']);
+    if (id == null || _busyId != null) return;
+
+    setState(() {
+      _busyId = id;
+      _error = null;
+      _notice = null;
+    });
+
+    try {
+      final payload = await _api.ownerAuthorizeRepaymentCorrection(
+        session: widget.session,
+        requestId: id,
+      );
+      if (!mounted) return;
+      setState(() {
+        _notice =
+            'Correction authorized. Manager can now allow the officer or edit.';
+      });
+      await _load();
+      await _showReportResubmitModal(
+        payload['reportResubmitRequired'] is Map
+            ? Map<String, dynamic>.from(
+                payload['reportResubmitRequired'] as Map,
+              )
+            : null,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = friendlyErrorMessage(error));
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
   Future<void> _openApplySheet(Map<String, dynamic> request) async {
-    final result = await showModalBottomSheet<bool>(
+    final result = await showModalBottomSheet<Map<String, dynamic>?>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.white,
@@ -144,13 +271,18 @@ class _RepaymentCorrectionsScreenState
       ),
     );
 
-    if (!mounted || result != true) return;
+    if (!mounted || result == null) return;
 
     setState(() {
       _notice = 'Repayment correction saved.';
     });
 
     await _load();
+    await _showReportResubmitModal(
+      result['reportResubmitRequired'] is Map
+          ? Map<String, dynamic>.from(result['reportResubmitRequired'] as Map)
+          : null,
+    );
   }
 
   @override
@@ -240,11 +372,14 @@ class _RepaymentCorrectionsScreenState
                   request: request,
                   busy: _busyId == _string(request['id']),
                   canReview: canReview,
+                  canOwnerAuthorize: _canOwnerAuthorize,
                   onEditNow: () => _openApplySheet(request),
                   onOfficerEdit: () =>
                       _review(request, approve: true, officerCanEdit: true),
                   onReject: () =>
                       _review(request, approve: false, officerCanEdit: false),
+                  onForwardToOwner: () => _forwardToOwner(request),
+                  onOwnerAuthorize: () => _ownerAuthorize(request),
                 ),
               ),
           ],
@@ -259,17 +394,30 @@ class _CorrectionRequestCard extends StatelessWidget {
     required this.request,
     required this.busy,
     required this.canReview,
+    required this.canOwnerAuthorize,
     required this.onEditNow,
     required this.onOfficerEdit,
     required this.onReject,
+    required this.onForwardToOwner,
+    required this.onOwnerAuthorize,
   });
 
   final Map<String, dynamic> request;
   final bool busy;
   final bool canReview;
+  final bool canOwnerAuthorize;
   final VoidCallback onEditNow;
   final VoidCallback onOfficerEdit;
   final VoidCallback onReject;
+  final VoidCallback onForwardToOwner;
+  final VoidCallback onOwnerAuthorize;
+
+  Map<String, dynamic> get _actions {
+    final raw = request['actions'];
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    return const {};
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -280,6 +428,12 @@ class _CorrectionRequestCard extends StatelessWidget {
     final requestedAmount = _numOrNull(request['requestedAmount']);
     final requestedMethod = _string(request['requestedMethod']);
     final requestedNote = _string(request['requestedNote']);
+    final reportStatus = _string(request['reportStatus']);
+    final canManagerEdit = _actions['canManagerEdit'] == true;
+    final canOfficerEdit = _actions['canOfficerEdit'] == true;
+    final canForward = _actions['canForwardToOwner'] == true;
+    final canAuthorize = _actions['canOwnerAuthorize'] == true;
+    final waitingForOwner = _actions['waitingForOwner'] == true;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -337,6 +491,17 @@ class _CorrectionRequestCard extends StatelessWidget {
                         fontWeight: FontWeight.w600,
                       ),
                     ),
+                    if (reportStatus != null) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        'Report: $reportStatus',
+                        style: const TextStyle(
+                          color: slateText,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -345,6 +510,84 @@ class _CorrectionRequestCard extends StatelessWidget {
                 applied: applied,
                 officerCanEdit: officerCanEdit,
               ),
+              if (status == 'PENDING' && canReview)
+                PopupMenuButton<_CorrectionMenuAction>(
+                  enabled: !busy,
+                  tooltip: 'More actions',
+                  onSelected: (action) {
+                    switch (action) {
+                      case _CorrectionMenuAction.officerEdit:
+                        onOfficerEdit();
+                      case _CorrectionMenuAction.managerEdit:
+                        onEditNow();
+                      case _CorrectionMenuAction.forwardToOwner:
+                        onForwardToOwner();
+                      case _CorrectionMenuAction.reject:
+                        onReject();
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: _CorrectionMenuAction.officerEdit,
+                      enabled: canOfficerEdit,
+                      child: Text(
+                        canOfficerEdit
+                            ? 'Allow agent to edit'
+                            : 'Allow agent to edit (locked)',
+                        style: TextStyle(
+                          color: canOfficerEdit
+                              ? midnightNavy
+                              : slateText.withValues(alpha: 0.45),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _CorrectionMenuAction.managerEdit,
+                      enabled: canManagerEdit,
+                      child: Text(
+                        canManagerEdit
+                            ? 'Edit myself'
+                            : 'Edit myself (locked)',
+                        style: TextStyle(
+                          color: canManagerEdit
+                              ? midnightNavy
+                              : slateText.withValues(alpha: 0.45),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: _CorrectionMenuAction.forwardToOwner,
+                      enabled: canForward,
+                      child: Text(
+                        canForward
+                            ? 'Forward to owner'
+                            : waitingForOwner
+                            ? 'Waiting for owner'
+                            : 'Forward to owner',
+                        style: TextStyle(
+                          color: canForward
+                              ? midnightNavy
+                              : slateText.withValues(alpha: 0.45),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const PopupMenuDivider(),
+                    PopupMenuItem(
+                      value: _CorrectionMenuAction.reject,
+                      child: const Text(
+                        'Reject',
+                        style: TextStyle(
+                          color: Color(0xFFE11D2E),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                  icon: const Icon(Icons.more_vert_rounded),
+                ),
             ],
           ),
           const SizedBox(height: 12),
@@ -371,34 +614,23 @@ class _CorrectionRequestCard extends StatelessWidget {
               fontWeight: FontWeight.w700,
             ),
           ),
-          if (status == 'PENDING' && canReview) ...[
+          if (waitingForOwner && canReview) ...[
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: busy ? null : onEditNow,
-                    icon: const Icon(Icons.edit_outlined, size: 17),
-                    label: const Text('Edit now'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: busy ? null : onOfficerEdit,
-                    icon: const Icon(Icons.how_to_reg_outlined, size: 17),
-                    label: const Text('Officer edit'),
-                  ),
-                ),
-                IconButton(
-                  onPressed: busy ? null : onReject,
-                  tooltip: 'Reject',
-                  icon: const Icon(
-                    Icons.close_rounded,
-                    color: Color(0xFFE11D2E),
-                  ),
-                ),
-              ],
+            const _InlineNotice(
+              icon: Icons.hourglass_top_rounded,
+              text: 'Waiting for the owner to authorize rollback.',
+              color: Color(0xFFC45C26),
+            ),
+          ],
+          if (canAuthorize && canOwnerAuthorize) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: busy ? null : onOwnerAuthorize,
+                icon: const Icon(Icons.verified_outlined, size: 17),
+                label: const Text('Authorize rollback'),
+              ),
             ),
           ] else if (canReview &&
               status == 'APPROVED' &&
@@ -433,6 +665,13 @@ class _CorrectionRequestCard extends StatelessWidget {
       ),
     );
   }
+}
+
+enum _CorrectionMenuAction {
+  officerEdit,
+  managerEdit,
+  forwardToOwner,
+  reject,
 }
 
 class _InlineNotice extends StatelessWidget {
@@ -589,7 +828,7 @@ class _ManagerRepaymentCorrectionSheetState
     });
 
     try {
-      await widget.api.applyRepaymentCorrection(
+      final payload = await widget.api.applyRepaymentCorrection(
         session: widget.session,
         repaymentId: repaymentId,
         correctionRequestId: requestId,
@@ -602,7 +841,7 @@ class _ManagerRepaymentCorrectionSheetState
 
       if (!mounted) return;
 
-      Navigator.of(context).pop(true);
+      Navigator.of(context).pop(payload);
     } catch (error) {
       if (!mounted) return;
 

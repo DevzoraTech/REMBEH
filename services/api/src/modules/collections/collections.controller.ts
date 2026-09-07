@@ -110,6 +110,30 @@ export class CollectionsController {
     );
   }
 
+  @Post('repayment-correction-requests/:requestId/forward-to-owner')
+  @RequirePermissions(COLLECTION_PERMISSIONS.read)
+  forwardRepaymentCorrectionToOwner(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+  ) {
+    return this.collectionsService.forwardRepaymentCorrectionToOwner(
+      user,
+      requestId,
+    );
+  }
+
+  @Post('repayment-correction-requests/:requestId/owner-authorize')
+  @RequirePermissions(COLLECTION_PERMISSIONS.read)
+  ownerAuthorizeRepaymentCorrection(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('requestId', ParseUUIDPipe) requestId: string,
+  ) {
+    return this.collectionsService.ownerAuthorizeRepaymentCorrection(
+      user,
+      requestId,
+    );
+  }
+
   @Get('repayments/:repaymentId')
   @RequirePermissions(COLLECTION_PERMISSIONS.read)
   getRepaymentDetail(

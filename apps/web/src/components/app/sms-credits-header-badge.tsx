@@ -30,15 +30,15 @@ function toneForCredits(credits: number): {
       label: "No SMS credit left. Top up to resume borrower notifications.",
     };
   }
-  if (credits < 5) {
+  if (credits <= 50) {
     return {
       wrap: "border-red-200 bg-red-50 hover:bg-red-100/80",
       text: "text-red-700",
       dot: "bg-red-500",
-      label: "SMS credit is critically low. Top up soon.",
+      label: "SMS credit is low. Top up soon.",
     };
   }
-  if (credits <= 20) {
+  if (credits <= 70) {
     return {
       wrap: "border-orange-200 bg-orange-50 hover:bg-orange-100/70",
       text: "text-orange-800",
@@ -47,9 +47,9 @@ function toneForCredits(credits: number): {
     };
   }
   return {
-    wrap: "border-emerald-200 bg-emerald-50 hover:bg-emerald-100/70",
-    text: "text-emerald-800",
-    dot: "bg-emerald-500",
+    wrap: "border-emerald-300 bg-emerald-100 hover:bg-emerald-200/70",
+    text: "text-emerald-900",
+    dot: "bg-emerald-600",
     label: "SMS notifications credit available.",
   };
 }

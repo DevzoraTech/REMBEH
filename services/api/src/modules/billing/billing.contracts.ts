@@ -61,6 +61,23 @@ export type ManualMerchantPaymentResponseContract = {
   message: string;
 };
 
+export type ManualPaymentMethodContract = {
+  id: 'MTN_MOMO' | 'AIRTEL_MONEY';
+  title: string;
+  subtitle: string;
+  available: boolean;
+  merchantCode: string | null;
+  accountName: string | null;
+  referenceHint: string;
+  howToPayTitle: string;
+  howToPaySteps: string[];
+};
+
+export type ManualPaymentMethodsResponseContract = {
+  methods: ManualPaymentMethodContract[];
+  accountNameFallback: string;
+};
+
 export type BranchBillingStatusContract = {
   branchId: string | null;
   branchName: string | null;

@@ -13,6 +13,10 @@ class PaymentHistoryItem {
     this.approvedCorrectionRequestId,
     this.officerCanEdit = false,
     this.correctionAppliedAt,
+    this.approvedCorrectionReason,
+    this.approvedRequestedAmount,
+    this.approvedRequestedMethod,
+    this.approvedRequestedNote,
   });
 
   final String id;
@@ -28,6 +32,10 @@ class PaymentHistoryItem {
   final String? approvedCorrectionRequestId;
   final bool officerCanEdit;
   final DateTime? correctionAppliedAt;
+  final String? approvedCorrectionReason;
+  final int? approvedRequestedAmount;
+  final String? approvedRequestedMethod;
+  final String? approvedRequestedNote;
 }
 
 class FineHistoryItem {

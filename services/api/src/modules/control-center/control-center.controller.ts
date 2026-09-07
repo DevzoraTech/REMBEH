@@ -8,12 +8,15 @@ import {
   Post,
   Query,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import type { ControlCenterAdminContext } from './control-center-admin';
 import {
   ControlCenterCreateOperatorSmsContactDto,
+  ControlCenterUpdateMerchantPaymentProviderDto,
   ControlCenterUpdateMessageTemplateDto,
   ControlCenterUpdateOperatorSmsContactDto,
+  ControlCenterMerchantPaymentProvider,
 } from './dto/control-center-settings.dto';
 import { ControlCenterAuditQueryDto } from './dto/control-center-audit-query.dto';
 import { ControlCenterReportQueryDto } from './dto/control-center-report-query.dto';
@@ -109,6 +112,26 @@ export class ControlCenterController {
   @UseGuards(ControlCenterAuthGuard)
   settings() {
     return this.controlCenterService.controlCenterSettings();
+  }
+
+  @Patch('settings/billing-providers/:provider')
+  @UseGuards(ControlCenterAuthGuard)
+  updateBillingProvider(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Param('provider') provider: string,
+    @Body() body: ControlCenterUpdateMerchantPaymentProviderDto,
+  ) {
+    if (
+      provider !== ControlCenterMerchantPaymentProvider.MTN_MOMO &&
+      provider !== ControlCenterMerchantPaymentProvider.AIRTEL_MONEY
+    ) {
+      throw new BadRequestException('Unknown payment provider.');
+    }
+    return this.controlCenterService.updateMerchantPaymentProvider(
+      admin,
+      provider,
+      body,
+    );
   }
 
   @Patch('message-templates/:templateId')

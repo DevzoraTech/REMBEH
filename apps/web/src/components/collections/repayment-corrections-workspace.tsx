@@ -65,6 +65,34 @@ type RepaymentCorrectionRequest = {
   correctionAppliedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  reportStatus:
+    | "MANAGER_REVIEW"
+    | "SENT_TO_OWNER"
+    | "OWNER_APPROVED"
+    | "RETURNED_TO_MANAGER"
+    | null;
+  reportId: string | null;
+  reportNumber: string | null;
+  operationDate: string | null;
+  forwardedToOwnerAt: string | null;
+  ownerAuthorizedAt: string | null;
+  actions?: {
+    canManagerEdit: boolean;
+    canOfficerEdit: boolean;
+    canForwardToOwner: boolean;
+    canOwnerAuthorize: boolean;
+    waitingForOwner: boolean;
+  };
+};
+
+type ReportResubmitRequired = {
+  required: true;
+  reportId: string;
+  reportNumber: string;
+  operationDate: string;
+  branchId: string;
+  title: string;
+  message: string;
 };
 
 type CorrectionsSession = {
@@ -158,6 +186,8 @@ export function RepaymentCorrectionsWorkspace({
   const [editing, setEditing] = useState<RepaymentCorrectionRequest | null>(
     null,
   );
+  const [resubmitPrompt, setResubmitPrompt] =
+    useState<ReportResubmitRequired | null>(null);
   const currency = state.workspace?.currency ?? "UGX";
   const isManager = mode === "manager";
 
@@ -212,6 +242,17 @@ export function RepaymentCorrectionsWorkspace({
     );
   }, [matchesBranch, mode, requests, search]);
 
+  const openResubmitIfNeeded = (payload: unknown) => {
+    if (
+      payload &&
+      typeof payload === "object" &&
+      "required" in payload &&
+      (payload as ReportResubmitRequired).required
+    ) {
+      setResubmitPrompt(payload as ReportResubmitRequired);
+    }
+  };
+
   const reviewRequest = async (
     request: RepaymentCorrectionRequest,
     payload: {
@@ -225,7 +266,9 @@ export function RepaymentCorrectionsWorkspace({
     setError(null);
     setNotice(null);
     try {
-      await apiPatch(
+      const response = await apiPatch<{
+        reportResubmitRequired?: ReportResubmitRequired | null;
+      }>(
         state.session,
         `/collections/repayment-correction-requests/${request.id}`,
         payload,
@@ -238,11 +281,63 @@ export function RepaymentCorrectionsWorkspace({
           : "Correction request rejected.",
       );
       await loadRequests();
+      openResubmitIfNeeded(response.reportResubmitRequired);
     } catch (caught) {
       setError(
         caught instanceof Error
           ? caught.message
           : "Correction request could not be reviewed.",
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const forwardToOwner = async (request: RepaymentCorrectionRequest) => {
+    if (!state.session) return;
+    setBusyId(request.id);
+    setError(null);
+    setNotice(null);
+    try {
+      await apiPost(
+        state.session,
+        `/collections/repayment-correction-requests/${request.id}/forward-to-owner`,
+        {},
+      );
+      setNotice("Forwarded to owner for approval.");
+      await loadRequests();
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not forward this request to the owner.",
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const ownerAuthorize = async (request: RepaymentCorrectionRequest) => {
+    if (!state.session) return;
+    setBusyId(request.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await apiPost<{
+        reportResubmitRequired?: ReportResubmitRequired | null;
+      }>(
+        state.session,
+        `/collections/repayment-correction-requests/${request.id}/owner-authorize`,
+        {},
+      );
+      setNotice("Owner authorized. Manager can now allow edit or correct.");
+      await loadRequests();
+      openResubmitIfNeeded(response.reportResubmitRequired);
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not authorize this correction.",
       );
     } finally {
       setBusyId(null);
@@ -263,7 +358,9 @@ export function RepaymentCorrectionsWorkspace({
     setError(null);
     setNotice(null);
     try {
-      await apiPatch(
+      const response = await apiPatch<{
+        reportResubmitRequired?: ReportResubmitRequired | null;
+      }>(
         state.session,
         `/collections/repayments/${request.repaymentId}/correction`,
         {
@@ -277,6 +374,7 @@ export function RepaymentCorrectionsWorkspace({
       setEditing(null);
       setNotice("Repayment correction saved and the loan balance was updated.");
       await loadRequests();
+      openResubmitIfNeeded(response.reportResubmitRequired);
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -451,27 +549,65 @@ export function RepaymentCorrectionsWorkspace({
                             <>
                               <button
                                 type="button"
-                                disabled={busyId === request.id}
+                                disabled={
+                                  busyId === request.id ||
+                                  request.actions?.canManagerEdit === false
+                                }
                                 onClick={() => setEditing(request)}
-                                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[var(--line)] bg-white px-3 text-xs font-bold text-[var(--midnight-navy)] hover:bg-[#f8faf9] disabled:opacity-60"
+                                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-[var(--line)] bg-white px-3 text-xs font-bold text-[var(--midnight-navy)] hover:bg-[#f8faf9] disabled:opacity-40"
+                                title={
+                                  request.actions?.canManagerEdit === false
+                                    ? "Locked until owner authorizes"
+                                    : "Edit myself"
+                                }
                               >
                                 <Edit3 className="size-3.5" />
-                                Edit now
+                                Edit myself
                               </button>
                               <button
                                 type="button"
-                                disabled={busyId === request.id}
+                                disabled={
+                                  busyId === request.id ||
+                                  request.actions?.canOfficerEdit === false
+                                }
                                 onClick={() =>
                                   void reviewRequest(request, {
                                     status: "APPROVED",
                                     officerCanEdit: true,
                                   })
                                 }
-                                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--forest-emerald)] px-3 text-xs font-bold text-white disabled:opacity-60"
+                                className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--forest-emerald)] px-3 text-xs font-bold text-white disabled:opacity-40"
+                                title={
+                                  request.actions?.canOfficerEdit === false
+                                    ? "Locked until owner authorizes"
+                                    : "Allow agent to edit"
+                                }
                               >
                                 <UserCheck className="size-3.5" />
-                                Let officer edit
+                                Allow agent
                               </button>
+                              <button
+                                type="button"
+                                disabled={
+                                  busyId === request.id ||
+                                  request.actions?.canForwardToOwner !== true
+                                }
+                                onClick={() => void forwardToOwner(request)}
+                                className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-bold text-amber-900 disabled:opacity-40"
+                              >
+                                Forward to owner
+                              </button>
+                              {request.actions?.canOwnerAuthorize &&
+                              mode === "owner" ? (
+                                <button
+                                  type="button"
+                                  disabled={busyId === request.id}
+                                  onClick={() => void ownerAuthorize(request)}
+                                  className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-[var(--midnight-navy)] px-3 text-xs font-bold text-white disabled:opacity-60"
+                                >
+                                  Authorize
+                                </button>
+                              ) : null}
                               <button
                                 type="button"
                                 disabled={busyId === request.id}
@@ -530,6 +666,32 @@ export function RepaymentCorrectionsWorkspace({
           onClose={() => setEditing(null)}
           onSave={(payload) => applyManagerCorrection(editing, payload)}
         />
+      ) : null}
+
+      {resubmitPrompt ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(8,16,28,0.48)] p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-md rounded-2xl border border-[#e6ebf0] bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
+            <h3 className="text-lg font-black text-[var(--midnight-navy)]">
+              {resubmitPrompt.title}
+            </h3>
+            <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
+              {resubmitPrompt.message}
+            </p>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  const date = resubmitPrompt.operationDate;
+                  setResubmitPrompt(null);
+                  window.location.href = `/operations?date=${encodeURIComponent(date)}`;
+                }}
+                className="inline-flex h-11 items-center justify-center rounded-xl bg-[var(--forest-emerald)] px-4 text-sm font-bold text-white"
+              >
+                Review report
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </AppShell>
   );
@@ -773,6 +935,28 @@ async function apiPatch<T>(
 ) {
   const response = await fetch(`${apiBaseUrl}${path}`, {
     method: "PATCH",
+    headers: {
+      ...authHeaders(session),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  const payload = await readApiJson<T & { message?: string | string[] }>(
+    response,
+  );
+  if (!response.ok) {
+    throw new Error(formatApiError(payload.message));
+  }
+  return payload;
+}
+
+async function apiPost<T>(
+  session: RembehSession,
+  path: string,
+  body: Record<string, unknown>,
+) {
+  const response = await fetch(`${apiBaseUrl}${path}`, {
+    method: "POST",
     headers: {
       ...authHeaders(session),
       "Content-Type": "application/json",

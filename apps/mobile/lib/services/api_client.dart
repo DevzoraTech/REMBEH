@@ -361,6 +361,30 @@ class ApiClient {
     );
   }
 
+  Future<Map<String, dynamic>> forwardRepaymentCorrectionToOwner({
+    required RembehSession session,
+    required String requestId,
+  }) {
+    return _postJson(
+      session: session,
+      path:
+          '/collections/repayment-correction-requests/$requestId/forward-to-owner',
+      body: const {},
+    );
+  }
+
+  Future<Map<String, dynamic>> ownerAuthorizeRepaymentCorrection({
+    required RembehSession session,
+    required String requestId,
+  }) {
+    return _postJson(
+      session: session,
+      path:
+          '/collections/repayment-correction-requests/$requestId/owner-authorize',
+      body: const {},
+    );
+  }
+
   Future<Map<String, dynamic>> applyRepaymentCorrection({
     required RembehSession session,
     required String repaymentId,
@@ -959,6 +983,61 @@ class ApiClient {
     );
   }
 
+  Future<Map<String, dynamic>> getSmsCreditsBalance({
+    required RembehSession session,
+  }) {
+    return _getJson(session: session, path: '/sms-credits/balance');
+  }
+
+  Future<Map<String, dynamic>> getSmsCreditBundles({
+    required RembehSession session,
+  }) {
+    return _getJson(session: session, path: '/sms-credits/bundles');
+  }
+
+  Future<Map<String, dynamic>> getBillingMyBranch({
+    required RembehSession session,
+  }) {
+    return _getJson(session: session, path: '/billing/my-branch');
+  }
+
+  Future<Map<String, dynamic>> getBillingPayments({
+    required RembehSession session,
+  }) {
+    return _getJson(session: session, path: '/billing/payments');
+  }
+
+  Future<Map<String, dynamic>> getManualPaymentMethods({
+    required RembehSession session,
+    String kind = 'sms',
+  }) {
+    final normalized = kind == 'subscription' ? 'subscription' : 'sms';
+    return _getJson(
+      session: session,
+      path: '/billing/manual-payment-methods?kind=$normalized',
+    );
+  }
+
+  Future<Map<String, dynamic>> submitManualSmsPayment({
+    required RembehSession session,
+    required String branchId,
+    required String bundleId,
+    required String provider,
+    required String transactionId,
+    required String confirmTransactionId,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/billing/branches/$branchId/manual-sms-payment',
+      body: {
+        'bundleId': bundleId,
+        'provider': provider,
+        'transactionId': transactionId,
+        'confirmTransactionId': confirmTransactionId,
+      },
+    );
+  }
+
   Future<Map<String, dynamic>> getSmsNotificationSettings({
     required RembehSession session,
   }) {
@@ -1117,17 +1196,34 @@ class ApiClient {
     required num amount,
     String? notes,
     bool addMore = false,
-  }) {
-    final action = addMore ? 'floats/top-ups' : 'floats';
-    return _postJson(
-      session: session,
-      path: '/agents/$agentId/$action',
-      body: {
-        'date': date,
-        'amountGiven': amount,
-        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
-      },
-    );
+  }) async {
+    final body = {
+      'date': date,
+      'amountGiven': amount,
+      if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+    };
+
+    try {
+      return await _postJson(
+        session: session,
+        path: '/agents/$agentId/${addMore ? 'floats/top-ups' : 'floats'}',
+        body: body,
+      );
+    } on ApiException catch (error) {
+      // If the client thought this was a first issue but float already
+      // exists, retry as a top-up so managers can add more without failing.
+      final message = error.message.toLowerCase();
+      if (!addMore &&
+          message.contains('already has float') &&
+          !message.contains('returned')) {
+        return _postJson(
+          session: session,
+          path: '/agents/$agentId/floats/top-ups',
+          body: body,
+        );
+      }
+      rethrow;
+    }
   }
 
   Future<Map<String, dynamic>> recordAgentReturn({

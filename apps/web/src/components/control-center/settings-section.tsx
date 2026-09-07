@@ -267,9 +267,11 @@ export function SettingsSection({
           ) : tab ===
             "BILLING" ? (
             <BillingView
-              settings={
-                settings
-              }
+              settings={settings}
+              session={session}
+              onSaved={async () => {
+                await loadSettings(true);
+              }}
             />
           ) : (
             <SystemView
@@ -1125,10 +1127,64 @@ function OperatorSmsContactRow({
 
 function BillingView({
   settings,
+  session,
+  onSaved,
 }: {
-  settings:
-    ControlCenterSettings | null;
+  settings: ControlCenterSettings | null;
+  session: ControlCenterSession | null;
+  onSaved: () => Promise<void> | void;
 }) {
+  const [drafts, setDrafts] = useState<
+    Record<
+      string,
+      { merchantCode: string; accountName: string; enabled: boolean }
+    >
+  >({});
+  const [busyProvider, setBusyProvider] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const next: Record<
+      string,
+      { merchantCode: string; accountName: string; enabled: boolean }
+    > = {};
+    for (const provider of settings?.billing.providers ?? []) {
+      next[provider.provider] = {
+        merchantCode: provider.merchantCode ?? "",
+        accountName: provider.accountName ?? "",
+        enabled: provider.enabled ?? provider.configured,
+      };
+    }
+    setDrafts(next);
+  }, [settings]);
+
+  async function saveProvider(provider: "MTN_MOMO" | "AIRTEL_MONEY") {
+    if (!session) return;
+    const draft = drafts[provider];
+    if (!draft) return;
+    setBusyProvider(provider);
+    setError(null);
+    try {
+      await controlCenterFetch(
+        `/settings/billing-providers/${provider}`,
+        session,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            merchantCode: draft.merchantCode.trim(),
+            accountName: draft.accountName.trim(),
+            enabled: draft.enabled,
+          }),
+        },
+      );
+      await onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save provider.");
+    } finally {
+      setBusyProvider(null);
+    }
+  }
+
   return (
     <div className="border-t border-[#edf1f4]">
       <div className="border-b border-[#edf1f4] px-4 py-4">
@@ -1137,28 +1193,30 @@ function BillingView({
         </p>
 
         <p className="mt-1 text-[9.5px] text-[#718099]">
-          Customer-facing merchant details are configured by the
-          server environment and shown here for operational
-          verification.
+          Merchant codes shown on Complete payment can be edited here. Disable a
+          method to show it as Unavailable in the apps.
         </p>
+        {error ? (
+          <p className="mt-2 text-[10px] font-semibold text-rose-600">{error}</p>
+        ) : null}
       </div>
 
       <div className="grid gap-3 p-4 lg:grid-cols-2">
-        {settings?.billing.providers.map(
-          (
-            provider,
-          ) => (
+        {settings?.billing.providers.map((provider) => {
+          const draft = drafts[provider.provider] ?? {
+            merchantCode: provider.merchantCode ?? "",
+            accountName: provider.accountName ?? "",
+            enabled: provider.enabled ?? provider.configured,
+          };
+          return (
             <article
-              key={
-                provider.provider
-              }
+              key={provider.provider}
               className="rounded-[10px] border border-[#dfe5eb] bg-white p-4"
             >
               <div className="flex items-start justify-between gap-4">
                 <span
                   className={`grid size-10 place-items-center rounded-[9px] ${
-                    provider.provider ===
-                    "MTN_MOMO"
+                    provider.provider === "MTN_MOMO"
                       ? "bg-[#fff6d8] text-[#b78b00]"
                       : "bg-[#fff0f0] text-[#d43c3c]"
                   }`}
@@ -1167,43 +1225,81 @@ function BillingView({
                 </span>
 
                 <StateBadge
-                  good={
-                    provider.configured
-                  }
-                  goodLabel="Configured"
-                  badLabel="Incomplete"
+                  good={provider.configured}
+                  goodLabel="Available"
+                  badLabel="Unavailable"
                 />
               </div>
 
               <p className="mt-4 text-[11px] font-semibold text-[#17233c]">
-                {
-                  provider.label
-                }
+                {provider.label}
+              </p>
+              <p className="mt-1 text-[8.5px] text-[#8490a1]">
+                Source: {provider.source ?? "ENVIRONMENT"}
               </p>
 
-              <ConfigRow
-                label="Merchant code"
-                value={
-                  provider.merchantCode ??
-                  "Not configured"
-                }
-              />
+              <label className="mt-3 block text-[9px] font-semibold text-[#718099]">
+                Merchant code
+                <input
+                  value={draft.merchantCode}
+                  onChange={(event) =>
+                    setDrafts((current) => ({
+                      ...current,
+                      [provider.provider]: {
+                        ...draft,
+                        merchantCode: event.target.value,
+                      },
+                    }))
+                  }
+                  className="mt-1 h-9 w-full rounded-md border border-[#dfe5eb] px-2.5 text-[11px] text-[#17233c] outline-none focus:border-[#168650]"
+                />
+              </label>
 
-              <ConfigRow
-                label="Registered account"
-                value={
-                  provider.accountName ??
-                  "Not configured"
-                }
-              />
+              <label className="mt-2 block text-[9px] font-semibold text-[#718099]">
+                Account name
+                <input
+                  value={draft.accountName}
+                  onChange={(event) =>
+                    setDrafts((current) => ({
+                      ...current,
+                      [provider.provider]: {
+                        ...draft,
+                        accountName: event.target.value,
+                      },
+                    }))
+                  }
+                  className="mt-1 h-9 w-full rounded-md border border-[#dfe5eb] px-2.5 text-[11px] text-[#17233c] outline-none focus:border-[#168650]"
+                />
+              </label>
 
-              <p className="mt-4 text-[8.5px] leading-4 text-[#8490a1]">
-                Modify these values through deployment/server
-                configuration rather than from the browser.
-              </p>
+              <label className="mt-3 flex items-center gap-2 text-[10px] font-semibold text-[#17233c]">
+                <input
+                  type="checkbox"
+                  checked={draft.enabled}
+                  onChange={(event) =>
+                    setDrafts((current) => ({
+                      ...current,
+                      [provider.provider]: {
+                        ...draft,
+                        enabled: event.target.checked,
+                      },
+                    }))
+                  }
+                />
+                Enabled for customers
+              </label>
+
+              <button
+                type="button"
+                disabled={busyProvider === provider.provider || !session}
+                onClick={() => void saveProvider(provider.provider)}
+                className="mt-4 inline-flex h-9 items-center justify-center rounded-md bg-[#168650] px-3 text-[10px] font-bold text-white disabled:opacity-55"
+              >
+                {busyProvider === provider.provider ? "Saving…" : "Save"}
+              </button>
             </article>
-          ),
-        )}
+          );
+        })}
       </div>
 
       <div className="border-t border-[#edf1f4] px-4 py-4">
@@ -1212,54 +1308,32 @@ function BillingView({
         </p>
 
         <p className="mt-1 text-[9.5px] text-[#718099]">
-          Pricing management remains in the Pricing workspace. These
-          values are displayed here only as system configuration.
+          Pricing management remains in the Pricing workspace. These values are
+          displayed here only as system configuration.
         </p>
 
         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {settings?.plans.map(
-            (
-              plan,
-            ) => (
-              <div
-                key={
-                  plan.id
-                }
-                className="rounded-[9px] border border-[#dfe5eb] p-3.5"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <WalletCards className="size-4 text-[#168650]" />
+          {settings?.plans.map((plan) => (
+            <div
+              key={plan.id}
+              className="rounded-[9px] border border-[#dfe5eb] p-3.5"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <WalletCards className="size-4 text-[#168650]" />
 
-                  <StatusBadge
-                    value={
-                      plan.isActive
-                        ? "ACTIVE"
-                        : "INACTIVE"
-                    }
-                  />
-                </div>
-
-                <p className="mt-3 text-[10.5px] font-semibold text-[#17233c]">
-                  {
-                    plan.name
-                  }
-                </p>
-
-                <p className="mt-1 text-[8.5px] text-[#8490a1]">
-                  {formatInterval(
-                    plan.interval,
-                  )}
-                </p>
-
-                <p className="mt-3 text-[17px] font-bold text-[#111d36]">
-                  {ccMoney(
-                    plan.amount,
-                    plan.currency,
-                  )}
-                </p>
+                <StatusBadge
+                  value={plan.isActive ? "ACTIVE" : "INACTIVE"}
+                />
               </div>
-            ),
-          )}
+              <p className="mt-3 text-[11px] font-semibold text-[#17233c]">
+                {plan.name}
+              </p>
+              <p className="mt-1 text-[10px] text-[#718099]">{plan.code}</p>
+              <p className="mt-2 text-[12px] font-bold tabular-nums text-[#17233c]">
+                {plan.currency} {plan.amount.toLocaleString("en-UG")}
+              </p>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -1362,11 +1436,9 @@ function SystemView({
             </p>
 
             <p className="mt-1 max-w-4xl text-[9.5px] leading-5 text-[#68768f]">
-              Security credentials, administrator allow-lists and
-              payment merchant configuration remain deployment-level
-              settings. The Control Center can inspect configuration
-              health without exposing secrets or silently changing
-              infrastructure-level controls.
+              Security credentials and administrator allow-lists remain
+              deployment-level settings. Merchant payment codes for MTN and
+              Airtel can be edited under the Billing settings tab.
             </p>
           </div>
         </div>

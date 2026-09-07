@@ -40,12 +40,29 @@ class _RepaymentCorrectionApplySheet extends StatefulWidget {
 
 class _RepaymentCorrectionApplySheetState
     extends State<_RepaymentCorrectionApplySheet> {
+  late final bool _fromApprovedRequest =
+      widget.payment.approvedCorrectionRequestId != null &&
+      widget.payment.officerCanEdit;
+
   late final _amount = TextEditingController(
-    text: widget.payment.amount.toString(),
+    text: (_fromApprovedRequest
+            ? (widget.payment.approvedRequestedAmount ?? widget.payment.amount)
+            : widget.payment.amount)
+        .toString(),
   );
-  late final _note = TextEditingController(text: widget.payment.note ?? '');
-  final _reason = TextEditingController();
-  late String _method = widget.payment.method;
+  late final _note = TextEditingController(
+    text: _fromApprovedRequest
+        ? (widget.payment.approvedRequestedNote ?? widget.payment.note ?? '')
+        : (widget.payment.note ?? ''),
+  );
+  late final _reason = TextEditingController(
+    text: _fromApprovedRequest
+        ? (widget.payment.approvedCorrectionReason ?? '')
+        : '',
+  );
+  late String _method = _fromApprovedRequest
+      ? (widget.payment.approvedRequestedMethod ?? widget.payment.method)
+      : widget.payment.method;
   bool _saving = false;
   String? _error;
 
@@ -66,8 +83,13 @@ class _RepaymentCorrectionApplySheetState
       return;
     }
 
-    if (reason.length < 6) {
+    if (!_fromApprovedRequest && reason.length < 6) {
       setState(() => _error = 'Add a reason for this correction.');
+      return;
+    }
+
+    if (_fromApprovedRequest && reason.isEmpty) {
+      setState(() => _error = 'Approved correction reason is missing.');
       return;
     }
 
@@ -104,6 +126,7 @@ class _RepaymentCorrectionApplySheetState
   @override
   Widget build(BuildContext context) {
     final bottom = MediaQuery.viewInsetsOf(context).bottom;
+    final requestedAmount = widget.payment.approvedRequestedAmount;
 
     return Padding(
       padding: EdgeInsets.only(bottom: bottom),
@@ -128,10 +151,12 @@ class _RepaymentCorrectionApplySheetState
               const SizedBox(height: 18),
               Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Correct payment',
-                      style: TextStyle(
+                      _fromApprovedRequest
+                          ? 'Apply approved correction'
+                          : 'Correct payment',
+                      style: const TextStyle(
                         color: midnightNavy,
                         fontSize: 22,
                         fontWeight: FontWeight.w900,
@@ -161,6 +186,27 @@ class _RepaymentCorrectionApplySheetState
                   ),
                 ),
               ),
+              if (_fromApprovedRequest && requestedAmount != null) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF8F1),
+                    border: Border.all(color: const Color(0xFFB7E0C2)),
+                    borderRadius: rembehBorderRadius(rembehRadiusMd),
+                  ),
+                  child: Text(
+                    'Approved change: UGX ${formatMoney(requestedAmount)}. Saving a different amount alerts the manager.',
+                    style: const TextStyle(
+                      color: midnightNavy,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 16),
               TextField(
                 controller: _amount,
@@ -205,9 +251,16 @@ class _RepaymentCorrectionApplySheetState
               TextField(
                 controller: _reason,
                 maxLines: 3,
+                readOnly: _fromApprovedRequest,
+                enabled: !_fromApprovedRequest,
                 textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(
-                  labelText: 'Reason for saved correction',
+                decoration: InputDecoration(
+                  labelText: _fromApprovedRequest
+                      ? 'Approved reason (locked)'
+                      : 'Reason for saved correction',
+                  helperText: _fromApprovedRequest
+                      ? 'This is the reason the manager already approved.'
+                      : null,
                 ),
               ),
               if (_error != null) ...[

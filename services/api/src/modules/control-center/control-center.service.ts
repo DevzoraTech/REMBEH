@@ -24,6 +24,7 @@ import {
 } from '@prisma/client';
 import {
   ControlCenterCreateOperatorSmsContactDto,
+  ControlCenterUpdateMerchantPaymentProviderDto,
   ControlCenterUpdateMessageTemplateDto,
   ControlCenterUpdateOperatorSmsContactDto,
 } from './dto/control-center-settings.dto';
@@ -41,6 +42,8 @@ import {
 } from '../notifications/operator-alert.service';
 import { SmsService } from '../notifications/sms.service';
 import { BillingService } from '../billing/billing.service';
+import { MerchantPaymentConfigService } from '../billing/merchant-payment-config.service';
+import { ManualMerchantPaymentProvider } from '../billing/dto/submit-manual-merchant-payment.dto';
 import type { ControlCenterAdminContext } from './control-center-admin';
 import {
   ControlCenterChangePasswordDto,
@@ -92,6 +95,7 @@ export class ControlCenterService implements OnModuleInit {
     private readonly operatorAlerts: OperatorAlertService,
     private readonly smsService: SmsService,
     private readonly billingService: BillingService,
+    private readonly merchantPaymentConfig: MerchantPaymentConfigService,
   ) {}
 
   async onModuleInit() {
@@ -174,23 +178,11 @@ export class ControlCenterService implements OnModuleInit {
         .map((email) => this.normalizeEmail(email))
         .filter(Boolean) ?? [];
 
-    const mtnMerchantCode =
-      this.configService.get<string>('MTN_MOMO_MERCHANT_CODE')?.trim() || null;
-
-    const mtnAccountName =
-      this.configService.get<string>('MTN_MOMO_ACCOUNT_NAME')?.trim() || null;
-
-    const airtelMerchantCode =
-      this.configService.get<string>('AIRTEL_MONEY_MERCHANT_CODE')?.trim() ||
-      null;
-
-    const airtelAccountName =
-      this.configService.get<string>('AIRTEL_MONEY_ACCOUNT_NAME')?.trim() ||
-      null;
-
     const jwtSecretConfigured = Boolean(
       this.configService.get<string>('CONTROL_CENTER_JWT_SECRET')?.trim(),
     );
+
+    const providers = await this.merchantPaymentConfig.listResolved();
 
     return {
       administrators: allowedEmails.map((email) => {
@@ -269,33 +261,49 @@ export class ControlCenterService implements OnModuleInit {
       ),
 
       billing: {
-        providers: [
-          {
-            provider: 'MTN_MOMO',
-
-            label: 'MTN Mobile Money',
-
-            merchantCode: mtnMerchantCode,
-
-            accountName: mtnAccountName,
-
-            configured: Boolean(mtnMerchantCode && mtnAccountName),
-          },
-
-          {
-            provider: 'AIRTEL_MONEY',
-
-            label: 'Airtel Money',
-
-            merchantCode: airtelMerchantCode,
-
-            accountName: airtelAccountName,
-
-            configured: Boolean(airtelMerchantCode && airtelAccountName),
-          },
-        ],
+        providers: providers.map((provider) => ({
+          provider: provider.provider,
+          label: provider.label,
+          merchantCode: provider.merchantCode,
+          accountName: provider.accountName,
+          enabled: provider.enabled,
+          configured: provider.available,
+          source: provider.source,
+        })),
       },
     };
+  }
+
+  async updateMerchantPaymentProvider(
+    admin: ControlCenterAdminContext,
+    provider: 'MTN_MOMO' | 'AIRTEL_MONEY',
+    dto: ControlCenterUpdateMerchantPaymentProviderDto,
+  ) {
+    const updated = await this.merchantPaymentConfig.upsert({
+      provider:
+        provider === 'MTN_MOMO'
+          ? ManualMerchantPaymentProvider.MTN_MOMO
+          : ManualMerchantPaymentProvider.AIRTEL_MONEY,
+      merchantCode: dto.merchantCode,
+      accountName: dto.accountName,
+      enabled: dto.enabled,
+    });
+
+    await this.audit(
+      admin.adminId,
+      'merchant_payment_provider.updated',
+      'merchant_payment_provider',
+      provider,
+      null,
+      {
+        merchantCode: updated.merchantCode,
+        accountName: updated.accountName,
+        enabled: updated.enabled,
+        available: updated.available,
+      },
+    );
+
+    return this.controlCenterSettings();
   }
 
   async updateMessageTemplate(

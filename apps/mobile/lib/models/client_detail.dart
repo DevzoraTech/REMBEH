@@ -13,6 +13,10 @@ class ClientPaymentHistoryItem {
     this.approvedCorrectionRequestId,
     this.officerCanEdit = false,
     this.correctionAppliedAt,
+    this.approvedCorrectionReason,
+    this.approvedRequestedAmount,
+    this.approvedRequestedMethod,
+    this.approvedRequestedNote,
   });
 
   final String id;
@@ -28,6 +32,10 @@ class ClientPaymentHistoryItem {
   final String? approvedCorrectionRequestId;
   final bool officerCanEdit;
   final DateTime? correctionAppliedAt;
+  final String? approvedCorrectionReason;
+  final int? approvedRequestedAmount;
+  final String? approvedRequestedMethod;
+  final String? approvedRequestedNote;
 }
 
 class ClientFineHistoryItem {
@@ -243,6 +251,15 @@ class ClientDetail {
                   correctionAppliedAt: DateTime.tryParse(
                     row['correctionAppliedAt'] as String? ?? '',
                   ),
+                  approvedCorrectionReason:
+                      row['approvedCorrectionReason'] as String?,
+                  approvedRequestedAmount: row['approvedRequestedAmount'] == null
+                      ? null
+                      : ((row['approvedRequestedAmount'] as num?) ?? 0).round(),
+                  approvedRequestedMethod:
+                      row['approvedRequestedMethod'] as String?,
+                  approvedRequestedNote:
+                      row['approvedRequestedNote'] as String?,
                 ),
               )
               .toList()

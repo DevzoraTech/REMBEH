@@ -277,4 +277,19 @@ updateReconciliationNotes(
   ) {
     return this.operationsService.ownerApproveReport(user, reportId, dto);
   }
+
+  @Post('reports/:reportId/owner-authorize-rollback')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.approve)
+  ownerAuthorizeReportRollback(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('reportId', ParseUUIDPipe)
+    reportId: string,
+    @Body() dto: ReviewOperationReportDto,
+  ) {
+    return this.operationsService.ownerAuthorizeReportRollback(
+      user,
+      reportId,
+      dto,
+    );
+  }
 }

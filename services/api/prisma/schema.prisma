@@ -248,6 +248,11 @@ enum SmsBundleStatus {
   ARCHIVED
 }
 
+enum MerchantPaymentProvider {
+  MTN_MOMO
+  AIRTEL_MONEY
+}
+
 enum SmsPurchaseStatus {
   PAYMENT_PENDING
   AWAITING_PAYMENT
@@ -757,6 +762,8 @@ model User {
   repaymentCorrectionRequests RepaymentCorrectionRequest[] @relation("RepaymentCorrectionRequester")
   repaymentCorrectionReviews  RepaymentCorrectionRequest[] @relation("RepaymentCorrectionReviewer")
   repaymentCorrectionsApplied RepaymentCorrectionRequest[] @relation("RepaymentCorrectionApplier")
+  repaymentCorrectionsForwarded RepaymentCorrectionRequest[] @relation("RepaymentCorrectionForwardedBy")
+  repaymentCorrectionsOwnerAuthorized RepaymentCorrectionRequest[] @relation("RepaymentCorrectionOwnerAuthorizedBy")
   dailyFloats                 AgentDailyFloat[]            @relation("AgentDailyFloatAgent")
   dailyFloatsRecorded         AgentDailyFloat[]            @relation("AgentDailyFloatRecorder")
   dailyFloatsReturned         AgentDailyFloat[]            @relation("AgentDailyFloatReturnedBy")
@@ -1359,6 +1366,10 @@ model RepaymentCorrectionRequest {
   reviewerFeedback          String?                          @map("reviewer_feedback")
   reviewedAt                DateTime?                        @map("reviewed_at")
   correctionAppliedAt       DateTime?                        @map("correction_applied_at")
+  forwardedToOwnerAt        DateTime?                        @map("forwarded_to_owner_at")
+  forwardedToOwnerById      String?                          @map("forwarded_to_owner_by_id") @db.Uuid
+  ownerAuthorizedAt         DateTime?                        @map("owner_authorized_at")
+  ownerAuthorizedById       String?                          @map("owner_authorized_by_id") @db.Uuid
   createdAt                 DateTime                         @default(now()) @map("created_at")
   updatedAt                 DateTime                         @updatedAt @map("updated_at")
 
@@ -1369,6 +1380,8 @@ model RepaymentCorrectionRequest {
   requestedBy         User      @relation("RepaymentCorrectionRequester", fields: [requestedByUserId], references: [id])
   reviewedBy          User?     @relation("RepaymentCorrectionReviewer", fields: [reviewedByUserId], references: [id], onDelete: SetNull)
   correctionAppliedBy User?     @relation("RepaymentCorrectionApplier", fields: [correctionAppliedByUserId], references: [id], onDelete: SetNull)
+  forwardedToOwnerBy  User?     @relation("RepaymentCorrectionForwardedBy", fields: [forwardedToOwnerById], references: [id], onDelete: SetNull)
+  ownerAuthorizedBy   User?     @relation("RepaymentCorrectionOwnerAuthorizedBy", fields: [ownerAuthorizedById], references: [id], onDelete: SetNull)
 
   @@index([tenantId, branchId, status, createdAt])
   @@index([tenantId, requestedByUserId, status, createdAt])
@@ -1594,6 +1607,19 @@ model ControlCenterOperatorSmsContact {
 
   @@index([active, sortOrder])
   @@map("control_center_operator_sms_contacts")
+}
+
+/// Control Center–editable MTN / Airtel merchant payment details.
+/// Overrides deployment env when a row exists.
+model MerchantPaymentProviderConfig {
+  provider     MerchantPaymentProvider @id
+  merchantCode String                  @map("merchant_code")
+  accountName  String                  @map("account_name")
+  enabled      Boolean                 @default(true)
+  createdAt    DateTime                @default(now()) @map("created_at")
+  updatedAt    DateTime                @updatedAt @map("updated_at")
+
+  @@map("merchant_payment_provider_configs")
 }
 
 model SubscriptionPriceOverride {

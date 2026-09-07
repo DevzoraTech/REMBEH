@@ -100,6 +100,10 @@ class RealtimeClient {
         'app_release.updated',
         (data) => _dispatch('app_release.updated', data),
       )
+      ..on(
+        'subscription_payment.updated',
+        (data) => _dispatch('subscription_payment.updated', data),
+      )
       ..connect();
   }
 

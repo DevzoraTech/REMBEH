@@ -329,6 +329,15 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
                   correctionAppliedAt: DateTime.tryParse(
                     row['correctionAppliedAt'] as String? ?? '',
                   ),
+                  approvedCorrectionReason:
+                      row['approvedCorrectionReason'] as String?,
+                  approvedRequestedAmount: row['approvedRequestedAmount'] == null
+                      ? null
+                      : _money(row['approvedRequestedAmount']),
+                  approvedRequestedMethod:
+                      row['approvedRequestedMethod'] as String?,
+                  approvedRequestedNote:
+                      row['approvedRequestedNote'] as String?,
                 ),
               )
               .toList()
@@ -442,6 +451,10 @@ ui.ClientDetail toUiClientDetail(ClientLoanDetail detail) {
             approvedCorrectionRequestId: item.approvedCorrectionRequestId,
             officerCanEdit: item.officerCanEdit,
             correctionAppliedAt: item.correctionAppliedAt,
+            approvedCorrectionReason: item.approvedCorrectionReason,
+            approvedRequestedAmount: item.approvedRequestedAmount,
+            approvedRequestedMethod: item.approvedRequestedMethod,
+            approvedRequestedNote: item.approvedRequestedNote,
           ),
         )
         .toList(),

@@ -526,18 +526,25 @@ export default function OperationsPage() {
         }
         const nextAgents = payload.agents ?? [];
         setAgents(nextAgents);
-        setFloatForm((current) => ({
-          ...current,
-          agentId:
+        setFloatForm((current) => {
+          const stillEligible =
             current.agentId &&
-            nextAgents.some(
-              (agent) =>
-                agent.id === current.agentId && agent.floatToday == null,
-            )
+            nextAgents.some((agent) => {
+              if (agent.id !== current.agentId || agent.status !== "ACTIVE") {
+                return false;
+              }
+              // Keep selection for first issue or for officers who already
+              // have float (issue panel also tops them up).
+              return true;
+            });
+          return {
+            ...current,
+            agentId: stillEligible
               ? current.agentId
-              : (nextAgents.find((agent) => agent.floatToday == null)?.id ??
+              : (nextAgents.find((agent) => agent.status === "ACTIVE")?.id ??
                 ""),
-        }));
+          };
+        });
       } catch {
         setAgents([]);
       } finally {
@@ -738,16 +745,28 @@ export default function OperationsPage() {
       ),
     [operation?.agentReturns],
   );
-  const addFloatOptions = pendingAgentReturns.filter(
-    (agentReturn) => agentReturn.amountGiven > 0,
-  );
-  const assignableAgents = useMemo(
+  const addFloatOptions = useMemo(
     () =>
-      agents.filter(
-        (agent) => agent.floatToday == null && agent.status === "ACTIVE",
+      pendingAgentReturns.filter(
+        (agentReturn) => Boolean(agentReturn.floatId),
       ),
-    [agents],
+    [pendingAgentReturns],
   );
+  /** Officers who can receive a first float or an additional top-up. */
+  const floatEligibleAgents = useMemo(() => {
+    const pendingFloatAgentIds = new Set(
+      addFloatOptions.map((agentReturn) => agentReturn.agentId),
+    );
+    return agents.filter((agent) => {
+      if (agent.status !== "ACTIVE") {
+        return false;
+      }
+      if (agent.floatToday == null) {
+        return true;
+      }
+      return pendingFloatAgentIds.has(agent.id);
+    });
+  }, [agents, addFloatOptions]);
   const floatAmount = Number(floatForm.amount);
   const extraFloatAmount = Number(floatTopUpForm.amount);
   const floatAmountValid =
@@ -791,8 +810,8 @@ export default function OperationsPage() {
         ...current,
         agentId:
           current.agentId ||
-          assignableAgents.find((agent) => agent.status === "ACTIVE")?.id ||
-          assignableAgents[0]?.id ||
+          floatEligibleAgents.find((agent) => agent.status === "ACTIVE")?.id ||
+          floatEligibleAgents[0]?.id ||
           "",
       }));
     }
@@ -906,10 +925,18 @@ export default function OperationsPage() {
     setError(null);
     setNotice(null);
     try {
-      const path =
-        mode === "issue"
-          ? `${apiBaseUrl}/agents/${targetForm.agentId}/floats`
-          : `${apiBaseUrl}/agents/${targetForm.agentId}/floats/top-ups`;
+      const selectedAgent = agents.find(
+        (agent) => agent.id === targetForm.agentId,
+      );
+      const alreadyHasFloat =
+        selectedAgent?.floatToday != null ||
+        addFloatOptions.some(
+          (agentReturn) => agentReturn.agentId === targetForm.agentId,
+        );
+      const useTopUp = mode === "add" || alreadyHasFloat;
+      const path = useTopUp
+        ? `${apiBaseUrl}/agents/${targetForm.agentId}/floats/top-ups`
+        : `${apiBaseUrl}/agents/${targetForm.agentId}/floats`;
       const response = await fetch(path, {
         method: "POST",
         headers: {
@@ -932,12 +959,16 @@ export default function OperationsPage() {
         loadOperation(session, date),
         loadAgentsForDay(session, date),
       ]);
-      if (mode === "issue") {
+      if (useTopUp) {
+        if (mode === "issue") {
+          setFloatForm(emptyFloatForm);
+        } else {
+          setFloatTopUpForm(emptyFloatForm);
+        }
+        setNotice("More float added.");
+      } else {
         setFloatForm(emptyFloatForm);
         setNotice("Float issued.");
-      } else {
-        setFloatTopUpForm(emptyFloatForm);
-        setNotice("More float added.");
       }
       setActivePanel(null);
     } catch (caught) {
@@ -1623,7 +1654,7 @@ export default function OperationsPage() {
               canReconcile={canReconcileOperation}
               loadingAgents={loadingAgents}
               pendingReturnsCount={pendingAgentReturns.length}
-              assignableAgentsCount={assignableAgents.length}
+              floatEligibleAgentsCount={floatEligibleAgents.length}
               addFloatAgentsCount={addFloatOptions.length}
               report={report}
               reportView={reportView}
@@ -1680,7 +1711,7 @@ export default function OperationsPage() {
           panel={activePanel}
           operation={operation}
           agents={agents}
-          assignableAgents={assignableAgents}
+          floatEligibleAgents={floatEligibleAgents}
           addFloatOptions={addFloatOptions}
           pendingAgentReturns={pendingAgentReturns}
           editable={canFinishOpenOperation}
@@ -1890,7 +1921,7 @@ function OpenOperationView({
   canReconcile,
   loadingAgents,
   pendingReturnsCount,
-  assignableAgentsCount,
+  floatEligibleAgentsCount,
   addFloatAgentsCount,
   report,
   reportView,
@@ -1923,7 +1954,7 @@ function OpenOperationView({
   canReconcile: boolean;
   loadingAgents: boolean;
   pendingReturnsCount: number;
-  assignableAgentsCount: number;
+  floatEligibleAgentsCount: number;
   addFloatAgentsCount: number;
   report: DailyOperationReport | null;
   reportView: DailyReportViewTab;
@@ -2095,7 +2126,7 @@ function OpenOperationView({
                   !editable ||
                   !canManageFloat ||
                   loadingAgents ||
-                  assignableAgentsCount === 0 ||
+                  floatEligibleAgentsCount === 0 ||
                   operation.floatRemaining <= 0
                 }
                 onClick={() => onAction("issue-float")}
@@ -2212,11 +2243,20 @@ function OpenOperationView({
           onIssueFloat={
             canOperateBranch ? () => onAction("issue-float") : undefined
           }
+          onAddFloat={
+            canOperateBranch ? () => onAction("add-float") : undefined
+          }
           canIssue={
             editable &&
             canManageFloat &&
             !loadingAgents &&
-            assignableAgentsCount > 0 &&
+            floatEligibleAgentsCount > 0 &&
+            operation.floatRemaining > 0
+          }
+          canAdd={
+            editable &&
+            canManageFloat &&
+            addFloatAgentsCount > 0 &&
             operation.floatRemaining > 0
           }
         />
@@ -3564,11 +3604,15 @@ function MovementBlock({
 function AgentFloatBoard({
   operation,
   onIssueFloat,
+  onAddFloat,
   canIssue,
+  canAdd,
 }: {
   operation: DailyOperation;
   onIssueFloat?: () => void;
+  onAddFloat?: () => void;
   canIssue?: boolean;
+  canAdd?: boolean;
 }) {
   const pendingCount = operation.agentReturns.filter(
     (row) => row.status === "PENDING",
@@ -3591,15 +3635,25 @@ function AgentFloatBoard({
             </span>
           </p>
         </div>
-        {onIssueFloat ? (
-          <ActionChip
-            icon={<UserRoundPlus className="size-3.5" />}
-            label="Issue"
-            primary
-            disabled={!canIssue}
-            onClick={onIssueFloat}
-          />
-        ) : null}
+        <div className="flex flex-wrap items-center gap-1.5">
+          {onAddFloat ? (
+            <ActionChip
+              icon={<CircleDollarSign className="size-3.5" />}
+              label="Add"
+              disabled={!canAdd}
+              onClick={onAddFloat}
+            />
+          ) : null}
+          {onIssueFloat ? (
+            <ActionChip
+              icon={<UserRoundPlus className="size-3.5" />}
+              label="Issue"
+              primary
+              disabled={!canIssue}
+              onClick={onIssueFloat}
+            />
+          ) : null}
+        </div>
       </div>
 
       {operation.agentReturns.length === 0 ? (
@@ -3977,7 +4031,7 @@ function OperationActionDrawer({
   panel,
   operation,
   agents,
-  assignableAgents,
+  floatEligibleAgents,
   addFloatOptions,
   pendingAgentReturns,
   editable,
@@ -4018,7 +4072,7 @@ function OperationActionDrawer({
   panel: OperationActionPanel;
   operation: DailyOperation | null | undefined;
   agents: OperationAgentRow[];
-  assignableAgents: OperationAgentRow[];
+  floatEligibleAgents: OperationAgentRow[];
   addFloatOptions: DailyOperationAgentReturn[];
   pendingAgentReturns: DailyOperationAgentReturn[];
   editable: boolean;
@@ -4129,6 +4183,11 @@ function OperationActionDrawer({
             : panel === "agent-return"
               ? canSubmitReturn && !recordingAgentReturn
               : canSubmitClose && !closing;
+  const issueFloatCta = floatEligibleAgents.some(
+    (agent) => agent.id === floatForm.agentId && agent.floatToday != null,
+  )
+    ? "Add float"
+    : meta.cta;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-[rgba(8,16,28,0.48)] backdrop-blur-[3px]">
@@ -4242,13 +4301,16 @@ function OperationActionDrawer({
             {panel === "issue-float" ? (
               <FloatPanelForm
                 form={floatForm}
-                options={assignableAgents.map((agent) => ({
+                options={floatEligibleAgents.map((agent) => ({
                   id: agent.id,
                   label: agent.name,
-                  meta: agent.publicId ?? "No officer ID",
+                  meta:
+                    agent.floatToday == null
+                      ? (agent.publicId ?? "No officer ID")
+                      : `Has ${formatMoney(agent.floatToday)} · add more`,
                 }))}
                 amountLeft={operation.floatRemaining}
-                emptyMessage="All field officers already have float for this day."
+                emptyMessage="No field officers can receive float right now."
                 locked={!editable || !canManageFloat}
                 onChange={setFloatForm}
               />
@@ -4260,7 +4322,9 @@ function OperationActionDrawer({
                 options={addFloatOptions.map((agentReturn) => ({
                   id: agentReturn.agentId,
                   label: agentReturn.agentName,
-                  meta: agentReturn.agentPublicId ?? "No officer ID",
+                  meta: `Has ${formatMoney(agentReturn.amountGiven)} · ${
+                    agentReturn.agentPublicId ?? "No officer ID"
+                  }`,
                 }))}
                 amountLeft={operation.floatRemaining}
                 emptyMessage="No active float can receive more right now."
@@ -4488,7 +4552,7 @@ function OperationActionDrawer({
               {submitting ? (
                 <Loader2 className="size-3.5 animate-spin" />
               ) : null}
-              {meta.cta}
+              {panel === "issue-float" ? issueFloatCta : meta.cta}
             </button>
           </div>
         </footer>
@@ -4543,7 +4607,8 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
     },
     "issue-float": {
       title: "Issue float",
-      subtitle: "Assign float to responsible staff for the field day.",
+      subtitle:
+        "Assign float to a field officer, or add more if they already have float today.",
       cta: "Issue float",
       icon: <UserRoundPlus className="size-5" />,
       stats: (operation: DailyOperation) => [
@@ -4559,7 +4624,7 @@ function panelMeta(panel: Exclude<OperationActionPanel, null>) {
     },
     "add-float": {
       title: "Add more float",
-      subtitle: "Add float to responsible staff who already have float today.",
+      subtitle: "Top up field officers who already have float and have not returned.",
       cta: "Add float",
       icon: <CircleDollarSign className="size-5" />,
       stats: (operation: DailyOperation) => [

@@ -54,12 +54,17 @@ class AgentDayStatusStore extends ChangeNotifier {
       ..on('loan_application.updated', _onDayEvent);
   }
 
-  Future<void> refresh() async {
+  /// [silent] skips the loading spinner so realtime / background refreshes
+  /// do not interrupt browse-only or locked-day screens.
+  Future<void> refresh({bool silent = false}) async {
     final session = _session;
     if (session == null) return;
-    _loading = true;
-    _error = null;
-    notifyListeners();
+
+    if (!silent) {
+      _loading = true;
+      _error = null;
+      notifyListeners();
+    }
 
     try {
       _status = await _api.getAgentDayStatus(session);
@@ -73,11 +78,13 @@ class AgentDayStatusStore extends ChangeNotifier {
       if (isAccountAccessBlockedMessage(message)) {
         _accountBlockedMessage = message;
         _error = message;
-      } else {
+      } else if (!silent) {
         _error = message;
       }
     } finally {
-      _loading = false;
+      if (!silent) {
+        _loading = false;
+      }
       notifyListeners();
     }
   }
@@ -114,6 +121,6 @@ class AgentDayStatusStore extends ChangeNotifier {
     if (payloadBranch != null && payloadBranch != session.branchId) return;
 
     // ignore: discarded_futures
-    refresh();
+    refresh(silent: true);
   }
 }

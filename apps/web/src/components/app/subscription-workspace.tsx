@@ -163,6 +163,10 @@ type ManualPaymentMethodOption = {
   logoAlt: string;
   merchantCode: string;
   accountName: string;
+  available: boolean;
+  referenceHint: string;
+  howToPayTitle: string;
+  howToPaySteps: string[];
   qrSrc?: string;
 };
 
@@ -248,6 +252,17 @@ const MANUAL_PAYMENT_METHODS: ManualPaymentMethodOption[] = [
     logoAlt: "MTN",
     merchantCode: "123456",
     accountName: PAYMENT_ACCOUNT_NAME,
+    available: true,
+    referenceHint: "SMS",
+    howToPayTitle: "How to pay with MTN MoMo",
+    howToPaySteps: [
+      "Dial *165*3#",
+      "Select Merchant Code",
+      "Enter merchant code {merchantCode}",
+      "Enter {amountLabel}",
+      "Confirm the details",
+      "Enter your MoMo PIN",
+    ],
   },
   {
     id: "AIRTEL_MONEY",
@@ -257,12 +272,56 @@ const MANUAL_PAYMENT_METHODS: ManualPaymentMethodOption[] = [
     logoAlt: "Airtel",
     merchantCode: "7170321",
     accountName: PAYMENT_ACCOUNT_NAME,
+    available: true,
+    referenceHint: "SMS",
+    howToPayTitle: "How to pay with Airtel",
+    howToPaySteps: [
+      "Dial *185*9#",
+      "Enter merchant code {merchantCode}",
+      "Enter the reference shown above",
+      "Enter the amount and complete the Airtel Money prompts",
+    ],
     qrSrc: "/assets/payments/airtel-qr.png",
   },
 ];
 
-function manualPaymentMethodById(method: ManualPaymentMethod | null) {
-  return MANUAL_PAYMENT_METHODS.find((item) => item.id === method) ?? null;
+function withMethodVisuals(
+  method: Omit<
+    ManualPaymentMethodOption,
+    "logoSrc" | "logoAlt" | "qrSrc"
+  > &
+    Partial<Pick<ManualPaymentMethodOption, "logoSrc" | "logoAlt" | "qrSrc">>,
+): ManualPaymentMethodOption {
+  if (method.id === "MTN_MOMO") {
+    return {
+      ...method,
+      logoSrc: "/assets/payments/mtn.png",
+      logoAlt: "MTN",
+    };
+  }
+  return {
+    ...method,
+    logoSrc: "/assets/payments/airtel.png",
+    logoAlt: "Airtel",
+    qrSrc: method.qrSrc ?? "/assets/payments/airtel-qr.png",
+  };
+}
+
+function formatHowToPayStep(
+  step: string,
+  merchantCode: string,
+  amountLabel: string,
+) {
+  return step
+    .replaceAll("{merchantCode}", merchantCode)
+    .replaceAll("{amountLabel}", amountLabel);
+}
+
+function manualPaymentMethodById(
+  method: ManualPaymentMethod | null,
+  methods: ManualPaymentMethodOption[] = MANUAL_PAYMENT_METHODS,
+) {
+  return methods.find((item) => item.id === method) ?? null;
 }
 
 function normalizeManualTransactionId(value: string) {
@@ -781,6 +840,9 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
   );
   const [selectedPaymentMethod, setSelectedPaymentMethod] =
     useState<ManualPaymentMethod | null>(null);
+  const [manualPaymentMethods, setManualPaymentMethods] = useState<
+    ManualPaymentMethodOption[]
+  >(MANUAL_PAYMENT_METHODS);
   const [transactionId, setTransactionId] = useState("");
   const [confirmTransactionId, setConfirmTransactionId] = useState("");
   const [submittingManualPayment, setSubmittingManualPayment] = useState(false);
@@ -1540,6 +1602,7 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     setSubmittedManualPayment(null);
     setPaymentResultOverlay(null);
     setError(null);
+    void loadManualPaymentMethods("subscription");
   }
 
   function openManualSmsPayment(bundle: SmsBundle, branchId?: string) {
@@ -1561,6 +1624,49 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     setSubmittedManualPayment(null);
     setPaymentResultOverlay(null);
     setError(null);
+    void loadManualPaymentMethods("sms");
+  }
+
+  async function loadManualPaymentMethods(kind: "subscription" | "sms") {
+    if (!session) return;
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/billing/manual-payment-methods?kind=${kind}`,
+        { headers: authHeaders(session) },
+      );
+      const payload = await readApiJson<{
+        methods?: Array<{
+          id: ManualPaymentMethod;
+          title: string;
+          subtitle: string;
+          available: boolean;
+          merchantCode: string | null;
+          accountName: string | null;
+          referenceHint: string;
+          howToPayTitle: string;
+          howToPaySteps: string[];
+        }>;
+        message?: string | string[];
+      }>(response);
+      if (!response.ok || !payload.methods?.length) return;
+      setManualPaymentMethods(
+        payload.methods.map((method) =>
+          withMethodVisuals({
+            id: method.id,
+            title: method.title,
+            subtitle: method.subtitle,
+            available: method.available,
+            merchantCode: method.merchantCode ?? "",
+            accountName: method.accountName ?? PAYMENT_ACCOUNT_NAME,
+            referenceHint: method.referenceHint,
+            howToPayTitle: method.howToPayTitle,
+            howToPaySteps: method.howToPaySteps,
+          }),
+        ),
+      );
+    } catch {
+      // Keep fallback methods.
+    }
   }
 
   async function cancelPendingPayment(paymentId: string) {
@@ -1657,9 +1763,16 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
       );
       return;
     }
-    const paymentMethodOption = manualPaymentMethodById(method);
+    const paymentMethodOption = manualPaymentMethodById(
+      method,
+      manualPaymentMethods,
+    );
     if (!method) {
       setError("Choose MTN MoMo or Airtel Money before verifying payment.");
+      return;
+    }
+    if (!paymentMethodOption?.available) {
+      setError("That payment method is unavailable right now.");
       return;
     }
     if (!paymentMethodOption) {
@@ -2599,6 +2712,7 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
             <ManualMerchantPaymentPanel
               plan={manualPaymentPlan}
               branchName={branchName}
+              methods={manualPaymentMethods}
               selectedMethod={selectedPaymentMethod}
               transactionId={transactionId}
               confirmTransactionId={confirmTransactionId}
@@ -2669,6 +2783,7 @@ function PaymentOverlay({
 function ManualMerchantPaymentPanel({
   plan,
   branchName,
+  methods,
   selectedMethod,
   transactionId,
   confirmTransactionId,
@@ -2684,6 +2799,7 @@ function ManualMerchantPaymentPanel({
 }: {
   plan: BillingPlanOption;
   branchName: string;
+  methods: ManualPaymentMethodOption[];
   selectedMethod: ManualPaymentMethod | null;
   transactionId: string;
   confirmTransactionId: string;
@@ -2697,7 +2813,7 @@ function ManualMerchantPaymentPanel({
   onConfirmTransactionIdChange: (value: string) => void;
   onSubmit: () => void;
 }) {
-  const method = manualPaymentMethodById(selectedMethod);
+  const method = manualPaymentMethodById(selectedMethod, methods);
   const amountLabel = formatMoney(plan.amount, plan.currency);
   const isSmsPayment = isSmsBundlePlan(plan);
   const hasTransactionId = transactionId.trim().length > 0;
@@ -2708,7 +2824,12 @@ function ManualMerchantPaymentPanel({
     compactManualTransactionId(transactionId) !==
       compactManualTransactionId(confirmTransactionId);
   const canSubmit =
-    hasTransactionId && hasConfirmTransactionId && !idsMismatch && !submitting;
+    Boolean(method?.available) &&
+    hasTransactionId &&
+    hasConfirmTransactionId &&
+    !idsMismatch &&
+    !submitting;
+  const referenceHint = method?.referenceHint ?? (isSmsPayment ? "SMS" : "SUB");
 
   return (
     <section
@@ -2809,18 +2930,24 @@ function ManualMerchantPaymentPanel({
               </p>
 
               <div className="mt-5 grid gap-4 md:grid-cols-2">
-                {MANUAL_PAYMENT_METHODS.map((item) => {
+                {methods.map((item) => {
                   const selected = item.id === selectedMethod;
+                  const unavailable = !item.available;
                   return (
                     <button
                       key={item.id}
                       type="button"
                       aria-pressed={selected}
-                      onClick={() => onSelectMethod(item.id)}
+                      disabled={unavailable}
+                      onClick={() => {
+                        if (!unavailable) onSelectMethod(item.id);
+                      }}
                       className={`relative flex min-h-[118px] items-center gap-6 rounded-lg border bg-white px-6 text-left transition ${
-                        selected
-                          ? "border-[#07885f] shadow-[0_8px_18px_rgba(7,136,95,0.08)]"
-                          : "border-[#dfe5eb] hover:border-[#07885f]/50"
+                        unavailable
+                          ? "cursor-not-allowed border-[#e6ebf0] opacity-55"
+                          : selected
+                            ? "border-[#07885f] shadow-[0_8px_18px_rgba(7,136,95,0.08)]"
+                            : "border-[#dfe5eb] hover:border-[#07885f]/50"
                       }`}
                     >
                       <span className="grid size-[68px] shrink-0 place-items-center overflow-hidden rounded-lg bg-white">
@@ -2833,11 +2960,20 @@ function ManualMerchantPaymentPanel({
                         />
                       </span>
                       <span className="min-w-0">
-                        <span className="block text-lg font-bold text-[#070b18]">
-                          {item.title}
+                        <span className="flex flex-wrap items-center gap-2">
+                          <span className="block text-lg font-bold text-[#070b18]">
+                            {item.title}
+                          </span>
+                          {unavailable ? (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] text-slate-500">
+                              Unavailable
+                            </span>
+                          ) : null}
                         </span>
                         <span className="mt-2 block text-sm text-slate-600">
-                          {item.subtitle}
+                          {unavailable
+                            ? "This payment method is not available right now."
+                            : item.subtitle}
                         </span>
                       </span>
                       <span
@@ -2858,14 +2994,13 @@ function ManualMerchantPaymentPanel({
               </div>
             </div>
 
-            {method ? (
+            {method?.available ? (
               <div className="mt-6 border-t border-[#eef2f6] pt-5">
                 <h3 className="text-base font-bold text-[#070b18]">
                   2. Payment instructions
                 </h3>
                 <p className="mt-2 text-sm text-slate-600">
-                  Use the details below to make your payment to{" "}
-                  {PAYMENT_ACCOUNT_NAME}.
+                  Make a payment to the merchant code below.
                 </p>
 
                 <div className="mt-5 flex flex-col gap-4 rounded-lg border border-[#e6ebf0] bg-[#fbfdfc] p-5 md:flex-row md:items-center">
@@ -2895,6 +3030,22 @@ function ManualMerchantPaymentPanel({
                         {method.accountName}
                       </dd>
                     </div>
+                    <div className="sm:border-r sm:border-[#dfe5eb]">
+                      <dt className="text-xs font-medium text-slate-500">
+                        Reference
+                      </dt>
+                      <dd className="mt-2 text-lg font-bold text-[#070b18]">
+                        {referenceHint}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-medium text-slate-500">
+                        Pay this amount
+                      </dt>
+                      <dd className="mt-2 text-lg font-bold tabular-nums text-[#07885f]">
+                        {amountLabel}
+                      </dd>
+                    </div>
                   </dl>
                   {method.qrSrc ? (
                     <div className="rounded-lg border border-[#e6ebf0] bg-white p-3 text-center md:w-[150px]">
@@ -2907,23 +3058,28 @@ function ManualMerchantPaymentPanel({
                       />
                     </div>
                   ) : null}
-                  <div className="rounded-lg border border-[#e6ebf0] bg-white px-8 py-5 text-center md:min-w-[230px]">
-                    <p className="text-xs font-medium text-slate-500">
-                      Pay this amount
-                    </p>
-                    <p className="mt-2 text-2xl font-bold tabular-nums text-[#07885f]">
-                      {amountLabel}
-                    </p>
-                    <p className="mt-2 text-sm font-semibold text-[#070b18]">
-                      {paymentPeriodLabel(plan)}
-                    </p>
-                  </div>
+                </div>
+
+                <div className="mt-5 rounded-lg border border-[#e6ebf0] bg-white p-5">
+                  <h4 className="text-base font-bold text-[#070b18]">
+                    {method.howToPayTitle}
+                  </h4>
+                  <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-slate-700">
+                    {method.howToPaySteps.map((step) => (
+                      <li key={step}>
+                        {formatHowToPayStep(
+                          step,
+                          method.merchantCode,
+                          amountLabel,
+                        )}
+                      </li>
+                    ))}
+                  </ol>
                 </div>
 
                 <p className="mt-4 flex items-center gap-2 text-sm text-slate-600">
                   <Info className="size-4 shrink-0 text-[#07885f]" />
-                  Please ensure you pay the exact amount using the details
-                  above.
+                  Pay the exact amount shown above.
                 </p>
 
                 <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_24rem]">
@@ -2935,7 +3091,7 @@ function ManualMerchantPaymentPanel({
                     }}
                   >
                     <h4 className="text-lg font-bold text-[#070b18]">
-                      Already made the payment?
+                      I have made the Payment
                     </h4>
                     <p className="mt-2 text-sm text-slate-600">
                       Enter the transaction ID from your payment confirmation
@@ -2992,7 +3148,7 @@ function ManualMerchantPaymentPanel({
                       ) : (
                         <Lock className="size-5" />
                       )}
-                      Verify payment
+                      I have made the Payment
                     </button>
                   </form>
 

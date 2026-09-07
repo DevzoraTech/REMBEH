@@ -1,5 +1,24 @@
 import { IsBoolean, IsOptional, IsString, Length } from 'class-validator';
 
+export enum ControlCenterMerchantPaymentProvider {
+  MTN_MOMO = 'MTN_MOMO',
+  AIRTEL_MONEY = 'AIRTEL_MONEY',
+}
+
+export class ControlCenterUpdateMerchantPaymentProviderDto {
+  @IsString()
+  @Length(3, 40)
+  merchantCode!: string;
+
+  @IsString()
+  @Length(2, 120)
+  accountName!: string;
+
+  @IsOptional()
+  @IsBoolean()
+  enabled?: boolean;
+}
+
 export class ControlCenterUpdateMessageTemplateDto {
   @IsOptional()
   @IsString()

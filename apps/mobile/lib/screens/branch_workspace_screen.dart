@@ -26,6 +26,7 @@ import '../features/shortages/data/mappers/cash_shortage_mapper.dart';
 import '../features/shortages/data/shortages_list_cache.dart';
 import '../features/shortages/presentation/screens/shortages_screen.dart';
 import '../features/workspace/presentation/widgets/branch_header.dart';
+import '../features/workspace/presentation/widgets/sign_out_confirm_dialog.dart';
 import '../features/workspace/presentation/widgets/workspace_bottom_navigation.dart';
 import '../features/agents/presentation/screens/agents_screen.dart';
 import '../models/field_records.dart';
@@ -38,6 +39,7 @@ import '../services/session_activity.dart';
 import '../services/session_cleanup.dart';
 import '../services/session_store.dart';
 import '../services/app_update_watcher.dart';
+import '../services/billing_payment_celebration_watcher.dart';
 import '../services/update_prompt.dart';
 import '../theme.dart';
 import '../utils/account_access.dart';
@@ -56,6 +58,7 @@ import 'repayment_corrections_screen.dart';
 import 'records/records_tab.dart';
 import 'search/search_tab.dart';
 import 'profile/agent_profile_screen.dart';
+import 'subscription/subscription_screen.dart';
 import 'voided_clients_screen.dart';
 import 'edit_records_screen.dart';
 
@@ -142,6 +145,10 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       session: widget.session,
       contextFinder: () => context,
     );
+    BillingPaymentCelebrationWatcher.instance.start(
+      session: widget.session,
+      contextFinder: () => context,
+    );
     _network.addListener(_onNetworkChanged);
 
     unawaited(_network.start());
@@ -161,6 +168,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     _network.removeListener(_onNetworkChanged);
     _stopOperationLiveEvents();
     AppUpdateWatcher.instance.stop();
+    BillingPaymentCelebrationWatcher.instance.stop();
     _activity.dispose();
     _syncService.dispose();
     super.dispose();
@@ -831,6 +839,9 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   }
 
   Future<void> _signOut() async {
+    final confirmed = await showSignOutConfirmDialog(context);
+    if (!confirmed || !mounted) return;
+
     await clearTenantScopedClientState();
     await _store.clear();
 
@@ -841,6 +852,14 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
       (_) => false,
+    );
+  }
+
+  void _openProfile() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => AgentProfileScreen(session: widget.session),
+      ),
     );
   }
 
@@ -1869,6 +1888,44 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     return null;
   }
 
+  /// True when this officer already has a float row for the day and has not
+  /// returned cash — additional cash must use the top-up endpoint.
+  bool _agentHasUnreturnedFloat(String agentId) {
+    final position = _positionForAgent(agentId);
+    if (position == null) {
+      return false;
+    }
+
+    final floatId = _string(position['floatId']);
+    if (floatId == null || floatId.isEmpty) {
+      return false;
+    }
+
+    return position['amountReturned'] == null;
+  }
+
+  /// Field officers who can still receive float (first issue or top-up).
+  List<Map<String, dynamic>> get _floatEligibleFieldOfficers {
+    return _fieldOfficerAgents.where((agent) {
+      final id = _string(agent['id']);
+      if (id == null) {
+        return false;
+      }
+
+      final position = _positionForAgent(id);
+      if (position == null) {
+        return true;
+      }
+
+      final floatId = _string(position['floatId']);
+      if (floatId == null || floatId.isEmpty) {
+        return true;
+      }
+
+      return position['amountReturned'] == null;
+    }).toList(growable: false);
+  }
+
   Map<String, dynamic> _agentMapForPosition(AgentFloatPosition position) {
     for (final agent in _agents) {
       if (_string(agent['id']) == position.id) {
@@ -2354,7 +2411,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   }
 
   Future<void> _showFloatSheet({
-    required bool addMore,
+    bool addMore = false,
     String? initialAgentId,
   }) async {
     final blockedMessage = _operationMutationBlockedMessage;
@@ -2365,11 +2422,15 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       return;
     }
 
-    final eligibleAgents = _fieldOfficerAgents;
+    // Include officers who already have float so managers can top them up
+    // from the same Allocate float action (API chooses issue vs top-up).
+    final eligibleAgents = _floatEligibleFieldOfficers;
 
     if (eligibleAgents.isEmpty) {
       setState(() {
-        _error = 'No field officers found.';
+        _error = addMore
+            ? 'No field officers can receive more float right now.'
+            : 'No field officers can receive float right now.';
       });
 
       return;
@@ -2387,24 +2448,46 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         ? initialAgentId
         : _string(eligibleAgents.first['id']) ?? '';
 
+    final opensAsTopUp = addMore || _agentHasUnreturnedFloat(agentId);
+
     await _showFormSheet(
-      title: addMore ? 'Add float' : 'Allocate float',
+      title: opensAsTopUp ? 'Add float' : 'Allocate float',
       actionLabel: 'Save',
-      builder: (setModalState) => [
-        _AgentPicker(
-          agents: eligibleAgents,
-          value: agentId,
-          onChanged: (value) {
-            setModalState(() {
-              agentId = value;
-            });
-          },
-        ),
-        const SizedBox(height: 10),
-        _AmountField(controller: amount, label: 'Amount'),
-        const SizedBox(height: 10),
-        _TextField(controller: notes, label: 'Notes', maxLines: 3),
-      ],
+      builder: (setModalState) {
+        final toppingUp = _agentHasUnreturnedFloat(agentId);
+        final currentFloat = toppingUp
+            ? _num(_positionForAgent(agentId)?['amountGiven'])
+            : 0;
+
+        return [
+          _AgentPicker(
+            agents: eligibleAgents,
+            value: agentId,
+            onChanged: (value) {
+              setModalState(() {
+                agentId = value;
+              });
+            },
+          ),
+          if (toppingUp) ...[
+            const SizedBox(height: 8),
+            Text(
+              currentFloat > 0
+                  ? 'Already has UGX ${_moneyText(currentFloat)} — this amount will be added.'
+                  : 'This officer already has float — this amount will be added.',
+              style: const TextStyle(
+                color: slateText,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          const SizedBox(height: 10),
+          _AmountField(controller: amount, label: 'Amount'),
+          const SizedBox(height: 10),
+          _TextField(controller: notes, label: 'Notes', maxLines: 3),
+        ];
+      },
       onSubmit: () async {
         final value = _parseAmount(amount.text);
 
@@ -2416,16 +2499,18 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           throw ApiException('Enter amount.');
         }
 
+        final shouldTopUp = _agentHasUnreturnedFloat(agentId);
+
         await _api.recordAgentFloat(
           session: widget.session,
           agentId: agentId,
           date: _date,
           amount: value,
           notes: notes.text,
-          addMore: addMore,
+          addMore: shouldTopUp,
         );
 
-        _setNotice(addMore ? 'Float added.' : 'Float allocated.');
+        _setNotice(shouldTopUp ? 'Float added.' : 'Float allocated.');
       },
     );
   }
@@ -2606,12 +2691,28 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           child: Column(
             children: [
               BranchHeader(
+                session: widget.session,
                 workspaceName: widget.session.workspaceName,
                 branchName: _branchName,
                 roleName: widget.session.roleName ?? 'Team',
                 loading: _loading,
                 onRefresh: _load,
                 onSignOut: _signOut,
+                onOpenProfile: _openProfile,
+                onOpenSettings: _openProfile,
+                onSmsTap: () {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      settings: const RouteSettings(
+                        name: SubscriptionScreen.routeName,
+                      ),
+                      builder: (_) => SubscriptionScreen(
+                        session: widget.session,
+                        initialTab: SubscriptionTab.sms,
+                      ),
+                    ),
+                  );
+                },
                 marketingCampaign: _marketingCampaign,
                 onMarketingTap: _openMarketingCampaign,
               ),
@@ -2702,7 +2803,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     return ManagerOwnerHomeTab(
       session: widget.session,
 
-      onOpenProfile: _signOut,
+      onOpenProfile: _openProfile,
 
       onOpenSearch: () {
         _openTab(3, searchAutofocus: true);
@@ -2959,7 +3060,15 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           : null,
 
       onSubscriptionTap: () {
-        _setNotice('Subscription management is handled on the web dashboard.');
+        Navigator.of(context).push<void>(
+          MaterialPageRoute(
+            settings: const RouteSettings(name: SubscriptionScreen.routeName),
+            builder: (_) => SubscriptionScreen(
+              session: widget.session,
+              initialTab: SubscriptionTab.plan,
+            ),
+          ),
+        );
       },
 
       onSettingsTap: () {

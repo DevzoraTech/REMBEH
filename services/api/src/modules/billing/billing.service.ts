@@ -33,8 +33,10 @@ import {
   BillingSummaryContract,
   BranchBillingStatusContract,
   ManualMerchantPaymentResponseContract,
+  ManualPaymentMethodsResponseContract,
   SubscriptionPaymentRowContract,
 } from './billing.contracts';
+import { MerchantPaymentConfigService } from './merchant-payment-config.service';
 import {
   BILLING_PERMISSIONS,
   GRACE_DAYS,
@@ -184,6 +186,7 @@ export class BillingService implements OnModuleInit {
     private readonly operatorAlerts: OperatorAlertService,
     private readonly fcmPushService: FcmPushService,
     private readonly realtime: RealtimeGateway,
+    private readonly merchantPaymentConfig: MerchantPaymentConfigService,
     @Inject(forwardRef(() => SmsCreditsService))
     private readonly smsCreditsService: SmsCreditsService,
   ) {}
@@ -339,6 +342,27 @@ export class BillingService implements OnModuleInit {
         : sub?.status === BranchSubscriptionStatus.GRACE
           ? 'Your subscription has expired. Renew now to keep this branch open.'
           : null,
+    };
+  }
+
+  async listManualPaymentMethods(input?: {
+    kind?: 'subscription' | 'sms';
+  }): Promise<ManualPaymentMethodsResponseContract> {
+    const methods = await this.merchantPaymentConfig.listResolved();
+    const referenceHint = input?.kind === 'subscription' ? 'SUB' : 'SMS';
+    return {
+      accountNameFallback: 'ANTIKRA HOLDINGS LTD',
+      methods: methods.map((method) => ({
+        id: method.provider,
+        title: method.title,
+        subtitle: method.subtitle,
+        available: method.available,
+        merchantCode: method.available ? method.merchantCode : null,
+        accountName: method.available ? method.accountName : null,
+        referenceHint,
+        howToPayTitle: method.howToPayTitle,
+        howToPaySteps: method.howToPaySteps,
+      })),
     };
   }
 
@@ -1028,7 +1052,7 @@ export class BillingService implements OnModuleInit {
       throw new ForbiddenException('You can only pay for your own branch.');
     }
 
-    const providerDetails = this.manualMerchantDetails(dto.provider);
+    const providerDetails = await this.manualMerchantDetails(dto.provider);
     const transactionId = this.normalizeManualTransactionId(
       dto.transactionId ?? '',
     );
@@ -1187,7 +1211,7 @@ export class BillingService implements OnModuleInit {
       throw new BadRequestException('Choose an SMS bundle to continue.');
     }
 
-    const providerDetails = this.manualMerchantDetails(dto.provider);
+    const providerDetails = await this.manualMerchantDetails(dto.provider);
     const transactionId = this.normalizeManualTransactionId(
       dto.transactionId ?? '',
     );
@@ -3365,33 +3389,20 @@ export class BillingService implements OnModuleInit {
     ]).has(status);
   }
 
-  private manualMerchantDetails(provider: ManualMerchantPaymentProvider) {
-    if (provider === ManualMerchantPaymentProvider.MTN_MOMO) {
-      return {
-        historyLabel: 'MTN MoMo',
-        merchantCode:
-          this.configService.get<string>('MTN_MOMO_MERCHANT_CODE')?.trim() ||
-          '123456',
-        accountName:
-          this.configService.get<string>('MTN_MOMO_ACCOUNT_NAME')?.trim() ||
-          'ANTIKRA HOLDINGS LTD',
-      };
+  private async manualMerchantDetails(
+    provider: ManualMerchantPaymentProvider,
+  ) {
+    const resolved = await this.merchantPaymentConfig.resolve(provider);
+    if (!resolved.available || !resolved.merchantCode || !resolved.accountName) {
+      throw new BadRequestException(
+        `${resolved.title} payments are unavailable right now. Choose another method or try again later.`,
+      );
     }
-
-    if (provider === ManualMerchantPaymentProvider.AIRTEL_MONEY) {
-      return {
-        historyLabel: 'Airtel Money',
-        merchantCode:
-          this.configService
-            .get<string>('AIRTEL_MONEY_MERCHANT_CODE')
-            ?.trim() || '7170321',
-        accountName:
-          this.configService.get<string>('AIRTEL_MONEY_ACCOUNT_NAME')?.trim() ||
-          'ANTIKRA HOLDINGS LTD',
-      };
-    }
-
-    throw new BadRequestException('Choose a payment method.');
+    return {
+      historyLabel: resolved.historyLabel,
+      merchantCode: resolved.merchantCode,
+      accountName: resolved.accountName,
+    };
   }
 
   private payloadString(raw: Prisma.JsonValue | null, keys: string[]) {

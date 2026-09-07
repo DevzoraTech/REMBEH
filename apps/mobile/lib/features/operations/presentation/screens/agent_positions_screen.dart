@@ -346,6 +346,14 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
       return;
     }
 
+    // Prefer live position so Allocate vs Add matches the server.
+    final livePosition = _positionFor(agentId);
+    final shouldTopUp =
+        addMore ||
+        (livePosition != null &&
+            (_string(livePosition['floatId'])?.isNotEmpty ?? false) &&
+            livePosition['amountReturned'] == null);
+
     final amount = TextEditingController();
 
     final notes = TextEditingController();
@@ -359,7 +367,7 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
         builder: (_) {
           return _AllocateFloatSheet(
             agentName: _string(agent['name']) ?? 'Staff member',
-            addMore: addMore,
+            addMore: shouldTopUp,
             amountController: amount,
             notesController: notes,
             onSubmit: () async {
@@ -375,7 +383,7 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
                 date: widget.date,
                 amount: value,
                 notes: notes.text,
-                addMore: addMore,
+                addMore: shouldTopUp,
               );
             },
           );
@@ -386,7 +394,8 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
         if (!mounted) return;
 
         setState(() {
-          _notice = addMore ? 'Additional float recorded.' : 'Float allocated.';
+          _notice =
+              shouldTopUp ? 'Additional float recorded.' : 'Float allocated.';
         });
 
         await _refresh();
@@ -729,16 +738,25 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
 
   num get _expensesTotal => _num(_position?['expensesTotal']);
 
-  num get _expected {
-    final unused = _nullableNum(_position?['unusedFloat']);
+  /// Collections still on hand after loans paid from repayments (server).
+  num get _collectionsOnHand {
     final available = _nullableNum(_position?['collectedRepaymentsAvailable']);
-
-    if (unused != null && available != null) {
-      final computed = unused + available + _processingFees - _expensesTotal;
-      return computed < 0 ? 0 : computed;
+    if (available != null) {
+      return available;
     }
+    return _collections;
+  }
 
-    return _num(_position?['expectedReturn']);
+  /// Must match ops list / API `expectedReturn`. Do not recompute with
+  /// `expensesTotal` — that includes BRANCH_CASH expenses which do not
+  /// reduce cash the officer must hand in (only AGENT_FLOAT expenses do).
+  num get _expected => _num(_position?['expectedReturn']);
+
+  /// Float-paid expenses implied by the server expected formula.
+  num get _floatExpensesDeducted {
+    final implied =
+        _unusedFloat + _collectionsOnHand + _processingFees - _expected;
+    return implied < 0 ? 0 : implied;
   }
 
   num? get _returned => _nullableNum(_position?['amountReturned']);
@@ -1141,10 +1159,13 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
             _OfficerExpectedHandoverCard(
               amount: _expected,
               floatAllocated: _amountGiven,
+              unusedFloat: _unusedFloat,
+              collectionsOnHand: _collectionsOnHand,
               repaymentsCollected: _collections,
               processingFees: _processingFees,
               loansIssued: _amountDisbursed,
-              expensesTotal: _expensesTotal,
+              floatExpenses: _floatExpensesDeducted,
+              allExpenses: _expensesTotal,
               expectedHandover: _expected,
               returned: _returned,
               variance: _variance,
@@ -1156,6 +1177,9 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
               canAllocate: canAllocate,
               canBalance: canBalance,
               saving: _saving,
+              allocateLabel: widget.onAddFloat != null
+                  ? 'Add float'
+                  : 'Allocate float',
               balanceLabel: _agentIsManager
                   ? 'Balance Manager'
                   : _staffLabel == 'Cashier'
@@ -2138,10 +2162,13 @@ class _OfficerExpectedHandoverCard extends StatelessWidget {
   const _OfficerExpectedHandoverCard({
     required this.amount,
     required this.floatAllocated,
+    required this.unusedFloat,
+    required this.collectionsOnHand,
     required this.repaymentsCollected,
     required this.processingFees,
     required this.loansIssued,
-    required this.expensesTotal,
+    required this.floatExpenses,
+    required this.allExpenses,
     required this.expectedHandover,
     required this.returned,
     required this.variance,
@@ -2149,16 +2176,21 @@ class _OfficerExpectedHandoverCard extends StatelessWidget {
 
   final num amount;
   final num floatAllocated;
+  final num unusedFloat;
+  final num collectionsOnHand;
   final num repaymentsCollected;
   final num processingFees;
   final num loansIssued;
-  final num expensesTotal;
+  final num floatExpenses;
+  final num allExpenses;
   final num expectedHandover;
   final num? returned;
   final num? variance;
 
   @override
   Widget build(BuildContext context) {
+    final branchCashExpenses = allExpenses - floatExpenses;
+
     return Container(
       padding: const EdgeInsets.fromLTRB(13, 14, 13, 12),
       decoration: BoxDecoration(
@@ -2216,10 +2248,13 @@ class _OfficerExpectedHandoverCard extends StatelessWidget {
           const SizedBox(height: 13),
           const Divider(height: 1, color: line),
           const SizedBox(height: 7),
-          _OfficerCashLine(label: 'Float allocated', value: floatAllocated),
+          // Authoritative cash-on-hand formula (matches API expectedReturn).
+          if (floatAllocated > 0)
+            _OfficerCashLine(label: 'Float allocated', value: floatAllocated),
+          _OfficerCashLine(label: 'Unused float', value: unusedFloat),
           _OfficerCashLine(
-            label: 'Cash in',
-            value: repaymentsCollected,
+            label: 'Collections on hand',
+            value: collectionsOnHand,
             signed: true,
           ),
           _OfficerCashLine(
@@ -2227,22 +2262,46 @@ class _OfficerExpectedHandoverCard extends StatelessWidget {
             value: processingFees,
             signed: true,
           ),
-          _OfficerCashLine(
-            label: 'Field expenses',
-            value: -expensesTotal,
-            signed: true,
-          ),
-          _OfficerCashLine(
-            label: 'Loans issued',
-            value: -loansIssued,
-            signed: true,
-          ),
+          if (floatExpenses > 0)
+            _OfficerCashLine(
+              label: 'Expenses from float',
+              value: -floatExpenses,
+              signed: true,
+            ),
           const Divider(height: 17, color: line),
           _OfficerCashLine(
             label: 'Expected handover',
             value: expectedHandover,
             strong: true,
           ),
+          // Context only — already reflected in unused float / collections
+          // on hand; do not treat as extra subtractions from expected.
+          if (repaymentsCollected != collectionsOnHand ||
+              loansIssued > 0 ||
+              branchCashExpenses > 0) ...[
+            const SizedBox(height: 8),
+            const Text(
+              "Today's activity",
+              style: TextStyle(
+                color: slateText,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 4),
+            if (repaymentsCollected != collectionsOnHand)
+              _OfficerCashLine(
+                label: 'Cash in (gross)',
+                value: repaymentsCollected,
+              ),
+            if (loansIssued > 0)
+              _OfficerCashLine(label: 'Loans issued', value: loansIssued),
+            if (branchCashExpenses > 0)
+              _OfficerCashLine(
+                label: 'Branch cash expenses',
+                value: branchCashExpenses,
+              ),
+          ],
           if (returned != null) ...[
             const SizedBox(height: 6),
             _OfficerCashLine(label: 'Actual handover', value: returned!),
@@ -2326,6 +2385,7 @@ class _OfficerDetailActions extends StatelessWidget {
     required this.canAllocate,
     required this.canBalance,
     required this.saving,
+    required this.allocateLabel,
     required this.balanceLabel,
     required this.onBalance,
     this.onAllocate,
@@ -2334,6 +2394,7 @@ class _OfficerDetailActions extends StatelessWidget {
   final bool canAllocate;
   final bool canBalance;
   final bool saving;
+  final String allocateLabel;
   final String balanceLabel;
   final Future<void> Function()? onAllocate;
   final VoidCallback onBalance;
@@ -2350,7 +2411,7 @@ class _OfficerDetailActions extends StatelessWidget {
                   }
                 : null,
             icon: const Icon(Icons.outbox_outlined, size: 18),
-            label: const Text('Allocate float'),
+            label: Text(allocateLabel),
             style: OutlinedButton.styleFrom(
               foregroundColor: forestEmerald,
               side: const BorderSide(color: forestEmerald),

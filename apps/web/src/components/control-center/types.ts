@@ -294,7 +294,9 @@ export type ControlCenterSettings = {
       label: string;
       merchantCode: string | null;
       accountName: string | null;
+      enabled?: boolean;
       configured: boolean;
+      source?: "DATABASE" | "ENVIRONMENT" | "DEFAULT";
     }>;
   };
 };

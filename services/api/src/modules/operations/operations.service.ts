@@ -455,7 +455,7 @@ export class OperationsService {
         lockReason: 'AGENT_DAY_CLOSED',
         lockTitle: 'Your day is closed',
         lockMessage:
-          'Your cash handover has been recorded. You can still browse client records.',
+          'Your cash handover has been recorded. Field actions are closed for today. You can still browse client records.',
         canRecordExpense: false,
         float: floatSummary,
       };
@@ -2049,6 +2049,80 @@ export class OperationsService {
     });
 
     this.broadcastOperationEvent(OPERATIONS_EVENTS.reportOwnerApproved, {
+      operationId: report.operationId,
+      reportId: updated.id,
+      tenantId: user.tenantId,
+      branchId: report.branchId,
+      operationDate: this.formatDateLabel(report.operationDate),
+      status: updated.status,
+    });
+
+    return this.getToday(user, {
+      branchId: report.branchId,
+      date: this.formatDateLabel(report.operationDate),
+    });
+  }
+
+  /**
+   * Owner grants rollback of an approved report so managers can correct
+   * ledger mismatches and re-submit.
+   */
+  async ownerAuthorizeReportRollback(
+    user: AuthenticatedUser,
+    reportId: string,
+    dto: ReviewOperationReportDto,
+  ): Promise<DailyOperationResponseContract> {
+    this.assertCanOwnerApproveReport(user);
+
+    const report = await this.repository.findReportById({
+      tenantId: user.tenantId,
+      reportId,
+    });
+
+    if (!report) {
+      throw new NotFoundException('Report was not found.');
+    }
+
+    await this.resolveBranch(user, report.branchId);
+
+    if (report.status !== BranchOperationReportStatus.OWNER_APPROVED) {
+      throw new BadRequestException(
+        'Only an owner-approved report can be rolled back with permission.',
+      );
+    }
+
+    const updated = await this.prisma.branchOperationReport.update({
+      where: { id: report.id },
+      data: {
+        status: BranchOperationReportStatus.RETURNED_TO_MANAGER,
+        returnedAt: new Date(),
+        returnedById: user.userId,
+        returnNotes:
+          dto.notes?.trim() ||
+          'Owner authorized rollback for repayment / ledger correction.',
+        ownerApprovedAt: null,
+        ownerApprovedById: null,
+        ownerNotes: null,
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: user.tenantId,
+        actorUserId: user.userId,
+        action: 'operation_report.owner_authorized_rollback',
+        entityType: 'branch_operation_report',
+        entityId: report.id,
+        newValue: {
+          reportNumber: report.reportNumber,
+          previousStatus: BranchOperationReportStatus.OWNER_APPROVED,
+          nextStatus: BranchOperationReportStatus.RETURNED_TO_MANAGER,
+          notes: dto.notes?.trim() || null,
+        },
+      },
+    });
+
+    this.broadcastOperationEvent(OPERATIONS_EVENTS.reportManagerReviewed, {
       operationId: report.operationId,
       reportId: updated.id,
       tenantId: user.tenantId,

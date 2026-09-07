@@ -7,6 +7,7 @@ import '../features/marketing/data/mobile_marketing_campaign_store.dart';
 import '../features/marketing/domain/models/mobile_marketing_campaign.dart';
 import '../features/marketing/presentation/sheets/mobile_marketing_campaign_sheet.dart';
 import '../features/operations/presentation/sheets/record_expense_sheet.dart';
+import '../features/workspace/presentation/widgets/sign_out_confirm_dialog.dart';
 import '../models/agent_day_status.dart';
 import '../models/field_records.dart';
 import '../features/repayment/data/repayments_live_store.dart';
@@ -17,6 +18,7 @@ import '../services/session_cleanup.dart';
 import '../services/session_activity.dart';
 import '../services/session_store.dart';
 import '../services/app_update_watcher.dart';
+import '../services/billing_payment_celebration_watcher.dart';
 import '../services/update_prompt.dart';
 import '../theme.dart';
 import '../utils/money.dart';
@@ -79,6 +81,10 @@ class _AgentShellState extends State<AgentShell> {
       session: widget.session,
       contextFinder: () => context,
     );
+    BillingPaymentCelebrationWatcher.instance.start(
+      session: widget.session,
+      contextFinder: () => context,
+    );
     _cacheRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (_network.isOnline) {
         // ignore: discarded_futures
@@ -113,6 +119,7 @@ class _AgentShellState extends State<AgentShell> {
     _dayStore.removeListener(_onDayChanged);
     _network.removeListener(_onNetworkChanged);
     AppUpdateWatcher.instance.stop();
+    BillingPaymentCelebrationWatcher.instance.stop();
     _activity.dispose();
     super.dispose();
   }
@@ -143,7 +150,7 @@ class _AgentShellState extends State<AgentShell> {
         return;
       }
 
-      await _dayStore.refresh();
+      await _dayStore.refresh(silent: true);
       await RepaymentsLiveStore.instance.refresh();
       await _loadMarketingCampaign();
 
@@ -286,6 +293,8 @@ class _AgentShellState extends State<AgentShell> {
 
   Future<void> _signOut() async {
     unawaitedTouch();
+    final confirmed = await showSignOutConfirmDialog(context);
+    if (!confirmed || !mounted) return;
     await clearTenantScopedClientState();
     await SessionStore().clear();
     if (!mounted) return;

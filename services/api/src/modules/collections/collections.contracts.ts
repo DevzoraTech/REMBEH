@@ -107,6 +107,11 @@ export type PaymentHistoryItemContract = {
   approvedCorrectionRequestId: string | null;
   officerCanEdit: boolean;
   correctionAppliedAt: string | null;
+  /** Approved request details so officers can apply without re-entering reason. */
+  approvedCorrectionReason: string | null;
+  approvedRequestedAmount: number | null;
+  approvedRequestedMethod: string | null;
+  approvedRequestedNote: string | null;
 };
 
 export type FineHistoryItemContract = {
@@ -247,6 +252,36 @@ export type RepaymentCorrectionRequestContract = {
   correctionAppliedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Linked daily report for the payment date, if any. */
+  reportStatus:
+    | 'MANAGER_REVIEW'
+    | 'SENT_TO_OWNER'
+    | 'OWNER_APPROVED'
+    | 'RETURNED_TO_MANAGER'
+    | null;
+  reportId: string | null;
+  reportNumber: string | null;
+  operationDate: string | null;
+  forwardedToOwnerAt: string | null;
+  ownerAuthorizedAt: string | null;
+  /** Manager action gates driven by report lifecycle. */
+  actions: {
+    canManagerEdit: boolean;
+    canOfficerEdit: boolean;
+    canForwardToOwner: boolean;
+    canOwnerAuthorize: boolean;
+    waitingForOwner: boolean;
+  };
+};
+
+export type ReportResubmitRequiredContract = {
+  required: true;
+  reportId: string;
+  reportNumber: string;
+  operationDate: string;
+  branchId: string;
+  title: string;
+  message: string;
 };
 
 export type DailyAgentApplicationItemContract = {

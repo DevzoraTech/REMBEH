@@ -38,6 +38,15 @@ export class BillingController {
     return this.billingService.getMyBranchStatus(user);
   }
 
+  /** MTN / Airtel merchant methods for Complete payment screens. */
+  @Get('manual-payment-methods')
+  @UseGuards(JwtAuthGuard)
+  listManualPaymentMethods(@Query('kind') kind?: string) {
+    const normalized =
+      kind === 'subscription' || kind === 'sms' ? kind : undefined;
+    return this.billingService.listManualPaymentMethods({ kind: normalized });
+  }
+
   /** Payment / subscription history for the caller's scope. */
   @Get('payments')
   @UseGuards(JwtAuthGuard)

@@ -6,6 +6,7 @@ import '../../features/applications_list/data/applications_live_store.dart';
 import '../../features/more/presentation/screens/more_tab.dart';
 import '../../features/repayment/data/repayments_live_store.dart';
 import '../../features/workspace/presentation/widgets/branch_header.dart';
+import '../../features/workspace/presentation/widgets/sign_out_confirm_dialog.dart';
 import '../../features/workspace/presentation/widgets/workspace_bottom_navigation.dart';
 import '../../models/field_records.dart';
 import '../../services/api_client.dart';
@@ -13,6 +14,7 @@ import '../../services/session_activity.dart';
 import '../../services/session_cleanup.dart';
 import '../../services/session_store.dart';
 import '../../services/app_update_watcher.dart';
+import '../../services/billing_payment_celebration_watcher.dart';
 import '../../services/update_prompt.dart';
 import '../../theme.dart';
 import '../../utils/friendly_errors.dart';
@@ -26,6 +28,7 @@ import '../profile/agent_profile_screen.dart';
 import '../records/records_tab.dart';
 import '../repayment_corrections_screen.dart';
 import '../search/search_tab.dart';
+import '../subscription/subscription_screen.dart';
 import '../voided_clients_screen.dart';
 import 'staff_screen.dart';
 
@@ -80,6 +83,10 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
       session: widget.session,
       contextFinder: () => context,
     );
+    BillingPaymentCelebrationWatcher.instance.start(
+      session: widget.session,
+      contextFinder: () => context,
+    );
     _repayStore.addListener(_onStoreChanged);
     unawaited(_boot());
   }
@@ -88,6 +95,7 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
   void dispose() {
     _repayStore.removeListener(_onStoreChanged);
     AppUpdateWatcher.instance.stop();
+    BillingPaymentCelebrationWatcher.instance.stop();
     _activity.dispose();
     super.dispose();
   }
@@ -143,12 +151,23 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
   }
 
   Future<void> _signOut() async {
+    final confirmed = await showSignOutConfirmDialog(context);
+    if (!confirmed || !mounted) return;
+
     await clearTenantScopedClientState();
     await _store.clear();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const LoginScreen()),
       (_) => false,
+    );
+  }
+
+  void _openProfile() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => AgentProfileScreen(session: widget.session),
+      ),
     );
   }
 
@@ -300,12 +319,29 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
           child: Column(
             children: [
               BranchHeader(
+                session: widget.session,
                 workspaceName: widget.session.workspaceName,
                 branchName: _selectedBranchLabel,
                 roleName: widget.session.roleName ?? 'Owner',
                 loading: _loading,
                 onRefresh: _boot,
                 onSignOut: _signOut,
+                onOpenProfile: _openProfile,
+                onOpenSettings: _openProfile,
+                onSmsTap: () {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute(
+                      settings: const RouteSettings(
+                        name: SubscriptionScreen.routeName,
+                      ),
+                      builder: (_) => SubscriptionScreen(
+                        session: widget.session,
+                        initialTab: SubscriptionTab.sms,
+                        branchId: _branchId,
+                      ),
+                    ),
+                  );
+                },
               ),
               _BranchFilterBar(
                 branches: _branches,
@@ -375,7 +411,20 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
                             },
                             onReportsTap: () {},
                             onBranchTap: () {},
-                            onSubscriptionTap: () {},
+                            onSubscriptionTap: () {
+                              Navigator.of(context).push<void>(
+                                MaterialPageRoute(
+                                  settings: const RouteSettings(
+                                    name: SubscriptionScreen.routeName,
+                                  ),
+                                  builder: (_) => SubscriptionScreen(
+                                    session: widget.session,
+                                    initialTab: SubscriptionTab.plan,
+                                    branchId: _branchId,
+                                  ),
+                                ),
+                              );
+                            },
                             onSettingsTap: () {
                               Navigator.of(context).push<void>(
                                 MaterialPageRoute(

@@ -61,6 +61,7 @@ import {
   RepaymentListItemContract,
   RepaymentSmsSendResultContract,
   RepaymentSmsStatusContract,
+  ReportResubmitRequiredContract,
 } from './collections.contracts';
 import {
   CollectionsRepository,
@@ -1365,9 +1366,7 @@ export class CollectionsService {
     });
 
     return {
-      requests: rows.map((row) =>
-        this.toRepaymentCorrectionRequestContract(row),
-      ),
+      requests: await this.toRepaymentCorrectionRequestContracts(rows),
     };
   }
 
@@ -1396,8 +1395,8 @@ export class CollectionsService {
       );
     }
 
-    await this.assertRepaymentOpenForCorrection(row);
-
+    // Officers may always request a correction. Report locks gate manager
+    // approve / apply / forward-to-owner, not the request itself.
     const reason = dto.reason.trim();
     const requestedPaidAt = this.parseOptionalIsoDate(
       dto.requestedPaidAt,
@@ -1416,7 +1415,7 @@ export class CollectionsService {
 
     if (existing) {
       return {
-        request: this.toRepaymentCorrectionRequestContract(existing),
+        request: await this.toRepaymentCorrectionRequestContractAsync(existing),
       };
     }
 
@@ -1471,7 +1470,7 @@ export class CollectionsService {
     void this.notifyRepaymentCorrectionManagers(request);
 
     return {
-      request: this.toRepaymentCorrectionRequestContract(request),
+      request: await this.toRepaymentCorrectionRequestContractAsync(request),
     };
   }
 
@@ -1479,7 +1478,10 @@ export class CollectionsService {
     user: AuthenticatedUser,
     requestId: string,
     dto: ReviewRepaymentCorrectionRequestDto,
-  ): Promise<{ request: RepaymentCorrectionRequestContract }> {
+  ): Promise<{
+    request: RepaymentCorrectionRequestContract;
+    reportResubmitRequired?: ReportResubmitRequiredContract | null;
+  }> {
     this.assertBranchAccess(user);
 
     if (!this.canReviewRepaymentCorrections(user)) {
@@ -1512,7 +1514,47 @@ export class CollectionsService {
       );
     }
 
-    await this.assertRepaymentOpenForCorrection(request.repayment);
+    // Reject never reverts a report.
+    if (dto.status === RepaymentCorrectionRequestStatus.REJECTED) {
+      const updated = await this.prisma.repaymentCorrectionRequest.update({
+        where: { id: request.id },
+        data: {
+          status: RepaymentCorrectionRequestStatus.REJECTED,
+          reviewedByUserId: user.userId,
+          reviewedAt: new Date(),
+          officerCanEdit: false,
+          reviewerFeedback:
+            this.cleanOptionalText(dto.feedback) ??
+            'Correction request was not approved.',
+        },
+        include: repaymentCorrectionRequestInclude,
+      });
+
+      void this.notifyRepaymentCorrectionRequester(updated);
+
+      return {
+        request: await this.toRepaymentCorrectionRequestContractAsync(updated),
+      };
+    }
+
+    const reportContext = await this.findReportForPaymentDay(request.repayment);
+    if (
+      reportContext?.status === BranchOperationReportStatus.OWNER_APPROVED &&
+      !request.ownerAuthorizedAt
+    ) {
+      throw new ForbiddenException(
+        'This report is owner-approved. Forward the request to the owner first.',
+      );
+    }
+
+    // Approving officer edit / unlocking manager edit may reopen a submitted report.
+    let reportResubmitRequired: ReportResubmitRequiredContract | null = null;
+    if (reportContext?.status === BranchOperationReportStatus.SENT_TO_OWNER) {
+      reportResubmitRequired = await this.returnSubmittedReportForCorrection({
+        report: reportContext,
+        actorUserId: user.userId,
+      });
+    }
 
     const updated = await this.prisma.repaymentCorrectionRequest.update({
       where: {
@@ -1552,7 +1594,136 @@ export class CollectionsService {
     void this.notifyRepaymentCorrectionRequester(updated);
 
     return {
-      request: this.toRepaymentCorrectionRequestContract(updated),
+      request: await this.toRepaymentCorrectionRequestContractAsync(updated),
+      reportResubmitRequired,
+    };
+  }
+
+  async forwardRepaymentCorrectionToOwner(
+    user: AuthenticatedUser,
+    requestId: string,
+  ): Promise<{ request: RepaymentCorrectionRequestContract }> {
+    this.assertBranchAccess(user);
+
+    if (!this.canReviewRepaymentCorrections(user)) {
+      throw new ForbiddenException(
+        'Missing permission to forward repayment correction requests.',
+      );
+    }
+
+    const request = await this.findRepaymentCorrectionRequestForUser(
+      user,
+      requestId,
+    );
+
+    if (!request) {
+      throw new NotFoundException('Correction request not found.');
+    }
+
+    if (request.status !== RepaymentCorrectionRequestStatus.PENDING) {
+      throw new BadRequestException(
+        'Only pending correction requests can be forwarded.',
+      );
+    }
+
+    const report = await this.findReportForPaymentDay(request.repayment);
+    if (report?.status !== BranchOperationReportStatus.OWNER_APPROVED) {
+      throw new BadRequestException(
+        'Forward to owner is only required after the daily report has been owner-approved.',
+      );
+    }
+
+    if (request.ownerAuthorizedAt) {
+      throw new BadRequestException(
+        'The owner already authorized this correction.',
+      );
+    }
+
+    const updated = await this.prisma.repaymentCorrectionRequest.update({
+      where: { id: request.id },
+      data: {
+        forwardedToOwnerAt: request.forwardedToOwnerAt ?? new Date(),
+        forwardedToOwnerById: request.forwardedToOwnerById ?? user.userId,
+      },
+      include: repaymentCorrectionRequestInclude,
+    });
+
+    void this.notifyOwnerReportRollbackPermission({
+      tenantId: request.tenantId,
+      branchId: request.branchId,
+      reportId: report.id,
+      reportNumber: report.reportNumber,
+      operationDate: this.dateLabel(report.operationDate),
+      requestedByUserId: user.userId,
+      correctionRequestId: request.id,
+      borrowerName: request.loan.customer.fullName,
+    });
+
+    return {
+      request: await this.toRepaymentCorrectionRequestContractAsync(updated),
+    };
+  }
+
+  async ownerAuthorizeRepaymentCorrection(
+    user: AuthenticatedUser,
+    requestId: string,
+  ): Promise<{
+    request: RepaymentCorrectionRequestContract;
+    reportResubmitRequired: ReportResubmitRequiredContract | null;
+  }> {
+    this.assertBranchAccess(user);
+
+    if (!user.permissions.includes(OPERATIONS_PERMISSIONS.approve)) {
+      throw new ForbiddenException(
+        'Only an account owner can authorize this correction.',
+      );
+    }
+
+    const request = await this.findRepaymentCorrectionRequestForUser(
+      user,
+      requestId,
+    );
+
+    if (!request) {
+      throw new NotFoundException('Correction request not found.');
+    }
+
+    if (request.status !== RepaymentCorrectionRequestStatus.PENDING) {
+      throw new BadRequestException(
+        'Only pending correction requests can be authorized.',
+      );
+    }
+
+    const report = await this.findReportForPaymentDay(request.repayment);
+    if (report?.status !== BranchOperationReportStatus.OWNER_APPROVED) {
+      throw new BadRequestException(
+        'This correction does not need owner authorization right now.',
+      );
+    }
+
+    const updated = await this.prisma.repaymentCorrectionRequest.update({
+      where: { id: request.id },
+      data: {
+        forwardedToOwnerAt: request.forwardedToOwnerAt ?? new Date(),
+        forwardedToOwnerById: request.forwardedToOwnerById ?? user.userId,
+        ownerAuthorizedAt: new Date(),
+        ownerAuthorizedById: user.userId,
+      },
+      include: repaymentCorrectionRequestInclude,
+    });
+
+    const reportResubmitRequired = await this.returnSubmittedReportForCorrection(
+      {
+        report,
+        actorUserId: user.userId,
+        notes:
+          'Owner authorized a repayment correction. Manager must re-reconcile and resubmit.',
+      },
+    );
+
+    return {
+      request: await this.toRepaymentCorrectionRequestContractAsync(updated),
+      reportResubmitRequired,
     };
   }
 
@@ -1564,6 +1735,7 @@ export class CollectionsService {
     repayment: RepaymentDetailContract;
     detail: ClientLoanDetailContract;
     request: RepaymentCorrectionRequestContract | null;
+    reportResubmitRequired: ReportResubmitRequiredContract | null;
   }> {
     this.assertBranchAccess(user);
 
@@ -1585,7 +1757,10 @@ export class CollectionsService {
       throw new NotFoundException('Payment not found.');
     }
 
-    await this.assertRepaymentOpenForCorrection(row);
+    let reportResubmitRequired =
+      (await this.assertRepaymentOpenForCorrection(row, user.userId, {
+        allowOwnerAuthorizedRequestId: dto.correctionRequestId,
+      })) ?? null;
 
     let request: RepaymentCorrectionRequestRecord | null = null;
 
@@ -1656,11 +1831,17 @@ export class CollectionsService {
       throw new BadRequestException('paidAt must be a valid date.');
     }
 
-    await this.assertRepaymentOpenForCorrection({
-      tenantId: row.tenantId,
-      branchId: row.branchId,
-      paidAt: nextPaidAt,
-    });
+    const nextResubmit =
+      (await this.assertRepaymentOpenForCorrection(
+        {
+          tenantId: row.tenantId,
+          branchId: row.branchId,
+          paidAt: nextPaidAt,
+        },
+        user.userId,
+        { allowOwnerAuthorizedRequestId: dto.correctionRequestId },
+      )) ?? null;
+    reportResubmitRequired = reportResubmitRequired ?? nextResubmit;
 
     if (nextAmount <= 0) {
       throw new BadRequestException('Amount must be greater than zero.');
@@ -1800,14 +1981,34 @@ export class CollectionsService {
 
     if (appliedRequest) {
       void this.notifyRepaymentCorrectionRequester(appliedRequest);
+
+      const requestedAmount = this.decimalToNumber(
+        appliedRequest.requestedAmount,
+      );
+      const amountMismatch =
+        requestedAmount != null &&
+        Math.abs(requestedAmount - nextAmount) > 0.001;
+      const methodMismatch =
+        appliedRequest.requestedMethod != null &&
+        appliedRequest.requestedMethod !== nextMethod;
+
+      if (amountMismatch || methodMismatch) {
+        void this.notifyRepaymentCorrectionMismatch({
+          request: appliedRequest,
+          appliedAmount: nextAmount,
+          appliedMethod: nextMethod,
+          appliedByName: user.displayName,
+        });
+      }
     }
 
     return {
       repayment: repayment.repayment,
       detail: detail.detail,
       request: appliedRequest
-        ? this.toRepaymentCorrectionRequestContract(appliedRequest)
+        ? await this.toRepaymentCorrectionRequestContractAsync(appliedRequest)
         : null,
+      reportResubmitRequired,
     };
   }
 
@@ -2965,34 +3166,307 @@ export class CollectionsService {
     });
   }
 
-  private async assertRepaymentOpenForCorrection(input: {
+  private async findReportForPaymentDay(input: {
     tenantId: string;
     branchId: string;
     paidAt: Date;
   }) {
-    const report = await this.prisma.branchOperationReport.findFirst({
+    return this.prisma.branchOperationReport.findFirst({
       where: {
         tenantId: input.tenantId,
         branchId: input.branchId,
         operationDate: this.dateOnly(input.paidAt),
-        status: {
-          in: [
-            BranchOperationReportStatus.SENT_TO_OWNER,
-            BranchOperationReportStatus.OWNER_APPROVED,
-          ],
-        },
       },
       select: {
-        reportNumber: true,
+        id: true,
+        tenantId: true,
+        branchId: true,
+        operationDate: true,
         status: true,
+        reportNumber: true,
+        returnedAt: true,
+      },
+    });
+  }
+
+  private buildReportResubmitRequired(report: {
+    id: string;
+    reportNumber: string;
+    operationDate: Date;
+    branchId: string;
+  }): ReportResubmitRequiredContract {
+    const operationDate = this.dateLabel(report.operationDate);
+    return {
+      required: true,
+      reportId: report.id,
+      reportNumber: report.reportNumber,
+      operationDate,
+      branchId: report.branchId,
+      title: 'Review report and resubmit.',
+      message: `The reconciliation report for ${operationDate} has been reverted because a change in figures has been detected. Please review the report, confirm the figure and submit the report again.`,
+    };
+  }
+
+  private async returnSubmittedReportForCorrection(input: {
+    report: {
+      id: string;
+      tenantId: string;
+      branchId: string;
+      operationDate: Date;
+      status: BranchOperationReportStatus;
+      reportNumber: string;
+    };
+    actorUserId?: string;
+    notes?: string;
+  }): Promise<ReportResubmitRequiredContract> {
+    await this.prisma.branchOperationReport.update({
+      where: { id: input.report.id },
+      data: {
+        status: BranchOperationReportStatus.RETURNED_TO_MANAGER,
+        returnedAt: new Date(),
+        returnedById: input.actorUserId ?? null,
+        returnNotes:
+          input.notes ??
+          'Automatically returned for repayment correction so the manager can re-reconcile and resubmit.',
+        ownerApprovedAt: null,
+        ownerApprovedById: null,
+        ownerNotes: null,
       },
     });
 
-    if (report) {
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: input.report.tenantId,
+        actorUserId: input.actorUserId ?? null,
+        action: 'operation_report.auto_returned_for_correction',
+        entityType: 'branch_operation_report',
+        entityId: input.report.id,
+        newValue: {
+          reportNumber: input.report.reportNumber,
+          previousStatus: input.report.status,
+          nextStatus: BranchOperationReportStatus.RETURNED_TO_MANAGER,
+        },
+      },
+    });
+
+    void this.notifyManagersReportReturned({
+      tenantId: input.report.tenantId,
+      branchId: input.report.branchId,
+      reportNumber: input.report.reportNumber,
+      operationDate: this.dateLabel(input.report.operationDate),
+    });
+
+    return this.buildReportResubmitRequired(input.report);
+  }
+
+  private async assertRepaymentOpenForCorrection(
+    input: {
+      tenantId: string;
+      branchId: string;
+      paidAt: Date;
+    },
+    actorUserId?: string,
+    options?: { allowOwnerAuthorizedRequestId?: string },
+  ) {
+    const report = await this.findReportForPaymentDay(input);
+
+    if (!report) {
+      return null;
+    }
+
+    if (
+      report.status === BranchOperationReportStatus.MANAGER_REVIEW ||
+      report.status === BranchOperationReportStatus.RETURNED_TO_MANAGER
+    ) {
+      return null;
+    }
+
+    if (report.status === BranchOperationReportStatus.SENT_TO_OWNER) {
+      return this.returnSubmittedReportForCorrection({
+        report,
+        actorUserId,
+      });
+    }
+
+    if (report.status === BranchOperationReportStatus.OWNER_APPROVED) {
+      if (options?.allowOwnerAuthorizedRequestId) {
+        const authorized =
+          await this.prisma.repaymentCorrectionRequest.findFirst({
+            where: {
+              id: options.allowOwnerAuthorizedRequestId,
+              tenantId: input.tenantId,
+              ownerAuthorizedAt: { not: null },
+            },
+            select: { id: true },
+          });
+        if (authorized) {
+          return this.returnSubmittedReportForCorrection({
+            report,
+            actorUserId,
+            notes:
+              'Owner-authorized repayment correction applied. Manager must re-reconcile and resubmit.',
+          });
+        }
+      }
+
       throw new ForbiddenException(
-        `This payment is locked because report ${report.reportNumber} has already been submitted.`,
+        `Report ${report.reportNumber} is owner-approved. Forward the correction to the owner for permission before editing.`,
       );
     }
+
+    return null;
+  }
+
+  private async notifyManagersReportReturned(input: {
+    tenantId: string;
+    branchId: string;
+    reportNumber: string;
+    operationDate: string;
+  }) {
+    const users = await this.prisma.user.findMany({
+      where: {
+        tenantId: input.tenantId,
+        status: UserStatus.ACTIVE,
+        OR: [{ branchId: input.branchId }, { branchId: null }],
+        roles: {
+          some: {
+            role: {
+              name: {
+                in: ['Account Owner', 'Owner', 'Manager', 'Branch Manager'],
+              },
+            },
+          },
+        },
+      },
+      select: { id: true },
+    });
+
+    await Promise.allSettled(
+      users.map((manager) =>
+        this.fcmPushService.sendToUser(input.tenantId, manager.id, {
+          title: 'Report returned for correction',
+          body: `Report ${input.reportNumber} (${input.operationDate}) was returned so repayment corrections can be finished. Re-reconcile and submit again.`,
+          href: '/operations',
+          data: {
+            type: 'operation_report_returned',
+            reportNumber: input.reportNumber,
+            operationDate: input.operationDate,
+          },
+        }),
+      ),
+    );
+  }
+
+  private async notifyOwnerReportRollbackPermission(input: {
+    tenantId: string;
+    branchId: string;
+    reportId: string;
+    reportNumber: string;
+    operationDate: string;
+    requestedByUserId?: string;
+    correctionRequestId?: string;
+    borrowerName?: string;
+  }) {
+    const owners = await this.prisma.user.findMany({
+      where: {
+        tenantId: input.tenantId,
+        status: UserStatus.ACTIVE,
+        roles: {
+          some: {
+            role: {
+              name: { in: ['Account Owner', 'Owner'] },
+            },
+          },
+        },
+      },
+      select: { id: true, phone: true, displayName: true },
+    });
+
+    const borrowerBit = input.borrowerName
+      ? ` for ${input.borrowerName}`
+      : '';
+    const body = `Report ${input.reportNumber} (${input.operationDate}) needs your permission to roll back so a repayment correction${borrowerBit} can proceed. Open Corrections to authorize.`;
+
+    await Promise.allSettled(
+      owners.map(async (owner) => {
+        await this.fcmPushService.sendToUser(input.tenantId, owner.id, {
+          title: 'Authorize correction rollback?',
+          body,
+          href: '/collections/corrections',
+          data: {
+            type: 'operation_report_rollback_request',
+            reportId: input.reportId,
+            reportNumber: input.reportNumber,
+            operationDate: input.operationDate,
+            correctionRequestId: input.correctionRequestId ?? '',
+          },
+        });
+
+        if (owner.phone?.trim()) {
+          await this.smsCreditsService.sendBranchSms({
+            tenantId: input.tenantId,
+            branchId: input.branchId,
+            destination: owner.phone,
+            body: `REMBEH: ${body}`,
+            purpose: 'report_rollback_permission',
+            triggerSource: 'report_rollback_request',
+            triggerReferenceId:
+              input.correctionRequestId ?? input.reportId,
+            requestedByUserId: input.requestedByUserId,
+            idempotencyKey: `report-rollback-${input.correctionRequestId ?? input.reportId}-${owner.id}`,
+          });
+        }
+      }),
+    );
+  }
+
+  private async notifyRepaymentCorrectionMismatch(input: {
+    request: RepaymentCorrectionRequestRecord;
+    appliedAmount: number;
+    appliedMethod: string;
+    appliedByName: string;
+  }) {
+    const requestedAmount = this.decimalToNumber(input.request.requestedAmount);
+    const users = await this.prisma.user.findMany({
+      where: {
+        tenantId: input.request.tenantId,
+        status: UserStatus.ACTIVE,
+        OR: [{ branchId: input.request.branchId }, { branchId: null }],
+        roles: {
+          some: {
+            role: {
+              name: {
+                in: ['Account Owner', 'Owner', 'Manager', 'Branch Manager'],
+              },
+            },
+          },
+        },
+      },
+      select: { id: true },
+    });
+
+    const requestedLabel =
+      requestedAmount == null ? 'n/a' : String(Math.round(requestedAmount));
+    const appliedLabel = String(Math.round(input.appliedAmount));
+
+    await Promise.allSettled(
+      users.map((manager) =>
+        this.fcmPushService.sendToUser(input.request.tenantId, manager.id, {
+          title: 'Correction differs from request',
+          body: `${input.appliedByName} saved UGX ${appliedLabel} for ${input.request.loan.customer.fullName}, but the approved request was UGX ${requestedLabel}.`,
+          href: '/collections/corrections',
+          data: {
+            type: 'repayment_correction_mismatch',
+            requestId: input.request.id,
+            repaymentId: input.request.repaymentId,
+            loanId: input.request.loanId,
+            requestedAmount: requestedLabel,
+            appliedAmount: appliedLabel,
+            appliedMethod: input.appliedMethod,
+          },
+        }),
+      ),
+    );
   }
 
   private async submittedReportDateSet(
@@ -3032,10 +3506,21 @@ export class CollectionsService {
       },
       select: {
         operationDate: true,
+        status: true,
+        returnedAt: true,
       },
     });
 
-    return new Set(rows.map((row) => this.dateLabel(row.operationDate)));
+    return new Set(
+      rows
+        .filter(
+          (row) =>
+            row.status === BranchOperationReportStatus.OWNER_APPROVED ||
+            (row.status === BranchOperationReportStatus.SENT_TO_OWNER &&
+              row.returnedAt == null),
+        )
+        .map((row) => this.dateLabel(row.operationDate)),
+    );
   }
 
   private parseOptionalIsoDate(
@@ -3054,11 +3539,107 @@ export class CollectionsService {
     return parsed;
   }
 
+  private async toRepaymentCorrectionRequestContracts(
+    rows: RepaymentCorrectionRequestRecord[],
+  ): Promise<RepaymentCorrectionRequestContract[]> {
+    if (rows.length === 0) {
+      return [];
+    }
+
+    const reportKeys = [
+      ...new Set(
+        rows.map(
+          (row) =>
+            `${row.tenantId}:${row.branchId}:${this.dateLabel(row.repayment.paidAt)}`,
+        ),
+      ),
+    ];
+
+    const reports = await this.prisma.branchOperationReport.findMany({
+      where: {
+        OR: reportKeys.map((key) => {
+          const [tenantId, branchId, dateLabel] = key.split(':');
+          return {
+            tenantId,
+            branchId,
+            operationDate: this.dateOnly(new Date(`${dateLabel}T00:00:00`)),
+          };
+        }),
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        branchId: true,
+        operationDate: true,
+        status: true,
+        reportNumber: true,
+      },
+    });
+
+    const reportByKey = new Map(
+      reports.map((report) => [
+        `${report.tenantId}:${report.branchId}:${this.dateLabel(report.operationDate)}`,
+        report,
+      ]),
+    );
+
+    return rows.map((row) =>
+      this.toRepaymentCorrectionRequestContract(
+        row,
+        reportByKey.get(
+          `${row.tenantId}:${row.branchId}:${this.dateLabel(row.repayment.paidAt)}`,
+        ) ?? null,
+      ),
+    );
+  }
+
+  private async toRepaymentCorrectionRequestContractAsync(
+    row: RepaymentCorrectionRequestRecord,
+  ): Promise<RepaymentCorrectionRequestContract> {
+    const report = await this.prisma.branchOperationReport.findFirst({
+      where: {
+        tenantId: row.tenantId,
+        branchId: row.branchId,
+        operationDate: this.dateOnly(row.repayment.paidAt),
+      },
+      select: {
+        id: true,
+        tenantId: true,
+        branchId: true,
+        operationDate: true,
+        status: true,
+        reportNumber: true,
+      },
+    });
+
+    return this.toRepaymentCorrectionRequestContract(row, report);
+  }
+
   private toRepaymentCorrectionRequestContract(
     row: RepaymentCorrectionRequestRecord,
+    report?: {
+      id: string;
+      status: BranchOperationReportStatus;
+      reportNumber: string;
+      operationDate: Date;
+    } | null,
   ): RepaymentCorrectionRequestContract {
     const loan = row.loan ?? row.repayment.loan;
     const customer = loan.customer ?? row.repayment.loan.customer;
+    const reportStatus = report?.status ?? null;
+    const forwarded = Boolean(row.forwardedToOwnerAt);
+    const ownerAuthorized = Boolean(row.ownerAuthorizedAt);
+    const pending = row.status === RepaymentCorrectionRequestStatus.PENDING;
+    const ownerApproved =
+      reportStatus === BranchOperationReportStatus.OWNER_APPROVED;
+    const sentToOwner =
+      reportStatus === BranchOperationReportStatus.SENT_TO_OWNER;
+    const unlocked =
+      !reportStatus ||
+      reportStatus === BranchOperationReportStatus.MANAGER_REVIEW ||
+      reportStatus === BranchOperationReportStatus.RETURNED_TO_MANAGER ||
+      (ownerApproved && ownerAuthorized) ||
+      sentToOwner;
 
     return {
       id: row.id,
@@ -3086,6 +3667,22 @@ export class CollectionsService {
       correctionAppliedAt: row.correctionAppliedAt?.toISOString() ?? null,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
+      reportStatus,
+      reportId: report?.id ?? null,
+      reportNumber: report?.reportNumber ?? null,
+      operationDate: report
+        ? this.dateLabel(report.operationDate)
+        : this.dateLabel(row.repayment.paidAt),
+      forwardedToOwnerAt: row.forwardedToOwnerAt?.toISOString() ?? null,
+      ownerAuthorizedAt: row.ownerAuthorizedAt?.toISOString() ?? null,
+      actions: {
+        canManagerEdit: pending && unlocked && !(ownerApproved && !ownerAuthorized),
+        canOfficerEdit: pending && unlocked && !(ownerApproved && !ownerAuthorized),
+        canForwardToOwner:
+          pending && ownerApproved && !ownerAuthorized,
+        canOwnerAuthorize: pending && ownerApproved && forwarded && !ownerAuthorized,
+        waitingForOwner: pending && ownerApproved && forwarded && !ownerAuthorized,
+      },
     };
   }
 
@@ -3714,6 +4311,16 @@ export class CollectionsService {
 
         correctionAppliedAt:
           appliedCorrection?.correctionAppliedAt?.toISOString() ?? null,
+
+        approvedCorrectionReason: approvedCorrection?.reason ?? null,
+
+        approvedRequestedAmount: approvedCorrection
+          ? (this.decimalToNumber(approvedCorrection.requestedAmount) ?? null)
+          : null,
+
+        approvedRequestedMethod: approvedCorrection?.requestedMethod ?? null,
+
+        approvedRequestedNote: approvedCorrection?.requestedNote ?? null,
       };
     });
 
