@@ -136,7 +136,7 @@ class _LoginScreenState extends State<LoginScreen>
       await widget.pushService?.requestPermissionAndSync();
       if (!mounted) return;
 
-      final update = await UpdateService.checkForUpdate();
+      final update = await UpdateService.checkForUpdate(session: session);
       if (!mounted) return;
       if (update != null && update.requiresFullInstall) {
         if (update.isBlocking) {

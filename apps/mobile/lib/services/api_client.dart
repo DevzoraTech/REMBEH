@@ -555,7 +555,12 @@ class ApiClient {
   }
 
   Future<AgentDayStatus> getAgentDayStatus(RembehSession session) async {
-    final uri = Uri.parse('$rembehApiBaseUrl/operations/agent-today');
+    final uri = Uri.parse('$rembehApiBaseUrl/operations/agent-today').replace(
+      queryParameters: {
+        // Bust any intermediary/client stale GET while balancing cash.
+        '_': DateTime.now().millisecondsSinceEpoch.toString(),
+      },
+    );
     final response = await http.get(uri, headers: _authHeaders(session));
     final body = _decode(response);
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -572,10 +577,11 @@ class ApiClient {
     final query = <String, String>{
       if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
       if (date != null && date.isNotEmpty) 'date': date,
+      '_': DateTime.now().millisecondsSinceEpoch.toString(),
     };
     final uri = Uri.parse(
       '$rembehApiBaseUrl/operations/today',
-    ).replace(queryParameters: query.isEmpty ? null : query);
+    ).replace(queryParameters: query);
     final response = await http.get(uri, headers: _authHeaders(session));
     final body = _decode(response);
     if (response.statusCode < 200 || response.statusCode >= 300) {

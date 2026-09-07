@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Headers,
   Param,
   ParseIntPipe,
@@ -34,6 +35,7 @@ export class AppUpdateController {
   ) {}
 
   @Get('check-update')
+  @Header('Cache-Control', 'private, no-store, no-cache, must-revalidate')
   async checkUpdate(
     @Query('app') app: string,
     @Query('appName') appName: string | undefined,
@@ -42,13 +44,14 @@ export class AppUpdateController {
     @Query('currentReleaseEpoch') currentReleaseEpoch?: string,
     @Query('tenantId') tenantId?: string,
     @Headers('authorization') authorization?: string,
+    @Headers('x-tenant-id') tenantHeader?: string,
   ) {
     return this.appUpdateService.checkUpdate(
       app || appName || 'mobile',
       currentBuild,
       platform || 'android',
       parseOptionalPositiveInt(currentReleaseEpoch, 1),
-      this.resolveCheckUpdateTenant(tenantId, authorization),
+      this.resolveCheckUpdateTenant(tenantId, authorization, tenantHeader),
     );
   }
 
@@ -165,6 +168,7 @@ export class AppUpdateController {
   private resolveCheckUpdateTenant(
     queryTenantId?: string,
     authorization?: string,
+    tenantHeader?: string,
   ) {
     if (authorization?.startsWith('Bearer ')) {
       try {
@@ -173,10 +177,12 @@ export class AppUpdateController {
         );
         if (payload.tenantId) return payload.tenantId;
       } catch {
-        /* Public endpoint: a missing or expired token still checks the all-organisations track. */
+        /* Public endpoint: a missing or expired token still checks with query/header tenant. */
       }
     }
-    return parseOptionalUuid(queryTenantId);
+    return (
+      parseOptionalUuid(queryTenantId) ?? parseOptionalUuid(tenantHeader)
+    );
   }
 }
 

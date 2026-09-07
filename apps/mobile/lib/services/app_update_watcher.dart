@@ -16,7 +16,7 @@ class AppUpdateWatcher with WidgetsBindingObserver {
 
   static final AppUpdateWatcher instance = AppUpdateWatcher._();
 
-  static const Duration pollInterval = Duration(seconds: 45);
+  static const Duration pollInterval = Duration(seconds: 20);
 
   BuildContext Function()? _contextFinder;
   RembehSession? _session;

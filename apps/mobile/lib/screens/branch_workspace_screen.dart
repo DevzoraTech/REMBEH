@@ -885,11 +885,25 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   }
 
   Future<void> _openAgentPositions() async {
+    if (_showingCachedData) {
+      setState(() {
+        _error =
+            'Connect to the internet and refresh before balancing staff. Cached figures can disagree with the server.';
+      });
+      return;
+    }
+
+    // Always load live branch day figures before balancing.
+    await _load(date: _date, showLoading: true, allowCacheFallback: false);
+    if (!mounted) return;
+
     final operation = _operation;
 
     if (operation == null) {
       setState(() {
-        _error = 'Today’s branch operation is not available.';
+        _error =
+            _error ??
+            'Today’s branch operation is not available. Check your connection and try again.';
       });
 
       return;
@@ -909,16 +923,29 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     );
 
     if (changed == true) {
-      await _load();
+      await _load(date: _date, allowCacheFallback: false);
     }
   }
 
   Future<void> _openAgentPosition(AgentFloatPosition position) async {
+    if (_showingCachedData) {
+      setState(() {
+        _error =
+            'Connect to the internet and refresh before balancing staff. Cached figures can disagree with the server.';
+      });
+      return;
+    }
+
+    await _load(date: _date, showLoading: true, allowCacheFallback: false);
+    if (!mounted) return;
+
     final operation = _operation;
 
     if (operation == null) {
       setState(() {
-        _error = 'Today’s branch operation is not available.';
+        _error =
+            _error ??
+            'Today’s branch operation is not available. Check your connection and try again.';
       });
 
       return;
@@ -953,7 +980,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     );
 
     if (changed == true) {
-      await _load();
+      await _load(date: _date, allowCacheFallback: false);
     }
   }
 
@@ -1018,9 +1045,25 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   }
 
   Future<void> _openDayReconciliation() async {
+    if (_showingCachedData) {
+      setState(() {
+        _error =
+            'Connect to the internet and refresh before closing the day. Cached figures can disagree with the server.';
+      });
+      return;
+    }
+
+    await _load(date: _date, showLoading: true, allowCacheFallback: false);
+    if (!mounted) return;
+
     final operation = _operation;
 
     if (operation == null) {
+      setState(() {
+        _error =
+            _error ??
+            'Today’s branch operation is not available. Check your connection and try again.';
+      });
       return;
     }
 
@@ -1041,11 +1084,11 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
       _setNotice('Report sent. Next day is open.');
 
-      await _load(date: nextDate);
+      await _load(date: nextDate, allowCacheFallback: false);
     } else {
       // The manager may have updated
       // the count and saved the draft.
-      await _load(date: operationDate);
+      await _load(date: operationDate, allowCacheFallback: false);
     }
   }
 

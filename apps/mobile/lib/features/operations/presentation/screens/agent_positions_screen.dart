@@ -60,6 +60,9 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
     _agents = List<Map<String, dynamic>>.from(widget.agents);
 
     _operation = widget.operation;
+    // Replace any parent snapshot with live server figures immediately.
+    // ignore: discarded_futures
+    _refresh();
   }
 
   @override
@@ -278,20 +281,19 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
     });
 
     try {
-      final operation = await _api.getBranchOperation(
+      final data = await _api.getBranchOperation(
         session: widget.session,
         branchId: widget.branchId,
         date: widget.date,
       );
 
-      final nextOperation = Map<String, dynamic>.from(operation);
-
-      final returnedPositions = nextOperation['agentReturns'];
-
-      if ((returnedPositions is! List || returnedPositions.isEmpty) &&
-          _agentReturns.isNotEmpty) {
-        nextOperation['agentReturns'] = _agentReturns;
-      }
+      // Always use the nested operation from the live server response.
+      // Never reuse prior agentReturns — that caused false shortages when
+      // expected handover had changed on the server.
+      final operation = data['operation'];
+      final nextOperation = operation is Map
+          ? Map<String, dynamic>.from(operation)
+          : <String, dynamic>{};
 
       var agents = _agents;
 
@@ -405,6 +407,10 @@ class _AgentPositionsScreenState extends State<AgentPositionsScreen> {
     if (id == null) {
       return;
     }
+
+    // Pull live expected handover before opening the balance screen.
+    await _refresh();
+    if (!mounted) return;
 
     final position = _positionFor(id);
 
@@ -629,12 +635,74 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
   late final ApiClient _api = ApiClient(_store);
 
   bool _saving = false;
+  bool _refreshing = false;
 
   String? _error;
 
   _OfficerActivityFilter _activityFilter = _OfficerActivityFilter.all;
 
-  Map<String, dynamic>? get _position => widget.position;
+  Map<String, dynamic>? _operation;
+  Map<String, dynamic>? _position;
+
+  @override
+  void initState() {
+    super.initState();
+    _operation = widget.operation == null
+        ? null
+        : Map<String, dynamic>.from(widget.operation!);
+    _position = widget.position == null
+        ? null
+        : Map<String, dynamic>.from(widget.position!);
+    // ignore: discarded_futures
+    _refreshLivePosition(showError: false);
+  }
+
+  /// Always prefer server expected handover over any snapshot passed in.
+  Future<bool> _refreshLivePosition({bool showError = true}) async {
+    if (_refreshing) return _position != null;
+    _refreshing = true;
+    try {
+      final data = await _api.getBranchOperation(
+        session: widget.session,
+        branchId: widget.branchId,
+        date: widget.date,
+      );
+      final operationRaw = data['operation'];
+      if (operationRaw is! Map) {
+        throw StateError('Branch operation is missing from the server response.');
+      }
+      final operation = Map<String, dynamic>.from(operationRaw);
+      final agentId = _string(widget.agent['id']);
+      final returns = operation['agentReturns'];
+      Map<String, dynamic>? nextPosition;
+      if (returns is List && agentId != null) {
+        for (final row in returns.whereType<Map>()) {
+          final mapped = Map<String, dynamic>.from(row);
+          if (_string(mapped['agentId']) == agentId) {
+            nextPosition = mapped;
+            break;
+          }
+        }
+      }
+      if (!mounted) return nextPosition != null;
+      setState(() {
+        _operation = operation;
+        _position = nextPosition;
+        _error = null;
+      });
+      return nextPosition != null;
+    } catch (error) {
+      if (!mounted) return false;
+      if (showError) {
+        setState(() {
+          _error = friendlyErrorMessage(error);
+        });
+      }
+      return false;
+    } finally {
+      _refreshing = false;
+    }
+  }
 
   bool get _balanced => _nullableNum(_position?['amountReturned']) != null;
 
@@ -701,7 +769,7 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
 
   List<_OfficerActivityEntry> get _activityEntries {
     final entries = <_OfficerActivityEntry>[];
-    final operation = widget.operation;
+    final operation = _operation;
 
     if (operation == null) {
       return entries;
@@ -845,7 +913,16 @@ class _AgentPositionDetailScreenState extends State<AgentPositionDetailScreen> {
   }
 
   Future<void> _balanceAgent() async {
-    if (_position == null) {
+    // Re-fetch expected handover from the server right before balancing so
+    // a stale phone never creates a false shortage against a newer figure.
+    final ok = await _refreshLivePosition();
+    if (!mounted) return;
+    if (!ok || _position == null) {
+      setState(() {
+        _error =
+            _error ??
+            'Could not load the latest handover amount. Check your connection and try again.';
+      });
       return;
     }
 

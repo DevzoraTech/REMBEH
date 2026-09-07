@@ -203,15 +203,17 @@ class UpdateService {
   );
 
   /// Check backend for updates. Returns null on network errors (non-blocking).
-  static Future<UpdateCheckResult?> checkForUpdate() async {
+  static Future<UpdateCheckResult?> checkForUpdate({
+    RembehSession? session,
+  }) async {
     try {
       final packageInfo = await PackageInfo.fromPlatform();
       final currentBuild = int.tryParse(packageInfo.buildNumber) ?? 1;
       final currentVersion = packageInfo.version;
       final platform = Platform.isAndroid ? 'android' : 'ios';
-      final session = await SessionStore().read();
-      final accessToken = session?.accessToken.trim();
-      var tenantId = session?.tenantId?.trim();
+      final activeSession = session ?? await SessionStore().read();
+      final accessToken = activeSession?.accessToken.trim();
+      var tenantId = activeSession?.tenantId?.trim();
       if (tenantId == null || tenantId.isEmpty) {
         tenantId = tenantIdFromAccessToken(accessToken ?? '');
       }
@@ -224,6 +226,7 @@ class UpdateService {
           'platform': platform,
           'currentVersion': currentVersion,
           if (tenantId != null && tenantId.isNotEmpty) 'tenantId': tenantId,
+          '_': DateTime.now().millisecondsSinceEpoch.toString(),
         },
       );
 
@@ -233,6 +236,10 @@ class UpdateService {
             headers: {
               if (accessToken != null && accessToken.isNotEmpty)
                 'Authorization': 'Bearer $accessToken',
+              if (tenantId != null && tenantId.isNotEmpty)
+                'X-Tenant-Id': tenantId,
+              'Cache-Control': 'no-cache',
+              'Pragma': 'no-cache',
             },
           )
           .timeout(const Duration(seconds: 8));
@@ -242,7 +249,8 @@ class UpdateService {
         final result = UpdateCheckResult.fromJson(data);
         debugPrint(
           '[UpdateService] mode=${result.updateMode} force=${result.forceUpdate} '
-          'latest=${result.latestVersion} build=${result.latestBuild}',
+          'latest=${result.latestVersion} build=${result.latestBuild} '
+          'tenant=${tenantId ?? "none"}',
         );
         return result;
       }

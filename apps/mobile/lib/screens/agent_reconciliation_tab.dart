@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../features/agent_day/data/agent_day_status_store.dart';
 import '../models/agent_day_status.dart';
 import '../services/api_client.dart';
 import '../services/session_store.dart';
@@ -44,7 +45,9 @@ class _AgentReconciliationTabState extends State<AgentReconciliationTab> {
 
   AgentDayFloatSummary get _float => widget.status.float;
 
-  num get _expected => _float.expectedHandover;
+  num get _expected =>
+      AgentDayStatusStore.instance.status?.float.expectedHandover ??
+      _float.expectedHandover;
 
   num? get _enteredAmount {
     final clean = _amountController.text.replaceAll(',', '').trim();
@@ -68,10 +71,36 @@ class _AgentReconciliationTabState extends State<AgentReconciliationTab> {
       return;
     }
 
-    if (_short && (_shortageReason == null || _shortageReason!.isEmpty)) {
-      setState(() => _error = 'Choose why the handover is short.');
+    // Refresh from the server before comparing/shortage so a cached
+    // expected handover cannot create a false shortage.
+    setState(() {
+      _saving = true;
+      _error = null;
+      _notice = null;
+    });
+    try {
+      await widget.onRefreshStatus();
+    } catch (_) {
+      // Parent refresh surfaces its own error; continue with latest known.
+    }
+    if (!mounted) return;
+
+    final expected = AgentDayStatusStore.instance.status?.float.expectedHandover ??
+        _expected;
+    final variance = amount - expected;
+    final isShort = variance < 0;
+
+    if (isShort && (_shortageReason == null || _shortageReason!.isEmpty)) {
+      setState(() {
+        _saving = false;
+        _error =
+            'Expected handover is now UGX ${formatMoney(expected)}. '
+            'Choose why the handover is short.';
+      });
       return;
     }
+
+    setState(() => _saving = false);
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -79,7 +108,7 @@ class _AgentReconciliationTabState extends State<AgentReconciliationTab> {
         title: const Text('Record handover?'),
         content: Text(
           'You are handing over UGX ${formatMoney(amount)}. '
-          'Expected handover is UGX ${formatMoney(_expected)}.',
+          'Expected handover is UGX ${formatMoney(expected)}.',
         ),
         actions: [
           TextButton(
@@ -107,7 +136,7 @@ class _AgentReconciliationTabState extends State<AgentReconciliationTab> {
         session: widget.session,
         date: widget.status.date,
         amountReturned: amount,
-        shortageReason: _short ? _shortageReason : null,
+        shortageReason: isShort ? _shortageReason : null,
         notes: _notesController.text,
       );
       await widget.onRefreshStatus();

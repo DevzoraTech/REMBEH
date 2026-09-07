@@ -175,13 +175,10 @@ export class RealtimeGateway
       forceUpdate: boolean;
     },
   ) {
-    if (payload.audience === 'ALL' || payload.tenantIds.length === 0) {
-      this.emitToAll(event, payload);
-      return;
-    }
-    for (const tenantId of payload.tenantIds) {
-      this.emitToTenant(tenantId, event, payload);
-    }
+    // Always broadcast globally. Field officers only join branch rooms, not the
+    // tenant room, so SELECTED emitToTenant never reached them. Clients still
+    // enforce audience via check-update + their signed-in organisation.
+    this.emitToAll(event, payload);
   }
 
   broadcastLoanApplication(

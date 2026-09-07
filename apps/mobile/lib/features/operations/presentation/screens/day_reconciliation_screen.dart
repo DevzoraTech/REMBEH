@@ -241,18 +241,9 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
 
       if (!mounted) return;
 
+      // Always take the live server payload. Never keep prior agentReturns —
+      // stale expectedReturn caused false shortages while balancing.
       final nextData = Map<String, dynamic>.from(data);
-      final operation = nextData['operation'];
-
-      final returnedPositions = operation is Map<String, dynamic>
-          ? operation['agentReturns']
-          : null;
-
-      if (operation is Map<String, dynamic> &&
-          (returnedPositions is! List || returnedPositions.isEmpty) &&
-          _agentReturns.isNotEmpty) {
-        nextData['operation'] = {...operation, 'agentReturns': _agentReturns};
-      }
 
       final reconciliation =
           nextData['reconciliation'] as Map<String, dynamic>?;
@@ -309,6 +300,10 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
   }
 
   Future<void> _updateCount() async {
+    await _load();
+    if (!mounted) return;
+    if (_error != null && _operation == null) return;
+
     final changed = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -351,9 +346,16 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
   }
 
   Future<void> _openOfficerPosition(AgentFloatPosition position) async {
+    await _load();
+    if (!mounted) return;
+
     final rawPosition = _rawPositionFor(position.id);
 
     if (rawPosition == null) {
+      setState(() {
+        _error =
+            'Could not load the latest handover for this officer. Pull to refresh and try again.';
+      });
       return;
     }
 
@@ -377,6 +379,9 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
   }
 
   Future<void> _sendReport() async {
+    await _load();
+    if (!mounted) return;
+
     if (_countedCash == null) {
       setState(() {
         _error = 'Count the physical branch cash before sending the report.';

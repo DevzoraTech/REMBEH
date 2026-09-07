@@ -182,7 +182,7 @@ export function ControlCenterAppUpdateRolloutSection({
       let message =
         saved.audience === "ALL"
           ? `${saved.version} is now live for every organisation. Signed-in phones pick it up within about a minute.`
-          : `${saved.version} is now live for ${saved.tenants.length} organisation${saved.tenants.length === 1 ? "" : "s"}. Signed-in phones in those organisations pick it up within about a minute.`;
+          : `${saved.version} is now live for ${saved.tenants.length} organisation${saved.tenants.length === 1 ? "" : "s"}. Those phones must be signed in to that organisation — then fully close and reopen REMBEH (or wait ~20s) to be prompted.`;
       if (!saved.isActive) {
         message = `${saved.version} was sent, but it is older than the latest ${keep} offered builds, so it was held. Pause newer offers or raise “Keep latest”.`;
       } else if (heldOlder > 0) {
@@ -198,8 +198,18 @@ export function ControlCenterAppUpdateRolloutSection({
             (row.releaseEpoch === saved.releaseEpoch &&
               row.buildNumber > saved.buildNumber)),
       );
+      const olderAll = stillOffered.find(
+        (row) =>
+          row.id !== saved.id &&
+          row.audience === "ALL" &&
+          (row.releaseEpoch < saved.releaseEpoch ||
+            (row.releaseEpoch === saved.releaseEpoch &&
+              row.buildNumber < saved.buildNumber)),
+      );
       if (saved.isActive && saved.audience === "SELECTED" && higherAll) {
         message += ` Note: ${higherAll.version} (${higherAll.buildNumber}) is still offered to everyone and will win for those organisations until you stop it.`;
+      } else if (saved.isActive && saved.audience === "SELECTED" && olderAll) {
+        message += ` ${olderAll.version} remains for everyone else. Chosen orgs get ${saved.version} while signed in.`;
       }
       setNotice(message);
     } catch (caught) {
