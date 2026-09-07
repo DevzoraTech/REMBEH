@@ -12,6 +12,7 @@ import '../../services/api_client.dart';
 import '../../services/session_activity.dart';
 import '../../services/session_cleanup.dart';
 import '../../services/session_store.dart';
+import '../../services/app_update_watcher.dart';
 import '../../services/update_prompt.dart';
 import '../../theme.dart';
 import '../../utils/friendly_errors.dart';
@@ -75,6 +76,10 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
       },
     );
     _activity.start();
+    AppUpdateWatcher.instance.start(
+      session: widget.session,
+      contextFinder: () => context,
+    );
     _repayStore.addListener(_onStoreChanged);
     unawaited(_boot());
   }
@@ -82,6 +87,7 @@ class _OwnerWorkspaceScreenState extends State<OwnerWorkspaceScreen> {
   @override
   void dispose() {
     _repayStore.removeListener(_onStoreChanged);
+    AppUpdateWatcher.instance.stop();
     _activity.dispose();
     super.dispose();
   }

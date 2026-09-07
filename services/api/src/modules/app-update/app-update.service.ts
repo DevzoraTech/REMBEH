@@ -14,6 +14,8 @@ import {
 } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../database/prisma.service';
+import { REALTIME_EVENTS } from '../realtime/realtime.events';
+import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { ObjectStorageService } from '../storage/object-storage.service';
 import {
   CreateReleaseDto,
@@ -24,6 +26,8 @@ import {
 import { ReleaseStorageService } from './release-storage.service';
 
 const SCREEN_KEY = 'mobile';
+/** Default number of newest active builds kept offering for an app+platform. */
+const DEFAULT_KEEP_LATEST_OFFERS = 3;
 
 const RELEASE_ADMIN_INCLUDE = {
   tenants: {
@@ -62,6 +66,7 @@ export class AppUpdateService {
     private readonly prisma: PrismaService,
     private readonly storage: ReleaseStorageService,
     private readonly objectStorage: ObjectStorageService,
+    private readonly realtime: RealtimeGateway,
   ) {}
 
   async checkUpdate(
@@ -400,9 +405,11 @@ export class AppUpdateService {
 
     const audience = this.resolveAudience(dto.audience, dto.tenantIds);
     const tenantIds = await this.resolveTenantIds(audience, dto.tenantIds);
+    // Held until Control Center Send — never auto-offer on register.
+    const isActive = dto.isActive === true;
 
-    return this.toAdminRelease(
-      await this.prisma.appRelease.create({
+    const created = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.appRelease.create({
         data: {
           appName: dto.appName,
           platform,
@@ -416,6 +423,7 @@ export class AppUpdateService {
           apkHash: dto.apkHash,
           changelog: dto.changelog ?? [],
           message: dto.message,
+          isActive,
           audience,
           tenants:
             tenantIds.length > 0
@@ -423,7 +431,25 @@ export class AppUpdateService {
               : undefined,
         },
         include: RELEASE_ADMIN_INCLUDE,
-      }),
+      });
+      if (isActive) {
+        await this.pruneOlderActiveOffers(
+          tx,
+          dto.appName,
+          platform,
+          DEFAULT_KEEP_LATEST_OFFERS,
+        );
+      }
+      return row;
+    });
+    if (isActive) {
+      this.broadcastReleaseChange(created);
+    }
+    return this.toAdminRelease(
+      (await this.prisma.appRelease.findUnique({
+        where: { id: created.id },
+        include: RELEASE_ADMIN_INCLUDE,
+      }))!,
     );
   }
 
@@ -446,8 +472,11 @@ export class AppUpdateService {
         ? undefined
         : await this.resolveTenantIds(audience, dto.tenantIds);
 
-    return this.toAdminRelease(
-      await this.prisma.appRelease.update({
+    const nextIsActive =
+      dto.isActive !== undefined ? dto.isActive : release.isActive;
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.appRelease.update({
         where: { id },
         data: {
           ...(dto.forceUpdate !== undefined && { forceUpdate: dto.forceUpdate }),
@@ -471,8 +500,24 @@ export class AppUpdateService {
           }),
         },
         include: RELEASE_ADMIN_INCLUDE,
-      }),
-    );
+      });
+      if (nextIsActive) {
+        await this.pruneOlderActiveOffers(
+          tx,
+          release.appName,
+          release.platform,
+          DEFAULT_KEEP_LATEST_OFFERS,
+        );
+      }
+      return row;
+    });
+
+    const fresh = await this.prisma.appRelease.findUnique({
+      where: { id },
+      include: RELEASE_ADMIN_INCLUDE,
+    });
+    this.broadcastReleaseChange(fresh ?? updated);
+    return this.toAdminRelease(fresh ?? updated);
   }
 
   async promoteReleaseToAll(id: string) {
@@ -485,18 +530,61 @@ export class AppUpdateService {
       audience: 'ALL' | 'SELECTED';
       tenantIds?: string[];
       forceUpdate?: boolean;
+      keepLatest?: number;
     },
   ) {
-    return this.updateRelease(id, {
-      audience: dto.audience,
-      tenantIds: dto.audience === 'SELECTED' ? dto.tenantIds : [],
-      forceUpdate: dto.forceUpdate ?? true,
-      isActive: true,
+    const release = await this.prisma.appRelease.findUnique({ where: { id } });
+    if (!release) throw new NotFoundException('Release not found.');
+
+    const audience = this.resolveAudience(dto.audience, dto.tenantIds);
+    const tenantIds = await this.resolveTenantIds(audience, dto.tenantIds);
+    const keepLatest = this.resolveKeepLatest(dto.keepLatest);
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.appRelease.update({
+        where: { id },
+        data: {
+          isActive: true,
+          audience,
+          forceUpdate: dto.forceUpdate ?? true,
+          tenants: {
+            deleteMany: {},
+            create: tenantIds.map((tenantId) => ({ tenantId })),
+          },
+        },
+        include: RELEASE_ADMIN_INCLUDE,
+      });
+      await this.pruneOlderActiveOffers(
+        tx,
+        release.appName,
+        release.platform,
+        keepLatest,
+      );
+      return row;
     });
+
+    const fresh = await this.prisma.appRelease.findUnique({
+      where: { id },
+      include: RELEASE_ADMIN_INCLUDE,
+    });
+    this.broadcastReleaseChange(fresh ?? updated);
+    return this.toAdminRelease(fresh ?? updated);
   }
 
   async pauseRelease(id: string) {
-    return this.updateRelease(id, { isActive: false });
+    const release = await this.prisma.appRelease.findUnique({
+      where: { id },
+      include: RELEASE_ADMIN_INCLUDE,
+    });
+    if (!release) throw new NotFoundException('Release not found.');
+
+    const updated = await this.prisma.appRelease.update({
+      where: { id },
+      data: { isActive: false },
+      include: RELEASE_ADMIN_INCLUDE,
+    });
+    this.broadcastReleaseChange(updated);
+    return this.toAdminRelease(updated);
   }
 
   async listReleases(appName?: string, platform?: string) {
@@ -828,6 +916,56 @@ export class AppUpdateService {
         status: row.tenant.status,
       })),
     };
+  }
+
+  private resolveKeepLatest(value?: number) {
+    if (value == null || !Number.isInteger(value)) {
+      return DEFAULT_KEEP_LATEST_OFFERS;
+    }
+    return Math.min(20, Math.max(1, value));
+  }
+
+  /**
+   * Keep only the newest `keepLatest` active offers for an app+platform.
+   * Older active builds are held so Control Center can't accidentally leave
+   * a long tail of offerings live.
+   */
+  private async pruneOlderActiveOffers(
+    tx: Prisma.TransactionClient,
+    appName: string,
+    platform: string,
+    keepLatest: number,
+  ) {
+    const active = await tx.appRelease.findMany({
+      where: { appName, platform, isActive: true },
+      orderBy: [
+        { releaseEpoch: 'desc' },
+        { buildNumber: 'desc' },
+        { updatedAt: 'desc' },
+      ],
+      select: { id: true },
+    });
+    if (active.length <= keepLatest) return;
+    const toHold = active.slice(keepLatest).map((row) => row.id);
+    await tx.appRelease.updateMany({
+      where: { id: { in: toHold } },
+      data: { isActive: false },
+    });
+  }
+
+  private broadcastReleaseChange(
+    release: Prisma.AppReleaseGetPayload<{ include: typeof RELEASE_ADMIN_INCLUDE }>,
+  ) {
+    this.realtime.broadcastAppRelease(REALTIME_EVENTS.appReleaseUpdated, {
+      appName: release.appName,
+      platform: release.platform,
+      audience: release.audience === AppReleaseAudience.SELECTED ? 'SELECTED' : 'ALL',
+      tenantIds: release.tenants.map((row) => row.tenantId),
+      isActive: release.isActive,
+      version: release.version,
+      buildNumber: release.buildNumber,
+      forceUpdate: release.forceUpdate,
+    });
   }
 
   private cleanNullable(value: string | null | undefined) {

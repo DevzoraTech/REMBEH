@@ -1799,7 +1799,7 @@ model AppRelease {
   apkHash           String?             @map("apk_hash")
   changelog         String[]            @default([])
   message           String?
-  isActive          Boolean             @default(true) @map("is_active")
+  isActive          Boolean             @default(false) @map("is_active")
   audience          AppReleaseAudience  @default(ALL)
   downloadCount     Int                 @default(0) @map("download_count")
   createdAt         DateTime            @default(now()) @map("created_at")

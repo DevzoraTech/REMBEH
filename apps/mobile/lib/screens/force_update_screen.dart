@@ -241,7 +241,9 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
     final whatsNew = _whatsNew.take(6).toList();
     final promo = _screen.promo;
 
-    return Scaffold(
+    return PopScope(
+      canPop: !_isBlocking,
+      child: Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
         child: Column(
@@ -451,6 +453,7 @@ class _ForceUpdateScreenState extends State<ForceUpdateScreen> {
           ],
         ),
       ),
+    ),
     );
   }
 }

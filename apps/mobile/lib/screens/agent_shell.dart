@@ -16,6 +16,7 @@ import '../services/offline_cache_store.dart';
 import '../services/session_cleanup.dart';
 import '../services/session_activity.dart';
 import '../services/session_store.dart';
+import '../services/app_update_watcher.dart';
 import '../services/update_prompt.dart';
 import '../theme.dart';
 import '../utils/money.dart';
@@ -74,6 +75,10 @@ class _AgentShellState extends State<AgentShell> {
     // ignore: discarded_futures
     _startNetworkAndCacheRefresh();
     _activity.start();
+    AppUpdateWatcher.instance.start(
+      session: widget.session,
+      contextFinder: () => context,
+    );
     _cacheRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (_network.isOnline) {
         // ignore: discarded_futures
@@ -107,6 +112,7 @@ class _AgentShellState extends State<AgentShell> {
     _cacheRefreshTimer?.cancel();
     _dayStore.removeListener(_onDayChanged);
     _network.removeListener(_onNetworkChanged);
+    AppUpdateWatcher.instance.stop();
     _activity.dispose();
     super.dispose();
   }

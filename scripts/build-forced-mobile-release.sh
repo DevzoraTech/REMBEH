@@ -52,7 +52,7 @@ CHANGELOG_CSV="Works better offline,Syncs latest records when internet returns,K
 
 INCREMENT_MODE="patch"
 FORCE_UPDATE="true"
-IS_ACTIVE="true"
+IS_ACTIVE="false"
 SKIP_BUILD="false"
 SKIP_REGISTER="false"
 DRY_RUN="false"
@@ -85,8 +85,11 @@ Options:
       Register as an optional update.
 
   --inactive
-      Upload and register, but do not offer the update yet.
-      Turn it on later in Control Center with "Release is active".
+      Upload and register, but do not offer the update yet (default).
+      Turn it on later in Control Center with Send update.
+
+  --active
+      Offer the update immediately after register (skips Control Center Send).
 
   --skip-build
       Reuse:
@@ -146,6 +149,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --inactive)
       IS_ACTIVE="false"
+      shift
+      ;;
+    --active)
+      IS_ACTIVE="true"
       shift
       ;;
     --skip-build)

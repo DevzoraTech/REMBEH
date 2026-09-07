@@ -8,6 +8,7 @@ import {
   IsString,
   IsUUID,
   Length,
+  Max,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -60,6 +61,10 @@ export class CreateReleaseDto {
   @IsString()
   @IsOptional()
   message?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
 
   @IsOptional()
   @IsIn(['ALL', 'SELECTED'])
@@ -128,6 +133,14 @@ export class SendReleaseDto {
   @IsOptional()
   @IsBoolean()
   forceUpdate?: boolean;
+
+  /** How many newest active builds to keep offering (default 3). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(20)
+  keepLatest?: number;
 }
 
 export class UploadUrlDto {

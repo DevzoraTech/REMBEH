@@ -96,6 +96,10 @@ class RealtimeClient {
         (data) => _dispatch('operation.cash_topup_recorded', data),
       )
       ..on('shortage.updated', (data) => _dispatch('shortage.updated', data))
+      ..on(
+        'app_release.updated',
+        (data) => _dispatch('app_release.updated', data),
+      )
       ..connect();
   }
 

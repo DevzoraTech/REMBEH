@@ -157,6 +157,33 @@ export class RealtimeGateway
     this.server.to(this.branchRoom(tenantId, branchId)).emit(event, payload);
   }
 
+  /** Notify every connected client (used for org-wide app rollouts). */
+  emitToAll(event: string, payload: unknown) {
+    this.server.emit(event, payload);
+  }
+
+  broadcastAppRelease(
+    event: string,
+    payload: {
+      appName: string;
+      platform: string;
+      audience: 'ALL' | 'SELECTED';
+      tenantIds: string[];
+      isActive: boolean;
+      version: string;
+      buildNumber: number;
+      forceUpdate: boolean;
+    },
+  ) {
+    if (payload.audience === 'ALL' || payload.tenantIds.length === 0) {
+      this.emitToAll(event, payload);
+      return;
+    }
+    for (const tenantId of payload.tenantIds) {
+      this.emitToTenant(tenantId, event, payload);
+    }
+  }
+
   broadcastLoanApplication(
     event: string,
     payload: LoanApplicationRealtimePayload,

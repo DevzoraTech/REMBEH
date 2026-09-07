@@ -31,7 +31,7 @@ RELEASE_EPOCH="${RELEASE_EPOCH:-2}"
 MESSAGE="First production APK"
 CHANGELOG_CSV=""
 FORCE_UPDATE="false"
-IS_ACTIVE="true"
+IS_ACTIVE="false"
 MIN_BUILD="1"
 APP_NAME="mobile"
 PLATFORM="android"
@@ -75,6 +75,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --inactive)
       IS_ACTIVE="false"
+      shift
+      ;;
+    --active)
+      IS_ACTIVE="true"
       shift
       ;;
     --min-build)
@@ -433,7 +437,7 @@ async function main() {
         ? changelog
         : ['Mobile app update'],
       message: process.env.MESSAGE || null,
-      isActive: process.env.IS_ACTIVE !== 'false',
+      isActive: process.env.IS_ACTIVE === 'true',
     };
 
     const release = existing

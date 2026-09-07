@@ -37,6 +37,7 @@ import '../services/offline_cache_store.dart';
 import '../services/session_activity.dart';
 import '../services/session_cleanup.dart';
 import '../services/session_store.dart';
+import '../services/app_update_watcher.dart';
 import '../services/update_prompt.dart';
 import '../theme.dart';
 import '../utils/account_access.dart';
@@ -137,6 +138,10 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     );
 
     _activity.start();
+    AppUpdateWatcher.instance.start(
+      session: widget.session,
+      contextFinder: () => context,
+    );
     _network.addListener(_onNetworkChanged);
 
     unawaited(_network.start());
@@ -155,6 +160,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     _cacheRecoveryTimer?.cancel();
     _network.removeListener(_onNetworkChanged);
     _stopOperationLiveEvents();
+    AppUpdateWatcher.instance.stop();
     _activity.dispose();
     _syncService.dispose();
     super.dispose();

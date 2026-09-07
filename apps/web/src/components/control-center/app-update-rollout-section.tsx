@@ -50,6 +50,7 @@ export function ControlCenterAppUpdateRolloutSection({
   const [audience, setAudience] = useState<RolloutAudience>("ALL");
   const [tenantIds, setTenantIds] = useState<string[]>([]);
   const [required, setRequired] = useState(true);
+  const [keepLatest, setKeepLatest] = useState(3);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,8 +70,8 @@ export function ControlCenterAppUpdateRolloutSection({
     );
   }, [organisations, query]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { soft?: boolean }) => {
+    if (!opts?.soft) setLoading(true);
     setError(null);
     try {
       const [releaseRows, orgRows] = await Promise.all([
@@ -88,14 +89,16 @@ export function ControlCenterAppUpdateRolloutSection({
         }
         return releaseRows[0]?.id ?? null;
       });
+      return releaseRows;
     } catch (caught) {
       setError(
         caught instanceof Error
           ? caught.message
           : "Could not load app rollouts.",
       );
+      return [] as AppRelease[];
     } finally {
-      setLoading(false);
+      if (!opts?.soft) setLoading(false);
     }
   }, [session]);
 
@@ -123,6 +126,11 @@ export function ControlCenterAppUpdateRolloutSection({
     );
   }
 
+  const offeringCount = useMemo(
+    () => releases.filter((release) => release.isActive).length,
+    [releases],
+  );
+
   function remember(saved: AppRelease, message: string) {
     setReleases((current) =>
       current.map((row) => (row.id === saved.id ? saved : row)),
@@ -136,11 +144,15 @@ export function ControlCenterAppUpdateRolloutSection({
       setError("Choose at least one organisation before sending.");
       return;
     }
+    const keep = Math.min(20, Math.max(1, Math.floor(keepLatest) || 3));
     setSaving(true);
     setError(null);
     setNotice(null);
     try {
-      const saved = await controlCenterFetch<AppRelease>(
+      const beforeActiveIds = new Set(
+        releases.filter((row) => row.isActive).map((row) => row.id),
+      );
+      await controlCenterFetch<AppRelease>(
         `/app-releases/${selected.id}/send`,
         session,
         {
@@ -149,15 +161,47 @@ export function ControlCenterAppUpdateRolloutSection({
             audience,
             tenantIds: audience === "SELECTED" ? tenantIds : [],
             forceUpdate: required,
+            keepLatest: keep,
           }),
         },
       );
-      remember(
-        saved,
+      const afterRows = await load({ soft: true });
+      const saved =
+        afterRows.find((row) => row.id === selected.id) ??
+        afterRows[0] ??
+        null;
+      if (!saved) {
+        setNotice("Send completed. Refresh if the list looks stale.");
+        return;
+      }
+      const stillOffered = afterRows.filter((row) => row.isActive);
+      const heldOlder = [...beforeActiveIds].filter(
+        (id) =>
+          id !== saved.id && !stillOffered.some((row) => row.id === id),
+      ).length;
+      let message =
         saved.audience === "ALL"
-          ? `${saved.version} is now offered to every organisation. Phones will be asked the next time they open REMBEH.`
-          : `${saved.version} is now offered to ${saved.tenants.length} organisation${saved.tenants.length === 1 ? "" : "s"}. Signed-in phones in those organisations will be asked the next time they open REMBEH.`,
+          ? `${saved.version} is now live for every organisation. Signed-in phones pick it up within about a minute.`
+          : `${saved.version} is now live for ${saved.tenants.length} organisation${saved.tenants.length === 1 ? "" : "s"}. Signed-in phones in those organisations pick it up within about a minute.`;
+      if (!saved.isActive) {
+        message = `${saved.version} was sent, but it is older than the latest ${keep} offered builds, so it was held. Pause newer offers or raise “Keep latest”.`;
+      } else if (heldOlder > 0) {
+        message += ` Held ${heldOlder} older offer${heldOlder === 1 ? "" : "s"} to keep the latest ${keep}.`;
+      } else {
+        message += ` ${stillOffered.length} build${stillOffered.length === 1 ? "" : "s"} currently offered (cap ${keep}).`;
+      }
+      const higherAll = stillOffered.find(
+        (row) =>
+          row.id !== saved.id &&
+          row.audience === "ALL" &&
+          (row.releaseEpoch > saved.releaseEpoch ||
+            (row.releaseEpoch === saved.releaseEpoch &&
+              row.buildNumber > saved.buildNumber)),
       );
+      if (saved.isActive && saved.audience === "SELECTED" && higherAll) {
+        message += ` Note: ${higherAll.version} (${higherAll.buildNumber}) is still offered to everyone and will win for those organisations until you stop it.`;
+      }
+      setNotice(message);
     } catch (caught) {
       setError(
         caught instanceof Error ? caught.message : "Could not send this update.",
@@ -180,8 +224,9 @@ export function ControlCenterAppUpdateRolloutSection({
       );
       remember(
         saved,
-        `${saved.version} is no longer offered. Phones stay on the latest all-organisations release.`,
+        `${saved.version} is held. Phones stop being offered this build (they keep whatever they already installed).`,
       );
+      void load();
     } catch (caught) {
       setError(
         caught instanceof Error
@@ -217,7 +262,8 @@ export function ControlCenterAppUpdateRolloutSection({
               <div>
                 <p className="text-sm font-semibold text-[#17233c]">Builds</p>
                 <p className="text-[11px] font-medium text-slate-500">
-                  Select a build, then send it from the panel on the right.
+                  {offeringCount} offering now. Send keeps the latest{" "}
+                  {keepLatest} active by default.
                 </p>
               </div>
               <button
@@ -284,8 +330,8 @@ export function ControlCenterAppUpdateRolloutSection({
                   </p>
                   <p className="mt-0.5 text-[11px] font-medium text-slate-500">
                     {selected.isActive
-                      ? `Currently offering to ${offeringLabel(selected).toLowerCase()}.`
-                      : "This build is in S3. Phones are not asked until you send it."}
+                      ? `Currently offering to ${offeringLabel(selected).toLowerCase()}. Signed-in phones are notified live.`
+                      : "This build is registered but held. Phones will not see it until you Send."}
                   </p>
                 </div>
                 <div className="space-y-3 p-4">
@@ -346,16 +392,16 @@ export function ControlCenterAppUpdateRolloutSection({
                         )}
                       </div>
                       <p className="mt-1.5 text-[11px] font-medium text-slate-500">
-                        {tenantIds.length} selected. Those organisations are
-                        asked the next time a signed-in phone opens REMBEH.
-                        If the app is already open, log out and log in, or
-                        fully close it and open it again.
+                        {tenantIds.length} selected. Only signed-in phones in
+                        those organisations are offered this build (live while
+                        the app is open, or within about a minute).
                       </p>
                     </div>
                   ) : (
                     <p className="text-[11px] font-medium leading-4 text-slate-500">
-                      Every organisation is asked the next time the app opens.
-                      The public website also switches to this APK.
+                      Every organisation is offered this build. The public
+                      website download follows the newest Everyone release.
+                      Signed-in phones update live.
                     </p>
                   )}
 
@@ -366,6 +412,30 @@ export function ControlCenterAppUpdateRolloutSection({
                       onChange={(event) => setRequired(event.target.checked)}
                     />
                     Required — cannot skip
+                  </label>
+
+                  <label className="block text-sm font-semibold text-slate-700">
+                    Keep latest offered builds
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={keepLatest}
+                        onChange={(event) => {
+                          const next = Number(event.target.value);
+                          setKeepLatest(
+                            Number.isFinite(next)
+                              ? Math.min(20, Math.max(1, Math.floor(next)))
+                              : 3,
+                          );
+                        }}
+                        className="h-9 w-20 rounded-lg border border-[#dfe5eb] px-3 text-sm"
+                      />
+                      <span className="text-[11px] font-medium text-slate-500">
+                        Default 3. Older active builds are held automatically.
+                      </span>
+                    </div>
                   </label>
 
                   <div className="flex flex-wrap gap-2 pt-1">
