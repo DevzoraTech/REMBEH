@@ -546,7 +546,7 @@ export class AppUpdateService {
         data: {
           isActive: true,
           audience,
-          forceUpdate: dto.forceUpdate ?? true,
+              forceUpdate: dto.forceUpdate !== false,
           tenants: {
             deleteMany: {},
             create: tenantIds.map((tenantId) => ({ tenantId })),

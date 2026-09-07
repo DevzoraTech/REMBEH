@@ -8,9 +8,9 @@ import 'update_prompt.dart';
 
 /// Keeps listening for Control Center rollout changes while the user is signed in.
 ///
-/// Checks immediately, on each `app_release.updated` socket event, and on a
-/// short poll so Send/Stop in Control Center reaches open phones without a
-/// full app restart.
+/// Checks on open/resume, on each `app_release.updated` socket event, and on a
+/// short poll. Optional (non-required) updates show a skippable modal on every
+/// open; after Skip they stay quiet until the next open/resume or a new Send.
 class AppUpdateWatcher with WidgetsBindingObserver {
   AppUpdateWatcher._();
 
@@ -31,13 +31,16 @@ class AppUpdateWatcher with WidgetsBindingObserver {
     _session = session;
     _contextFinder = contextFinder;
     if (_started) {
-      unawaited(_check());
+      unawaited(_check(UpdatePromptTrigger.open));
       return;
     }
     _started = true;
     WidgetsBinding.instance.addObserver(this);
     RealtimeClient.instance.on('app_release.updated', _onReleaseEvent);
-    _timer = Timer.periodic(pollInterval, (_) => unawaited(_check()));
+    _timer = Timer.periodic(
+      pollInterval,
+      (_) => unawaited(_check(UpdatePromptTrigger.poll)),
+    );
     unawaited(_connectAndCheck());
   }
 
@@ -55,7 +58,7 @@ class AppUpdateWatcher with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      unawaited(_check());
+      unawaited(_check(UpdatePromptTrigger.open));
     }
   }
 
@@ -68,7 +71,7 @@ class AppUpdateWatcher with WidgetsBindingObserver {
         // Non-fatal — polling still covers Control Center sends.
       }
     }
-    await _check();
+    await _check(UpdatePromptTrigger.open);
   }
 
   void _onReleaseEvent(Map<String, dynamic> payload) {
@@ -76,10 +79,10 @@ class AppUpdateWatcher with WidgetsBindingObserver {
     if (appName != null && appName.isNotEmpty && appName != 'mobile') {
       return;
     }
-    unawaited(_check());
+    unawaited(_check(UpdatePromptTrigger.rollout));
   }
 
-  Future<void> _check() async {
+  Future<void> _check(UpdatePromptTrigger trigger) async {
     if (_checking) return;
     final finder = _contextFinder;
     if (finder == null) return;
@@ -87,7 +90,7 @@ class AppUpdateWatcher with WidgetsBindingObserver {
     try {
       final context = finder();
       if (!context.mounted) return;
-      await promptAppUpdateIfNeeded(context);
+      await promptAppUpdateIfNeeded(context, trigger: trigger);
     } finally {
       _checking = false;
     }

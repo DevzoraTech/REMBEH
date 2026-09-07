@@ -181,8 +181,15 @@ export function ControlCenterAppUpdateRolloutSection({
       ).length;
       let message =
         saved.audience === "ALL"
-          ? `${saved.version} is now live for every organisation. Signed-in phones pick it up within about a minute.`
-          : `${saved.version} is now live for ${saved.tenants.length} organisation${saved.tenants.length === 1 ? "" : "s"}. Those phones must be signed in to that organisation — then fully close and reopen REMBEH (or wait ~20s) to be prompted.`;
+          ? `${saved.version} is now live for every organisation.`
+          : `${saved.version} is now live for ${saved.tenants.length} organisation${saved.tenants.length === 1 ? "" : "s"}.`;
+      if (saved.forceUpdate) {
+        message +=
+          " Required — phones must install and cannot skip.";
+      } else {
+        message +=
+          " Optional — phones see a skippable modal on every open until they install.";
+      }
       if (!saved.isActive) {
         message = `${saved.version} was sent, but it is older than the latest ${keep} offered builds, so it was held. Pause newer offers or raise “Keep latest”.`;
       } else if (heldOlder > 0) {
@@ -311,8 +318,10 @@ export function ControlCenterAppUpdateRolloutSection({
                         </p>
                         <p className="truncate text-[11px] font-medium text-slate-500">
                           {offeringLabel(release)}
-                          {release.forceUpdate && release.isActive
-                            ? " · required"
+                          {release.isActive
+                            ? release.forceUpdate
+                              ? " · required"
+                              : " · optional"
                             : ""}
                         </p>
                       </div>
@@ -415,14 +424,35 @@ export function ControlCenterAppUpdateRolloutSection({
                     </p>
                   )}
 
-                  <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                    <input
-                      type="checkbox"
-                      checked={required}
-                      onChange={(event) => setRequired(event.target.checked)}
-                    />
-                    Required — cannot skip
-                  </label>
+                  <div className="grid grid-cols-2 gap-1 rounded-lg border border-[#dfe5eb] bg-[#f8faf9] p-1">
+                    <button
+                      type="button"
+                      onClick={() => setRequired(true)}
+                      className={`h-8 rounded-md text-xs font-semibold ${
+                        required
+                          ? "bg-white text-[#17233c] shadow-sm"
+                          : "text-slate-500"
+                      }`}
+                    >
+                      Required
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRequired(false)}
+                      className={`h-8 rounded-md text-xs font-semibold ${
+                        !required
+                          ? "bg-white text-[#17233c] shadow-sm"
+                          : "text-slate-500"
+                      }`}
+                    >
+                      Optional — can skip
+                    </button>
+                  </div>
+                  <p className="text-[11px] font-medium leading-4 text-slate-500">
+                    {required
+                      ? "Phones must install before continuing. Skip is hidden."
+                      : "Phones see the update modal on every open and can tap Skip for now. It comes back next time they open REMBEH until they install."}
+                  </p>
 
                   <label className="block text-sm font-semibold text-slate-700">
                     Keep latest offered builds
@@ -443,7 +473,8 @@ export function ControlCenterAppUpdateRolloutSection({
                         className="h-9 w-20 rounded-lg border border-[#dfe5eb] px-3 text-sm"
                       />
                       <span className="text-[11px] font-medium text-slate-500">
-                        Default 3. Older active builds are held automatically.
+                        Default 3. Older phones on those builds also get the
+                        modal for the newest offer.
                       </span>
                     </div>
                   </label>

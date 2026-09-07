@@ -151,7 +151,10 @@ class _LoginScreenState extends State<LoginScreen>
           MaterialPageRoute(
             builder: (_) => ForceUpdateScreen(
               updateResult: update,
-              onSkip: () => Navigator.of(context).pop(),
+              onSkip: () {
+                // Same session skip; next open/resume will prompt again.
+                Navigator.of(context).pop();
+              },
             ),
           ),
         );

@@ -67,7 +67,9 @@ class _BootScreenState extends State<_BootScreen> {
             updateResult: update,
             onSkip: update.isBlocking
                 ? null
-                : () => Navigator.of(context).pop(),
+                : () {
+                    Navigator.of(context).pop();
+                  },
           ),
         ),
       );
