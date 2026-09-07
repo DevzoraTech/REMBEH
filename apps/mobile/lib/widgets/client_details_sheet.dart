@@ -767,24 +767,7 @@ class _PaymentHistoryTrailingState extends State<_PaymentHistoryTrailing> {
             ),
           ),
           const SizedBox(height: 4),
-          if (widget.payment.correctionLocked)
-            const Text(
-              'Locked by report',
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                color: slateText,
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-              ),
-            )
-          else if (canManagerCorrect)
-            _CorrectionActionButton(
-              label: 'Correct payment',
-              icon: Icons.edit_outlined,
-              tone: forestEmerald,
-              onPressed: _applyApprovedCorrection,
-            )
-          else if (pending)
+          if (pending)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
               decoration: BoxDecoration(
@@ -809,12 +792,65 @@ class _PaymentHistoryTrailingState extends State<_PaymentHistoryTrailing> {
               tone: forestEmerald,
               onPressed: _applyApprovedCorrection,
             )
+          else if (canManagerCorrect)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (widget.payment.correctionLocked)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      'Report locked',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        color: slateText,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                _CorrectionActionButton(
+                  label: 'Correct payment',
+                  icon: Icons.edit_outlined,
+                  tone: forestEmerald,
+                  onPressed: _applyApprovedCorrection,
+                ),
+              ],
+            )
           else if (widget.payment.canRequestCorrection)
-            _CorrectionActionButton(
-              label: 'Request correction',
-              icon: Icons.outgoing_mail,
-              tone: const Color(0xFFC45C26),
-              onPressed: _requestCorrection,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (widget.payment.correctionLocked)
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      'Locked by report',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        color: slateText,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                _CorrectionActionButton(
+                  label: 'Request correction',
+                  icon: Icons.outgoing_mail,
+                  tone: const Color(0xFFC45C26),
+                  onPressed: _requestCorrection,
+                ),
+              ],
+            )
+          else if (widget.payment.correctionLocked)
+            const Text(
+              'Locked by report',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: slateText,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
             ),
         ],
       ),

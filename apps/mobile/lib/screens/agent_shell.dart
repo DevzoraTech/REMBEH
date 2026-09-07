@@ -56,6 +56,7 @@ class _AgentShellState extends State<AgentShell> {
   MobileMarketingCampaign? _marketingCampaign;
   Timer? _cacheRefreshTimer;
   bool _cacheRefreshInFlight = false;
+  bool? _lastDayCanUseApp;
   late final SessionActivityController _activity;
 
   @override
@@ -184,7 +185,6 @@ class _AgentShellState extends State<AgentShell> {
 
   void _onDayChanged() {
     if (!mounted) return;
-    setState(() {});
     final blocked = _dayStore.accountBlockedMessage;
     if (blocked != null && blocked.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -194,14 +194,38 @@ class _AgentShellState extends State<AgentShell> {
       });
       return;
     }
+
     final status = _dayStore.status;
-    if (status != null && !status.canUseApp && !status.canBrowseClients) {
+    if (status == null) {
+      setState(() {});
+      return;
+    }
+
+    final previouslyUsable = _lastDayCanUseApp;
+    _lastDayCanUseApp = status.canUseApp;
+
+    // Rebuild chrome without dismissing open sheets/dialogs unless the day
+    // lock state actually changed into a blocking mode.
+    setState(() {});
+
+    final becameFullyLocked =
+        previouslyUsable == true &&
+        !status.canUseApp &&
+        !status.canBrowseClients;
+    final becameBrowseOnly =
+        previouslyUsable == true &&
+        !status.canUseApp &&
+        status.canBrowseClients;
+
+    if (becameFullyLocked) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         Navigator.of(context).popUntil((route) => route.isFirst);
       });
+      return;
     }
-    if (status != null && !status.canUseApp && status.canBrowseClients) {
+
+    if (becameBrowseOnly) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         Navigator.of(context).popUntil((route) => route.isFirst);

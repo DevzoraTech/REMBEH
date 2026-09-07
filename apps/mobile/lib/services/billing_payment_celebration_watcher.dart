@@ -1,10 +1,9 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/network/realtime_client.dart';
 import '../features/sms/data/sms_credits_store.dart';
+import '../screens/subscription/payment_waiting_screen.dart';
 import '../services/session_store.dart';
 import '../theme.dart';
 import '../utils/money.dart';
@@ -22,7 +21,6 @@ class BillingPaymentCelebrationWatcher {
 
   BuildContext Function()? _contextFinder;
   RembehSession? _session;
-  late final RealtimeHandler _onPaymentUpdated;
   bool _started = false;
   bool _showing = false;
   final Set<String> _shownIds = {};
@@ -35,7 +33,6 @@ class BillingPaymentCelebrationWatcher {
     _contextFinder = contextFinder;
     if (_started) return;
     _started = true;
-    _onPaymentUpdated = _handleRealtime;
     // ignore: discarded_futures
     _bootstrap();
   }
@@ -45,7 +42,7 @@ class BillingPaymentCelebrationWatcher {
     _started = false;
     RealtimeClient.instance.off(
       'subscription_payment.updated',
-      _onPaymentUpdated,
+      _handleRealtime,
     );
     _contextFinder = null;
     _session = null;
@@ -64,7 +61,7 @@ class BillingPaymentCelebrationWatcher {
     }
     RealtimeClient.instance.on(
       'subscription_payment.updated',
-      _onPaymentUpdated,
+      _handleRealtime,
     );
   }
 
@@ -118,6 +115,18 @@ class BillingPaymentCelebrationWatcher {
         : int.tryParse('${payment['credits'] ?? ''}') ?? 0;
     final newBalance = SmsCreditsStore.instance.credits;
 
+    final durationMonths = payment['planDurationMonths'] is num
+        ? (payment['planDurationMonths'] as num).floor()
+        : int.tryParse('${payment['planDurationMonths'] ?? ''}');
+    final periodLabel = (payment['periodLabel'] as String?)?.trim();
+    final activeUntil = DateTime.tryParse('${payment['activeUntil'] ?? ''}');
+    // Copy rule: "6 months · Valid until …" — never "6-month plan · …"
+    final planPeriodLine = formatPlanCelebrationPeriodLine(
+      durationMonths: durationMonths,
+      periodLabel: periodLabel,
+      activeUntil: activeUntil,
+    );
+
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -131,67 +140,87 @@ class BillingPaymentCelebrationWatcher {
             ),
             insetPadding: const EdgeInsets.symmetric(horizontal: 28),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(22, 28, 22, 20),
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 18),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    width: 72,
-                    height: 72,
+                    width: 64,
+                    height: 64,
                     decoration: const BoxDecoration(
                       color: Color(0xFFE8F7EE),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
                       Icons.check_rounded,
-                      size: 40,
+                      size: 36,
                       color: forestEmerald,
                     ),
                   ),
-                  const SizedBox(height: 18),
-                  Text(
-                    isSms ? 'Subscription activated' : 'Subscription activated',
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Subscription activated',
                     textAlign: TextAlign.center,
-                    style: const TextStyle(
+                    style: TextStyle(
                       color: midnightNavy,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 18,
                     ),
                   ),
                   const SizedBox(height: 10),
-                  if (isSms && credits > 0)
+                  if (isSms && credits > 0) ...[
                     Text(
                       '${formatCompactMoney(credits)} SMS added',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: forestEmerald,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 17,
                       ),
-                    )
-                  else
+                    ),
+                    if (newBalance != null) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'New balance: ${formatCompactMoney(newBalance)} SMS',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: slateText,
+                          fontWeight: FontWeight.w500,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ] else if (!isSms) ...[
+                    const Text(
+                      'Pro plan activated for',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: forestEmerald,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      planPeriodLine,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: midnightNavy,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ] else
                     Text(
                       '${payment['transaction'] ?? 'Payment'} confirmed',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: forestEmerald,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
                       ),
                     ),
-                  if (isSms && newBalance != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      'New balance: ${formatCompactMoney(newBalance)} SMS',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: slateText,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 20),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(

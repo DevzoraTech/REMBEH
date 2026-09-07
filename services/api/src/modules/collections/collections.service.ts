@@ -4301,7 +4301,8 @@ export class CollectionsService {
 
         correctionLocked,
 
-        canRequestCorrection: !correctionLocked && !pendingCorrection,
+        // Officers may always request; report locks gate apply/approve only.
+        canRequestCorrection: !pendingCorrection,
 
         pendingCorrectionRequestId: pendingCorrection?.id ?? null,
 
