@@ -1452,8 +1452,9 @@ updateExpense(input: {
     floatDate: Date;
     dayStart: Date;
     dayEnd: Date;
+    operationId?: string;
   }) {
-    const [floatRows, disbursementRows, loanRows, collectionRows] =
+    const [floatRows, disbursementRows, loanRows, collectionRows, expenseRows] =
       await Promise.all([
         this.prisma.agentDailyFloat.findMany({
           where: {
@@ -1502,6 +1503,25 @@ updateExpense(input: {
             },
           },
         }),
+
+        input.operationId
+          ? this.prisma.branchOperationExpense.findMany({
+              where: {
+                tenantId: input.tenantId,
+                operationId: input.operationId,
+                voidedAt: null,
+              },
+              select: {
+                agentId: true,
+                recordedByUserId: true,
+              },
+            })
+          : Promise.resolve(
+              [] as Array<{
+                agentId: string | null;
+                recordedByUserId: string;
+              }>,
+            ),
       ]);
 
     const userIds = [
@@ -1510,6 +1530,11 @@ updateExpense(input: {
         ...disbursementRows.map((row) => row.recordedByUserId),
         ...loanRows.map((row) => row.officerUserId),
         ...collectionRows.map((row) => row.recordedByUserId),
+        ...expenseRows.flatMap((row) =>
+          [row.agentId, row.recordedByUserId].filter(
+            (id): id is string => Boolean(id),
+          ),
+        ),
       ]),
     ].filter((id): id is string => Boolean(id));
 

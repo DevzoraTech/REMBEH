@@ -137,7 +137,10 @@ class DailyReportMapper {
       loans: _list(snapshot['loansIssued']).map(_loan).toList(),
       repayments: _list(snapshot['repayments']).map(_repayment).toList(),
       expenses: _list(snapshot['expenses']).map(_expense).toList(),
-      agentReturns: _list(snapshot['agentReturns']).map(_agentReturn).toList(),
+      agentReturns: _reconcileAccountability(
+        agents: _list(snapshot['agentReturns']).map(_agentReturn).toList(),
+        expenses: _list(snapshot['expenses']).map(_expense).toList(),
+      ),
       processingFees: _list(
         snapshot['processingFees'],
       ).map(_processingFee).toList(),
@@ -204,7 +207,10 @@ class DailyReportMapper {
       loans: _list(operation['loansIssued']).map(_loan).toList(),
       repayments: _list(operation['repayments']).map(_repayment).toList(),
       expenses: _list(operation['expenses']).map(_expense).toList(),
-      agentReturns: _list(operation['agentReturns']).map(_agentReturn).toList(),
+      agentReturns: _reconcileAccountability(
+        agents: _list(operation['agentReturns']).map(_agentReturn).toList(),
+        expenses: _list(operation['expenses']).map(_expense).toList(),
+      ),
       processingFees: _list(
         operation['processingFees'],
       ).map(_processingFee).toList(),
@@ -269,12 +275,77 @@ class DailyReportMapper {
       recordedByName: _string(row['agentName']) ??
           _string(row['recordedByName']) ??
           'Officer',
+      agentId: _string(row['agentId']),
+      recordedByUserId: _string(row['recordedByUserId']),
       approvedAt: _date(row['approvedAt']),
       approvedByName: _string(row['approvedByName']),
       voidedAt: _date(row['voidedAt']),
       voidedByName: _string(row['voidedByName']),
       voidReason: _string(row['voidReason']),
     );
+  }
+
+  /// Attribute every expense (branch cash + field float) onto accountability rows.
+  static List<DailyReportAgentReturn> _reconcileAccountability({
+    required List<DailyReportAgentReturn> agents,
+    required List<DailyReportExpense> expenses,
+  }) {
+    final byPerson = <String, num>{};
+    final names = <String, String>{};
+    for (final expense in expenses.where((row) => !row.isVoided)) {
+      final key = expense.ownerKey;
+      byPerson[key] = (byPerson[key] ?? 0) + expense.amount;
+      names.putIfAbsent(key, () => expense.recordedByName);
+    }
+
+    final reconciled = agents.map((agent) {
+      final idKey = agent.agentId.trim();
+      final nameKey = 'name:${agent.agentName.trim().toLowerCase()}';
+      final attributed =
+          (idKey.isNotEmpty ? byPerson.remove(idKey) : null) ??
+          byPerson.remove(nameKey) ??
+          agent.expensesTotal;
+      return DailyReportAgentReturn(
+        floatId: agent.floatId,
+        agentId: agent.agentId,
+        agentName: agent.agentName,
+        agentPublicId: agent.agentPublicId,
+        amountGiven: agent.amountGiven,
+        amountDisbursed: agent.amountDisbursed,
+        processingFees: agent.processingFees,
+        amountCollected: agent.amountCollected,
+        collectedRepaymentsAvailable: agent.collectedRepaymentsAvailable,
+        unusedFloat: agent.unusedFloat,
+        expensesTotal: attributed,
+        expectedReturn: agent.expectedReturn,
+        amountReturned: agent.amountReturned,
+        variance: agent.variance,
+        returnedAt: agent.returnedAt,
+        returnedByName: agent.returnedByName,
+        notes: agent.notes,
+        status: agent.status,
+      );
+    }).toList();
+
+    for (final entry in byPerson.entries) {
+      if (entry.value <= 0) continue;
+      reconciled.add(
+        DailyReportAgentReturn(
+          floatId: '',
+          agentId: entry.key.startsWith('name:') ? '' : entry.key,
+          agentName: names[entry.key] ?? 'Staff',
+          amountGiven: 0,
+          amountDisbursed: 0,
+          processingFees: 0,
+          amountCollected: 0,
+          expensesTotal: entry.value,
+          expectedReturn: 0,
+          status: 'PENDING',
+        ),
+      );
+    }
+
+    return reconciled;
   }
 
   static DailyReportAgentReturn _agentReturn(Map<String, dynamic> row) {

@@ -2407,6 +2407,7 @@ export class OperationsService {
         floatDate: operation.operationDate,
         dayStart,
         dayEnd,
+        operationId: operation.id,
       }),
 
       this.repository.listLoansIssuedToday({
@@ -3685,19 +3686,34 @@ export class OperationsService {
     >,
     agentId: string,
   ) {
+    return this.expensesForPerson(expenses, agentId, {
+      paidFrom: BranchOperationExpensePaidFrom.AGENT_FLOAT,
+    });
+  }
+
+  /** All non-voided expenses attributed to a staff member (float + branch cash). */
+  private expensesForPerson(
+    expenses: Awaited<
+      ReturnType<OperationsRepository['listExpensesForOperation']>
+    >,
+    personId: string,
+    options?: { paidFrom?: BranchOperationExpensePaidFrom },
+  ) {
     return this.roundMoney(
       expenses.reduce((total, expense) => {
         if (expense.voidedAt) {
           return total;
         }
 
-        if (expense.paidFrom !== BranchOperationExpensePaidFrom.AGENT_FLOAT) {
+        if (
+          options?.paidFrom != null &&
+          expense.paidFrom !== options.paidFrom
+        ) {
           return total;
         }
 
         const ownerId = expense.agentId ?? expense.recordedByUserId;
-
-        if (ownerId !== agentId) {
+        if (ownerId !== personId) {
           return total;
         }
 
@@ -3763,15 +3779,17 @@ export class OperationsService {
 
     /*
      * Build a cash position for every staff member who was financially
-     * active during the day, together with every actual float recipient.
-     *
-     * This intentionally includes managers and cashiers. The same contract
-     * drives the staff-balancing views in both mobile and web.
+     * active during the day, together with every actual float recipient
+     * and anyone who recorded expenses (managers and officers).
      */
     const agentIds = [
       ...new Set([
         ...activeUsers.map((staff) => staff.id),
         ...agentFloats.map((float) => float.agentId),
+        ...expenses
+          .filter((expense) => !expense.voidedAt)
+          .map((expense) => expense.agentId ?? expense.recordedByUserId)
+          .filter((id): id is string => Boolean(id)),
       ]),
     ];
 
@@ -3790,7 +3808,11 @@ export class OperationsService {
 
       const amountCollected = collectionsByAgent.get(agentId) ?? 0;
 
-      const expensesTotal = this.agentFloatExpensesForAgent(expenses, agentId);
+      const floatExpensesTotal = this.agentFloatExpensesForAgent(
+        expenses,
+        agentId,
+      );
+      const expensesTotal = this.expensesForPerson(expenses, agentId);
 
       const {
         unusedFloat,
@@ -3802,7 +3824,8 @@ export class OperationsService {
         amountCollected,
         collectedRepaymentsDisbursed: disbursed?.collectedRepaymentsAmount ?? 0,
         processingFees,
-        expensesTotal,
+        // Only float-paid expenses reduce expected cash returned.
+        expensesTotal: floatExpensesTotal,
       });
 
       const amountReturned =
@@ -3824,12 +3847,23 @@ export class OperationsService {
               ? 'SHORT'
               : 'OVER';
 
+      const expenseFallbackName = expenses.find((expense) => {
+        if (expense.voidedAt) return false;
+        const ownerId = expense.agentId ?? expense.recordedByUserId;
+        return ownerId === agentId;
+      });
+
       return {
         floatId: float?.id ?? '',
 
         agentId,
 
-        agentName: staff?.displayName ?? float?.agent.displayName ?? 'Staff',
+        agentName:
+          staff?.displayName ??
+          float?.agent.displayName ??
+          expenseFallbackName?.agent?.displayName ??
+          expenseFallbackName?.recordedBy.displayName ??
+          'Staff',
 
         agentPublicId: staff?.publicId ?? float?.agent.publicId ?? null,
 

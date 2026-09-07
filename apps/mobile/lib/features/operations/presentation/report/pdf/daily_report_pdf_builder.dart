@@ -53,7 +53,7 @@ class DailyReportPdfBuilder {
           pw.SizedBox(height: 8),
           _cashMovement(report),
           pw.SizedBox(height: 16),
-          _sectionTitle('2. FIELD OFFICER ACCOUNTABILITY'),
+          _sectionTitle('2. ACCOUNTABILITY'),
           pw.SizedBox(height: 6),
           _agentTable(report),
           pw.SizedBox(height: 16),
@@ -481,12 +481,12 @@ class DailyReportPdfBuilder {
   pw.Widget _agentTable(DailyReportData report) {
     final rows = report.agentReturns;
     if (rows.isEmpty) {
-      return _empty('No field officer float activity for this day.');
+      return _empty('No staff accountability activity for this day.');
     }
 
     return _dataTable(
       headers: const [
-        'Field officer',
+        'Staff',
         'Float issued',
         'Loans issued',
         'Cash in',

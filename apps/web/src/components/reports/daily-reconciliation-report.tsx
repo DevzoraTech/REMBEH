@@ -163,6 +163,7 @@ export type DailyReportDocumentModel = {
   }>;
   agentReturns: Array<{
     floatId: string;
+    agentId?: string;
     agentName: string;
     amountGiven: number;
     amountDisbursed: number;
@@ -611,7 +612,8 @@ function SummaryDocument({
           </div>
           <p className="mt-1.5 text-[12px] italic text-slate-500">
             Total Expenses includes cashier and field-officer expenses for the
-            day. Unused float is balanced on field-officer handover and is not
+            day. The Accountability table attributes each expense to the staff
+            member who paid it. Unused float is balanced on handover and is not
             listed here.
           </p>
         </Section>
@@ -1317,7 +1319,7 @@ function AgentHandoverTab({
       <div className="overflow-x-auto p-4">
         <ReportTable
           columns={[
-            "Field Officer",
+            "Staff",
             "Float",
             "Loans",
             "Repayments",
@@ -1341,7 +1343,7 @@ function AgentHandoverTab({
             row.variance == null ? "—" : amt(row.variance),
             titleCase(row.status),
           ])}
-          empty="No agent float was issued for this day."
+          empty="No staff accountability activity for this day."
         />
       </div>
     </article>
@@ -2178,11 +2180,71 @@ export function buildDailyReportDocumentFromSnapshot(
   const variances = arrayValue(root.variances);
   const previous = objectValue(root.previousReportReference);
 
-  const mappedAgents = agentReturns.map((row, index) => {
+  const mappedExpenses = expenses.map((row, index) => {
     const item = objectValue(row);
+    const voided = Boolean(item.voidedAt);
+    return {
+      id: stringValue(item.id) || `expense-${index}`,
+      category: stringValue(item.category) || "OTHER",
+      amount: numberValue(item.amount),
+      description:
+        typeof item.description === "string" ? item.description : null,
+      incurredAt: stringValue(item.incurredAt) || report.generatedAt,
+      recordedByName: stringValue(item.recordedByName) || "—",
+      recordedByUserId:
+        typeof item.recordedByUserId === "string"
+          ? item.recordedByUserId
+          : null,
+      paidFrom:
+        stringValue(item.paidFrom) === "AGENT_FLOAT"
+          ? ("AGENT_FLOAT" as const)
+          : ("BRANCH_CASH" as const),
+      agentId: typeof item.agentId === "string" ? item.agentId : null,
+      agentName:
+        typeof item.agentName === "string" ? item.agentName : null,
+      voided,
+    };
+  });
+
+  const activeExpenses = mappedExpenses.filter((row) => !row.voided);
+  const expensesByPerson = new Map<string, number>();
+  const expenseNamesByPerson = new Map<string, string>();
+  for (const expense of activeExpenses) {
+    const personId =
+      expense.agentId ||
+      expense.recordedByUserId ||
+      `name:${(expense.agentName || expense.recordedByName).trim().toLowerCase()}`;
+    if (!personId) continue;
+    expensesByPerson.set(
+      personId,
+      (expensesByPerson.get(personId) ?? 0) + expense.amount,
+    );
+    if (!expenseNamesByPerson.has(personId)) {
+      expenseNamesByPerson.set(
+        personId,
+        expense.agentName || expense.recordedByName || "Staff",
+      );
+    }
+  }
+
+  let mappedAgents = agentReturns.map((row, index) => {
+    const item = objectValue(row);
+    const agentId =
+      typeof item.agentId === "string" && item.agentId.trim()
+        ? item.agentId.trim()
+        : "";
+    const agentName = stringValue(item.agentName) || "Staff";
+    const nameKey = `name:${agentName.trim().toLowerCase()}`;
+    const attributed =
+      (agentId ? expensesByPerson.get(agentId) : undefined) ??
+      expensesByPerson.get(nameKey) ??
+      numberValue(item.expensesTotal);
+    if (agentId) expensesByPerson.delete(agentId);
+    expensesByPerson.delete(nameKey);
     return {
       floatId: stringValue(item.floatId) || `agent-${index}`,
-      agentName: stringValue(item.agentName) || "Field Officer",
+      agentId: agentId || undefined,
+      agentName,
       amountGiven: numberValue(item.amountGiven),
       amountDisbursed: numberValue(item.amountDisbursed),
       amountCollected: numberValue(item.amountCollected),
@@ -2191,7 +2253,7 @@ export function buildDailyReportDocumentFromSnapshot(
       ),
       unusedFloat: numberValue(item.unusedFloat),
       processingFees: numberValue(item.processingFees),
-      expensesTotal: numberValue(item.expensesTotal),
+      expensesTotal: attributed,
       expectedReturn: numberValue(item.expectedReturn),
       amountReturned:
         item.amountReturned == null ? null : numberValue(item.amountReturned),
@@ -2200,6 +2262,29 @@ export function buildDailyReportDocumentFromSnapshot(
     };
   });
 
+  // Include managers/officers who only have expenses and were missing from accountability.
+  for (const [personId, amount] of expensesByPerson.entries()) {
+    if (!(amount > 0)) continue;
+    mappedAgents = [
+      ...mappedAgents,
+      {
+        floatId: "",
+        agentId: personId.startsWith("name:") ? undefined : personId,
+        agentName: expenseNamesByPerson.get(personId) || "Staff",
+        amountGiven: 0,
+        amountDisbursed: 0,
+        amountCollected: 0,
+        collectedRepaymentsAvailable: 0,
+        unusedFloat: 0,
+        processingFees: 0,
+        expensesTotal: amount,
+        expectedReturn: 0,
+        amountReturned: null,
+        variance: null,
+        status: "PENDING",
+      },
+    ];
+  }
   const openingBalance = numberValue(
     openingCash.previousClosingBalance ?? summary.previousClosingBalance,
   );
@@ -2405,7 +2490,7 @@ export function buildDailyReportDocumentFromSnapshot(
     collectionsReceived: report.collectionsReceived,
     processingFeesTotal: report.processingFeesTotal,
     expensesTotal: report.expensesTotal,
-    expensesCount: expenses.length,
+    expensesCount: activeExpenses.length,
     salariesTotal: numberValue(summary.salaries),
     salariesCount: numberValue(summary.salariesCount),
     shortageRecoveriesTotal: numberValue(summary.shortageRecoveries),
@@ -2417,24 +2502,10 @@ export function buildDailyReportDocumentFromSnapshot(
         amount: numberValue(item.amount),
       };
     }),
-    expenses: expenses.map((row, index) => {
-      const item = objectValue(row);
-      return {
-        id: stringValue(item.id) || `expense-${index}`,
-        category: stringValue(item.category) || "OTHER",
-        amount: numberValue(item.amount),
-        description:
-          typeof item.description === "string" ? item.description : null,
-        incurredAt: stringValue(item.incurredAt) || report.generatedAt,
-        recordedByName: stringValue(item.recordedByName) || "—",
-        paidFrom:
-          stringValue(item.paidFrom) === "AGENT_FLOAT"
-            ? "AGENT_FLOAT"
-            : "BRANCH_CASH",
-        agentName:
-          typeof item.agentName === "string" ? item.agentName : null,
-      };
-    }),
+    expenses: activeExpenses.map(
+      ({ recordedByUserId: _id, voided: _voided, agentId: _agentId, ...row }) =>
+        row,
+    ),
     agentReturns: mappedAgents,
     closingNotes:
       typeof root.closingNotes === "string" ? root.closingNotes : null,

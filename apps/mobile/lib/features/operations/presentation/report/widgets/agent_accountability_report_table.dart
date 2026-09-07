@@ -45,12 +45,12 @@ class AgentAccountabilityReportTable extends StatelessWidget {
     );
 
     return ReportSection(
-      title: 'FIELD OFFICER ACCOUNTABILITY',
+      title: 'ACCOUNTABILITY',
       child: ReportTable(
         emptyMessage:
-            'No field officer float was issued during this business day.',
+            'No staff accountability activity for this business day.',
         columns: const [
-          ReportTableColumn(label: 'Field officer', flex: 22),
+          ReportTableColumn(label: 'Staff', flex: 22),
           ReportTableColumn(
             label: 'Float\nissued',
             flex: 14,

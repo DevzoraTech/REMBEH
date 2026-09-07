@@ -169,7 +169,7 @@ export async function buildDailyReconciliationPdfBlob(
   sectionTitle("1. CASH POSITION SUMMARY");
   y = drawCashMovement(doc, document, margin, contentWidth, y);
 
-  sectionTitle("2. FIELD OFFICER ACCOUNTABILITY");
+  sectionTitle("2. ACCOUNTABILITY");
   y = drawAgentTable(doc, autoTable, document, margin, y);
 
   sectionTitle("3. LOANS ISSUED TODAY");
@@ -557,10 +557,15 @@ function drawCashMovement(
   return startY + blockH + 16;
 }
 
-function baseTableOptions(margin: number, startY: number) {
+function baseTableOptions(
+  margin: number,
+  startY: number,
+  options?: { showFoot?: "everyPage" | "lastPage" | "never" },
+) {
   return {
     startY,
     margin: { left: margin, right: margin },
+    showFoot: options?.showFoot ?? "everyPage",
     styles: {
       font: "helvetica",
       fontSize: 8,
@@ -615,14 +620,14 @@ function drawAgentTable(
       doc,
       margin,
       startY,
-      "No field officer float activity for this day.",
+      "No staff accountability activity for this day.",
     );
   }
   autoTable(doc, {
-    ...baseTableOptions(margin, startY),
+    ...baseTableOptions(margin, startY, { showFoot: "lastPage" }),
     head: [
       [
-        "Field officer",
+        "Staff",
         "Float issued",
         "Loans issued",
         "Cash in",
@@ -697,7 +702,7 @@ function drawLoansTable(
     );
   }
   autoTable(doc, {
-    ...baseTableOptions(margin, startY),
+    ...baseTableOptions(margin, startY, { showFoot: "lastPage" }),
     head: [["Borrower", "Product", "Duration", "Issued by", "Time", "Principal"]],
     body: document.loansIssued.map((row) => [
       row.borrowerName,
@@ -738,7 +743,7 @@ function drawRepaymentsTable(
     );
   }
   autoTable(doc, {
-    ...baseTableOptions(margin, startY),
+    ...baseTableOptions(margin, startY, { showFoot: "lastPage" }),
     head: [["Borrower", "Collected by", "Role", "Time", "Method", "Amount"]],
     body: document.repayments.map((row) => [
       row.borrowerName,
@@ -770,7 +775,7 @@ function drawFeesTable(
     );
   }
   autoTable(doc, {
-    ...baseTableOptions(margin, startY),
+    ...baseTableOptions(margin, startY, { showFoot: "lastPage" }),
     head: [["Borrower", "Officer", "Time", "Amount"]],
     body: document.processingFees.map((row) => [
       row.borrowerName,
@@ -800,7 +805,7 @@ function drawExpensesTable(
     );
   }
   autoTable(doc, {
-    ...baseTableOptions(margin, startY),
+    ...baseTableOptions(margin, startY, { showFoot: "lastPage" }),
     head: [["Time", "Type", "Description", "Paid by", "Amount"]],
     body: document.expenses.map((row) => [
       formatTime(row.incurredAt),
