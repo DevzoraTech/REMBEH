@@ -2,25 +2,18 @@
 
 import {
   AlertTriangle,
-  Archive,
   ArrowRight,
   BarChart3,
-  CalendarDays,
   ChevronDown,
-  Copy,
-  Edit3,
   FileText,
   Gift,
   Megaphone,
   MessageCircle,
   PauseCircle,
-  PlayCircle,
   Plus,
   RefreshCw,
   Save,
-  Search,
   Send,
-  Sparkles,
   X,
 } from "lucide-react";
 import {
@@ -35,8 +28,6 @@ import type { ControlCenterSession } from "../../lib/control-center-session";
 import { controlCenterFetch } from "../../lib/control-center-api";
 import { ccDate, ccDateTime, ccNumber } from "./formatters";
 import {
-  InlineSearch,
-  Panel,
   SectionTitle,
   SelectControl,
   StatCard,
@@ -215,6 +206,15 @@ const emptyForm: MarketingForm = {
   startsAt: "",
   endsAt: "",
 };
+
+const fieldLabelClass = "text-[10px] font-semibold text-[#5e6c84]";
+const fieldInputClass =
+  "mt-1 h-9 w-full rounded-md border border-[#dfe5eb] bg-white px-3 text-[10.5px] font-medium text-[#17233c] outline-none transition placeholder:text-[#8c97a9] focus:border-[#87bfa1] focus:ring-2 focus:ring-[#e6f4eb]";
+const fieldTextareaClass =
+  "mt-1 w-full resize-none rounded-md border border-[#dfe5eb] bg-white px-3 py-2 text-[10.5px] font-medium leading-5 text-[#17233c] outline-none transition placeholder:text-[#8c97a9] focus:border-[#87bfa1] focus:ring-2 focus:ring-[#e6f4eb]";
+const sectionLabelClass = "text-[11px] font-semibold text-[#15223a]";
+const actionTextBtnClass =
+  "text-[10px] font-semibold text-[#53627a] transition hover:text-[#168650] disabled:opacity-50";
 
 export function ControlCenterMarketingSection({
   session,
@@ -696,30 +696,30 @@ export function ControlCenterMarketingSection({
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <SectionTitle
         title="Marketing"
-        subtitle="Create app header campaigns, choose exactly who sees them, and attach media without releasing a new app."
+        subtitle="In-app header campaigns for mobile users."
         action={
           <button
             type="button"
             onClick={() => void loadCampaigns()}
             disabled={loading}
-            className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#dde4eb] bg-white px-3 text-sm font-bold text-[#12213f] transition hover:bg-[#f7faf8] disabled:opacity-60"
+            className="inline-flex h-9 items-center gap-2 rounded-md border border-[#dfe5eb] bg-white px-3.5 text-[10.5px] font-semibold text-[#17233c] transition hover:bg-[#f7faf8] disabled:opacity-60"
           >
-            <RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
             Refresh
           </button>
         }
       />
 
       {error ? (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+        <p className="rounded-[8px] border border-red-200 bg-red-50 px-3 py-2 text-[11px] font-medium text-red-700">
           {error}
         </p>
       ) : null}
       {notice ? (
-        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-[var(--forest-emerald)]">
+        <p className="rounded-[8px] border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-medium text-[#188653]">
           {notice}
         </p>
       ) : null}
@@ -734,15 +734,15 @@ export function ControlCenterMarketingSection({
         <StatCard
           title="Active"
           value={ccNumber(data?.stats.active ?? 0)}
-          subtitle="Visible when targeting matches"
+          subtitle="Currently published"
           icon={Send}
           tone="green"
         />
         <StatCard
           title="Drafts"
           value={ccNumber(data?.stats.draft ?? 0)}
-          subtitle="Prepared but not visible"
-          icon={Sparkles}
+          subtitle="Not yet published"
+          icon={FileText}
           tone="blue"
         />
         <StatCard
@@ -754,606 +754,568 @@ export function ControlCenterMarketingSection({
         />
       </div>
 
-      <Panel className="p-5">
-        <form
-          onSubmit={submitCampaign}
-          className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]"
-        >
-          <div className="space-y-4">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-base font-black text-[var(--midnight-navy)]">
-                  {editingId ? "Edit campaign" : "Create campaign"}
-                </h2>
-                <p className="mt-1 text-xs font-medium text-slate-500">
-                  This content appears in the mobile app header for matching
-                  users.
-                </p>
-              </div>
-              {editingId ? (
-                <button
-                  type="button"
-                  onClick={resetForm}
-                  className="grid size-9 place-items-center rounded-lg border border-[#dde4eb] text-slate-500"
-                  aria-label="Cancel editing"
-                >
-                  <X className="size-4" />
-                </button>
-              ) : null}
-            </div>
-
+      <section className="overflow-hidden rounded-[10px] border border-[#dfe5eb] bg-white">
+        <form onSubmit={submitCampaign}>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#edf1f4] px-4 py-3">
             <div>
-              <span className="text-xs font-bold text-slate-600">
-                Design template
-              </span>
-              <p className="mt-1 text-[11px] font-medium text-slate-500">
-                Choose one card style. Selecting a template deselects the others.
+              <h2 className="text-[13px] font-semibold text-[#15223a]">
+                {editingId ? "Edit campaign" : "New campaign"}
+              </h2>
+              <p className="mt-0.5 text-[10px] font-medium text-[#68758d]">
+                Appears in the mobile app header for matching users.
               </p>
-              <div className="mt-2 space-y-2">
-                {CATEGORY_OPTIONS.map((option) => {
-                  const checked = form.category === option.value;
-                  return (
-                    <label
-                      key={option.value}
-                      className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 transition ${
-                        checked
-                          ? "border-[var(--forest-emerald)] bg-emerald-50"
-                          : "border-[#dde4eb] bg-white hover:border-emerald-200"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => selectCategory(option.value)}
-                        className="mt-0.5 size-4 accent-[var(--forest-emerald)]"
-                      />
-                      <span className="min-w-0">
-                        <span className="block text-sm font-bold text-[var(--midnight-navy)]">
+            </div>
+            {editingId ? (
+              <button
+                type="button"
+                onClick={resetForm}
+                className="grid size-8 place-items-center rounded-md border border-[#dfe5eb] text-[#60708a] transition hover:bg-[#f7faf8]"
+                aria-label="Cancel editing"
+              >
+                <X className="size-3.5" />
+              </button>
+            ) : null}
+          </div>
+
+          <div className="grid xl:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
+            <div className="min-w-0">
+              {/* Section A: Template */}
+              <div className="px-4 py-3.5">
+                <p className={sectionLabelClass}>Template</p>
+                <div className="mt-2 divide-y divide-[#edf1f4] rounded-md border border-[#dfe5eb]">
+                  {CATEGORY_OPTIONS.map((option) => {
+                    const checked = form.category === option.value;
+                    return (
+                      <label
+                        key={option.value}
+                        className={`flex cursor-pointer items-center gap-2.5 px-3 py-2.5 transition ${
+                          checked ? "bg-[#f4faf6]" : "bg-white hover:bg-[#fbfcfd]"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="campaign-template"
+                          checked={checked}
+                          onChange={() => selectCategory(option.value)}
+                          className="size-3.5 accent-[#188653]"
+                        />
+                        <span
+                          className={`text-[10.5px] font-semibold ${
+                            checked ? "text-[#168650]" : "text-[#17233c]"
+                          }`}
+                        >
                           {option.label}
                         </span>
-                      </span>
-                    </label>
-                  );
-                })}
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
 
-            <label className="block">
-              <span className="text-xs font-bold text-slate-600">Headline</span>
-              <input
-                value={form.title}
-                onChange={(event) => updateForm("title", event.target.value)}
-                placeholder="e.g. New customer care line"
-                className="mt-1 h-11 w-full rounded-lg border border-[#dde4eb] px-3 text-sm font-semibold outline-none focus:border-[var(--forest-emerald)] focus:ring-2 focus:ring-emerald-100"
-                required
-              />
-            </label>
-
-            <label className="block">
-              <span className="text-xs font-bold text-slate-600">Message</span>
-              <textarea
-                value={form.body}
-                onChange={(event) => updateForm("body", event.target.value)}
-                placeholder="Write the short message mobile users should see."
-                rows={4}
-                className="mt-1 w-full resize-none rounded-lg border border-[#dde4eb] px-3 py-2 text-sm font-medium leading-6 outline-none focus:border-[var(--forest-emerald)] focus:ring-2 focus:ring-emerald-100"
-                required
-              />
-            </label>
-
-            <label className="block">
-              <span className="text-xs font-bold text-slate-600">
-                Button label
-              </span>
-              <input
-                value={form.ctaLabel}
-                onChange={(event) =>
-                  updateForm("ctaLabel", event.target.value)
-                }
-                placeholder="Learn more"
-                className="mt-1 h-10 w-full rounded-lg border border-[#dde4eb] px-3 text-sm font-medium outline-none focus:border-[var(--forest-emerald)] focus:ring-2 focus:ring-emerald-100"
-              />
-            </label>
-
-            <div>
-              <span className="text-xs font-bold text-slate-600">
-                Button action
-              </span>
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                {(
-                  [
-                    { value: "EXTERNAL_URL", label: "External link" },
-                    { value: "INTERNAL_ROUTE", label: "In-app page" },
-                  ] as const
-                ).map((option) => {
-                  const selected = form.ctaAction === option.value;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => updateForm("ctaAction", option.value)}
-                      className={`h-10 rounded-lg border text-xs font-bold transition ${
-                        selected
-                          ? "border-[var(--forest-emerald)] bg-emerald-50 text-[var(--forest-emerald)]"
-                          : "border-[#dde4eb] bg-white text-slate-600 hover:border-emerald-200"
-                      }`}
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
+              {/* Section B: Content */}
+              <div className="border-t border-[#edf1f4] px-4 py-3.5">
+                <p className={sectionLabelClass}>Content</p>
+                <div className="mt-2.5 space-y-2.5">
+                  <label className="block">
+                    <span className={fieldLabelClass}>Title</span>
+                    <input
+                      value={form.title}
+                      onChange={(event) => updateForm("title", event.target.value)}
+                      placeholder="Campaign title"
+                      className={fieldInputClass}
+                      required
+                    />
+                  </label>
+                  <label className="block">
+                    <span className={fieldLabelClass}>Body</span>
+                    <textarea
+                      value={form.body}
+                      onChange={(event) => updateForm("body", event.target.value)}
+                      placeholder="Short message for the header card"
+                      rows={3}
+                      className={fieldTextareaClass}
+                      required
+                    />
+                  </label>
+                  <label className="block">
+                    <span className={fieldLabelClass}>Button label</span>
+                    <input
+                      value={form.ctaLabel}
+                      onChange={(event) =>
+                        updateForm("ctaLabel", event.target.value)
+                      }
+                      placeholder="Optional"
+                      className={fieldInputClass}
+                    />
+                  </label>
+                </div>
               </div>
-              {form.ctaAction === "EXTERNAL_URL" ? (
-                <label className="mt-3 block">
-                  <span className="text-xs font-bold text-slate-600">
-                    Button URL
+
+              {/* Section C: Button destination */}
+              <div className="border-t border-[#edf1f4] px-4 py-3.5">
+                <p className={sectionLabelClass}>Button destination</p>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  {(
+                    [
+                      { value: "EXTERNAL_URL", label: "External" },
+                      { value: "INTERNAL_ROUTE", label: "In-app" },
+                    ] as const
+                  ).map((option) => {
+                    const selected = form.ctaAction === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => updateForm("ctaAction", option.value)}
+                        className={`h-8 rounded-md border text-[10px] font-semibold transition ${
+                          selected
+                            ? "border-[#188653] bg-[#f2fbf6] text-[#188653]"
+                            : "border-[#dfe5eb] bg-white text-[#53627a] hover:bg-[#fbfcfd]"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {form.ctaAction === "EXTERNAL_URL" ? (
+                  <label className="mt-2.5 block">
+                    <span className={fieldLabelClass}>URL</span>
+                    <input
+                      value={form.ctaUrl}
+                      onChange={(event) =>
+                        updateForm("ctaUrl", event.target.value)
+                      }
+                      placeholder="https://..."
+                      className={fieldInputClass}
+                    />
+                  </label>
+                ) : (
+                  <label className="mt-2.5 block">
+                    <span className={fieldLabelClass}>In-app page</span>
+                    <SelectControl
+                      value={form.ctaRoute}
+                      onChange={(value) => updateForm("ctaRoute", value)}
+                      ariaLabel="In-app page"
+                      className="mt-1 !h-9 w-full !rounded-md !border-[#dfe5eb] !text-[10.5px] !font-medium"
+                      options={[
+                        { value: "", label: "Choose page" },
+                        ...internalRoutes.map((route) => ({
+                          value: route.key,
+                          label: route.label,
+                        })),
+                      ]}
+                    />
+                  </label>
+                )}
+              </div>
+
+              {/* Section D: Audience + schedule + priority + status */}
+              <div className="border-t border-[#edf1f4] px-4 py-3.5">
+                <p className={sectionLabelClass}>Audience & schedule</p>
+                <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
+                  <label className="block">
+                    <span className={fieldLabelClass}>Audience</span>
+                    <SelectControl
+                      value={form.audience}
+                      onChange={(value) =>
+                        updateForm(
+                          "audience",
+                          value as ControlCenterMarketingCampaignAudience,
+                        )
+                      }
+                      ariaLabel="Audience"
+                      className="mt-1 !h-9 w-full !rounded-md !border-[#dfe5eb] !text-[10.5px] !font-medium"
+                      options={AUDIENCE_OPTIONS}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className={fieldLabelClass}>Status</span>
+                    <SelectControl
+                      value={form.status}
+                      onChange={(value) =>
+                        updateForm(
+                          "status",
+                          value as ControlCenterMarketingCampaignStatus,
+                        )
+                      }
+                      ariaLabel="Status"
+                      className="mt-1 !h-9 w-full !rounded-md !border-[#dfe5eb] !text-[10.5px] !font-medium"
+                      options={STATUS_OPTIONS}
+                    />
+                  </label>
+                </div>
+
+                <div className="mt-2.5 flex items-center justify-between rounded-md border border-[#dfe5eb] bg-[#fcfdfe] px-3 py-2">
+                  <span className="text-[10px] font-semibold text-[#5e6c84]">
+                    Estimated reach
                   </span>
-                  <input
-                    value={form.ctaUrl}
-                    onChange={(event) =>
-                      updateForm("ctaUrl", event.target.value)
-                    }
-                    placeholder="https://..."
-                    className="mt-1 h-10 w-full rounded-lg border border-[#dde4eb] px-3 text-sm font-medium outline-none focus:border-[var(--forest-emerald)] focus:ring-2 focus:ring-emerald-100"
-                  />
-                </label>
-              ) : (
-                <label className="mt-3 block">
-                  <span className="text-xs font-bold text-slate-600">
-                    In-app page
+                  <span className="text-[13px] font-semibold text-[#15223a]">
+                    {ccNumber(audienceReach)}
                   </span>
+                </div>
+
+                {form.audience !== "ALL_USERS" ? (
+                  <label className="mt-2.5 block">
+                    <span className={fieldLabelClass}>Organization</span>
+                    <SelectControl
+                      value={form.tenantId}
+                      onChange={(value) => updateForm("tenantId", value)}
+                      ariaLabel="Organization"
+                      className="mt-1 !h-9 w-full !rounded-md !border-[#dfe5eb] !text-[10.5px] !font-medium"
+                      options={[
+                        { value: "", label: "Choose organization" },
+                        ...clients.map((client) => ({
+                          value: client.id,
+                          label: client.name,
+                        })),
+                      ]}
+                    />
+                  </label>
+                ) : null}
+
+                {["BRANCH_USERS", "SELECTED_USERS"].includes(form.audience) &&
+                form.tenantId ? (
+                  <label className="mt-2.5 block">
+                    <span className={fieldLabelClass}>Branch</span>
+                    <SelectControl
+                      value={form.branchId}
+                      onChange={(value) => updateForm("branchId", value)}
+                      ariaLabel="Branch"
+                      className="mt-1 !h-9 w-full !rounded-md !border-[#dfe5eb] !text-[10.5px] !font-medium"
+                      options={[
+                        {
+                          value: "",
+                          label:
+                            form.audience === "BRANCH_USERS"
+                              ? "Choose branch"
+                              : "All branches",
+                        },
+                        ...branches.map((branch) => ({
+                          value: branch.id,
+                          label: branch.name,
+                        })),
+                      ]}
+                    />
+                  </label>
+                ) : null}
+
+                {form.audience === "ROLE_USERS" ? (
+                  <div className="mt-2.5">
+                    <span className={fieldLabelClass}>Roles</span>
+                    <div className="mt-1.5 divide-y divide-[#edf1f4] rounded-md border border-[#dfe5eb]">
+                      {ROLE_OPTIONS.map((role) => (
+                        <label
+                          key={role}
+                          className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-[10.5px] font-semibold text-[#17233c]"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={form.roleNames.includes(role)}
+                            onChange={() => toggleRole(role)}
+                            className="size-3.5 accent-[#188653]"
+                          />
+                          {role}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {form.audience === "SELECTED_USERS" ? (
+                  <div className="mt-2.5">
+                    <span className={fieldLabelClass}>Selected people</span>
+                    <div className="mt-1.5 max-h-40 divide-y divide-[#edf1f4] overflow-y-auto rounded-md border border-[#dfe5eb]">
+                      {selectableUsers.length === 0 ? (
+                        <p className="px-3 py-3 text-[10.5px] font-medium text-[#68758d]">
+                          No users match the current filters.
+                        </p>
+                      ) : (
+                        selectableUsers.slice(0, 120).map((user) => (
+                          <label
+                            key={user.id}
+                            className="flex cursor-pointer items-center gap-2.5 px-3 py-2"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedUsers.has(user.id)}
+                              onChange={() => toggleUser(user.id)}
+                              className="size-3.5 accent-[#188653]"
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className="block truncate text-[10.5px] font-semibold text-[#17233c]">
+                                {user.name}
+                              </span>
+                              <span className="block truncate text-[9.5px] font-medium text-[#68758d]">
+                                {user.tenant.name}
+                                {user.branch ? ` · ${user.branch.name}` : ""}
+                              </span>
+                            </span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="mt-2.5 grid gap-2.5 sm:grid-cols-3">
+                  <label className="block">
+                    <span className={fieldLabelClass}>Priority</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={form.priority}
+                      onChange={(event) =>
+                        updateForm("priority", event.target.value)
+                      }
+                      className={fieldInputClass}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className={fieldLabelClass}>Starts</span>
+                    <input
+                      type="datetime-local"
+                      value={form.startsAt}
+                      onChange={(event) =>
+                        updateForm("startsAt", event.target.value)
+                      }
+                      className={fieldInputClass}
+                    />
+                  </label>
+                  <label className="block">
+                    <span className={fieldLabelClass}>Ends</span>
+                    <input
+                      type="datetime-local"
+                      value={form.endsAt}
+                      onChange={(event) =>
+                        updateForm("endsAt", event.target.value)
+                      }
+                      className={fieldInputClass}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Section E: Media */}
+              <div className="border-t border-[#edf1f4] px-4 py-3.5">
+                <p className={sectionLabelClass}>Media</p>
+                <p className="mt-0.5 text-[9.5px] font-medium text-[#68758d]">
+                  Optional image or video for the header card.
+                </p>
+                <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2">
+                  <label className="block">
+                    <span className={fieldLabelClass}>Upload file</span>
+                    <input
+                      type="file"
+                      accept="image/*,video/*"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        setMediaFile(file);
+                        if (file) {
+                          updateForm(
+                            "mediaType",
+                            file.type.startsWith("video/") ? "VIDEO" : "IMAGE",
+                          );
+                        }
+                      }}
+                      className="mt-1 block w-full text-[10px] font-medium text-[#53627a] file:mr-2 file:h-8 file:rounded-md file:border-0 file:bg-[#f2fbf6] file:px-2.5 file:text-[10px] file:font-semibold file:text-[#188653]"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className={fieldLabelClass}>Or media URL</span>
+                    <input
+                      value={form.mediaUrl}
+                      onChange={(event) => {
+                        updateForm("mediaUrl", event.target.value);
+                        if (
+                          event.target.value.trim() &&
+                          form.mediaType === "NONE"
+                        ) {
+                          updateForm("mediaType", "IMAGE");
+                        }
+                      }}
+                      placeholder="https://..."
+                      className={fieldInputClass}
+                    />
+                  </label>
+                </div>
+                <label className="mt-2.5 block max-w-xs">
+                  <span className={fieldLabelClass}>Media type</span>
                   <SelectControl
-                    value={form.ctaRoute}
-                    onChange={(value) => updateForm("ctaRoute", value)}
-                    ariaLabel="In-app page"
-                    className="mt-1 w-full"
+                    value={form.mediaType}
+                    onChange={(value) =>
+                      updateForm(
+                        "mediaType",
+                        value as ControlCenterMarketingCampaignMediaType,
+                      )
+                    }
+                    ariaLabel="Media type"
+                    className="mt-1 !h-9 w-full !rounded-md !border-[#dfe5eb] !text-[10.5px] !font-medium"
                     options={[
-                      { value: "", label: "Choose page" },
-                      ...internalRoutes.map((route) => ({
-                        value: route.key,
-                        label: route.label,
-                      })),
+                      { value: "NONE", label: "Text only" },
+                      { value: "IMAGE", label: "Image" },
+                      { value: "VIDEO", label: "Video" },
                     ]}
                   />
                 </label>
-              )}
+              </div>
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="block">
-                <span className="text-xs font-bold text-slate-600">
-                  Attach image or video
-                </span>
-                <input
-                  type="file"
-                  accept="image/*,video/*"
-                  onChange={(event) => {
-                    const file = event.target.files?.[0] ?? null;
-                    setMediaFile(file);
-                    if (file) {
-                      updateForm(
-                        "mediaType",
-                        file.type.startsWith("video/") ? "VIDEO" : "IMAGE",
-                      );
-                    }
-                  }}
-                  className="mt-1 block w-full text-sm font-medium text-slate-600 file:mr-3 file:h-10 file:rounded-lg file:border-0 file:bg-emerald-50 file:px-3 file:text-sm file:font-bold file:text-[var(--forest-emerald)]"
+            {/* Right column: Preview */}
+            <div className="border-t border-[#edf1f4] bg-[#fcfdfe] px-4 py-3.5 xl:border-l xl:border-t-0">
+              <div className="xl:sticky xl:top-4">
+                <div className="mb-2.5 flex items-center justify-between gap-2">
+                  <p className="text-[11px] font-semibold text-[#15223a]">
+                    Preview
+                  </p>
+                  <span className="text-[10px] font-semibold text-[#68758d]">
+                    Priority {form.priority || 0}
+                  </span>
+                </div>
+                <CampaignCardPreview
+                  category={form.category}
+                  title={form.title}
+                  body={form.body}
+                  ctaLabel={form.ctaLabel}
                 />
-              </label>
-              <label className="block">
-                <span className="text-xs font-bold text-slate-600">
-                  Or paste media link
-                </span>
-                <input
-                  value={form.mediaUrl}
-                  onChange={(event) => {
-                    updateForm("mediaUrl", event.target.value);
-                    if (
-                      event.target.value.trim() &&
-                      form.mediaType === "NONE"
-                    ) {
-                      updateForm("mediaType", "IMAGE");
-                    }
-                  }}
-                  placeholder="https://..."
-                  className="mt-1 h-10 w-full rounded-lg border border-[#dde4eb] px-3 text-sm font-medium outline-none focus:border-[var(--forest-emerald)] focus:ring-2 focus:ring-emerald-100"
-                />
-              </label>
+              </div>
             </div>
-
-            <label className="block">
-              <span className="text-xs font-bold text-slate-600">
-                Media type
-              </span>
-              <SelectControl
-                value={form.mediaType}
-                onChange={(value) =>
-                  updateForm(
-                    "mediaType",
-                    value as ControlCenterMarketingCampaignMediaType,
-                  )
-                }
-                ariaLabel="Media type"
-                className="mt-1 w-full"
-                options={[
-                  { value: "NONE", label: "Text only" },
-                  { value: "IMAGE", label: "Image" },
-                  { value: "VIDEO", label: "Video" },
-                ]}
-              />
-            </label>
           </div>
 
-          <div className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
-              <label className="block">
-                <span className="text-xs font-bold text-slate-600">
-                  Audience
-                </span>
-                <SelectControl
-                  value={form.audience}
-                  onChange={(value) =>
-                    updateForm(
-                      "audience",
-                      value as ControlCenterMarketingCampaignAudience,
-                    )
-                  }
-                  ariaLabel="Audience"
-                  className="mt-1 w-full"
-                  options={AUDIENCE_OPTIONS}
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-xs font-bold text-slate-600">Status</span>
-                <SelectControl
-                  value={form.status}
-                  onChange={(value) =>
-                    updateForm(
-                      "status",
-                      value as ControlCenterMarketingCampaignStatus,
-                    )
-                  }
-                  ariaLabel="Status"
-                  className="mt-1 w-full"
-                  options={STATUS_OPTIONS}
-                />
-              </label>
-            </div>
-
-            <div className="rounded-lg border border-red-100 bg-red-50 p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-black text-red-800">
-                    Estimated reach
-                  </p>
-                  <p className="mt-1 text-xs font-semibold text-red-600">
-                    Based on current users and selected filters.
-                  </p>
-                </div>
-                <p className="text-2xl font-black text-red-700">
-                  {ccNumber(audienceReach)}
-                </p>
-              </div>
-            </div>
-
-            {form.audience !== "ALL_USERS" ? (
-              <label className="block">
-                <span className="text-xs font-bold text-slate-600">
-                  Organization
-                </span>
-                <SelectControl
-                  value={form.tenantId}
-                  onChange={(value) => updateForm("tenantId", value)}
-                  ariaLabel="Organization"
-                  className="mt-1 w-full"
-                  options={[
-                    { value: "", label: "Choose organization" },
-                    ...clients.map((client) => ({
-                      value: client.id,
-                      label: client.name,
-                    })),
-                  ]}
-                />
-              </label>
-            ) : null}
-
-            {["BRANCH_USERS", "SELECTED_USERS"].includes(form.audience) &&
-            form.tenantId ? (
-              <label className="block">
-                <span className="text-xs font-bold text-slate-600">Branch</span>
-                <SelectControl
-                  value={form.branchId}
-                  onChange={(value) => updateForm("branchId", value)}
-                  ariaLabel="Branch"
-                  className="mt-1 w-full"
-                  options={[
-                    {
-                      value: "",
-                      label:
-                        form.audience === "BRANCH_USERS"
-                          ? "Choose branch"
-                          : "All branches",
-                    },
-                    ...branches.map((branch) => ({
-                      value: branch.id,
-                      label: branch.name,
-                    })),
-                  ]}
-                />
-              </label>
-            ) : null}
-
-            {form.audience === "ROLE_USERS" ? (
-              <div>
-                <span className="text-xs font-bold text-slate-600">Roles</span>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {ROLE_OPTIONS.map((role) => (
-                    <button
-                      key={role}
-                      type="button"
-                      onClick={() => toggleRole(role)}
-                      className={`h-9 rounded-lg border px-3 text-xs font-bold ${
-                        form.roleNames.includes(role)
-                          ? "border-[var(--forest-emerald)] bg-emerald-50 text-[var(--forest-emerald)]"
-                          : "border-[#dde4eb] bg-white text-slate-600"
-                      }`}
-                    >
-                      {role}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {form.audience === "SELECTED_USERS" ? (
-              <div>
-                <span className="text-xs font-bold text-slate-600">
-                  Selected people
-                </span>
-                <div className="mt-2 max-h-44 divide-y divide-[#eef2f5] overflow-y-auto rounded-lg border border-[#dde4eb]">
-                  {selectableUsers.length === 0 ? (
-                    <p className="px-3 py-4 text-sm font-medium text-slate-500">
-                      No users match the current filters.
-                    </p>
-                  ) : (
-                    selectableUsers.slice(0, 120).map((user) => (
-                      <label
-                        key={user.id}
-                        className="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedUsers.has(user.id)}
-                          onChange={() => toggleUser(user.id)}
-                          className="size-4 accent-[var(--forest-emerald)]"
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate font-bold text-[var(--midnight-navy)]">
-                            {user.name}
-                          </span>
-                          <span className="block truncate text-xs font-medium text-slate-500">
-                            {user.tenant.name}
-                            {user.branch ? ` - ${user.branch.name}` : ""}
-                          </span>
-                        </span>
-                      </label>
-                    ))
-                  )}
-                </div>
-              </div>
-            ) : null}
-
-            <div className="grid gap-3 md:grid-cols-3">
-              <label className="block">
-                <span className="text-xs font-bold text-slate-600">
-                  Priority
-                </span>
-                <input
-                  type="number"
-                  min={0}
-                  max={100}
-                  value={form.priority}
-                  onChange={(event) =>
-                    updateForm("priority", event.target.value)
-                  }
-                  className="mt-1 h-10 w-full rounded-lg border border-[#dde4eb] px-3 text-sm font-medium outline-none focus:border-[var(--forest-emerald)] focus:ring-2 focus:ring-emerald-100"
-                />
-              </label>
-              <label className="block md:col-span-2">
-                <span className="text-xs font-bold text-slate-600">Starts</span>
-                <input
-                  type="datetime-local"
-                  value={form.startsAt}
-                  onChange={(event) =>
-                    updateForm("startsAt", event.target.value)
-                  }
-                  className="mt-1 h-10 w-full rounded-lg border border-[#dde4eb] px-3 text-sm font-medium outline-none focus:border-[var(--forest-emerald)] focus:ring-2 focus:ring-emerald-100"
-                />
-              </label>
-            </div>
-
-            <label className="block">
-              <span className="text-xs font-bold text-slate-600">Ends</span>
-              <input
-                type="datetime-local"
-                value={form.endsAt}
-                onChange={(event) => updateForm("endsAt", event.target.value)}
-                className="mt-1 h-10 w-full rounded-lg border border-[#dde4eb] px-3 text-sm font-medium outline-none focus:border-[var(--forest-emerald)] focus:ring-2 focus:ring-emerald-100"
-              />
-            </label>
-
-            <div className="overflow-hidden rounded-lg border border-[#dde4eb] bg-[#f7faf9] p-3">
-              <div className="mb-3 flex items-center justify-between gap-3">
-                <span className="text-[11px] font-black uppercase tracking-[0.08em] text-slate-500">
-                  Mobile card preview
-                </span>
-                <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-slate-500 shadow-sm">
-                  Priority {form.priority || 0}
-                </span>
-              </div>
-              <CampaignCardPreview
-                category={form.category}
-                title={form.title}
-                body={form.body}
-                ctaLabel={form.ctaLabel}
-              />
-            </div>
-
-            <div className="grid gap-2 sm:grid-cols-2">
-              <button
-                type="submit"
-                disabled={saving}
-                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-[#dde4eb] bg-white px-4 text-sm font-black text-[#12213f] transition hover:bg-[#f7faf8] disabled:opacity-60"
-              >
-                <Save className="size-4" />
-                {saving
-                  ? "Saving..."
-                  : editingId
-                    ? "Save changes"
-                    : "Save draft"}
-              </button>
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => void saveCampaign({ publish: true })}
-                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[var(--forest-emerald)] px-4 text-sm font-black text-white shadow-[0_12px_24px_rgba(5,111,58,0.2)] transition hover:bg-[#025f31] disabled:opacity-60"
-              >
-                <Send className="size-4" />
-                {saving ? "Publishing..." : "Publish & notify"}
-              </button>
-            </div>
+          <div className="flex flex-wrap items-center gap-2 border-t border-[#edf1f4] px-4 py-3">
+            <button
+              type="submit"
+              disabled={saving}
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md border border-[#dfe5eb] bg-white px-3.5 text-[10px] font-semibold text-[#17233c] transition hover:bg-[#f7faf8] disabled:opacity-60"
+            >
+              <Save className="size-3.5" />
+              {saving
+                ? "Saving..."
+                : editingId
+                  ? "Save changes"
+                  : "Save draft"}
+            </button>
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => void saveCampaign({ publish: true })}
+              className="inline-flex h-9 items-center justify-center gap-1.5 rounded-md bg-[#188653] px-3.5 text-[10px] font-semibold text-white transition hover:bg-[#147348] disabled:opacity-60"
+            >
+              <Send className="size-3.5" />
+              {saving ? "Publishing..." : "Publish"}
+            </button>
             {editingId ? (
               <button
                 type="button"
                 disabled={saving}
                 onClick={resetForm}
-                className="inline-flex h-10 w-full items-center justify-center rounded-lg text-sm font-bold text-slate-500 transition hover:bg-[#f7faf8] disabled:opacity-60"
+                className="ml-auto inline-flex h-9 items-center px-2 text-[10px] font-semibold text-[#68758d] transition hover:text-[#17233c] disabled:opacity-60"
               >
-                Start a new campaign
+                New campaign
               </button>
             ) : null}
           </div>
         </form>
-      </Panel>
+      </section>
 
-      <Panel className="overflow-hidden">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e6ebf0] px-5 py-4">
-          <div>
-            <h2 className="text-base font-black text-[var(--midnight-navy)]">
-              Campaigns
-            </h2>
-            <p className="mt-1 text-xs font-medium text-slate-500">
-              Higher priority active campaigns appear first when more than one
-              matches.
-            </p>
-          </div>
-          <InlineSearch
-            value={query}
-            onChange={setQuery}
-            placeholder="Search campaigns..."
-            className="max-w-md"
+      <section className="overflow-hidden rounded-[10px] border border-[#dfe5eb] bg-white">
+        <div className="flex flex-wrap items-center gap-2.5 border-b border-[#edf1f4] px-4 py-3">
+          <h2 className="mr-auto text-[13px] font-semibold text-[#15223a]">
+            Campaigns
+          </h2>
+          <label className="flex h-9 min-w-[200px] flex-1 items-center gap-2 rounded-md border border-[#dfe5eb] bg-white px-3 focus-within:border-[#87bfa1] focus-within:ring-2 focus-within:ring-[#e6f4eb] sm:max-w-[280px]">
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search campaigns..."
+              className="min-w-0 flex-1 bg-transparent text-[10.5px] font-normal text-[#17233c] outline-none placeholder:text-[#8c97a9]"
+            />
+          </label>
+          <SelectControl
+            value={statusFilter}
+            onChange={(value) =>
+              setStatusFilter(
+                value as ControlCenterMarketingCampaignStatus | "ALL",
+              )
+            }
+            ariaLabel="Status filter"
+            className="!h-9 !min-w-[140px] !rounded-md !border-[#dfe5eb] !text-[10px] !font-medium"
+            options={[
+              { value: "ALL", label: `All statuses (${statusCounts.ALL})` },
+              { value: "ACTIVE", label: `Active (${statusCounts.ACTIVE})` },
+              { value: "DRAFT", label: `Draft (${statusCounts.DRAFT})` },
+              { value: "PAUSED", label: `Paused (${statusCounts.PAUSED})` },
+              {
+                value: "ARCHIVED",
+                label: `Archived (${statusCounts.ARCHIVED})`,
+              },
+            ]}
+          />
+          <SelectControl
+            value={categoryFilter}
+            onChange={(value) =>
+              setCategoryFilter(
+                value as ControlCenterMarketingCampaignCategory | "ALL",
+              )
+            }
+            ariaLabel="Category filter"
+            className="!h-9 !min-w-[140px] !rounded-md !border-[#dfe5eb] !text-[10px] !font-medium"
+            options={[
+              { value: "ALL", label: `All templates (${categoryCounts.ALL})` },
+              {
+                value: "CRITICAL_WARNING",
+                label: `Critical (${categoryCounts.CRITICAL_WARNING})`,
+              },
+              {
+                value: "PRODUCT_UPDATE",
+                label: `Product (${categoryCounts.PRODUCT_UPDATE})`,
+              },
+              {
+                value: "PROMOTIONAL",
+                label: `Promo (${categoryCounts.PROMOTIONAL})`,
+              },
+            ]}
           />
         </div>
 
-        <div className="space-y-3 border-b border-[#e6ebf0] px-5 py-3">
-          <div className="flex flex-wrap gap-2">
-            {(
-              [
-                { value: "ALL", label: "All" },
-                { value: "ACTIVE", label: "Active" },
-                { value: "DRAFT", label: "Draft" },
-                { value: "PAUSED", label: "Paused" },
-                { value: "ARCHIVED", label: "Archived" },
-              ] as const
-            ).map((chip) => {
-              const selected = statusFilter === chip.value;
-              return (
-                <button
-                  key={chip.value}
-                  type="button"
-                  onClick={() => setStatusFilter(chip.value)}
-                  className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold transition ${
-                    selected
-                      ? "border-[var(--forest-emerald)] bg-emerald-50 text-[var(--forest-emerald)]"
-                      : "border-[#dde4eb] bg-white text-slate-600 hover:border-emerald-200"
-                  }`}
-                >
-                  {chip.label}
-                  <span
-                    className={`rounded-md px-1.5 py-0.5 text-[10px] font-black ${
-                      selected
-                        ? "bg-white text-[var(--forest-emerald)]"
-                        : "bg-[#f7faf9] text-slate-500"
-                    }`}
-                  >
-                    {statusCounts[chip.value]}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {(
-              [
-                { value: "ALL", label: "All categories" },
-                { value: "CRITICAL_WARNING", label: "Critical" },
-                { value: "PRODUCT_UPDATE", label: "Product" },
-                { value: "PROMOTIONAL", label: "Promo" },
-              ] as const
-            ).map((chip) => {
-              const selected = categoryFilter === chip.value;
-              return (
-                <button
-                  key={chip.value}
-                  type="button"
-                  onClick={() => setCategoryFilter(chip.value)}
-                  className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[11px] font-bold transition ${
-                    selected
-                      ? "border-[#12213f] bg-[#12213f] text-white"
-                      : "border-[#dde4eb] bg-white text-slate-500 hover:border-slate-300"
-                  }`}
-                >
-                  {chip.label}
-                  <span
-                    className={`text-[10px] font-black ${
-                      selected ? "text-emerald-200" : "text-slate-400"
-                    }`}
-                  >
-                    {categoryCounts[chip.value]}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="space-y-3 p-4 sm:p-5">
-          {loading ? (
-            <p className="px-1 py-8 text-sm font-semibold text-slate-500">
-              Loading campaigns...
-            </p>
-          ) : filteredCampaigns.length === 0 ? (
-            <CampaignListEmpty
-              statusFilter={statusFilter}
-              categoryFilter={categoryFilter}
-              hasQuery={query.trim().length > 0}
-            />
-          ) : (
-            filteredCampaigns.map((campaign) => (
-              <CampaignCard
-                key={campaign.id}
-                campaign={campaign}
-                saving={saving}
-                internalRoutes={internalRoutes}
-                onEdit={() => editCampaign(campaign)}
-                onDuplicate={() => duplicateCampaign(campaign)}
-                onStatus={(status) => void updateStatus(campaign, status)}
-              />
-            ))
-          )}
-        </div>
-      </Panel>
+        {loading ? (
+          <p className="px-4 py-8 text-[11px] font-medium text-[#68758d]">
+            Loading campaigns...
+          </p>
+        ) : filteredCampaigns.length === 0 ? (
+          <CampaignListEmpty
+            statusFilter={statusFilter}
+            categoryFilter={categoryFilter}
+            hasQuery={query.trim().length > 0}
+          />
+        ) : (
+          <>
+            <div className="hidden border-b border-[#edf1f4] bg-[#fcfdfe] px-4 py-2.5 text-[9.5px] font-semibold text-[#56647d] xl:grid xl:grid-cols-[minmax(0,1.4fr)_90px_minmax(120px,0.7fr)_minmax(130px,0.75fr)_90px_minmax(200px,0.9fr)] xl:gap-3">
+              <span>Campaign</span>
+              <span>Template</span>
+              <span>Audience</span>
+              <span>Schedule</span>
+              <span>Status</span>
+              <span className="text-right">Actions</span>
+            </div>
+            <div className="divide-y divide-[#edf1f4]">
+              {filteredCampaigns.map((campaign) => (
+                <CampaignTableRow
+                  key={campaign.id}
+                  campaign={campaign}
+                  saving={saving}
+                  internalRoutes={internalRoutes}
+                  onEdit={() => editCampaign(campaign)}
+                  onDuplicate={() => duplicateCampaign(campaign)}
+                  onStatus={(status) => void updateStatus(campaign, status)}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </section>
     </div>
   );
 }
@@ -1374,7 +1336,7 @@ function CampaignCardPreview({
 
   return (
     <div
-      className="relative overflow-hidden rounded-2xl border p-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
+      className="relative overflow-hidden rounded-[10px] border p-3.5"
       style={{
         backgroundColor: theme.surface,
         borderColor: theme.border,
@@ -1386,46 +1348,46 @@ function CampaignCardPreview({
         type="button"
         tabIndex={-1}
         aria-hidden
-        className="absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-white/80 text-slate-400 shadow-sm"
+        className="absolute right-2.5 top-2.5 grid size-6 place-items-center rounded-full bg-white/80 text-slate-400"
       >
-        <X className="size-3.5" />
+        <X className="size-3" />
       </button>
 
-      <div className="relative z-[1] flex items-start gap-3 pr-8">
+      <div className="relative z-[1] flex items-start gap-2.5 pr-7">
         <div
-          className="grid size-11 shrink-0 place-items-center rounded-full"
+          className="grid size-9 shrink-0 place-items-center rounded-full"
           style={{ backgroundColor: theme.iconBg, color: theme.accent }}
         >
           {category === "CRITICAL_WARNING" ? (
-            <AlertTriangle className="size-5" strokeWidth={2.4} />
+            <AlertTriangle className="size-4" strokeWidth={2.4} />
           ) : category === "PRODUCT_UPDATE" ? (
-            <Megaphone className="size-5" strokeWidth={2.4} />
+            <Megaphone className="size-4" strokeWidth={2.4} />
           ) : (
-            <Gift className="size-5" strokeWidth={2.4} />
+            <Gift className="size-4" strokeWidth={2.4} />
           )}
         </div>
 
         <div className="min-w-0 flex-1">
           <p
-            className="text-sm font-black leading-5"
+            className="text-[12px] font-semibold leading-4"
             style={{ color: theme.title }}
           >
             {title.trim() || "Campaign preview"}
           </p>
           <p
-            className="mt-1 line-clamp-3 text-xs font-medium leading-5"
+            className="mt-1 line-clamp-3 text-[10.5px] font-medium leading-4"
             style={{ color: theme.body }}
           >
             {body.trim() ||
-              "Write a short, useful message that will sit in the mobile header card."}
+              "Write a short message for the mobile header card."}
           </p>
 
           <div
-            className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[11px] font-black text-white"
+            className="mt-2.5 inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-[10px] font-semibold text-white"
             style={{ backgroundColor: theme.accent }}
           >
             {label}
-            <ArrowRight className="size-3.5" />
+            <ArrowRight className="size-3" />
           </div>
         </div>
       </div>
@@ -1443,7 +1405,7 @@ function PreviewWatermark({
   if (category === "CRITICAL_WARNING") {
     return (
       <MessageCircle
-        className="pointer-events-none absolute -right-2 bottom-1 size-24 opacity-[0.12]"
+        className="pointer-events-none absolute -right-2 bottom-1 size-20 opacity-[0.1]"
         style={{ color: accent }}
         strokeWidth={1.5}
       />
@@ -1452,13 +1414,13 @@ function PreviewWatermark({
 
   if (category === "PRODUCT_UPDATE") {
     return (
-      <div className="pointer-events-none absolute -right-1 bottom-2 flex items-end opacity-[0.18]">
-        <FileText className="size-16" style={{ color: accent }} strokeWidth={1.4} />
+      <div className="pointer-events-none absolute -right-1 bottom-2 flex items-end opacity-[0.14]">
+        <FileText className="size-14" style={{ color: accent }} strokeWidth={1.4} />
         <span
-          className="absolute -right-0.5 top-1 grid size-6 place-items-center rounded-full text-white"
+          className="absolute -right-0.5 top-1 grid size-5 place-items-center rounded-full text-white"
           style={{ backgroundColor: "#10B981" }}
         >
-          <Plus className="size-3.5" strokeWidth={3} />
+          <Plus className="size-3" strokeWidth={3} />
         </span>
       </div>
     );
@@ -1466,7 +1428,7 @@ function PreviewWatermark({
 
   return (
     <BarChart3
-      className="pointer-events-none absolute -right-1 bottom-1 size-24 opacity-[0.14]"
+      className="pointer-events-none absolute -right-1 bottom-1 size-20 opacity-[0.12]"
       style={{ color: accent }}
       strokeWidth={1.5}
     />
@@ -1491,7 +1453,7 @@ function CampaignListEmpty({
     categoryFilter === "ALL" ? null : categoryShortLabel(categoryFilter);
 
   let title = "No campaigns yet";
-  let body = "Create the first header campaign to start notifying mobile users.";
+  let body = "Create a header campaign to notify mobile users.";
 
   if (hasQuery) {
     title = "No campaigns match your search";
@@ -1503,17 +1465,14 @@ function CampaignListEmpty({
   }
 
   return (
-    <div className="rounded-xl border border-dashed border-[#dde4eb] bg-[#f7faf9] px-5 py-12 text-center">
-      <Search className="mx-auto size-7 text-slate-300" />
-      <h3 className="mt-3 text-base font-black text-[var(--midnight-navy)]">
-        {title}
-      </h3>
-      <p className="mt-1 text-sm font-medium text-slate-500">{body}</p>
+    <div className="mx-4 my-5 rounded-[10px] border border-dashed border-[#dfe5eb] px-4 py-8 text-center">
+      <p className="text-[11px] font-semibold text-[#15223a]">{title}</p>
+      <p className="mt-1 text-[10px] font-medium text-[#68758d]">{body}</p>
     </div>
   );
 }
 
-function CampaignCard({
+function CampaignTableRow({
   campaign,
   saving,
   internalRoutes,
@@ -1529,93 +1488,74 @@ function CampaignCard({
   onStatus: (status: ControlCenterMarketingCampaignStatus) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const theme = CATEGORY_PREVIEW[campaign.category] ?? CATEGORY_PREVIEW.PRODUCT_UPDATE;
   const schedule = campaignScheduleMeta(campaign);
 
   return (
-    <article
-      className="overflow-hidden rounded-xl border border-[#dde4eb] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
-      style={{ borderLeftWidth: 4, borderLeftColor: theme.accent }}
-    >
-      <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className="inline-flex h-6 items-center rounded-md px-2 text-[10px] font-black uppercase tracking-[0.04em]"
-              style={{
-                backgroundColor: theme.iconBg,
-                color: theme.accent,
-              }}
-            >
-              {categoryShortLabel(campaign.category)}
-            </span>
-            <StatusPill value={campaign.status} />
-            <span
-              className={`inline-flex h-6 items-center rounded-md px-2 text-[10px] font-black uppercase tracking-[0.04em] ${schedule.badgeClass}`}
-            >
-              {schedule.badge}
-            </span>
-          </div>
-
-          <h3 className="mt-2 truncate text-sm font-black text-[var(--midnight-navy)]">
-            {campaign.title}
-          </h3>
-          <p
-            className={`mt-1 text-xs font-medium leading-5 text-slate-500 ${
-              expanded ? "" : "line-clamp-2"
-            }`}
-          >
-            {campaign.body}
-          </p>
-
-          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] font-semibold text-slate-500">
-            <span>{audienceLabel(campaign)}</span>
-            <span>Priority {campaign.priority}</span>
-            <span className="inline-flex items-center gap-1">
-              <CalendarDays className="size-3 text-slate-400" />
-              {schedule.detail}
-            </span>
-            <span>{ctaSummary(campaign, internalRoutes)}</span>
-          </div>
-
-          {expanded ? (
-            <div className="mt-3 rounded-lg border border-[#eef2f5] bg-[#f7faf9] px-3 py-2 text-[11px] font-medium text-slate-500">
-              <p>
-                Created by {campaign.createdBy?.name ?? "Unknown"} ·{" "}
-                {ccDateTime(campaign.createdAt)}
+    <div>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setExpanded((current) => !current)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            setExpanded((current) => !current);
+          }
+        }}
+        className="grid cursor-pointer gap-2 px-4 py-3 transition hover:bg-[#fbfcfd] xl:grid-cols-[minmax(0,1.4fr)_90px_minmax(120px,0.7fr)_minmax(130px,0.75fr)_90px_minmax(200px,0.9fr)] xl:items-center xl:gap-3"
+      >
+        <div className="min-w-0">
+          <div className="flex items-start gap-1.5">
+            <ChevronDown
+              className={`mt-0.5 size-3.5 shrink-0 text-[#8a94a5] transition ${
+                expanded ? "rotate-180" : ""
+              }`}
+            />
+            <div className="min-w-0">
+              <p className="truncate text-[10.5px] font-semibold text-[#17233c]">
+                {campaign.title}
               </p>
-              {campaign.ctaLabel ? (
-                <p className="mt-1">
-                  Button: {campaign.ctaLabel}
-                  {campaign.ctaAction === "EXTERNAL_URL" && campaign.ctaUrl
-                    ? ` → ${campaign.ctaUrl}`
-                    : ""}
-                  {campaign.ctaAction === "INTERNAL_ROUTE" && campaign.ctaRoute
-                    ? ` → ${routeLabel(campaign.ctaRoute, internalRoutes)}`
-                    : ""}
-                </p>
-              ) : null}
+              <p className="mt-0.5 truncate text-[9.5px] font-medium text-[#68758d]">
+                {campaign.body}
+              </p>
             </div>
-          ) : null}
+          </div>
         </div>
 
-        <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
+        <p className="text-[10.5px] font-medium text-[#26344d]">
+          {categoryShortLabel(campaign.category)}
+        </p>
+
+        <p className="truncate text-[10.5px] font-medium text-[#26344d]">
+          {audienceLabel(campaign)}
+        </p>
+
+        <p className="text-[10px] font-medium text-[#26354f]">
+          {schedule.detail}
+        </p>
+
+        <div>
+          <StatusPill value={campaign.status} />
+        </div>
+
+        <div
+          className="flex flex-wrap items-center justify-start gap-x-2.5 gap-y-1 xl:justify-end"
+          onClick={(event) => event.stopPropagation()}
+        >
           <button
             type="button"
             onClick={onEdit}
             disabled={saving}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#dde4eb] bg-white px-2.5 text-xs font-bold text-[#12213f] disabled:opacity-60"
+            className={actionTextBtnClass}
           >
-            <Edit3 className="size-3.5" />
             Edit
           </button>
           <button
             type="button"
             onClick={onDuplicate}
             disabled={saving}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#dde4eb] bg-white px-2.5 text-xs font-bold text-[#12213f] disabled:opacity-60"
+            className={actionTextBtnClass}
           >
-            <Copy className="size-3.5" />
             Duplicate
           </button>
           {campaign.status === "ACTIVE" ? (
@@ -1623,9 +1563,8 @@ function CampaignCard({
               type="button"
               onClick={() => onStatus("PAUSED")}
               disabled={saving}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 text-xs font-bold text-amber-700 disabled:opacity-60"
+              className={actionTextBtnClass}
             >
-              <PauseCircle className="size-3.5" />
               Pause
             </button>
           ) : campaign.status !== "ARCHIVED" ? (
@@ -1633,9 +1572,8 @@ function CampaignCard({
               type="button"
               onClick={() => onStatus("ACTIVE")}
               disabled={saving}
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-bold text-[var(--forest-emerald)] disabled:opacity-60"
+              className="text-[10px] font-semibold text-[#188653] transition hover:text-[#147348] disabled:opacity-50"
             >
-              <PlayCircle className="size-3.5" />
               Publish
             </button>
           ) : null}
@@ -1644,26 +1582,34 @@ function CampaignCard({
               type="button"
               onClick={() => onStatus("ARCHIVED")}
               disabled={saving}
-              className="grid size-8 place-items-center rounded-lg border border-red-100 bg-red-50 text-red-600 disabled:opacity-60"
-              aria-label="Archive campaign"
+              className="text-[10px] font-semibold text-[#c94040] transition hover:text-[#a83333] disabled:opacity-50"
             >
-              <Archive className="size-3.5" />
+              Archive
             </button>
           ) : null}
-          <button
-            type="button"
-            onClick={() => setExpanded((current) => !current)}
-            className="grid size-8 place-items-center rounded-lg border border-[#dde4eb] bg-white text-slate-500"
-            aria-label={expanded ? "Collapse campaign" : "Expand campaign"}
-            aria-expanded={expanded}
-          >
-            <ChevronDown
-              className={`size-3.5 transition ${expanded ? "rotate-180" : ""}`}
-            />
-          </button>
         </div>
       </div>
-    </article>
+
+      {expanded ? (
+        <div className="border-t border-[#edf1f4] bg-[#fcfdfe] px-4 py-2.5 text-[10px] font-medium text-[#68758d]">
+          <p>
+            Created by {campaign.createdBy?.name ?? "Unknown"} ·{" "}
+            {ccDateTime(campaign.createdAt)} · Priority {campaign.priority}
+          </p>
+          <p className="mt-1">
+            {ctaSummary(campaign, internalRoutes)}
+            {campaign.ctaLabel ? ` · Button: ${campaign.ctaLabel}` : ""}
+            {campaign.ctaAction === "EXTERNAL_URL" && campaign.ctaUrl
+              ? ` → ${campaign.ctaUrl}`
+              : ""}
+            {campaign.ctaAction === "INTERNAL_ROUTE" && campaign.ctaRoute
+              ? ` → ${routeLabel(campaign.ctaRoute, internalRoutes)}`
+              : ""}
+          </p>
+          <p className="mt-1">{schedule.badge}</p>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
