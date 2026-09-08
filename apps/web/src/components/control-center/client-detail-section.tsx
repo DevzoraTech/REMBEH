@@ -10,6 +10,7 @@ import {
   Landmark,
   LockKeyhole,
   MapPin,
+  MessageSquare,
   ShieldAlert,
   Tag,
   Timer,
@@ -64,6 +65,7 @@ export function ControlCenterClientDetailSection({
   onManagePricing,
   onPricingHistory,
   onSetDataCorrectionAccess,
+  onSetSmsAccess,
   onSetTrialDuration,
 }: {
   detail: ControlCenterClientDetail | null;
@@ -73,6 +75,12 @@ export function ControlCenterClientDetailSection({
   onManagePricing: () => void;
   onPricingHistory: () => void;
   onSetDataCorrectionAccess: (input: {
+    tenantId: string;
+    branchId?: string;
+    enabled: boolean;
+    reason: string;
+  }) => Promise<void>;
+  onSetSmsAccess: (input: {
     tenantId: string;
     branchId?: string;
     enabled: boolean;
@@ -146,6 +154,7 @@ export function ControlCenterClientDetailSection({
             onOpenBranch={onOpenBranch}
             onOpenActivity={() => setTab("ACTIVITY")}
             onSetDataCorrectionAccess={onSetDataCorrectionAccess}
+            onSetSmsAccess={onSetSmsAccess}
             onSetTrialDuration={onSetTrialDuration}
           />
         ) : tab === "BRANCHES" ? (
@@ -321,6 +330,7 @@ function OverviewTab({
   onOpenBranch,
   onOpenActivity,
   onSetDataCorrectionAccess,
+  onSetSmsAccess,
   onSetTrialDuration,
 }: {
   detail: ControlCenterClientDetail;
@@ -330,6 +340,12 @@ function OverviewTab({
   onOpenBranch: (branchId: string) => void;
   onOpenActivity: () => void;
   onSetDataCorrectionAccess: (input: {
+    tenantId: string;
+    branchId?: string;
+    enabled: boolean;
+    reason: string;
+  }) => Promise<void>;
+  onSetSmsAccess: (input: {
     tenantId: string;
     branchId?: string;
     enabled: boolean;
@@ -499,6 +515,10 @@ function OverviewTab({
           detail={detail}
           onSetAccess={onSetDataCorrectionAccess}
         />
+      </div>
+
+      <div className="mt-4">
+        <SmsAccessPanel detail={detail} onSetAccess={onSetSmsAccess} />
       </div>
 
       <div className="mt-4">
@@ -1391,6 +1411,203 @@ function DataCorrectionAccessPanel({
                       className="inline-flex h-7 items-center rounded-md border border-[#ead2aa] bg-white px-2.5 text-[9px] font-semibold text-[#a05a16] disabled:cursor-not-allowed disabled:text-[#9aa4b3]"
                     >
                       {busy ? "Saving" : "Disable"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function SmsAccessPanel({
+  detail,
+  onSetAccess,
+}: {
+  detail: ControlCenterClientDetail;
+  onSetAccess: (input: {
+    tenantId: string;
+    branchId?: string;
+    enabled: boolean;
+    reason: string;
+  }) => Promise<void>;
+}) {
+  const [reason, setReason] = useState(
+    "SMS access revoked pending account review.",
+  );
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const client = detail.client;
+  const organizationAccess = client.smsAccess ?? {
+    ...emptyFeatureAccess,
+    enabled: true,
+  };
+  const orgRevoked = !organizationAccess.enabled;
+
+  async function apply(input: { branchId?: string; enabled: boolean }) {
+    const cleanReason = reason.trim();
+    if (cleanReason.length < 6) {
+      return;
+    }
+
+    const busy = input.branchId ?? "organization";
+    setBusyKey(busy);
+
+    try {
+      await onSetAccess({
+        tenantId: client.id,
+        branchId: input.branchId,
+        enabled: input.enabled,
+        reason: cleanReason,
+      });
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  return (
+    <section className="overflow-hidden rounded-[10px] border border-[#d7e4f4] bg-[#f5f9fd]">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#dce7f3] px-4 py-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-white text-[#2f6fad] shadow-sm">
+            <MessageSquare className="size-4" />
+          </div>
+
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold text-[#17233c]">SMS access</p>
+
+            <p className="mt-1 max-w-[720px] text-[9.5px] leading-4 text-[#4d6280]">
+              Allow or revoke SMS sending and buying/consuming for this
+              organisation or a single branch. Organisation revoke blocks every
+              branch.
+            </p>
+          </div>
+        </div>
+
+        <FeatureAccessBadge
+          enabled={organizationAccess.enabled}
+          label={
+            organizationAccess.enabled
+              ? "Organization allowed"
+              : "Organization revoked"
+          }
+        />
+      </div>
+
+      <div className="grid gap-4 p-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <div className="rounded-[8px] border border-[#c9d9ec] bg-white p-3">
+          <label
+            htmlFor="sms-access-reason"
+            className="text-[9.5px] font-semibold text-[#40597a]"
+          >
+            Audit reason
+          </label>
+
+          <textarea
+            id="sms-access-reason"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            rows={3}
+            className="mt-2 w-full resize-none rounded-md border border-[#dfe5eb] px-3 py-2 text-[10px] font-medium text-[#17233c] outline-none transition focus:border-[#188653]"
+          />
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={busyKey !== null || organizationAccess.enabled}
+              onClick={() => void apply({ enabled: true })}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[#188653] px-3 text-[9.5px] font-semibold text-white transition disabled:cursor-not-allowed disabled:bg-[#aab6c2]"
+            >
+              <UnlockKeyhole className="size-3.5" />
+              Allow organization
+            </button>
+
+            <button
+              type="button"
+              disabled={busyKey !== null || !organizationAccess.enabled}
+              onClick={() => void apply({ enabled: false })}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[#b7c9df] bg-white px-3 text-[9.5px] font-semibold text-[#355279] transition disabled:cursor-not-allowed disabled:text-[#9aa4b3]"
+            >
+              <LockKeyhole className="size-3.5" />
+              Revoke organization
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-[8px] border border-[#c9d9ec] bg-white">
+          <div className="grid grid-cols-[minmax(0,1fr)_150px_170px] gap-3 border-b border-[#edf1f4] px-3 py-2 text-[9px] font-semibold text-[#6a7890]">
+            <span>Branch</span>
+            <span>Access</span>
+            <span className="text-right">Action</span>
+          </div>
+
+          <div className="divide-y divide-[#edf1f4]">
+            {detail.branches.map((branch) => {
+              const access = branch.smsAccess ?? {
+                ...emptyFeatureAccess,
+                enabled: true,
+              };
+              const enabled = access.enabled;
+              const source = access.source;
+              const label = !enabled
+                ? source === "ORGANIZATION"
+                  ? "Org revoked"
+                  : source === "BRANCH"
+                    ? "Branch revoked"
+                    : "Revoked"
+                : source === "BRANCH"
+                  ? "Branch allowed"
+                  : source === "ORGANIZATION"
+                    ? "Inherited"
+                    : "Allowed";
+              const busy = busyKey === branch.id;
+
+              return (
+                <div
+                  key={branch.id}
+                  className="grid grid-cols-[minmax(0,1fr)_150px_170px] items-center gap-3 px-3 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-[10px] font-semibold text-[#17233c]">
+                      {branch.name}
+                    </p>
+
+                    <p className="mt-0.5 truncate text-[9px] text-[#718099]">
+                      {access.reason || "SMS send and purchase allowed by default"}
+                    </p>
+                  </div>
+
+                  <div>
+                    <FeatureAccessBadge enabled={enabled} label={label} />
+                  </div>
+
+                  <div className="flex justify-end gap-1.5">
+                    <button
+                      type="button"
+                      disabled={busyKey !== null || enabled || orgRevoked}
+                      onClick={() =>
+                        void apply({ branchId: branch.id, enabled: true })
+                      }
+                      className="inline-flex h-7 items-center rounded-md border border-[#cfe8d7] bg-[#f4fbf6] px-2.5 text-[9px] font-semibold text-[#188653] disabled:cursor-not-allowed disabled:text-[#9aa4b3]"
+                    >
+                      Allow
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={
+                        busyKey !== null ||
+                        orgRevoked ||
+                        (!enabled && source !== "BRANCH")
+                      }
+                      onClick={() =>
+                        void apply({ branchId: branch.id, enabled: false })
+                      }
+                      className="inline-flex h-7 items-center rounded-md border border-[#c9d9ec] bg-white px-2.5 text-[9px] font-semibold text-[#355279] disabled:cursor-not-allowed disabled:text-[#9aa4b3]"
+                    >
+                      {busy ? "Saving" : "Revoke"}
                     </button>
                   </div>
                 </div>

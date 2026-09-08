@@ -14,6 +14,7 @@ export type SmsWalletContract = {
   availableUnits: number;
   reservedUnits: number;
   canSendSms: boolean;
+  smsAccessAllowed: boolean;
   /** @deprecated Prefer availableUnits. Kept for older clients. */
   creditsRemaining: number;
 };
@@ -23,6 +24,7 @@ export type SmsBalanceContract = {
   availableUnits: number;
   reservedUnits: number;
   canSendSms: boolean;
+  smsAccessAllowed: boolean;
   scope: 'branch' | 'account';
   branchId: string | null;
   branchName: string | null;

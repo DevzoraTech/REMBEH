@@ -210,8 +210,11 @@ export function DailyReconciliationReport({
   onExportExcel,
   onExportPdf,
   onPrimaryAction,
+  primaryDisabled = false,
+  primaryDisabledReason,
   showBack = false,
   onBack,
+  backLabel = "Back to Daily Reports",
   className = "",
 }: {
   document: DailyReportDocumentModel;
@@ -225,8 +228,11 @@ export function DailyReconciliationReport({
   onExportExcel: () => void;
   onExportPdf: () => void;
   onPrimaryAction?: () => void;
+  primaryDisabled?: boolean;
+  primaryDisabledReason?: string;
   showBack?: boolean;
   onBack?: () => void;
+  backLabel?: string;
   className?: string;
 }) {
   const [exportOpen, setExportOpen] = useState(false);
@@ -254,7 +260,7 @@ export function DailyReconciliationReport({
           className="inline-flex items-center gap-1.5 text-sm font-semibold text-slate-600 transition hover:text-[#0b1220]"
         >
           <ChevronLeft className="size-4" />
-          Back to Daily Reports
+          {backLabel}
         </button>
       ) : null}
 
@@ -328,8 +334,13 @@ export function DailyReconciliationReport({
           {primaryLabel && onPrimaryAction ? (
             <button
               type="button"
-              disabled={acting}
+              disabled={acting || primaryDisabled}
               onClick={onPrimaryAction}
+              title={
+                primaryDisabled
+                  ? primaryDisabledReason || "Action unavailable"
+                  : undefined
+              }
               className="inline-flex h-9 items-center gap-2 rounded-xl bg-[var(--forest-emerald)] px-4 text-xs font-bold text-white shadow-[0_10px_22px_rgba(15,143,104,0.28)] transition hover:brightness-105 disabled:opacity-55"
             >
               {acting ? (
@@ -337,7 +348,9 @@ export function DailyReconciliationReport({
               ) : (
                 <Send className="size-3.5" />
               )}
-              {primaryLabel}
+              {primaryDisabled && primaryDisabledReason
+                ? primaryDisabledReason
+                : primaryLabel}
             </button>
           ) : null}
         </div>
@@ -357,6 +370,8 @@ export function DailyReconciliationReport({
           canManagerSend={canManagerSend}
           canOwnerApprove={canOwnerApprove}
           primaryLabel={primaryLabel}
+          primaryDisabled={primaryDisabled}
+          primaryDisabledReason={primaryDisabledReason}
           onPrimaryAction={onPrimaryAction}
         />
       </div>
@@ -1110,6 +1125,8 @@ function ReviewSidebar({
   canManagerSend,
   canOwnerApprove,
   primaryLabel,
+  primaryDisabled = false,
+  primaryDisabledReason,
   onPrimaryAction,
 }: {
   document: DailyReportDocumentModel;
@@ -1120,6 +1137,8 @@ function ReviewSidebar({
   canManagerSend: boolean;
   canOwnerApprove: boolean;
   primaryLabel: string | null;
+  primaryDisabled?: boolean;
+  primaryDisabledReason?: string;
   onPrimaryAction?: () => void;
 }) {
   const cashCounted = document.countedCash != null;
@@ -1143,8 +1162,11 @@ function ReviewSidebar({
           <StatusBadge status={document.status} label={statusLabel} />
         </div>
         <p className="mt-2 text-xs leading-relaxed text-slate-500">
-          {document.status === "MANAGER_REVIEW" ||
-          document.status === "RETURNED_TO_MANAGER"
+          {document.status === "RETURNED_TO_MANAGER"
+            ? primaryDisabled
+              ? "Apply payment corrections first, then re-check figures before resubmitting."
+              : "Re-check corrected figures, then resubmit this report to the owner."
+            : document.status === "MANAGER_REVIEW"
             ? allPassed
               ? "All validations passed. You can send this report to the owner."
               : "Complete the remaining checks before sending to the owner."
@@ -1216,8 +1238,13 @@ function ReviewSidebar({
             <>
               <button
                 type="button"
-                disabled={acting}
+                disabled={acting || primaryDisabled}
                 onClick={onPrimaryAction}
+                title={
+                  primaryDisabled
+                    ? primaryDisabledReason || "Action unavailable"
+                    : undefined
+                }
                 className="mt-3 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[var(--forest-emerald)] text-sm font-bold text-white shadow-[0_10px_22px_rgba(15,143,104,0.28)] transition hover:brightness-105 disabled:opacity-55"
               >
                 {acting ? (
@@ -1225,12 +1252,18 @@ function ReviewSidebar({
                 ) : (
                   <Send className="size-4" />
                 )}
-                {primaryLabel}
+                {primaryDisabled && primaryDisabledReason
+                  ? primaryDisabledReason
+                  : primaryLabel}
               </button>
               <p className="mt-2 text-center text-[11px] text-slate-500">
-                {canManagerSend
-                  ? "This will notify the owner to review this report."
-                  : "This will finalize and save the approved report."}
+                {primaryDisabled
+                  ? "Finish applying payment corrections on Corrections, then return here."
+                  : canManagerSend
+                    ? document.status === "RETURNED_TO_MANAGER"
+                      ? "This will resubmit the returned report to the owner."
+                      : "This will notify the owner to review this report."
+                    : "This will finalize and save the approved report."}
               </p>
             </>
           ) : null}

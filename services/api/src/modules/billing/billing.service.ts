@@ -1243,6 +1243,11 @@ export class BillingService implements OnModuleInit {
       throw new NotFoundException('Branch not found.');
     }
 
+    await this.smsCreditsService.assertSmsAccessAllowed(
+      user.tenantId,
+      branch.id,
+    );
+
     const now = new Date();
     const bundle = await this.prisma.smsBundle.findFirst({
       where: {

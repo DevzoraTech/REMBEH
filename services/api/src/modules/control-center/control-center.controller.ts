@@ -285,6 +285,42 @@ export class ControlCenterController {
     );
   }
 
+  @Get('clients/:tenantId/sms-access')
+  @UseGuards(ControlCenterAuthGuard)
+  smsAccess(@Param('tenantId') tenantId: string) {
+    return this.controlCenterService.getSmsAccess(tenantId);
+  }
+
+  @Patch('clients/:tenantId/sms-access')
+  @UseGuards(ControlCenterAuthGuard)
+  updateOrganizationSmsAccess(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Param('tenantId') tenantId: string,
+    @Body() body: ControlCenterFeatureAccessDto,
+  ) {
+    return this.controlCenterService.updateOrganizationSmsAccess(
+      admin,
+      tenantId,
+      body,
+    );
+  }
+
+  @Patch('clients/:tenantId/branches/:branchId/sms-access')
+  @UseGuards(ControlCenterAuthGuard)
+  updateBranchSmsAccess(
+    @CurrentControlCenterAdmin() admin: ControlCenterAdminContext,
+    @Param('tenantId') tenantId: string,
+    @Param('branchId') branchId: string,
+    @Body() body: ControlCenterFeatureAccessDto,
+  ) {
+    return this.controlCenterService.updateBranchSmsAccess(
+      admin,
+      tenantId,
+      branchId,
+      body,
+    );
+  }
+
   @Post('clients/:tenantId/pricing')
   @UseGuards(ControlCenterAuthGuard)
   saveOrganizationPricing(

@@ -851,6 +851,16 @@ class _PaymentHistoryTrailingState extends State<_PaymentHistoryTrailing> {
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
               ),
+            )
+          else
+            const Text(
+              'Prev. day only',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: slateText,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+              ),
             ),
         ],
       ),

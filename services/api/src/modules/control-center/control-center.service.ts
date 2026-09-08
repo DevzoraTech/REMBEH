@@ -67,6 +67,7 @@ const DEFAULT_ALLOWED_EMAILS = [
 ];
 
 const LEGACY_DATA_CORRECTION_FEATURE = 'legacy_data_corrections';
+const SMS_ACCESS_FEATURE = 'sms_access';
 
 type ControlCenterTokenPayload = {
   typ: 'control-center';
@@ -2531,6 +2532,7 @@ export class ControlCenterService implements OnModuleInit {
       subscriptionPayments,
       latestActivity,
       dataCorrectionAccess,
+      smsAccess,
       trialInfo,
     ] = await Promise.all([
       this.prisma.repayment.groupBy({
@@ -2561,6 +2563,7 @@ export class ControlCenterService implements OnModuleInit {
         include: { actor: { select: { displayName: true, email: true } } },
       }),
       this.buildDataCorrectionAccess(tenantId, tenant.branches),
+      this.buildSmsAccess(tenantId, tenant.branches),
       this.billingService.resolveTenantTrialDays(tenantId),
     ]);
 
@@ -2603,6 +2606,7 @@ export class ControlCenterService implements OnModuleInit {
           totalUsers: tenant.users.length,
         },
         dataCorrectionAccess: dataCorrectionAccess.organization,
+        smsAccess: smsAccess.organization,
         trial: {
           durationDays: trialInfo.durationDays,
           isCustom: trialInfo.isCustom,
@@ -2618,6 +2622,9 @@ export class ControlCenterService implements OnModuleInit {
           dataCorrectionAccess.branches.find(
             (item) => item.branch.id === branch.id,
           )?.access ?? null;
+        const branchSmsAccess =
+          smsAccess.branches.find((item) => item.branch.id === branch.id)
+            ?.access ?? null;
         const lastUsedAt = this.latestDate(
           branch.users.flatMap((user) =>
             user.authSessions.map((session) => session.lastSeenAt),
@@ -2641,6 +2648,7 @@ export class ControlCenterService implements OnModuleInit {
           subscriptionPayments: payment?._count._all ?? 0,
           lastUsedAt: lastUsedAt?.toISOString() ?? null,
           dataCorrectionAccess: branchCorrectionAccess,
+          smsAccess: branchSmsAccess,
         };
       }),
       subscriptions: tenant.branches.map((branch) => ({
@@ -3217,6 +3225,128 @@ export class ControlCenterService implements OnModuleInit {
     );
 
     return this.getDataCorrectionAccess(tenantId);
+  }
+
+  async getSmsAccess(tenantId: string) {
+    await this.assertTenant(tenantId);
+
+    const branches = await this.prisma.branch.findMany({
+      where: { tenantId },
+      select: { id: true, name: true },
+      orderBy: { name: 'asc' },
+    });
+
+    return this.buildSmsAccess(tenantId, branches);
+  }
+
+  async updateOrganizationSmsAccess(
+    admin: ControlCenterAdminContext,
+    tenantId: string,
+    dto: ControlCenterFeatureAccessDto,
+  ) {
+    await this.assertTenant(tenantId);
+
+    const oldValue = await this.prisma.controlledFeatureAccess.findUnique({
+      where: {
+        featureKey_scope_scopeId: {
+          featureKey: SMS_ACCESS_FEATURE,
+          scope: ControlledFeatureScope.TENANT,
+          scopeId: tenantId,
+        },
+      },
+    });
+
+    const saved = await this.prisma.controlledFeatureAccess.upsert({
+      where: {
+        featureKey_scope_scopeId: {
+          featureKey: SMS_ACCESS_FEATURE,
+          scope: ControlledFeatureScope.TENANT,
+          scopeId: tenantId,
+        },
+      },
+      update: {
+        enabled: dto.enabled,
+        reason: this.cleanOptionalText(dto.reason),
+        updatedByAdminId: admin.adminId,
+      },
+      create: {
+        featureKey: SMS_ACCESS_FEATURE,
+        scope: ControlledFeatureScope.TENANT,
+        scopeId: tenantId,
+        tenantId,
+        enabled: dto.enabled,
+        reason: this.cleanOptionalText(dto.reason),
+        updatedByAdminId: admin.adminId,
+      },
+    });
+
+    await this.audit(
+      admin.adminId,
+      'control_center.feature.sms_access.updated',
+      'ControlledFeatureAccess',
+      saved.id,
+      this.featureAccessAuditValue(oldValue),
+      this.featureAccessAuditValue(saved),
+    );
+
+    return this.getSmsAccess(tenantId);
+  }
+
+  async updateBranchSmsAccess(
+    admin: ControlCenterAdminContext,
+    tenantId: string,
+    branchId: string,
+    dto: ControlCenterFeatureAccessDto,
+  ) {
+    await this.assertBranch(tenantId, branchId);
+
+    const oldValue = await this.prisma.controlledFeatureAccess.findUnique({
+      where: {
+        featureKey_scope_scopeId: {
+          featureKey: SMS_ACCESS_FEATURE,
+          scope: ControlledFeatureScope.BRANCH,
+          scopeId: branchId,
+        },
+      },
+    });
+
+    const saved = await this.prisma.controlledFeatureAccess.upsert({
+      where: {
+        featureKey_scope_scopeId: {
+          featureKey: SMS_ACCESS_FEATURE,
+          scope: ControlledFeatureScope.BRANCH,
+          scopeId: branchId,
+        },
+      },
+      update: {
+        enabled: dto.enabled,
+        tenantId,
+        branchId,
+        reason: this.cleanOptionalText(dto.reason),
+        updatedByAdminId: admin.adminId,
+      },
+      create: {
+        featureKey: SMS_ACCESS_FEATURE,
+        scope: ControlledFeatureScope.BRANCH,
+        scopeId: branchId,
+        tenantId,
+        branchId,
+        enabled: dto.enabled,
+        reason: this.cleanOptionalText(dto.reason),
+        updatedByAdminId: admin.adminId,
+      },
+    });
+
+    await this.audit(
+      admin.adminId,
+      'control_center.feature.sms_access.updated',
+      'ControlledFeatureAccess',
+      saved.id,
+      this.featureAccessAuditValue(oldValue),
+      this.featureAccessAuditValue(saved),
+    );
+
+    return this.getSmsAccess(tenantId);
   }
 
   async getPricing(tenantId: string) {
@@ -4568,6 +4698,65 @@ export class ControlCenterService implements OnModuleInit {
     };
   }
 
+  private async buildSmsAccess(
+    tenantId: string,
+    branches: Array<{ id: string; name: string }>,
+  ) {
+    const accessRows = await this.prisma.controlledFeatureAccess.findMany({
+      where: {
+        tenantId,
+        featureKey: SMS_ACCESS_FEATURE,
+      },
+      include: {
+        updatedBy: {
+          select: {
+            displayName: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    const organizationRow =
+      accessRows.find((row) => row.scope === ControlledFeatureScope.TENANT) ??
+      null;
+
+    const branchRows = new Map(
+      accessRows
+        .filter((row) => row.scope === ControlledFeatureScope.BRANCH)
+        .map((row) => [row.scopeId, row]),
+    );
+
+    const organization = this.toFeatureAccessContract(
+      organizationRow,
+      organizationRow,
+      null,
+      true,
+    );
+
+    return {
+      featureKey: SMS_ACCESS_FEATURE,
+      organization,
+      branches: branches.map((branch) => {
+        const branchRow = branchRows.get(branch.id) ?? null;
+        // Org revoke wins; branch cannot override org revoke to allow.
+        const orgRevoked = organizationRow?.enabled === false;
+        const effectiveRow = orgRevoked
+          ? organizationRow
+          : (branchRow ?? organizationRow);
+        return {
+          branch,
+          access: this.toFeatureAccessContract(
+            branchRow,
+            effectiveRow,
+            organizationRow,
+            true,
+          ),
+        };
+      }),
+    };
+  }
+
   private toFeatureAccessContract(
     ownRow: Prisma.ControlledFeatureAccessGetPayload<{
       include: {
@@ -4584,9 +4773,10 @@ export class ControlCenterService implements OnModuleInit {
         updatedBy: { select: { displayName: true; email: true } };
       };
     }> | null,
+    defaultEnabled = false,
   ) {
     return {
-      enabled: effectiveRow?.enabled ?? false,
+      enabled: effectiveRow?.enabled ?? defaultEnabled,
       source:
         effectiveRow?.scope === ControlledFeatureScope.BRANCH
           ? 'BRANCH'

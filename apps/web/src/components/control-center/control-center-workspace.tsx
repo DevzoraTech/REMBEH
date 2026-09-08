@@ -499,6 +499,48 @@ export function ControlCenterWorkspace() {
     }
   }
 
+  async function setSmsAccess(input: {
+    tenantId: string;
+    branchId?: string;
+    enabled: boolean;
+    reason: string;
+  }) {
+    if (!session) {
+      return;
+    }
+
+    setError(null);
+
+    try {
+      await controlCenterFetch(
+        input.branchId
+          ? `/clients/${input.tenantId}/branches/${input.branchId}/sms-access`
+          : `/clients/${input.tenantId}/sms-access`,
+        session,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            enabled: input.enabled,
+            reason: input.reason,
+          }),
+        },
+      );
+
+      await Promise.all([
+        loadClient(input.tenantId, session),
+        loadCore(session),
+      ]);
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Could not update SMS access.",
+      );
+
+      throw caughtError;
+    }
+  }
+
   async function refreshUsers() {
     if (!session) {
       return;
@@ -573,6 +615,7 @@ export function ControlCenterWorkspace() {
 
         refreshAfterPricing,
         setDataCorrectionAccess,
+        setSmsAccess,
         setTrialDuration,
         loadBranchUsage,
         refreshUsers,
@@ -643,6 +686,13 @@ function renderSection(input: {
     reason: string;
   }) => Promise<void>;
 
+  setSmsAccess: (input: {
+    tenantId: string;
+    branchId?: string;
+    enabled: boolean;
+    reason: string;
+  }) => Promise<void>;
+
   setTrialDuration: (input: {
     tenantId: string;
     durationDays: number | null;
@@ -686,6 +736,7 @@ function renderSection(input: {
             }}
             onPricingHistory={() => input.openHistory()}
             onSetDataCorrectionAccess={input.setDataCorrectionAccess}
+            onSetSmsAccess={input.setSmsAccess}
             onSetTrialDuration={input.setTrialDuration}
           />
         );
@@ -721,6 +772,7 @@ function renderSection(input: {
             }
           }}
           onSetDataCorrectionAccess={input.setDataCorrectionAccess}
+          onSetSmsAccess={input.setSmsAccess}
         />
       );
     }
@@ -739,6 +791,7 @@ function renderSection(input: {
           }}
           onPricingHistory={() => input.openHistory()}
           onSetDataCorrectionAccess={input.setDataCorrectionAccess}
+          onSetSmsAccess={input.setSmsAccess}
           onSetTrialDuration={input.setTrialDuration}
         />
       );

@@ -498,6 +498,7 @@ export type ControlCenterClientDetail = {
       totalUsers: number;
     };
     dataCorrectionAccess: ControlCenterFeatureAccess;
+    smsAccess: ControlCenterFeatureAccess;
     trial?: ControlCenterTenantTrial;
   };
   branches: ControlCenterBranch[];
@@ -571,6 +572,7 @@ export type ControlCenterBranch = {
   subscriptionPayments: number;
   lastUsedAt: string | null;
   dataCorrectionAccess: ControlCenterFeatureAccess | null;
+  smsAccess: ControlCenterFeatureAccess | null;
 };
 
 export type ControlCenterPricing = {

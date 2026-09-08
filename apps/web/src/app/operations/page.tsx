@@ -37,6 +37,10 @@ import { Money } from "../../components/app/money";
 import { AppBootSkeleton, SkeletonBlock } from "../../components/app/skeleton";
 import { CashShortagesPanel } from "../../components/operations/cash-shortages-panel";
 import {
+  ReturnedReportPanel,
+  type ReturnedReportSummary,
+} from "../../components/operations/returned-report-panel";
+import {
   buildDailyReportDocumentFromOperation,
   DailyReconciliationReport,
   type DailyReportViewTab,
@@ -416,6 +420,14 @@ export default function OperationsPage() {
   const [reviewingReport, setReviewingReport] = useState(false);
   const [approvingReport, setApprovingReport] = useState(false);
   const [exportingReport, setExportingReport] = useState(false);
+  const [returnedReports, setReturnedReports] = useState<
+    ReturnedReportSummary[]
+  >([]);
+  const [expandedReturnedReportId, setExpandedReturnedReportId] = useState<
+    string | null
+  >(null);
+  const [closedReturnedCollapsed, setClosedReturnedCollapsed] =
+    useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -489,8 +501,12 @@ export default function OperationsPage() {
       const params = new URLSearchParams(window.location.search);
       const queryDate = params.get("date");
       const prompt = params.get("prompt");
+      const returnedReportId = params.get("returnedReport");
       if (validDateInputValue(queryDate)) {
         setDate((current) => (queryDate === current ? current : queryDate!));
+      }
+      if (returnedReportId) {
+        setExpandedReturnedReportId(returnedReportId);
       }
       if (prompt === "close") {
         setNotice(
@@ -571,6 +587,46 @@ export default function OperationsPage() {
       const branches = payload.branches ?? [];
       setReportBranches(branches);
       return branches;
+    },
+    [],
+  );
+
+  const loadReturnedReports = useCallback(
+    async (activeSession: RembehSession) => {
+      try {
+        const response = await fetch(
+          `${apiBaseUrl}/operations/reports?status=RETURNED_TO_MANAGER`,
+          {
+            headers: {
+              Authorization: `${activeSession.tokenType} ${activeSession.accessToken}`,
+            },
+          },
+        );
+        const payload = await readApiJson<{
+          reports?: ReturnedReportSummary[];
+          message?: string | string[];
+        }>(response);
+        if (!response.ok) {
+          throw new Error(formatApiError(payload.message));
+        }
+        const next = (payload.reports ?? []).map((report) => ({
+          id: report.id,
+          reportNumber: report.reportNumber,
+          operationDate: report.operationDate,
+          status: report.status,
+          returnNotes: report.returnNotes ?? null,
+          returnedAt: report.returnedAt ?? null,
+        }));
+        setReturnedReports(next);
+        setExpandedReturnedReportId((current) => {
+          if (!current) return current;
+          return next.some((report) => report.id === current) ? current : null;
+        });
+        return next;
+      } catch {
+        setReturnedReports([]);
+        return [] as ReturnedReportSummary[];
+      }
     },
     [],
   );
@@ -689,6 +745,16 @@ export default function OperationsPage() {
         void Promise.all([
           loadOperation(activeSession, date),
           loadAgentsForDay(activeSession, date),
+          loadReturnedReports(activeSession).then((reports) => {
+            const params = new URLSearchParams(window.location.search);
+            const requestedId = params.get("returnedReport");
+            const focusReturned = params.get("focusReturned") === "1";
+            if (requestedId && reports.some((report) => report.id === requestedId)) {
+              setExpandedReturnedReportId(requestedId);
+            } else if (focusReturned && reports[0]) {
+              setExpandedReturnedReportId(reports[0].id);
+            }
+          }),
         ]);
       })();
     }, 0);
@@ -701,6 +767,7 @@ export default function OperationsPage() {
     loadOperation,
     loadAgentsForDay,
     loadBranchesForReports,
+    loadReturnedReports,
   ]);
 
   useEffect(() => {
@@ -1489,6 +1556,36 @@ export default function OperationsPage() {
     );
   }
 
+  function goToTodayOperations() {
+    const today = todayInputValue();
+    setNotice(null);
+    setError(null);
+    setExpandedReturnedReportId(null);
+    setClosedReturnedCollapsed(false);
+    setDate(today);
+    router.replace("/operations");
+  }
+
+  function expandReturnedReport(reportId: string) {
+    setExpandedReturnedReportId(reportId);
+    const params = new URLSearchParams();
+    if (date !== todayInputValue()) {
+      params.set("date", date);
+    }
+    params.set("returnedReport", reportId);
+    const query = params.toString();
+    router.replace(query ? `/operations?${query}` : "/operations");
+  }
+
+  function minimizeReturnedReport() {
+    setExpandedReturnedReportId(null);
+    if (date !== todayInputValue()) {
+      router.replace(`/operations?date=${encodeURIComponent(date)}`);
+      return;
+    }
+    router.replace("/operations");
+  }
+
   if (!session) {
     return <AppBootSkeleton />;
   }
@@ -1574,7 +1671,13 @@ export default function OperationsPage() {
                       setManagerReportNotes("");
                       setOwnerReportNotes("");
                       setActivePanel(null);
-                      setDate(event.target.value);
+                      setExpandedReturnedReportId(null);
+                      setClosedReturnedCollapsed(false);
+                      const nextDate = event.target.value;
+                      setDate(nextDate);
+                      router.replace(
+                        `/operations?date=${encodeURIComponent(nextDate)}`,
+                      );
                     }}
                     className="bg-transparent outline-none"
                   />
@@ -1639,42 +1742,128 @@ export default function OperationsPage() {
           />
         ) : operation ? (
           <>
-            <OpenOperationView
-              operation={operation}
-              currency={workspace?.currency ?? "UGX"}
-              organizationName={workspace?.name ?? null}
-              branchLocation={branch?.address ?? activeBranch?.address ?? null}
-              canOperateBranch={canOperateBranch}
-              editable={canFinishOpenOperation}
-              canRecordTopUp={canRecordTopUp}
-              canRecordReturn={canRecordReturn}
-              canRecordExpense={canRecordExpense}
-              canManageFloat={canManageFloat}
-              canClose={canClose}
-              canReconcile={canReconcileOperation}
-              loadingAgents={loadingAgents}
-              pendingReturnsCount={pendingAgentReturns.length}
-              floatEligibleAgentsCount={floatEligibleAgents.length}
-              addFloatAgentsCount={addFloatOptions.length}
-              report={report}
-              reportView={reportView}
-              canReviewReport={canReviewReport}
-              canApproveReport={canApproveReport}
-              managerReportNotes={managerReportNotes}
-              ownerReportNotes={ownerReportNotes}
-              reviewingReport={reviewingReport}
-              approvingReport={approvingReport}
-              exportingReport={exportingReport}
-              setReportView={setReportView}
-              setManagerReportNotes={setManagerReportNotes}
-              setOwnerReportNotes={setOwnerReportNotes}
-              onManagerConfirmReport={() => void managerConfirmReport()}
-              onOwnerApproveReport={() => void ownerApproveReport()}
-              onExportReport={(format) =>
-                void exportDailyOperationReport(format)
-              }
-              onAction={openActionPanel}
-            />
+            {operation.status === "OPEN" &&
+            operatorRole === "manager" &&
+            returnedReports.length > 0 ? (
+              <ReturnedReportPanel
+                session={session}
+                reports={returnedReports}
+                expandedReportId={expandedReturnedReportId}
+                onExpand={expandReturnedReport}
+                onMinimize={minimizeReturnedReport}
+                canReviewReport={canReviewReport}
+                currency={workspace?.currency ?? "UGX"}
+                organizationName={workspace?.name ?? null}
+                branchLocation={
+                  branch?.address ?? activeBranch?.address ?? null
+                }
+                onResubmitted={() => {
+                  if (!session) return;
+                  setNotice("Returned report resubmitted to owner.");
+                  void loadReturnedReports(session);
+                  void loadOperation(session, date, selectedBranchId || undefined, {
+                    silent: true,
+                  });
+                }}
+              />
+            ) : null}
+            {operation.status === "CLOSED" &&
+            report?.status === "RETURNED_TO_MANAGER" ? (
+              <div className="space-y-3">
+                <p className="rounded-[14px] border border-[#e6ebf0] bg-white px-3.5 py-2.5 text-xs font-medium text-slate-600 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
+                  {formatDateOnly(operation.operationDate)} is closed. Review the
+                  returned report below, or go back to today&apos;s open
+                  operations without losing today&apos;s work.
+                </p>
+                <ReturnedReportPanel
+                  session={session}
+                  reports={[
+                    {
+                      id: report.id,
+                      reportNumber: report.reportNumber,
+                      operationDate: report.operationDate,
+                      status: report.status,
+                      returnNotes: report.returnNotes,
+                      returnedAt: report.returnedAt,
+                    },
+                  ]}
+                  expandedReportId={
+                    closedReturnedCollapsed
+                      ? null
+                      : (expandedReturnedReportId ?? report.id)
+                  }
+                  onExpand={(reportId) => {
+                    setClosedReturnedCollapsed(false);
+                    expandReturnedReport(reportId);
+                  }}
+                  onMinimize={() => {
+                    setClosedReturnedCollapsed(true);
+                    setExpandedReturnedReportId(null);
+                    if (date !== todayInputValue()) {
+                      router.replace(
+                        `/operations?date=${encodeURIComponent(date)}`,
+                      );
+                      return;
+                    }
+                    router.replace("/operations");
+                  }}
+                  onBackToToday={
+                    date !== todayInputValue()
+                      ? goToTodayOperations
+                      : undefined
+                  }
+                  canReviewReport={canReviewReport}
+                  currency={workspace?.currency ?? "UGX"}
+                  organizationName={workspace?.name ?? null}
+                  branchLocation={
+                    branch?.address ?? activeBranch?.address ?? null
+                  }
+                  onResubmitted={() => {
+                    if (!session) return;
+                    setNotice("Returned report resubmitted to owner.");
+                    void loadReturnedReports(session);
+                    goToTodayOperations();
+                  }}
+                />
+              </div>
+            ) : (
+              <OpenOperationView
+                operation={operation}
+                currency={workspace?.currency ?? "UGX"}
+                organizationName={workspace?.name ?? null}
+                branchLocation={branch?.address ?? activeBranch?.address ?? null}
+                canOperateBranch={canOperateBranch}
+                editable={canFinishOpenOperation}
+                canRecordTopUp={canRecordTopUp}
+                canRecordReturn={canRecordReturn}
+                canRecordExpense={canRecordExpense}
+                canManageFloat={canManageFloat}
+                canClose={canClose}
+                canReconcile={canReconcileOperation}
+                loadingAgents={loadingAgents}
+                pendingReturnsCount={pendingAgentReturns.length}
+                floatEligibleAgentsCount={floatEligibleAgents.length}
+                addFloatAgentsCount={addFloatOptions.length}
+                report={report}
+                reportView={reportView}
+                canReviewReport={canReviewReport}
+                canApproveReport={canApproveReport}
+                managerReportNotes={managerReportNotes}
+                ownerReportNotes={ownerReportNotes}
+                reviewingReport={reviewingReport}
+                approvingReport={approvingReport}
+                exportingReport={exportingReport}
+                setReportView={setReportView}
+                setManagerReportNotes={setManagerReportNotes}
+                setOwnerReportNotes={setOwnerReportNotes}
+                onManagerConfirmReport={() => void managerConfirmReport()}
+                onOwnerApproveReport={() => void ownerApproveReport()}
+                onExportReport={(format) =>
+                  void exportDailyOperationReport(format)
+                }
+                onAction={openActionPanel}
+              />
+            )}
             {session && activeBranch && canOperateBranch ? (
               <div className="mt-3">
                 <CashShortagesPanel

@@ -18,6 +18,7 @@ import {
   SmsWalletLedgerDirection,
   SmsWalletLedgerEntryType,
   SubscriptionPaymentStatus,
+  ControlledFeatureScope,
 } from '@prisma/client';
 import { createHash, randomUUID } from 'node:crypto';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
@@ -50,6 +51,8 @@ import type {
   SmsWalletContract,
 } from './sms-credits.contracts';
 import { analyzeSmsBody, normalizeUgPhoneTo256 } from './sms-segments';
+
+const SMS_ACCESS_FEATURE = 'sms_access';
 
 type TxClient = Prisma.TransactionClient;
 
@@ -97,7 +100,11 @@ export class SmsCreditsService {
     const branch = await this.resolveBranch(user, branchId);
     const wallet = await this.ensureWallet(user.tenantId, branch.id);
     await this.expireStalePurchasesForBranch(branch.id);
-    return this.toWalletContract(branch.id, branch.name, wallet);
+    const smsAccessAllowed = await this.isSmsAccessAllowed(
+      user.tenantId,
+      branch.id,
+    );
+    return this.toWalletContract(branch.id, branch.name, wallet, smsAccessAllowed);
   }
 
   /**
@@ -112,11 +119,16 @@ export class SmsCreditsService {
     if (user.branchId?.trim()) {
       const branch = await this.resolveBranch(user, user.branchId);
       const wallet = await this.ensureWallet(user.tenantId, branch.id);
+      const smsAccessAllowed = await this.isSmsAccessAllowed(
+        user.tenantId,
+        branch.id,
+      );
       return {
         availableUnits: wallet.availableUnits,
         reservedUnits: wallet.reservedUnits,
         creditsRemaining: wallet.availableUnits,
-        canSendSms: wallet.availableUnits > 0,
+        smsAccessAllowed,
+        canSendSms: smsAccessAllowed && wallet.availableUnits > 0,
         scope: 'branch',
         branchId: branch.id,
         branchName: branch.name,
@@ -141,12 +153,14 @@ export class SmsCreditsService {
       (sum, row) => sum + row.reservedUnits,
       0,
     );
+    const smsAccessAllowed = await this.isSmsAccessAllowed(user.tenantId);
 
     return {
       availableUnits,
       reservedUnits,
       creditsRemaining: availableUnits,
-      canSendSms: availableUnits > 0,
+      smsAccessAllowed,
+      canSendSms: smsAccessAllowed && availableUnits > 0,
       scope: 'account',
       branchId: null,
       branchName: null,
@@ -196,6 +210,7 @@ export class SmsCreditsService {
     }
 
     const branch = await this.resolveBranch(user, input.branchId);
+    await this.assertSmsAccessAllowed(user.tenantId, branch.id);
     await this.expireStalePurchasesForBranch(branch.id);
 
     const now = new Date();
@@ -667,6 +682,8 @@ export class SmsCreditsService {
     if (!input.branchId?.trim()) {
       throw new BadRequestException('A valid workspace (branch) is required.');
     }
+
+    await this.assertSmsAccessAllowed(input.tenantId, input.branchId);
 
     if (input.idempotencyKey) {
       const existing = await this.prisma.smsMessage.findUnique({
@@ -1702,10 +1719,81 @@ export class SmsCreditsService {
     return branch;
   }
 
+  /**
+   * SMS use/purchase is allowed by default (no ControlledFeatureAccess row).
+   * Org revoke blocks all branches; branch revoke blocks that branch only.
+   * Branch cannot override an org revoke to allow.
+   */
+  async isSmsAccessAllowed(
+    tenantId: string,
+    branchId?: string | null,
+  ): Promise<boolean> {
+    const cleanTenantId = tenantId?.trim();
+    if (!cleanTenantId) {
+      return false;
+    }
+
+    const cleanBranchId = branchId?.trim() || null;
+    const rows = await this.prisma.controlledFeatureAccess.findMany({
+      where: {
+        featureKey: SMS_ACCESS_FEATURE,
+        OR: [
+          {
+            scope: ControlledFeatureScope.TENANT,
+            scopeId: cleanTenantId,
+          },
+          ...(cleanBranchId
+            ? [
+                {
+                  scope: ControlledFeatureScope.BRANCH,
+                  scopeId: cleanBranchId,
+                },
+              ]
+            : []),
+        ],
+      },
+      select: {
+        scope: true,
+        enabled: true,
+      },
+    });
+
+    const organizationRow =
+      rows.find((row) => row.scope === ControlledFeatureScope.TENANT) ?? null;
+    if (organizationRow?.enabled === false) {
+      return false;
+    }
+
+    if (!cleanBranchId) {
+      return organizationRow?.enabled ?? true;
+    }
+
+    const branchRow =
+      rows.find((row) => row.scope === ControlledFeatureScope.BRANCH) ?? null;
+    if (branchRow) {
+      return branchRow.enabled;
+    }
+
+    return organizationRow?.enabled ?? true;
+  }
+
+  async assertSmsAccessAllowed(
+    tenantId: string,
+    branchId?: string | null,
+  ): Promise<void> {
+    const allowed = await this.isSmsAccessAllowed(tenantId, branchId);
+    if (!allowed) {
+      throw new ForbiddenException(
+        'SMS access has been revoked for this organisation or branch. Sending and purchasing SMS are blocked.',
+      );
+    }
+  }
+
   private toWalletContract(
     branchId: string,
     branchName: string,
     wallet: { availableUnits: number; reservedUnits: number },
+    smsAccessAllowed: boolean,
   ): SmsWalletContract {
     return {
       branchId,
@@ -1713,7 +1801,8 @@ export class SmsCreditsService {
       availableUnits: wallet.availableUnits,
       reservedUnits: wallet.reservedUnits,
       creditsRemaining: wallet.availableUnits,
-      canSendSms: wallet.availableUnits > 0,
+      smsAccessAllowed,
+      canSendSms: smsAccessAllowed && wallet.availableUnits > 0,
     };
   }
 }

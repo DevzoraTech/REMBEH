@@ -650,9 +650,12 @@ export function RepaymentCorrectionsWorkspace({
           <div className="flex gap-2">
             <ShieldAlert className="mt-0.5 size-4 shrink-0" />
             <p>
-              Payments already included in a submitted daily report are locked.
-              Managers can correct open records directly; field officers need an
-              approved request first.
+              Corrections are only for the previous day, and only while today
+              has not started reconciliation. If that day&apos;s report was
+              already sent to the owner or approved, forward the request so the
+              owner can authorize before any edit. Apply payment changes first,
+              then reopen the returned report from Daily Operations to
+              re-check and resubmit.
             </p>
           </div>
         </div>
@@ -675,19 +678,33 @@ export function RepaymentCorrectionsWorkspace({
               {resubmitPrompt.title}
             </h3>
             <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
-              {resubmitPrompt.message}
+              {resubmitPrompt.message ||
+                "Apply payment corrections first, then open the returned report from today's Daily Operations to re-check and resubmit."}
             </p>
-            <div className="mt-5 flex justify-end">
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setResubmitPrompt(null)}
+                className="inline-flex h-11 items-center justify-center rounded-xl border border-[#e6ebf0] bg-white px-4 text-sm font-bold text-slate-700"
+              >
+                Stay on corrections
+              </button>
               <button
                 type="button"
                 onClick={() => {
-                  const date = resubmitPrompt.operationDate;
+                  const reportId = resubmitPrompt.reportId;
                   setResubmitPrompt(null);
-                  window.location.href = `/operations?date=${encodeURIComponent(date)}`;
+                  const params = new URLSearchParams({
+                    focusReturned: "1",
+                  });
+                  if (reportId) {
+                    params.set("returnedReport", reportId);
+                  }
+                  window.location.href = `/operations?${params.toString()}`;
                 }}
                 className="inline-flex h-11 items-center justify-center rounded-xl bg-[var(--forest-emerald)] px-4 text-sm font-bold text-white"
               >
-                Review report
+                Open returned report
               </button>
             </div>
           </div>

@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import {
   BranchOperationReportStatus,
+  BranchOperationStatus,
   ControlledFeatureScope,
   LoanApplicationMediaType,
   LoanApplicationStatus,
@@ -1395,8 +1396,15 @@ export class CollectionsService {
       );
     }
 
-    // Officers may always request a correction. Report locks gate manager
-    // approve / apply / forward-to-owner, not the request itself.
+    // Request eligibility: previous calendar day only, and only while today
+    // has not started reconciliation at all. Report locks still gate
+    // approve / apply / forward-to-owner.
+    await this.assertCorrectionRequestEligible({
+      tenantId: row.tenantId,
+      branchId: row.branchId,
+      paidAt: row.paidAt,
+    });
+
     const reason = dto.reason.trim();
     const requestedPaidAt = this.parseOptionalIsoDate(
       dto.requestedPaidAt,
@@ -1539,22 +1547,19 @@ export class CollectionsService {
 
     const reportContext = await this.findReportForPaymentDay(request.repayment);
     if (
-      reportContext?.status === BranchOperationReportStatus.OWNER_APPROVED &&
+      this.reportRequiresOwnerGate(reportContext?.status) &&
       !request.ownerAuthorizedAt
     ) {
       throw new ForbiddenException(
-        'This report is owner-approved. Forward the request to the owner first.',
+        reportContext?.status === BranchOperationReportStatus.SENT_TO_OWNER
+          ? 'This report was already sent to the owner. Forward the request so the owner can authorize the change first.'
+          : 'This report is owner-approved. Forward the request to the owner first.',
       );
     }
 
-    // Approving officer edit / unlocking manager edit may reopen a submitted report.
-    let reportResubmitRequired: ReportResubmitRequiredContract | null = null;
-    if (reportContext?.status === BranchOperationReportStatus.SENT_TO_OWNER) {
-      reportResubmitRequired = await this.returnSubmittedReportForCorrection({
-        report: reportContext,
-        actorUserId: user.userId,
-      });
-    }
+    // Approving never auto-returns a submitted report. Owner authorization
+    // returns SENT_TO_OWNER / OWNER_APPROVED reports; manager then approves edits.
+    const reportResubmitRequired: ReportResubmitRequiredContract | null = null;
 
     const updated = await this.prisma.repaymentCorrectionRequest.update({
       where: {
@@ -1627,9 +1632,9 @@ export class CollectionsService {
     }
 
     const report = await this.findReportForPaymentDay(request.repayment);
-    if (report?.status !== BranchOperationReportStatus.OWNER_APPROVED) {
+    if (!this.reportRequiresOwnerGate(report?.status)) {
       throw new BadRequestException(
-        'Forward to owner is only required after the daily report has been owner-approved.',
+        'Forward to owner is only required after the daily report has been sent to the owner or owner-approved.',
       );
     }
 
@@ -1651,9 +1656,9 @@ export class CollectionsService {
     void this.notifyOwnerReportRollbackPermission({
       tenantId: request.tenantId,
       branchId: request.branchId,
-      reportId: report.id,
-      reportNumber: report.reportNumber,
-      operationDate: this.dateLabel(report.operationDate),
+      reportId: report!.id,
+      reportNumber: report!.reportNumber,
+      operationDate: this.dateLabel(report!.operationDate),
       requestedByUserId: user.userId,
       correctionRequestId: request.id,
       borrowerName: request.loan.customer.fullName,
@@ -1695,7 +1700,7 @@ export class CollectionsService {
     }
 
     const report = await this.findReportForPaymentDay(request.repayment);
-    if (report?.status !== BranchOperationReportStatus.OWNER_APPROVED) {
+    if (!this.reportRequiresOwnerGate(report?.status)) {
       throw new BadRequestException(
         'This correction does not need owner authorization right now.',
       );
@@ -1714,10 +1719,10 @@ export class CollectionsService {
 
     const reportResubmitRequired = await this.returnSubmittedReportForCorrection(
       {
-        report,
+        report: report!,
         actorUserId: user.userId,
         notes:
-          'Owner authorized a repayment correction. Manager must re-reconcile and resubmit.',
+          'Owner authorized a repayment correction. Apply the payment changes first, then re-check and resubmit the report.',
       },
     );
 
@@ -3166,6 +3171,95 @@ export class CollectionsService {
     });
   }
 
+  private reportRequiresOwnerGate(
+    status: BranchOperationReportStatus | null | undefined,
+  ): boolean {
+    return (
+      status === BranchOperationReportStatus.SENT_TO_OWNER ||
+      status === BranchOperationReportStatus.OWNER_APPROVED
+    );
+  }
+
+  private previousCalendarDay(from: Date = new Date()) {
+    const day = this.dateOnly(from);
+    day.setDate(day.getDate() - 1);
+    return day;
+  }
+
+  /**
+   * Corrections are allowed only for the previous calendar day's payments,
+   * and only while today's branch day has not started reconciliation at all.
+   */
+  private async assertCorrectionRequestEligible(input: {
+    tenantId: string;
+    branchId: string;
+    paidAt: Date;
+  }) {
+    const paymentDay = this.dateOnly(input.paidAt);
+    const yesterday = this.previousCalendarDay();
+
+    if (!this.sameDay(paymentDay, yesterday)) {
+      throw new BadRequestException(
+        "Corrections are only allowed for the previous day's payments.",
+      );
+    }
+
+    const todayOpen = await this.isCurrentDayUnreconciled(
+      input.tenantId,
+      input.branchId,
+    );
+    if (!todayOpen) {
+      throw new BadRequestException(
+        "Corrections for the previous day are blocked once today's reconciliation has started.",
+      );
+    }
+  }
+
+  private async isCurrentDayUnreconciled(
+    tenantId: string,
+    branchId: string,
+  ): Promise<boolean> {
+    const today = this.dateOnly(new Date());
+    const operation = await this.prisma.branchDailyOperation.findUnique({
+      where: {
+        tenantId_branchId_operationDate: {
+          tenantId,
+          branchId,
+          operationDate: today,
+        },
+      },
+      select: {
+        status: true,
+        report: { select: { id: true } },
+        reconciliation: {
+          select: {
+            id: true,
+          },
+        },
+      },
+    });
+
+    if (!operation) {
+      return true;
+    }
+
+    if (
+      operation.status === BranchOperationStatus.CLOSING ||
+      operation.status === BranchOperationStatus.CLOSED ||
+      operation.report != null
+    ) {
+      return false;
+    }
+
+    const recon = operation.reconciliation;
+    // Any reconciliation draft means today's close has started "even slightly".
+    if (recon != null) {
+      return false;
+    }
+
+    return true;
+  }
+
   private async findReportForPaymentDay(input: {
     tenantId: string;
     branchId: string;
@@ -3202,8 +3296,8 @@ export class CollectionsService {
       reportNumber: report.reportNumber,
       operationDate,
       branchId: report.branchId,
-      title: 'Review report and resubmit.',
-      message: `The reconciliation report for ${operationDate} has been reverted because a change in figures has been detected. Please review the report, confirm the figure and submit the report again.`,
+      title: 'Apply corrections, then review the report.',
+      message: `The reconciliation report for ${operationDate} was returned so repayment corrections can be finished. Apply the payment changes first, verify the figures, then open the returned report to re-check and resubmit.`,
     };
   }
 
@@ -3281,14 +3375,7 @@ export class CollectionsService {
       return null;
     }
 
-    if (report.status === BranchOperationReportStatus.SENT_TO_OWNER) {
-      return this.returnSubmittedReportForCorrection({
-        report,
-        actorUserId,
-      });
-    }
-
-    if (report.status === BranchOperationReportStatus.OWNER_APPROVED) {
+    if (this.reportRequiresOwnerGate(report.status)) {
       if (options?.allowOwnerAuthorizedRequestId) {
         const authorized =
           await this.prisma.repaymentCorrectionRequest.findFirst({
@@ -3300,17 +3387,27 @@ export class CollectionsService {
             select: { id: true },
           });
         if (authorized) {
-          return this.returnSubmittedReportForCorrection({
-            report,
-            actorUserId,
-            notes:
-              'Owner-authorized repayment correction applied. Manager must re-reconcile and resubmit.',
-          });
+          // Report should already be RETURNED after owner auth; if it somehow
+          // is still submitted, return it now before applying the edit.
+          if (
+            report.status === BranchOperationReportStatus.SENT_TO_OWNER ||
+            report.status === BranchOperationReportStatus.OWNER_APPROVED
+          ) {
+            return this.returnSubmittedReportForCorrection({
+              report,
+              actorUserId,
+              notes:
+                'Owner-authorized repayment correction applied. Apply remaining payment changes, then re-check and resubmit the report.',
+            });
+          }
+          return null;
         }
       }
 
       throw new ForbiddenException(
-        `Report ${report.reportNumber} is owner-approved. Forward the correction to the owner for permission before editing.`,
+        report.status === BranchOperationReportStatus.SENT_TO_OWNER
+          ? `Report ${report.reportNumber} was already sent to the owner. Forward the correction for owner permission before editing.`
+          : `Report ${report.reportNumber} is owner-approved. Forward the correction to the owner for permission before editing.`,
       );
     }
 
@@ -3634,12 +3731,12 @@ export class CollectionsService {
       reportStatus === BranchOperationReportStatus.OWNER_APPROVED;
     const sentToOwner =
       reportStatus === BranchOperationReportStatus.SENT_TO_OWNER;
+    const needsOwnerGate = sentToOwner || ownerApproved;
     const unlocked =
       !reportStatus ||
       reportStatus === BranchOperationReportStatus.MANAGER_REVIEW ||
       reportStatus === BranchOperationReportStatus.RETURNED_TO_MANAGER ||
-      (ownerApproved && ownerAuthorized) ||
-      sentToOwner;
+      (needsOwnerGate && ownerAuthorized);
 
     return {
       id: row.id,
@@ -3676,12 +3773,13 @@ export class CollectionsService {
       forwardedToOwnerAt: row.forwardedToOwnerAt?.toISOString() ?? null,
       ownerAuthorizedAt: row.ownerAuthorizedAt?.toISOString() ?? null,
       actions: {
-        canManagerEdit: pending && unlocked && !(ownerApproved && !ownerAuthorized),
-        canOfficerEdit: pending && unlocked && !(ownerApproved && !ownerAuthorized),
-        canForwardToOwner:
-          pending && ownerApproved && !ownerAuthorized,
-        canOwnerAuthorize: pending && ownerApproved && forwarded && !ownerAuthorized,
-        waitingForOwner: pending && ownerApproved && forwarded && !ownerAuthorized,
+        canManagerEdit: pending && unlocked,
+        canOfficerEdit: pending && unlocked,
+        canForwardToOwner: pending && needsOwnerGate && !ownerAuthorized,
+        canOwnerAuthorize:
+          pending && needsOwnerGate && forwarded && !ownerAuthorized,
+        waitingForOwner:
+          pending && needsOwnerGate && forwarded && !ownerAuthorized,
       },
     };
   }
@@ -4263,6 +4361,12 @@ export class CollectionsService {
       repayments.map((row) => row.paidAt),
     );
 
+    const yesterdayLabel = this.dateLabel(this.previousCalendarDay());
+    const todayUnreconciled = await this.isCurrentDayUnreconciled(
+      loan.tenantId,
+      loan.branchId,
+    );
+
     const paymentHistory = repayments.map((row, index) => {
       const pendingCorrection =
         row.correctionRequests.find(
@@ -4281,6 +4385,8 @@ export class CollectionsService {
       const correctionLocked = lockedPaymentDates.has(
         this.dateLabel(row.paidAt),
       );
+      const isPreviousDayPayment =
+        this.dateLabel(row.paidAt) === yesterdayLabel;
 
       return {
         id: row.id,
@@ -4301,8 +4407,8 @@ export class CollectionsService {
 
         correctionLocked,
 
-        // Officers may always request; report locks gate apply/approve only.
-        canRequestCorrection: !pendingCorrection,
+        canRequestCorrection:
+          !pendingCorrection && isPreviousDayPayment && todayUnreconciled,
 
         pendingCorrectionRequestId: pendingCorrection?.id ?? null,
 

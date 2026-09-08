@@ -9,6 +9,7 @@ import {
   Landmark,
   LockKeyhole,
   MapPin,
+  MessageSquare,
   Phone,
   RefreshCw,
   ShieldAlert,
@@ -53,6 +54,7 @@ export function ControlCenterBranchDetailSection({
   onOpenSubscription,
   onOpenPayments,
   onSetDataCorrectionAccess,
+  onSetSmsAccess,
 }: {
   branch: ControlCenterBranch;
   tenantId: string;
@@ -72,11 +74,26 @@ export function ControlCenterBranchDetailSection({
     enabled: boolean;
     reason: string;
   }) => Promise<void>;
+  onSetSmsAccess?: (input: {
+    tenantId: string;
+    branchId?: string;
+    enabled: boolean;
+    reason: string;
+  }) => Promise<void>;
 }) {
   const lifecycle = getSubscriptionLifecycle(branch);
   const [reason, setReason] = useState("Approved legacy data cleanup window.");
+  const [smsReason, setSmsReason] = useState(
+    "SMS access revoked pending account review.",
+  );
   const [savingCorrectionAccess, setSavingCorrectionAccess] = useState(false);
+  const [savingSmsAccess, setSavingSmsAccess] = useState(false);
   const correctionAccess = branch.dataCorrectionAccess ?? emptyFeatureAccess;
+  const smsAccess = branch.smsAccess ?? {
+    ...emptyFeatureAccess,
+    enabled: true,
+  };
+  const orgSmsRevoked = smsAccess.organizationEnabled === false;
 
   async function updateCorrectionAccess(enabled: boolean) {
     if (!onSetDataCorrectionAccess || savingCorrectionAccess) {
@@ -99,6 +116,30 @@ export function ControlCenterBranchDetailSection({
       });
     } finally {
       setSavingCorrectionAccess(false);
+    }
+  }
+
+  async function updateSmsAccess(enabled: boolean) {
+    if (!onSetSmsAccess || savingSmsAccess) {
+      return;
+    }
+
+    const cleanReason = smsReason.trim();
+    if (cleanReason.length < 6) {
+      return;
+    }
+
+    setSavingSmsAccess(true);
+
+    try {
+      await onSetSmsAccess({
+        tenantId,
+        branchId: branch.id,
+        enabled,
+        reason: cleanReason,
+      });
+    } finally {
+      setSavingSmsAccess(false);
     }
   }
 
@@ -450,6 +491,76 @@ export function ControlCenterBranchDetailSection({
                 Disable
               </button>
             </div>
+          </div>
+        </section>
+      ) : null}
+
+      {onSetSmsAccess ? (
+        <section className="mt-4 overflow-hidden rounded-[10px] border border-[#d7e4f4] bg-[#f5f9fd]">
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#dce7f3] px-4 py-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="grid size-8 shrink-0 place-items-center rounded-[8px] bg-white text-[#2f6fad] shadow-sm">
+                <MessageSquare className="size-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-bold text-[#17233c]">
+                  SMS access
+                </p>
+                <p className="mt-1 max-w-[720px] text-[9.5px] leading-4 text-[#4d6280]">
+                  Allow or revoke sending and buying/consuming SMS for this
+                  branch. Organisation revoke still blocks this branch.
+                </p>
+              </div>
+            </div>
+            <FeatureAccessBadge
+              enabled={smsAccess.enabled}
+              label={
+                smsAccess.enabled
+                  ? "Allowed"
+                  : smsAccess.source === "ORGANIZATION"
+                    ? "Org revoked"
+                    : "Revoked"
+              }
+            />
+          </div>
+          <div className="p-4">
+            <textarea
+              value={smsReason}
+              onChange={(event) => setSmsReason(event.target.value)}
+              rows={2}
+              className="w-full resize-none rounded-md border border-[#dfe5eb] px-3 py-2 text-[10px] font-medium text-[#17233c] outline-none focus:border-[#188653]"
+            />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={
+                  savingSmsAccess || smsAccess.enabled || orgSmsRevoked
+                }
+                onClick={() => void updateSmsAccess(true)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[#188653] px-3 text-[9.5px] font-semibold text-white disabled:opacity-60"
+              >
+                <UnlockKeyhole className="size-3.5" />
+                Allow
+              </button>
+              <button
+                type="button"
+                disabled={
+                  savingSmsAccess ||
+                  (!smsAccess.enabled && smsAccess.source !== "BRANCH")
+                }
+                onClick={() => void updateSmsAccess(false)}
+                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-[#dfe5eb] bg-white px-3 text-[9.5px] font-semibold text-[#53627a] disabled:opacity-60"
+              >
+                <LockKeyhole className="size-3.5" />
+                Revoke
+              </button>
+            </div>
+            {orgSmsRevoked ? (
+              <p className="mt-2 text-[9.5px] leading-4 text-[#8b5a12]">
+                Organisation SMS access is revoked. Restore it on the client
+                before allowing this branch.
+              </p>
+            ) : null}
           </div>
         </section>
       ) : null}

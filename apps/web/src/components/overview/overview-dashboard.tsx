@@ -2374,10 +2374,11 @@ function buildAlerts({
           returnedReports.length === 1
             ? "Report returned"
             : `${returnedReports.length} reports returned`,
-        detail: "Fix and resubmit your close-day report.",
+        detail:
+          "Apply payment corrections if needed, then open the returned report from Daily Operations.",
         time: "Today",
         tone: "red",
-        href: links.reports,
+        href: "/operations?focusReturned=1",
       });
     }
 
