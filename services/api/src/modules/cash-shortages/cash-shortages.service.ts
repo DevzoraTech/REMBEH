@@ -852,6 +852,157 @@ export class CashShortagesService {
     return operation.id;
   }
 
+  /**
+   * Keep an existing shortage aligned with recalculated variance for a
+   * closed day (e.g. after a previous-day repayment correction).
+   * Does not invent new BRANCH_CLOSE shortages without a prior row.
+   * Physical cash / payments already recorded are preserved.
+   */
+  async syncExistingShortageToVariance(input: {
+    tenantId: string;
+    branchId: string;
+    sourceType: CashShortageSource;
+    sourceId: string;
+    /** counted/returned - expected; negative means shortage */
+    variance: number;
+    actorUserId?: string | null;
+    notes?: string | null;
+  }) {
+    const shortageNeeded =
+      Math.round(Math.max(0, -input.variance) * 100) / 100;
+
+    const existing = await this.prisma.cashShortage.findFirst({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        sourceType: input.sourceType,
+        sourceId: input.sourceId,
+      },
+    });
+
+    if (!existing) {
+      return null;
+    }
+
+    const paid = Math.round(
+      (Number(existing.amountOriginal) - Number(existing.amountOutstanding)) *
+        100,
+    ) / 100;
+
+    if (shortageNeeded <= 0) {
+      // Variance cleared — zero the accountable shortage if nothing was paid,
+      // otherwise keep paid amount as original and clear outstanding.
+      const nextOriginal = Math.max(0, paid);
+      const nextOutstanding = 0;
+      const updated = await this.prisma.cashShortage.update({
+        where: { id: existing.id },
+        data: {
+          amountOriginal: new Prisma.Decimal(nextOriginal.toFixed(2)),
+          amountOutstanding: new Prisma.Decimal(0),
+          status: CashShortageStatus.CLEARED,
+          clearedAt: existing.clearedAt ?? new Date(),
+          notes:
+            input.notes?.trim() ||
+            existing.notes ||
+            'Shortage cleared after repayment correction refreshed expected cash.',
+        },
+        include: shortageInclude,
+      });
+      await this.prisma.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId ?? null,
+          action: 'cash_shortage.synced_after_correction',
+          entityType: 'CashShortage',
+          entityId: updated.id,
+          oldValue: {
+            amountOriginal: Number(existing.amountOriginal),
+            amountOutstanding: Number(existing.amountOutstanding),
+            status: existing.status,
+          },
+          newValue: {
+            amountOriginal: nextOriginal,
+            amountOutstanding: nextOutstanding,
+            status: CashShortageStatus.CLEARED,
+            variance: input.variance,
+          },
+        },
+      });
+      this.emitShortageChanged({
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        shortageId: updated.id,
+        action: 'updated',
+      });
+      return updated;
+    }
+
+    const nextOriginal = shortageNeeded;
+    const nextOutstanding = Math.max(0, Math.round((nextOriginal - paid) * 100) / 100);
+    const nextStatus =
+      nextOutstanding <= 0
+        ? CashShortageStatus.CLEARED
+        : paid > 0
+          ? CashShortageStatus.PARTIALLY_PAID
+          : CashShortageStatus.OPEN;
+
+    if (
+      Math.abs(Number(existing.amountOriginal) - nextOriginal) < 0.001 &&
+      Math.abs(Number(existing.amountOutstanding) - nextOutstanding) < 0.001 &&
+      existing.status === nextStatus
+    ) {
+      return existing;
+    }
+
+    const updated = await this.prisma.cashShortage.update({
+      where: { id: existing.id },
+      data: {
+        amountOriginal: new Prisma.Decimal(nextOriginal.toFixed(2)),
+        amountOutstanding: new Prisma.Decimal(nextOutstanding.toFixed(2)),
+        status: nextStatus,
+        clearedAt:
+          nextStatus === CashShortageStatus.CLEARED
+            ? (existing.clearedAt ?? new Date())
+            : null,
+        notes:
+          input.notes?.trim() ||
+          existing.notes ||
+          'Shortage updated after repayment correction refreshed expected cash.',
+      },
+      include: shortageInclude,
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        tenantId: input.tenantId,
+        actorUserId: input.actorUserId ?? null,
+        action: 'cash_shortage.synced_after_correction',
+        entityType: 'CashShortage',
+        entityId: updated.id,
+        oldValue: {
+          amountOriginal: Number(existing.amountOriginal),
+          amountOutstanding: Number(existing.amountOutstanding),
+          status: existing.status,
+        },
+        newValue: {
+          amountOriginal: nextOriginal,
+          amountOutstanding: nextOutstanding,
+          status: nextStatus,
+          variance: input.variance,
+        },
+      },
+    });
+
+    this.emitShortageChanged({
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      shortageId: updated.id,
+      action: nextStatus === CashShortageStatus.CLEARED ? 'settled' : 'updated',
+    });
+
+    return updated;
+  }
+
   private parseDate(value?: string) {
     if (!value?.trim()) {
       const today = new Date();

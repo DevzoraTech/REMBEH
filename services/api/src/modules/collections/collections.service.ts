@@ -26,6 +26,7 @@ import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import { resolveListBranchId } from '../../common/auth/branch-scope';
 import { BillingService } from '../billing/billing.service';
 import { OPERATIONS_PERMISSIONS } from '../operations/operations.permissions';
+import { OperationsService } from '../operations/operations.service';
 import {
   isInternationalPhoneNumber,
   normalizeEmailAddress,
@@ -166,6 +167,7 @@ export class CollectionsService {
     private readonly smsCreditsService: SmsCreditsService,
     private readonly smsNotificationSettings: SmsNotificationSettingsService,
     private readonly fcmPushService: FcmPushService,
+    private readonly operationsService: OperationsService,
   ) {}
 
   async getSummary(
@@ -2023,6 +2025,29 @@ export class CollectionsService {
           appliedMethod: nextMethod,
           appliedByName: user.displayName,
         });
+      }
+    }
+
+    // Refresh the corrected payment day(s) only — expected cash, report
+    // snapshot, and shortages — without touching today's open day.
+    const affectedDays = new Set<string>([
+      this.dateLabel(row.paidAt),
+      this.dateLabel(nextPaidAt),
+    ]);
+    for (const operationDate of affectedDays) {
+      try {
+        await this.operationsService.refreshDayAfterRepaymentCorrection({
+          tenantId: row.tenantId,
+          branchId: row.branchId,
+          operationDate,
+          actorUserId: user.userId,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Failed to refresh operations day ${operationDate} after repayment correction ${repaymentId}: ${
+            error instanceof Error ? error.message : error
+          }`,
+        );
       }
     }
 

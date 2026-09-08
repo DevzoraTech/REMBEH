@@ -1977,6 +1977,17 @@ export class OperationsService {
       );
     }
 
+    // Rebuild expected cash / variance from live repayments before sending
+    // a returned report back to the owner after corrections.
+    if (report.status === BranchOperationReportStatus.RETURNED_TO_MANAGER) {
+      await this.refreshDayAfterRepaymentCorrection({
+        tenantId: user.tenantId,
+        branchId: report.branchId,
+        operationDate: this.formatDateLabel(report.operationDate),
+        actorUserId: user.userId,
+      });
+    }
+
     const updated = await this.repository.managerConfirmReport({
       tenantId: user.tenantId,
       reportId: report.id,
@@ -2975,6 +2986,140 @@ export class OperationsService {
       expenses: [],
       amountReturned: null,
       returnedAt: null,
+    };
+  }
+
+  /**
+   * After a repayment correction, refresh only that payment day's closed
+   * report snapshot and accountable shortages. Physical counted cash is kept;
+   * expected closing / variance are recomputed from live repayments.
+   * Today's open day is left alone (live ops already sum current repayments).
+   */
+  async refreshDayAfterRepaymentCorrection(input: {
+    tenantId: string;
+    branchId: string;
+    operationDate: string | Date;
+    actorUserId?: string | null;
+  }): Promise<{
+    refreshed: boolean;
+    operationDate: string;
+    expectedClosingBalance: number | null;
+    countedCash: number | null;
+    variance: number | null;
+  }> {
+    const dateLabel =
+      typeof input.operationDate === 'string'
+        ? input.operationDate.trim().slice(0, 10)
+        : this.formatDateLabel(input.operationDate);
+    const bounds = this.parseDayBounds(dateLabel);
+
+    const operation = await this.repository.findOperationForDay({
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      operationDate: bounds.dateOnly,
+    });
+
+    if (!operation) {
+      return {
+        refreshed: false,
+        operationDate: bounds.dateLabel,
+        expectedClosingBalance: null,
+        countedCash: null,
+        variance: null,
+      };
+    }
+
+    // Open current day stays live — do not rewrite snapshots/shortages.
+    if (operation.status === BranchOperationStatus.OPEN) {
+      return {
+        refreshed: false,
+        operationDate: bounds.dateLabel,
+        expectedClosingBalance: null,
+        countedCash: null,
+        variance: null,
+      };
+    }
+
+    const contract = await this.toContract(
+      operation,
+      bounds.dayStart,
+      bounds.dayEnd,
+    );
+
+    const report = await this.repository.findReportForOperation({
+      tenantId: input.tenantId,
+      operationId: operation.id,
+    });
+
+    if (report) {
+      await this.repository.updateOperationReportSnapshot({
+        tenantId: input.tenantId,
+        reportId: report.id,
+        snapshot: this.buildReportSnapshot(contract),
+        actorUserId: input.actorUserId ?? null,
+        reason:
+          'Repayment correction refreshed collections, expected closing, and variance for this day only.',
+      });
+    }
+
+    const countedCash = contract.closingBalance;
+    const expectedClosingBalance = contract.expectedClosingBalance;
+    const variance =
+      countedCash == null
+        ? null
+        : this.roundMoney(countedCash - expectedClosingBalance);
+
+    if (variance != null) {
+      await this.cashShortagesService.syncExistingShortageToVariance({
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        sourceType: CashShortageSource.BRANCH_CLOSE,
+        sourceId: operation.id,
+        variance,
+        actorUserId: input.actorUserId ?? null,
+        notes:
+          'Branch close shortage synced after repayment correction on this day.',
+      });
+    }
+
+    for (const agentReturn of contract.agentReturns) {
+      if (agentReturn.amountReturned == null) continue;
+      const agentVariance =
+        agentReturn.variance ??
+        this.roundMoney(
+          agentReturn.amountReturned - agentReturn.expectedReturn,
+        );
+      await this.cashShortagesService.syncExistingShortageToVariance({
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        sourceType: CashShortageSource.AGENT_FLOAT_RETURN,
+        sourceId: agentReturn.floatId,
+        variance: agentVariance,
+        actorUserId: input.actorUserId ?? null,
+        notes:
+          'Agent handover shortage synced after repayment correction on this day.',
+      });
+    }
+
+    this.broadcastOperationEvent(OPERATIONS_EVENTS.reportGenerated, {
+      operationId: operation.id,
+      reportId: report?.id ?? null,
+      tenantId: input.tenantId,
+      branchId: input.branchId,
+      operationDate: bounds.dateLabel,
+      status: report?.status ?? operation.status,
+      expectedClosingBalance,
+      countedCash,
+      variance,
+      refreshedAfterCorrection: true,
+    });
+
+    return {
+      refreshed: true,
+      operationDate: bounds.dateLabel,
+      expectedClosingBalance,
+      countedCash,
+      variance,
     };
   }
 

@@ -812,6 +812,46 @@ export class OperationsRepository {
     });
   }
 
+  updateOperationReportSnapshot(input: {
+    tenantId: string;
+    reportId: string;
+    snapshot: Prisma.InputJsonValue;
+    actorUserId?: string | null;
+    reason?: string | null;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const report = await tx.branchOperationReport.update({
+        where: {
+          id: input.reportId,
+        },
+        data: {
+          snapshot: input.snapshot,
+        },
+        include: operationReportInclude,
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId ?? null,
+          action: 'operation.report.snapshot_refreshed',
+          entityType: 'branch_operation_report',
+          entityId: report.id,
+          newValue: {
+            reportNumber: report.reportNumber,
+            operationId: report.operationId,
+            branchId: report.branchId,
+            operationDate: this.formatDateLabel(report.operationDate),
+            status: report.status,
+            reason: input.reason ?? 'Repayment correction refreshed expected cash and variance.',
+          },
+        },
+      });
+
+      return report;
+    });
+  }
+
   managerConfirmReport(input: {
     tenantId: string;
     reportId: string;
