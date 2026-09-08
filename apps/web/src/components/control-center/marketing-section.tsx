@@ -6,10 +6,11 @@ import {
   ArrowRight,
   BarChart3,
   CalendarDays,
+  ChevronDown,
+  Copy,
   Edit3,
   FileText,
   Gift,
-  ImagePlus,
   Megaphone,
   MessageCircle,
   PauseCircle,
@@ -20,7 +21,6 @@ import {
   Search,
   Send,
   Sparkles,
-  Video,
   X,
 } from "lucide-react";
 import {
@@ -33,7 +33,7 @@ import {
 
 import type { ControlCenterSession } from "../../lib/control-center-session";
 import { controlCenterFetch } from "../../lib/control-center-api";
-import { ccDate, ccNumber } from "./formatters";
+import { ccDate, ccDateTime, ccNumber } from "./formatters";
 import {
   InlineSearch,
   Panel,
@@ -110,6 +110,8 @@ const CATEGORY_OPTIONS = [
     title: "Important REMBEH notice",
     body: "Please review this update before continuing daily operations. It may affect how your branch records work today.",
     ctaLabel: "Read notice",
+    ctaAction: "INTERNAL_ROUTE" as const,
+    ctaRoute: "home",
     priority: "95",
   },
   {
@@ -118,14 +120,18 @@ const CATEGORY_OPTIONS = [
     title: "New REMBEH feature available",
     body: "A new workflow is now available in your app. Open this update to see what changed and how it helps your team.",
     ctaLabel: "See update",
+    ctaAction: "INTERNAL_ROUTE" as const,
+    ctaRoute: "subscription",
     priority: "55",
   },
   {
     value: "PROMOTIONAL" as const,
     label: "Promotional / marketing",
-    title: "Subscription renewal reminder",
-    body: "Your branch subscription is nearing renewal. Renew early to keep REMBEH running without interruption.",
-    ctaLabel: "Renew now",
+    title: "Get more value with Pro",
+    body: "Unlock all features, get free SMS, and grow your business with a Rembeh Pro plan.",
+    ctaLabel: "View plans",
+    ctaAction: "INTERNAL_ROUTE" as const,
+    ctaRoute: "subscription_plan",
     priority: "80",
   },
 ] satisfies Array<{
@@ -134,6 +140,8 @@ const CATEGORY_OPTIONS = [
   title: string;
   body: string;
   ctaLabel: string;
+  ctaAction: ControlCenterMarketingCampaignCtaAction;
+  ctaRoute: string;
   priority: string;
 }>;
 
@@ -191,14 +199,14 @@ const emptyForm: MarketingForm = {
   body: "",
   ctaLabel: "",
   ctaUrl: "",
-  ctaAction: "EXTERNAL_URL",
-  ctaRoute: "",
+  ctaAction: "INTERNAL_ROUTE",
+  ctaRoute: "home",
   category: "PRODUCT_UPDATE",
   mediaUrl: "",
   mediaStorageKey: "",
   mediaType: "NONE",
-  audience: "TENANT_USERS",
-  status: "ACTIVE",
+  audience: "ALL_USERS",
+  status: "DRAFT",
   tenantId: "",
   branchId: "",
   roleNames: [],
@@ -223,6 +231,12 @@ export function ControlCenterMarketingSection({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [branches, setBranches] = useState<ControlCenterBranch[]>([]);
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<
+    ControlCenterMarketingCampaignStatus | "ALL"
+  >("ALL");
+  const [categoryFilter, setCategoryFilter] = useState<
+    ControlCenterMarketingCampaignCategory | "ALL"
+  >("ALL");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
@@ -238,23 +252,68 @@ export function ControlCenterMarketingSection({
     return routes.length > 0 ? routes : FALLBACK_INTERNAL_ROUTES;
   }, [data?.internalRoutes]);
 
+  const statusCounts = useMemo(() => {
+    return {
+      ALL: data?.stats.total ?? campaignRows.length,
+      ACTIVE: data?.stats.active ?? 0,
+      DRAFT: data?.stats.draft ?? 0,
+      PAUSED: data?.stats.paused ?? 0,
+      ARCHIVED: data?.stats.archived ?? 0,
+    };
+  }, [campaignRows.length, data?.stats]);
+
+  const categoryCounts = useMemo(() => {
+    const base =
+      statusFilter === "ALL"
+        ? campaignRows
+        : campaignRows.filter((campaign) => campaign.status === statusFilter);
+    return {
+      ALL: base.length,
+      CRITICAL_WARNING: base.filter(
+        (campaign) => campaign.category === "CRITICAL_WARNING",
+      ).length,
+      PRODUCT_UPDATE: base.filter(
+        (campaign) => campaign.category === "PRODUCT_UPDATE",
+      ).length,
+      PROMOTIONAL: base.filter((campaign) => campaign.category === "PROMOTIONAL")
+        .length,
+    };
+  }, [campaignRows, statusFilter]);
+
   const filteredCampaigns = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) return campaignRows;
-    return campaignRows.filter((campaign) =>
-      [
+    const filtered = campaignRows.filter((campaign) => {
+      if (statusFilter !== "ALL" && campaign.status !== statusFilter) {
+        return false;
+      }
+      if (categoryFilter !== "ALL" && campaign.category !== categoryFilter) {
+        return false;
+      }
+      if (!needle) return true;
+      return [
         campaign.title,
         campaign.body,
         campaign.tenantName ?? "",
         campaign.branchName ?? "",
         campaign.status,
         campaign.audience,
+        campaign.category,
       ]
         .join(" ")
         .toLowerCase()
-        .includes(needle),
-    );
-  }, [campaignRows, query]);
+        .includes(needle);
+    });
+
+    return [...filtered].sort((a, b) => {
+      const aActive = a.status === "ACTIVE" ? 0 : 1;
+      const bActive = b.status === "ACTIVE" ? 0 : 1;
+      if (aActive !== bActive) return aActive - bActive;
+      if (b.priority !== a.priority) return b.priority - a.priority;
+      return (
+        new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime()
+      );
+    });
+  }, [campaignRows, categoryFilter, query, statusFilter]);
 
   const selectedUsers = useMemo(() => new Set(form.userIds), [form.userIds]);
 
@@ -388,8 +447,14 @@ export function ControlCenterMarketingSection({
     });
   }
 
-  async function submitCampaign(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function saveCampaign(options?: { publish?: boolean }) {
+    const validationError = validateCampaignForm(form);
+    if (validationError) {
+      setError(validationError);
+      setNotice(null);
+      return;
+    }
+
     setSaving(true);
     setError(null);
     setNotice(null);
@@ -397,6 +462,7 @@ export function ControlCenterMarketingSection({
       const uploaded = mediaFile ? await uploadMedia(mediaFile) : null;
       const mediaStorageKey = uploaded?.storageKey ?? form.mediaStorageKey;
       const mediaType = uploaded?.mediaType ?? form.mediaType;
+      const nextStatus = options?.publish ? "ACTIVE" : form.status;
       const payload = {
         title: form.title.trim(),
         body: form.body.trim(),
@@ -412,7 +478,7 @@ export function ControlCenterMarketingSection({
         mediaType: mediaStorageKey || form.mediaUrl ? mediaType : "NONE",
         placement: "MOBILE_HEADER",
         audience: form.audience,
-        status: form.status,
+        status: nextStatus,
         tenantId: nullable(form.tenantId),
         branchId: nullable(form.branchId),
         roleNames: form.roleNames,
@@ -424,7 +490,9 @@ export function ControlCenterMarketingSection({
         endsAt: form.endsAt ? new Date(form.endsAt).toISOString() : null,
       };
 
-      await controlCenterFetch<{ campaign: ControlCenterMarketingCampaign }>(
+      const response = await controlCenterFetch<{
+        campaign: ControlCenterMarketingCampaign;
+      }>(
         editingId
           ? `/marketing-campaigns/${editingId}`
           : "/marketing-campaigns",
@@ -434,12 +502,23 @@ export function ControlCenterMarketingSection({
           body: JSON.stringify(payload),
         },
       );
+
+      const saved = response.campaign;
+      setData((current) => mergeCampaignIntoList(current, saved));
+      setEditingId(saved.id);
+      setMediaFile(null);
+      setForm((current) => ({
+        ...current,
+        status: saved.status,
+        mediaStorageKey: saved.mediaStorageKey ?? current.mediaStorageKey,
+        mediaUrl: saved.mediaStorageKey ? "" : (saved.mediaUrl ?? ""),
+        mediaType: saved.mediaType,
+      }));
       setNotice(
-        editingId
-          ? "Marketing campaign updated."
-          : "Marketing campaign created.",
+        saved.status === "ACTIVE"
+          ? "Campaign saved and published. Matching users get a push, and the Home card appears under SMS balance after they refresh the app."
+          : "Campaign saved as a draft. Publish it when you want the mobile card to go live.",
       );
-      resetForm();
       await loadCampaigns();
     } catch (caught) {
       setError(
@@ -450,6 +529,11 @@ export function ControlCenterMarketingSection({
     } finally {
       setSaving(false);
     }
+  }
+
+  async function submitCampaign(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await saveCampaign();
   }
 
   async function uploadMedia(file: File) {
@@ -532,6 +616,35 @@ export function ControlCenterMarketingSection({
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function duplicateCampaign(campaign: ControlCenterMarketingCampaign) {
+    setEditingId(null);
+    setMediaFile(null);
+    setForm({
+      title: campaign.title,
+      body: campaign.body,
+      ctaLabel: campaign.ctaLabel ?? "",
+      ctaUrl: campaign.ctaUrl ?? "",
+      ctaAction: campaign.ctaAction ?? "EXTERNAL_URL",
+      ctaRoute: campaign.ctaRoute ?? "",
+      category: campaign.category ?? "PRODUCT_UPDATE",
+      mediaUrl: campaign.mediaStorageKey ? "" : (campaign.mediaUrl ?? ""),
+      mediaStorageKey: campaign.mediaStorageKey ?? "",
+      mediaType: campaign.mediaType,
+      audience: campaign.audience,
+      status: "DRAFT",
+      tenantId: campaign.tenantId ?? "",
+      branchId: campaign.branchId ?? "",
+      roleNames: campaign.roleNames,
+      userIds: campaign.userIds,
+      priority: String(campaign.priority),
+      startsAt: toDateTimeLocal(campaign.startsAt),
+      endsAt: campaign.endsAt ? toDateTimeLocal(campaign.endsAt) : "",
+    });
+    setNotice("Campaign duplicated into the form as a new draft. Review and save.");
+    setError(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function resetForm() {
     setEditingId(null);
     setMediaFile(null);
@@ -572,6 +685,8 @@ export function ControlCenterMarketingSection({
               title: sample.title,
               body: sample.body,
               ctaLabel: sample.ctaLabel,
+              ctaAction: sample.ctaAction,
+              ctaRoute: sample.ctaRoute,
               priority: sample.priority,
             }
           : {}),
@@ -1085,18 +1200,39 @@ export function ControlCenterMarketingSection({
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={saving}
-              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[var(--forest-emerald)] px-4 text-sm font-black text-white shadow-[0_12px_24px_rgba(5,111,58,0.2)] transition hover:bg-[#025f31] disabled:opacity-60"
-            >
-              <Save className="size-4" />
-              {saving
-                ? "Saving..."
-                : editingId
-                  ? "Save campaign"
-                  : "Create campaign"}
-            </button>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <button
+                type="submit"
+                disabled={saving}
+                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-[#dde4eb] bg-white px-4 text-sm font-black text-[#12213f] transition hover:bg-[#f7faf8] disabled:opacity-60"
+              >
+                <Save className="size-4" />
+                {saving
+                  ? "Saving..."
+                  : editingId
+                    ? "Save changes"
+                    : "Save draft"}
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => void saveCampaign({ publish: true })}
+                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-[var(--forest-emerald)] px-4 text-sm font-black text-white shadow-[0_12px_24px_rgba(5,111,58,0.2)] transition hover:bg-[#025f31] disabled:opacity-60"
+              >
+                <Send className="size-4" />
+                {saving ? "Publishing..." : "Publish & notify"}
+              </button>
+            </div>
+            {editingId ? (
+              <button
+                type="button"
+                disabled={saving}
+                onClick={resetForm}
+                className="inline-flex h-10 w-full items-center justify-center rounded-lg text-sm font-bold text-slate-500 transition hover:bg-[#f7faf8] disabled:opacity-60"
+              >
+                Start a new campaign
+              </button>
+            ) : null}
           </div>
         </form>
       </Panel>
@@ -1120,37 +1256,98 @@ export function ControlCenterMarketingSection({
           />
         </div>
 
-        <div className="hidden grid-cols-[1.15fr_0.9fr_0.8fr_0.75fr_0.8fr_190px] gap-3 border-b border-[#e6ebf0] bg-[#f7faf9] px-5 py-3 text-[11px] font-black uppercase text-slate-500 xl:grid">
-          <span>Campaign</span>
-          <span>Audience</span>
-          <span>Media</span>
-          <span>Schedule</span>
-          <span>Status</span>
-          <span className="text-right">Actions</span>
+        <div className="space-y-3 border-b border-[#e6ebf0] px-5 py-3">
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                { value: "ALL", label: "All" },
+                { value: "ACTIVE", label: "Active" },
+                { value: "DRAFT", label: "Draft" },
+                { value: "PAUSED", label: "Paused" },
+                { value: "ARCHIVED", label: "Archived" },
+              ] as const
+            ).map((chip) => {
+              const selected = statusFilter === chip.value;
+              return (
+                <button
+                  key={chip.value}
+                  type="button"
+                  onClick={() => setStatusFilter(chip.value)}
+                  className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-bold transition ${
+                    selected
+                      ? "border-[var(--forest-emerald)] bg-emerald-50 text-[var(--forest-emerald)]"
+                      : "border-[#dde4eb] bg-white text-slate-600 hover:border-emerald-200"
+                  }`}
+                >
+                  {chip.label}
+                  <span
+                    className={`rounded-md px-1.5 py-0.5 text-[10px] font-black ${
+                      selected
+                        ? "bg-white text-[var(--forest-emerald)]"
+                        : "bg-[#f7faf9] text-slate-500"
+                    }`}
+                  >
+                    {statusCounts[chip.value]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {(
+              [
+                { value: "ALL", label: "All categories" },
+                { value: "CRITICAL_WARNING", label: "Critical" },
+                { value: "PRODUCT_UPDATE", label: "Product" },
+                { value: "PROMOTIONAL", label: "Promo" },
+              ] as const
+            ).map((chip) => {
+              const selected = categoryFilter === chip.value;
+              return (
+                <button
+                  key={chip.value}
+                  type="button"
+                  onClick={() => setCategoryFilter(chip.value)}
+                  className={`inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5 text-[11px] font-bold transition ${
+                    selected
+                      ? "border-[#12213f] bg-[#12213f] text-white"
+                      : "border-[#dde4eb] bg-white text-slate-500 hover:border-slate-300"
+                  }`}
+                >
+                  {chip.label}
+                  <span
+                    className={`text-[10px] font-black ${
+                      selected ? "text-emerald-200" : "text-slate-400"
+                    }`}
+                  >
+                    {categoryCounts[chip.value]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="divide-y divide-[#edf1f4]">
+        <div className="space-y-3 p-4 sm:p-5">
           {loading ? (
-            <p className="px-5 py-8 text-sm font-semibold text-slate-500">
+            <p className="px-1 py-8 text-sm font-semibold text-slate-500">
               Loading campaigns...
             </p>
           ) : filteredCampaigns.length === 0 ? (
-            <div className="px-5 py-12 text-center">
-              <Search className="mx-auto size-7 text-slate-300" />
-              <h3 className="mt-3 text-base font-black text-[var(--midnight-navy)]">
-                No campaigns found
-              </h3>
-              <p className="mt-1 text-sm font-medium text-slate-500">
-                Create the first header campaign or clear your search.
-              </p>
-            </div>
+            <CampaignListEmpty
+              statusFilter={statusFilter}
+              categoryFilter={categoryFilter}
+              hasQuery={query.trim().length > 0}
+            />
           ) : (
             filteredCampaigns.map((campaign) => (
-              <CampaignRow
+              <CampaignCard
                 key={campaign.id}
                 campaign={campaign}
                 saving={saving}
+                internalRoutes={internalRoutes}
                 onEdit={() => editCampaign(campaign)}
+                onDuplicate={() => duplicateCampaign(campaign)}
                 onStatus={(status) => void updateStatus(campaign, status)}
               />
             ))
@@ -1276,103 +1473,291 @@ function PreviewWatermark({
   );
 }
 
-function CampaignRow({
+function CampaignListEmpty({
+  statusFilter,
+  categoryFilter,
+  hasQuery,
+}: {
+  statusFilter: ControlCenterMarketingCampaignStatus | "ALL";
+  categoryFilter: ControlCenterMarketingCampaignCategory | "ALL";
+  hasQuery: boolean;
+}) {
+  const statusLabel =
+    statusFilter === "ALL"
+      ? null
+      : STATUS_OPTIONS.find((option) => option.value === statusFilter)?.label ??
+        statusFilter.toLowerCase();
+  const categoryLabel =
+    categoryFilter === "ALL" ? null : categoryShortLabel(categoryFilter);
+
+  let title = "No campaigns yet";
+  let body = "Create the first header campaign to start notifying mobile users.";
+
+  if (hasQuery) {
+    title = "No campaigns match your search";
+    body = "Try a different keyword, or clear search and filters.";
+  } else if (statusLabel || categoryLabel) {
+    const parts = [statusLabel, categoryLabel].filter(Boolean).join(" · ");
+    title = `No ${parts} campaigns`;
+    body = "Switch filters or create a campaign that matches this view.";
+  }
+
+  return (
+    <div className="rounded-xl border border-dashed border-[#dde4eb] bg-[#f7faf9] px-5 py-12 text-center">
+      <Search className="mx-auto size-7 text-slate-300" />
+      <h3 className="mt-3 text-base font-black text-[var(--midnight-navy)]">
+        {title}
+      </h3>
+      <p className="mt-1 text-sm font-medium text-slate-500">{body}</p>
+    </div>
+  );
+}
+
+function CampaignCard({
   campaign,
   saving,
+  internalRoutes,
   onEdit,
+  onDuplicate,
   onStatus,
 }: {
   campaign: ControlCenterMarketingCampaign;
   saving: boolean;
+  internalRoutes: ControlCenterMarketingInternalRoute[];
   onEdit: () => void;
+  onDuplicate: () => void;
   onStatus: (status: ControlCenterMarketingCampaignStatus) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const theme = CATEGORY_PREVIEW[campaign.category] ?? CATEGORY_PREVIEW.PRODUCT_UPDATE;
+  const schedule = campaignScheduleMeta(campaign);
+
   return (
-    <article className="grid gap-3 px-5 py-4 xl:grid-cols-[1.15fr_0.9fr_0.8fr_0.75fr_0.8fr_190px] xl:items-center">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-black text-[var(--midnight-navy)]">
-          {campaign.title}
-        </p>
-        <p className="mt-1 line-clamp-2 text-xs font-medium leading-5 text-slate-500">
-          {campaign.body}
-        </p>
-      </div>
+    <article
+      className="overflow-hidden rounded-xl border border-[#dde4eb] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]"
+      style={{ borderLeftWidth: 4, borderLeftColor: theme.accent }}
+    >
+      <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className="inline-flex h-6 items-center rounded-md px-2 text-[10px] font-black uppercase tracking-[0.04em]"
+              style={{
+                backgroundColor: theme.iconBg,
+                color: theme.accent,
+              }}
+            >
+              {categoryShortLabel(campaign.category)}
+            </span>
+            <StatusPill value={campaign.status} />
+            <span
+              className={`inline-flex h-6 items-center rounded-md px-2 text-[10px] font-black uppercase tracking-[0.04em] ${schedule.badgeClass}`}
+            >
+              {schedule.badge}
+            </span>
+          </div>
 
-      <div className="text-xs font-semibold text-slate-600">
-        <p>{audienceLabel(campaign)}</p>
-        <p className="mt-1 text-slate-400">Priority {campaign.priority}</p>
-      </div>
+          <h3 className="mt-2 truncate text-sm font-black text-[var(--midnight-navy)]">
+            {campaign.title}
+          </h3>
+          <p
+            className={`mt-1 text-xs font-medium leading-5 text-slate-500 ${
+              expanded ? "" : "line-clamp-2"
+            }`}
+          >
+            {campaign.body}
+          </p>
 
-      <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
-        {campaign.mediaType === "VIDEO" ? (
-          <Video className="size-4 text-[#2563eb]" />
-        ) : campaign.mediaType === "IMAGE" ? (
-          <ImagePlus className="size-4 text-[var(--forest-emerald)]" />
-        ) : (
-          <Megaphone className="size-4 text-slate-400" />
-        )}
-        {campaign.mediaType === "NONE" ? "Text only" : campaign.mediaType}
-      </div>
+          <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] font-semibold text-slate-500">
+            <span>{audienceLabel(campaign)}</span>
+            <span>Priority {campaign.priority}</span>
+            <span className="inline-flex items-center gap-1">
+              <CalendarDays className="size-3 text-slate-400" />
+              {schedule.detail}
+            </span>
+            <span>{ctaSummary(campaign, internalRoutes)}</span>
+          </div>
 
-      <div className="text-xs font-semibold text-slate-600">
-        <div className="flex items-center gap-1.5">
-          <CalendarDays className="size-3.5 text-slate-400" />
-          {ccDate(campaign.startsAt)}
+          {expanded ? (
+            <div className="mt-3 rounded-lg border border-[#eef2f5] bg-[#f7faf9] px-3 py-2 text-[11px] font-medium text-slate-500">
+              <p>
+                Created by {campaign.createdBy?.name ?? "Unknown"} ·{" "}
+                {ccDateTime(campaign.createdAt)}
+              </p>
+              {campaign.ctaLabel ? (
+                <p className="mt-1">
+                  Button: {campaign.ctaLabel}
+                  {campaign.ctaAction === "EXTERNAL_URL" && campaign.ctaUrl
+                    ? ` → ${campaign.ctaUrl}`
+                    : ""}
+                  {campaign.ctaAction === "INTERNAL_ROUTE" && campaign.ctaRoute
+                    ? ` → ${routeLabel(campaign.ctaRoute, internalRoutes)}`
+                    : ""}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </div>
-        {campaign.endsAt ? (
-          <p className="mt-1 text-slate-400">Until {ccDate(campaign.endsAt)}</p>
-        ) : (
-          <p className="mt-1 text-slate-400">No end date</p>
-        )}
-      </div>
 
-      <StatusPill value={campaign.status} />
-
-      <div className="flex flex-wrap justify-start gap-2 xl:justify-end">
-        <button
-          type="button"
-          onClick={onEdit}
-          disabled={saving}
-          className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#dde4eb] bg-white px-2.5 text-xs font-bold text-[#12213f] disabled:opacity-60"
-        >
-          <Edit3 className="size-3.5" />
-          Edit
-        </button>
-        {campaign.status === "ACTIVE" ? (
+        <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
           <button
             type="button"
-            onClick={() => onStatus("PAUSED")}
+            onClick={onEdit}
             disabled={saving}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 text-xs font-bold text-amber-700 disabled:opacity-60"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#dde4eb] bg-white px-2.5 text-xs font-bold text-[#12213f] disabled:opacity-60"
           >
-            <PauseCircle className="size-3.5" />
-            Pause
+            <Edit3 className="size-3.5" />
+            Edit
           </button>
-        ) : campaign.status !== "ARCHIVED" ? (
           <button
             type="button"
-            onClick={() => onStatus("ACTIVE")}
+            onClick={onDuplicate}
             disabled={saving}
-            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-bold text-[var(--forest-emerald)] disabled:opacity-60"
+            className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-[#dde4eb] bg-white px-2.5 text-xs font-bold text-[#12213f] disabled:opacity-60"
           >
-            <PlayCircle className="size-3.5" />
-            Publish
+            <Copy className="size-3.5" />
+            Duplicate
           </button>
-        ) : null}
-        {campaign.status !== "ARCHIVED" ? (
+          {campaign.status === "ACTIVE" ? (
+            <button
+              type="button"
+              onClick={() => onStatus("PAUSED")}
+              disabled={saving}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2.5 text-xs font-bold text-amber-700 disabled:opacity-60"
+            >
+              <PauseCircle className="size-3.5" />
+              Pause
+            </button>
+          ) : campaign.status !== "ARCHIVED" ? (
+            <button
+              type="button"
+              onClick={() => onStatus("ACTIVE")}
+              disabled={saving}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 text-xs font-bold text-[var(--forest-emerald)] disabled:opacity-60"
+            >
+              <PlayCircle className="size-3.5" />
+              Publish
+            </button>
+          ) : null}
+          {campaign.status !== "ARCHIVED" ? (
+            <button
+              type="button"
+              onClick={() => onStatus("ARCHIVED")}
+              disabled={saving}
+              className="grid size-8 place-items-center rounded-lg border border-red-100 bg-red-50 text-red-600 disabled:opacity-60"
+              aria-label="Archive campaign"
+            >
+              <Archive className="size-3.5" />
+            </button>
+          ) : null}
           <button
             type="button"
-            onClick={() => onStatus("ARCHIVED")}
-            disabled={saving}
-            className="grid size-8 place-items-center rounded-lg border border-red-100 bg-red-50 text-red-600 disabled:opacity-60"
-            aria-label="Archive campaign"
+            onClick={() => setExpanded((current) => !current)}
+            className="grid size-8 place-items-center rounded-lg border border-[#dde4eb] bg-white text-slate-500"
+            aria-label={expanded ? "Collapse campaign" : "Expand campaign"}
+            aria-expanded={expanded}
           >
-            <Archive className="size-3.5" />
+            <ChevronDown
+              className={`size-3.5 transition ${expanded ? "rotate-180" : ""}`}
+            />
           </button>
-        ) : null}
+        </div>
       </div>
     </article>
   );
+}
+
+function categoryShortLabel(category: ControlCenterMarketingCampaignCategory) {
+  if (category === "CRITICAL_WARNING") return "Critical";
+  if (category === "PRODUCT_UPDATE") return "Product";
+  return "Promo";
+}
+
+function routeLabel(
+  routeKey: string,
+  routes: ControlCenterMarketingInternalRoute[],
+) {
+  return routes.find((route) => route.key === routeKey)?.label ?? routeKey;
+}
+
+function ctaSummary(
+  campaign: ControlCenterMarketingCampaign,
+  routes: ControlCenterMarketingInternalRoute[],
+) {
+  if (!campaign.ctaLabel?.trim()) return "No button";
+  if (campaign.ctaAction === "INTERNAL_ROUTE") {
+    const page = campaign.ctaRoute
+      ? routeLabel(campaign.ctaRoute, routes)
+      : "In-app";
+    return `In-app · ${page}`;
+  }
+  return "External link";
+}
+
+function campaignScheduleMeta(campaign: ControlCenterMarketingCampaign) {
+  const now = Date.now();
+  const starts = new Date(campaign.startsAt).getTime();
+  const ends = campaign.endsAt ? new Date(campaign.endsAt).getTime() : null;
+  const startsValid = !Number.isNaN(starts);
+  const endsValid = ends !== null && !Number.isNaN(ends);
+
+  if (campaign.status === "ARCHIVED") {
+    return {
+      badge: "Archived",
+      badgeClass: "bg-slate-100 text-slate-600",
+      detail: startsValid
+        ? `Started ${ccDate(campaign.startsAt)}`
+        : "No schedule",
+    };
+  }
+
+  if (endsValid && ends! < now) {
+    return {
+      badge: "Expired",
+      badgeClass: "bg-red-50 text-red-700",
+      detail: `Ended ${ccDate(campaign.endsAt!)}`,
+    };
+  }
+
+  if (startsValid && starts > now) {
+    return {
+      badge: "Scheduled",
+      badgeClass: "bg-sky-50 text-sky-700",
+      detail: endsValid
+        ? `Starts ${ccDate(campaign.startsAt)} · ends ${ccDate(campaign.endsAt!)}`
+        : `Starts ${ccDate(campaign.startsAt)}`,
+    };
+  }
+
+  if (campaign.status === "ACTIVE") {
+    return {
+      badge: "Live",
+      badgeClass: "bg-emerald-50 text-[var(--forest-emerald)]",
+      detail: endsValid
+        ? `Live · until ${ccDate(campaign.endsAt!)}`
+        : `Live · from ${ccDate(campaign.startsAt)}`,
+    };
+  }
+
+  if (campaign.status === "PAUSED") {
+    return {
+      badge: "Paused",
+      badgeClass: "bg-amber-50 text-amber-700",
+      detail: endsValid
+        ? `Until ${ccDate(campaign.endsAt!)}`
+        : `From ${ccDate(campaign.startsAt)}`,
+    };
+  }
+
+  return {
+    badge: "Draft",
+    badgeClass: "bg-slate-100 text-slate-600",
+    detail: startsValid
+      ? endsValid
+        ? `${ccDate(campaign.startsAt)} → ${ccDate(campaign.endsAt!)}`
+        : `Starts ${ccDate(campaign.startsAt)}`
+      : "No schedule",
+  };
 }
 
 function audienceLabel(campaign: ControlCenterMarketingCampaign) {
@@ -1391,6 +1776,77 @@ function audienceLabel(campaign: ControlCenterMarketingCampaign) {
     return `${campaign.userIds.length} selected people`;
   }
   return campaign.tenantName ?? "Organization users";
+}
+
+function validateCampaignForm(form: MarketingForm): string | null {
+  if (form.title.trim().length < 2 || form.body.trim().length < 2) {
+    return "Add a title and message before saving.";
+  }
+  if (form.audience !== "ALL_USERS" && !form.tenantId.trim()) {
+    return "Choose an organization for this audience.";
+  }
+  if (form.audience === "BRANCH_USERS" && !form.branchId.trim()) {
+    return "Choose a branch for this audience.";
+  }
+  if (form.audience === "ROLE_USERS" && form.roleNames.length === 0) {
+    return "Choose at least one role.";
+  }
+  if (form.audience === "SELECTED_USERS" && form.userIds.length === 0) {
+    return "Choose at least one person.";
+  }
+  if (form.ctaAction === "INTERNAL_ROUTE" && !form.ctaRoute.trim()) {
+    return "Choose the in-app page for the action button.";
+  }
+  if (form.ctaAction === "EXTERNAL_URL" && form.ctaUrl.trim()) {
+    try {
+      const parsed = new URL(form.ctaUrl.trim());
+      if (!["http:", "https:"].includes(parsed.protocol)) {
+        return "External button links must start with https://";
+      }
+    } catch {
+      return "External button links must be a full https:// URL.";
+    }
+  }
+  if (
+    form.ctaLabel.trim() &&
+    form.ctaAction === "EXTERNAL_URL" &&
+    !form.ctaUrl.trim()
+  ) {
+    return "Add an external https link for the button, or switch to an in-app page.";
+  }
+  if (form.endsAt && form.startsAt) {
+    const starts = new Date(form.startsAt).getTime();
+    const ends = new Date(form.endsAt).getTime();
+    if (!Number.isNaN(starts) && !Number.isNaN(ends) && ends <= starts) {
+      return "End date must be after the start date.";
+    }
+  }
+  return null;
+}
+
+function mergeCampaignIntoList(
+  current: ControlCenterMarketingCampaignsResponse | null,
+  saved: ControlCenterMarketingCampaign,
+): ControlCenterMarketingCampaignsResponse {
+  const routes =
+    current?.internalRoutes ??
+    FALLBACK_INTERNAL_ROUTES.map((route) => ({
+      key: route.key,
+      label: route.label,
+    }));
+  const existing = Array.isArray(current?.campaigns) ? current!.campaigns : [];
+  const campaigns = [saved, ...existing.filter((row) => row.id !== saved.id)];
+  return {
+    internalRoutes: routes,
+    campaigns,
+    stats: {
+      total: campaigns.length,
+      active: campaigns.filter((row) => row.status === "ACTIVE").length,
+      draft: campaigns.filter((row) => row.status === "DRAFT").length,
+      paused: campaigns.filter((row) => row.status === "PAUSED").length,
+      archived: campaigns.filter((row) => row.status === "ARCHIVED").length,
+    },
+  };
 }
 
 function nullable(value: string | null | undefined) {

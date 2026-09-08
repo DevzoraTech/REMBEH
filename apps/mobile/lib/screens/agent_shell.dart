@@ -71,6 +71,7 @@ class _AgentShellState extends State<AgentShell> {
       onResumed: () async {
         if (!mounted) return;
         await promptAppUpdateIfNeeded(context);
+        unawaited(_loadMarketingCampaign());
       },
     );
     _dayStore.addListener(_onDayChanged);

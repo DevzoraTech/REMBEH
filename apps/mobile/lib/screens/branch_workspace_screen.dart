@@ -138,6 +138,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       onResumed: () async {
         if (!mounted) return;
         await promptAppUpdateIfNeeded(context);
+        unawaited(_loadMarketingCampaign());
       },
     );
 

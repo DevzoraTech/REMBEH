@@ -44,7 +44,8 @@ class MobileMarketingCampaign {
     if (ctaAction == 'INTERNAL_ROUTE') {
       return (ctaRoute?.trim() ?? '').isNotEmpty;
     }
-    return (ctaUrl?.trim() ?? '').isNotEmpty;
+    // Show the button whenever a label exists; invalid URLs are handled on tap.
+    return true;
   }
 
   factory MobileMarketingCampaign.fromJson(Map<String, dynamic> json) {
