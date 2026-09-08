@@ -4593,9 +4593,13 @@ export class OperationsService {
       return;
     }
 
-    this.realtime.emitToBranch(tenantId, branchId, event, payload);
+    try {
+      this.realtime.emitToBranch(tenantId, branchId, event, payload);
 
-    this.realtime.emitToTenant(tenantId, event, payload);
+      this.realtime.emitToTenant(tenantId, event, payload);
+    } catch {
+      // Realtime is best-effort.
+    }
   }
 
   private currentBusinessHour() {

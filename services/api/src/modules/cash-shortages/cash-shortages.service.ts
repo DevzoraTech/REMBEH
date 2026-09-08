@@ -797,13 +797,17 @@ export class CashShortagesService {
       action: input.action,
       at: new Date().toISOString(),
     };
-    this.realtime.emitToTenant(input.tenantId, 'shortage.updated', payload);
-    this.realtime.emitToBranch(
-      input.tenantId,
-      input.branchId,
-      'shortage.updated',
-      payload,
-    );
+    try {
+      this.realtime.emitToTenant(input.tenantId, 'shortage.updated', payload);
+      this.realtime.emitToBranch(
+        input.tenantId,
+        input.branchId,
+        'shortage.updated',
+        payload,
+      );
+    } catch {
+      // Realtime is best-effort (e.g. Nest application context without sockets).
+    }
   }
 
   private async findEmployeeInScope(user: AuthenticatedUser, employeeId: string) {
