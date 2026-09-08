@@ -11,12 +11,24 @@ export type MarketingCampaignAudienceContract =
 
 export type MarketingCampaignMediaTypeContract = 'NONE' | 'IMAGE' | 'VIDEO';
 
+export type MarketingCampaignCategoryContract =
+  | 'CRITICAL_WARNING'
+  | 'PRODUCT_UPDATE'
+  | 'PROMOTIONAL';
+
+export type MarketingCampaignCtaActionContract =
+  | 'EXTERNAL_URL'
+  | 'INTERNAL_ROUTE';
+
 export type MarketingCampaignContract = {
   id: string;
   title: string;
   body: string;
   ctaLabel: string | null;
   ctaUrl: string | null;
+  ctaAction: MarketingCampaignCtaActionContract;
+  ctaRoute: string | null;
+  category: MarketingCampaignCategoryContract;
   mediaUrl: string | null;
   mediaStorageKey: string | null;
   mediaType: MarketingCampaignMediaTypeContract;
@@ -50,6 +62,7 @@ export type MarketingCampaignListContract = {
     archived: number;
   };
   campaigns: MarketingCampaignContract[];
+  internalRoutes: Array<{ key: string; label: string }>;
 };
 
 export type MobileMarketingCampaignContract = Pick<
@@ -59,6 +72,9 @@ export type MobileMarketingCampaignContract = Pick<
   | 'body'
   | 'ctaLabel'
   | 'ctaUrl'
+  | 'ctaAction'
+  | 'ctaRoute'
+  | 'category'
   | 'mediaUrl'
   | 'mediaType'
   | 'priority'

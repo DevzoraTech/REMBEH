@@ -8,6 +8,9 @@ class MobileMarketingCampaign {
     this.endsAt,
     this.ctaLabel,
     this.ctaUrl,
+    this.ctaAction = 'EXTERNAL_URL',
+    this.ctaRoute,
+    this.category = 'PRODUCT_UPDATE',
     this.mediaUrl,
     this.mediaType = 'NONE',
   });
@@ -17,6 +20,9 @@ class MobileMarketingCampaign {
   final String body;
   final String? ctaLabel;
   final String? ctaUrl;
+  final String ctaAction;
+  final String? ctaRoute;
+  final String category;
   final String? mediaUrl;
   final String mediaType;
   final int priority;
@@ -28,13 +34,38 @@ class MobileMarketingCampaign {
     return end != null && DateTime.now().isAfter(end);
   }
 
+  bool get isCriticalWarning => category == 'CRITICAL_WARNING';
+  bool get isProductUpdate => category == 'PRODUCT_UPDATE';
+  bool get isPromotional => category == 'PROMOTIONAL';
+
+  bool get hasCta {
+    final label = ctaLabel?.trim() ?? '';
+    if (label.isEmpty) return false;
+    if (ctaAction == 'INTERNAL_ROUTE') {
+      return (ctaRoute?.trim() ?? '').isNotEmpty;
+    }
+    return (ctaUrl?.trim() ?? '').isNotEmpty;
+  }
+
   factory MobileMarketingCampaign.fromJson(Map<String, dynamic> json) {
+    final category = (json['category'] as String?)?.trim();
+    final ctaAction = (json['ctaAction'] as String?)?.trim();
     return MobileMarketingCampaign(
       id: json['id'] as String? ?? '',
       title: json['title'] as String? ?? '',
       body: json['body'] as String? ?? '',
       ctaLabel: json['ctaLabel'] as String?,
       ctaUrl: json['ctaUrl'] as String?,
+      ctaAction: ctaAction == 'INTERNAL_ROUTE' || ctaAction == 'EXTERNAL_URL'
+          ? ctaAction!
+          : 'EXTERNAL_URL',
+      ctaRoute: json['ctaRoute'] as String?,
+      category:
+          category == 'CRITICAL_WARNING' ||
+              category == 'PRODUCT_UPDATE' ||
+              category == 'PROMOTIONAL'
+          ? category!
+          : 'PRODUCT_UPDATE',
       mediaUrl: json['mediaUrl'] as String?,
       mediaType: json['mediaType'] as String? ?? 'NONE',
       priority: (json['priority'] as num?)?.round() ?? 0,
@@ -51,6 +82,9 @@ class MobileMarketingCampaign {
     'body': body,
     'ctaLabel': ctaLabel,
     'ctaUrl': ctaUrl,
+    'ctaAction': ctaAction,
+    'ctaRoute': ctaRoute,
+    'category': category,
     'mediaUrl': mediaUrl,
     'mediaType': mediaType,
     'priority': priority,

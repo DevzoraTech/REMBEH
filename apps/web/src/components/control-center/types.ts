@@ -672,12 +672,29 @@ export type ControlCenterMarketingCampaignAudience =
 export type ControlCenterMarketingCampaignMediaType =
   "NONE" | "IMAGE" | "VIDEO";
 
+export type ControlCenterMarketingCampaignCategory =
+  | "CRITICAL_WARNING"
+  | "PRODUCT_UPDATE"
+  | "PROMOTIONAL";
+
+export type ControlCenterMarketingCampaignCtaAction =
+  | "EXTERNAL_URL"
+  | "INTERNAL_ROUTE";
+
+export type ControlCenterMarketingInternalRoute = {
+  key: string;
+  label: string;
+};
+
 export type ControlCenterMarketingCampaign = {
   id: string;
   title: string;
   body: string;
   ctaLabel: string | null;
   ctaUrl: string | null;
+  ctaAction: ControlCenterMarketingCampaignCtaAction;
+  ctaRoute: string | null;
+  category: ControlCenterMarketingCampaignCategory;
   mediaUrl: string | null;
   mediaStorageKey: string | null;
   mediaType: ControlCenterMarketingCampaignMediaType;
@@ -711,4 +728,5 @@ export type ControlCenterMarketingCampaignsResponse = {
     archived: number;
   };
   campaigns: ControlCenterMarketingCampaign[];
+  internalRoutes: ControlCenterMarketingInternalRoute[];
 };

@@ -19,6 +19,7 @@ import '../features/operations/presentation/screens/operations_tab.dart';
 import '../features/operations/presentation/report/screens/daily_report_screen.dart';
 import '../features/marketing/data/mobile_marketing_campaign_store.dart';
 import '../features/marketing/domain/models/mobile_marketing_campaign.dart';
+import '../features/marketing/presentation/marketing_campaign_actions.dart';
 import '../features/marketing/presentation/sheets/mobile_marketing_campaign_sheet.dart';
 import '../features/repayment/data/repayments_live_store.dart';
 import '../features/salaries/presentation/screens/salaries_screen.dart';
@@ -806,7 +807,91 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   void _openMarketingCampaign() {
     final campaign = _marketingCampaign;
     if (campaign == null) return;
-    unawaited(showMobileMarketingCampaignSheet(context, campaign));
+    unawaited(
+      showMobileMarketingCampaignSheet(
+        context,
+        campaign,
+        onInternalRoute: _navigateMarketingRoute,
+      ),
+    );
+  }
+
+  Future<void> _dismissMarketingCampaign() async {
+    final campaign = _marketingCampaign;
+    if (campaign == null) return;
+    await _marketingStore.dismiss(campaign);
+    if (!mounted) return;
+    setState(() {
+      _marketingCampaign = null;
+    });
+  }
+
+  void _handleMarketingCta() {
+    final campaign = _marketingCampaign;
+    if (campaign == null) return;
+    unawaited(
+      handleMarketingCampaignCta(
+        context: context,
+        campaign: campaign,
+        onInternalRoute: _navigateMarketingRoute,
+      ),
+    );
+  }
+
+  void _navigateMarketingRoute(String routeKey) {
+    switch (routeKey) {
+      case 'home':
+        _openTab(0);
+        break;
+      case 'ops':
+        _openTab(1);
+        break;
+      case 'records':
+        _openTab(2);
+        break;
+      case 'clients':
+        _openTab(3);
+        break;
+      case 'more':
+        _openTab(4);
+        break;
+      case 'subscription':
+        _openSubscription();
+        break;
+      case 'subscription_sms':
+        _openSubscription(SubscriptionTab.sms);
+        break;
+      case 'subscription_plan':
+        _openSubscription(SubscriptionTab.plan);
+        break;
+      case 'corrections':
+        Navigator.of(context).push<void>(
+          MaterialPageRoute(
+            builder: (_) =>
+                RepaymentCorrectionsScreen(session: widget.session),
+          ),
+        );
+        break;
+      case 'reports':
+        unawaited(_openReportsList());
+        break;
+      case 'profile':
+      case 'settings':
+        _openProfile();
+        break;
+    }
+  }
+
+  void _openSubscription([SubscriptionTab initialTab = SubscriptionTab.plan]) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        settings: const RouteSettings(name: SubscriptionScreen.routeName),
+        builder: (_) => SubscriptionScreen(
+          session: widget.session,
+          initialTab: initialTab,
+        ),
+      ),
+    );
   }
 
   // ===========================================================================
@@ -2701,20 +2786,14 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
                 onOpenProfile: _openProfile,
                 onOpenSettings: _openProfile,
                 onSmsTap: () {
-                  Navigator.of(context).push<void>(
-                    MaterialPageRoute(
-                      settings: const RouteSettings(
-                        name: SubscriptionScreen.routeName,
-                      ),
-                      builder: (_) => SubscriptionScreen(
-                        session: widget.session,
-                        initialTab: SubscriptionTab.sms,
-                      ),
-                    ),
-                  );
+                  _openSubscription(SubscriptionTab.sms);
                 },
                 marketingCampaign: _marketingCampaign,
                 onMarketingTap: _openMarketingCampaign,
+                onMarketingDismiss: () {
+                  unawaited(_dismissMarketingCampaign());
+                },
+                onMarketingCta: _handleMarketingCta,
               ),
 
               if (_notice != null)
@@ -3060,15 +3139,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           : null,
 
       onSubscriptionTap: () {
-        Navigator.of(context).push<void>(
-          MaterialPageRoute(
-            settings: const RouteSettings(name: SubscriptionScreen.routeName),
-            builder: (_) => SubscriptionScreen(
-              session: widget.session,
-              initialTab: SubscriptionTab.plan,
-            ),
-          ),
-        );
+        _openSubscription(SubscriptionTab.plan);
       },
 
       onSettingsTap: () {

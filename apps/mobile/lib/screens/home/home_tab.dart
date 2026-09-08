@@ -30,6 +30,8 @@ class HomeTab extends StatefulWidget {
     required this.onOpenRecords,
     this.marketingCampaign,
     this.onMarketingTap,
+    this.onMarketingDismiss,
+    this.onMarketingCta,
     this.onRecordExpense,
   });
 
@@ -40,6 +42,8 @@ class HomeTab extends StatefulWidget {
   final VoidCallback onOpenSearch;
   final MobileMarketingCampaign? marketingCampaign;
   final VoidCallback? onMarketingTap;
+  final VoidCallback? onMarketingDismiss;
+  final VoidCallback? onMarketingCta;
   final void Function({
     required RecordsSection section,
     required RecordsFilter filter,
@@ -238,6 +242,8 @@ class _HomeTabState extends State<HomeTab> {
               MobileMarketingBanner(
                 campaign: widget.marketingCampaign!,
                 onTap: widget.onMarketingTap,
+                onDismiss: widget.onMarketingDismiss,
+                onCta: widget.onMarketingCta,
               ),
             ],
             const SizedBox(height: 16),

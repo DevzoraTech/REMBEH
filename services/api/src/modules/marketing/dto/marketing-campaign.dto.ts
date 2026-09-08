@@ -31,6 +31,19 @@ export class MarketingCampaignDto {
   ctaUrl?: string | null;
 
   @IsOptional()
+  @IsIn(['EXTERNAL_URL', 'INTERNAL_ROUTE'])
+  ctaAction?: 'EXTERNAL_URL' | 'INTERNAL_ROUTE';
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 80)
+  ctaRoute?: string | null;
+
+  @IsOptional()
+  @IsIn(['CRITICAL_WARNING', 'PRODUCT_UPDATE', 'PROMOTIONAL'])
+  category?: 'CRITICAL_WARNING' | 'PRODUCT_UPDATE' | 'PROMOTIONAL';
+
+  @IsOptional()
   @IsString()
   @Length(0, 1000)
   mediaUrl?: string | null;
@@ -123,6 +136,19 @@ export class UpdateMarketingCampaignDto {
   @IsString()
   @Length(0, 500)
   ctaUrl?: string | null;
+
+  @IsOptional()
+  @IsIn(['EXTERNAL_URL', 'INTERNAL_ROUTE'])
+  ctaAction?: 'EXTERNAL_URL' | 'INTERNAL_ROUTE';
+
+  @IsOptional()
+  @IsString()
+  @Length(0, 80)
+  ctaRoute?: string | null;
+
+  @IsOptional()
+  @IsIn(['CRITICAL_WARNING', 'PRODUCT_UPDATE', 'PROMOTIONAL'])
+  category?: 'CRITICAL_WARNING' | 'PRODUCT_UPDATE' | 'PROMOTIONAL';
 
   @IsOptional()
   @IsString()

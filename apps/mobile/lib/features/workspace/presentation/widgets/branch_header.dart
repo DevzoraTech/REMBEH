@@ -23,6 +23,8 @@ class BranchHeader extends StatefulWidget {
     this.showSmsCredits = true,
     this.marketingCampaign,
     this.onMarketingTap,
+    this.onMarketingDismiss,
+    this.onMarketingCta,
   });
 
   final RembehSession session;
@@ -39,6 +41,8 @@ class BranchHeader extends StatefulWidget {
   final bool showSmsCredits;
   final MobileMarketingCampaign? marketingCampaign;
   final VoidCallback? onMarketingTap;
+  final VoidCallback? onMarketingDismiss;
+  final VoidCallback? onMarketingCta;
 
   @override
   State<BranchHeader> createState() => _BranchHeaderState();
@@ -269,6 +273,8 @@ class _BranchHeaderState extends State<BranchHeader>
               child: MobileMarketingBanner(
                 campaign: campaign,
                 onTap: widget.onMarketingTap,
+                onDismiss: widget.onMarketingDismiss,
+                onCta: widget.onMarketingCta,
               ),
             ),
         ],

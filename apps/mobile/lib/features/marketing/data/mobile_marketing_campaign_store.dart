@@ -14,7 +14,7 @@ class MobileMarketingCampaignStore {
   Future<MobileMarketingCampaign?> fetchLatest(RembehSession session) async {
     final campaign = await _api.getMobileHeaderCampaign(session);
     await cache(session, campaign);
-    return campaign;
+    return _filterDismissed(campaign);
   }
 
   Future<void> cache(
@@ -22,7 +22,7 @@ class MobileMarketingCampaignStore {
     MobileMarketingCampaign? campaign,
   ) async {
     final prefs = await SharedPreferences.getInstance();
-    final key = _key(session);
+    final key = _cacheKey(session);
     if (campaign == null || campaign.isExpired) {
       await prefs.remove(key);
       return;
@@ -32,7 +32,7 @@ class MobileMarketingCampaignStore {
 
   Future<MobileMarketingCampaign?> readCached(RembehSession session) async {
     final prefs = await SharedPreferences.getInstance();
-    final key = _key(session);
+    final key = _cacheKey(session);
     final raw = prefs.getString(key);
     if (raw == null || raw.isEmpty) return null;
     try {
@@ -43,16 +43,57 @@ class MobileMarketingCampaignStore {
         await prefs.remove(key);
         return null;
       }
-      return campaign;
+      return _filterDismissed(campaign);
     } catch (_) {
       await prefs.remove(key);
       return null;
     }
   }
 
-  String _key(RembehSession session) {
+  /// Persist dismiss until [campaign.endsAt] passes or a different campaign id.
+  Future<void> dismiss(MobileMarketingCampaign campaign) async {
+    if (campaign.id.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    final value = campaign.endsAt?.toIso8601String() ?? 'indefinite';
+    await prefs.setString(_dismissKey(campaign.id), value);
+  }
+
+  Future<bool> isDismissed(MobileMarketingCampaign campaign) async {
+    if (campaign.id.isEmpty) return false;
+    final prefs = await SharedPreferences.getInstance();
+    final key = _dismissKey(campaign.id);
+    final raw = prefs.getString(key);
+    if (raw == null || raw.isEmpty) return false;
+
+    if (campaign.isExpired) {
+      await prefs.remove(key);
+      return false;
+    }
+
+    if (raw != 'indefinite') {
+      final storedEnd = DateTime.tryParse(raw);
+      if (storedEnd != null && DateTime.now().isAfter(storedEnd)) {
+        await prefs.remove(key);
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  Future<MobileMarketingCampaign?> _filterDismissed(
+    MobileMarketingCampaign? campaign,
+  ) async {
+    if (campaign == null || campaign.isExpired) return null;
+    if (await isDismissed(campaign)) return null;
+    return campaign;
+  }
+
+  String _cacheKey(RembehSession session) {
     final tenantId = session.tenantId ?? 'tenant';
     final branchId = session.branchId ?? 'all';
     return 'rembeh.mobile_header_campaign.$tenantId.$branchId';
   }
+
+  String _dismissKey(String campaignId) => 'marketing_dismissed_$campaignId';
 }

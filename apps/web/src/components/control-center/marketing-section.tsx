@@ -1,13 +1,20 @@
 "use client";
 
 import {
+  AlertTriangle,
   Archive,
+  ArrowRight,
+  BarChart3,
   CalendarDays,
   Edit3,
+  FileText,
+  Gift,
   ImagePlus,
   Megaphone,
+  MessageCircle,
   PauseCircle,
   PlayCircle,
+  Plus,
   RefreshCw,
   Save,
   Search,
@@ -28,7 +35,6 @@ import type { ControlCenterSession } from "../../lib/control-center-session";
 import { controlCenterFetch } from "../../lib/control-center-api";
 import { ccDate, ccNumber } from "./formatters";
 import {
-  IconBadge,
   InlineSearch,
   Panel,
   SectionTitle,
@@ -42,9 +48,12 @@ import type {
   ControlCenterClientDetail,
   ControlCenterMarketingCampaign,
   ControlCenterMarketingCampaignAudience,
+  ControlCenterMarketingCampaignCategory,
+  ControlCenterMarketingCampaignCtaAction,
   ControlCenterMarketingCampaignMediaType,
   ControlCenterMarketingCampaignStatus,
   ControlCenterMarketingCampaignsResponse,
+  ControlCenterMarketingInternalRoute,
   ControlCenterUser,
 } from "./types";
 
@@ -53,6 +62,9 @@ type MarketingForm = {
   body: string;
   ctaLabel: string;
   ctaUrl: string;
+  ctaAction: ControlCenterMarketingCampaignCtaAction;
+  ctaRoute: string;
+  category: ControlCenterMarketingCampaignCategory;
   mediaUrl: string;
   mediaStorageKey: string;
   mediaType: ControlCenterMarketingCampaignMediaType;
@@ -76,42 +88,81 @@ type PresignResponse = {
 
 const ROLE_OPTIONS = ["Account Owner", "Manager", "Cashier", "Field Officer"];
 
-const MARKETING_TEMPLATES = [
+const FALLBACK_INTERNAL_ROUTES: ControlCenterMarketingInternalRoute[] = [
+  { key: "home", label: "Home" },
+  { key: "ops", label: "Daily Operations (Ops)" },
+  { key: "records", label: "Records" },
+  { key: "clients", label: "Clients" },
+  { key: "more", label: "More" },
+  { key: "subscription", label: "Subscription & SMS" },
+  { key: "subscription_sms", label: "SMS bundles" },
+  { key: "subscription_plan", label: "Plan renewal" },
+  { key: "corrections", label: "Repayment corrections" },
+  { key: "reports", label: "Reports" },
+  { key: "profile", label: "Profile" },
+  { key: "settings", label: "Settings" },
+];
+
+const CATEGORY_OPTIONS = [
   {
-    label: "Subscription reminder",
-    title: "Subscription renewal reminder",
-    body: "Your branch subscription is nearing renewal. Renew early to keep REMBEH running without interruption.",
-    ctaLabel: "Renew now",
-    priority: 80,
-  },
-  {
-    label: "New feature",
-    title: "New REMBEH feature available",
-    body: "A new workflow is now available in your app. Open this update to see what changed and how it helps your team.",
-    ctaLabel: "See update",
-    priority: 55,
-  },
-  {
-    label: "Training",
-    title: "Team training notice",
-    body: "A REMBEH training session is available for your team. Share this with the right staff and confirm attendance.",
-    ctaLabel: "Confirm",
-    priority: 45,
-  },
-  {
-    label: "Critical notice",
+    value: "CRITICAL_WARNING" as const,
+    label: "Critical operational warning",
     title: "Important REMBEH notice",
     body: "Please review this update before continuing daily operations. It may affect how your branch records work today.",
     ctaLabel: "Read notice",
-    priority: 95,
+    priority: "95",
+  },
+  {
+    value: "PRODUCT_UPDATE" as const,
+    label: "Product / update / education",
+    title: "New REMBEH feature available",
+    body: "A new workflow is now available in your app. Open this update to see what changed and how it helps your team.",
+    ctaLabel: "See update",
+    priority: "55",
+  },
+  {
+    value: "PROMOTIONAL" as const,
+    label: "Promotional / marketing",
+    title: "Subscription renewal reminder",
+    body: "Your branch subscription is nearing renewal. Renew early to keep REMBEH running without interruption.",
+    ctaLabel: "Renew now",
+    priority: "80",
   },
 ] satisfies Array<{
+  value: ControlCenterMarketingCampaignCategory;
   label: string;
   title: string;
   body: string;
   ctaLabel: string;
-  priority: number;
+  priority: string;
 }>;
+
+const CATEGORY_PREVIEW = {
+  CRITICAL_WARNING: {
+    surface: "#FFF5F5",
+    border: "#FECACA",
+    accent: "#DC2626",
+    iconBg: "#FEE2E2",
+    title: "#7F1D1D",
+    body: "#991B1B",
+  },
+  PRODUCT_UPDATE: {
+    surface: "#F0F7FF",
+    border: "#BFDBFE",
+    accent: "#2563EB",
+    iconBg: "#DBEAFE",
+    title: "#1E3A8A",
+    body: "#1E40AF",
+  },
+  PROMOTIONAL: {
+    surface: "#F0FDF6",
+    border: "#BBF7D0",
+    accent: "#059669",
+    iconBg: "#D1FAE5",
+    title: "#064E3B",
+    body: "#065F46",
+  },
+} as const;
 
 const AUDIENCE_OPTIONS: Array<{
   value: ControlCenterMarketingCampaignAudience;
@@ -140,6 +191,9 @@ const emptyForm: MarketingForm = {
   body: "",
   ctaLabel: "",
   ctaUrl: "",
+  ctaAction: "EXTERNAL_URL",
+  ctaRoute: "",
+  category: "PRODUCT_UPDATE",
   mediaUrl: "",
   mediaStorageKey: "",
   mediaType: "NONE",
@@ -176,6 +230,13 @@ export function ControlCenterMarketingSection({
   const [error, setError] = useState<string | null>(null);
 
   const campaignRows = Array.isArray(data?.campaigns) ? data!.campaigns : [];
+
+  const internalRoutes = useMemo(() => {
+    const routes = Array.isArray(data?.internalRoutes)
+      ? data!.internalRoutes
+      : [];
+    return routes.length > 0 ? routes : FALLBACK_INTERNAL_ROUTES;
+  }, [data?.internalRoutes]);
 
   const filteredCampaigns = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -340,7 +401,12 @@ export function ControlCenterMarketingSection({
         title: form.title.trim(),
         body: form.body.trim(),
         ctaLabel: nullable(form.ctaLabel),
-        ctaUrl: nullable(form.ctaUrl),
+        ctaUrl:
+          form.ctaAction === "EXTERNAL_URL" ? nullable(form.ctaUrl) : null,
+        ctaAction: form.ctaAction,
+        ctaRoute:
+          form.ctaAction === "INTERNAL_ROUTE" ? nullable(form.ctaRoute) : null,
+        category: form.category,
         mediaUrl: mediaStorageKey ? null : nullable(form.mediaUrl),
         mediaStorageKey: nullable(mediaStorageKey),
         mediaType: mediaStorageKey || form.mediaUrl ? mediaType : "NONE",
@@ -447,6 +513,9 @@ export function ControlCenterMarketingSection({
       body: campaign.body,
       ctaLabel: campaign.ctaLabel ?? "",
       ctaUrl: campaign.ctaUrl ?? "",
+      ctaAction: campaign.ctaAction ?? "EXTERNAL_URL",
+      ctaRoute: campaign.ctaRoute ?? "",
+      category: campaign.category ?? "PRODUCT_UPDATE",
       mediaUrl: campaign.mediaStorageKey ? "" : (campaign.mediaUrl ?? ""),
       mediaStorageKey: campaign.mediaStorageKey ?? "",
       mediaType: campaign.mediaType,
@@ -487,15 +556,28 @@ export function ControlCenterMarketingSection({
     );
   }
 
-  function applyTemplate(template: (typeof MARKETING_TEMPLATES)[number]) {
-    setForm((current) => ({
-      ...current,
-      title: template.title,
-      body: template.body,
-      ctaLabel: template.ctaLabel,
-      priority: String(template.priority),
-      status: current.status === "ARCHIVED" ? "DRAFT" : current.status,
-    }));
+  function selectCategory(category: ControlCenterMarketingCampaignCategory) {
+    const sample = CATEGORY_OPTIONS.find((option) => option.value === category);
+    setForm((current) => {
+      const sampleTitles = new Set(
+        CATEGORY_OPTIONS.map((option) => option.title),
+      );
+      const usingSampleContent =
+        !current.title.trim() || sampleTitles.has(current.title.trim());
+      return {
+        ...current,
+        category,
+        ...(usingSampleContent && sample
+          ? {
+              title: sample.title,
+              body: sample.body,
+              ctaLabel: sample.ctaLabel,
+              priority: sample.priority,
+            }
+          : {}),
+        status: current.status === "ARCHIVED" ? "DRAFT" : current.status,
+      };
+    });
   }
 
   return (
@@ -587,19 +669,37 @@ export function ControlCenterMarketingSection({
 
             <div>
               <span className="text-xs font-bold text-slate-600">
-                Quick templates
+                Design template
               </span>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {MARKETING_TEMPLATES.map((template) => (
-                  <button
-                    key={template.label}
-                    type="button"
-                    onClick={() => applyTemplate(template)}
-                    className="inline-flex h-8 items-center rounded-lg border border-[#dde4eb] bg-white px-3 text-xs font-bold text-[#12213f] transition hover:border-red-200 hover:bg-red-50 hover:text-red-700"
-                  >
-                    {template.label}
-                  </button>
-                ))}
+              <p className="mt-1 text-[11px] font-medium text-slate-500">
+                Choose one card style. Selecting a template deselects the others.
+              </p>
+              <div className="mt-2 space-y-2">
+                {CATEGORY_OPTIONS.map((option) => {
+                  const checked = form.category === option.value;
+                  return (
+                    <label
+                      key={option.value}
+                      className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2.5 transition ${
+                        checked
+                          ? "border-[var(--forest-emerald)] bg-emerald-50"
+                          : "border-[#dde4eb] bg-white hover:border-emerald-200"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => selectCategory(option.value)}
+                        className="mt-0.5 size-4 accent-[var(--forest-emerald)]"
+                      />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-bold text-[var(--midnight-navy)]">
+                          {option.label}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
               </div>
             </div>
 
@@ -626,31 +726,82 @@ export function ControlCenterMarketingSection({
               />
             </label>
 
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="block">
-                <span className="text-xs font-bold text-slate-600">
-                  Button label
-                </span>
-                <input
-                  value={form.ctaLabel}
-                  onChange={(event) =>
-                    updateForm("ctaLabel", event.target.value)
-                  }
-                  placeholder="Learn more"
-                  className="mt-1 h-10 w-full rounded-lg border border-[#dde4eb] px-3 text-sm font-medium outline-none focus:border-[var(--forest-emerald)] focus:ring-2 focus:ring-emerald-100"
-                />
-              </label>
-              <label className="block">
-                <span className="text-xs font-bold text-slate-600">
-                  Button link
-                </span>
-                <input
-                  value={form.ctaUrl}
-                  onChange={(event) => updateForm("ctaUrl", event.target.value)}
-                  placeholder="https://..."
-                  className="mt-1 h-10 w-full rounded-lg border border-[#dde4eb] px-3 text-sm font-medium outline-none focus:border-[var(--forest-emerald)] focus:ring-2 focus:ring-emerald-100"
-                />
-              </label>
+            <label className="block">
+              <span className="text-xs font-bold text-slate-600">
+                Button label
+              </span>
+              <input
+                value={form.ctaLabel}
+                onChange={(event) =>
+                  updateForm("ctaLabel", event.target.value)
+                }
+                placeholder="Learn more"
+                className="mt-1 h-10 w-full rounded-lg border border-[#dde4eb] px-3 text-sm font-medium outline-none focus:border-[var(--forest-emerald)] focus:ring-2 focus:ring-emerald-100"
+              />
+            </label>
+
+            <div>
+              <span className="text-xs font-bold text-slate-600">
+                Button action
+              </span>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {(
+                  [
+                    { value: "EXTERNAL_URL", label: "External link" },
+                    { value: "INTERNAL_ROUTE", label: "In-app page" },
+                  ] as const
+                ).map((option) => {
+                  const selected = form.ctaAction === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => updateForm("ctaAction", option.value)}
+                      className={`h-10 rounded-lg border text-xs font-bold transition ${
+                        selected
+                          ? "border-[var(--forest-emerald)] bg-emerald-50 text-[var(--forest-emerald)]"
+                          : "border-[#dde4eb] bg-white text-slate-600 hover:border-emerald-200"
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {form.ctaAction === "EXTERNAL_URL" ? (
+                <label className="mt-3 block">
+                  <span className="text-xs font-bold text-slate-600">
+                    Button URL
+                  </span>
+                  <input
+                    value={form.ctaUrl}
+                    onChange={(event) =>
+                      updateForm("ctaUrl", event.target.value)
+                    }
+                    placeholder="https://..."
+                    className="mt-1 h-10 w-full rounded-lg border border-[#dde4eb] px-3 text-sm font-medium outline-none focus:border-[var(--forest-emerald)] focus:ring-2 focus:ring-emerald-100"
+                  />
+                </label>
+              ) : (
+                <label className="mt-3 block">
+                  <span className="text-xs font-bold text-slate-600">
+                    In-app page
+                  </span>
+                  <SelectControl
+                    value={form.ctaRoute}
+                    onChange={(value) => updateForm("ctaRoute", value)}
+                    ariaLabel="In-app page"
+                    className="mt-1 w-full"
+                    options={[
+                      { value: "", label: "Choose page" },
+                      ...internalRoutes.map((route) => ({
+                        value: route.key,
+                        label: route.label,
+                      })),
+                    ]}
+                  />
+                </label>
+              )}
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
@@ -917,43 +1068,21 @@ export function ControlCenterMarketingSection({
               />
             </label>
 
-            <div className="rounded-lg border border-red-200 bg-white p-3 shadow-[0_14px_30px_rgba(220,38,38,0.09)]">
-              <div className="mb-3 flex items-center justify-between gap-3 rounded-md bg-red-600 px-3 py-2 text-white">
-                <span className="text-[11px] font-black uppercase tracking-[0.08em]">
-                  Mobile header preview
+            <div className="overflow-hidden rounded-lg border border-[#dde4eb] bg-[#f7faf9] p-3">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <span className="text-[11px] font-black uppercase tracking-[0.08em] text-slate-500">
+                  Mobile card preview
                 </span>
-                <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-black">
+                <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-slate-500 shadow-sm">
                   Priority {form.priority || 0}
                 </span>
               </div>
-              <div className="flex items-start gap-3">
-                <IconBadge
-                  icon={form.mediaType === "VIDEO" ? Video : ImagePlus}
-                  tone={form.mediaType === "NONE" ? "slate" : "gold"}
-                  className="size-10"
-                />
-                <div className="min-w-0">
-                  <p className="text-sm font-black text-[var(--midnight-navy)]">
-                    {form.title || "Campaign preview"}
-                  </p>
-                  <p className="mt-1 line-clamp-3 text-xs font-medium leading-5 text-slate-600">
-                    {form.body ||
-                      "Write a short, useful message that will sit below the branch header."}
-                  </p>
-                  {form.ctaLabel ? (
-                    <p className="mt-2 text-xs font-black text-red-700">
-                      {form.ctaLabel}
-                    </p>
-                  ) : null}
-                  {mediaFile || form.mediaUrl || form.mediaStorageKey ? (
-                    <p className="mt-2 truncate text-[11px] font-semibold text-slate-400">
-                      {mediaFile?.name ||
-                        form.mediaUrl ||
-                        "Uploaded media attached"}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
+              <CampaignCardPreview
+                category={form.category}
+                title={form.title}
+                body={form.body}
+                ctaLabel={form.ctaLabel}
+              />
             </div>
 
             <button
@@ -1029,6 +1158,121 @@ export function ControlCenterMarketingSection({
         </div>
       </Panel>
     </div>
+  );
+}
+
+function CampaignCardPreview({
+  category,
+  title,
+  body,
+  ctaLabel,
+}: {
+  category: ControlCenterMarketingCampaignCategory;
+  title: string;
+  body: string;
+  ctaLabel: string;
+}) {
+  const theme = CATEGORY_PREVIEW[category];
+  const label = ctaLabel.trim() || "Learn more";
+
+  return (
+    <div
+      className="relative overflow-hidden rounded-2xl border p-4 shadow-[0_10px_24px_rgba(15,23,42,0.06)]"
+      style={{
+        backgroundColor: theme.surface,
+        borderColor: theme.border,
+      }}
+    >
+      <PreviewWatermark category={category} accent={theme.accent} />
+
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-hidden
+        className="absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-white/80 text-slate-400 shadow-sm"
+      >
+        <X className="size-3.5" />
+      </button>
+
+      <div className="relative z-[1] flex items-start gap-3 pr-8">
+        <div
+          className="grid size-11 shrink-0 place-items-center rounded-full"
+          style={{ backgroundColor: theme.iconBg, color: theme.accent }}
+        >
+          {category === "CRITICAL_WARNING" ? (
+            <AlertTriangle className="size-5" strokeWidth={2.4} />
+          ) : category === "PRODUCT_UPDATE" ? (
+            <Megaphone className="size-5" strokeWidth={2.4} />
+          ) : (
+            <Gift className="size-5" strokeWidth={2.4} />
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <p
+            className="text-sm font-black leading-5"
+            style={{ color: theme.title }}
+          >
+            {title.trim() || "Campaign preview"}
+          </p>
+          <p
+            className="mt-1 line-clamp-3 text-xs font-medium leading-5"
+            style={{ color: theme.body }}
+          >
+            {body.trim() ||
+              "Write a short, useful message that will sit in the mobile header card."}
+          </p>
+
+          <div
+            className="mt-3 inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-[11px] font-black text-white"
+            style={{ backgroundColor: theme.accent }}
+          >
+            {label}
+            <ArrowRight className="size-3.5" />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PreviewWatermark({
+  category,
+  accent,
+}: {
+  category: ControlCenterMarketingCampaignCategory;
+  accent: string;
+}) {
+  if (category === "CRITICAL_WARNING") {
+    return (
+      <MessageCircle
+        className="pointer-events-none absolute -right-2 bottom-1 size-24 opacity-[0.12]"
+        style={{ color: accent }}
+        strokeWidth={1.5}
+      />
+    );
+  }
+
+  if (category === "PRODUCT_UPDATE") {
+    return (
+      <div className="pointer-events-none absolute -right-1 bottom-2 flex items-end opacity-[0.18]">
+        <FileText className="size-16" style={{ color: accent }} strokeWidth={1.4} />
+        <span
+          className="absolute -right-0.5 top-1 grid size-6 place-items-center rounded-full text-white"
+          style={{ backgroundColor: "#10B981" }}
+        >
+          <Plus className="size-3.5" strokeWidth={3} />
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <BarChart3
+      className="pointer-events-none absolute -right-1 bottom-1 size-24 opacity-[0.14]"
+      style={{ color: accent }}
+      strokeWidth={1.5}
+    />
   );
 }
 

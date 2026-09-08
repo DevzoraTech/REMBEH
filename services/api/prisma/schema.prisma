@@ -423,6 +423,17 @@ enum MarketingCampaignMediaType {
   VIDEO
 }
 
+enum MarketingCampaignCategory {
+  CRITICAL_WARNING
+  PRODUCT_UPDATE
+  PROMOTIONAL
+}
+
+enum MarketingCampaignCtaAction {
+  EXTERNAL_URL
+  INTERNAL_ROUTE
+}
+
 enum ControlledFeatureScope {
   TENANT
   BRANCH
@@ -1694,6 +1705,9 @@ model MarketingCampaign {
   body             String                     @db.Text
   ctaLabel         String?                    @map("cta_label")
   ctaUrl           String?                    @map("cta_url")
+  ctaAction        MarketingCampaignCtaAction @default(EXTERNAL_URL) @map("cta_action")
+  ctaRoute         String?                    @map("cta_route")
+  category         MarketingCampaignCategory  @default(PRODUCT_UPDATE)
   mediaUrl         String?                    @map("media_url")
   mediaStorageKey  String?                    @map("media_storage_key")
   mediaType        MarketingCampaignMediaType @default(NONE) @map("media_type")

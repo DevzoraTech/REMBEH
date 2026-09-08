@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import {
   MarketingCampaignAudience,
+  MarketingCampaignCategory,
+  MarketingCampaignCtaAction,
   MarketingCampaignMediaType,
   MarketingCampaignPlacement,
   MarketingCampaignStatus,
@@ -29,6 +31,10 @@ import type {
   MarketingCampaignListContract,
   MobileMarketingCampaignResponseContract,
 } from './marketing.contracts';
+import {
+  isMarketingInternalRoute,
+  MARKETING_INTERNAL_ROUTES,
+} from './marketing-routes';
 
 type CampaignWithRelations = Prisma.MarketingCampaignGetPayload<{
   include: {
@@ -79,6 +85,10 @@ export class MarketingService {
       campaigns: await Promise.all(
         campaigns.map((campaign) => this.toCampaignContract(campaign)),
       ),
+      internalRoutes: MARKETING_INTERNAL_ROUTES.map((route) => ({
+        key: route.key,
+        label: route.label,
+      })),
     };
   }
 
@@ -257,6 +267,9 @@ export class MarketingService {
         body: contract.body,
         ctaLabel: contract.ctaLabel,
         ctaUrl: contract.ctaUrl,
+        ctaAction: contract.ctaAction,
+        ctaRoute: contract.ctaRoute,
+        category: contract.category,
         mediaUrl: contract.mediaUrl,
         mediaType: contract.mediaType,
         priority: contract.priority,
@@ -278,6 +291,9 @@ export class MarketingService {
       body: normalized.body,
       ctaLabel: normalized.ctaLabel,
       ctaUrl: normalized.ctaUrl,
+      ctaAction: normalized.ctaAction,
+      ctaRoute: normalized.ctaRoute,
+      category: normalized.category,
       mediaUrl: normalized.mediaUrl,
       mediaStorageKey: normalized.mediaStorageKey,
       mediaType: normalized.mediaType,
@@ -308,6 +324,9 @@ export class MarketingService {
       body: dto.body ?? existing.body,
       ctaLabel: dto.ctaLabel === undefined ? existing.ctaLabel : dto.ctaLabel,
       ctaUrl: dto.ctaUrl === undefined ? existing.ctaUrl : dto.ctaUrl,
+      ctaAction: dto.ctaAction ?? existing.ctaAction,
+      ctaRoute: dto.ctaRoute === undefined ? existing.ctaRoute : dto.ctaRoute,
+      category: dto.category ?? existing.category,
       mediaUrl: dto.mediaUrl === undefined ? existing.mediaUrl : dto.mediaUrl,
       mediaStorageKey:
         dto.mediaStorageKey === undefined
@@ -333,6 +352,9 @@ export class MarketingService {
       body: merged.body,
       ctaLabel: merged.ctaLabel,
       ctaUrl: merged.ctaUrl,
+      ctaAction: merged.ctaAction,
+      ctaRoute: merged.ctaRoute,
+      category: merged.category,
       mediaUrl: merged.mediaUrl,
       mediaStorageKey: merged.mediaStorageKey,
       mediaType: merged.mediaType,
@@ -378,11 +400,30 @@ export class MarketingService {
         ? MarketingCampaignMediaType.IMAGE
         : MarketingCampaignMediaType.NONE);
 
+    const ctaAction =
+      (dto.ctaAction as MarketingCampaignCtaAction | undefined) ??
+      MarketingCampaignCtaAction.EXTERNAL_URL;
+    const ctaRoute =
+      ctaAction === MarketingCampaignCtaAction.INTERNAL_ROUTE
+        ? this.cleanNullable(
+            'ctaRoute' in dto ? (dto.ctaRoute as string | null | undefined) : null,
+          )
+        : null;
+    const ctaUrl =
+      ctaAction === MarketingCampaignCtaAction.EXTERNAL_URL
+        ? this.cleanNullable(dto.ctaUrl)
+        : null;
+
     return {
       title,
       body,
       ctaLabel: this.cleanNullable(dto.ctaLabel),
-      ctaUrl: this.cleanNullable(dto.ctaUrl),
+      ctaUrl,
+      ctaAction,
+      ctaRoute,
+      category:
+        (dto.category as MarketingCampaignCategory | undefined) ??
+        MarketingCampaignCategory.PRODUCT_UPDATE,
       mediaUrl,
       mediaStorageKey,
       mediaType,
@@ -406,6 +447,29 @@ export class MarketingService {
   private async validateCampaignScope(input: NormalizedCampaignInput) {
     if (!input.title || !input.body) {
       throw new BadRequestException('Add a title and message.');
+    }
+    if (
+      input.ctaAction === MarketingCampaignCtaAction.INTERNAL_ROUTE &&
+      !isMarketingInternalRoute(input.ctaRoute)
+    ) {
+      throw new BadRequestException(
+        'Choose a valid in-app page for the action button.',
+      );
+    }
+    if (
+      input.ctaAction === MarketingCampaignCtaAction.EXTERNAL_URL &&
+      input.ctaUrl
+    ) {
+      try {
+        const parsed = new URL(input.ctaUrl);
+        if (!['http:', 'https:'].includes(parsed.protocol)) {
+          throw new Error('invalid');
+        }
+      } catch {
+        throw new BadRequestException(
+          'Use a full https link for the external button action.',
+        );
+      }
     }
     if (
       input.audience === MarketingCampaignAudience.ALL_USERS &&
@@ -565,6 +629,9 @@ export class MarketingService {
       body: campaign.body,
       ctaLabel: campaign.ctaLabel,
       ctaUrl: campaign.ctaUrl,
+      ctaAction: campaign.ctaAction,
+      ctaRoute: campaign.ctaRoute,
+      category: campaign.category,
       mediaUrl,
       mediaStorageKey: campaign.mediaStorageKey,
       mediaType: campaign.mediaType,
@@ -612,12 +679,18 @@ export class MarketingService {
       const result = await this.fcmPushService.sendToUser(user.tenantId, user.id, {
         title: campaign.title,
         body: campaign.body,
-        href: campaign.ctaUrl ?? '/owner',
+        href:
+          campaign.ctaAction === MarketingCampaignCtaAction.INTERNAL_ROUTE
+            ? `rembeh://app/${campaign.ctaRoute ?? 'home'}`
+            : (campaign.ctaUrl ?? '/owner'),
         data: {
           type: 'marketing_campaign',
           campaignId: campaign.id,
           placement: campaign.placement,
+          category: campaign.category,
+          ctaAction: campaign.ctaAction,
           ...(campaign.ctaUrl ? { ctaUrl: campaign.ctaUrl } : {}),
+          ...(campaign.ctaRoute ? { ctaRoute: campaign.ctaRoute } : {}),
         },
       });
       success += result.success;
@@ -812,6 +885,9 @@ type RequiredCampaignInput = {
   body: string;
   ctaLabel?: string | null;
   ctaUrl?: string | null;
+  ctaAction?: string;
+  ctaRoute?: string | null;
+  category?: string;
   mediaUrl?: string | null;
   mediaStorageKey?: string | null;
   mediaType?: string;
@@ -832,6 +908,9 @@ type NormalizedCampaignInput = {
   body: string;
   ctaLabel: string | null;
   ctaUrl: string | null;
+  ctaAction: MarketingCampaignCtaAction;
+  ctaRoute: string | null;
+  category: MarketingCampaignCategory;
   mediaUrl: string | null;
   mediaStorageKey: string | null;
   mediaType: MarketingCampaignMediaType;

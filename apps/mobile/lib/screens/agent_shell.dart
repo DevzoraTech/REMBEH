@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../features/agent_day/data/agent_day_status_store.dart';
 import '../features/marketing/data/mobile_marketing_campaign_store.dart';
 import '../features/marketing/domain/models/mobile_marketing_campaign.dart';
+import '../features/marketing/presentation/marketing_campaign_actions.dart';
 import '../features/marketing/presentation/sheets/mobile_marketing_campaign_sheet.dart';
 import '../features/operations/presentation/sheets/record_expense_sheet.dart';
 import '../features/workspace/presentation/widgets/sign_out_confirm_dialog.dart';
@@ -30,6 +31,7 @@ import 'profile/agent_profile_screen.dart';
 import 'repayment_corrections_screen.dart';
 import 'records/records_tab.dart';
 import 'search/search_tab.dart';
+import 'subscription/subscription_screen.dart';
 
 class AgentShell extends StatefulWidget {
   const AgentShell({super.key, required this.session});
@@ -271,7 +273,97 @@ class _AgentShellState extends State<AgentShell> {
   void _openMarketingCampaign() {
     final campaign = _marketingCampaign;
     if (campaign == null) return;
-    unawaited(showMobileMarketingCampaignSheet(context, campaign));
+    unawaited(
+      showMobileMarketingCampaignSheet(
+        context,
+        campaign,
+        onInternalRoute: _navigateMarketingRoute,
+      ),
+    );
+  }
+
+  Future<void> _dismissMarketingCampaign() async {
+    final campaign = _marketingCampaign;
+    if (campaign == null) return;
+    await _marketingStore.dismiss(campaign);
+    if (!mounted) return;
+    setState(() {
+      _marketingCampaign = null;
+    });
+  }
+
+  void _handleMarketingCta() {
+    final campaign = _marketingCampaign;
+    if (campaign == null) return;
+    unawaited(
+      handleMarketingCampaignCta(
+        context: context,
+        campaign: campaign,
+        onInternalRoute: _navigateMarketingRoute,
+      ),
+    );
+  }
+
+  void _navigateMarketingRoute(String routeKey) {
+    switch (routeKey) {
+      case 'home':
+        setState(() {
+          _index = 0;
+          _searchAutofocus = false;
+        });
+        break;
+      case 'records':
+        setState(() {
+          _index = 1;
+          _searchAutofocus = false;
+        });
+        break;
+      case 'ops':
+      case 'clients':
+      case 'more':
+        // Agent shell has no Ops/Clients/More tabs — keep user on home.
+        setState(() {
+          _index = 0;
+          _searchAutofocus = false;
+        });
+        break;
+      case 'subscription':
+        _openSubscription();
+        break;
+      case 'subscription_sms':
+        _openSubscription(SubscriptionTab.sms);
+        break;
+      case 'subscription_plan':
+        _openSubscription(SubscriptionTab.plan);
+        break;
+      case 'corrections':
+        unawaited(_openRepaymentCorrections());
+        break;
+      case 'reports':
+        // Reports are manager-only; fall back to home.
+        setState(() {
+          _index = 0;
+          _searchAutofocus = false;
+        });
+        break;
+      case 'profile':
+      case 'settings':
+        unawaited(_openProfile());
+        break;
+    }
+  }
+
+  void _openSubscription([SubscriptionTab initialTab = SubscriptionTab.plan]) {
+    unawaitedTouch();
+    Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        settings: const RouteSettings(name: SubscriptionScreen.routeName),
+        builder: (_) => SubscriptionScreen(
+          session: widget.session,
+          initialTab: initialTab,
+        ),
+      ),
+    );
   }
 
   Future<void> _handleAccountBlocked(String message) async {
@@ -550,6 +642,10 @@ class _AgentShellState extends State<AgentShell> {
                     onOpenRecords: _openRecords,
                     marketingCampaign: _marketingCampaign,
                     onMarketingTap: _openMarketingCampaign,
+                    onMarketingDismiss: () {
+                      unawaited(_dismissMarketingCampaign());
+                    },
+                    onMarketingCta: _handleMarketingCta,
                     onRecordExpense: dayStatus.canRecordExpense
                         ? _openRecordExpense
                         : null,

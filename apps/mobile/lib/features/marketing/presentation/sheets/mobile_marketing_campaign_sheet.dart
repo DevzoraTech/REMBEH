@@ -1,18 +1,16 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../../theme.dart';
 import '../../domain/models/mobile_marketing_campaign.dart';
-
-const _campaignRed = Color(0xFFDC2626);
-const _campaignAmber = Color(0xFFF59E0B);
+import '../marketing_campaign_actions.dart';
 
 Future<void> showMobileMarketingCampaignSheet(
   BuildContext context,
-  MobileMarketingCampaign campaign,
-) {
+  MobileMarketingCampaign campaign, {
+  void Function(String routeKey)? onInternalRoute,
+}) {
   return showModalBottomSheet<void>(
     context: context,
     showDragHandle: false,
@@ -20,13 +18,8 @@ Future<void> showMobileMarketingCampaignSheet(
     backgroundColor: Colors.white,
     shape: RoundedRectangleBorder(borderRadius: rembehSheetRadius()),
     builder: (sheetContext) {
-      final important = campaign.priority >= 70;
-      final accent = important ? _campaignRed : _campaignAmber;
-      final hasCta =
-          campaign.ctaLabel != null &&
-          campaign.ctaLabel!.trim().isNotEmpty &&
-          campaign.ctaUrl != null &&
-          campaign.ctaUrl!.trim().isNotEmpty;
+      final accent = _accentFor(campaign.category);
+      final hasCta = campaign.hasCta;
       final hasMediaLink =
           campaign.mediaUrl != null && campaign.mediaUrl!.trim().isNotEmpty;
 
@@ -68,12 +61,7 @@ Future<void> showMobileMarketingCampaignSheet(
                         color: accent.withValues(alpha: 0.12),
                         borderRadius: rembehBorderRadius(12),
                       ),
-                      child: Icon(
-                        important
-                            ? Icons.notifications_active_outlined
-                            : Icons.campaign_outlined,
-                        color: accent,
-                      ),
+                      child: Icon(_iconFor(campaign.category), color: accent),
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -90,7 +78,7 @@ Future<void> showMobileMarketingCampaignSheet(
                               borderRadius: rembehBorderRadius(6),
                             ),
                             child: Text(
-                              important ? 'Important update' : 'Campaign',
+                              _badgeFor(campaign.category),
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 10,
@@ -134,25 +122,50 @@ Future<void> showMobileMarketingCampaignSheet(
                   ),
                 ),
                 if (hasCta ||
-                    campaign.mediaType == 'VIDEO' && hasMediaLink) ...[
+                    (campaign.mediaType == 'VIDEO' && hasMediaLink)) ...[
                   const SizedBox(height: 18),
                   FilledButton.icon(
                     onPressed: () {
                       Navigator.of(sheetContext).pop();
+                      if (hasCta) {
+                        unawaited(
+                          handleMarketingCampaignCta(
+                            context: context,
+                            campaign: campaign,
+                            onInternalRoute: onInternalRoute ?? (_) {},
+                          ),
+                        );
+                        return;
+                      }
                       unawaited(
-                        _openCampaignLink(
-                          context,
-                          hasCta ? campaign.ctaUrl! : campaign.mediaUrl!,
+                        handleMarketingCampaignCta(
+                          context: context,
+                          campaign: MobileMarketingCampaign(
+                            id: campaign.id,
+                            title: campaign.title,
+                            body: campaign.body,
+                            priority: campaign.priority,
+                            startsAt: campaign.startsAt,
+                            ctaLabel: 'Open',
+                            ctaUrl: campaign.mediaUrl,
+                            ctaAction: 'EXTERNAL_URL',
+                            category: campaign.category,
+                          ),
+                          onInternalRoute: (_) {},
                         ),
                       );
                     },
                     icon: Icon(
                       campaign.mediaType == 'VIDEO' && !hasCta
                           ? Icons.play_circle_outline
+                          : campaign.ctaAction == 'INTERNAL_ROUTE'
+                          ? Icons.arrow_forward_rounded
                           : Icons.open_in_new,
                     ),
                     label: Text(
-                      hasCta ? campaign.ctaLabel! : 'Open campaign video',
+                      hasCta
+                          ? marketingCtaButtonLabel(campaign.ctaLabel)
+                          : 'Open campaign video',
                     ),
                     style: FilledButton.styleFrom(backgroundColor: accent),
                   ),
@@ -164,6 +177,42 @@ Future<void> showMobileMarketingCampaignSheet(
       );
     },
   );
+}
+
+Color _accentFor(String category) {
+  switch (category) {
+    case 'CRITICAL_WARNING':
+      return const Color(0xFFDC2626);
+    case 'PROMOTIONAL':
+      return forestEmerald;
+    case 'PRODUCT_UPDATE':
+    default:
+      return const Color(0xFF2563EB);
+  }
+}
+
+IconData _iconFor(String category) {
+  switch (category) {
+    case 'CRITICAL_WARNING':
+      return Icons.warning_rounded;
+    case 'PROMOTIONAL':
+      return Icons.card_giftcard_rounded;
+    case 'PRODUCT_UPDATE':
+    default:
+      return Icons.campaign_rounded;
+  }
+}
+
+String _badgeFor(String category) {
+  switch (category) {
+    case 'CRITICAL_WARNING':
+      return 'Important update';
+    case 'PROMOTIONAL':
+      return 'Offer';
+    case 'PRODUCT_UPDATE':
+    default:
+      return 'Product update';
+  }
 }
 
 class _MarketingCampaignMedia extends StatelessWidget {
@@ -211,25 +260,6 @@ class _MarketingCampaignMedia extends StatelessWidget {
           child: const Icon(Icons.image_outlined, color: forestEmerald),
         ),
       ),
-    );
-  }
-}
-
-Future<void> _openCampaignLink(BuildContext context, String value) async {
-  final uri = Uri.tryParse(value.trim());
-  if (uri == null || !uri.hasScheme) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('This campaign link is not valid.')),
-      );
-    }
-    return;
-  }
-
-  final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-  if (!opened && context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Could not open this campaign link.')),
     );
   }
 }
