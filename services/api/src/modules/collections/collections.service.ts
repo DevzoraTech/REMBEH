@@ -1862,6 +1862,29 @@ export class CollectionsService {
       throw new BadRequestException('No correction changes were provided.');
     }
 
+    // Rotate the wrong amount off the loan first, then apply the corrected
+    // amount — same net effect as void + re-record. Do NOT rebuild balance
+    // from sum(repayments) vs obligation; legacy loans can already be
+    // over-summed while the live balance is still correct.
+    const currentBalance = this.decimalToNumber(row.loan.balance) ?? 0;
+    const restoredBalance = this.roundMoney(currentBalance + previousAmount);
+    if (nextAmount > restoredBalance + 0.001) {
+      throw new BadRequestException(
+        `Amount exceeds outstanding balance of ${restoredBalance}.`,
+      );
+    }
+    const nextBalance = this.roundMoney(
+      Math.max(0, restoredBalance - nextAmount),
+    );
+    const nextLoanStatus =
+      nextBalance <= 0
+        ? LoanStatus.CLOSED
+        : row.loan.status === LoanStatus.CLOSED ||
+            row.loan.status === LoanStatus.SUBMITTED ||
+            row.loan.status === LoanStatus.APPROVED
+          ? LoanStatus.CURRENT
+          : row.loan.status;
+
     const appliedRequest = await this.prisma.$transaction(async (tx) => {
       await tx.repayment.update({
         where: {
@@ -1894,18 +1917,6 @@ export class CollectionsService {
 
       const rebuild = this.rebuildLoanRepaymentState(loan);
 
-      // Only block corrections that make an overpayment worse.
-      // Downward fixes (e.g. 195k typed instead of 10k) must be allowed even
-      // when other historical repayments already exceed the obligation.
-      if (
-        rebuild.totalPaid > rebuild.totalObligation + 0.001 &&
-        nextAmount > previousAmount + 0.001
-      ) {
-        throw new BadRequestException(
-          'Corrected repayments exceed the loan amount due.',
-        );
-      }
-
       await Promise.all(
         rebuild.allocations.map((allocation) =>
           tx.repayment.update({
@@ -1932,8 +1943,8 @@ export class CollectionsService {
           id: row.loanId,
         },
         data: {
-          balance: new Prisma.Decimal(rebuild.nextBalance.toFixed(2)),
-          status: rebuild.nextStatus,
+          balance: new Prisma.Decimal(nextBalance.toFixed(2)),
+          status: nextLoanStatus,
         },
       });
 
@@ -1968,7 +1979,7 @@ export class CollectionsService {
             method: row.method,
             paidAt: row.paidAt.toISOString(),
             note: row.note,
-            loanBalance: this.decimalToNumber(row.loan.balance) ?? null,
+            loanBalance: currentBalance,
             loanStatus: row.loan.status,
           },
           newValue: {
@@ -1978,8 +1989,10 @@ export class CollectionsService {
             note: nextNote,
             reason,
             correctionRequestId: request?.id ?? null,
-            loanBalance: rebuild.nextBalance,
-            loanStatus: rebuild.nextStatus,
+            loanBalance: nextBalance,
+            loanStatus: nextLoanStatus,
+            balanceRotatedFrom: currentBalance,
+            balanceRestoredBeforeApply: restoredBalance,
           },
         },
       });
