@@ -650,12 +650,12 @@ export function RepaymentCorrectionsWorkspace({
           <div className="flex gap-2">
             <ShieldAlert className="mt-0.5 size-4 shrink-0" />
             <p>
-              Corrections are only for the previous day, and only while today
-              has not started reconciliation. If that day&apos;s report was
-              already sent to the owner or approved, forward the request so the
-              owner can authorize before any edit. Apply payment changes first,
-              then reopen the returned report from Daily Operations to
-              re-check and resubmit.
+              Corrections are for today or the previous day. Previous-day
+              requests are blocked once today&apos;s reconciliation has
+              started. If that day&apos;s report was already sent to the owner
+              or approved, forward the request so the owner can authorize
+              before any edit. Apply payment changes first, then reopen the
+              returned report from Daily Operations to re-check and resubmit.
             </p>
           </div>
         </div>

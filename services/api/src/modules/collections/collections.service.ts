@@ -1396,9 +1396,9 @@ export class CollectionsService {
       );
     }
 
-    // Request eligibility: previous calendar day only, and only while today
-    // has not started reconciliation at all. Report locks still gate
-    // approve / apply / forward-to-owner.
+    // Request eligibility: today or previous calendar day. Previous-day
+    // requests additionally require today still unreconciled. Report locks
+    // still gate approve / apply / forward-to-owner.
     await this.assertCorrectionRequestEligible({
       tenantId: row.tenantId,
       branchId: row.branchId,
@@ -3187,8 +3187,10 @@ export class CollectionsService {
   }
 
   /**
-   * Corrections are allowed only for the previous calendar day's payments,
-   * and only while today's branch day has not started reconciliation at all.
+   * Correction requests are allowed for today's or the previous calendar
+   * day's payments. Previous-day requests are blocked once today's
+   * reconciliation has started; same-day requests stay open until report
+   * locks apply on approve/edit.
    */
   private async assertCorrectionRequestEligible(input: {
     tenantId: string;
@@ -3196,22 +3198,27 @@ export class CollectionsService {
     paidAt: Date;
   }) {
     const paymentDay = this.dateOnly(input.paidAt);
+    const today = this.dateOnly(new Date());
     const yesterday = this.previousCalendarDay();
+    const isToday = this.sameDay(paymentDay, today);
+    const isYesterday = this.sameDay(paymentDay, yesterday);
 
-    if (!this.sameDay(paymentDay, yesterday)) {
+    if (!isToday && !isYesterday) {
       throw new BadRequestException(
-        "Corrections are only allowed for the previous day's payments.",
+        "Corrections are only allowed for today's or the previous day's payments.",
       );
     }
 
-    const todayOpen = await this.isCurrentDayUnreconciled(
-      input.tenantId,
-      input.branchId,
-    );
-    if (!todayOpen) {
-      throw new BadRequestException(
-        "Corrections for the previous day are blocked once today's reconciliation has started.",
+    if (isYesterday) {
+      const todayOpen = await this.isCurrentDayUnreconciled(
+        input.tenantId,
+        input.branchId,
       );
+      if (!todayOpen) {
+        throw new BadRequestException(
+          "Corrections for the previous day are blocked once today's reconciliation has started.",
+        );
+      }
     }
   }
 
@@ -4361,6 +4368,7 @@ export class CollectionsService {
       repayments.map((row) => row.paidAt),
     );
 
+    const todayLabel = this.dateLabel(this.dateOnly(new Date()));
     const yesterdayLabel = this.dateLabel(this.previousCalendarDay());
     const todayUnreconciled = await this.isCurrentDayUnreconciled(
       loan.tenantId,
@@ -4382,11 +4390,12 @@ export class CollectionsService {
       const appliedCorrection =
         row.correctionRequests.find((request) => request.correctionAppliedAt) ??
         null;
-      const correctionLocked = lockedPaymentDates.has(
-        this.dateLabel(row.paidAt),
-      );
-      const isPreviousDayPayment =
-        this.dateLabel(row.paidAt) === yesterdayLabel;
+      const paymentDayLabel = this.dateLabel(row.paidAt);
+      const correctionLocked = lockedPaymentDates.has(paymentDayLabel);
+      const isTodayPayment = paymentDayLabel === todayLabel;
+      const isPreviousDayPayment = paymentDayLabel === yesterdayLabel;
+      const dayEligibleForRequest =
+        isTodayPayment || (isPreviousDayPayment && todayUnreconciled);
 
       return {
         id: row.id,
@@ -4407,8 +4416,7 @@ export class CollectionsService {
 
         correctionLocked,
 
-        canRequestCorrection:
-          !pendingCorrection && isPreviousDayPayment && todayUnreconciled,
+        canRequestCorrection: !pendingCorrection && dayEligibleForRequest,
 
         pendingCorrectionRequestId: pendingCorrection?.id ?? null,
 
