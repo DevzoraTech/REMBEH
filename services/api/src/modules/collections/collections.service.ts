@@ -1894,7 +1894,13 @@ export class CollectionsService {
 
       const rebuild = this.rebuildLoanRepaymentState(loan);
 
-      if (rebuild.totalPaid > rebuild.totalObligation + 0.001) {
+      // Only block corrections that make an overpayment worse.
+      // Downward fixes (e.g. 195k typed instead of 10k) must be allowed even
+      // when other historical repayments already exceed the obligation.
+      if (
+        rebuild.totalPaid > rebuild.totalObligation + 0.001 &&
+        nextAmount > previousAmount + 0.001
+      ) {
         throw new BadRequestException(
           'Corrected repayments exceed the loan amount due.',
         );
