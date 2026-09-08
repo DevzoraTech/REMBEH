@@ -9,37 +9,125 @@ import '../../services/session_store.dart';
 import '../../theme.dart';
 import '../../utils/friendly_errors.dart';
 import '../../utils/money.dart';
+import 'complete_manual_payment_screen.dart';
 
 String _formatUgx(num amount, [String currency = 'UGX']) {
   return '$currency ${formatCompactMoney(amount)}';
 }
 
-/// Screenshot 2 — shown after submit and whenever SMS tab has a pending payment.
+String formatBillingShortDate(DateTime value) {
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final local = value.toLocal();
+  return '${local.day} ${months[local.month - 1]} ${local.year}';
+}
+
+/// Period line for plan celebration — never appends the word "plan".
+/// Example: "6 months · Valid until 27 Oct 2026"
+String formatPlanCelebrationPeriodLine({
+  int? durationMonths,
+  String? periodLabel,
+  DateTime? activeUntil,
+}) {
+  String period;
+  if (durationMonths != null && durationMonths > 0) {
+    period = durationMonths == 1 ? '1 month' : '$durationMonths months';
+  } else {
+    var raw = (periodLabel ?? '').trim();
+    raw = raw.replaceAll(RegExp(r'\s*plan\s*$', caseSensitive: false), '');
+    raw = raw.replaceAllMapped(
+      RegExp(r'^(\d+)\s*-?\s*month(s)?$', caseSensitive: false),
+      (m) {
+        final n = int.tryParse(m.group(1) ?? '') ?? 0;
+        if (n <= 0) return raw;
+        return n == 1 ? '1 month' : '$n months';
+      },
+    );
+    period = raw.isNotEmpty ? raw : 'Pro';
+  }
+
+  if (activeUntil != null) {
+    return '$period · Valid until ${formatBillingShortDate(activeUntil)}';
+  }
+  return period;
+}
+
+/// Shown after submit and whenever Plan/SMS tab has a pending payment.
 class PaymentSubmittedScreen extends StatefulWidget {
   const PaymentSubmittedScreen({
     super.key,
     required this.session,
     required this.paymentId,
-    required this.bundleName,
-    required this.smsUnits,
+    required this.kind,
     required this.amount,
     required this.currency,
     required this.paymentMethodTitle,
     required this.transactionId,
     this.submittedAt,
+    this.bundleName,
+    this.smsUnits,
+    this.planName,
+    this.billingPeriodLabel,
     this.embedded = false,
     this.onResolved,
   });
 
+  /// Convenience constructor matching the previous SMS-only API.
+  factory PaymentSubmittedScreen.sms({
+    Key? key,
+    required RembehSession session,
+    required String paymentId,
+    required String bundleName,
+    required int smsUnits,
+    required num amount,
+    required String currency,
+    required String paymentMethodTitle,
+    required String transactionId,
+    DateTime? submittedAt,
+    bool embedded = false,
+    VoidCallback? onResolved,
+  }) {
+    return PaymentSubmittedScreen(
+      key: key,
+      session: session,
+      paymentId: paymentId,
+      kind: ManualPaymentKind.sms,
+      amount: amount,
+      currency: currency,
+      paymentMethodTitle: paymentMethodTitle,
+      transactionId: transactionId,
+      submittedAt: submittedAt,
+      bundleName: bundleName,
+      smsUnits: smsUnits,
+      embedded: embedded,
+      onResolved: onResolved,
+    );
+  }
+
   final RembehSession session;
   final String paymentId;
-  final String bundleName;
-  final int smsUnits;
+  final ManualPaymentKind kind;
   final num amount;
   final String currency;
   final String paymentMethodTitle;
   final String transactionId;
   final DateTime? submittedAt;
+  final String? bundleName;
+  final int? smsUnits;
+  final String? planName;
+  final String? billingPeriodLabel;
   final bool embedded;
   final VoidCallback? onResolved;
 
@@ -57,6 +145,8 @@ class _PaymentSubmittedScreenState extends State<PaymentSubmittedScreen> {
   bool _failed = false;
   String _statusLabel = 'Pending verification';
   String? _error;
+
+  bool get _isSms => widget.kind == ManualPaymentKind.sms;
 
   @override
   void initState() {
@@ -144,7 +234,9 @@ class _PaymentSubmittedScreenState extends State<PaymentSubmittedScreen> {
     if (normalized == 'paid' ||
         normalized == 'completed' ||
         normalized == 'credited') {
-      await SmsCreditsStore.instance.refresh(silent: true);
+      if (_isSms) {
+        await SmsCreditsStore.instance.refresh(silent: true);
+      }
       if (!mounted) return;
       // Global celebration modal owns success UX.
       if (widget.embedded) {
@@ -218,7 +310,7 @@ class _PaymentSubmittedScreenState extends State<PaymentSubmittedScreen> {
         elevation: 0,
         title: const Text(
           'Payment submitted',
-          style: TextStyle(fontWeight: FontWeight.w900),
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17),
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: forestEmerald),
@@ -232,17 +324,17 @@ class _PaymentSubmittedScreenState extends State<PaymentSubmittedScreen> {
   Widget _buildBody(String amountLabel) {
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
         child: Column(
           children: [
             Expanded(
               child: ListView(
                 children: [
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   Center(
                     child: Container(
-                      width: 88,
-                      height: 88,
+                      width: 76,
+                      height: 76,
                       decoration: const BoxDecoration(
                         color: Color(0xFFFFF4E5),
                         shape: BoxShape.circle,
@@ -251,14 +343,14 @@ class _PaymentSubmittedScreenState extends State<PaymentSubmittedScreen> {
                         _failed
                             ? Icons.error_outline_rounded
                             : Icons.schedule_rounded,
-                        size: 44,
+                        size: 38,
                         color: _failed
                             ? const Color(0xFFB42318)
                             : const Color(0xFFE67E22),
                       ),
                     ),
                   ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 14),
                   Text(
                     _failed
                         ? 'Verification failed'
@@ -268,11 +360,11 @@ class _PaymentSubmittedScreenState extends State<PaymentSubmittedScreen> {
                       color: _failed
                           ? const Color(0xFFB42318)
                           : const Color(0xFFE67E22),
-                      fontWeight: FontWeight.w900,
-                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 18,
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Text(
                     _failed
                         ? (_error ?? 'Payment could not be verified.')
@@ -280,15 +372,15 @@ class _PaymentSubmittedScreenState extends State<PaymentSubmittedScreen> {
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: slateText,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w500,
                       fontSize: 13,
                       height: 1.4,
                     ),
                   ),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: 18),
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.fromLTRB(14, 6, 14, 6),
+                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: rembehBorderRadius(rembehRadiusLg),
@@ -296,17 +388,30 @@ class _PaymentSubmittedScreenState extends State<PaymentSubmittedScreen> {
                     ),
                     child: Column(
                       children: [
-                        _DetailRow(
-                          icon: Icons.list_alt_rounded,
-                          label: 'Bundle',
-                          value: widget.bundleName,
-                        ),
-                        _DetailRow(
-                          icon: Icons.chat_bubble_outline_rounded,
-                          label: 'SMS credits',
-                          value:
-                              '${formatCompactMoney(widget.smsUnits)} SMS',
-                        ),
+                        if (_isSms) ...[
+                          _DetailRow(
+                            icon: Icons.list_alt_rounded,
+                            label: 'Bundle',
+                            value: widget.bundleName ?? 'SMS bundle',
+                          ),
+                          _DetailRow(
+                            icon: Icons.chat_bubble_outline_rounded,
+                            label: 'SMS credits',
+                            value:
+                                '${formatCompactMoney(widget.smsUnits ?? 0)} SMS',
+                          ),
+                        ] else ...[
+                          _DetailRow(
+                            icon: Icons.workspace_premium_outlined,
+                            label: 'Plan',
+                            value: widget.planName ?? 'Pro',
+                          ),
+                          _DetailRow(
+                            icon: Icons.calendar_month_outlined,
+                            label: 'Billing period',
+                            value: widget.billingPeriodLabel ?? '—',
+                          ),
+                        ],
                         _DetailRow(
                           icon: Icons.payments_outlined,
                           label: 'Amount',
@@ -338,12 +443,12 @@ class _PaymentSubmittedScreenState extends State<PaymentSubmittedScreen> {
                     ),
                   ),
                   if (!_failed) ...[
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 12,
+                        horizontal: 10,
+                        vertical: 10,
                       ),
                       decoration: BoxDecoration(
                         color: const Color(0xFFE8F7EE),
@@ -353,7 +458,7 @@ class _PaymentSubmittedScreenState extends State<PaymentSubmittedScreen> {
                         children: [
                           Icon(
                             Icons.info_outline_rounded,
-                            size: 18,
+                            size: 16,
                             color: forestEmerald,
                           ),
                           SizedBox(width: 8),
@@ -362,7 +467,7 @@ class _PaymentSubmittedScreenState extends State<PaymentSubmittedScreen> {
                               "You'll receive a confirmation message once your payment is verified.",
                               style: TextStyle(
                                 color: midnightNavy,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.w500,
                                 fontSize: 12,
                                 height: 1.35,
                               ),
@@ -373,7 +478,7 @@ class _PaymentSubmittedScreenState extends State<PaymentSubmittedScreen> {
                     ),
                   ],
                   if (_checking) ...[
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 12),
                     const Center(
                       child: SizedBox(
                         width: 18,
@@ -426,11 +531,11 @@ class _DetailRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18, color: forestEmerald),
+          Icon(icon, size: 17, color: forestEmerald),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -440,11 +545,11 @@ class _DetailRow extends StatelessWidget {
                   label,
                   style: const TextStyle(
                     color: slateText,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w500,
                     fontSize: 11,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 3),
                 if (statusChip)
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -459,7 +564,7 @@ class _DetailRow extends StatelessWidget {
                       value,
                       style: const TextStyle(
                         color: Color(0xFFB45309),
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w700,
                         fontSize: 12,
                       ),
                     ),
@@ -469,8 +574,8 @@ class _DetailRow extends StatelessWidget {
                     value,
                     style: TextStyle(
                       color: emphasize ? forestEmerald : midnightNavy,
-                      fontWeight: FontWeight.w900,
-                      fontSize: emphasize ? 16 : 14,
+                      fontWeight: emphasize ? FontWeight.w800 : FontWeight.w700,
+                      fontSize: emphasize ? 15 : 13.5,
                     ),
                   ),
               ],
@@ -482,7 +587,6 @@ class _DetailRow extends StatelessWidget {
   }
 }
 
-/// Screenshot 2 content for pending SMS verification.
 /// Prefer [PaymentSubmittedScreen]; kept for older imports.
 @Deprecated('Use PaymentSubmittedScreen')
 typedef PaymentWaitingScreen = PaymentSubmittedScreen;

@@ -1001,6 +1001,12 @@ class ApiClient {
     return _getJson(session: session, path: '/billing/my-branch');
   }
 
+  Future<Map<String, dynamic>> getBillingSummary({
+    required RembehSession session,
+  }) {
+    return _getJson(session: session, path: '/billing/summary');
+  }
+
   Future<Map<String, dynamic>> getBillingPayments({
     required RembehSession session,
   }) {
@@ -1031,6 +1037,26 @@ class ApiClient {
       path: '/billing/branches/$branchId/manual-sms-payment',
       body: {
         'bundleId': bundleId,
+        'provider': provider,
+        'transactionId': transactionId,
+        'confirmTransactionId': confirmTransactionId,
+      },
+    );
+  }
+
+  Future<Map<String, dynamic>> submitManualPlanPayment({
+    required RembehSession session,
+    required String branchId,
+    required String planCode,
+    required String provider,
+    required String transactionId,
+    required String confirmTransactionId,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/billing/branches/$branchId/manual-payment',
+      body: {
+        'planCode': planCode,
         'provider': provider,
         'transactionId': transactionId,
         'confirmTransactionId': confirmTransactionId,
