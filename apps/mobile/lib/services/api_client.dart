@@ -413,11 +413,14 @@ class ApiClient {
   Future<List<Map<String, dynamic>>> listOperationReports({
     required RembehSession session,
     String? branchId,
+    String? status,
   }) async {
+    final query = <String, String>{
+      if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
+      if (status != null && status.isNotEmpty) 'status': status,
+    };
     final uri = Uri.parse('$rembehApiBaseUrl/operations/reports').replace(
-      queryParameters: branchId == null || branchId.isEmpty
-          ? null
-          : {'branchId': branchId},
+      queryParameters: query.isEmpty ? null : query,
     );
     final response = await http.get(uri, headers: _authHeaders(session));
     final body = _decode(response);

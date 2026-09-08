@@ -107,13 +107,19 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
       String fingerprint;
 
       if (isPersisted) {
-        final listMeta = widget.reportPayload;
+        // Always refetch the live report when online so snapshot refreshes
+        // (e.g. after repayment corrections) replace stale cached PDFs.
+        data = await _loadPersistedData(reportId, widget.reportPayload);
         fingerprint = DailyReportPdfCache.fingerprint(
           reportId: reportId,
-          generatedAt: _string(listMeta?['generatedAt']),
-          status: _string(listMeta?['status']),
-          operationDate: _string(listMeta?['operationDate']),
-          ownerNotes: _string(listMeta?['ownerNotes']),
+          generatedAt: data.generatedAt?.toIso8601String(),
+          status: data.status,
+          operationDate: data.operationDate,
+          ownerNotes: data.ownerNotes,
+          collectionsReceived: data.cashPosition.repaymentsCollected,
+          expectedClosingBalance: data.cashPosition.expectedClosingCash,
+          closingVariance: data.cashPosition.variance,
+          closingBalance: data.cashPosition.countedCash,
         );
 
         final cached = await _cache.find(
@@ -126,35 +132,6 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
           await _showPdf(
             bytes: bytes,
             file: cached,
-            title: _dateTitle(_string(listMeta?['operationDate'])),
-            shareName: _fileName(
-              operationDate: _string(listMeta?['operationDate']),
-              branchName: widget.session.branchName,
-            ),
-            branchLabel: widget.session.branchName,
-          );
-          return;
-        }
-
-        data = await _loadPersistedData(reportId, listMeta);
-        fingerprint = DailyReportPdfCache.fingerprint(
-          reportId: reportId,
-          generatedAt: data.generatedAt?.toIso8601String(),
-          status: data.status,
-          operationDate: data.operationDate,
-          ownerNotes: data.ownerNotes,
-        );
-
-        final stillCached = await _cache.find(
-          reportId: reportId,
-          fingerprint: fingerprint,
-        );
-        if (stillCached != null) {
-          final bytes = await stillCached.readAsBytes();
-          if (!mounted) return;
-          await _showPdf(
-            bytes: bytes,
-            file: stillCached,
             title: _dateTitle(data.operationDate),
             shareName: _fileName(
               operationDate: data.operationDate,
@@ -172,26 +149,19 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
               DateTime.now().toIso8601String(),
           status: data.status,
           operationDate: data.operationDate,
+          collectionsReceived: data.cashPosition.repaymentsCollected,
+          expectedClosingBalance: data.cashPosition.expectedClosingCash,
+          closingVariance: data.cashPosition.variance,
+          closingBalance: data.cashPosition.countedCash,
         );
       }
 
       final bytes = Uint8List.fromList(await _builder.build(data));
       File? file;
       if (isPersisted) {
-        final listFingerprint = DailyReportPdfCache.fingerprint(
-          reportId: reportId,
-          generatedAt: _string(widget.reportPayload?['generatedAt']) ??
-              data.generatedAt?.toIso8601String(),
-          status: _string(widget.reportPayload?['status']) ?? data.status,
-          operationDate:
-              _string(widget.reportPayload?['operationDate']) ??
-              data.operationDate,
-          ownerNotes:
-              _string(widget.reportPayload?['ownerNotes']) ?? data.ownerNotes,
-        );
         file = await _cache.save(
           reportId: reportId,
-          fingerprint: listFingerprint,
+          fingerprint: fingerprint,
           bytes: bytes,
         );
       }
@@ -250,24 +220,28 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
     String reportId,
     Map<String, dynamic>? listMeta,
   ) async {
-    final snapshot = listMeta?['snapshot'];
-    if (listMeta != null && snapshot is Map) {
-      return DailyReportMapper.fromReportPayload(
-        report: listMeta,
-        organizationName: widget.session.workspaceName,
-        fallbackBranchName: widget.session.branchName,
-        fallbackBranchAddress: widget.session.branchAddress,
-        fallbackManagerName: widget.session.userName,
+    try {
+      final repository = DailyReportRepositoryImpl(
+        apiClient: ApiClient(SessionStore()),
       );
+      return await repository.getPersistedReport(
+        session: widget.session,
+        reportId: reportId,
+      );
+    } catch (_) {
+      // Offline / network failure: fall back to list payload if it has a snapshot.
+      final snapshot = listMeta?['snapshot'];
+      if (listMeta != null && snapshot is Map) {
+        return DailyReportMapper.fromReportPayload(
+          report: listMeta,
+          organizationName: widget.session.workspaceName,
+          fallbackBranchName: widget.session.branchName,
+          fallbackBranchAddress: widget.session.branchAddress,
+          fallbackManagerName: widget.session.userName,
+        );
+      }
+      rethrow;
     }
-
-    final repository = DailyReportRepositoryImpl(
-      apiClient: ApiClient(SessionStore()),
-    );
-    return repository.getPersistedReport(
-      session: widget.session,
-      reportId: reportId,
-    );
   }
 
   Future<DailyReportData> _loadLiveData() async {
@@ -536,12 +510,6 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
       ],
     );
   }
-}
-
-String? _string(Object? value) {
-  if (value == null) return null;
-  final text = value.toString().trim();
-  return text.isEmpty ? null : text;
 }
 
 String _dateTitle(String? operationDate) {

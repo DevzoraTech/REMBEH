@@ -75,7 +75,13 @@ class DailyReportMapper {
       branchPhone: _string(report['branchPhone']),
       branchEmail: _string(report['branchEmail']),
       managerName: managerName,
-      generatedAt: _date(report['generatedAt'] ?? snapshot['generatedAt']),
+      generatedAt: () {
+        final rowAt = _date(report['generatedAt']);
+        final snapAt = _date(snapshot['generatedAt']);
+        if (rowAt == null) return snapAt;
+        if (snapAt == null) return rowAt;
+        return rowAt.isAfter(snapAt) ? rowAt : snapAt;
+      }(),
       managerNotes:
           _string(report['managerNotes']) ?? _string(snapshot['closingNotes']),
       ownerNotes: _string(report['ownerNotes']),

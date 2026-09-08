@@ -17,6 +17,8 @@ import '../features/operations/presentation/screens/day_reconciliation_screen.da
 import '../features/operations/presentation/screens/expenses_screen.dart';
 import '../features/operations/presentation/screens/operations_tab.dart';
 import '../features/operations/presentation/report/screens/daily_report_screen.dart';
+import '../features/operations/presentation/report/screens/returned_report_screen.dart';
+import '../features/operations/presentation/report/pdf/daily_report_pdf_cache.dart';
 import '../features/marketing/data/mobile_marketing_campaign_store.dart';
 import '../features/marketing/domain/models/mobile_marketing_campaign.dart';
 import '../features/marketing/presentation/marketing_campaign_actions.dart';
@@ -1197,6 +1199,30 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     }
   }
 
+  Future<void> _openReturnedReport(Map<String, dynamic> report) async {
+    final reportId = _string(report['id']);
+    if (reportId == null) return;
+
+    await const DailyReportPdfCache().invalidate(reportId);
+
+    if (!mounted) return;
+    final refreshed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => ReturnedReportScreen(
+          session: widget.session,
+          reportId: reportId,
+          listPayload: report,
+        ),
+      ),
+    );
+
+    if (refreshed == true) {
+      _setNotice('Returned report resubmitted to owner.');
+      unawaited(_refreshReportsQuietly());
+      unawaited(_load(allowCacheFallback: false));
+    }
+  }
+
   Future<void> _openReportsList() async {
     if (_openingReports) {
       return;
@@ -1249,6 +1275,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           builder: (_) => _ReportsListScreen(
             session: widget.session,
             reports: reports,
+            onOpenReturnedReport: _openReturnedReport,
           ),
         ),
       );
@@ -1272,8 +1299,15 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       if (!mounted) {
         return;
       }
+      final summaries = _reportListSummaries(fresh);
+      // Drop stale PDF binaries for reports whose figures/status changed.
+      for (final report in summaries) {
+        final id = _string(report['id']);
+        if (id == null) continue;
+        unawaited(const DailyReportPdfCache().invalidate(id));
+      }
       setState(() {
-        _reports = _reportListSummaries(fresh);
+        _reports = summaries;
       });
     } catch (_) {
       // Keep the last good list.
@@ -1478,9 +1512,33 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       );
     }
 
-    final reportsToSend = _reports.where(_reportNeedsManagerSubmission).length;
+    final reportsToSend = _reports.where(_reportNeedsManagerSubmission).toList();
+    final returnedReports = reportsToSend
+        .where((report) => _string(report['status']) == 'RETURNED_TO_MANAGER')
+        .toList();
+    final closeReports = reportsToSend
+        .where((report) => _string(report['status']) != 'RETURNED_TO_MANAGER')
+        .toList();
 
-    if (reportsToSend > 0 || _reportNeedsManagerSubmission(_report)) {
+    if (returnedReports.isNotEmpty) {
+      items.add(
+        AttentionItem(
+          icon: Icons.assignment_return_outlined,
+          iconColor: warmGold,
+          title: returnedReports.length == 1
+              ? 'Returned report needs review'
+              : '${returnedReports.length} returned reports need review',
+          subtitle: 'Re-check figures and resubmit to the owner',
+          onTap: () {
+            unawaited(_openReturnedReport(returnedReports.first));
+          },
+        ),
+      );
+    }
+
+    if (closeReports.isNotEmpty ||
+        (_reportNeedsManagerSubmission(_report) &&
+            _string(_report?['status']) != 'RETURNED_TO_MANAGER')) {
       items.add(
         AttentionItem(
           icon: Icons.receipt_long_outlined,
@@ -3018,6 +3076,22 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           : '${_dateLabel(_awaitingReport?['operationDate'])} '
                 'is closed. Send its report before today can open.',
 
+      returnedReportMessage: () {
+        final returned = _reports
+            .where(
+              (report) =>
+                  _string(report['status']) == 'RETURNED_TO_MANAGER',
+            )
+            .toList();
+        if (returned.isEmpty) return null;
+        final first = returned.first;
+        final date = _dateLabel(first['operationDate']);
+        if (returned.length == 1) {
+          return '$date was returned. Re-check figures and resubmit.';
+        }
+        return '$date and ${returned.length - 1} more returned. Re-check and resubmit.';
+      }(),
+
       openDayBlockedMessage: _openDayBlockedMessage,
 
       operationReadOnlyMessage: _operationMutationBlockedMessage,
@@ -3033,6 +3107,20 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           : () {
               unawaited(_sendAwaitingReport());
             },
+
+      onOpenReturnedReport: () {
+        final returned = _reports
+            .where(
+              (report) =>
+                  _string(report['status']) == 'RETURNED_TO_MANAGER',
+            )
+            .toList();
+        if (returned.isEmpty) {
+          unawaited(_openReportsList());
+          return;
+        }
+        unawaited(_openReturnedReport(returned.first));
+      },
 
       onOpenAgentPositions:
           widget.session.hasPermission('operation.float.manage')
@@ -3159,10 +3247,15 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 }
 
 class _ReportsListScreen extends StatefulWidget {
-  const _ReportsListScreen({required this.session, required this.reports});
+  const _ReportsListScreen({
+    required this.session,
+    required this.reports,
+    required this.onOpenReturnedReport,
+  });
 
   final RembehSession session;
   final List<Map<String, dynamic>> reports;
+  final Future<void> Function(Map<String, dynamic> report) onOpenReturnedReport;
 
   @override
   State<_ReportsListScreen> createState() => _ReportsListScreenState();
@@ -3181,12 +3274,19 @@ class _ReportsListScreenState extends State<_ReportsListScreen> {
     }
     _openingReport = true;
     try {
+      final status = (_string(report['status']) ?? '').toUpperCase();
+      if (status == 'RETURNED_TO_MANAGER') {
+        await widget.onOpenReturnedReport(report);
+        return;
+      }
+      await const DailyReportPdfCache().invalidate(reportId);
+      if (!mounted) return;
       await Navigator.of(context).push<void>(
         MaterialPageRoute(
           builder: (_) => DailyReportScreen(
             session: widget.session,
             reportId: reportId,
-            // Metadata only — snapshot is stripped from the list cache.
+            // Fresh detail is always fetched; list meta is a hint only.
             reportPayload: report,
           ),
         ),

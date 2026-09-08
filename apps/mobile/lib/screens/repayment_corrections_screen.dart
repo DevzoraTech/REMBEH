@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../features/operations/presentation/screens/day_reconciliation_screen.dart';
+import '../features/operations/presentation/report/screens/returned_report_screen.dart';
 import '../services/api_client.dart';
 import '../services/session_store.dart';
 import '../theme.dart';
@@ -128,12 +128,25 @@ class _RepaymentCorrectionsScreenState
 
     if (go != true || !mounted) return;
 
+    final reportId = _string(payload['reportId']);
+    if (reportId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Returned report was not found. Open More → Reports.'),
+        ),
+      );
+      return;
+    }
+
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => DayReconciliationScreen(
+        builder: (_) => ReturnedReportScreen(
           session: widget.session,
-          branchId: widget.session.branchId ?? _string(payload['branchId']),
-          date: date,
+          reportId: reportId,
+          listPayload: {
+            'operationDate': payload['operationDate'],
+            'returnNotes': payload['message'],
+          },
         ),
       ),
     );

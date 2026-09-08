@@ -826,6 +826,8 @@ export class OperationsRepository {
         },
         data: {
           snapshot: input.snapshot,
+          // Bump so mobile PDF fingerprints invalidate stale cached files.
+          generatedAt: new Date(),
         },
         include: operationReportInclude,
       });

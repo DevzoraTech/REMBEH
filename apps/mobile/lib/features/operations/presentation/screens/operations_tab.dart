@@ -35,10 +35,12 @@ class OperationsTab extends StatelessWidget {
     this.onRecordShortagePaid,
     this.pendingClosureMessage,
     this.awaitingReportMessage,
+    this.returnedReportMessage,
     this.openDayBlockedMessage,
     this.operationReadOnlyMessage,
     this.onPendingClosure,
     this.onSendAwaitingReport,
+    this.onOpenReturnedReport,
     this.onOpenAgentPositions,
     this.onOpenAgentPosition,
   });
@@ -73,11 +75,13 @@ class OperationsTab extends StatelessWidget {
 
   final String? pendingClosureMessage;
   final String? awaitingReportMessage;
+  final String? returnedReportMessage;
   final String? openDayBlockedMessage;
   final String? operationReadOnlyMessage;
 
   final VoidCallback? onPendingClosure;
   final VoidCallback? onSendAwaitingReport;
+  final VoidCallback? onOpenReturnedReport;
   final VoidCallback? onOpenAgentPositions;
   final ValueChanged<AgentFloatPosition>? onOpenAgentPosition;
 
@@ -106,6 +110,14 @@ class OperationsTab extends StatelessWidget {
                 message: awaitingReportMessage!,
                 actionLabel: 'Send report',
                 onAction: onSendAwaitingReport,
+              )
+            else if (returnedReportMessage != null)
+              CarryoverDayCard(
+                icon: Icons.assignment_return_outlined,
+                title: 'Returned report',
+                message: returnedReportMessage!,
+                actionLabel: 'Review & resubmit',
+                onAction: onOpenReturnedReport,
               )
             else
               EmptyDayCard(
@@ -165,6 +177,17 @@ class OperationsTab extends StatelessWidget {
         children: [
           if (operationReadOnlyMessage != null) ...[
             _OperationReadOnlyBanner(message: operationReadOnlyMessage!),
+            const SizedBox(height: 10),
+          ],
+
+          if (returnedReportMessage != null) ...[
+            CarryoverDayCard(
+              icon: Icons.assignment_return_outlined,
+              title: 'Returned report needs review',
+              message: returnedReportMessage!,
+              actionLabel: 'Review & resubmit',
+              onAction: onOpenReturnedReport,
+            ),
             const SizedBox(height: 10),
           ],
 
