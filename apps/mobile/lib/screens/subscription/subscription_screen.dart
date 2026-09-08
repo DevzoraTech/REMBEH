@@ -405,6 +405,17 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   Future<void> _openBundlePayment(SmsBundleOption bundle) async {
+    if (!_smsStore.smsAccessAllowed) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'SMS access has been revoked for this branch. Contact support.',
+          ),
+        ),
+      );
+      return;
+    }
+
     final branchId = _resolvedBranchId;
     if (branchId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -536,6 +547,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                               )
                             : _SmsTab(
                                 credits: _smsStore.credits ?? 0,
+                                smsAccessAllowed: _smsStore.smsAccessAllowed,
                                 bundles: _bundles,
                                 selectedBundleId: _selectedBundleId,
                                 payments: _smsPayments,
@@ -1072,6 +1084,7 @@ class _PlanTab extends StatelessWidget {
 class _SmsTab extends StatelessWidget {
   const _SmsTab({
     required this.credits,
+    required this.smsAccessAllowed,
     required this.bundles,
     required this.selectedBundleId,
     required this.payments,
@@ -1080,6 +1093,7 @@ class _SmsTab extends StatelessWidget {
   });
 
   final int credits;
+  final bool smsAccessAllowed;
   final List<SmsBundleOption> bundles;
   final String? selectedBundleId;
   final List<BillingPaymentRow> payments;
@@ -1133,6 +1147,27 @@ class _SmsTab extends StatelessWidget {
             ],
           ),
         ),
+        if (!smsAccessAllowed) ...[
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEF3F2),
+              borderRadius: rembehBorderRadius(rembehRadiusLg),
+              border: Border.all(color: const Color(0xFFFDA29B)),
+            ),
+            child: const Text(
+              'SMS access has been revoked for this branch. Sending and buying SMS are blocked. Contact support if this is unexpected.',
+              style: TextStyle(
+                color: Color(0xFFB42318),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 14),
         const Text(
           'Buy SMS bundle',
@@ -1143,9 +1178,11 @@ class _SmsTab extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 3),
-        const Text(
-          'Tap a pack to continue to payment.',
-          style: TextStyle(
+        Text(
+          smsAccessAllowed
+              ? 'Tap a pack to continue to payment.'
+              : 'Purchases are unavailable while SMS access is revoked.',
+          style: const TextStyle(
             color: slateText,
             fontSize: 12,
             fontWeight: FontWeight.w500,
@@ -1173,11 +1210,15 @@ class _SmsTab extends StatelessWidget {
             final selected = bundle.id == selectedBundleId;
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
-              child: Material(
+              child: Opacity(
+                opacity: smsAccessAllowed ? 1 : 0.55,
+                child: Material(
                 color: Colors.white,
                 borderRadius: rembehBorderRadius(rembehRadiusLg),
                 child: InkWell(
-                  onTap: () => onSelectBundle(bundle),
+                  onTap: smsAccessAllowed
+                      ? () => onSelectBundle(bundle)
+                      : null,
                   borderRadius: rembehBorderRadius(rembehRadiusLg),
                   child: Container(
                     padding: const EdgeInsets.all(12),
@@ -1248,6 +1289,7 @@ class _SmsTab extends StatelessWidget {
                     ),
                   ),
                 ),
+              ),
               ),
             );
           }),

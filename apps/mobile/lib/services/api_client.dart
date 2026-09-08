@@ -1543,6 +1543,16 @@ class ApiClient {
       return 'Your session has expired. Please sign in again.';
     }
     if (statusCode == 403) {
+      final trimmed = message.trim();
+      final lower = trimmed.toLowerCase();
+      // Prefer concrete API guidance (e.g. SMS revoked, wrong branch)
+      // over a generic 403 that hides the real reason.
+      if (trimmed.isNotEmpty &&
+          lower != 'forbidden' &&
+          !lower.startsWith('cannot ') &&
+          trimmed.length <= 220) {
+        return friendlyErrorMessage(trimmed);
+      }
       return 'You do not have access to do that. Contact your manager.';
     }
     if (statusCode == 404 || message.toLowerCase().startsWith('cannot ')) {

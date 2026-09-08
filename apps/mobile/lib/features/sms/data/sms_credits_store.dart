@@ -14,11 +14,13 @@ class SmsCreditsStore extends ChangeNotifier {
   final _api = ApiClient(SessionStore());
   RembehSession? _session;
   int? _credits;
+  bool _smsAccessAllowed = true;
   bool _loading = false;
   Timer? _pollTimer;
   bool _started = false;
 
   int? get credits => _credits;
+  bool get smsAccessAllowed => _smsAccessAllowed;
   bool get loading => _loading;
 
   Future<void> start(RembehSession session) async {
@@ -40,6 +42,7 @@ class SmsCreditsStore extends ChangeNotifier {
     _started = false;
     _session = null;
     _credits = null;
+    _smsAccessAllowed = true;
     _loading = false;
     notifyListeners();
   }
@@ -60,6 +63,14 @@ class SmsCreditsStore extends ChangeNotifier {
           ? raw.floor()
           : int.tryParse('$raw') ?? _credits ?? 0;
       _credits = next < 0 ? 0 : next;
+      final accessRaw = payload['smsAccessAllowed'];
+      if (accessRaw is bool) {
+        _smsAccessAllowed = accessRaw;
+      } else if (accessRaw != null) {
+        final normalized = '$accessRaw'.trim().toLowerCase();
+        _smsAccessAllowed =
+            normalized != 'false' && normalized != '0' && normalized != 'no';
+      }
     } catch (_) {
       // Header chrome is optional; keep last known value.
     } finally {
