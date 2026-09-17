@@ -55,11 +55,17 @@ class RepaymentsLiveStore extends ChangeNotifier {
   bool get loading => _loading;
   String? get error => _error;
   bool get canReviewRepaymentCorrections {
-    final permissions = _session?.permissions;
-    if (permissions == null) return false;
+    final session = _session;
+    if (session == null) return false;
+    final permissions = session.permissions;
+    final role = (session.roleName ?? '').trim().toLowerCase();
     return permissions.contains('collection.reconcile') ||
         permissions.contains('operation.close') ||
         permissions.contains('operation.report.review') ||
+        role.contains('manager') ||
+        role.contains('account owner') ||
+        role == 'owner' ||
+        session.isOrganisationOwner ||
         (permissions.contains('operation.approve') &&
             permissions.contains('branch.create'));
   }

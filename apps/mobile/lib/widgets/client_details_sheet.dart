@@ -835,35 +835,32 @@ class _PaymentHistoryTrailingState extends State<_PaymentHistoryTrailing> {
             ),
           ),
           const SizedBox(height: 4),
-          if (pending)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF7E6),
-                border: Border.all(color: const Color(0xFFE9C46A)),
-                borderRadius: rembehBorderRadius(rembehRadiusSm),
-              ),
-              child: const Text(
-                'Correction pending',
-                textAlign: TextAlign.right,
-                style: TextStyle(
-                  color: Color(0xFFC45C26),
-                  fontSize: 10,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            )
-          else if (approvedForOfficer)
-            _CorrectionActionButton(
-              label: 'Edit approved',
-              icon: Icons.check_circle_outline,
-              tone: forestEmerald,
-              onPressed: _applyApprovedCorrection,
-            )
-          else if (canManagerCorrect)
+          if (canManagerCorrect)
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
+                if (pending)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF7E6),
+                      border: Border.all(color: const Color(0xFFE9C46A)),
+                      borderRadius: rembehBorderRadius(rembehRadiusSm),
+                    ),
+                    child: const Text(
+                      'Correction pending',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        color: Color(0xFFC45C26),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
                 if (widget.payment.correctionLocked)
                   const Padding(
                     padding: EdgeInsets.only(bottom: 4),
@@ -893,6 +890,31 @@ class _PaymentHistoryTrailingState extends State<_PaymentHistoryTrailing> {
                   ),
                 ],
               ],
+            )
+          else if (pending)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF7E6),
+                border: Border.all(color: const Color(0xFFE9C46A)),
+                borderRadius: rembehBorderRadius(rembehRadiusSm),
+              ),
+              child: const Text(
+                'Correction pending',
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                  color: Color(0xFFC45C26),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            )
+          else if (approvedForOfficer)
+            _CorrectionActionButton(
+              label: 'Edit approved',
+              icon: Icons.check_circle_outline,
+              tone: forestEmerald,
+              onPressed: _applyApprovedCorrection,
             )
           else if (widget.payment.canRequestCorrection)
             Column(
