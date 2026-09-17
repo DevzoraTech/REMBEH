@@ -715,6 +715,7 @@ class _PaymentHistoryTrailing extends StatefulWidget {
 
 class _PaymentHistoryTrailingState extends State<_PaymentHistoryTrailing> {
   bool _pendingJustSent = false;
+  bool _isVoiding = false;
 
   Future<void> _requestCorrection() async {
     final sent = await showRepaymentCorrectionRequestSheet(
@@ -744,55 +745,21 @@ class _PaymentHistoryTrailingState extends State<_PaymentHistoryTrailing> {
   }
 
   Future<void> _voidPayment() async {
-    final reason = TextEditingController();
-    final confirmed = await showDialog<bool>(
+    if (_isVoiding) return;
+
+    final reason = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Void repayment?'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'The original record will remain in the audit trail and the loan balance will be restored.',
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: reason,
-              minLines: 2,
-              maxLines: 4,
-              decoration: const InputDecoration(
-                labelText: 'Reason for voiding',
-                hintText: 'For example: repayment entered twice',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () {
-              if (reason.text.trim().length < 6) return;
-              Navigator.pop(context, true);
-            },
-            child: const Text('Void repayment'),
-          ),
-        ],
-      ),
+      useRootNavigator: true,
+      builder: (context) => const _VoidRepaymentDialog(),
     );
-    if (confirmed != true || !mounted) {
-      reason.dispose();
-      return;
-    }
+    if (reason == null || !mounted) return;
+
+    setState(() => _isVoiding = true);
     try {
       await RepaymentsLiveStore.instance.voidRepayment(
         repaymentId: widget.payment.id,
         loanId: widget.detail.loanId,
-        reason: reason.text.trim(),
+        reason: reason,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -806,7 +773,7 @@ class _PaymentHistoryTrailingState extends State<_PaymentHistoryTrailing> {
         context,
       ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
     } finally {
-      reason.dispose();
+      if (mounted) setState(() => _isVoiding = false);
     }
   }
 
@@ -883,10 +850,10 @@ class _PaymentHistoryTrailingState extends State<_PaymentHistoryTrailing> {
                 if (!widget.payment.correctionLocked) ...[
                   const SizedBox(height: 6),
                   _CorrectionActionButton(
-                    label: 'Void repayment',
+                    label: _isVoiding ? 'Voiding...' : 'Void repayment',
                     icon: Icons.block_outlined,
                     tone: Colors.red,
-                    onPressed: _voidPayment,
+                    onPressed: _isVoiding ? null : _voidPayment,
                   ),
                 ],
               ],
@@ -978,7 +945,7 @@ class _CorrectionActionButton extends StatelessWidget {
   final String label;
   final IconData icon;
   final Color tone;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -1004,6 +971,80 @@ class _CorrectionActionButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _VoidRepaymentDialog extends StatefulWidget {
+  const _VoidRepaymentDialog();
+
+  @override
+  State<_VoidRepaymentDialog> createState() => _VoidRepaymentDialogState();
+}
+
+class _VoidRepaymentDialogState extends State<_VoidRepaymentDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _reasonController = TextEditingController();
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
+  }
+
+  void _confirm() {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    Navigator.of(context).pop(_reasonController.text.trim());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Void repayment?'),
+      content: Form(
+        key: _formKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'The original record will remain in the audit trail and the loan balance will be restored.',
+            ),
+            const SizedBox(height: 14),
+            TextFormField(
+              controller: _reasonController,
+              autofocus: true,
+              minLines: 2,
+              maxLines: 4,
+              textInputAction: TextInputAction.done,
+              onFieldSubmitted: (_) => _confirm(),
+              validator: (value) {
+                if ((value?.trim().length ?? 0) < 6) {
+                  return 'Enter a clear reason (at least 6 characters).';
+                }
+                return null;
+              },
+              decoration: const InputDecoration(
+                labelText: 'Reason for voiding',
+                hintText: 'For example: repayment entered twice',
+                helperText: 'Required for the audit trail.',
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          style: FilledButton.styleFrom(backgroundColor: Colors.red),
+          onPressed: _confirm,
+          icon: const Icon(Icons.block_outlined),
+          label: const Text('Void repayment'),
+        ),
+      ],
     );
   }
 }
