@@ -175,6 +175,7 @@ export class SyncService implements OnModuleInit {
           where: {
             tenantId,
             ...branchWhere,
+            voidedAt: null,
             ...incrementalWhere,
           },
           select: {

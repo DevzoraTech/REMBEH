@@ -2,6 +2,7 @@ import { Type } from 'class-transformer';
 import {
   IsNumber,
   IsOptional,
+  IsISO8601,
   IsString,
   Length,
   Max,
@@ -9,6 +10,11 @@ import {
 } from 'class-validator';
 
 export class SubmitLoanApplicationDto {
+  /** Operating day that owns this application when a report was returned. */
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  operationDate?: string;
+
   /**
    * Amount physically handed to the borrower now.
    * Defaults to full principal for the existing one-step issue flow.

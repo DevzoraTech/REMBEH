@@ -32,7 +32,9 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
     return HomeSummary(
       amountCollectedToday: _money(summary['amountCollectedToday']),
       repaymentsTodayCount: _int(summary['repaymentsTodayCount']),
-      dueTodayCount: _int(summary['dueTodayUnpaidCount'] ?? summary['dueTodayCount']),
+      dueTodayCount: _int(
+        summary['dueTodayUnpaidCount'] ?? summary['dueTodayCount'],
+      ),
       dueTodayPaidCount: _int(summary['dueTodayPaidCount']),
       overduePaidCount: _int(summary['overduePaidCount']),
       newApplicationsTodayCount: 0,
@@ -56,7 +58,8 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
   Future<DueTodayBundle> listDueToday() async {
     final payload = await _api.listDueToday();
     List<DueClient> parse(String key, [String? fallback]) {
-      final raw = (payload[key] as List?) ??
+      final raw =
+          (payload[key] as List?) ??
           (fallback != null ? payload[fallback] as List? : null) ??
           const [];
       return raw
@@ -206,6 +209,20 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
     );
   }
 
+  @override
+  Future<ClientLoanDetail> voidRepayment({
+    required String repaymentId,
+    required String reason,
+  }) async {
+    final payload = await _api.voidRepayment(
+      repaymentId: repaymentId,
+      reason: reason,
+    );
+    return _detail(
+      Map<String, dynamic>.from(payload['detail'] as Map? ?? const {}),
+    );
+  }
+
   DueClient _dueClient(Map<String, dynamic> json) {
     return DueClient(
       id: json['loanId'] as String? ?? json['id'] as String? ?? '',
@@ -331,7 +348,8 @@ class RepaymentRepositoryImpl implements RepaymentRepository {
                   ),
                   approvedCorrectionReason:
                       row['approvedCorrectionReason'] as String?,
-                  approvedRequestedAmount: row['approvedRequestedAmount'] == null
+                  approvedRequestedAmount:
+                      row['approvedRequestedAmount'] == null
                       ? null
                       : _money(row['approvedRequestedAmount']),
                   approvedRequestedMethod:

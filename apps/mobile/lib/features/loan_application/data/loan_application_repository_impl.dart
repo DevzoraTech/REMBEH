@@ -201,6 +201,7 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
     double? initialDisbursementAmount,
     double collectedRepaymentsAmount = 0,
     String? disbursementNote,
+    String? operationDate,
   }) async {
     try {
       final body = await _api.submit(
@@ -208,6 +209,7 @@ class LoanApplicationRepositoryImpl implements LoanApplicationRepository {
         initialDisbursementAmount: initialDisbursementAmount,
         collectedRepaymentsAmount: collectedRepaymentsAmount,
         disbursementNote: disbursementNote,
+        operationDate: operationDate,
       );
 
       return _mapApplication(body['application'] as Map<String, dynamic>);

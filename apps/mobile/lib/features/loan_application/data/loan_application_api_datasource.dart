@@ -143,6 +143,7 @@ class LoanApplicationApiDatasource {
     double? initialDisbursementAmount,
     double collectedRepaymentsAmount = 0,
     String? disbursementNote,
+    String? operationDate,
   }) async {
     final session = await _requireSession();
     final response = await http.post(
@@ -154,6 +155,8 @@ class LoanApplicationApiDatasource {
           'collectedRepaymentsAmount': collectedRepaymentsAmount,
         if (disbursementNote != null && disbursementNote.trim().isNotEmpty)
           'disbursementNote': disbursementNote.trim(),
+        if (operationDate != null && operationDate.isNotEmpty)
+          'operationDate': operationDate,
       }),
     );
     return _decodeOk(response);

@@ -33,7 +33,9 @@ export class AgentsRepository {
   }) {
     const search = input.search?.trim();
     const roleNames = [
-      ...(input.includeFloatRecipients ? FIELD_AGENT_ROLES : BRANCH_STAFF_ROLES),
+      ...(input.includeFloatRecipients
+        ? FIELD_AGENT_ROLES
+        : BRANCH_STAFF_ROLES),
     ];
     const orFilters: Prisma.UserWhereInput[] | undefined = search
       ? [
@@ -72,7 +74,9 @@ export class AgentsRepository {
     includeFloatRecipients?: boolean;
   }) {
     const roleNames = [
-      ...(input.includeFloatRecipients ? FIELD_AGENT_ROLES : BRANCH_STAFF_ROLES),
+      ...(input.includeFloatRecipients
+        ? FIELD_AGENT_ROLES
+        : BRANCH_STAFF_ROLES),
     ];
 
     return this.prisma.user.findFirst({
@@ -111,7 +115,7 @@ export class AgentsRepository {
         status: input.status,
         suspensionReason:
           input.status === UserStatus.SUSPENDED
-            ? (input.suspensionReason?.trim() || null)
+            ? input.suspensionReason?.trim() || null
             : null,
       },
     });
@@ -147,6 +151,7 @@ export class AgentsRepository {
       where: {
         tenantId: input.tenantId,
         recordedByUserId: input.agentId,
+        voidedAt: null,
         ...(input.from || input.to
           ? {
               paidAt: {
@@ -169,6 +174,7 @@ export class AgentsRepository {
       where: {
         tenantId: input.tenantId,
         recordedByUserId: input.agentId,
+        voidedAt: null,
         ...(input.from || input.to
           ? {
               paidAt: {
@@ -300,6 +306,7 @@ export class AgentsRepository {
       where: {
         tenantId: input.tenantId,
         recordedByUserId: input.agentId,
+        voidedAt: null,
         ...(input.from || input.to
           ? {
               paidAt: {
@@ -582,10 +589,7 @@ export class AgentsRepository {
     });
   }
 
-  revokeSession(input: {
-    sessionId: string;
-    revokedByUserId: string;
-  }) {
+  revokeSession(input: { sessionId: string; revokedByUserId: string }) {
     return this.prisma.authSession.update({
       where: { id: input.sessionId },
       data: {

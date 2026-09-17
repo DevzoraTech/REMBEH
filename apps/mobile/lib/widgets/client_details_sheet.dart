@@ -6,6 +6,7 @@ import '../features/repayment/data/repayments_live_store.dart';
 import '../models/client_detail.dart';
 import '../theme.dart';
 import '../utils/date_groups.dart';
+import '../utils/friendly_errors.dart';
 import '../utils/money.dart';
 import 'legacy_loan_correction_sheet.dart';
 import 'record_repayment_sheet.dart';
@@ -742,6 +743,73 @@ class _PaymentHistoryTrailingState extends State<_PaymentHistoryTrailing> {
     );
   }
 
+  Future<void> _voidPayment() async {
+    final reason = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Void repayment?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'The original record will remain in the audit trail and the loan balance will be restored.',
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: reason,
+              minLines: 2,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'Reason for voiding',
+                hintText: 'For example: repayment entered twice',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              if (reason.text.trim().length < 6) return;
+              Navigator.pop(context, true);
+            },
+            child: const Text('Void repayment'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      reason.dispose();
+      return;
+    }
+    try {
+      await RepaymentsLiveStore.instance.voidRepayment(
+        repaymentId: widget.payment.id,
+        loanId: widget.detail.loanId,
+        reason: reason.text.trim(),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Repayment voided and loan balance restored.'),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
+    } finally {
+      reason.dispose();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final pending =
@@ -815,6 +883,15 @@ class _PaymentHistoryTrailingState extends State<_PaymentHistoryTrailing> {
                   tone: forestEmerald,
                   onPressed: _applyApprovedCorrection,
                 ),
+                if (!widget.payment.correctionLocked) ...[
+                  const SizedBox(height: 6),
+                  _CorrectionActionButton(
+                    label: 'Void repayment',
+                    icon: Icons.block_outlined,
+                    tone: Colors.red,
+                    onPressed: _voidPayment,
+                  ),
+                ],
               ],
             )
           else if (widget.payment.canRequestCorrection)

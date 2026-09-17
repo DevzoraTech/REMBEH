@@ -489,9 +489,9 @@ class RepaymentsLiveStore extends ChangeNotifier {
           .fold<int>(0, (sum, item) => sum + item.amount);
       final paidAnythingToday =
           paidToday > 0 ||
-          (detail.lastPaymentAt != null &&
-              sameDay(detail.lastPaymentAt!, now));
-      final overdue = detail.nextDueLabel.toLowerCase() == 'overdue' ||
+          (detail.lastPaymentAt != null && sameDay(detail.lastPaymentAt!, now));
+      final overdue =
+          detail.nextDueLabel.toLowerCase() == 'overdue' ||
           detail.carriedForward > 0;
       final dueToday =
           detail.nextDueIsToday ||
@@ -697,6 +697,25 @@ class RepaymentsLiveStore extends ChangeNotifier {
       method: method,
       paidAt: paidAt,
       note: note,
+    );
+    _detailCache[loanId] = detail;
+    await refresh();
+    notifyListeners();
+    return detail;
+  }
+
+  Future<ClientLoanDetail> voidRepayment({
+    required String repaymentId,
+    required String loanId,
+    required String reason,
+  }) async {
+    final network = NetworkStatusStore.instance;
+    if (network.isOffline && !await network.checkNow()) {
+      throw ApiException('Connect to the internet to void this repayment.');
+    }
+    final detail = await _locator.voidRepayment(
+      repaymentId: repaymentId,
+      reason: reason,
     );
     _detailCache[loanId] = detail;
     await refresh();

@@ -37,4 +37,7 @@ class RepaymentLocator {
       RequestRepaymentCorrectionUseCase(repository);
   late final ApplyRepaymentCorrectionUseCase applyRepaymentCorrection =
       ApplyRepaymentCorrectionUseCase(repository);
+  late final VoidRepaymentUseCase voidRepayment = VoidRepaymentUseCase(
+    repository,
+  );
 }

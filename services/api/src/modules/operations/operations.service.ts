@@ -329,47 +329,53 @@ export class OperationsService {
       };
     }
 
-    const [float, loansAgg, disbursementsAgg, collectionsAgg, expensesAgg, expenseRows] =
-      await Promise.all([
-        this.repository.findAgentFloatForDay({
-          tenantId: user.tenantId,
-          branchId: branch.id,
-          agentId: user.userId,
-          floatDate: operation.operationDate,
-        }),
-        this.repository.sumLoansIssuedForAgent({
-          tenantId: user.tenantId,
-          branchId: branch.id,
-          agentId: user.userId,
-          dayStart: bounds.dayStart,
-          dayEnd: bounds.dayEnd,
-        }),
-        this.repository.sumLoanDisbursementsForAgent({
-          tenantId: user.tenantId,
-          branchId: branch.id,
-          agentId: user.userId,
-          dayStart: bounds.dayStart,
-          dayEnd: bounds.dayEnd,
-        }),
-        this.repository.sumCollectionsForAgent({
-          tenantId: user.tenantId,
-          branchId: branch.id,
-          agentId: user.userId,
-          dayStart: bounds.dayStart,
-          dayEnd: bounds.dayEnd,
-        }),
-        this.repository.sumExpensesForOperation({
-          tenantId: user.tenantId,
-          operationId: operation.id,
-          paidFrom: BranchOperationExpensePaidFrom.AGENT_FLOAT,
-          agentId: user.userId,
-        }),
-        this.repository.listExpensesForOperation({
-          tenantId: user.tenantId,
-          operationId: operation.id,
-          agentId: user.userId,
-        }),
-      ]);
+    const [
+      float,
+      loansAgg,
+      disbursementsAgg,
+      collectionsAgg,
+      expensesAgg,
+      expenseRows,
+    ] = await Promise.all([
+      this.repository.findAgentFloatForDay({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        agentId: user.userId,
+        floatDate: operation.operationDate,
+      }),
+      this.repository.sumLoansIssuedForAgent({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        agentId: user.userId,
+        dayStart: bounds.dayStart,
+        dayEnd: bounds.dayEnd,
+      }),
+      this.repository.sumLoanDisbursementsForAgent({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        agentId: user.userId,
+        dayStart: bounds.dayStart,
+        dayEnd: bounds.dayEnd,
+      }),
+      this.repository.sumCollectionsForAgent({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        agentId: user.userId,
+        dayStart: bounds.dayStart,
+        dayEnd: bounds.dayEnd,
+      }),
+      this.repository.sumExpensesForOperation({
+        tenantId: user.tenantId,
+        operationId: operation.id,
+        paidFrom: BranchOperationExpensePaidFrom.AGENT_FLOAT,
+        agentId: user.userId,
+      }),
+      this.repository.listExpensesForOperation({
+        tenantId: user.tenantId,
+        operationId: operation.id,
+        agentId: user.userId,
+      }),
+    ]);
 
     const amountReceived = this.decimalToNumber(float?.amountGiven);
 
@@ -390,18 +396,15 @@ export class OperationsService {
       .filter((row) => !row.voidedAt)
       .map((row) => this.toExpenseContract(row));
 
-    const {
-      unusedFloat,
-      collectedRepaymentsAvailable,
-      expectedHandover,
-    } = this.agentExpectedHandover({
-      amountGiven: amountReceived,
-      assignedFloatDisbursed,
-      amountCollected,
-      collectedRepaymentsDisbursed,
-      processingFees,
-      expensesTotal,
-    });
+    const { unusedFloat, collectedRepaymentsAvailable, expectedHandover } =
+      this.agentExpectedHandover({
+        amountGiven: amountReceived,
+        assignedFloatDisbursed,
+        amountCollected,
+        collectedRepaymentsDisbursed,
+        processingFees,
+        expensesTotal,
+      });
 
     const returnedAt = float?.returnedAt?.toISOString() ?? null;
 
@@ -809,7 +812,9 @@ export class OperationsService {
   async recordExpense(
     user: AuthenticatedUser,
     dto: RecordOperationExpenseDto,
-  ): Promise<DailyOperationResponseContract | AgentDailyOperationResponseContract> {
+  ): Promise<
+    DailyOperationResponseContract | AgentDailyOperationResponseContract
+  > {
     const paidFrom = this.resolveExpensePaidFrom(user, dto.paidFrom);
 
     if (paidFrom === BranchOperationExpensePaidFrom.AGENT_FLOAT) {
@@ -852,10 +857,8 @@ export class OperationsService {
         amount: dto.amount,
       });
     } else {
-      const remainingBeforeExpense = await this.remainingDayCashForBranchExpense(
-        operation,
-        bounds,
-      );
+      const remainingBeforeExpense =
+        await this.remainingDayCashForBranchExpense(operation, bounds);
 
       if (dto.amount > remainingBeforeExpense) {
         throw new BadRequestException(
@@ -1526,7 +1529,9 @@ export class OperationsService {
     user: AuthenticatedUser,
     expenseId: string,
     dto: UpdateOperationExpenseDto,
-  ): Promise<DailyOperationResponseContract | AgentDailyOperationResponseContract> {
+  ): Promise<
+    DailyOperationResponseContract | AgentDailyOperationResponseContract
+  > {
     const branch = await this.resolveBranch(user, undefined);
 
     if (!branch) {
@@ -1625,7 +1630,9 @@ export class OperationsService {
     user: AuthenticatedUser,
     expenseId: string,
     dto: VoidOperationExpenseDto,
-  ): Promise<DailyOperationResponseContract | AgentDailyOperationResponseContract> {
+  ): Promise<
+    DailyOperationResponseContract | AgentDailyOperationResponseContract
+  > {
     const branch = await this.resolveBranch(user, undefined);
 
     if (!branch) {
@@ -2236,36 +2243,36 @@ export class OperationsService {
       salariesAgg,
       shortageRecoveriesAgg,
     ] = await Promise.all([
-        this.repository.sumFloatIssued({
-          tenantId: input.tenantId,
-          branchId: input.branchId,
-          floatDate: operation.operationDate,
-        }),
-        this.repository.findAgentFloatForDay({
-          tenantId: input.tenantId,
-          branchId: input.branchId,
-          agentId: input.agentId,
-          floatDate: operation.operationDate,
-        }),
-        this.repository.sumExpensesForOperation({
-          tenantId: input.tenantId,
-          operationId: operation.id,
-          paidFrom: BranchOperationExpensePaidFrom.BRANCH_CASH,
-        }),
-        this.repository.sumFloatReturned({
-          tenantId: input.tenantId,
-          branchId: input.branchId,
-          floatDate: operation.operationDate,
-        }),
-        this.repository.sumSalariesForOperation({
-          tenantId: input.tenantId,
-          operationId: operation.id,
-        }),
-        this.repository.sumShortageRecoveriesForOperation({
-          tenantId: input.tenantId,
-          operationId: operation.id,
-        }),
-      ]);
+      this.repository.sumFloatIssued({
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        floatDate: operation.operationDate,
+      }),
+      this.repository.findAgentFloatForDay({
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        agentId: input.agentId,
+        floatDate: operation.operationDate,
+      }),
+      this.repository.sumExpensesForOperation({
+        tenantId: input.tenantId,
+        operationId: operation.id,
+        paidFrom: BranchOperationExpensePaidFrom.BRANCH_CASH,
+      }),
+      this.repository.sumFloatReturned({
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        floatDate: operation.operationDate,
+      }),
+      this.repository.sumSalariesForOperation({
+        tenantId: input.tenantId,
+        operationId: operation.id,
+      }),
+      this.repository.sumShortageRecoveriesForOperation({
+        tenantId: input.tenantId,
+        operationId: operation.id,
+      }),
+    ]);
 
     const mode = input.mode ?? 'new';
 
@@ -3574,10 +3581,7 @@ export class OperationsService {
   ) {
     if (clearedByName) {
       const extra = shortage?.notes?.trim();
-      if (
-        extra &&
-        !extra.toLowerCase().includes('shortage cleared by')
-      ) {
+      if (extra && !extra.toLowerCase().includes('shortage cleared by')) {
         return `Shortage cleared by ${clearedByName}. ${extra}`;
       }
       return `Shortage cleared by ${clearedByName}`;
@@ -4328,7 +4332,8 @@ export class OperationsService {
       agentId: expense.agentId ?? null,
       agentName: expense.agent?.displayName ?? null,
       incurredAt: expense.incurredAt.toISOString(),
-      recordedByUserId: expense.recordedByUserId ?? expense.recordedBy.id ?? null,
+      recordedByUserId:
+        expense.recordedByUserId ?? expense.recordedBy.id ?? null,
       recordedByName: expense.recordedBy.displayName,
       approvedAt: expense.approvedAt?.toISOString() ?? null,
       approvedByName: expense.approvedBy?.displayName ?? null,
@@ -4736,6 +4741,7 @@ export class OperationsService {
           where: {
             tenantId: operation.tenantId,
             branchId: operation.branchId,
+            voidedAt: null,
             paidAt: {
               gte: bounds.dayStart,
               lte: bounds.dayEnd,
@@ -4860,6 +4866,7 @@ export class OperationsService {
           where: {
             tenantId: operation.tenantId,
             branchId: operation.branchId,
+            voidedAt: null,
             paidAt: {
               gte: bounds.dayStart,
               lte: bounds.dayEnd,

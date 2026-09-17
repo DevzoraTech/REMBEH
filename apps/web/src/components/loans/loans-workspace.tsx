@@ -334,8 +334,9 @@ export function LoansWorkspace({
     if (!state.ready) return;
     const params = new URLSearchParams(window.location.search);
     const fromUrl = loansFiltersFromSearchParams(params);
+    setAdvancedFilters({ ...EMPTY_LOANS_FILTERS, ...fromUrl });
+    setFilter("all");
     if (Object.keys(fromUrl).length > 0) {
-      setAdvancedFilters((current) => ({ ...current, ...fromUrl }));
       if (fromUrl.repayment && fromUrl.repayment !== "all") {
         setFilter("all");
       }
@@ -377,42 +378,49 @@ export function LoansWorkspace({
     );
   }, [isManager, loans, router]);
 
-  const loadLoans = useCallback(async (opts?: { silent?: boolean }): Promise<LoanRow[]> => {
-    if (!state.session) return [];
-    if (!opts?.silent) setLoading(true);
-    setError(null);
-    try {
-      const payload = await ownerFetch<{ loans?: LoanRow[] }>(
-        state.session,
-        "/loans",
-        { branchId: isManager ? (state.branch?.id ?? null) : selectedBranchId },
-      );
-      const next = payload.loans ?? [];
-      const scoped =
-        isManager && state.branch?.id
-          ? next.filter((loan) => loan.branchId === state.branch?.id)
-          : next;
-      setLoans(scoped);
-      const fallbackPending = pendingDisbursementsFromLoans(
-        scoped,
-        isManager ? (state.branch?.name ?? null) : null,
-      );
-      setPendingDisbursements(fallbackPending);
-      setPendingSummary(summarizePendingDisbursements(fallbackPending));
-      setDetailLoan((current) => {
-        if (!current) return null;
-        return scoped.find((loan) => loan.id === current.id) ?? current;
-      });
-      return scoped;
-    } catch (caught) {
-      setError(
-        caught instanceof Error ? caught.message : "Could not load portfolio.",
-      );
-      return [];
-    } finally {
-      setLoading(false);
-    }
-  }, [isManager, selectedBranchId, state.branch?.id, state.session]);
+  const loadLoans = useCallback(
+    async (opts?: { silent?: boolean }): Promise<LoanRow[]> => {
+      if (!state.session) return [];
+      if (!opts?.silent) setLoading(true);
+      setError(null);
+      try {
+        const payload = await ownerFetch<{ loans?: LoanRow[] }>(
+          state.session,
+          "/loans",
+          {
+            branchId: isManager ? (state.branch?.id ?? null) : selectedBranchId,
+          },
+        );
+        const next = payload.loans ?? [];
+        const scoped =
+          isManager && state.branch?.id
+            ? next.filter((loan) => loan.branchId === state.branch?.id)
+            : next;
+        setLoans(scoped);
+        const fallbackPending = pendingDisbursementsFromLoans(
+          scoped,
+          isManager ? (state.branch?.name ?? null) : null,
+        );
+        setPendingDisbursements(fallbackPending);
+        setPendingSummary(summarizePendingDisbursements(fallbackPending));
+        setDetailLoan((current) => {
+          if (!current) return null;
+          return scoped.find((loan) => loan.id === current.id) ?? current;
+        });
+        return scoped;
+      } catch (caught) {
+        setError(
+          caught instanceof Error
+            ? caught.message
+            : "Could not load portfolio.",
+        );
+        return [];
+      } finally {
+        setLoading(false);
+      }
+    },
+    [isManager, selectedBranchId, state.branch?.id, state.session],
+  );
 
   const loadPendingDisbursements = useCallback(
     async (fallbackLoans: LoanRow[] = []) => {
@@ -426,7 +434,9 @@ export function LoansWorkspace({
         const payload = await ownerFetch<PendingDisbursementsResponse>(
           state.session,
           "/loans/pending-disbursements",
-          { branchId: isManager ? (state.branch?.id ?? null) : selectedBranchId },
+          {
+            branchId: isManager ? (state.branch?.id ?? null) : selectedBranchId,
+          },
         );
         const rows = payload.pendingDisbursements ?? [];
         const scoped =
@@ -443,7 +453,13 @@ export function LoansWorkspace({
         setPendingLoading(false);
       }
     },
-    [isManager, selectedBranchId, state.branch?.id, state.branch?.name, state.session],
+    [
+      isManager,
+      selectedBranchId,
+      state.branch?.id,
+      state.branch?.name,
+      state.session,
+    ],
   );
 
   const loadDisbursementStaff = useCallback(async () => {
@@ -645,13 +661,16 @@ export function LoansWorkspace({
     state.session,
   ]);
 
-  const refreshLoansWorkspace = useCallback(async (opts?: { silent?: boolean }) => {
-    const [latestLoans] = await Promise.all([
-      loadLoans(opts),
-      loadPendingDisbursements(loansRef.current),
-    ]);
-    return latestLoans;
-  }, [loadLoans, loadPendingDisbursements]);
+  const refreshLoansWorkspace = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      const [latestLoans] = await Promise.all([
+        loadLoans(opts),
+        loadPendingDisbursements(loansRef.current),
+      ]);
+      return latestLoans;
+    },
+    [loadLoans, loadPendingDisbursements],
+  );
 
   function openRecordDisbursement(row: PendingDisbursementRow) {
     setRecordDisbursementLoan(row);
@@ -772,7 +791,10 @@ export function LoansWorkspace({
     return () => window.clearTimeout(boot);
   }, [refreshLoansWorkspace, state.ready, state.session]);
 
-  useOwnerLiveReload(refreshLoansWorkspace, Boolean(state.ready && state.session));
+  useOwnerLiveReload(
+    refreshLoansWorkspace,
+    Boolean(state.ready && state.session),
+  );
 
   const officerOptions = useMemo<OfficerOption[]>(() => {
     const map = new Map<string, string>();
@@ -798,7 +820,11 @@ export function LoansWorkspace({
       if (filter === "overdue" && !isLoanScheduleOverdue(loan)) {
         return false;
       }
-      if (filter === "due_today" && loan.dueDayCoverage !== "due_unpaid" && loan.dueDayCoverage !== "overdue_unpaid") {
+      if (
+        filter === "due_today" &&
+        loan.dueDayCoverage !== "due_unpaid" &&
+        loan.dueDayCoverage !== "overdue_unpaid"
+      ) {
         return false;
       }
       if (filter === "due_paid" && loan.dueDayCoverage !== "due_paid") {

@@ -16,16 +16,9 @@ import {
   type OfficerOption,
 } from "../loans/loans-filters";
 
-export type VerificationFilter =
-  | "all"
-  | "verified"
-  | "pending"
-  | "issue";
+export type VerificationFilter = "all" | "verified" | "pending" | "issue";
 export type BorrowerLoanStatusFilter =
-  | "all"
-  | "active"
-  | "overdue"
-  | "closed_only";
+  "all" | "active" | "overdue" | "closed_only";
 
 export type BorrowersAdvancedFilters = {
   officerKey: string | null;
@@ -48,6 +41,7 @@ export const EMPTY_BORROWERS_FILTERS: BorrowersAdvancedFilters = {
 };
 
 const DATE_OPTIONS: Array<{ value: DateIssuedPreset; label: string }> = [
+  { value: "all", label: "All dates" },
   { value: "today", label: "Today" },
   { value: "this_week", label: "This week" },
   { value: "this_month", label: "This month" },
@@ -84,8 +78,9 @@ export function activeBorrowerFilterChips(filters: BorrowersAdvancedFilters) {
   }
   if (filters.verification !== "all") {
     const label =
-      VERIFICATION_OPTIONS.find((option) => option.value === filters.verification)
-        ?.label ?? filters.verification;
+      VERIFICATION_OPTIONS.find(
+        (option) => option.value === filters.verification,
+      )?.label ?? filters.verification;
     chips.push({ key: "verification", label });
   }
   if (filters.loanStatus !== "all") {
@@ -139,7 +134,9 @@ function resolveOfficerFilter(
   officers: OfficerOption[],
 ): BorrowersAdvancedFilters {
   if (draft.officerKey) {
-    const selected = officers.find((officer) => officer.key === draft.officerKey);
+    const selected = officers.find(
+      (officer) => officer.key === draft.officerKey,
+    );
     if (selected) {
       return {
         ...draft,

@@ -31,9 +31,9 @@ class DailyReportScreen extends StatefulWidget {
     this.branchId,
     this.reportPayload,
   }) : assert(
-          reportId != null || date != null,
-          'Either reportId or date must be provided.',
-        );
+         reportId != null || date != null,
+         'Either reportId or date must be provided.',
+       );
 
   final RembehSession session;
 
@@ -145,7 +145,8 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
         data = await _loadLiveData();
         fingerprint = DailyReportPdfCache.fingerprint(
           reportId: 'live-${data.operationDate}',
-          generatedAt: data.generatedAt?.toIso8601String() ??
+          generatedAt:
+              data.generatedAt?.toIso8601String() ??
               DateTime.now().toIso8601String(),
           status: data.status,
           operationDate: data.operationDate,
@@ -304,7 +305,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
     return box.localToGlobal(Offset.zero) & box.size;
   }
 
-  Future<void> _share() async {
+  Future<void> _sharePdf() async {
     final bytes = _bytes;
     if (bytes == null) return;
 
@@ -316,14 +317,133 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
 
     await SharePlus.instance.share(
       ShareParams(
-        files: [
-          XFile(file.path, mimeType: 'application/pdf', name: name),
-        ],
+        files: [XFile(file.path, mimeType: 'application/pdf', name: name)],
         subject: 'Daily Reconciliation Report · REMBEH',
         text: _shareMessage(),
         sharePositionOrigin: _shareOrigin(),
       ),
     );
+  }
+
+  Future<void> _shareImages() async {
+    final bytes = _bytes;
+    if (bytes == null) return;
+
+    final document = await PdfDocument.openData(bytes);
+    final files = <XFile>[];
+    final baseName = (_shareName ?? 'daily-report.pdf').replaceFirst(
+      RegExp(r'\.pdf$', caseSensitive: false),
+      '',
+    );
+    try {
+      for (
+        var pageNumber = 1;
+        pageNumber <= document.pagesCount;
+        pageNumber++
+      ) {
+        final page = await document.getPage(pageNumber);
+        try {
+          const targetWidth = 1600.0;
+          final rendered = await page.render(
+            width: targetWidth,
+            height: targetWidth * page.height / page.width,
+            format: PdfPageImageFormat.png,
+            backgroundColor: '#FFFFFF',
+            forPrint: true,
+          );
+          if (rendered == null) continue;
+          final file = File(
+            '${Directory.systemTemp.path}/$baseName-page-$pageNumber.png',
+          );
+          await file.writeAsBytes(rendered.bytes, flush: true);
+          files.add(
+            XFile(
+              file.path,
+              mimeType: 'image/png',
+              name: '$baseName-page-$pageNumber.png',
+            ),
+          );
+        } finally {
+          await page.close();
+        }
+      }
+    } finally {
+      await document.close();
+    }
+
+    if (files.isEmpty) {
+      throw Exception('Could not create report images.');
+    }
+    await SharePlus.instance.share(
+      ShareParams(
+        files: files,
+        subject: 'Daily Reconciliation Report · REMBEH',
+        text: _shareMessage(),
+        sharePositionOrigin: _shareOrigin(),
+      ),
+    );
+  }
+
+  Future<void> _chooseExport() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: rembehSheetRadius()),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(child: Container(width: 40, height: 4, color: line)),
+              const SizedBox(height: 18),
+              const Text(
+                'Export report',
+                style: TextStyle(
+                  color: midnightNavy,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Choose PDF or export every report page as a separate image.',
+                style: TextStyle(color: slateText),
+              ),
+              const SizedBox(height: 14),
+              ListTile(
+                leading: const Icon(Icons.picture_as_pdf_outlined),
+                title: const Text('PDF document'),
+                subtitle: const Text('One shareable PDF file'),
+                onTap: () => Navigator.pop(context, 'pdf'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.image_outlined),
+                title: const Text('Images'),
+                subtitle: const Text('One PNG image for each page'),
+                onTap: () => Navigator.pop(context, 'images'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    try {
+      if (choice == 'images') {
+        await _shareImages();
+      } else {
+        await _sharePdf();
+      }
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Exception: ', '')),
+        ),
+      );
+    }
   }
 
   @override
@@ -353,7 +473,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
                   IconButton(
                     key: _shareButtonKey,
                     tooltip: 'Share',
-                    onPressed: _share,
+                    onPressed: _chooseExport,
                     icon: const Icon(Icons.ios_share_rounded),
                   ),
               ],
@@ -402,7 +522,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
                   IconButton(
                     key: _shareButtonKey,
                     tooltip: 'Share',
-                    onPressed: _share,
+                    onPressed: _chooseExport,
                     icon: const Icon(Icons.ios_share_rounded),
                   ),
                 ],
@@ -422,10 +542,7 @@ class _DailyReportScreenState extends State<DailyReportScreen> {
             SizedBox(height: 14),
             Text(
               'Preparing report PDF…',
-              style: TextStyle(
-                color: slateText,
-                fontWeight: FontWeight.w600,
-              ),
+              style: TextStyle(color: slateText, fontWeight: FontWeight.w600),
             ),
           ],
         ),
@@ -537,9 +654,9 @@ String _dateTitle(String? operationDate) {
 
 String _fileName({String? operationDate, String? branchName}) {
   final date = (operationDate ?? 'report').replaceAll('/', '-');
-  final branch = (branchName ?? 'branch')
-      .trim()
-      .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9]+'), '-');
+  final branch = (branchName ?? 'branch').trim().toLowerCase().replaceAll(
+    RegExp(r'[^a-z0-9]+'),
+    '-',
+  );
   return 'rembeh-$branch-$date.pdf';
 }

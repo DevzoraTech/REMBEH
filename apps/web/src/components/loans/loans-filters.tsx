@@ -12,12 +12,7 @@ import {
 import { createPortal } from "react-dom";
 
 export type DateIssuedPreset =
-  | "all"
-  | "today"
-  | "this_week"
-  | "this_month"
-  | "last_month"
-  | "custom";
+  "all" | "today" | "this_week" | "this_month" | "last_month" | "custom";
 
 export type RepaymentPosition = "all" | "2-3" | "4-7" | "8+";
 
@@ -49,6 +44,7 @@ export type OfficerOption = {
 };
 
 const DATE_OPTIONS: Array<{ value: DateIssuedPreset; label: string }> = [
+  { value: "all", label: "All dates" },
   { value: "today", label: "Today" },
   { value: "this_week", label: "This week" },
   { value: "this_month", label: "This month" },
@@ -135,7 +131,9 @@ export function resolveOfficerFilter(
   officers: OfficerOption[],
 ): LoansAdvancedFilters {
   if (draft.officerKey) {
-    const selected = officers.find((officer) => officer.key === draft.officerKey);
+    const selected = officers.find(
+      (officer) => officer.key === draft.officerKey,
+    );
     if (selected) {
       return {
         ...draft,
@@ -266,10 +264,7 @@ export function LoansFiltersControl({
       }
 
       const openUpward = spaceBelow < minComfortable && spaceAbove > spaceBelow;
-      const maxHeight = Math.max(
-        320,
-        openUpward ? spaceAbove : spaceBelow,
-      );
+      const maxHeight = Math.max(320, openUpward ? spaceAbove : spaceBelow);
 
       if (openUpward) {
         setPanelStyle({
@@ -389,219 +384,219 @@ export function LoansFiltersControl({
                 onClick={(event) => event.stopPropagation()}
               >
                 <section className="space-y-2">
-              <h4 className="text-[12px] font-bold text-[#0b1220]">
-                Issued by agent
-              </h4>
-              <div className="relative" ref={officerBoxRef}>
-                <label className="flex h-10 items-center gap-2 rounded-xl border border-[#e6ebf0] px-3">
-                  <Search className="size-3.5 shrink-0 text-slate-400" />
-                  <input
-                    value={officerQuery}
-                    onChange={(event) => {
-                      setOfficerQuery(event.target.value);
-                      setOfficerMenuOpen(true);
-                      if (!event.target.value.trim()) {
-                        setDraft((current) => ({
-                          ...current,
-                          officerKey: null,
-                          officerLabel: null,
-                        }));
-                      }
-                    }}
-                    onFocus={() => setOfficerMenuOpen(true)}
-                    placeholder="Search agent"
-                    className="min-w-0 flex-1 bg-transparent text-xs font-semibold text-[#0b1220] outline-none placeholder:font-medium placeholder:text-slate-400"
-                  />
-                  {draft.officerKey || officerQuery ? (
-                    <button
-                      type="button"
-                      className="text-slate-400 hover:text-slate-600"
-                      aria-label="Clear agent"
-                      onClick={() => {
-                        setOfficerQuery("");
-                        setDraft((current) => ({
-                          ...current,
-                          officerKey: null,
-                          officerLabel: null,
-                        }));
-                      }}
-                    >
-                      <X className="size-3.5" />
-                    </button>
-                  ) : null}
-                  <ChevronDown className="size-3.5 shrink-0 text-slate-400" />
-                </label>
-                {officerMenuOpen ? (
-                  <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-10 max-h-44 overflow-y-auto rounded-xl border border-[#e6ebf0] bg-white py-1 shadow-[0_12px_28px_rgba(15,23,42,0.12)]">
-                    {filteredOfficers.length === 0 ? (
-                      <p className="px-3 py-2 text-[11px] text-slate-500">
-                        No agents found.
-                      </p>
-                    ) : (
-                      filteredOfficers.map((officer) => (
-                        <button
-                          key={officer.key}
-                          type="button"
-                          className={`flex w-full px-3 py-2 text-left text-xs font-semibold hover:bg-[#f8faf9] ${
-                            draft.officerKey === officer.key
-                              ? "bg-emerald-50 text-[var(--forest-emerald)]"
-                              : "text-[#0b1220]"
-                          }`}
-                          onClick={() => {
+                  <h4 className="text-[12px] font-bold text-[#0b1220]">
+                    Issued by agent
+                  </h4>
+                  <div className="relative" ref={officerBoxRef}>
+                    <label className="flex h-10 items-center gap-2 rounded-xl border border-[#e6ebf0] px-3">
+                      <Search className="size-3.5 shrink-0 text-slate-400" />
+                      <input
+                        value={officerQuery}
+                        onChange={(event) => {
+                          setOfficerQuery(event.target.value);
+                          setOfficerMenuOpen(true);
+                          if (!event.target.value.trim()) {
                             setDraft((current) => ({
                               ...current,
-                              officerKey: officer.key,
-                              officerLabel: officer.label,
+                              officerKey: null,
+                              officerLabel: null,
                             }));
-                            setOfficerQuery(officer.label);
-                            setOfficerMenuOpen(false);
+                          }
+                        }}
+                        onFocus={() => setOfficerMenuOpen(true)}
+                        placeholder="Search agent"
+                        className="min-w-0 flex-1 bg-transparent text-xs font-semibold text-[#0b1220] outline-none placeholder:font-medium placeholder:text-slate-400"
+                      />
+                      {draft.officerKey || officerQuery ? (
+                        <button
+                          type="button"
+                          className="text-slate-400 hover:text-slate-600"
+                          aria-label="Clear agent"
+                          onClick={() => {
+                            setOfficerQuery("");
+                            setDraft((current) => ({
+                              ...current,
+                              officerKey: null,
+                              officerLabel: null,
+                            }));
                           }}
                         >
-                          {officer.label}
+                          <X className="size-3.5" />
                         </button>
-                      ))
-                    )}
+                      ) : null}
+                      <ChevronDown className="size-3.5 shrink-0 text-slate-400" />
+                    </label>
+                    {officerMenuOpen ? (
+                      <div className="absolute left-0 right-0 top-[calc(100%+4px)] z-10 max-h-44 overflow-y-auto rounded-xl border border-[#e6ebf0] bg-white py-1 shadow-[0_12px_28px_rgba(15,23,42,0.12)]">
+                        {filteredOfficers.length === 0 ? (
+                          <p className="px-3 py-2 text-[11px] text-slate-500">
+                            No agents found.
+                          </p>
+                        ) : (
+                          filteredOfficers.map((officer) => (
+                            <button
+                              key={officer.key}
+                              type="button"
+                              className={`flex w-full px-3 py-2 text-left text-xs font-semibold hover:bg-[#f8faf9] ${
+                                draft.officerKey === officer.key
+                                  ? "bg-emerald-50 text-[var(--forest-emerald)]"
+                                  : "text-[#0b1220]"
+                              }`}
+                              onClick={() => {
+                                setDraft((current) => ({
+                                  ...current,
+                                  officerKey: officer.key,
+                                  officerLabel: officer.label,
+                                }));
+                                setOfficerQuery(officer.label);
+                                setOfficerMenuOpen(false);
+                              }}
+                            >
+                              {officer.label}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
-              </div>
-            </section>
+                </section>
 
-            <section className="mt-4 space-y-2">
-              <h4 className="text-[12px] font-bold text-[#0b1220]">
-                Date issued
-              </h4>
-              <div className="flex flex-wrap gap-1.5">
-                {DATE_OPTIONS.map((option) => (
-                  <FilterPill
-                    key={option.value}
-                    active={draft.dateIssued === option.value}
-                    label={option.label}
-                    onClick={() =>
-                      setDraft((current) => {
-                        const nextDate =
-                          current.dateIssued === option.value
-                            ? "all"
-                            : option.value;
-                        const clearCustom =
-                          nextDate === "all" || nextDate !== "custom";
-                        return {
-                          ...current,
-                          dateIssued: nextDate,
-                          customFrom: clearCustom ? "" : current.customFrom,
-                          customTo: clearCustom ? "" : current.customTo,
-                        };
-                      })
-                    }
-                  />
-                ))}
-              </div>
-              {draft.dateIssued === "custom" ? (
-                <div className="grid grid-cols-2 gap-2 pt-1">
-                  <label className="space-y-1">
-                    <span className="text-[10px] font-semibold text-slate-500">
-                      From
+                <section className="mt-4 space-y-2">
+                  <h4 className="text-[12px] font-bold text-[#0b1220]">
+                    Date issued
+                  </h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {DATE_OPTIONS.map((option) => (
+                      <FilterPill
+                        key={option.value}
+                        active={draft.dateIssued === option.value}
+                        label={option.label}
+                        onClick={() =>
+                          setDraft((current) => {
+                            const nextDate =
+                              current.dateIssued === option.value
+                                ? "all"
+                                : option.value;
+                            const clearCustom =
+                              nextDate === "all" || nextDate !== "custom";
+                            return {
+                              ...current,
+                              dateIssued: nextDate,
+                              customFrom: clearCustom ? "" : current.customFrom,
+                              customTo: clearCustom ? "" : current.customTo,
+                            };
+                          })
+                        }
+                      />
+                    ))}
+                  </div>
+                  {draft.dateIssued === "custom" ? (
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      <label className="space-y-1">
+                        <span className="text-[10px] font-semibold text-slate-500">
+                          From
+                        </span>
+                        <input
+                          type="date"
+                          value={draft.customFrom}
+                          onChange={(event) =>
+                            setDraft((current) => ({
+                              ...current,
+                              customFrom: event.target.value,
+                            }))
+                          }
+                          className="h-9 w-full rounded-xl border border-[#e6ebf0] px-2.5 text-xs font-semibold outline-none"
+                        />
+                      </label>
+                      <label className="space-y-1">
+                        <span className="text-[10px] font-semibold text-slate-500">
+                          To
+                        </span>
+                        <input
+                          type="date"
+                          value={draft.customTo}
+                          onChange={(event) =>
+                            setDraft((current) => ({
+                              ...current,
+                              customTo: event.target.value,
+                            }))
+                          }
+                          className="h-9 w-full rounded-xl border border-[#e6ebf0] px-2.5 text-xs font-semibold outline-none"
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+                </section>
+
+                <section className="mt-4 space-y-2">
+                  <h4 className="text-[12px] font-bold text-[#0b1220]">
+                    Repayment position
+                  </h4>
+                  <div className="flex flex-wrap gap-1.5">
+                    {REPAYMENT_OPTIONS.map((option) => (
+                      <FilterPill
+                        key={option.value}
+                        active={draft.repayment === option.value}
+                        label={option.label}
+                        onClick={() =>
+                          setDraft((current) => ({
+                            ...current,
+                            repayment: option.value,
+                          }))
+                        }
+                      />
+                    ))}
+                  </div>
+                </section>
+
+                <section className="mt-4 space-y-2">
+                  <h4 className="text-[12px] font-bold text-[#0b1220]">
+                    Principal amount
+                  </h4>
+                  <div className="flex items-center gap-2">
+                    <label className="min-w-0 flex-1 space-y-1">
+                      <span className="text-[10px] font-semibold text-slate-500">
+                        Min
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        inputMode="numeric"
+                        placeholder="0"
+                        value={draft.principalMin}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            principalMin: event.target.value,
+                          }))
+                        }
+                        className="h-9 w-full rounded-xl border border-[#e6ebf0] px-2.5 text-xs font-semibold outline-none"
+                      />
+                    </label>
+                    <span className="mt-5 text-xs font-semibold text-slate-400">
+                      –
                     </span>
-                    <input
-                      type="date"
-                      value={draft.customFrom}
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          customFrom: event.target.value,
-                        }))
-                      }
-                      className="h-9 w-full rounded-xl border border-[#e6ebf0] px-2.5 text-xs font-semibold outline-none"
-                    />
-                  </label>
-                  <label className="space-y-1">
-                    <span className="text-[10px] font-semibold text-slate-500">
-                      To
-                    </span>
-                    <input
-                      type="date"
-                      value={draft.customTo}
-                      onChange={(event) =>
-                        setDraft((current) => ({
-                          ...current,
-                          customTo: event.target.value,
-                        }))
-                      }
-                      className="h-9 w-full rounded-xl border border-[#e6ebf0] px-2.5 text-xs font-semibold outline-none"
-                    />
-                  </label>
-                </div>
-              ) : null}
-            </section>
-
-            <section className="mt-4 space-y-2">
-              <h4 className="text-[12px] font-bold text-[#0b1220]">
-                Repayment position
-              </h4>
-              <div className="flex flex-wrap gap-1.5">
-                {REPAYMENT_OPTIONS.map((option) => (
-                  <FilterPill
-                    key={option.value}
-                    active={draft.repayment === option.value}
-                    label={option.label}
-                    onClick={() =>
-                      setDraft((current) => ({
-                        ...current,
-                        repayment: option.value,
-                      }))
-                    }
-                  />
-                ))}
-              </div>
-            </section>
-
-            <section className="mt-4 space-y-2">
-              <h4 className="text-[12px] font-bold text-[#0b1220]">
-                Principal amount
-              </h4>
-              <div className="flex items-center gap-2">
-                <label className="min-w-0 flex-1 space-y-1">
-                  <span className="text-[10px] font-semibold text-slate-500">
-                    Min
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    inputMode="numeric"
-                    placeholder="0"
-                    value={draft.principalMin}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        principalMin: event.target.value,
-                      }))
-                    }
-                    className="h-9 w-full rounded-xl border border-[#e6ebf0] px-2.5 text-xs font-semibold outline-none"
-                  />
-                </label>
-                <span className="mt-5 text-xs font-semibold text-slate-400">
-                  –
-                </span>
-                <label className="min-w-0 flex-1 space-y-1">
-                  <span className="text-[10px] font-semibold text-slate-500">
-                    Max
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    inputMode="numeric"
-                    placeholder="Any"
-                    value={draft.principalMax}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        principalMax: event.target.value,
-                      }))
-                    }
-                    className="h-9 w-full rounded-xl border border-[#e6ebf0] px-2.5 text-xs font-semibold outline-none"
-                  />
-                </label>
-              </div>
-            </section>
+                    <label className="min-w-0 flex-1 space-y-1">
+                      <span className="text-[10px] font-semibold text-slate-500">
+                        Max
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        inputMode="numeric"
+                        placeholder="Any"
+                        value={draft.principalMax}
+                        onChange={(event) =>
+                          setDraft((current) => ({
+                            ...current,
+                            principalMax: event.target.value,
+                          }))
+                        }
+                        className="h-9 w-full rounded-xl border border-[#e6ebf0] px-2.5 text-xs font-semibold outline-none"
+                      />
+                    </label>
+                  </div>
+                </section>
 
                 <div className="sticky bottom-0 mt-5 grid grid-cols-2 gap-2 bg-white pt-1">
                   <button

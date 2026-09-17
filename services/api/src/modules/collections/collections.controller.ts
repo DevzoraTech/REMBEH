@@ -18,6 +18,7 @@ import { PermissionsGuard } from '../../common/auth/permissions.guard';
 import { COLLECTION_PERMISSIONS } from './collections.permissions';
 import { CollectionsService } from './collections.service';
 import { RecordRepaymentDto } from './dto/record-repayment.dto';
+import { VoidRepaymentDto } from './dto/void-repayment.dto';
 import {
   LegacyLoanCorrectionDto,
   LegacyLoanDeleteDto,
@@ -198,6 +199,16 @@ export class CollectionsController {
       repaymentId,
       dto,
     );
+  }
+
+  @Post('repayments/:repaymentId/void')
+  @RequirePermissions(COLLECTION_PERMISSIONS.read)
+  voidRepayment(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('repaymentId', ParseUUIDPipe) repaymentId: string,
+    @Body() dto: VoidRepaymentDto,
+  ) {
+    return this.collectionsService.voidRepayment(user, repaymentId, dto);
   }
 
   @Get('clients/search')

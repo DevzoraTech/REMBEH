@@ -310,94 +310,94 @@ export class OperationsRepository {
   }
 
   recordExpense(input: {
-  tenantId: string;
-  branchId: string;
-  operationId: string;
-  amount: Prisma.Decimal;
-  description: string | null;
-  paidFrom: BranchOperationExpensePaidFrom;
-  agentId: string | null;
-  incurredAt: Date;
-  recordedByUserId: string;
-  operationDate: Date;
-  status: BranchOperationStatus;
-}) {
-  return this.prisma.$transaction(async (tx) => {
-    const expense = await tx.branchOperationExpense.create({
-      data: {
-        tenantId: input.tenantId,
-        branchId: input.branchId,
-        operationId: input.operationId,
-        amount: input.amount,
-        description: input.description,
-        paidFrom: input.paidFrom,
-        agentId: input.agentId,
-        incurredAt: input.incurredAt,
-        recordedByUserId: input.recordedByUserId,
-      },
-      include: {
-        recordedBy: {
-          select: {
-            id: true,
-            displayName: true,
-          },
-        },
-        approvedBy: {
-          select: {
-            id: true,
-            displayName: true,
-          },
-        },
-      },
-    });
-
-    await tx.outboxEvent.create({
-      data: {
-        tenantId: input.tenantId,
-        topic: OPERATIONS_EVENTS.expenseRecorded,
-        aggregateType: 'branch_operation_expense',
-        aggregateId: expense.id,
-        payload: {
-          expenseId: expense.id,
-          operationId: input.operationId,
+    tenantId: string;
+    branchId: string;
+    operationId: string;
+    amount: Prisma.Decimal;
+    description: string | null;
+    paidFrom: BranchOperationExpensePaidFrom;
+    agentId: string | null;
+    incurredAt: Date;
+    recordedByUserId: string;
+    operationDate: Date;
+    status: BranchOperationStatus;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const expense = await tx.branchOperationExpense.create({
+        data: {
           tenantId: input.tenantId,
           branchId: input.branchId,
-          operationDate: this.formatDateLabel(input.operationDate),
-          amount: input.amount.toString(),
-          paidFrom: input.paidFrom,
-          agentId: input.agentId,
-          recordedByUserId: input.recordedByUserId,
-          status: input.status,
-        },
-      },
-    });
-
-    await tx.auditLog.create({
-      data: {
-        tenantId: input.tenantId,
-        actorUserId: input.recordedByUserId,
-        action:
-          input.paidFrom === BranchOperationExpensePaidFrom.AGENT_FLOAT
-            ? OPERATIONS_PERMISSIONS.agentExpenseCreate
-            : OPERATIONS_PERMISSIONS.expenseCreate,
-        entityType: 'branch_operation_expense',
-        entityId: expense.id,
-        newValue: {
           operationId: input.operationId,
-          branchId: input.branchId,
-          operationDate: this.formatDateLabel(input.operationDate),
-          amount: input.amount.toString(),
+          amount: input.amount,
           description: input.description,
           paidFrom: input.paidFrom,
           agentId: input.agentId,
+          incurredAt: input.incurredAt,
           recordedByUserId: input.recordedByUserId,
         },
-      },
-    });
+        include: {
+          recordedBy: {
+            select: {
+              id: true,
+              displayName: true,
+            },
+          },
+          approvedBy: {
+            select: {
+              id: true,
+              displayName: true,
+            },
+          },
+        },
+      });
 
-    return expense;
-  });
-}
+      await tx.outboxEvent.create({
+        data: {
+          tenantId: input.tenantId,
+          topic: OPERATIONS_EVENTS.expenseRecorded,
+          aggregateType: 'branch_operation_expense',
+          aggregateId: expense.id,
+          payload: {
+            expenseId: expense.id,
+            operationId: input.operationId,
+            tenantId: input.tenantId,
+            branchId: input.branchId,
+            operationDate: this.formatDateLabel(input.operationDate),
+            amount: input.amount.toString(),
+            paidFrom: input.paidFrom,
+            agentId: input.agentId,
+            recordedByUserId: input.recordedByUserId,
+            status: input.status,
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.recordedByUserId,
+          action:
+            input.paidFrom === BranchOperationExpensePaidFrom.AGENT_FLOAT
+              ? OPERATIONS_PERMISSIONS.agentExpenseCreate
+              : OPERATIONS_PERMISSIONS.expenseCreate,
+          entityType: 'branch_operation_expense',
+          entityId: expense.id,
+          newValue: {
+            operationId: input.operationId,
+            branchId: input.branchId,
+            operationDate: this.formatDateLabel(input.operationDate),
+            amount: input.amount.toString(),
+            description: input.description,
+            paidFrom: input.paidFrom,
+            agentId: input.agentId,
+            recordedByUserId: input.recordedByUserId,
+          },
+        },
+      });
+
+      return expense;
+    });
+  }
 
   recordTopUp(input: {
     tenantId: string;
@@ -845,7 +845,9 @@ export class OperationsRepository {
             branchId: report.branchId,
             operationDate: this.formatDateLabel(report.operationDate),
             status: report.status,
-            reason: input.reason ?? 'Repayment correction refreshed expected cash and variance.',
+            reason:
+              input.reason ??
+              'Repayment correction refreshed expected cash and variance.',
           },
         },
       });
@@ -1093,60 +1095,60 @@ export class OperationsRepository {
     });
   }
 
-updateExpense(input: {
-  tenantId: string;
-  expenseId: string;
-  actorUserId: string;
-  amount?: Prisma.Decimal;
-  description?: string | null;
-}) {
-  return this.prisma.$transaction(async (tx) => {
-    const existing = await tx.branchOperationExpense.findFirst({
-      where: {
-        id: input.expenseId,
-        tenantId: input.tenantId,
-      },
-    });
-
-    if (!existing) {
-      throw new Error('Expense was not found.');
-    }
-
-    const expense = await tx.branchOperationExpense.update({
-      where: {
-        id: input.expenseId,
-      },
-      data: {
-        ...(input.amount !== undefined ? { amount: input.amount } : {}),
-        ...(input.description !== undefined
-          ? { description: input.description }
-          : {}),
-      },
-    });
-
-    await tx.auditLog.create({
-      data: {
-        tenantId: input.tenantId,
-        actorUserId: input.actorUserId,
-        action: 'operation.expense.update',
-        entityType: 'branch_operation_expense',
-        entityId: expense.id,
-        oldValue: {
-          amount: existing.amount.toString(),
-          description: existing.description,
+  updateExpense(input: {
+    tenantId: string;
+    expenseId: string;
+    actorUserId: string;
+    amount?: Prisma.Decimal;
+    description?: string | null;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.branchOperationExpense.findFirst({
+        where: {
+          id: input.expenseId,
+          tenantId: input.tenantId,
         },
-        newValue: {
-          amount: expense.amount.toString(),
-          description: expense.description,
-          paidFrom: expense.paidFrom,
-          agentId: expense.agentId,
-        },
-      },
-    });
+      });
 
-    return expense;
-  });
-}
+      if (!existing) {
+        throw new Error('Expense was not found.');
+      }
+
+      const expense = await tx.branchOperationExpense.update({
+        where: {
+          id: input.expenseId,
+        },
+        data: {
+          ...(input.amount !== undefined ? { amount: input.amount } : {}),
+          ...(input.description !== undefined
+            ? { description: input.description }
+            : {}),
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.actorUserId,
+          action: 'operation.expense.update',
+          entityType: 'branch_operation_expense',
+          entityId: expense.id,
+          oldValue: {
+            amount: existing.amount.toString(),
+            description: existing.description,
+          },
+          newValue: {
+            amount: expense.amount.toString(),
+            description: expense.description,
+            paidFrom: expense.paidFrom,
+            agentId: expense.agentId,
+          },
+        },
+      });
+
+      return expense;
+    });
+  }
 
   voidExpense(input: {
     tenantId: string;
@@ -1539,6 +1541,7 @@ updateExpense(input: {
           where: {
             tenantId: input.tenantId,
             branchId: input.branchId,
+            voidedAt: null,
             paidAt: {
               gte: input.dayStart,
               lte: input.dayEnd,
@@ -1573,8 +1576,8 @@ updateExpense(input: {
         ...loanRows.map((row) => row.officerUserId),
         ...collectionRows.map((row) => row.recordedByUserId),
         ...expenseRows.flatMap((row) =>
-          [row.agentId, row.recordedByUserId].filter(
-            (id): id is string => Boolean(id),
+          [row.agentId, row.recordedByUserId].filter((id): id is string =>
+            Boolean(id),
           ),
         ),
       ]),
@@ -1875,6 +1878,7 @@ updateExpense(input: {
       where: {
         tenantId: input.tenantId,
         branchId: input.branchId,
+        voidedAt: null,
         paidAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
@@ -2042,6 +2046,7 @@ updateExpense(input: {
       where: {
         tenantId: input.tenantId,
         branchId: input.branchId,
+        voidedAt: null,
         paidAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
@@ -2068,6 +2073,7 @@ updateExpense(input: {
         tenantId: input.tenantId,
         branchId: input.branchId,
         recordedByUserId: input.agentId,
+        voidedAt: null,
         paidAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
@@ -2097,6 +2103,7 @@ updateExpense(input: {
         recordedByUserId: {
           in: input.agentIds,
         },
+        voidedAt: null,
         paidAt: {
           gte: input.dayStart,
           lte: input.dayEnd,
@@ -2254,7 +2261,9 @@ updateExpense(input: {
     });
   }
 
-  private agentExpenseOwnerWhere(agentId: string): Prisma.BranchOperationExpenseWhereInput {
+  private agentExpenseOwnerWhere(
+    agentId: string,
+  ): Prisma.BranchOperationExpenseWhereInput {
     return {
       OR: [
         { agentId },

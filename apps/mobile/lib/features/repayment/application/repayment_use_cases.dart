@@ -110,3 +110,13 @@ class ApplyRepaymentCorrectionUseCase {
     note: note,
   );
 }
+
+class VoidRepaymentUseCase {
+  VoidRepaymentUseCase(this._repository);
+  final RepaymentRepository _repository;
+
+  Future<ClientLoanDetail> call({
+    required String repaymentId,
+    required String reason,
+  }) => _repository.voidRepayment(repaymentId: repaymentId, reason: reason);
+}

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../features/repayment/data/repayments_live_store.dart';
 import '../models/client_detail.dart';
+import '../services/api_client.dart';
+import '../services/session_store.dart';
 import '../theme.dart';
 import '../utils/friendly_errors.dart';
 import '../utils/money.dart';
@@ -103,6 +105,9 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
       return;
     }
 
+    final accountingDate = await _chooseAccountingDate();
+    if (accountingDate == null || !mounted) return;
+
     final confirmed = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -124,7 +129,7 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
         amount: _paidAmount,
         method: _method,
         note: _note.text.trim().isEmpty ? null : _note.text.trim(),
-        paidAt: _paidAt,
+        paidAt: accountingDate,
       );
       if (!mounted) return;
       Navigator.of(context).pop();
@@ -143,6 +148,111 @@ class _RecordRepaymentSheetState extends State<RecordRepaymentSheet> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<DateTime?> _chooseAccountingDate() async {
+    try {
+      final store = SessionStore();
+      final session = await store.read();
+      if (session == null || !mounted) return _paidAt;
+      final reports = await ApiClient(store).listOperationReports(
+        session: session,
+        branchId: session.branchId,
+        status: 'RETURNED_TO_MANAGER',
+      );
+      if (reports.isEmpty || !mounted) return _paidAt;
+
+      final selected = await showModalBottomSheet<String>(
+        context: context,
+        backgroundColor: Colors.white,
+        isScrollControlled: true,
+        shape: RoundedRectangleBorder(borderRadius: rembehSheetRadius()),
+        builder: (context) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(child: Container(width: 40, height: 4, color: line)),
+                const SizedBox(height: 18),
+                const Text(
+                  'Which operating day is this repayment for?',
+                  style: TextStyle(
+                    color: midnightNavy,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'A report was returned while a new day is open. Choose where this record belongs.',
+                  style: TextStyle(color: slateText),
+                ),
+                const SizedBox(height: 12),
+                ListTile(
+                  leading: const Icon(Icons.today_outlined),
+                  title: const Text("Today's open day"),
+                  subtitle: const Text('Include it in the new daily report'),
+                  onTap: () => Navigator.pop(context, 'today'),
+                ),
+                ...reports.map((report) {
+                  final date = report['operationDate']?.toString() ?? '';
+                  final number = report['reportNumber']?.toString() ?? '';
+                  return ListTile(
+                    leading: const Icon(
+                      Icons.assignment_return_outlined,
+                      color: Colors.orange,
+                    ),
+                    title: Text('Returned report · ${_reportDateLabel(date)}'),
+                    subtitle: Text(
+                      number.isEmpty
+                          ? 'Include it in the returned report'
+                          : '$number · Include it in the returned report',
+                    ),
+                    onTap: () => Navigator.pop(context, date),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
+      );
+      if (selected == null) return null;
+      if (selected == 'today') return _paidAt;
+      final parsed = DateTime.tryParse(selected);
+      if (parsed == null) return _paidAt;
+      return DateTime(
+        parsed.year,
+        parsed.month,
+        parsed.day,
+        _paidAt.hour,
+        _paidAt.minute,
+        _paidAt.second,
+      );
+    } catch (_) {
+      return _paidAt;
+    }
+  }
+
+  String _reportDateLabel(String value) {
+    final date = DateTime.tryParse(value);
+    if (date == null) return value;
+    const months = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
 
   @override

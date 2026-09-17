@@ -30,10 +30,7 @@ import { AppShell } from "../app/app-shell";
 import { Money } from "../app/money";
 import { AppBootSkeleton, SkeletonBlock } from "../app/skeleton";
 import { StepTimeline } from "../app/step-timeline";
-import {
-  OwnerHeader,
-  Tooltip,
-} from "../../app/owner/owner-header";
+import { OwnerHeader, Tooltip } from "../../app/owner/owner-header";
 import {
   buildBranchCollectionPerformance,
   type BranchCollectionPerformance,
@@ -259,66 +256,74 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
   const currency = state.workspace?.currency ?? "UGX";
   const loadGeneration = useRef(0);
 
-  const loadData = useCallback(async (opts?: { silent?: boolean }) => {
-    if (!state.session) return;
-    const generation = ++loadGeneration.current;
-    const branchId = isManager ? (state.branch?.id ?? null) : selectedBranchId;
-    // Owner-only endpoint — managers do not get operation.approve.
-    const canLoadOwnerDailyStatus =
-      state.session.permissions.includes("operation.approve");
-    const dailyStatusPath = `/operations/owner-daily-status?date=${previousDateLabel()}`;
-    const repaymentPath = "/collections/repayments?filter=thisWeek";
+  const loadData = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!state.session) return;
+      const generation = ++loadGeneration.current;
+      const branchId = isManager
+        ? (state.branch?.id ?? null)
+        : selectedBranchId;
+      // Owner-only endpoint — managers do not get operation.approve.
+      const canLoadOwnerDailyStatus =
+        state.session.permissions.includes("operation.approve");
+      const dailyStatusPath = `/operations/owner-daily-status?date=${previousDateLabel()}`;
+      const repaymentPath = "/collections/repayments?filter=thisWeek";
 
-    const cachedBranches = peekOwnerFetch<{ branches?: OwnerBranch[] }>(
-      "/branches",
-      branchId,
-    );
-    const cachedLoans = peekOwnerFetch<{ loans?: OwnerLoan[] }>(
-      "/loans",
-      branchId,
-    );
-    const cachedBorrowers = peekOwnerFetch<{ customers?: OwnerBorrower[] }>(
-      "/customers",
-      branchId,
-    );
-    const cachedRepayments = peekOwnerFetch<{ repayments?: OwnerRepayment[] }>(
-      repaymentPath,
-      branchId,
-    );
-    const cachedReports = peekOwnerFetch<{ reports?: OwnerReport[] }>(
-      "/operations/reports",
-      branchId,
-    );
-    const cachedStatuses = canLoadOwnerDailyStatus
-      ? peekOwnerFetch<{
-          statuses?: OwnerBranchDailyStatus[];
-        }>(dailyStatusPath, branchId)
-      : undefined;
+      const cachedBranches = peekOwnerFetch<{ branches?: OwnerBranch[] }>(
+        "/branches",
+        branchId,
+      );
+      const cachedLoans = peekOwnerFetch<{ loans?: OwnerLoan[] }>(
+        "/loans",
+        branchId,
+      );
+      const cachedBorrowers = peekOwnerFetch<{ customers?: OwnerBorrower[] }>(
+        "/customers",
+        branchId,
+      );
+      const cachedRepayments = peekOwnerFetch<{
+        repayments?: OwnerRepayment[];
+      }>(repaymentPath, branchId);
+      const cachedReports = peekOwnerFetch<{ reports?: OwnerReport[] }>(
+        "/operations/reports",
+        branchId,
+      );
+      const cachedStatuses = canLoadOwnerDailyStatus
+        ? peekOwnerFetch<{
+            statuses?: OwnerBranchDailyStatus[];
+          }>(dailyStatusPath, branchId)
+        : undefined;
 
-    const hasCached =
-      Boolean(cachedBranches) ||
-      Boolean(cachedLoans) ||
-      Boolean(cachedBorrowers) ||
-      Boolean(cachedRepayments);
+      const hasCached =
+        Boolean(cachedBranches) ||
+        Boolean(cachedLoans) ||
+        Boolean(cachedBorrowers) ||
+        Boolean(cachedRepayments);
 
-    if (cachedBranches) setBranches(cachedBranches.branches ?? []);
-    if (cachedLoans) setLoans(cachedLoans.loans ?? []);
-    if (cachedBorrowers) setBorrowers(cachedBorrowers.customers ?? []);
-    if (cachedRepayments) setRepayments(cachedRepayments.repayments ?? []);
-    if (cachedReports) setReports(cachedReports.reports ?? []);
-    if (cachedStatuses) setDailyStatuses(cachedStatuses.statuses ?? []);
-    if (!canLoadOwnerDailyStatus) setDailyStatuses([]);
+      if (cachedBranches) setBranches(cachedBranches.branches ?? []);
+      if (cachedLoans) setLoans(cachedLoans.loans ?? []);
+      if (cachedBorrowers) setBorrowers(cachedBorrowers.customers ?? []);
+      if (cachedRepayments) setRepayments(cachedRepayments.repayments ?? []);
+      if (cachedReports) setReports(cachedReports.reports ?? []);
+      if (cachedStatuses) setDailyStatuses(cachedStatuses.statuses ?? []);
+      if (!canLoadOwnerDailyStatus) setDailyStatuses([]);
 
-    if (!opts?.silent && !hasCached) {
-      setLoading(true);
-    } else if (!opts?.silent) {
-      setLoading(false);
-    }
-    setError(null);
+      if (!opts?.silent && !hasCached) {
+        setLoading(true);
+      } else if (!opts?.silent) {
+        setLoading(false);
+      }
+      setError(null);
 
-    const fetchOpts = { branchId };
-    const [branchResult, loanResult, borrowerResult, repaymentResult, reportResult, dailyStatusResult] =
-      await Promise.allSettled([
+      const fetchOpts = { branchId };
+      const [
+        branchResult,
+        loanResult,
+        borrowerResult,
+        repaymentResult,
+        reportResult,
+        dailyStatusResult,
+      ] = await Promise.allSettled([
         ownerFetch<{ branches?: OwnerBranch[] }>(
           state.session,
           "/branches",
@@ -349,61 +354,64 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
           : Promise.resolve({ statuses: [] as OwnerBranchDailyStatus[] }),
       ]);
 
-    if (generation !== loadGeneration.current) return;
+      if (generation !== loadGeneration.current) return;
 
-    const coreFailures: string[] = [];
-    function takeCore<T>(
-      result: PromiseSettledResult<T>,
-      label: string,
-    ): T | null {
-      if (result.status === "fulfilled") return result.value;
-      coreFailures.push(
-        result.reason instanceof Error ? result.reason.message : label,
-      );
-      return null;
-    }
+      const coreFailures: string[] = [];
+      function takeCore<T>(
+        result: PromiseSettledResult<T>,
+        label: string,
+      ): T | null {
+        if (result.status === "fulfilled") return result.value;
+        coreFailures.push(
+          result.reason instanceof Error ? result.reason.message : label,
+        );
+        return null;
+      }
 
-    const branchPayload = takeCore(branchResult, "branches");
-    const loanPayload = takeCore(loanResult, "loans");
-    const borrowerPayload = takeCore(borrowerResult, "borrowers");
-    const repaymentPayload = takeCore(repaymentResult, "collections");
-    const reportPayload =
-      reportResult.status === "fulfilled" ? reportResult.value : null;
-    const dailyStatusPayload =
-      dailyStatusResult.status === "fulfilled"
-        ? dailyStatusResult.value
-        : null;
+      const branchPayload = takeCore(branchResult, "branches");
+      const loanPayload = takeCore(loanResult, "loans");
+      const borrowerPayload = takeCore(borrowerResult, "borrowers");
+      const repaymentPayload = takeCore(repaymentResult, "collections");
+      const reportPayload =
+        reportResult.status === "fulfilled" ? reportResult.value : null;
+      const dailyStatusPayload =
+        dailyStatusResult.status === "fulfilled"
+          ? dailyStatusResult.value
+          : null;
 
-    if (branchPayload) setBranches(branchPayload.branches ?? []);
-    if (loanPayload) setLoans(loanPayload.loans ?? []);
-    if (borrowerPayload) setBorrowers(borrowerPayload.customers ?? []);
-    if (repaymentPayload) setRepayments(repaymentPayload.repayments ?? []);
-    if (reportPayload) setReports(reportPayload.reports ?? []);
-    if (dailyStatusPayload) setDailyStatuses(dailyStatusPayload.statuses ?? []);
+      if (branchPayload) setBranches(branchPayload.branches ?? []);
+      if (loanPayload) setLoans(loanPayload.loans ?? []);
+      if (borrowerPayload) setBorrowers(borrowerPayload.customers ?? []);
+      if (repaymentPayload) setRepayments(repaymentPayload.repayments ?? []);
+      if (reportPayload) setReports(reportPayload.reports ?? []);
+      if (dailyStatusPayload)
+        setDailyStatuses(dailyStatusPayload.statuses ?? []);
 
-    const nextBranches = branchPayload?.branches ?? cachedBranches?.branches ?? [];
-    if (isManager) {
-      const lockedBranchId =
-        state.branch?.id ?? nextBranches[0]?.id ?? "all";
-      setActivityBranchId(lockedBranchId);
-    }
+      const nextBranches =
+        branchPayload?.branches ?? cachedBranches?.branches ?? [];
+      if (isManager) {
+        const lockedBranchId = state.branch?.id ?? nextBranches[0]?.id ?? "all";
+        setActivityBranchId(lockedBranchId);
+      }
 
-    const loadedAny =
-      Boolean(branchPayload) ||
-      Boolean(loanPayload) ||
-      Boolean(borrowerPayload) ||
-      Boolean(repaymentPayload) ||
-      hasCached;
-    // Only surface core KPI failures — optional report/status enrichments
-    // must not paint a red banner over a working dashboard.
-    if (!loadedAny) {
-      setError(coreFailures[0] ?? "Could not load overview.");
-    } else {
-      setError(null);
-    }
+      const loadedAny =
+        Boolean(branchPayload) ||
+        Boolean(loanPayload) ||
+        Boolean(borrowerPayload) ||
+        Boolean(repaymentPayload) ||
+        hasCached;
+      // Only surface core KPI failures — optional report/status enrichments
+      // must not paint a red banner over a working dashboard.
+      if (!loadedAny) {
+        setError(coreFailures[0] ?? "Could not load overview.");
+      } else {
+        setError(null);
+      }
 
-    setLoading(false);
-  }, [isManager, selectedBranchId, state.branch, state.session]);
+      setLoading(false);
+    },
+    [isManager, selectedBranchId, state.branch, state.session],
+  );
 
   useEffect(() => {
     const boot = window.setTimeout(() => {
@@ -425,8 +433,7 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
   const scopedLoans = useMemo(
     () =>
       loans.filter(
-        (loan) =>
-          matchesScopeBranch(loan.branchId) && !loan.customerVoidedAt,
+        (loan) => matchesScopeBranch(loan.branchId) && !loan.customerVoidedAt,
       ),
     [loans, matchesScopeBranch],
   );
@@ -470,14 +477,16 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
     [scopedReports],
   );
   const reportsThisMonth = useMemo(
-    () => scopedReports.filter((report) => isSameMonth(report.operationDate, new Date())),
+    () =>
+      scopedReports.filter((report) =>
+        isSameMonth(report.operationDate, new Date()),
+      ),
     [scopedReports],
   );
   const receivedReportsThisMonth = useMemo(
     () =>
-      reportsThisMonth.filter(
-        (report) =>
-          RECEIVED_REPORT_STATUSES.has(report.status),
+      reportsThisMonth.filter((report) =>
+        RECEIVED_REPORT_STATUSES.has(report.status),
       ),
     [reportsThisMonth],
   );
@@ -486,7 +495,8 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
     [scopedRepayments],
   );
   const yesterdayRepayments = useMemo(
-    () => scopedRepayments.filter((repayment) => isYesterday(repayment.recordedAt)),
+    () =>
+      scopedRepayments.filter((repayment) => isYesterday(repayment.recordedAt)),
     [scopedRepayments],
   );
   const todayLoans = useMemo(
@@ -527,9 +537,7 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
   );
   const todayActivity = useMemo(() => {
     const inActivityScope = (branchId: string | null | undefined) =>
-      isManager ||
-      activityBranchId === "all" ||
-      branchId === activityBranchId;
+      isManager || activityBranchId === "all" || branchId === activityBranchId;
 
     return {
       loansIssued: todayLoans.filter((loan) => inActivityScope(loan.branchId)),
@@ -561,7 +569,13 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
         loanById,
         scopedDailyStatuses,
       ),
-    [loanById, scopedBranches, scopedDailyStatuses, scopedLoans, todayRepayments],
+    [
+      loanById,
+      scopedBranches,
+      scopedDailyStatuses,
+      scopedLoans,
+      todayRepayments,
+    ],
   );
   const branchAnalytics = useMemo(
     () =>
@@ -574,11 +588,13 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
     [scopedBranches, scopedDailyStatuses, scopedLoans, scopedRepayments],
   );
   const series = useMemo(
-    () => buildPortfolioSeries(scopedLoans, scopedRepayments, performancePeriod),
+    () =>
+      buildPortfolioSeries(scopedLoans, scopedRepayments, performancePeriod),
     [performancePeriod, scopedLoans, scopedRepayments],
   );
   const activities = useMemo(
-    () => buildActivities(todayRepayments, scopedLoans, scopedReports, currency),
+    () =>
+      buildActivities(todayRepayments, scopedLoans, scopedReports, currency),
     [currency, scopedLoans, scopedReports, todayRepayments],
   );
   const alerts = useMemo(
@@ -593,7 +609,16 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
         links,
         mode,
       }),
-    [activeLoans, branchAnalytics, currency, links, mode, pendingReports, scopedBranches, scopedReports],
+    [
+      activeLoans,
+      branchAnalytics,
+      currency,
+      links,
+      mode,
+      pendingReports,
+      scopedBranches,
+      scopedReports,
+    ],
   );
   const alertsHref = alerts.some((alert) => alert.id === "overdue-paid-today")
     ? `${links.loans}?coverage=overdue_paid`
@@ -613,14 +638,14 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
       ? selectedBranchName
       : "Across all branches";
   const shellBranch = isManager
-    ? state.branch ??
+    ? (state.branch ??
       (branches[0]
         ? {
             id: branches[0].id,
             name: branches[0].name,
             address: branches[0].address,
           }
-        : null)
+        : null))
     : null;
 
   return (
@@ -648,52 +673,52 @@ export function OverviewDashboard({ mode }: { mode: OverviewMode }) {
         {loading && loans.length === 0 && borrowers.length === 0 ? (
           <KpiSkeleton compact={isManager} />
         ) : (
-        <section
-          className={`grid grid-cols-1 gap-2.5 sm:grid-cols-2 ${
-            isManager ? "xl:grid-cols-4" : "xl:grid-cols-5"
-          }`}
-        >
-          <TopStatCard
-            icon={<WalletCards className="size-5" />}
-            label={isBranchScoped ? "Loan Balance" : "Total Loan Balance"}
-            value={<Money value={totalLoanBalance} currency={currency} />}
-            hint={branchScopeHint}
-            change={loanBalanceChange}
-            tone="green"
-          />
-          <TopStatCard
-            icon={<Banknote className="size-5" />}
-            label={isManager ? "Today's repayments" : "Collected Today"}
-            value={<Money value={collectedToday} currency={currency} />}
-            hint={branchScopeHint}
-            change={collectedTodayChange}
-            tone="green"
-          />
-          <TopStatCard
-            icon={<Folder className="size-5" />}
-            label="Active Loans"
-            value={formatNumber(activeLoans.length)}
-            hint={`${formatNumber(todayLoans.length)} New Today`}
-            tone="blue"
-          />
-          <TopStatCard
-            icon={<Users className="size-5" />}
-            label="Borrowers"
-            value={formatNumber(scopedBorrowers.length)}
-            hint={`${formatNumber(todayBorrowers.length)} new today`}
-            tone="violet"
-          />
-          {!isManager ? (
+          <section
+            className={`grid grid-cols-1 gap-2.5 sm:grid-cols-2 ${
+              isManager ? "xl:grid-cols-4" : "xl:grid-cols-5"
+            }`}
+          >
             <TopStatCard
-              icon={<Clock3 className="size-5" />}
-              label="Received Reports"
-              value={`${formatNumber(receivedReportsThisMonth.length)} of ${formatNumber(reportsThisMonth.length)}`}
-              hint={`${formatNumber(pendingReports.length)} pending approval`}
-              tone="gold"
-              className="sm:col-span-2 xl:col-span-1"
+              icon={<WalletCards className="size-5" />}
+              label={isBranchScoped ? "Loan Balance" : "Total Loan Balance"}
+              value={<Money value={totalLoanBalance} currency={currency} />}
+              hint={branchScopeHint}
+              change={loanBalanceChange}
+              tone="green"
             />
-          ) : null}
-        </section>
+            <TopStatCard
+              icon={<Banknote className="size-5" />}
+              label={isManager ? "Today's repayments" : "Collected Today"}
+              value={<Money value={collectedToday} currency={currency} />}
+              hint={branchScopeHint}
+              change={collectedTodayChange}
+              tone="green"
+            />
+            <TopStatCard
+              icon={<Folder className="size-5" />}
+              label="Active Loans"
+              value={formatNumber(activeLoans.length)}
+              hint={`${formatNumber(todayLoans.length)} New Today`}
+              tone="blue"
+            />
+            <TopStatCard
+              icon={<Users className="size-5" />}
+              label="Borrowers"
+              value={formatNumber(scopedBorrowers.length)}
+              hint={`${formatNumber(todayBorrowers.length)} new today`}
+              tone="violet"
+            />
+            {!isManager ? (
+              <TopStatCard
+                icon={<Clock3 className="size-5" />}
+                label="Received Reports"
+                value={`${formatNumber(receivedReportsThisMonth.length)} of ${formatNumber(reportsThisMonth.length)}`}
+                hint={`${formatNumber(pendingReports.length)} pending approval`}
+                tone="gold"
+                className="sm:col-span-2 xl:col-span-1"
+              />
+            ) : null}
+          </section>
         )}
 
         {loading && loans.length === 0 && borrowers.length === 0 ? (
@@ -837,11 +862,12 @@ function TopStatCard({
     violet: "bg-[#f2eaff] text-[#8b4ee8]",
     gold: "bg-[#fff3df] text-[#f28a17]",
   }[tone];
-  const changeClass = !change || change === "0%"
-    ? "bg-slate-100 text-slate-500"
-    : change.startsWith("-")
-      ? "bg-red-50 text-red-600"
-      : "bg-[#e6f8ee] text-[#0c9b6d]";
+  const changeClass =
+    !change || change === "0%"
+      ? "bg-slate-100 text-slate-500"
+      : change.startsWith("-")
+        ? "bg-red-50 text-red-600"
+        : "bg-[#e6f8ee] text-[#0c9b6d]";
 
   return (
     <div className={`min-w-0 ${className}`}>
@@ -1239,11 +1265,7 @@ function OverviewSidePanel({
           <div className={`min-w-0 ${listClassName}`}>{children}</div>
         ) : (
           <div className="flex flex-1 items-center justify-center">
-            <EmptyState
-              icon={emptyIcon}
-              title={emptyTitle}
-              text={emptyText}
-            />
+            <EmptyState icon={emptyIcon} title={emptyTitle} text={emptyText} />
           </div>
         )}
       </div>
@@ -1293,9 +1315,7 @@ function RecentActivityCard({
                 : item.tone === "blue"
                   ? "blue"
                   : "green",
-          icon: (
-            <ActivityIconGlyph icon={item.icon} />
-          ),
+          icon: <ActivityIconGlyph icon={item.icon} />,
           meta: item.time,
         }))}
       />
@@ -1303,13 +1323,7 @@ function RecentActivityCard({
   );
 }
 
-function AlertsCard({
-  alerts,
-  href,
-}: {
-  alerts: AlertItem[];
-  href: string;
-}) {
+function AlertsCard({ alerts, href }: { alerts: AlertItem[]; href: string }) {
   const rows = alerts.slice(0, 5);
   return (
     <OverviewSidePanel
@@ -1441,9 +1455,7 @@ function LineChart({
   const activeSeries = seriesMeta.filter((item) => visible[item.key]);
   const maxValue = Math.max(
     1,
-    ...series.flatMap((point) =>
-      activeSeries.map((item) => point[item.key]),
-    ),
+    ...series.flatMap((point) => activeSeries.map((item) => point[item.key])),
   );
 
   const pointMaps = {
@@ -1490,7 +1502,7 @@ function LineChart({
   const activeX =
     activeIndex == null
       ? null
-      : pointMaps.outstanding[activeIndex]?.x ?? null;
+      : (pointMaps.outstanding[activeIndex]?.x ?? null);
   const chartBottom = height - padding.bottom;
   const plotLeft = padding.left;
   const plotRight = width - padding.right;
@@ -1504,7 +1516,10 @@ function LineChart({
     const ratio = (x - plotLeft) / Math.max(1, plotRight - plotLeft);
     return Math.max(
       0,
-      Math.min(series.length - 1, Math.round(ratio * Math.max(0, series.length - 1))),
+      Math.min(
+        series.length - 1,
+        Math.round(ratio * Math.max(0, series.length - 1)),
+      ),
     );
   }
 
@@ -1717,17 +1732,19 @@ function LineChart({
           ) : null}
 
           {activeIndex != null
-            ? seriesMeta.filter((item) => visible[item.key]).map((item) => (
-                <circle
-                  key={item.key}
-                  cx={pointMaps[item.key][activeIndex]?.x}
-                  cy={pointMaps[item.key][activeIndex]?.y}
-                  r={item.key === "outstanding" ? 5.5 : 5}
-                  fill={item.color}
-                  stroke="#fff"
-                  strokeWidth="2.5"
-                />
-              ))
+            ? seriesMeta
+                .filter((item) => visible[item.key])
+                .map((item) => (
+                  <circle
+                    key={item.key}
+                    cx={pointMaps[item.key][activeIndex]?.x}
+                    cy={pointMaps[item.key][activeIndex]?.y}
+                    r={item.key === "outstanding" ? 5.5 : 5}
+                    fill={item.color}
+                    stroke="#fff"
+                    strokeWidth="2.5"
+                  />
+                ))
             : null}
 
           {series.map((point, index) => {
@@ -1772,22 +1789,22 @@ function LineChart({
               ) : null}
             </div>
             <div className="mt-2 space-y-1 text-[11px]">
-              {seriesMeta.filter((item) => visible[item.key]).map((item) => (
-                <HoverStat
-                  key={item.key}
-                  color={item.color}
-                  label={item.label}
-                  value={
-                    <Money value={active[item.key]} currency={currency} />
-                  }
-                  delta={
-                    previous
-                      ? active[item.key] - previous[item.key]
-                      : null
-                  }
-                  currency={currency}
-                />
-              ))}
+              {seriesMeta
+                .filter((item) => visible[item.key])
+                .map((item) => (
+                  <HoverStat
+                    key={item.key}
+                    color={item.color}
+                    label={item.label}
+                    value={
+                      <Money value={active[item.key]} currency={currency} />
+                    }
+                    delta={
+                      previous ? active[item.key] - previous[item.key] : null
+                    }
+                    currency={currency}
+                  />
+                ))}
             </div>
             <p className="mt-2 text-[10px] font-medium text-slate-400">
               Click to pin · ← → to move · Esc to clear
@@ -1962,8 +1979,7 @@ function PerformanceDonutChart({
       <div className="space-y-1">
         {items.map((item) => {
           const isHidden = Boolean(hidden[item.label]);
-          const share =
-            !isHidden && total > 0 ? (item.value / total) * 100 : 0;
+          const share = !isHidden && total > 0 ? (item.value / total) * 100 : 0;
           const focused = focusLabel === item.label;
           return (
             <div
@@ -2031,11 +2047,7 @@ function PerformanceDonutChart({
   );
 }
 
-function ActivityIconGlyph({
-  icon,
-}: {
-  icon: ActivityItem["icon"];
-}) {
+function ActivityIconGlyph({ icon }: { icon: ActivityItem["icon"] }) {
   if (icon === "check") return <CheckCircle2 />;
   if (icon === "loan") return <Folder />;
   if (icon === "report") return <FileText />;
@@ -2103,7 +2115,9 @@ function buildBranchPerformance(
       const overdue = activeBranchLoans.filter(isOverdueLoan);
       const overdueAmount = sumBy(overdue, (loan) => loan.balance);
       const collectedToday = sumBy(
-        todayRepayments.filter((repayment) => loanById.get(repayment.loanId)?.branchId === branch.id),
+        todayRepayments.filter(
+          (repayment) => loanById.get(repayment.loanId)?.branchId === branch.id,
+        ),
         (repayment) => repayment.amount,
       );
       return {
@@ -2291,7 +2305,9 @@ function buildActivities(
   const loanItems = loans.slice(0, 8).map((loan) => ({
     id: `loan-${loan.id}`,
     title: `New loan issued to ${loan.borrowerName}`,
-    meta: [loan.officerName, loan.loanTypeName].filter(Boolean).join(" · ") || "Loan issued",
+    meta:
+      [loan.officerName, loan.loanTypeName].filter(Boolean).join(" · ") ||
+      "Loan issued",
     amountValue: loan.principal,
     amountCurrency: currency,
     time: timeAgo(loan.disbursedAt ?? loan.createdAt),
@@ -2416,7 +2432,7 @@ function buildAlerts({
           title: "Repayments overdue",
           detail: `${overdueExposure.criticalCount} borrower${
             overdueExposure.criticalCount === 1 ? "" : "s"
-          } have missed repayments for more than 8 days.`,
+          } are 8 or more calendar days behind their earliest unpaid due date.`,
           time: "Today",
           tone: "red",
           href: `${links.loans}?repayment=${encodeURIComponent("8+")}`,
@@ -2428,7 +2444,7 @@ function buildAlerts({
           title: "Repayments overdue",
           detail: `${overdueExposure.highRiskCount} borrower${
             overdueExposure.highRiskCount === 1 ? "" : "s"
-          } have missed repayments for more than 4 days.`,
+          } are 4–7 calendar days behind their earliest unpaid due date.`,
           time: "Today",
           tone: "gold",
           href: `${links.loans}?repayment=${encodeURIComponent("4-7")}`,
@@ -2440,7 +2456,7 @@ function buildAlerts({
           title: "Repayments overdue",
           detail: `${overdueExposure.followUpCount} borrower${
             overdueExposure.followUpCount === 1 ? "" : "s"
-          } have missed repayments for more than 2 days.`,
+          } are 2–3 calendar days behind their earliest unpaid due date.`,
           time: "Today",
           tone: "gold",
           href: `${links.loans}?repayment=${encodeURIComponent("2-3")}`,
@@ -2511,8 +2527,9 @@ function buildAlerts({
 
   if (missingReconciliationBranches.length > 0) {
     const closeDate =
-      missingReconciliationBranches.find((branch) => branch.dailyCompliance.date)
-        ?.dailyCompliance.date ?? previousDateLabel();
+      missingReconciliationBranches.find(
+        (branch) => branch.dailyCompliance.date,
+      )?.dailyCompliance.date ?? previousDateLabel();
     const count = missingReconciliationBranches.length;
     alerts.push({
       id: "branch-missing-reconciliation",
@@ -2708,11 +2725,7 @@ function isSameDay(value: string | Date, date: Date) {
   );
 }
 
-function isBetween(
-  value: string | null | undefined,
-  start: Date,
-  end: Date,
-) {
+function isBetween(value: string | null | undefined, start: Date, end: Date) {
   if (!value) return false;
   const time = new Date(value).getTime();
   return time >= start.getTime() && time <= end.getTime();

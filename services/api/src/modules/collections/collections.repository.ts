@@ -56,6 +56,9 @@ const loanWithRelations = {
   },
 
   repayments: {
+    where: {
+      voidedAt: null,
+    },
     orderBy: {
       paidAt: 'desc' as const,
     },
@@ -555,6 +558,8 @@ export class CollectionsRepository {
       where: {
         ...this.branchScope(input),
 
+        voidedAt: null,
+
         ...(input.from || input.to
           ? {
               paidAt: {
@@ -606,6 +611,8 @@ export class CollectionsRepository {
     return this.prisma.repayment.aggregate({
       where: {
         ...this.branchScope(input),
+
+        voidedAt: null,
 
         paidAt: {
           gte: input.dayStart,
@@ -665,6 +672,8 @@ export class CollectionsRepository {
     return this.prisma.repayment.findMany({
       where: {
         ...this.branchScope(input),
+
+        voidedAt: null,
 
         paidAt: {
           gte: input.dayStart,

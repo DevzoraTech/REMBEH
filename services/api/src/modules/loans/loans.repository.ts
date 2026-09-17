@@ -91,16 +91,13 @@ const loanListInclude = {
   },
 } satisfies Prisma.LoanInclude;
 
-export type LoanListRecord =
-  Prisma.LoanGetPayload<{
-    include: typeof loanListInclude;
-  }>;
+export type LoanListRecord = Prisma.LoanGetPayload<{
+  include: typeof loanListInclude;
+}>;
 
 @Injectable()
 export class LoansRepository {
-  constructor(
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   listForScope(input: {
     tenantId: string;
@@ -325,6 +322,7 @@ export class LoansRepository {
         tenantId: input.tenantId,
         branchId: input.branchId,
         recordedByUserId: input.recordedByUserId,
+        voidedAt: null,
         paidAt: {
           gte: input.dayStart,
           lte: input.dayEnd,

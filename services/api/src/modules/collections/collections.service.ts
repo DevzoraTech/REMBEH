@@ -71,6 +71,7 @@ import {
   activeLoanStatuses,
 } from './collections.repository';
 import { RecordRepaymentDto } from './dto/record-repayment.dto';
+import { VoidRepaymentDto } from './dto/void-repayment.dto';
 import {
   LegacyLoanCorrectionDto,
   LegacyLoanDeleteDto,
@@ -209,7 +210,8 @@ export class CollectionsService {
     ).filter((item): item is DueClientContract => item != null);
 
     const sortByActivity = (a: DueClientContract, b: DueClientContract) =>
-      new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime();
+      new Date(b.lastActivityAt).getTime() -
+      new Date(a.lastActivityAt).getTime();
 
     const clientsDueTodayUnpaid = classified
       .filter(
@@ -249,9 +251,7 @@ export class CollectionsService {
     };
   }
 
-  async listDueToday(
-    user: AuthenticatedUser,
-  ): Promise<{
+  async listDueToday(user: AuthenticatedUser): Promise<{
     clients: DueClientContract[];
     unpaid: DueClientContract[];
     paid: DueClientContract[];
@@ -321,6 +321,9 @@ export class CollectionsService {
           branchId: loan.branchId,
           branchName: loan.branch?.name ?? null,
           sms: smsByRepayment.get(row.id) ?? this.emptyRepaymentSmsStatus(),
+          voidedAt: null,
+          voidedByUserId: null,
+          voidReason: null,
         } satisfies RepaymentListItemContract;
       }),
     );
@@ -864,7 +867,11 @@ export class CollectionsService {
     });
 
     await this.prisma.$transaction(async (tx) => {
-      if (applyIdentityUpdates && nextPhone && nextPhone !== loan.customer.phone) {
+      if (
+        applyIdentityUpdates &&
+        nextPhone &&
+        nextPhone !== loan.customer.phone
+      ) {
         const duplicate = await tx.customer.findFirst({
           where: {
             tenantId: loan.tenantId,
@@ -1339,6 +1346,12 @@ export class CollectionsService {
         officerCanEdit: historyItem?.officerCanEdit ?? false,
 
         correctionAppliedAt: historyItem?.correctionAppliedAt ?? null,
+
+        voidedAt: row.voidedAt?.toISOString() ?? null,
+
+        voidedByUserId: row.voidedByUserId ?? null,
+
+        voidReason: row.voidReason ?? null,
       },
     };
   }
@@ -1540,6 +1553,26 @@ export class CollectionsService {
         include: repaymentCorrectionRequestInclude,
       });
 
+      await this.prisma.auditLog.create({
+        data: {
+          tenantId: request.tenantId,
+          actorUserId: user.userId,
+          action: 'repayment.correction.rejected',
+          entityType: 'RepaymentCorrectionRequest',
+          entityId: request.id,
+          oldValue: {
+            status: request.status,
+            officerCanEdit: request.officerCanEdit,
+          },
+          newValue: {
+            status: updated.status,
+            officerCanEdit: false,
+            reviewerFeedback: updated.reviewerFeedback,
+            repaymentId: request.repaymentId,
+          },
+        },
+      });
+
       void this.notifyRepaymentCorrectionRequester(updated);
 
       return {
@@ -1719,14 +1752,13 @@ export class CollectionsService {
       include: repaymentCorrectionRequestInclude,
     });
 
-    const reportResubmitRequired = await this.returnSubmittedReportForCorrection(
-      {
+    const reportResubmitRequired =
+      await this.returnSubmittedReportForCorrection({
         report: report!,
         actorUserId: user.userId,
         notes:
           'Owner authorized a repayment correction. Apply the payment changes first, then re-check and resubmit the report.',
-      },
-    );
+      });
 
     return {
       request: await this.toRepaymentCorrectionRequestContractAsync(updated),
@@ -2532,6 +2564,25 @@ export class CollectionsService {
       throw new BadRequestException('Invalid paidAt timestamp.');
     }
 
+    const today = this.dateLabel(this.dateOnly(new Date()));
+    const paymentDay = this.dateLabel(this.dateOnly(paidAt));
+    if (paymentDay !== today) {
+      const returnedReport = await this.prisma.branchOperationReport.findFirst({
+        where: {
+          tenantId: user.tenantId,
+          branchId: loan.branchId,
+          operationDate: this.dateOnly(paidAt),
+          status: BranchOperationReportStatus.RETURNED_TO_MANAGER,
+        },
+        select: { id: true },
+      });
+      if (!returnedReport) {
+        throw new BadRequestException(
+          'Repayments can only be recorded for today or a returned report.',
+        );
+      }
+    }
+
     const { repayment, loan: updatedLoan } =
       await this.repository.recordRepayment({
         tenantId: user.tenantId,
@@ -2614,6 +2665,12 @@ export class CollectionsService {
       branchName: updatedLoan.branch?.name ?? null,
 
       sms: this.emptyRepaymentSmsStatus(),
+
+      voidedAt: null,
+
+      voidedByUserId: null,
+
+      voidReason: null,
     };
 
     this.realtime.broadcastPayment(REALTIME_EVENTS.paymentMade, {
@@ -2670,10 +2727,154 @@ export class CollectionsService {
       balance: detail.outstanding,
     });
 
+    if (paymentDay !== today) {
+      await this.operationsService.refreshDayAfterRepaymentCorrection({
+        tenantId: user.tenantId,
+        branchId: loan.branchId,
+        operationDate: paymentDay,
+        actorUserId: user.userId,
+      });
+    }
+
     return {
       repayment: item,
 
       detail,
+    };
+  }
+
+  async voidRepayment(
+    user: AuthenticatedUser,
+    repaymentId: string,
+    dto: VoidRepaymentDto,
+  ): Promise<{
+    repaymentId: string;
+    voided: true;
+    detail: ClientLoanDetailContract;
+  }> {
+    this.assertBranchAccess(user);
+
+    if (!this.canReviewRepaymentCorrections(user)) {
+      throw new ForbiddenException(
+        'Only a manager or account owner can void a repayment.',
+      );
+    }
+
+    const row = await this.repository.findRepaymentById({
+      ...this.scope(user),
+      repaymentId,
+    });
+    if (!row) throw new NotFoundException('Payment not found.');
+    if (row.voidedAt)
+      throw new BadRequestException('Payment is already voided.');
+
+    await this.assertRepaymentOpenForCorrection(row, user.userId);
+    const reason = dto.reason.trim();
+    const previousBalance = this.decimalToNumber(row.loan.balance) ?? 0;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.repayment.update({
+        where: { id: row.id },
+        data: {
+          voidedAt: new Date(),
+          voidedByUserId: user.userId,
+          voidReason: reason,
+        },
+      });
+
+      const loan = await tx.loan.findUnique({
+        where: { id: row.loanId },
+        include: {
+          application: true,
+          wallet: true,
+          repayments: {
+            where: { voidedAt: null },
+            orderBy: [{ paidAt: 'asc' }, { createdAt: 'asc' }],
+          },
+        },
+      });
+      if (!loan) throw new NotFoundException('Loan not found.');
+
+      const rebuild = this.rebuildLoanRepaymentState(loan);
+      await Promise.all(
+        rebuild.allocations.map((allocation) =>
+          tx.repayment.update({
+            where: { id: allocation.repaymentId },
+            data: {
+              principalAllocated: new Prisma.Decimal(
+                allocation.principalAllocated.toFixed(2),
+              ),
+              interestAllocated: new Prisma.Decimal(
+                allocation.interestAllocated.toFixed(2),
+              ),
+              feesAllocated: new Prisma.Decimal(
+                allocation.feesAllocated.toFixed(2),
+              ),
+            },
+          }),
+        ),
+      );
+      await tx.loan.update({
+        where: { id: row.loanId },
+        data: {
+          balance: new Prisma.Decimal(rebuild.nextBalance.toFixed(2)),
+          status: rebuild.nextStatus,
+        },
+      });
+      await tx.repaymentCorrectionRequest.updateMany({
+        where: {
+          repaymentId: row.id,
+          status: RepaymentCorrectionRequestStatus.PENDING,
+        },
+        data: {
+          status: RepaymentCorrectionRequestStatus.CANCELLED,
+          reviewedByUserId: user.userId,
+          reviewedAt: new Date(),
+          reviewerFeedback: 'Payment was voided.',
+          officerCanEdit: false,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          tenantId: row.tenantId,
+          actorUserId: user.userId,
+          action: 'repayment.voided',
+          entityType: 'Repayment',
+          entityId: row.id,
+          oldValue: {
+            amount: this.decimalToNumber(row.amount) ?? 0,
+            loanBalance: previousBalance,
+            loanStatus: row.loan.status,
+          },
+          newValue: {
+            voided: true,
+            reason,
+            loanBalance: rebuild.nextBalance,
+            loanStatus: rebuild.nextStatus,
+          },
+        },
+      });
+    });
+
+    try {
+      await this.operationsService.refreshDayAfterRepaymentCorrection({
+        tenantId: row.tenantId,
+        branchId: row.branchId,
+        operationDate: this.dateLabel(row.paidAt),
+        actorUserId: user.userId,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to refresh operations day after voiding repayment ${row.id}: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+    }
+
+    return {
+      repaymentId: row.id,
+      voided: true,
+      detail: (await this.getLoanDetail(user, row.loanId)).detail,
     };
   }
 
@@ -3530,9 +3731,7 @@ export class CollectionsService {
       select: { id: true, phone: true, displayName: true },
     });
 
-    const borrowerBit = input.borrowerName
-      ? ` for ${input.borrowerName}`
-      : '';
+    const borrowerBit = input.borrowerName ? ` for ${input.borrowerName}` : '';
     const body = `Report ${input.reportNumber} (${input.operationDate}) needs your permission to roll back so a repayment correction${borrowerBit} can proceed. Open Corrections to authorize.`;
 
     await Promise.allSettled(
@@ -3558,8 +3757,7 @@ export class CollectionsService {
             body: `REMBEH: ${body}`,
             purpose: 'report_rollback_permission',
             triggerSource: 'report_rollback_request',
-            triggerReferenceId:
-              input.correctionRequestId ?? input.reportId,
+            triggerReferenceId: input.correctionRequestId ?? input.reportId,
             requestedByUserId: input.requestedByUserId,
             idempotencyKey: `report-rollback-${input.correctionRequestId ?? input.reportId}-${owner.id}`,
           });
@@ -4480,6 +4678,12 @@ export class CollectionsService {
         approvedRequestedMethod: approvedCorrection?.requestedMethod ?? null,
 
         approvedRequestedNote: approvedCorrection?.requestedNote ?? null,
+
+        voidedAt: row.voidedAt?.toISOString() ?? null,
+
+        voidedByUserId: row.voidedByUserId ?? null,
+
+        voidReason: row.voidReason ?? null,
       };
     });
 
@@ -4638,7 +4842,10 @@ export class CollectionsService {
 
     const paidTodayAmount = this.roundMoney(
       (loan.repayments ?? []).reduce((sum, row) => {
-        if (!(row.paidAt instanceof Date) || Number.isNaN(row.paidAt.getTime())) {
+        if (
+          !(row.paidAt instanceof Date) ||
+          Number.isNaN(row.paidAt.getTime())
+        ) {
           return sum;
         }
         if (!this.sameDay(row.paidAt, asOf)) {

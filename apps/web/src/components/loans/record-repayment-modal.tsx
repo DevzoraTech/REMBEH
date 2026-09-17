@@ -32,6 +32,12 @@ type LoanCollectionDetail = {
   loanStartDate: string;
 };
 
+type ReturnedReportOption = {
+  id: string;
+  reportNumber?: string | null;
+  operationDate: string;
+};
+
 const METHODS = [
   { value: "CASH", label: "Cash" },
   { value: "MOBILE_MONEY", label: "Mobile money" },
@@ -58,6 +64,10 @@ export function RecordRepaymentModal({
   const [paidAt, setPaidAt] = useState(() => toDateInputValue(new Date()));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [returnedReports, setReturnedReports] = useState<
+    ReturnedReportOption[]
+  >([]);
+  const [targetDay, setTargetDay] = useState("today");
 
   useEffect(() => {
     if (!open || !loan) return;
@@ -70,17 +80,18 @@ export function RecordRepaymentModal({
     setDetail(null);
     setLoadingDetail(true);
     setAmount("");
+    setReturnedReports([]);
+    setTargetDay("today");
 
     void (async () => {
       try {
-        const response = await fetch(
-          `${apiBaseUrl}/collections/loans/${loan.id}`,
-          {
-            headers: {
-              Authorization: `${tokenType} ${accessToken}`,
-            },
-          },
-        );
+        const headers = { Authorization: `${tokenType} ${accessToken}` };
+        const [response, reportsResponse] = await Promise.all([
+          fetch(`${apiBaseUrl}/collections/loans/${loan.id}`, { headers }),
+          fetch(`${apiBaseUrl}/operations/reports?status=RETURNED_TO_MANAGER`, {
+            headers,
+          }),
+        ]);
         const payload = await readApiJson<{
           detail?: LoanCollectionDetail;
           message?: string | string[];
@@ -93,6 +104,12 @@ export function RecordRepaymentModal({
         }
         const next = payload.detail ?? null;
         setDetail(next);
+        if (reportsResponse.ok) {
+          const reportsPayload = await readApiJson<{
+            reports?: ReturnedReportOption[];
+          }>(reportsResponse);
+          setReturnedReports(reportsPayload.reports ?? []);
+        }
       } catch (caught) {
         if (!cancelled) {
           setError(
@@ -152,7 +169,9 @@ export function RecordRepaymentModal({
           amount: paidAmount,
           method,
           note: note.trim() || undefined,
-          paidAt: paidAtToIso(paidAt),
+          paidAt: paidAtToIso(
+            targetDay === "today" ? paidAt : targetDay.slice(0, 10),
+          ),
         }),
       });
       const payload = await readApiJson<{ message?: string | string[] }>(
@@ -272,6 +291,31 @@ export function RecordRepaymentModal({
             <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {error}
             </p>
+          ) : null}
+
+          {returnedReports.length > 0 ? (
+            <label className="block space-y-1.5">
+              <span className="text-[12px] font-semibold text-[#0b1220]">
+                Operating day
+              </span>
+              <select
+                value={targetDay}
+                onChange={(event) => setTargetDay(event.target.value)}
+                className="h-11 w-full rounded-xl border border-[#dce3e8] bg-white px-3 text-sm font-semibold text-[#0b1220] outline-none focus:border-[#07885f]"
+              >
+                <option value="today">Today&apos;s open day</option>
+                {returnedReports.map((report) => (
+                  <option key={report.id} value={report.operationDate}>
+                    Returned report · {formatShortDate(report.operationDate)}
+                    {report.reportNumber ? ` · ${report.reportNumber}` : ""}
+                  </option>
+                ))}
+              </select>
+              <span className="text-[11px] text-slate-500">
+                Choose whether this repayment belongs to the returned report or
+                the new day.
+              </span>
+            </label>
           ) : null}
 
           <label className="block space-y-1.5">

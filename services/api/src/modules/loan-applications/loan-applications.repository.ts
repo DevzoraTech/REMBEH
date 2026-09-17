@@ -139,10 +139,7 @@ export class LoanApplicationsRepository {
     });
   }
 
-  countActiveLoansForCustomer(input: {
-    tenantId: string;
-    customerId: string;
-  }) {
+  countActiveLoansForCustomer(input: { tenantId: string; customerId: string }) {
     return this.prisma.loan.count({
       where: {
         tenantId: input.tenantId,
@@ -374,6 +371,7 @@ export class LoanApplicationsRepository {
         tenantId: input.tenantId,
         branchId: input.branchId,
         recordedByUserId: input.officerUserId,
+        voidedAt: null,
         paidAt: {
           gte: input.dayStart,
           lte: input.dayEnd,

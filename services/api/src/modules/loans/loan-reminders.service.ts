@@ -46,10 +46,7 @@ import {
 
 import { LOAN_PERMISSIONS } from './loans.permissions';
 
-import {
-  LoanListRecord,
-  LoansRepository,
-} from './loans.repository';
+import { LoanListRecord, LoansRepository } from './loans.repository';
 
 const PURPOSE = 'loan_reminder';
 
@@ -60,10 +57,7 @@ const CLOSED_STATUSES = new Set<string>([
 
 @Injectable()
 export class LoanRemindersService {
-  private readonly logger =
-    new Logger(
-      LoanRemindersService.name,
-    );
+  private readonly logger = new Logger(LoanRemindersService.name);
 
   private draining = false;
 
@@ -90,129 +84,97 @@ export class LoanRemindersService {
   ): Promise<LoanReminderEnqueueResponseContract> {
     this.assertCanSend(user);
 
-    const branchId =
-      this.requireBranchId(user);
+    const branchId = this.requireBranchId(user);
 
-    const loan =
-      await this.prisma.loan.findFirst({
-        where: {
-          id: loanId,
+    const loan = await this.prisma.loan.findFirst({
+      where: {
+        id: loanId,
 
-          tenantId:
-            user.tenantId!,
+        tenantId: user.tenantId!,
 
-          branchId,
-        },
+        branchId,
+      },
 
-        include: {
-          customer: {
-            select: {
-              fullName: true,
-              phone: true,
-            },
-          },
-
-          branch: {
-            select: {
-              name: true,
-            },
-          },
-
-          application: {
-            select: {
-              durationDays: true,
-
-              repaymentFrequency:
-                true,
-
-              paymentStartDate:
-                true,
-
-              processingFee:
-                true,
-
-              interestRatePercent:
-                true,
-            },
-          },
-
-          wallet: {
-            select: {
-              openingBalance:
-                true,
-
-              finesTotal:
-                true,
-            },
-          },
-
-          repayments: {
-            select: {
-              amount: true,
-            },
+      include: {
+        customer: {
+          select: {
+            fullName: true,
+            phone: true,
           },
         },
-      });
+
+        branch: {
+          select: {
+            name: true,
+          },
+        },
+
+        application: {
+          select: {
+            durationDays: true,
+
+            repaymentFrequency: true,
+
+            paymentStartDate: true,
+
+            processingFee: true,
+
+            interestRatePercent: true,
+          },
+        },
+
+        wallet: {
+          select: {
+            openingBalance: true,
+
+            finesTotal: true,
+          },
+        },
+
+        repayments: {
+          select: {
+            amount: true,
+          },
+        },
+      },
+    });
 
     if (!loan) {
-      throw new NotFoundException(
-        'Loan was not found.',
-      );
+      throw new NotFoundException('Loan was not found.');
     }
 
-    if (
-      CLOSED_STATUSES.has(
-        loan.status,
-      ) ||
-      Number(
-        loan.balance,
-      ) <= 0
-    ) {
+    if (CLOSED_STATUSES.has(loan.status) || Number(loan.balance) <= 0) {
       throw new BadRequestException(
         'Reminders can only be sent for open loans with a balance.',
       );
     }
 
-    const phone =
-      loan.customer.phone?.trim() ??
-      '';
+    const phone = loan.customer.phone?.trim() ?? '';
 
-    const resend =
-      Boolean(
-        options?.resend,
-      );
+    const resend = Boolean(options?.resend);
 
-    const day =
-      this.kampalaDateLabel();
+    const day = this.kampalaDateLabel();
 
-    const idempotencyKey =
-      await this.resolveReminderIdempotencyKey({
-        loanId:
-          loan.id,
+    const idempotencyKey = await this.resolveReminderIdempotencyKey({
+      loanId: loan.id,
 
-        day,
+      day,
 
-        resend,
-      });
+      resend,
+    });
 
     if (!resend) {
-      const existingOpen =
-        await this.prisma.loanReminderItem.findFirst({
-          where: {
-            tenantId:
-              user.tenantId!,
+      const existingOpen = await this.prisma.loanReminderItem.findFirst({
+        where: {
+          tenantId: user.tenantId!,
 
-            loanId:
-              loan.id,
+          loanId: loan.id,
 
-            status: {
-              in: [
-                LoanReminderItemStatus.QUEUED,
-                LoanReminderItemStatus.SENDING,
-              ],
-            },
+          status: {
+            in: [LoanReminderItemStatus.QUEUED, LoanReminderItemStatus.SENDING],
           },
-        });
+        },
+      });
 
       if (existingOpen) {
         throw new BadRequestException(
@@ -220,158 +182,103 @@ export class LoanRemindersService {
         );
       }
 
-      const alreadySent =
-        await this.findSuccessfulReminderToday(
-          loan.id,
-          day,
-        );
+      const alreadySent = await this.findSuccessfulReminderToday(loan.id, day);
 
       if (alreadySent) {
-        const batch =
-          await this.createBatch({
-            tenantId:
-              user.tenantId!,
+        const batch = await this.createBatch({
+          tenantId: user.tenantId!,
 
-            branchId,
+          branchId,
 
-            filter:
-              'single',
+          filter: 'single',
 
-            createdByUserId:
-              user.userId,
+          createdByUserId: user.userId,
 
-            items: [
-              {
-                loanId:
-                  loan.id,
+          items: [
+            {
+              loanId: loan.id,
 
-                idempotencyKey:
-                  `${idempotencyKey}_dup_${randomUUID()}`,
+              idempotencyKey: `${idempotencyKey}_dup_${randomUUID()}`,
 
-                status:
-                  LoanReminderItemStatus.SKIPPED_ALREADY_SENT,
+              status: LoanReminderItemStatus.SKIPPED_ALREADY_SENT,
 
-                failureReason:
-                  'already_sent_today',
+              failureReason: 'already_sent_today',
 
-                smsMessageId:
-                  alreadySent.id,
+              smsMessageId: alreadySent.id,
 
-                sentAt:
-                  alreadySent.sentAt,
-              },
-            ],
-          });
+              sentAt: alreadySent.sentAt,
+            },
+          ],
+        });
 
-        await this.refreshBatchCounts(
-          batch.id,
-        );
+        await this.refreshBatchCounts(batch.id);
 
         return {
-          batch:
-            await this.toBatchContract(
-              batch.id,
-            ),
+          batch: await this.toBatchContract(batch.id),
 
-          reminder:
-            await this.summarizeLoan(
-              user.tenantId!,
-              loan.id,
-            ),
+          reminder: await this.summarizeLoan(user.tenantId!, loan.id),
         };
       }
     }
 
     if (!phone) {
-      const batch =
-        await this.createBatch({
-          tenantId:
-            user.tenantId!,
-
-          branchId,
-
-          filter:
-            'single',
-
-          createdByUserId:
-            user.userId,
-
-          items: [
-            {
-              loanId:
-                loan.id,
-
-              idempotencyKey:
-                `${idempotencyKey}_nophone_${randomUUID()}`,
-
-              status:
-                LoanReminderItemStatus.SKIPPED_NO_PHONE,
-
-              failureReason:
-                'no_phone',
-            },
-          ],
-        });
-
-      await this.refreshBatchCounts(
-        batch.id,
-      );
-
-      return {
-        batch:
-          await this.toBatchContract(
-            batch.id,
-          ),
-
-        reminder:
-          await this.summarizeLoan(
-            user.tenantId!,
-            loan.id,
-          ),
-      };
-    }
-
-    const batch =
-      await this.createBatch({
-        tenantId:
-          user.tenantId!,
+      const batch = await this.createBatch({
+        tenantId: user.tenantId!,
 
         branchId,
 
-        filter:
-          'single',
+        filter: 'single',
 
-        createdByUserId:
-          user.userId,
+        createdByUserId: user.userId,
 
         items: [
           {
-            loanId:
-              loan.id,
+            loanId: loan.id,
 
-            idempotencyKey,
+            idempotencyKey: `${idempotencyKey}_nophone_${randomUUID()}`,
 
-            status:
-              LoanReminderItemStatus.QUEUED,
+            status: LoanReminderItemStatus.SKIPPED_NO_PHONE,
+
+            failureReason: 'no_phone',
           },
         ],
       });
 
-    await this.processBatchUntilIdle(
-      batch.id,
-    );
+      await this.refreshBatchCounts(batch.id);
+
+      return {
+        batch: await this.toBatchContract(batch.id),
+
+        reminder: await this.summarizeLoan(user.tenantId!, loan.id),
+      };
+    }
+
+    const batch = await this.createBatch({
+      tenantId: user.tenantId!,
+
+      branchId,
+
+      filter: 'single',
+
+      createdByUserId: user.userId,
+
+      items: [
+        {
+          loanId: loan.id,
+
+          idempotencyKey,
+
+          status: LoanReminderItemStatus.QUEUED,
+        },
+      ],
+    });
+
+    await this.processBatchUntilIdle(batch.id);
 
     return {
-      batch:
-        await this.toBatchContract(
-          batch.id,
-        ),
+      batch: await this.toBatchContract(batch.id),
 
-      reminder:
-        await this.summarizeLoan(
-          user.tenantId!,
-          loan.id,
-        ),
+      reminder: await this.summarizeLoan(user.tenantId!, loan.id),
     };
   }
 
@@ -381,32 +288,26 @@ export class LoanRemindersService {
 
   async enqueueBulk(
     user: AuthenticatedUser,
-    filter: Exclude<
-      LoanReminderFilter,
-      'single'
-    >,
+    filter: Exclude<LoanReminderFilter, 'single'>,
   ): Promise<LoanReminderBatchContract> {
     this.assertCanSend(user);
 
-    const branchId =
-      this.requireBranchId(user);
+    const branchId = this.requireBranchId(user);
 
-    const activeBatch =
-      await this.prisma.loanReminderBatch.findFirst({
-        where: {
-          tenantId:
-            user.tenantId!,
+    const activeBatch = await this.prisma.loanReminderBatch.findFirst({
+      where: {
+        tenantId: user.tenantId!,
 
-          branchId,
+        branchId,
 
-          status: {
-            in: [
-              LoanReminderBatchStatus.QUEUED,
-              LoanReminderBatchStatus.PROCESSING,
-            ],
-          },
+        status: {
+          in: [
+            LoanReminderBatchStatus.QUEUED,
+            LoanReminderBatchStatus.PROCESSING,
+          ],
         },
-      });
+      },
+    });
 
     if (activeBatch) {
       throw new BadRequestException(
@@ -414,33 +315,21 @@ export class LoanRemindersService {
       );
     }
 
-    const loans =
-      await this.loansRepository.listForScope({
-        tenantId:
-          user.tenantId!,
+    const loans = await this.loansRepository.listForScope({
+      tenantId: user.tenantId!,
 
-        branchId,
-      });
+      branchId,
+    });
 
-    const matching =
-      loans.filter(
-        (loan) =>
-          this.loanMatchesFilter(
-            loan,
-            filter,
-          ),
-      );
+    const matching = loans.filter((loan) =>
+      this.loanMatchesFilter(loan, filter),
+    );
 
-    if (
-      matching.length === 0
-    ) {
-      throw new BadRequestException(
-        'No loans matched that reminder filter.',
-      );
+    if (matching.length === 0) {
+      throw new BadRequestException('No loans matched that reminder filter.');
     }
 
-    const day =
-      this.kampalaDateLabel();
+    const day = this.kampalaDateLabel();
 
     const items: Array<{
       loanId: string;
@@ -451,105 +340,75 @@ export class LoanRemindersService {
       sentAt?: Date | null;
     }> = [];
 
-    for (
-      const loan of matching
-    ) {
-      const phone =
-        loan.customer.phone?.trim() ??
-        '';
+    for (const loan of matching) {
+      const phone = loan.customer.phone?.trim() ?? '';
 
       if (!phone) {
         items.push({
-          loanId:
-            loan.id,
+          loanId: loan.id,
 
-          idempotencyKey:
-            `loan_reminder_${loan.id}_${day}_nophone_${randomUUID()}`,
+          idempotencyKey: `loan_reminder_${loan.id}_${day}_nophone_${randomUUID()}`,
 
-          status:
-            LoanReminderItemStatus.SKIPPED_NO_PHONE,
+          status: LoanReminderItemStatus.SKIPPED_NO_PHONE,
 
-          failureReason:
-            'no_phone',
+          failureReason: 'no_phone',
         });
 
         continue;
       }
 
-      const alreadySent =
-        await this.findSuccessfulReminderToday(
-          loan.id,
-          day,
-        );
+      const alreadySent = await this.findSuccessfulReminderToday(loan.id, day);
 
       if (alreadySent) {
         items.push({
-          loanId:
-            loan.id,
+          loanId: loan.id,
 
-          idempotencyKey:
-            `loan_reminder_${loan.id}_${day}_dup_${randomUUID()}`,
+          idempotencyKey: `loan_reminder_${loan.id}_${day}_dup_${randomUUID()}`,
 
-          status:
-            LoanReminderItemStatus.SKIPPED_ALREADY_SENT,
+          status: LoanReminderItemStatus.SKIPPED_ALREADY_SENT,
 
-          failureReason:
-            'already_sent_today',
+          failureReason: 'already_sent_today',
 
-          smsMessageId:
-            alreadySent.id,
+          smsMessageId: alreadySent.id,
 
-          sentAt:
-            alreadySent.sentAt,
+          sentAt: alreadySent.sentAt,
         });
 
         continue;
       }
 
       items.push({
-        loanId:
-          loan.id,
+        loanId: loan.id,
 
-        idempotencyKey:
-          await this.resolveReminderIdempotencyKey({
-            loanId:
-              loan.id,
+        idempotencyKey: await this.resolveReminderIdempotencyKey({
+          loanId: loan.id,
 
-            day,
+          day,
 
-            resend:
-              false,
-          }),
+          resend: false,
+        }),
 
-        status:
-          LoanReminderItemStatus.QUEUED,
+        status: LoanReminderItemStatus.QUEUED,
       });
     }
 
-    const batch =
-      await this.createBatch({
-        tenantId:
-          user.tenantId!,
+    const batch = await this.createBatch({
+      tenantId: user.tenantId!,
 
-        branchId,
+      branchId,
 
-        filter,
+      filter,
 
-        createdByUserId:
-          user.userId,
+      createdByUserId: user.userId,
 
-        items,
-      });
+      items,
+    });
 
-    await this.refreshBatchCounts(
-      batch.id,
-    );
+    await this.refreshBatchCounts(batch.id);
 
     this.kickDrain();
 
-    return this.toBatchContract(
-      batch.id,
-    );
+    return this.toBatchContract(batch.id);
   }
 
   // ===========================================================================
@@ -562,37 +421,25 @@ export class LoanRemindersService {
   ): Promise<LoanReminderBatchContract> {
     this.assertCanRead(user);
 
-    const batch =
-      await this.prisma.loanReminderBatch.findFirst({
-        where: {
-          id:
-            batchId,
+    const batch = await this.prisma.loanReminderBatch.findFirst({
+      where: {
+        id: batchId,
 
-          tenantId:
-            user.tenantId!,
+        tenantId: user.tenantId!,
 
-          ...(user.permissions.includes(
-            BRANCH_PERMISSIONS.create,
-          )
-            ? {}
-            : {
-                branchId:
-                  this.requireBranchId(
-                    user,
-                  ),
-              }),
-        },
-      });
+        ...(user.permissions.includes(BRANCH_PERMISSIONS.create)
+          ? {}
+          : {
+              branchId: this.requireBranchId(user),
+            }),
+      },
+    });
 
     if (!batch) {
-      throw new NotFoundException(
-        'Reminder batch was not found.',
-      );
+      throw new NotFoundException('Reminder batch was not found.');
     }
 
-    return this.toBatchContract(
-      batch.id,
-    );
+    return this.toBatchContract(batch.id);
   }
 
   // ===========================================================================
@@ -602,323 +449,201 @@ export class LoanRemindersService {
   async summarizeLoans(
     tenantId: string,
     loanIds: string[],
-  ): Promise<
-    Map<
-      string,
-      LoanReminderSummaryContract
-    >
-  > {
-    const map =
-      new Map<
-        string,
-        LoanReminderSummaryContract
-      >();
+  ): Promise<Map<string, LoanReminderSummaryContract>> {
+    const map = new Map<string, LoanReminderSummaryContract>();
 
-    if (
-      loanIds.length === 0
-    ) {
+    if (loanIds.length === 0) {
       return map;
     }
 
-    const [
-      openItems,
-      sentMessages,
-      failedItems,
-    ] =
-      await Promise.all([
-        this.prisma.loanReminderItem.findMany({
-          where: {
-            tenantId,
+    const [openItems, sentMessages, failedItems] = await Promise.all([
+      this.prisma.loanReminderItem.findMany({
+        where: {
+          tenantId,
 
-            loanId: {
-              in:
-                loanIds,
-            },
-
-            status: {
-              in: [
-                LoanReminderItemStatus.QUEUED,
-                LoanReminderItemStatus.SENDING,
-              ],
-            },
+          loanId: {
+            in: loanIds,
           },
 
-          orderBy: {
-            createdAt:
-              'desc',
+          status: {
+            in: [LoanReminderItemStatus.QUEUED, LoanReminderItemStatus.SENDING],
+          },
+        },
+
+        orderBy: {
+          createdAt: 'desc',
+        },
+
+        select: {
+          loanId: true,
+
+          status: true,
+
+          batchId: true,
+
+          failureReason: true,
+        },
+      }),
+
+      this.prisma.smsMessage.findMany({
+        where: {
+          tenantId,
+
+          messageType: PURPOSE,
+
+          triggerReferenceId: {
+            in: loanIds,
           },
 
-          select: {
-            loanId:
-              true,
-
-            status:
-              true,
-
-            batchId:
-              true,
-
-            failureReason:
-              true,
+          status: {
+            in: [SmsMessageStatus.PROVIDER_ACCEPTED, SmsMessageStatus.SENT],
           },
-        }),
+        },
 
-        this.prisma.smsMessage.findMany({
-          where: {
-            tenantId,
+        orderBy: {
+          createdAt: 'desc',
+        },
 
-            messageType:
-              PURPOSE,
+        select: {
+          triggerReferenceId: true,
 
-            triggerReferenceId: {
-              in:
-                loanIds,
-            },
+          sentAt: true,
 
-            status: {
-              in: [
-                SmsMessageStatus.PROVIDER_ACCEPTED,
-                SmsMessageStatus.SENT,
-              ],
-            },
+          createdAt: true,
+        },
+      }),
+
+      this.prisma.loanReminderItem.findMany({
+        where: {
+          tenantId,
+
+          loanId: {
+            in: loanIds,
           },
 
-          orderBy: {
-            createdAt:
-              'desc',
+          status: {
+            in: [
+              LoanReminderItemStatus.FAILED,
+              LoanReminderItemStatus.SKIPPED_NO_CREDIT,
+              LoanReminderItemStatus.SKIPPED_NO_PHONE,
+            ],
           },
+        },
 
-          select: {
-            triggerReferenceId:
-              true,
+        orderBy: {
+          createdAt: 'desc',
+        },
 
-            sentAt:
-              true,
+        select: {
+          loanId: true,
 
-            createdAt:
-              true,
-          },
-        }),
+          status: true,
 
-        this.prisma.loanReminderItem.findMany({
-          where: {
-            tenantId,
+          failureReason: true,
+        },
+      }),
+    ]);
 
-            loanId: {
-              in:
-                loanIds,
-            },
+    const openByLoan = new Map<string, (typeof openItems)[number]>();
 
-            status: {
-              in: [
-                LoanReminderItemStatus.FAILED,
-                LoanReminderItemStatus.SKIPPED_NO_CREDIT,
-                LoanReminderItemStatus.SKIPPED_NO_PHONE,
-              ],
-            },
-          },
-
-          orderBy: {
-            createdAt:
-              'desc',
-          },
-
-          select: {
-            loanId:
-              true,
-
-            status:
-              true,
-
-            failureReason:
-              true,
-          },
-        }),
-      ]);
-
-    const openByLoan =
-      new Map<
-        string,
-        (typeof openItems)[number]
-      >();
-
-    for (
-      const item of openItems
-    ) {
-      if (
-        !openByLoan.has(
-          item.loanId,
-        )
-      ) {
-        openByLoan.set(
-          item.loanId,
-          item,
-        );
+    for (const item of openItems) {
+      if (!openByLoan.has(item.loanId)) {
+        openByLoan.set(item.loanId, item);
       }
     }
 
-    const sentByLoan =
-      new Map<
-        string,
-        (typeof sentMessages)[number]
-      >();
+    const sentByLoan = new Map<string, (typeof sentMessages)[number]>();
 
-    for (
-      const message of sentMessages
-    ) {
-      const loanId =
-        message.triggerReferenceId;
+    for (const message of sentMessages) {
+      const loanId = message.triggerReferenceId;
 
-      if (
-        loanId &&
-        !sentByLoan.has(
-          loanId,
-        )
-      ) {
-        sentByLoan.set(
-          loanId,
-          message,
-        );
+      if (loanId && !sentByLoan.has(loanId)) {
+        sentByLoan.set(loanId, message);
       }
     }
 
-    const failedByLoan =
-      new Map<
-        string,
-        (typeof failedItems)[number]
-      >();
+    const failedByLoan = new Map<string, (typeof failedItems)[number]>();
 
-    for (
-      const item of failedItems
-    ) {
-      if (
-        !failedByLoan.has(
-          item.loanId,
-        )
-      ) {
-        failedByLoan.set(
-          item.loanId,
-          item,
-        );
+    for (const item of failedItems) {
+      if (!failedByLoan.has(item.loanId)) {
+        failedByLoan.set(item.loanId, item);
       }
     }
 
-    for (
-      const loanId of loanIds
-    ) {
-      const open =
-        openByLoan.get(
-          loanId,
-        );
+    for (const loanId of loanIds) {
+      const open = openByLoan.get(loanId);
 
-      const sent =
-        sentByLoan.get(
-          loanId,
-        );
+      const sent = sentByLoan.get(loanId);
 
-      const failed =
-        failedByLoan.get(
-          loanId,
-        );
+      const failed = failedByLoan.get(loanId);
 
       if (open) {
-        map.set(
-          loanId,
-          {
-            status:
-              open.status ===
-              LoanReminderItemStatus.SENDING
-                ? 'sending'
-                : 'queued',
+        map.set(loanId, {
+          status:
+            open.status === LoanReminderItemStatus.SENDING
+              ? 'sending'
+              : 'queued',
 
-            lastSentAt:
-              sent?.sentAt?.toISOString() ??
-              sent?.createdAt.toISOString() ??
-              null,
+          lastSentAt:
+            sent?.sentAt?.toISOString() ??
+            sent?.createdAt.toISOString() ??
+            null,
 
-            lastFailureReason:
-              null,
+          lastFailureReason: null,
 
-            canResend:
-              false,
+          canResend: false,
 
-            activeBatchId:
-              open.batchId,
-          },
-        );
+          activeBatchId: open.batchId,
+        });
 
         continue;
       }
 
       if (sent) {
-        map.set(
-          loanId,
-          {
-            status:
-              'sent',
+        map.set(loanId, {
+          status: 'sent',
 
-            lastSentAt:
-              sent.sentAt?.toISOString() ??
-              sent.createdAt.toISOString(),
+          lastSentAt:
+            sent.sentAt?.toISOString() ?? sent.createdAt.toISOString(),
 
-            lastFailureReason:
-              null,
+          lastFailureReason: null,
 
-            canResend:
-              true,
+          canResend: true,
 
-            activeBatchId:
-              null,
-          },
-        );
+          activeBatchId: null,
+        });
 
         continue;
       }
 
       if (failed) {
-        map.set(
-          loanId,
-          {
-            status:
-              'failed',
+        map.set(loanId, {
+          status: 'failed',
 
-            lastSentAt:
-              null,
+          lastSentAt: null,
 
-            lastFailureReason:
-              failed.failureReason ??
-              failed.status.toLowerCase(),
+          lastFailureReason:
+            failed.failureReason ?? failed.status.toLowerCase(),
 
-            canResend:
-              true,
+          canResend: true,
 
-            activeBatchId:
-              null,
-          },
-        );
+          activeBatchId: null,
+        });
 
         continue;
       }
 
-      map.set(
-        loanId,
-        {
-          status:
-            'not_sent',
+      map.set(loanId, {
+        status: 'not_sent',
 
-          lastSentAt:
-            null,
+        lastSentAt: null,
 
-          lastFailureReason:
-            null,
+        lastFailureReason: null,
 
-          canResend:
-            false,
+        canResend: false,
 
-          activeBatchId:
-            null,
-        },
-      );
+        activeBatchId: null,
+      });
     }
 
     return map;
@@ -934,31 +659,21 @@ export class LoanRemindersService {
   }
 
   kickDrain() {
-    setImmediate(
-      () => {
-        void this.drainQueuedReminders();
-      },
-    );
+    setImmediate(() => {
+      void this.drainQueuedReminders();
+    });
   }
 
   private async drainQueuedReminders() {
-    if (
-      this.draining
-    ) {
+    if (this.draining) {
       return;
     }
 
-    this.draining =
-      true;
+    this.draining = true;
 
     try {
-      for (
-        let i = 0;
-        i < 25;
-        i += 1
-      ) {
-        const processed =
-          await this.processNextQueuedItem();
+      for (let i = 0; i < 25; i += 1) {
+        const processed = await this.processNextQueuedItem();
 
         if (!processed) {
           break;
@@ -967,87 +682,64 @@ export class LoanRemindersService {
     } catch (error) {
       this.logger.warn(
         `Loan reminder drain failed: ${
-          error instanceof Error
-            ? error.message
-            : error
+          error instanceof Error ? error.message : error
         }`,
       );
     } finally {
-      this.draining =
-        false;
+      this.draining = false;
     }
   }
 
-  private async processBatchUntilIdle(
-    batchId: string,
-  ) {
+  private async processBatchUntilIdle(batchId: string) {
     await this.prisma.loanReminderBatch.update({
       where: {
-        id:
-          batchId,
+        id: batchId,
       },
 
       data: {
-        status:
-          LoanReminderBatchStatus.PROCESSING,
+        status: LoanReminderBatchStatus.PROCESSING,
       },
     });
 
-    for (
-      let i = 0;
-      i < 50;
-      i += 1
-    ) {
-      const next =
-        await this.prisma.loanReminderItem.findFirst({
-          where: {
-            batchId,
+    for (let i = 0; i < 50; i += 1) {
+      const next = await this.prisma.loanReminderItem.findFirst({
+        where: {
+          batchId,
 
-            status:
-              LoanReminderItemStatus.QUEUED,
-          },
+          status: LoanReminderItemStatus.QUEUED,
+        },
 
-          orderBy: {
-            createdAt:
-              'asc',
-          },
-        });
+        orderBy: {
+          createdAt: 'asc',
+        },
+      });
 
       if (!next) {
         break;
       }
 
-      await this.processItem(
-        next.id,
-      );
+      await this.processItem(next.id);
     }
 
-    await this.refreshBatchCounts(
-      batchId,
-    );
+    await this.refreshBatchCounts(batchId);
   }
 
   private async processNextQueuedItem() {
-    const next =
-      await this.prisma.loanReminderItem.findFirst({
-        where: {
-          status:
-            LoanReminderItemStatus.QUEUED,
-        },
+    const next = await this.prisma.loanReminderItem.findFirst({
+      where: {
+        status: LoanReminderItemStatus.QUEUED,
+      },
 
-        orderBy: {
-          createdAt:
-            'asc',
-        },
+      orderBy: {
+        createdAt: 'asc',
+      },
 
-        select: {
-          id:
-            true,
+      select: {
+        id: true,
 
-          batchId:
-            true,
-        },
-      });
+        batchId: true,
+      },
+    });
 
     if (!next) {
       return false;
@@ -1055,26 +747,19 @@ export class LoanRemindersService {
 
     await this.prisma.loanReminderBatch.updateMany({
       where: {
-        id:
-          next.batchId,
+        id: next.batchId,
 
-        status:
-          LoanReminderBatchStatus.QUEUED,
+        status: LoanReminderBatchStatus.QUEUED,
       },
 
       data: {
-        status:
-          LoanReminderBatchStatus.PROCESSING,
+        status: LoanReminderBatchStatus.PROCESSING,
       },
     });
 
-    await this.processItem(
-      next.id,
-    );
+    await this.processItem(next.id);
 
-    await this.refreshBatchCounts(
-      next.batchId,
-    );
+    await this.refreshBatchCounts(next.batchId);
 
     return true;
   }
@@ -1083,354 +768,260 @@ export class LoanRemindersService {
   // PROCESS REMINDER
   // ===========================================================================
 
-  private async processItem(
-    itemId: string,
-  ) {
-    const claimed =
-      await this.prisma.loanReminderItem.updateMany({
-        where: {
-          id:
-            itemId,
+  private async processItem(itemId: string) {
+    const claimed = await this.prisma.loanReminderItem.updateMany({
+      where: {
+        id: itemId,
 
-          status:
-            LoanReminderItemStatus.QUEUED,
-        },
+        status: LoanReminderItemStatus.QUEUED,
+      },
 
-        data: {
-          status:
-            LoanReminderItemStatus.SENDING,
-        },
-      });
+      data: {
+        status: LoanReminderItemStatus.SENDING,
+      },
+    });
 
-    if (
-      claimed.count === 0
-    ) {
+    if (claimed.count === 0) {
       return;
     }
 
-    const item =
-      await this.prisma.loanReminderItem.findUnique({
-        where: {
-          id:
-            itemId,
-        },
+    const item = await this.prisma.loanReminderItem.findUnique({
+      where: {
+        id: itemId,
+      },
 
-        include: {
-          loan: {
-            include: {
-              customer: {
-                select: {
-                  fullName:
-                    true,
+      include: {
+        loan: {
+          include: {
+            customer: {
+              select: {
+                fullName: true,
 
-                  phone:
-                    true,
-                },
+                phone: true,
               },
+            },
 
-              branch: {
-                select: {
-                  name:
-                    true,
-                },
+            branch: {
+              select: {
+                name: true,
               },
+            },
 
-              application: {
-                select: {
-                  durationDays:
-                    true,
+            application: {
+              select: {
+                durationDays: true,
 
-                  repaymentFrequency:
-                    true,
+                repaymentFrequency: true,
 
-                  paymentStartDate:
-                    true,
+                paymentStartDate: true,
 
-                  processingFee:
-                    true,
+                processingFee: true,
 
-                  interestRatePercent:
-                    true,
-                },
+                interestRatePercent: true,
               },
+            },
 
-              wallet: {
-                select: {
-                  openingBalance:
-                    true,
+            wallet: {
+              select: {
+                openingBalance: true,
 
-                  finesTotal:
-                    true,
-                },
+                finesTotal: true,
               },
+            },
 
-              repayments: {
-                select: {
-                  amount:
-                    true,
-                },
+            repayments: {
+              select: {
+                amount: true,
               },
             },
           },
         },
-      });
+      },
+    });
 
     if (!item) {
       return;
     }
 
-    const phone =
-      item.loan.customer.phone?.trim() ??
-      '';
+    const phone = item.loan.customer.phone?.trim() ?? '';
 
     if (!phone) {
       await this.prisma.loanReminderItem.update({
         where: {
-          id:
-            item.id,
+          id: item.id,
         },
 
         data: {
-          status:
-            LoanReminderItemStatus.SKIPPED_NO_PHONE,
+          status: LoanReminderItemStatus.SKIPPED_NO_PHONE,
 
-          failureReason:
-            'no_phone',
+          failureReason: 'no_phone',
         },
       });
 
       return;
     }
 
-    const metrics =
-      this.loanReminderMetrics(
-        item.loan,
-      );
+    const metrics = this.loanReminderMetrics(item.loan);
 
     const kind =
-      metrics.overdueDays >= 4
-        ? 'overdue_notice'
-        : 'payment_reminder';
+      metrics.overdueDays >= 4 ? 'overdue_notice' : 'payment_reminder';
 
-    const allowed =
-      await this.smsNotificationSettings.isKindEnabled(
-        item.tenantId,
-        kind,
-      );
+    const allowed = await this.smsNotificationSettings.isKindEnabled(
+      item.tenantId,
+      kind,
+    );
 
     if (!allowed) {
       await this.prisma.loanReminderItem.update({
         where: {
-          id:
-            item.id,
+          id: item.id,
         },
 
         data: {
-          status:
-            LoanReminderItemStatus.SKIPPED_NO_PHONE,
+          status: LoanReminderItemStatus.SKIPPED_NO_PHONE,
 
-          failureReason:
-            'sms_setting_disabled',
+          failureReason: 'sms_setting_disabled',
         },
       });
 
       return;
     }
 
-    const supportPhone =
-      await this.smsNotificationSettings.resolveSupportPhone(
-        item.branchId,
-      );
+    const supportPhone = await this.smsNotificationSettings.resolveSupportPhone(
+      item.branchId,
+    );
 
-    const body =
-      this.buildReminderBody({
-        borrowerName:
-          item.loan.customer.fullName,
+    const body = this.buildReminderBody({
+      borrowerName: item.loan.customer.fullName,
 
-        balance:
-          metrics.balance,
+      balance: metrics.balance,
 
-        overdueDays:
-          metrics.overdueDays,
+      overdueDays: metrics.overdueDays,
 
-        nextDueDate:
-          metrics.nextDueDate,
+      nextDueDate: metrics.nextDueDate,
 
-        supportPhone,
-      });
+      supportPhone,
+    });
 
-    const result =
-      await this.smsCreditsService.sendBranchSms({
-        tenantId:
-          item.tenantId,
+    const result = await this.smsCreditsService.sendBranchSms({
+      tenantId: item.tenantId,
 
-        branchId:
-          item.branchId,
+      branchId: item.branchId,
 
-        destination:
-          phone,
+      destination: phone,
 
-        body,
+      body,
 
-        purpose:
-          PURPOSE,
+      purpose: PURPOSE,
 
-        triggerSource:
-          'loans_workspace',
+      triggerSource: 'loans_workspace',
 
-        triggerReferenceId:
-          item.loanId,
+      triggerReferenceId: item.loanId,
 
-        requestedByUserId:
-          undefined,
+      requestedByUserId: undefined,
 
-        idempotencyKey:
-          item.idempotencyKey,
-      });
+      idempotencyKey: item.idempotencyKey,
+    });
 
-    if (
-      result.sent
-    ) {
+    if (result.sent) {
       await this.prisma.loanReminderItem.update({
         where: {
-          id:
-            item.id,
+          id: item.id,
         },
 
         data: {
-          status:
-            LoanReminderItemStatus.SENT,
+          status: LoanReminderItemStatus.SENT,
 
-          smsMessageId:
-            result.messageId ??
-            null,
+          smsMessageId: result.messageId ?? null,
 
-          sentAt:
-            new Date(),
+          sentAt: new Date(),
 
-          failureReason:
-            null,
+          failureReason: null,
         },
       });
 
       return;
     }
 
-    const reason =
-      result.reason ??
-      'send_failed';
+    const reason = result.reason ?? 'send_failed';
 
-    if (
-      reason ===
-      'no_credits'
-    ) {
+    if (reason === 'no_credits') {
       await this.prisma.loanReminderItem.update({
         where: {
-          id:
-            item.id,
+          id: item.id,
         },
 
         data: {
-          status:
-            LoanReminderItemStatus.SKIPPED_NO_CREDIT,
+          status: LoanReminderItemStatus.SKIPPED_NO_CREDIT,
 
-          smsMessageId:
-            result.messageId ??
-            null,
+          smsMessageId: result.messageId ?? null,
 
-          failureReason:
-            'no_credits',
+          failureReason: 'no_credits',
         },
       });
 
       await this.prisma.loanReminderItem.updateMany({
         where: {
-          batchId:
-            item.batchId,
+          batchId: item.batchId,
 
-          status:
-            LoanReminderItemStatus.QUEUED,
+          status: LoanReminderItemStatus.QUEUED,
         },
 
         data: {
-          status:
-            LoanReminderItemStatus.SKIPPED_NO_CREDIT,
+          status: LoanReminderItemStatus.SKIPPED_NO_CREDIT,
 
-          failureReason:
-            'no_credits',
+          failureReason: 'no_credits',
         },
       });
 
       return;
     }
 
-    if (
-      result.messageId &&
-      !result.reason
-    ) {
+    if (result.messageId && !result.reason) {
       await this.prisma.loanReminderItem.update({
         where: {
-          id:
-            item.id,
+          id: item.id,
         },
 
         data: {
-          status:
-            LoanReminderItemStatus.SENT,
+          status: LoanReminderItemStatus.SENT,
 
-          smsMessageId:
-            result.messageId,
+          smsMessageId: result.messageId,
 
-          sentAt:
-            new Date(),
+          sentAt: new Date(),
         },
       });
 
       return;
     }
 
-    if (
-      reason ===
-        'already_sent' ||
-      result.messageId
-    ) {
-      const existing =
-        result.messageId
-          ? await this.prisma.smsMessage.findUnique({
-              where: {
-                id:
-                  result.messageId,
-              },
-            })
-          : null;
+    if (reason === 'already_sent' || result.messageId) {
+      const existing = result.messageId
+        ? await this.prisma.smsMessage.findUnique({
+            where: {
+              id: result.messageId,
+            },
+          })
+        : null;
 
       if (
         existing &&
-        (
-          existing.status ===
-            SmsMessageStatus.PROVIDER_ACCEPTED ||
-          existing.status ===
-            SmsMessageStatus.SENT
-        )
+        (existing.status === SmsMessageStatus.PROVIDER_ACCEPTED ||
+          existing.status === SmsMessageStatus.SENT)
       ) {
         await this.prisma.loanReminderItem.update({
           where: {
-            id:
-              item.id,
+            id: item.id,
           },
 
           data: {
-            status:
-              LoanReminderItemStatus.SKIPPED_ALREADY_SENT,
+            status: LoanReminderItemStatus.SKIPPED_ALREADY_SENT,
 
-            smsMessageId:
-              existing.id,
+            smsMessageId: existing.id,
 
-            sentAt:
-              existing.sentAt,
+            sentAt: existing.sentAt,
 
-            failureReason:
-              'already_sent_today',
+            failureReason: 'already_sent_today',
           },
         });
 
@@ -1440,20 +1031,15 @@ export class LoanRemindersService {
 
     await this.prisma.loanReminderItem.update({
       where: {
-        id:
-          item.id,
+        id: item.id,
       },
 
       data: {
-        status:
-          LoanReminderItemStatus.FAILED,
+        status: LoanReminderItemStatus.FAILED,
 
-        smsMessageId:
-          result.messageId ??
-          null,
+        smsMessageId: result.messageId ?? null,
 
-        failureReason:
-          reason,
+        failureReason: reason,
       },
     });
   }
@@ -1462,83 +1048,61 @@ export class LoanRemindersService {
   // BATCH CREATE
   // ===========================================================================
 
-  private async createBatch(
-    input: {
-      tenantId: string;
+  private async createBatch(input: {
+    tenantId: string;
 
-      branchId: string;
+    branchId: string;
 
-      filter: string;
+    filter: string;
 
-      createdByUserId: string;
+    createdByUserId: string;
 
-      items: Array<{
-        loanId: string;
+    items: Array<{
+      loanId: string;
 
-        idempotencyKey: string;
+      idempotencyKey: string;
 
-        status: LoanReminderItemStatus;
+      status: LoanReminderItemStatus;
 
-        failureReason?: string;
+      failureReason?: string;
 
-        smsMessageId?: string;
+      smsMessageId?: string;
 
-        sentAt?: Date | null;
-      }>;
-    },
-  ) {
+      sentAt?: Date | null;
+    }>;
+  }) {
     return this.prisma.loanReminderBatch.create({
       data: {
-        tenantId:
-          input.tenantId,
+        tenantId: input.tenantId,
 
-        branchId:
-          input.branchId,
+        branchId: input.branchId,
 
-        filter:
-          input.filter,
+        filter: input.filter,
 
-        status:
-          LoanReminderBatchStatus.QUEUED,
+        status: LoanReminderBatchStatus.QUEUED,
 
-        totalCount:
-          input.items.length,
+        totalCount: input.items.length,
 
-        createdByUserId:
-          input.createdByUserId,
+        createdByUserId: input.createdByUserId,
 
         items: {
-          create:
-            input.items.map(
-              (item) => ({
-                tenantId:
-                  input.tenantId,
+          create: input.items.map((item) => ({
+            tenantId: input.tenantId,
 
-                branchId:
-                  input.branchId,
+            branchId: input.branchId,
 
-                loanId:
-                  item.loanId,
+            loanId: item.loanId,
 
-                idempotencyKey:
-                  item.idempotencyKey,
+            idempotencyKey: item.idempotencyKey,
 
-                status:
-                  item.status,
+            status: item.status,
 
-                failureReason:
-                  item.failureReason ??
-                  null,
+            failureReason: item.failureReason ?? null,
 
-                smsMessageId:
-                  item.smsMessageId ??
-                  null,
+            smsMessageId: item.smsMessageId ?? null,
 
-                sentAt:
-                  item.sentAt ??
-                  null,
-              }),
-            ),
+            sentAt: item.sentAt ?? null,
+          })),
         },
       },
     });
@@ -1548,24 +1112,18 @@ export class LoanRemindersService {
   // BATCH COUNTS
   // ===========================================================================
 
-  private async refreshBatchCounts(
-    batchId: string,
-  ) {
-    const items =
-      await this.prisma.loanReminderItem.groupBy({
-        by: [
-          'status',
-        ],
+  private async refreshBatchCounts(batchId: string) {
+    const items = await this.prisma.loanReminderItem.groupBy({
+      by: ['status'],
 
-        where: {
-          batchId,
-        },
+      where: {
+        batchId,
+      },
 
-        _count: {
-          _all:
-            true,
-        },
-      });
+      _count: {
+        _all: true,
+      },
+    });
 
     let sent = 0;
     let failed = 0;
@@ -1574,112 +1132,75 @@ export class LoanRemindersService {
     let sending = 0;
     let total = 0;
 
-    for (
-      const row of items
-    ) {
-      const count =
-        row._count._all;
+    for (const row of items) {
+      const count = row._count._all;
 
-      total +=
-        count;
+      total += count;
 
-      switch (
-        row.status
-      ) {
+      switch (row.status) {
         case LoanReminderItemStatus.SENT:
-          sent +=
-            count;
+          sent += count;
 
           break;
 
         case LoanReminderItemStatus.FAILED:
-          failed +=
-            count;
+          failed += count;
 
           break;
 
         case LoanReminderItemStatus.QUEUED:
-          queued +=
-            count;
+          queued += count;
 
           break;
 
         case LoanReminderItemStatus.SENDING:
-          sending +=
-            count;
+          sending += count;
 
           break;
 
         default:
-          skipped +=
-            count;
+          skipped += count;
 
           break;
       }
     }
 
-    const done =
-      queued === 0 &&
-      sending === 0;
+    const done = queued === 0 && sending === 0;
 
-    let status:
-      LoanReminderBatchStatus =
-        LoanReminderBatchStatus.PROCESSING;
+    let status: LoanReminderBatchStatus = LoanReminderBatchStatus.PROCESSING;
 
     if (done) {
-      if (
-        failed > 0 &&
-        sent === 0 &&
-        failed + skipped === total
-      ) {
-        status =
-          LoanReminderBatchStatus.FAILED;
-      } else if (
-        failed > 0 ||
-        skipped > 0
-      ) {
+      if (failed > 0 && sent === 0 && failed + skipped === total) {
+        status = LoanReminderBatchStatus.FAILED;
+      } else if (failed > 0 || skipped > 0) {
         status =
           sent > 0
             ? LoanReminderBatchStatus.PARTIAL
             : LoanReminderBatchStatus.COMPLETED;
       } else {
-        status =
-          LoanReminderBatchStatus.COMPLETED;
+        status = LoanReminderBatchStatus.COMPLETED;
       }
-    } else if (
-      queued === total &&
-      sending === 0 &&
-      sent === 0
-    ) {
-      status =
-        LoanReminderBatchStatus.QUEUED;
+    } else if (queued === total && sending === 0 && sent === 0) {
+      status = LoanReminderBatchStatus.QUEUED;
     }
 
     await this.prisma.loanReminderBatch.update({
       where: {
-        id:
-          batchId,
+        id: batchId,
       },
 
       data: {
-        totalCount:
-          total,
+        totalCount: total,
 
-        sentCount:
-          sent,
+        sentCount: sent,
 
-        failedCount:
-          failed,
+        failedCount: failed,
 
-        skippedCount:
-          skipped,
+        skippedCount: skipped,
 
         status,
 
-        completedAt:
-          done
-            ? new Date()
-            : null,
+        completedAt: done ? new Date() : null,
       },
     });
   }
@@ -1691,78 +1212,49 @@ export class LoanRemindersService {
   private async toBatchContract(
     batchId: string,
   ): Promise<LoanReminderBatchContract> {
-    const batch =
-      await this.prisma.loanReminderBatch.findUniqueOrThrow({
-        where: {
-          id:
-            batchId,
-        },
-      });
+    const batch = await this.prisma.loanReminderBatch.findUniqueOrThrow({
+      where: {
+        id: batchId,
+      },
+    });
 
     return {
-      id:
-        batch.id,
+      id: batch.id,
 
-      branchId:
-        batch.branchId,
+      branchId: batch.branchId,
 
-      filter:
-        batch.filter,
+      filter: batch.filter,
 
-      status:
-        batch.status,
+      status: batch.status,
 
-      totalCount:
-        batch.totalCount,
+      totalCount: batch.totalCount,
 
-      sentCount:
-        batch.sentCount,
+      sentCount: batch.sentCount,
 
-      failedCount:
-        batch.failedCount,
+      failedCount: batch.failedCount,
 
-      skippedCount:
-        batch.skippedCount,
+      skippedCount: batch.skippedCount,
 
-      createdAt:
-        batch.createdAt.toISOString(),
+      createdAt: batch.createdAt.toISOString(),
 
-      completedAt:
-        batch.completedAt?.toISOString() ??
-        null,
+      completedAt: batch.completedAt?.toISOString() ?? null,
     };
   }
 
-  private async summarizeLoan(
-    tenantId: string,
-    loanId: string,
-  ) {
-    const map =
-      await this.summarizeLoans(
-        tenantId,
-        [
-          loanId,
-        ],
-      );
+  private async summarizeLoan(tenantId: string, loanId: string) {
+    const map = await this.summarizeLoans(tenantId, [loanId]);
 
     return (
-      map.get(
-        loanId,
-      ) ?? {
-        status:
-          'not_sent' as const,
+      map.get(loanId) ?? {
+        status: 'not_sent' as const,
 
-        lastSentAt:
-          null,
+        lastSentAt: null,
 
-        lastFailureReason:
-          null,
+        lastFailureReason: null,
 
-        canResend:
-          false,
+        canResend: false,
 
-        activeBatchId:
-          null,
+        activeBatchId: null,
       }
     );
   }
@@ -1771,89 +1263,37 @@ export class LoanRemindersService {
   // FILTERING
   // ===========================================================================
 
-  private loanMatchesFilter(
-    loan: LoanListRecord,
-    filter: string,
-  ) {
-    const balance =
-      Number(
-        loan.balance,
-      );
+  private loanMatchesFilter(loan: LoanListRecord, filter: string) {
+    const balance = Number(loan.balance);
 
-    if (
-      balance <= 0 ||
-      CLOSED_STATUSES.has(
-        loan.status,
-      )
-    ) {
+    if (balance <= 0 || CLOSED_STATUSES.has(loan.status)) {
       return false;
     }
 
-    const metrics =
-      this.loanReminderMetrics(
-        loan,
-      );
+    const metrics = this.loanReminderMetrics(loan);
 
-    if (
-      filter ===
-      'active'
-    ) {
+    if (filter === 'active') {
       return true;
     }
 
-    if (
-      filter ===
-      'overdue'
-    ) {
-      return (
-        metrics.overdueDays >=
-        1
-      );
+    if (filter === 'overdue') {
+      return metrics.overdueDays >= 1;
     }
 
-    if (
-      filter ===
-      'due_today'
-    ) {
-      return (
-        metrics.overdueDays ===
-          0 &&
-        metrics.nextDueIsToday
-      );
+    if (filter === 'due_today') {
+      return metrics.overdueDays === 0 && metrics.nextDueIsToday;
     }
 
-    if (
-      filter ===
-      'repayment:2-3'
-    ) {
-      return (
-        metrics.overdueDays >=
-          2 &&
-        metrics.overdueDays <=
-          3
-      );
+    if (filter === 'repayment:2-3') {
+      return metrics.overdueDays >= 2 && metrics.overdueDays <= 3;
     }
 
-    if (
-      filter ===
-      'repayment:4-7'
-    ) {
-      return (
-        metrics.overdueDays >=
-          4 &&
-        metrics.overdueDays <=
-          7
-      );
+    if (filter === 'repayment:4-7') {
+      return metrics.overdueDays >= 4 && metrics.overdueDays <= 7;
     }
 
-    if (
-      filter ===
-      'repayment:8+'
-    ) {
-      return (
-        metrics.overdueDays >=
-        8
-      );
+    if (filter === 'repayment:8+') {
+      return metrics.overdueDays >= 8;
     }
 
     return false;
@@ -1863,168 +1303,92 @@ export class LoanRemindersService {
   // REMINDER METRICS
   // ===========================================================================
 
-  private loanReminderMetrics(
-    loan: {
-      principal:
-        Prisma.Decimal |
-        number;
+  private loanReminderMetrics(loan: {
+    principal: Prisma.Decimal | number;
 
-      balance:
-        Prisma.Decimal |
-        number;
+    balance: Prisma.Decimal | number;
 
-      paymentStartDate:
-        Date |
-        null;
+    paymentStartDate: Date | null;
 
-      disbursedAt:
-        Date |
-        null;
+    disbursedAt: Date | null;
 
-      createdAt:
-        Date;
+    createdAt: Date;
 
-      finesTotal?:
-        Prisma.Decimal |
-        number |
-        null;
+    finesTotal?: Prisma.Decimal | number | null;
 
-      application?: {
-        durationDays:
-          number |
-          null;
+    application?: {
+      durationDays: number | null;
 
-        repaymentFrequency?:
-          string |
-          null;
+      repaymentFrequency?: string | null;
 
-        paymentStartDate:
-          Date |
-          null;
+      paymentStartDate: Date | null;
 
-        processingFee:
-          Prisma.Decimal |
-          number |
-          null;
+      processingFee: Prisma.Decimal | number | null;
 
-        interestRatePercent:
-          Prisma.Decimal |
-          number |
-          null;
-      } | null;
+      interestRatePercent: Prisma.Decimal | number | null;
+    } | null;
 
-      wallet?: {
-        openingBalance:
-          Prisma.Decimal |
-          number;
+    wallet?: {
+      openingBalance: Prisma.Decimal | number;
 
-        finesTotal:
-          Prisma.Decimal |
-          number;
-      } | null;
+      finesTotal: Prisma.Decimal | number;
+    } | null;
 
-      repayments:
-        Array<{
-          amount:
-            Prisma.Decimal |
-            number;
-        }>;
-    },
-  ) {
-    const principal =
-      Number(
-        loan.principal,
-      );
+    repayments: Array<{
+      amount: Prisma.Decimal | number;
+    }>;
+  }) {
+    const principal = Number(loan.principal);
 
-    const balance =
-      Number(
-        loan.balance,
-      );
+    const balance = Number(loan.balance);
 
-    const paidFromRows =
-      loan.repayments.reduce(
-        (
-          sum,
-          repayment,
-        ) =>
-          sum +
-          Number(
-            repayment.amount,
-          ),
-        0,
-      );
+    const paidFromRows = loan.repayments.reduce(
+      (sum, repayment) => sum + Number(repayment.amount),
+      0,
+    );
 
     const openingBalance =
-      loan.wallet?.openingBalance ==
-      null
+      loan.wallet?.openingBalance == null
         ? null
-        : Number(
-            loan.wallet.openingBalance,
-          );
+        : Number(loan.wallet.openingBalance);
 
-    const finesTotal =
-      Number(
-        loan.finesTotal ??
-        loan.wallet?.finesTotal ??
-        0,
-      );
+    const finesTotal = Number(loan.finesTotal ?? loan.wallet?.finesTotal ?? 0);
 
-    const processingFee =
-      Number(
-        loan.application?.processingFee ??
-        0,
-      );
+    const processingFee = Number(loan.application?.processingFee ?? 0);
 
-    const interestRatePercent =
-      Number(
-        loan.application?.interestRatePercent ??
-        0,
-      );
+    const interestRatePercent = Number(
+      loan.application?.interestRatePercent ?? 0,
+    );
 
-    const durationDays =
-      loan.application?.durationDays ??
-      1;
+    const durationDays = loan.application?.durationDays ?? 1;
 
-    const periodDays =
-      durationDays > 0
-        ? durationDays
-        : 1;
+    const periodDays = durationDays > 0 ? durationDays : 1;
 
-    const repaymentFrequency =
-      loan.application?.repaymentFrequency ??
-      'DAILY';
+    const repaymentFrequency = loan.application?.repaymentFrequency ?? 'DAILY';
 
-    const priced =
-      computeLoanPricing({
-        principalAmount:
-          principal,
+    const priced = computeLoanPricing({
+      principalAmount: principal,
 
-        interestRatePercent,
+      interestRatePercent,
 
-        durationDays:
-          periodDays,
+      durationDays: periodDays,
 
-        processingFee,
-      });
+      processingFee,
+    });
 
-    const baseRepayable =
-      resolveBaseRepayable({
-        openingBalance,
+    const baseRepayable = resolveBaseRepayable({
+      openingBalance,
 
-        pricedTotal:
-          priced.totalRepayable,
+      pricedTotal: priced.totalRepayable,
 
-        principal,
+      principal,
 
-        paidAmount:
-          openingBalance == null
-            ? paidFromRows
-            : undefined,
+      paidAmount: openingBalance == null ? paidFromRows : undefined,
 
-        balance,
+      balance,
 
-        finesTotal,
-      });
+      finesTotal,
+    });
 
     const paidAmount = contractualPaidTowardDebt({
       baseRepayable,
@@ -2045,30 +1409,25 @@ export class LoanRemindersService {
       loan.disbursedAt ??
       loan.createdAt;
 
-    const schedule =
-      computeCollectionSchedule({
-        principalAmount:
-          principal,
+    const schedule = computeCollectionSchedule({
+      principalAmount: principal,
 
-        interestRatePercent,
+      interestRatePercent,
 
-        durationDays:
-          periodDays,
+      durationDays: periodDays,
 
-        repaymentFrequency,
+      repaymentFrequency,
 
-        processingFee,
+      processingFee,
 
-        balance,
+      balance,
 
-        recordedPaidAmount:
-          paidAmount,
+      recordedPaidAmount: paidAmount,
 
-        totalRepayableOverride:
-          baseRepayable,
+      totalRepayableOverride: baseRepayable,
 
-        startDate,
-      });
+      startDate,
+    });
 
     /*
      * schedule.daysElapsed now represents scheduled repayment
@@ -2085,24 +1444,12 @@ export class LoanRemindersService {
      * Monthly:
      *  occurrence 1, occurrence 2...
      */
-    const expectedOccurrences =
-      Math.max(
-        0,
-        schedule.daysElapsed,
-      );
+    const expectedOccurrences = Math.max(0, schedule.daysElapsed);
 
     const coveredOccurrences =
-      schedule.dailyInstalment >
-      0
+      schedule.dailyInstalment > 0
         ? Math.floor(
-            (
-              Math.max(
-                0,
-                paidAmount,
-              ) +
-              0.001
-            ) /
-              schedule.dailyInstalment,
+            (Math.max(0, paidAmount) + 0.001) / schedule.dailyInstalment,
           )
         : 0;
 
@@ -2116,23 +1463,15 @@ export class LoanRemindersService {
      * missed occurrences.
      */
     const currentDueAllowance =
-      schedule.nextDueIsToday &&
-      schedule.nextDueLabel ===
-        'Due today'
-        ? 1
-        : 0;
+      schedule.nextDueIsToday && schedule.nextDueLabel === 'Due today' ? 1 : 0;
 
     const missedOccurrences =
-      balance <= 0 ||
-      schedule.dailyInstalment <=
-        0
+      balance <= 0 || schedule.dailyInstalment <= 0
         ? 0
         : Math.max(
             0,
 
-            expectedOccurrences -
-              coveredOccurrences -
-              currentDueAllowance,
+            expectedOccurrences - coveredOccurrences - currentDueAllowance,
           );
 
     /*
@@ -2147,20 +1486,50 @@ export class LoanRemindersService {
      * This avoids incorrectly marking a WEEKLY product seven times
      * overdue merely because seven calendar days passed.
      */
-    const overdueDays =
-      missedOccurrences;
+    let overdueDays = 0;
+    if (missedOccurrences > 0 && balance > 0) {
+      const nextUnpaid = new Date(
+        startDate.getFullYear(),
+        startDate.getMonth(),
+        startDate.getDate(),
+      );
+      if (repaymentFrequency === 'MONTHLY') {
+        nextUnpaid.setMonth(nextUnpaid.getMonth() + coveredOccurrences);
+      } else if (repaymentFrequency === 'LUMP_SUM') {
+        nextUnpaid.setDate(nextUnpaid.getDate() + Math.max(0, periodDays - 1));
+      } else {
+        const interval =
+          repaymentFrequency === 'WEEKLY'
+            ? 7
+            : repaymentFrequency === 'BIWEEKLY'
+              ? 14
+              : 1;
+        nextUnpaid.setDate(
+          nextUnpaid.getDate() + coveredOccurrences * interval,
+        );
+      }
+      const today = new Date();
+      const left = Date.UTC(
+        nextUnpaid.getFullYear(),
+        nextUnpaid.getMonth(),
+        nextUnpaid.getDate(),
+      );
+      const right = Date.UTC(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate(),
+      );
+      overdueDays = Math.max(0, Math.floor((right - left) / 86_400_000));
+    }
 
     return {
       balance,
 
       overdueDays,
 
-      nextDueIsToday:
-        balance > 0 &&
-        schedule.nextDueIsToday,
+      nextDueIsToday: balance > 0 && schedule.nextDueIsToday,
 
-      nextDueDate:
-        schedule.nextDueLabel,
+      nextDueDate: schedule.nextDueLabel,
     };
   }
 
@@ -2168,59 +1537,44 @@ export class LoanRemindersService {
   // SMS BODY
   // ===========================================================================
 
-  private buildReminderBody(
-    input: {
-      borrowerName: string;
+  private buildReminderBody(input: {
+    borrowerName: string;
 
-      balance: number;
+    balance: number;
 
-      overdueDays: number;
+    overdueDays: number;
 
-      nextDueDate: string;
+    nextDueDate: string;
 
-      supportPhone: string;
-    },
-  ) {
-    if (
-      input.overdueDays >= 4
-    ) {
+    supportPhone: string;
+  }) {
+    if (input.overdueDays >= 4) {
       return buildOverdueNoticeSms({
-        fullName:
-          input.borrowerName,
+        fullName: input.borrowerName,
 
-        amount:
-          input.balance,
+        amount: input.balance,
 
-        days:
-          input.overdueDays,
+        days: input.overdueDays,
 
-        supportPhone:
-          input.supportPhone,
+        supportPhone: input.supportPhone,
       });
     }
 
     const days =
       input.overdueDays > 0
         ? input.overdueDays
-        : input.nextDueDate
-              .toLowerCase()
-              .includes(
-                'today',
-              )
+        : input.nextDueDate.toLowerCase().includes('today')
           ? 0
           : 1;
 
     return buildPaymentReminderSms({
-      fullName:
-        input.borrowerName,
+      fullName: input.borrowerName,
 
-      balance:
-        input.balance,
+      balance: input.balance,
 
       days,
 
-      supportPhone:
-        input.supportPhone,
+      supportPhone: input.supportPhone,
     });
   }
 
@@ -2228,41 +1582,32 @@ export class LoanRemindersService {
   // IDEMPOTENCY
   // ===========================================================================
 
-  private async resolveReminderIdempotencyKey(
-    input: {
-      loanId: string;
+  private async resolveReminderIdempotencyKey(input: {
+    loanId: string;
 
-      day: string;
+    day: string;
 
-      resend: boolean;
-    },
-  ) {
-    if (
-      input.resend
-    ) {
+    resend: boolean;
+  }) {
+    if (input.resend) {
       return `loan_reminder_${input.loanId}_resend_${randomUUID()}`;
     }
 
-    const key =
-      `loan_reminder_${input.loanId}_${input.day}`;
+    const key = `loan_reminder_${input.loanId}_${input.day}`;
 
-    const existing =
-      await this.prisma.smsMessage.findUnique({
-        where: {
-          idempotencyKey:
-            key,
-        },
-      });
+    const existing = await this.prisma.smsMessage.findUnique({
+      where: {
+        idempotencyKey: key,
+      },
+    });
 
     if (!existing) {
       return key;
     }
 
     if (
-      existing.status ===
-        SmsMessageStatus.PROVIDER_ACCEPTED ||
-      existing.status ===
-        SmsMessageStatus.SENT
+      existing.status === SmsMessageStatus.PROVIDER_ACCEPTED ||
+      existing.status === SmsMessageStatus.SENT
     ) {
       return key;
     }
@@ -2270,46 +1615,34 @@ export class LoanRemindersService {
     return `loan_reminder_${input.loanId}_${input.day}_retry_${randomUUID()}`;
   }
 
-  private async findSuccessfulReminderToday(
-    loanId: string,
-    day: string,
-  ) {
-    const prefix =
-      `loan_reminder_${loanId}_${day}`;
+  private async findSuccessfulReminderToday(loanId: string, day: string) {
+    const prefix = `loan_reminder_${loanId}_${day}`;
 
     return this.prisma.smsMessage.findFirst({
       where: {
-        messageType:
-          PURPOSE,
+        messageType: PURPOSE,
 
-        triggerReferenceId:
-          loanId,
+        triggerReferenceId: loanId,
 
         status: {
-          in: [
-            SmsMessageStatus.PROVIDER_ACCEPTED,
-            SmsMessageStatus.SENT,
-          ],
+          in: [SmsMessageStatus.PROVIDER_ACCEPTED, SmsMessageStatus.SENT],
         },
 
         OR: [
           {
-            idempotencyKey:
-              prefix,
+            idempotencyKey: prefix,
           },
 
           {
             idempotencyKey: {
-              startsWith:
-                `${prefix}_`,
+              startsWith: `${prefix}_`,
             },
           },
         ],
       },
 
       orderBy: {
-        createdAt:
-          'desc',
+        createdAt: 'desc',
       },
     });
   }
@@ -2319,35 +1652,19 @@ export class LoanRemindersService {
   // ===========================================================================
 
   private kampalaDateLabel() {
-    const parts =
-      new Intl.DateTimeFormat(
-        'en-GB',
-        {
-          timeZone:
-            'Africa/Kampala',
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Africa/Kampala',
 
-          year:
-            'numeric',
+      year: 'numeric',
 
-          month:
-            '2-digit',
+      month: '2-digit',
 
-          day:
-            '2-digit',
-        },
-      ).formatToParts(
-        new Date(),
-      );
+      day: '2-digit',
+    }).formatToParts(new Date());
 
-    const byType =
-      Object.fromEntries(
-        parts.map(
-          (part) => [
-            part.type,
-            part.value,
-          ],
-        ),
-      );
+    const byType = Object.fromEntries(
+      parts.map((part) => [part.type, part.value]),
+    );
 
     return `${byType.year}${byType.month}${byType.day}`;
   }
@@ -2356,52 +1673,28 @@ export class LoanRemindersService {
   // PERMISSIONS
   // ===========================================================================
 
-  private assertCanSend(
-    user: AuthenticatedUser,
-  ) {
-    this.assertCanRead(
-      user,
-    );
+  private assertCanSend(user: AuthenticatedUser) {
+    this.assertCanRead(user);
 
-    if (
-      !user.permissions.includes(
-        LOAN_PERMISSIONS.update,
-      )
-    ) {
+    if (!user.permissions.includes(LOAN_PERMISSIONS.update)) {
       throw new ForbiddenException(
         'You do not have permission to send loan reminders.',
       );
     }
   }
 
-  private assertCanRead(
-    user: AuthenticatedUser,
-  ) {
-    if (
-      !user.tenantId?.trim()
-    ) {
-      throw new ForbiddenException(
-        'Account access is required.',
-      );
+  private assertCanRead(user: AuthenticatedUser) {
+    if (!user.tenantId?.trim()) {
+      throw new ForbiddenException('Account access is required.');
     }
 
-    if (
-      !user.permissions.includes(
-        LOAN_PERMISSIONS.read,
-      )
-    ) {
-      throw new ForbiddenException(
-        'You cannot view loans.',
-      );
+    if (!user.permissions.includes(LOAN_PERMISSIONS.read)) {
+      throw new ForbiddenException('You cannot view loans.');
     }
   }
 
-  private requireBranchId(
-    user: AuthenticatedUser,
-  ) {
-    if (
-      !user.branchId?.trim()
-    ) {
+  private requireBranchId(user: AuthenticatedUser) {
+    if (!user.branchId?.trim()) {
       throw new BadRequestException(
         'A branch workspace is required to send loan reminders.',
       );

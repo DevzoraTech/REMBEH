@@ -229,6 +229,7 @@ class OfflineCapableLoanApplicationRepository
     double? initialDisbursementAmount,
     double collectedRepaymentsAmount = 0,
     String? disbursementNote,
+    String? operationDate,
   }) async {
     final draft = _drafts[id];
 
@@ -238,6 +239,7 @@ class OfflineCapableLoanApplicationRepository
         initialDisbursementAmount: initialDisbursementAmount,
         collectedRepaymentsAmount: collectedRepaymentsAmount,
         disbursementNote: disbursementNote,
+        operationDate: operationDate,
       );
     }
 
@@ -251,6 +253,9 @@ class OfflineCapableLoanApplicationRepository
 
     if (disbursementNote != null && disbursementNote.trim().isNotEmpty) {
       draft.data['disbursementNote'] = disbursementNote.trim();
+    }
+    if (operationDate != null && operationDate.isNotEmpty) {
+      draft.data['operationDate'] = operationDate;
     }
 
     await _persistLocalSubmission(draft);

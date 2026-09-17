@@ -469,38 +469,39 @@ export class AgentsService {
     const range = this.normalizeRange(options?.range);
     const bounds = this.rangeBounds(range, options?.date);
 
-    const [applications, repayments, floats, expenses, statusAudits] = await Promise.all([
-      this.repository.listApplications({
-        tenantId: scope.tenantId,
-        agentId,
-        from: bounds.from,
-        to: bounds.to,
-      }),
-      this.repository.listRepayments({
-        tenantId: scope.tenantId,
-        agentId,
-        from: bounds.from,
-        to: bounds.to,
-      }),
-      this.repository.listFloatsForAgent({
-        tenantId: scope.tenantId,
-        agentId,
-        from: bounds.from,
-        to: bounds.to,
-      }),
-      this.repository.listExpensesForAgent({
-        tenantId: scope.tenantId,
-        agentId,
-        from: bounds.from,
-        to: bounds.to,
-      }),
-      this.repository.listAgentStatusAudits({
-        tenantId: scope.tenantId,
-        agentId,
-        from: bounds.from,
-        to: bounds.to,
-      }),
-    ]);
+    const [applications, repayments, floats, expenses, statusAudits] =
+      await Promise.all([
+        this.repository.listApplications({
+          tenantId: scope.tenantId,
+          agentId,
+          from: bounds.from,
+          to: bounds.to,
+        }),
+        this.repository.listRepayments({
+          tenantId: scope.tenantId,
+          agentId,
+          from: bounds.from,
+          to: bounds.to,
+        }),
+        this.repository.listFloatsForAgent({
+          tenantId: scope.tenantId,
+          agentId,
+          from: bounds.from,
+          to: bounds.to,
+        }),
+        this.repository.listExpensesForAgent({
+          tenantId: scope.tenantId,
+          agentId,
+          from: bounds.from,
+          to: bounds.to,
+        }),
+        this.repository.listAgentStatusAudits({
+          tenantId: scope.tenantId,
+          agentId,
+          from: bounds.from,
+          to: bounds.to,
+        }),
+      ]);
 
     const otherActivity = this.buildOtherActivity(
       floats,
@@ -903,6 +904,7 @@ export class AgentsService {
       where: {
         tenantId,
         recordedByUserId: { in: agentIds },
+        voidedAt: null,
         ...(from || to
           ? {
               paidAt: {
@@ -1029,6 +1031,7 @@ export class AgentsService {
           where: {
             tenantId,
             recordedByUserId: { in: agentIds },
+            voidedAt: null,
           },
           _max: { paidAt: true },
         }),

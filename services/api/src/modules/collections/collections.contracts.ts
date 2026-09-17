@@ -1,9 +1,5 @@
 export type DueDayCoverageKind =
-  | 'due_paid'
-  | 'due_unpaid'
-  | 'overdue_paid'
-  | 'overdue_unpaid'
-  | 'none';
+  'due_paid' | 'due_unpaid' | 'overdue_paid' | 'overdue_unpaid' | 'none';
 
 export type CollectionSummaryContract = {
   amountCollectedToday: number;
@@ -58,6 +54,9 @@ export type RepaymentListItemContract = {
   branchId: string;
   branchName: string | null;
   sms: RepaymentSmsStatusContract;
+  voidedAt: string | null;
+  voidedByUserId: string | null;
+  voidReason: string | null;
 };
 
 export type RepaymentSmsStatusValue =
@@ -112,6 +111,9 @@ export type PaymentHistoryItemContract = {
   approvedRequestedAmount: number | null;
   approvedRequestedMethod: string | null;
   approvedRequestedNote: string | null;
+  voidedAt: string | null;
+  voidedByUserId: string | null;
+  voidReason: string | null;
 };
 
 export type FineHistoryItemContract = {

@@ -12,7 +12,11 @@ import {
 } from '@prisma/client';
 import type { AuthenticatedUser } from '../../common/auth/authenticated-user';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
-import { computeCollectionSchedule, classifyDueDayCoverage, isSameCalendarDay } from '../collections/collection-schedule';
+import {
+  computeCollectionSchedule,
+  classifyDueDayCoverage,
+  isSameCalendarDay,
+} from '../collections/collection-schedule';
 import { CreateLoanApplicationFromCustomerDto } from '../loan-applications/dto/create-from-customer.dto';
 import { LoanApplicationsService } from '../loan-applications/loan-applications.service';
 import { OPERATIONS_PERMISSIONS } from '../operations/operations.permissions';
@@ -399,25 +403,19 @@ export class LoansService {
 
     const dueDate = new Date(schedule.maturityDate);
 
-    const overdueDays = this.scheduleOverdueDays({
-      balance,
-      paidAmount,
-      dailyInstalment: schedule.dailyInstalment,
-      daysElapsed: schedule.daysElapsed,
-      periodDays: schedule.loanPeriodDays,
-      nextDueIsToday: schedule.nextDueIsToday,
-      nextDueLabel: schedule.nextDueLabel,
-    });
-
     const nextDueDate = this.resolveNextDueDate({
       balance,
       startDate,
       dailyInstalment: schedule.dailyInstalment,
       paidAmount,
       maturityDate: new Date(schedule.maturityDate),
+      repaymentFrequency: loan.application?.repaymentFrequency ?? 'DAILY',
       nextDueIsToday: schedule.nextDueIsToday,
       nextDueLabel: schedule.nextDueLabel,
     });
+    const overdueDays = nextDueDate
+      ? this.calendarDaysBetween(new Date(nextDueDate), new Date())
+      : 0;
 
     const now = new Date();
     const paidTodayAmount = this.roundMoney(
@@ -873,25 +871,33 @@ export class LoansService {
     dailyInstalment: number;
     paidAmount: number;
     maturityDate: Date;
+    repaymentFrequency: string;
     nextDueIsToday: boolean;
     nextDueLabel: string;
   }) {
     if (input.balance <= 0) return null;
-    const today = this.startOfLocalDay(new Date());
-    if (input.nextDueIsToday || input.nextDueLabel === 'Overdue') {
-      return today.toISOString();
-    }
     if (input.dailyInstalment <= 0) {
       return this.startOfLocalDay(input.maturityDate).toISOString();
     }
-    const coveredDays = Math.floor(
+    const coveredInstalments = Math.floor(
       Math.max(0, input.paidAmount) / input.dailyInstalment,
     );
     const next = this.startOfLocalDay(input.startDate);
-    next.setDate(next.getDate() + coveredDays);
+    if (input.repaymentFrequency === 'MONTHLY') {
+      next.setMonth(next.getMonth() + coveredInstalments);
+    } else if (input.repaymentFrequency === 'LUMP_SUM') {
+      return this.startOfLocalDay(input.maturityDate).toISOString();
+    } else {
+      const interval =
+        input.repaymentFrequency === 'WEEKLY'
+          ? 7
+          : input.repaymentFrequency === 'BIWEEKLY'
+            ? 14
+            : 1;
+      next.setDate(next.getDate() + coveredInstalments * interval);
+    }
     const maturity = this.startOfLocalDay(input.maturityDate);
     if (next > maturity) return maturity.toISOString();
-    if (next < today) return today.toISOString();
     return next.toISOString();
   }
 

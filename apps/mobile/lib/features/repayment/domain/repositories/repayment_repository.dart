@@ -56,4 +56,9 @@ abstract class RepaymentRepository {
     DateTime? paidAt,
     String? note,
   });
+
+  Future<ClientLoanDetail> voidRepayment({
+    required String repaymentId,
+    required String reason,
+  });
 }

@@ -639,6 +639,7 @@ export class ControlCenterService implements OnModuleInit {
       }),
 
       this.prisma.repayment.aggregate({
+        where: { voidedAt: null },
         _sum: {
           amount: true,
         },
@@ -701,6 +702,7 @@ export class ControlCenterService implements OnModuleInit {
 
       this.prisma.repayment.findMany({
         where: {
+          voidedAt: null,
           paidAt: {
             gte: from,
             lte: to,
@@ -803,6 +805,7 @@ export class ControlCenterService implements OnModuleInit {
 
       this.prisma.repayment.findMany({
         where: {
+          voidedAt: null,
           paidAt: {
             gte: previousFrom,
             lte: previousTo,
@@ -1898,7 +1901,9 @@ export class ControlCenterService implements OnModuleInit {
       }),
       this.prisma.authSession.findMany({
         where: {
-          lastSeenAt: { gte: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000) },
+          lastSeenAt: {
+            gte: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000),
+          },
           revokedAt: null,
         },
         distinct: ['userId'],
@@ -1916,7 +1921,7 @@ export class ControlCenterService implements OnModuleInit {
         },
       }),
       this.prisma.repayment.aggregate({
-        where: { paidAt: { gte: thirtyDaysAgo } },
+        where: { voidedAt: null, paidAt: { gte: thirtyDaysAgo } },
         _sum: { amount: true },
         _count: { _all: true },
       }),
@@ -2072,68 +2077,67 @@ export class ControlCenterService implements OnModuleInit {
       plans,
       smsBundles,
       smsEconomics,
-    ] =
-      await Promise.all([
-        this.prisma.branch.findMany({
-          orderBy: [{ tenant: { name: 'asc' } }, { name: 'asc' }],
-          include: {
-            tenant: {
-              select: {
-                id: true,
-                name: true,
-                currency: true,
-                status: true,
-              },
+    ] = await Promise.all([
+      this.prisma.branch.findMany({
+        orderBy: [{ tenant: { name: 'asc' } }, { name: 'asc' }],
+        include: {
+          tenant: {
+            select: {
+              id: true,
+              name: true,
+              currency: true,
+              status: true,
             },
-            subscription: {
-              include: {
-                plan: true,
-              },
+          },
+          subscription: {
+            include: {
+              plan: true,
             },
-            _count: {
-              select: {
-                users: true,
-                customers: true,
-                loans: true,
-              },
+          },
+          _count: {
+            select: {
+              users: true,
+              customers: true,
+              loans: true,
             },
-            users: {
-              select: {
-                authSessions: {
-                  take: 1,
-                  orderBy: { lastSeenAt: 'desc' },
-                  select: { lastSeenAt: true },
-                },
+          },
+          users: {
+            select: {
+              authSessions: {
+                take: 1,
+                orderBy: { lastSeenAt: 'desc' },
+                select: { lastSeenAt: true },
               },
             },
           },
-        }),
-        this.prisma.subscriptionPayment.groupBy({
-          by: ['branchId'],
-          where: { status: SubscriptionPaymentStatus.COMPLETED },
-          _sum: { amount: true },
-          _count: { _all: true },
-        }),
-        this.prisma.subscriptionPayment.findMany({
-          orderBy: { createdAt: 'desc' },
-          include: {
-            tenant: { select: { id: true, name: true } },
-            branch: { select: { id: true, name: true } },
-            plan: { select: { code: true, name: true, interval: true } },
-          },
-          take: 1000,
-        }),
-        this.listControlCenterPaymentRows(500),
-        this.prisma.subscriptionPlan.findMany({
-          where: { isActive: true },
-          orderBy: { createdAt: 'asc' },
-        }),
-        this.prisma.smsBundle.findMany({
-          where: { status: { not: SmsBundleStatus.ARCHIVED } },
-          orderBy: [{ status: 'asc' }, { priceUgx: 'asc' }],
-        }),
-        this.smsEconomics(),
-      ]);
+        },
+      }),
+      this.prisma.subscriptionPayment.groupBy({
+        by: ['branchId'],
+        where: { status: SubscriptionPaymentStatus.COMPLETED },
+        _sum: { amount: true },
+        _count: { _all: true },
+      }),
+      this.prisma.subscriptionPayment.findMany({
+        orderBy: { createdAt: 'desc' },
+        include: {
+          tenant: { select: { id: true, name: true } },
+          branch: { select: { id: true, name: true } },
+          plan: { select: { code: true, name: true, interval: true } },
+        },
+        take: 1000,
+      }),
+      this.listControlCenterPaymentRows(500),
+      this.prisma.subscriptionPlan.findMany({
+        where: { isActive: true },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.smsBundle.findMany({
+        where: { status: { not: SmsBundleStatus.ARCHIVED } },
+        orderBy: [{ status: 'asc' }, { priceUgx: 'asc' }],
+      }),
+      this.smsEconomics(),
+    ]);
 
     const completedByBranch = new Map(
       completedPaymentGroups.map((row) => [row.branchId, row]),
@@ -2537,7 +2541,7 @@ export class ControlCenterService implements OnModuleInit {
     ] = await Promise.all([
       this.prisma.repayment.groupBy({
         by: ['branchId'],
-        where: { tenantId },
+        where: { tenantId, voidedAt: null },
         _sum: { amount: true },
         _count: { _all: true },
       }),
@@ -2765,9 +2769,7 @@ export class ControlCenterService implements OnModuleInit {
     const now = new Date();
     const todayStart = this.startOfUtcDay(now);
     const tomorrowStart = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
-    const weekStart = new Date(
-      todayStart.getTime() - 6 * 24 * 60 * 60 * 1000,
-    );
+    const weekStart = new Date(todayStart.getTime() - 6 * 24 * 60 * 60 * 1000);
 
     const [
       todayRepayments,
@@ -2786,6 +2788,7 @@ export class ControlCenterService implements OnModuleInit {
         where: {
           tenantId,
           branchId,
+          voidedAt: null,
           paidAt: { gte: todayStart, lt: tomorrowStart },
         },
         _sum: { amount: true },
@@ -2825,6 +2828,7 @@ export class ControlCenterService implements OnModuleInit {
         where: {
           tenantId,
           branchId,
+          voidedAt: null,
           paidAt: { gte: weekStart, lt: tomorrowStart },
         },
         select: { amount: true, paidAt: true },
@@ -2875,7 +2879,7 @@ export class ControlCenterService implements OnModuleInit {
         },
       }),
       this.prisma.repayment.findMany({
-        where: { tenantId, branchId },
+        where: { tenantId, branchId, voidedAt: null },
         take: 12,
         orderBy: { paidAt: 'desc' },
         include: {
@@ -2962,9 +2966,9 @@ export class ControlCenterService implements OnModuleInit {
         operationStatus: operation?.status ?? null,
         reportSubmitted: Boolean(
           report &&
-            ['SENT_TO_OWNER', 'OWNER_APPROVED', 'RETURNED_TO_MANAGER'].includes(
-              report.status,
-            ),
+          ['SENT_TO_OWNER', 'OWNER_APPROVED', 'RETURNED_TO_MANAGER'].includes(
+            report.status,
+          ),
         ),
         reportStatus: report?.status ?? null,
       };
@@ -4459,7 +4463,12 @@ export class ControlCenterService implements OnModuleInit {
       ),
     ];
 
-    if (!dto.tenantId && userIds.length === 0 && !dto.audience && !dto.roleNames?.length) {
+    if (
+      !dto.tenantId &&
+      userIds.length === 0 &&
+      !dto.audience &&
+      !dto.roleNames?.length
+    ) {
       throw new BadRequestException(
         'Choose recipients directly, select users, select a role, or select a client organization.',
       );
@@ -4470,7 +4479,9 @@ export class ControlCenterService implements OnModuleInit {
     }
 
     if (dto.audience === 'BRANCH_USERS' && !dto.branchId) {
-      throw new BadRequestException('Select a branch for the branch users audience.');
+      throw new BadRequestException(
+        'Select a branch for the branch users audience.',
+      );
     }
 
     const roleNames = this.normalizeMessageRoleNames(

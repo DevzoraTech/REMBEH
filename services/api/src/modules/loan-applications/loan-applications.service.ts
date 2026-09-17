@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import {
   ApplicantGender,
+  BranchOperationReportStatus,
   BranchOperationStatus,
   LoanApplicationMediaType,
   LoanApplicationSignerRole,
@@ -878,7 +879,11 @@ export class LoanApplicationsService {
       dto,
     );
 
-    const goLiveAt = new Date();
+    const goLiveAt = await this.resolveSubmissionTime(
+      user,
+      application.branchId,
+      dto.operationDate,
+    );
     const fullyDisbursed = disbursementPlan.remainingAfterThis <= 0;
     const paymentStartDate = fullyDisbursed
       ? await this.loanProducts.resolvePaymentStartDate({
@@ -1992,6 +1997,65 @@ export class LoanApplicationsService {
 
   private formatMoney(value: number) {
     return Math.max(0, Math.round(value)).toLocaleString('en-US');
+  }
+
+  private async resolveSubmissionTime(
+    user: AuthenticatedUser,
+    branchId: string,
+    operationDate?: string,
+  ) {
+    if (!operationDate) return new Date();
+    const dateOnly = this.parseOperationDate(operationDate);
+    const [returnedReport, openOperation] = await Promise.all([
+      this.prisma.branchOperationReport.findFirst({
+        where: {
+          tenantId: user.tenantId,
+          branchId,
+          operationDate: dateOnly,
+          status: BranchOperationReportStatus.RETURNED_TO_MANAGER,
+        },
+        select: { id: true },
+      }),
+      this.prisma.branchDailyOperation.findFirst({
+        where: {
+          tenantId: user.tenantId,
+          branchId,
+          operationDate: dateOnly,
+          status: BranchOperationStatus.OPEN,
+        },
+        select: { id: true },
+      }),
+    ]);
+    if (!returnedReport && !openOperation) {
+      throw new BadRequestException(
+        'Select the current open day or a returned report.',
+      );
+    }
+    const now = new Date();
+    return new Date(
+      Date.UTC(
+        dateOnly.getUTCFullYear(),
+        dateOnly.getUTCMonth(),
+        dateOnly.getUTCDate(),
+        now.getUTCHours(),
+        now.getUTCMinutes(),
+        now.getUTCSeconds(),
+      ),
+    );
+  }
+
+  private parseOperationDate(raw: string) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})(?:T.*)?$/.exec(raw.trim());
+    if (!match) {
+      throw new BadRequestException('operationDate must be YYYY-MM-DD.');
+    }
+    const date = new Date(
+      Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])),
+    );
+    if (Number.isNaN(date.getTime())) {
+      throw new BadRequestException('operationDate must be valid.');
+    }
+    return date;
   }
 
   private parseDateOnly(raw: string): Date {

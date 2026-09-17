@@ -105,12 +105,14 @@ class SubmitLoanApplicationUseCase {
     double? initialDisbursementAmount,
     double collectedRepaymentsAmount = 0,
     String? disbursementNote,
+    String? operationDate,
   }) {
     return _repository.submit(
       id,
       initialDisbursementAmount: initialDisbursementAmount,
       collectedRepaymentsAmount: collectedRepaymentsAmount,
       disbursementNote: disbursementNote,
+      operationDate: operationDate,
     );
   }
 }

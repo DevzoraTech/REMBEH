@@ -246,6 +246,19 @@ class RepaymentApiDatasource {
     return _decodeOk(response);
   }
 
+  Future<Map<String, dynamic>> voidRepayment({
+    required String repaymentId,
+    required String reason,
+  }) async {
+    final session = await _requireSession();
+    final response = await http.post(
+      Uri.parse('$rembehApiBaseUrl/collections/repayments/$repaymentId/void'),
+      headers: {..._headers(session), 'Content-Type': 'application/json'},
+      body: jsonEncode({'reason': reason.trim()}),
+    );
+    return _decodeOk(response);
+  }
+
   Map<String, String> _headers(RembehSession session) => {
     'Authorization': '${session.tokenType} ${session.accessToken}',
     'Accept': 'application/json',

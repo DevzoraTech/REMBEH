@@ -45,6 +45,7 @@ abstract class LoanApplicationRepository {
     double? initialDisbursementAmount,
     double collectedRepaymentsAmount = 0,
     String? disbursementNote,
+    String? operationDate,
   });
 
   Future<List<LoanApplicationListItem>> listApplications();
