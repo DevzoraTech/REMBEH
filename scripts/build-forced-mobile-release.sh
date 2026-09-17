@@ -729,7 +729,9 @@ if [[ "$FORCE_UPDATE" == "true" ]]; then
   register_args+=(--force)
 fi
 
-if [[ "$IS_ACTIVE" != "true" ]]; then
+if [[ "$IS_ACTIVE" == "true" ]]; then
+  register_args+=(--active)
+else
   register_args+=(--inactive)
 fi
 
