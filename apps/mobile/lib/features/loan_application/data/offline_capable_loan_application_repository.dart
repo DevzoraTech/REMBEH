@@ -358,6 +358,8 @@ class OfflineCapableLoanApplicationRepository
         guarantorPhone: _string(guarantorMap['phone']),
         businessDescription: _string(draft.data['collateralType']),
         disbursementNote: _string(draft.data['disbursementNote']),
+        operationDate:
+            _string(draft.data['operationDate']) ?? _dateLabel(draft.createdAt),
         createdAt: draft.createdAt,
       ),
     );
@@ -428,6 +430,13 @@ class _OfflineLoanDraft {
   String? verificationCode;
   DateTime? verifiedAt;
   DateTime? termsConfirmedAt;
+}
+
+String _dateLabel(DateTime value) {
+  final local = value.toLocal();
+  return '${local.year.toString().padLeft(4, '0')}-'
+      '${local.month.toString().padLeft(2, '0')}-'
+      '${local.day.toString().padLeft(2, '0')}';
 }
 
 String? _string(Object? value) {

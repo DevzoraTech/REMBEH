@@ -179,6 +179,7 @@ class LocalDatabase {
         guarantor_nin TEXT,
         business_description TEXT,
         disbursement_note TEXT,
+        operation_date TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         submitted_at INTEGER,
         synced_at INTEGER,
@@ -521,6 +522,7 @@ class LocalDatabase {
       'collected_repayments_amount REAL DEFAULT 0',
     );
     await addColumn('disbursement_note', 'disbursement_note TEXT');
+    await addColumn('operation_date', 'operation_date TEXT');
   }
 
   Future<String?> getMetadata(String key) async {
@@ -538,15 +540,11 @@ class LocalDatabase {
   Future<void> setMetadata(String key, String value) async {
     final db = await database;
 
-    await db.insert(
-      'sync_metadata',
-      {
-        'key': key,
-        'value': value,
-        'updated_at': DateTime.now().millisecondsSinceEpoch,
-      },
-      conflictAlgorithm: ConflictAlgorithm.replace,
-    );
+    await db.insert('sync_metadata', {
+      'key': key,
+      'value': value,
+      'updated_at': DateTime.now().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<DateTime?> getLastSyncTimestamp() async {
@@ -583,17 +581,9 @@ class LocalDatabase {
       whereArgs: ['SYNCED'],
     );
 
-    await db.delete(
-      'collections',
-      where: 'status = ?',
-      whereArgs: ['SYNCED'],
-    );
+    await db.delete('collections', where: 'status = ?', whereArgs: ['SYNCED']);
 
-    await db.delete(
-      'payments',
-      where: 'status = ?',
-      whereArgs: ['SYNCED'],
-    );
+    await db.delete('payments', where: 'status = ?', whereArgs: ['SYNCED']);
 
     await db.delete(
       'loan_application_media',

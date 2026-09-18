@@ -556,6 +556,7 @@ export class SyncService implements OnModuleInit {
           branchId!,
           userId,
           operation.localId,
+          operation.createdAt,
           operation.payload,
         );
 
@@ -598,6 +599,7 @@ export class SyncService implements OnModuleInit {
     branchId: string,
     agentId: string,
     localId: string,
+    operationCreatedAt: string,
     payload: any,
   ) {
     const principalAmount = this.parseMoney(
@@ -652,6 +654,11 @@ export class SyncService implements OnModuleInit {
             ? Number(template.processingFeeFixedAmount.toString())
             : null,
       });
+
+    const operationDate = this.parseOfflineOperationDate(
+      payload.operationDate,
+      operationCreatedAt,
+    );
 
     // Check for duplicate NIN if provided
     if (payload.applicantNin) {
@@ -722,11 +729,43 @@ export class SyncService implements OnModuleInit {
               },
             }
           : {}),
-        submittedAt: new Date(),
+        createdAt: operationDate,
+        submittedAt: operationDate,
       },
     });
 
     return { id: application.id };
+  }
+
+  private parseOfflineOperationDate(
+    requestedDate: unknown,
+    fallbackCreatedAt: string,
+  ) {
+    const requested = String(requestedDate ?? '').trim();
+    if (requested) {
+      const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(requested);
+      if (!match) {
+        throw new BadRequestException('operationDate must be YYYY-MM-DD.');
+      }
+      const parsed = new Date(
+        Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 9),
+      );
+      if (
+        Number.isNaN(parsed.getTime()) ||
+        parsed.getUTCFullYear() !== Number(match[1]) ||
+        parsed.getUTCMonth() !== Number(match[2]) - 1 ||
+        parsed.getUTCDate() !== Number(match[3])
+      ) {
+        throw new BadRequestException('operationDate must be valid.');
+      }
+      return parsed;
+    }
+
+    const fallback = new Date(fallbackCreatedAt);
+    if (Number.isNaN(fallback.getTime())) {
+      throw new BadRequestException('Offline record date is invalid.');
+    }
+    return fallback;
   }
 
   private async createLoanDisbursement(

@@ -13,6 +13,7 @@ export const OPERATIONS_EVENTS = {
   reportGenerated: 'operation.report_generated',
   reportManagerReviewed: 'operation.report_manager_reviewed',
   reportOwnerApproved: 'operation.report_owner_approved',
+  reportOwnerReturned: 'operation.report_owner_returned',
 } as const;
 
 export type BranchOperationEventPayload = {

@@ -17,6 +17,7 @@ class ExpensesScreen extends StatefulWidget {
     required this.date,
     required this.operation,
     required this.dayOpen,
+    this.canCorrectExisting = false,
     this.branchId,
   });
 
@@ -25,6 +26,7 @@ class ExpensesScreen extends StatefulWidget {
   final String? branchId;
   final Map<String, dynamic>? operation;
   final bool dayOpen;
+  final bool canCorrectExisting;
 
   @override
   State<ExpensesScreen> createState() => _ExpensesScreenState();
@@ -156,6 +158,7 @@ class _ExpensesScreenState extends State<ExpensesScreen> {
           branchId: widget.branchId,
           expense: expense,
           dayOpen: widget.dayOpen,
+          canCorrect: widget.dayOpen || widget.canCorrectExisting,
           remainingCash: _remainingDayCash,
         );
       },
@@ -642,18 +645,6 @@ class _MessageCard extends StatelessWidget {
       ),
     );
   }
-}
-
-String _categoryLabel(String value) {
-  return value
-      .toLowerCase()
-      .split('_')
-      .map(
-        (word) => word.isEmpty
-            ? word
-            : '${word[0].toUpperCase()}${word.substring(1)}',
-      )
-      .join(' ');
 }
 
 IconData _categoryIcon(String category) {

@@ -22,6 +22,7 @@ class LoanApplicationLocal {
   final String? guarantorNin;
   final String? businessDescription;
   final String? disbursementNote;
+  final String operationDate;
   final DateTime createdAt;
   final DateTime? submittedAt;
   final DateTime? syncedAt;
@@ -49,6 +50,7 @@ class LoanApplicationLocal {
     this.guarantorNin,
     this.businessDescription,
     this.disbursementNote,
+    required this.operationDate,
     required this.createdAt,
     this.submittedAt,
     this.syncedAt,
@@ -93,6 +95,11 @@ class LoanApplicationLocal {
       guarantorNin: map['guarantor_nin'] as String?,
       businessDescription: map['business_description'] as String?,
       disbursementNote: map['disbursement_note'] as String?,
+      operationDate:
+          map['operation_date'] as String? ??
+          _dateLabel(
+            DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int),
+          ),
       createdAt: DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int),
       submittedAt: map['submitted_at'] != null
           ? DateTime.fromMillisecondsSinceEpoch(map['submitted_at'] as int)
@@ -128,6 +135,7 @@ class LoanApplicationLocal {
       'guarantor_nin': guarantorNin,
       'business_description': businessDescription,
       'disbursement_note': disbursementNote,
+      'operation_date': operationDate,
       'created_at': createdAt.millisecondsSinceEpoch,
       'submitted_at': submittedAt?.millisecondsSinceEpoch,
       'synced_at': syncedAt?.millisecondsSinceEpoch,
@@ -164,11 +172,19 @@ class LoanApplicationLocal {
       guarantorNin: guarantorNin,
       businessDescription: businessDescription,
       disbursementNote: disbursementNote,
+      operationDate: operationDate,
       createdAt: createdAt,
       submittedAt: submittedAt ?? this.submittedAt,
       syncedAt: syncedAt ?? this.syncedAt,
     );
   }
+}
+
+String _dateLabel(DateTime value) {
+  final local = value.toLocal();
+  return '${local.year.toString().padLeft(4, '0')}-'
+      '${local.month.toString().padLeft(2, '0')}-'
+      '${local.day.toString().padLeft(2, '0')}';
 }
 
 double _double(Object? value) {

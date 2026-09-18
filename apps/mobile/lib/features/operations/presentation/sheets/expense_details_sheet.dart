@@ -14,6 +14,7 @@ class ExpenseDetailsSheet extends StatefulWidget {
     required this.date,
     required this.expense,
     required this.dayOpen,
+    required this.canCorrect,
     this.branchId,
     this.remainingCash,
   });
@@ -24,6 +25,7 @@ class ExpenseDetailsSheet extends StatefulWidget {
 
   final Map<String, dynamic> expense;
   final bool dayOpen;
+  final bool canCorrect;
   final num? remainingCash;
 
   @override
@@ -41,7 +43,7 @@ class _ExpenseDetailsSheetState extends State<ExpenseDetailsSheet> {
   bool get _voided => widget.expense['voidedAt'] != null;
 
   Future<void> _edit() async {
-    if (!widget.dayOpen || _voided) {
+    if (!widget.canCorrect || _voided) {
       return;
     }
 
@@ -58,8 +60,7 @@ class _ExpenseDetailsSheetState extends State<ExpenseDetailsSheet> {
           initialExpense: widget.expense,
           remainingCash: widget.remainingCash == null
               ? null
-              : widget.remainingCash! +
-                  (_num(widget.expense['amount'])),
+              : widget.remainingCash! + (_num(widget.expense['amount'])),
         );
       },
     );
@@ -70,7 +71,7 @@ class _ExpenseDetailsSheetState extends State<ExpenseDetailsSheet> {
   }
 
   Future<void> _voidExpense() async {
-    if (!widget.dayOpen || _voided || _saving) {
+    if (!widget.canCorrect || _voided || _saving) {
       return;
     }
 
@@ -350,8 +351,10 @@ class _ExpenseDetailsSheetState extends State<ExpenseDetailsSheet> {
                     child: Text(
                       _voided
                           ? 'This expense was voided and no longer affects branch cash.'
-                          : widget.dayOpen
-                          ? 'You can edit or void this expense while the day is open. Changes are saved in the audit trail.'
+                          : widget.canCorrect
+                          ? widget.dayOpen
+                                ? 'You can edit or void this expense while the day is open. Changes are saved in the audit trail.'
+                                : 'This report was returned for correction. Expense changes are saved in the audit trail and update the report figures.'
                           : 'This expense is locked because the business day is no longer open.',
                       style: const TextStyle(
                         color: slateText,
@@ -377,7 +380,7 @@ class _ExpenseDetailsSheetState extends State<ExpenseDetailsSheet> {
               ),
             ],
 
-            if (widget.dayOpen && !_voided) ...[
+            if (widget.canCorrect && !_voided) ...[
               const SizedBox(height: 14),
 
               OutlinedButton.icon(
@@ -572,18 +575,6 @@ class _DetailsRow extends StatelessWidget {
       ),
     );
   }
-}
-
-String _categoryLabel(String value) {
-  return value
-      .toLowerCase()
-      .split('_')
-      .map(
-        (word) => word.isEmpty
-            ? word
-            : '${word[0].toUpperCase()}${word.substring(1)}',
-      )
-      .join(' ');
 }
 
 IconData _categoryIcon(String value) {

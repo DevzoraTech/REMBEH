@@ -180,16 +180,13 @@ export class OperationsController {
   }
 
   @Post('reconciliation/notes')
-@RequirePermissions(OPERATIONS_PERMISSIONS.close)
-updateReconciliationNotes(
-  @CurrentUser() user: AuthenticatedUser,
-  @Body() dto: UpdateOperationReconciliationNotesDto,
-) {
-  return this.operationsService.updateReconciliationNotes(
-    user,
-    dto,
-  );
-}
+  @RequirePermissions(OPERATIONS_PERMISSIONS.close)
+  updateReconciliationNotes(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateOperationReconciliationNotesDto,
+  ) {
+    return this.operationsService.updateReconciliationNotes(user, dto);
+  }
 
   /**
    * Final reconciliation submission.
@@ -276,6 +273,17 @@ updateReconciliationNotes(
     @Body() dto: ReviewOperationReportDto,
   ) {
     return this.operationsService.ownerApproveReport(user, reportId, dto);
+  }
+
+  @Post('reports/:reportId/owner-return')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.approve)
+  ownerReturnReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('reportId', ParseUUIDPipe)
+    reportId: string,
+    @Body() dto: ReviewOperationReportDto,
+  ) {
+    return this.operationsService.ownerReturnReport(user, reportId, dto);
   }
 
   @Post('reports/:reportId/owner-authorize-rollback')

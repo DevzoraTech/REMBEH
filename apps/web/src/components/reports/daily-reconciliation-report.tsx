@@ -11,6 +11,7 @@ import {
   FileText,
   Info,
   Loader2,
+  RotateCcw,
   Scale,
   Send,
   WalletCards,
@@ -210,6 +211,7 @@ export function DailyReconciliationReport({
   onExportExcel,
   onExportPdf,
   onPrimaryAction,
+  onReturnAction,
   primaryDisabled = false,
   primaryDisabledReason,
   showBack = false,
@@ -228,6 +230,7 @@ export function DailyReconciliationReport({
   onExportExcel: () => void;
   onExportPdf: () => void;
   onPrimaryAction?: () => void;
+  onReturnAction?: () => void;
   primaryDisabled?: boolean;
   primaryDisabledReason?: string;
   showBack?: boolean;
@@ -242,6 +245,10 @@ export function DailyReconciliationReport({
       document.status === "RETURNED_TO_MANAGER");
   const canOwnerApprove =
     mode === "owner" && document.status === "SENT_TO_OWNER";
+  const canOwnerReturn =
+    mode === "owner" &&
+    (document.status === "SENT_TO_OWNER" ||
+      document.status === "OWNER_APPROVED");
   const primaryLabel = canManagerSend
     ? "Send to Owner"
     : canOwnerApprove
@@ -369,10 +376,12 @@ export function DailyReconciliationReport({
           acting={acting}
           canManagerSend={canManagerSend}
           canOwnerApprove={canOwnerApprove}
+          canOwnerReturn={canOwnerReturn}
           primaryLabel={primaryLabel}
           primaryDisabled={primaryDisabled}
           primaryDisabledReason={primaryDisabledReason}
           onPrimaryAction={onPrimaryAction}
+          onReturnAction={onReturnAction}
         />
       </div>
     </div>
@@ -1124,10 +1133,12 @@ function ReviewSidebar({
   acting,
   canManagerSend,
   canOwnerApprove,
+  canOwnerReturn,
   primaryLabel,
   primaryDisabled = false,
   primaryDisabledReason,
   onPrimaryAction,
+  onReturnAction,
 }: {
   document: DailyReportDocumentModel;
   mode: "manager" | "owner" | "readonly";
@@ -1136,10 +1147,12 @@ function ReviewSidebar({
   acting: boolean;
   canManagerSend: boolean;
   canOwnerApprove: boolean;
+  canOwnerReturn: boolean;
   primaryLabel: string | null;
   primaryDisabled?: boolean;
   primaryDisabledReason?: string;
   onPrimaryAction?: () => void;
+  onReturnAction?: () => void;
 }) {
   const cashCounted = document.countedCash != null;
   const handoversDone =
@@ -1152,7 +1165,7 @@ function ReviewSidebar({
   const allPassed =
     cashCounted && handoversDone && expensesReviewed && noteAdded;
   const statusLabel = documentReportStatusLabel(document.status);
-  const showComment = canManagerSend || canOwnerApprove;
+  const showComment = canManagerSend || canOwnerApprove || canOwnerReturn;
 
   return (
     <aside className="space-y-3 xl:sticky xl:top-4 xl:self-start">
@@ -1167,16 +1180,16 @@ function ReviewSidebar({
               ? "Apply payment corrections first, then re-check figures before resubmitting."
               : "Re-check corrected figures, then resubmit this report to the owner."
             : document.status === "MANAGER_REVIEW"
-            ? allPassed
-              ? "All validations passed. You can send this report to the owner."
-              : "Complete the remaining checks before sending to the owner."
-            : document.status === "SENT_TO_OWNER"
-              ? mode === "owner"
-                ? "Review the figures and approve when everything looks correct."
-                : "Waiting for the owner to review and approve this report."
-              : document.status === "OWNER_APPROVED"
-                ? "This report has been approved and saved."
-                : "Review this report."}
+              ? allPassed
+                ? "All validations passed. You can send this report to the owner."
+                : "Complete the remaining checks before sending to the owner."
+              : document.status === "SENT_TO_OWNER"
+                ? mode === "owner"
+                  ? "Review the figures and approve when everything looks correct."
+                  : "Waiting for the owner to review and approve this report."
+                : document.status === "OWNER_APPROVED"
+                  ? "This report has been approved and saved."
+                  : "Review this report."}
         </p>
         <ul className="mt-4 space-y-3">
           <CheckItem
@@ -1215,7 +1228,9 @@ function ReviewSidebar({
           <label className="text-sm font-bold text-[#0b1220]">
             {canManagerSend
               ? "Owner Comment (Optional)"
-              : "Approval Comment (Optional)"}
+              : canOwnerReturn
+                ? "Owner review note"
+                : "Approval Comment (Optional)"}
           </label>
           <div className="relative mt-2">
             <textarea
@@ -1226,7 +1241,9 @@ function ReviewSidebar({
               placeholder={
                 canManagerSend
                   ? "Add a comment for the owner..."
-                  : "Add an approval comment..."
+                  : canOwnerReturn
+                    ? "Explain what the manager should correct..."
+                    : "Add an approval comment..."
               }
               className="w-full resize-none rounded-xl border border-[#e6ebf0] bg-[#f8faf9] px-3 py-2.5 text-sm text-[#0b1220] outline-none ring-[var(--forest-emerald)] placeholder:text-slate-400 focus:ring-2"
             />
@@ -1266,6 +1283,21 @@ function ReviewSidebar({
                     : "This will finalize and save the approved report."}
               </p>
             </>
+          ) : null}
+          {canOwnerReturn && onReturnAction ? (
+            <button
+              type="button"
+              disabled={acting}
+              onClick={onReturnAction}
+              className="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 text-sm font-bold text-red-700 transition hover:bg-red-100 disabled:opacity-55"
+            >
+              {acting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <RotateCcw className="size-4" />
+              )}
+              Return for correction
+            </button>
           ) : null}
         </section>
       ) : null}
@@ -1394,7 +1426,13 @@ function ExpensesTab({ document }: { document: DailyReportDocumentModel }) {
       </div>
       <div className="overflow-x-auto p-4">
         <ReportTable
-          columns={["Paid from", "Description", "Amount", "Time", "Recorded by"]}
+          columns={[
+            "Paid from",
+            "Description",
+            "Amount",
+            "Time",
+            "Recorded by",
+          ]}
           align={[false, false, true, false, false]}
           rows={document.expenses.map((row) => [
             row.paidFrom === "AGENT_FLOAT" ? "Field float" : "Branch cash",
@@ -2233,8 +2271,7 @@ export function buildDailyReportDocumentFromSnapshot(
           ? ("AGENT_FLOAT" as const)
           : ("BRANCH_CASH" as const),
       agentId: typeof item.agentId === "string" ? item.agentId : null,
-      agentName:
-        typeof item.agentName === "string" ? item.agentName : null,
+      agentName: typeof item.agentName === "string" ? item.agentName : null,
       voided,
     };
   });

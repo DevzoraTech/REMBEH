@@ -5,6 +5,7 @@ import '../../../../../services/session_store.dart';
 import '../../../../../theme.dart';
 import '../../../../../utils/friendly_errors.dart';
 import '../../../../../utils/money.dart';
+import '../../screens/expenses_screen.dart';
 import '../pdf/daily_report_pdf_cache.dart';
 import 'daily_report_screen.dart';
 
@@ -140,6 +141,55 @@ class _ReturnedReportScreenState extends State<ReturnedReportScreen> {
     );
   }
 
+  Future<void> _openExpenses() async {
+    final report = _report;
+    final operationDate = '${report?['operationDate'] ?? ''}'.trim();
+    if (operationDate.isEmpty) {
+      setState(() => _error = 'The report date is not available.');
+      return;
+    }
+
+    setState(() {
+      _error = null;
+      _notice = null;
+    });
+
+    try {
+      final payload = await _api.getBranchOperation(
+        session: widget.session,
+        branchId: widget.session.branchId,
+        date: operationDate,
+      );
+      final rawOperation = payload['operation'];
+      final operation = rawOperation is Map
+          ? Map<String, dynamic>.from(rawOperation)
+          : null;
+      if (operation == null) {
+        throw ApiException('The operation for this report was not found.');
+      }
+      if (!mounted) return;
+
+      final changed = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => ExpensesScreen(
+            session: widget.session,
+            branchId: widget.session.branchId,
+            date: operationDate,
+            operation: operation,
+            dayOpen: false,
+            canCorrectExisting: true,
+          ),
+        ),
+      );
+      if (changed == true) {
+        await _load();
+      }
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = friendlyErrorMessage(error));
+    }
+  }
+
   Future<void> _resubmit() async {
     if (_submitting || _correctionsBlocking || _report == null) return;
     setState(() {
@@ -241,9 +291,7 @@ class _ReturnedReportScreenState extends State<ReturnedReportScreen> {
         ],
       ),
       body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(color: forestEmerald),
-            )
+          ? const Center(child: CircularProgressIndicator(color: forestEmerald))
           : ListView(
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 28),
               children: [
@@ -319,10 +367,10 @@ class _ReturnedReportScreenState extends State<ReturnedReportScreen> {
                         valueColor: variance == null
                             ? midnightNavy
                             : variance < 0
-                                ? const Color(0xFFB42318)
-                                : variance > 0
-                                    ? forestEmerald
-                                    : midnightNavy,
+                            ? const Color(0xFFB42318)
+                            : variance > 0
+                            ? forestEmerald
+                            : midnightNavy,
                       ),
                     ],
                   ),
@@ -332,6 +380,18 @@ class _ReturnedReportScreenState extends State<ReturnedReportScreen> {
                   onPressed: _openPdf,
                   icon: const Icon(Icons.picture_as_pdf_outlined),
                   label: const Text('View full report'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: forestEmerald,
+                    side: const BorderSide(color: forestEmerald),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  onPressed: _openExpenses,
+                  icon: const Icon(Icons.receipt_long_outlined),
+                  label: const Text('Correct expenses'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: forestEmerald,
                     side: const BorderSide(color: forestEmerald),
@@ -426,9 +486,7 @@ class _ReturnedReportScreenState extends State<ReturnedReportScreen> {
                           ),
                         )
                       : const Icon(Icons.send_rounded),
-                  label: Text(
-                    _submitting ? 'Sending…' : 'Resubmit to owner',
-                  ),
+                  label: Text(_submitting ? 'Sending…' : 'Resubmit to owner'),
                   style: FilledButton.styleFrom(
                     backgroundColor: forestEmerald,
                     padding: const EdgeInsets.symmetric(vertical: 14),

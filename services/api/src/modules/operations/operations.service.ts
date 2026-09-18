@@ -1550,14 +1550,27 @@ export class OperationsService {
 
     await this.assertCanMutateExpense(user, expense);
 
-    if (expense.operation.status !== BranchOperationStatus.OPEN) {
-      throw new BadRequestException(
-        'Expenses can only be edited while the branch day is open.',
-      );
-    }
+    const returnedReport = await this.assertExpenseDayCanBeCorrected(
+      user,
+      expense.operation,
+    );
 
     if (expense.voidedAt) {
       throw new BadRequestException('A voided expense cannot be edited.');
+    }
+
+    let incurredAt: Date | undefined;
+    if (dto.incurredAt !== undefined) {
+      incurredAt = new Date(dto.incurredAt);
+      const expenseDay = this.formatDateLabel(expense.operation.operationDate);
+      if (
+        Number.isNaN(incurredAt.getTime()) ||
+        this.formatDateLabel(incurredAt) !== expenseDay
+      ) {
+        throw new BadRequestException(
+          'Expense time must remain within the report day.',
+        );
+      }
     }
 
     if (dto.amount !== undefined) {
@@ -1601,7 +1614,17 @@ export class OperationsService {
         dto.description === undefined
           ? undefined
           : dto.description.trim() || null,
+      incurredAt,
     });
+
+    if (returnedReport) {
+      await this.refreshDayAfterRepaymentCorrection({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        operationDate: this.formatDateLabel(expense.operation.operationDate),
+        actorUserId: user.userId,
+      });
+    }
 
     this.broadcastExpenseEvent(OPERATIONS_EVENTS.expenseUpdated, {
       operationId: expense.operation.id,
@@ -1616,7 +1639,10 @@ export class OperationsService {
       amount: dto.amount ?? this.decimalToNumber(expense.amount),
     });
 
-    if (expense.paidFrom === BranchOperationExpensePaidFrom.AGENT_FLOAT) {
+    if (
+      !returnedReport &&
+      expense.paidFrom === BranchOperationExpensePaidFrom.AGENT_FLOAT
+    ) {
       return this.getAgentToday(user);
     }
 
@@ -1651,11 +1677,10 @@ export class OperationsService {
 
     await this.assertCanMutateExpense(user, expense);
 
-    if (expense.operation.status !== BranchOperationStatus.OPEN) {
-      throw new BadRequestException(
-        'Expenses can only be voided while the branch day is open.',
-      );
-    }
+    const returnedReport = await this.assertExpenseDayCanBeCorrected(
+      user,
+      expense.operation,
+    );
 
     if (expense.voidedAt) {
       throw new BadRequestException('This expense has already been voided.');
@@ -1667,6 +1692,15 @@ export class OperationsService {
       actorUserId: user.userId,
       reason: dto.reason,
     });
+
+    if (returnedReport) {
+      await this.refreshDayAfterRepaymentCorrection({
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        operationDate: this.formatDateLabel(expense.operation.operationDate),
+        actorUserId: user.userId,
+      });
+    }
 
     this.broadcastExpenseEvent(OPERATIONS_EVENTS.expenseVoided, {
       operationId: expense.operation.id,
@@ -1681,7 +1715,10 @@ export class OperationsService {
       amount: this.decimalToNumber(expense.amount),
     });
 
-    if (expense.paidFrom === BranchOperationExpensePaidFrom.AGENT_FLOAT) {
+    if (
+      !returnedReport &&
+      expense.paidFrom === BranchOperationExpensePaidFrom.AGENT_FLOAT
+    ) {
       return this.getAgentToday(user);
     }
 
@@ -2067,6 +2104,88 @@ export class OperationsService {
     });
 
     this.broadcastOperationEvent(OPERATIONS_EVENTS.reportOwnerApproved, {
+      operationId: report.operationId,
+      reportId: updated.id,
+      tenantId: user.tenantId,
+      branchId: report.branchId,
+      operationDate: this.formatDateLabel(report.operationDate),
+      status: updated.status,
+    });
+
+    return this.getToday(user, {
+      branchId: report.branchId,
+      date: this.formatDateLabel(report.operationDate),
+    });
+  }
+
+  async ownerReturnReport(
+    user: AuthenticatedUser,
+    reportId: string,
+    dto: ReviewOperationReportDto,
+  ): Promise<DailyOperationResponseContract> {
+    this.assertCanOwnerApproveReport(user);
+
+    const report = await this.repository.findReportById({
+      tenantId: user.tenantId,
+      reportId,
+    });
+
+    if (!report) {
+      throw new NotFoundException('Report was not found.');
+    }
+
+    await this.resolveBranch(user, report.branchId);
+
+    if (
+      report.status !== BranchOperationReportStatus.SENT_TO_OWNER &&
+      report.status !== BranchOperationReportStatus.OWNER_APPROVED
+    ) {
+      throw new BadRequestException(
+        'Only a report with the owner can be returned for correction.',
+      );
+    }
+
+    const notes = dto.notes?.trim() ?? '';
+    if (notes.length < 6) {
+      throw new BadRequestException(
+        'Add a clear correction note before returning the report.',
+      );
+    }
+
+    const previousStatus = report.status;
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const returned = await tx.branchOperationReport.update({
+        where: { id: report.id },
+        data: {
+          status: BranchOperationReportStatus.RETURNED_TO_MANAGER,
+          returnedAt: new Date(),
+          returnedById: user.userId,
+          returnNotes: notes,
+          ownerApprovedAt: null,
+          ownerApprovedById: null,
+          ownerNotes: null,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: user.tenantId,
+          actorUserId: user.userId,
+          action: 'operation_report.owner_returned',
+          entityType: 'branch_operation_report',
+          entityId: report.id,
+          oldValue: { status: previousStatus },
+          newValue: {
+            status: BranchOperationReportStatus.RETURNED_TO_MANAGER,
+            notes,
+          },
+        },
+      });
+
+      return returned;
+    });
+
+    this.broadcastOperationEvent(OPERATIONS_EVENTS.reportOwnerReturned, {
       operationId: report.operationId,
       reportId: updated.id,
       tenantId: user.tenantId,
@@ -4235,6 +4354,37 @@ export class OperationsService {
         'You can only change your own field expenses.',
       );
     }
+  }
+
+  private async assertExpenseDayCanBeCorrected(
+    user: AuthenticatedUser,
+    operation: {
+      id: string;
+      status: BranchOperationStatus;
+      operationDate: Date;
+    },
+  ) {
+    if (operation.status === BranchOperationStatus.OPEN) return false;
+
+    const report = await this.prisma.branchOperationReport.findUnique({
+      where: { operationId: operation.id },
+      select: { status: true },
+    });
+    const canManageReturnedReport =
+      user.permissions.includes(OPERATIONS_PERMISSIONS.reportReview) ||
+      user.permissions.includes(OPERATIONS_PERMISSIONS.approve);
+
+    if (
+      operation.status === BranchOperationStatus.CLOSED &&
+      report?.status === BranchOperationReportStatus.RETURNED_TO_MANAGER &&
+      canManageReturnedReport
+    ) {
+      return true;
+    }
+
+    throw new BadRequestException(
+      'Expenses can only be corrected in an open day or a report returned for correction.',
+    );
   }
 
   private assertCanCreateExpense(user: AuthenticatedUser) {

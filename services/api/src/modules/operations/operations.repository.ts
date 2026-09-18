@@ -1101,6 +1101,7 @@ export class OperationsRepository {
     actorUserId: string;
     amount?: Prisma.Decimal;
     description?: string | null;
+    incurredAt?: Date;
   }) {
     return this.prisma.$transaction(async (tx) => {
       const existing = await tx.branchOperationExpense.findFirst({
@@ -1123,6 +1124,9 @@ export class OperationsRepository {
           ...(input.description !== undefined
             ? { description: input.description }
             : {}),
+          ...(input.incurredAt !== undefined
+            ? { incurredAt: input.incurredAt }
+            : {}),
         },
       });
 
@@ -1136,10 +1140,12 @@ export class OperationsRepository {
           oldValue: {
             amount: existing.amount.toString(),
             description: existing.description,
+            incurredAt: existing.incurredAt.toISOString(),
           },
           newValue: {
             amount: expense.amount.toString(),
             description: expense.description,
+            incurredAt: expense.incurredAt.toISOString(),
             paidFrom: expense.paidFrom,
             agentId: expense.agentId,
           },

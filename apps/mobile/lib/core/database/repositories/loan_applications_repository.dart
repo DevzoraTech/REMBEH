@@ -109,9 +109,8 @@ class LoanApplicationsRepository {
     final database = await _db.database;
 
     final payload = jsonEncode({
-  if (application.customerId != null)
-    'customerId': application.customerId,
-  'applicantNin': application.applicantNin,
+      if (application.customerId != null) 'customerId': application.customerId,
+      'applicantNin': application.applicantNin,
       'applicantFirstName': application.applicantFirstName,
       'applicantLastName': application.applicantLastName,
       'applicantPhone': application.applicantPhone,
@@ -125,6 +124,7 @@ class LoanApplicationsRepository {
         'initialDisbursementLocalId': '${application.localId}-initial-cash',
       if (application.disbursementNote?.trim().isNotEmpty == true)
         'disbursementNote': application.disbursementNote!.trim(),
+      'operationDate': application.operationDate,
       'processingFee': application.processingFee,
       'loanProductId': application.loanProductId,
       'guarantorName': application.guarantorName,

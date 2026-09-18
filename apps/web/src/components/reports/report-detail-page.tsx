@@ -174,6 +174,47 @@ export function ReportDetailPage({
     }
   }
 
+  async function returnForCorrection() {
+    if (!state.session || !report || acting) return;
+    const notes = comment.trim();
+    if (notes.length < 6) {
+      setError("Explain what needs correction before returning the report.");
+      return;
+    }
+    setActing(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/operations/reports/${report.id}/owner-return`,
+        {
+          method: "POST",
+          headers: {
+            ...authHeaders(state.session),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ notes }),
+        },
+      );
+      const payload = await readApiJson<{ message?: string | string[] }>(
+        response,
+      );
+      if (!response.ok) throw new Error(formatApiError(payload.message));
+      setComment("");
+      setNotice("Report returned to the manager for correction.");
+      invalidateOwnerNotifications();
+      await loadReport();
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : "Could not return the report for correction.",
+      );
+    } finally {
+      setActing(false);
+    }
+  }
+
   async function exportReport(format: "excel" | "pdf") {
     if (!report || exporting) return;
     setExporting(true);
@@ -184,9 +225,7 @@ export function ReportDetailPage({
         branchLocation: state.branch?.address ?? null,
       });
       setNotice(
-        format === "pdf"
-          ? "PDF downloaded."
-          : "Excel report downloaded.",
+        format === "pdf" ? "PDF downloaded." : "Excel report downloaded.",
       );
     } catch (caught) {
       setError(
@@ -293,6 +332,13 @@ export function ReportDetailPage({
                 report.status === "RETURNED_TO_MANAGER")) ||
             (!isManager && report.status === "SENT_TO_OWNER")
               ? () => void submitAction()
+              : undefined
+          }
+          onReturnAction={
+            !isManager &&
+            (report.status === "SENT_TO_OWNER" ||
+              report.status === "OWNER_APPROVED")
+              ? () => void returnForCorrection()
               : undefined
           }
         />
