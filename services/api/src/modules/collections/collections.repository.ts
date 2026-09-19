@@ -546,7 +546,7 @@ export class CollectionsRepository {
   // REPAYMENT LISTS
   // ===========================================================================
 
-  listRepayments(input: {
+    listRepayments(input: {
     tenantId: string;
     branchId: string | null;
     recordedByUserId?: string | null;
@@ -585,11 +585,74 @@ export class CollectionsRepository {
           : {}),
       },
 
-      include: {
-        recordedBy: true,
+      select: {
+        id: true,
+        loanId: true,
+        branchId: true,
+        recordedByUserId: true,
+
+        amount: true,
+        paidAt: true,
+        method: true,
+        note: true,
+
+        recordedBy: {
+          select: {
+            displayName: true,
+            publicId: true,
+            profilePhotoStorageKey: true,
+          },
+        },
 
         loan: {
-          include: loanWithRelations,
+          select: {
+            id: true,
+            customerId: true,
+            branchId: true,
+
+            principal: true,
+            balance: true,
+            finesTotal: true,
+            isFined: true,
+
+            disbursedAt: true,
+            paymentStartDate: true,
+            createdAt: true,
+
+            customer: {
+              select: {
+                fullName: true,
+                phone: true,
+              },
+            },
+
+            branch: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+
+            wallet: {
+              select: {
+                openingBalance: true,
+                finesTotal: true,
+                isFined: true,
+              },
+            },
+
+            application: {
+              select: {
+                principalAmount: true,
+                interestRatePercent: true,
+                durationDays: true,
+                repaymentFrequency: true,
+                processingFee: true,
+                paymentStartDate: true,
+                submittedAt: true,
+              },
+            },
+          },
         },
       },
 
@@ -600,7 +663,6 @@ export class CollectionsRepository {
       take: input.take ?? 200,
     });
   }
-
   sumRepaymentsToday(input: {
     tenantId: string;
     branchId: string | null;

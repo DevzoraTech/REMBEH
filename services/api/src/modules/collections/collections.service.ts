@@ -292,10 +292,80 @@ export class CollectionsService {
       rows.map((row) => row.id),
     );
 
-    const repayments = await Promise.all(
+        const repayments = await Promise.all(
       rows.map(async (row) => {
         const loan = row.loan;
-        const detail = await this.buildDetail(loan);
+        const app = loan.application;
+
+        const principalAmount =
+          this.decimalToNumber(app?.principalAmount) ??
+          this.decimalToNumber(loan.principal) ??
+          0;
+
+        const interestRatePercent =
+          this.decimalToNumber(app?.interestRatePercent) ?? 0;
+
+        const durationDays = app?.durationDays ?? 0;
+
+        const processingFee =
+          this.decimalToNumber(app?.processingFee) ?? 0;
+
+        const computedPricing = computeLoanPricing({
+          principalAmount,
+          interestRatePercent,
+          durationDays,
+          processingFee,
+        });
+
+        /*
+         * Wallet opening balance is the authoritative contractual debt
+         * snapshot when present. Processing fee remains separate income.
+         */
+        const openingBalance = this.decimalToNumber(
+          loan.wallet?.openingBalance,
+        );
+
+        const baseRepayable =
+          openingBalance ?? computedPricing.totalRepayable;
+
+        const balance = this.decimalToNumber(loan.balance) ?? 0;
+
+        const finesTotal =
+          this.decimalToNumber(loan.finesTotal) ??
+          this.decimalToNumber(loan.wallet?.finesTotal) ??
+          0;
+
+        /*
+         * Preserve buildDetail() semantics without loading repayment history:
+         *
+         * contractual paid-to-date is derived from authoritative remaining
+         * balance rather than by summing historical repayment rows.
+         */
+        const amountPaid = contractualPaidTowardDebt({
+          baseRepayable,
+          balance,
+          finesTotal,
+        });
+
+        const startDate =
+          loan.paymentStartDate ??
+          app?.paymentStartDate ??
+          loan.disbursedAt ??
+          app?.submittedAt ??
+          loan.createdAt;
+
+        const schedule = computeCollectionSchedule({
+          principalAmount,
+          interestRatePercent,
+          durationDays,
+          repaymentFrequency: app?.repaymentFrequency ?? 'DAILY',
+          processingFee,
+          balance,
+          recordedPaidAmount: amountPaid,
+          totalRepayableOverride: baseRepayable,
+          startDate,
+        });
+
         const agentPhotoStorageKey =
           row.recordedBy.profilePhotoStorageKey ?? null;
 
@@ -305,22 +375,36 @@ export class CollectionsService {
           customerId: loan.customerId,
           clientName: loan.customer.fullName,
           phone: loan.customer.phone,
+
           amount: this.decimalToNumber(row.amount) ?? 0,
-          amountPaid: detail.paidAmount,
-          loanAmount: detail.loanAmount,
+
+          amountPaid: schedule.paidAmount,
+
+          loanAmount: this.roundMoney(baseRepayable + finesTotal),
+
           recordedAt: row.paidAt.toISOString(),
+
           synced: true,
-          dueToday: detail.nextDueIsToday,
+
+          dueToday: schedule.nextDueIsToday,
+
           note: row.note,
           method: row.method,
+
           recordedByUserId: row.recordedByUserId,
           recordedByName: row.recordedBy.displayName,
           recordedByPublicId: row.recordedBy.publicId ?? null,
+
           agentPhotoUrl: await this.presignPhotoUrl(agentPhotoStorageKey),
           agentPhotoStorageKey,
+
           branchId: loan.branchId,
           branchName: loan.branch?.name ?? null,
-          sms: smsByRepayment.get(row.id) ?? this.emptyRepaymentSmsStatus(),
+
+          sms:
+            smsByRepayment.get(row.id) ??
+            this.emptyRepaymentSmsStatus(),
+
           voidedAt: null,
           voidedByUserId: null,
           voidReason: null,
@@ -334,15 +418,7 @@ export class CollectionsService {
       };
     }
 
-    if (filter === 'collectedToday') {
-      const now = new Date();
-
-      return {
-        repayments: repayments.filter((item) =>
-          this.sameDay(new Date(item.recordedAt), now),
-        ),
-      };
-    }
+  
 
     return {
       repayments,
