@@ -2847,6 +2847,19 @@ export class CollectionsService {
     await this.assertRepaymentOpenForCorrection(row, user.userId);
     const reason = dto.reason.trim();
     const previousBalance = this.decimalToNumber(row.loan.balance) ?? 0;
+    const voidedAmount = this.decimalToNumber(row.amount) ?? 0;
+    // Rotate the voided amount back onto the live balance. Do NOT rebuild
+    // balance from obligation − sum(repayments); legacy Coglim books can
+    // already be over-summed while the stored balance is still correct.
+    const nextBalance = this.roundMoney(previousBalance + voidedAmount);
+    const nextLoanStatus =
+      nextBalance <= 0
+        ? LoanStatus.CLOSED
+        : row.loan.status === LoanStatus.CLOSED ||
+            row.loan.status === LoanStatus.SUBMITTED ||
+            row.loan.status === LoanStatus.APPROVED
+          ? LoanStatus.CURRENT
+          : row.loan.status;
 
     await this.prisma.$transaction(async (tx) => {
       await tx.repayment.update({
@@ -2893,8 +2906,8 @@ export class CollectionsService {
       await tx.loan.update({
         where: { id: row.loanId },
         data: {
-          balance: new Prisma.Decimal(rebuild.nextBalance.toFixed(2)),
-          status: rebuild.nextStatus,
+          balance: new Prisma.Decimal(nextBalance.toFixed(2)),
+          status: nextLoanStatus,
         },
       });
       await tx.repaymentCorrectionRequest.updateMany({
@@ -2918,15 +2931,16 @@ export class CollectionsService {
           entityType: 'Repayment',
           entityId: row.id,
           oldValue: {
-            amount: this.decimalToNumber(row.amount) ?? 0,
+            amount: voidedAmount,
             loanBalance: previousBalance,
             loanStatus: row.loan.status,
           },
           newValue: {
             voided: true,
             reason,
-            loanBalance: rebuild.nextBalance,
-            loanStatus: rebuild.nextStatus,
+            loanBalance: nextBalance,
+            loanStatus: nextLoanStatus,
+            balanceRotatedFrom: previousBalance,
           },
         },
       });
