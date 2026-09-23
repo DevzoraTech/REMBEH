@@ -1,10 +1,7 @@
 export type BranchOperationStatusContract = 'OPEN' | 'CLOSING' | 'CLOSED';
 
 export type DailyOperationReportStatusContract =
-  | 'MANAGER_REVIEW'
-  | 'SENT_TO_OWNER'
-  | 'OWNER_APPROVED'
-  | 'RETURNED_TO_MANAGER';
+  'MANAGER_REVIEW' | 'SENT_TO_OWNER' | 'OWNER_APPROVED' | 'RETURNED_TO_MANAGER';
 
 export type DailyOperationBranchContract = {
   id: string;
@@ -20,8 +17,7 @@ export type DailyOperationBranchAccessContract = {
 };
 
 export type DailyOperationExpensePaidFromContract =
-  | 'BRANCH_CASH'
-  | 'AGENT_FLOAT';
+  'BRANCH_CASH' | 'AGENT_FLOAT';
 
 export type DailyOperationExpenseContract = {
   id: string;
@@ -72,10 +68,7 @@ export type DailyOperationTopUpContract = {
 };
 
 export type DailyOperationAgentReturnStatusContract =
-  | 'PENDING'
-  | 'RETURNED'
-  | 'SHORT'
-  | 'OVER';
+  'PENDING' | 'RETURNED' | 'SHORT' | 'OVER';
 
 export type DailyOperationAgentReturnContract = {
   floatId: string;
@@ -278,6 +271,8 @@ export type DailyOperationContract = {
   collectionsCount: number;
   collectionsReceived: number;
 
+  portfolioPerformance: DailyOperationPortfolioPerformanceContract;
+
   notes: string | null;
 
   loansByProduct: DailyOperationProductBreakdownContract[];
@@ -295,6 +290,23 @@ export type DailyOperationContract = {
     operationDate: string;
     amount: number;
   } | null;
+};
+
+export type DailyOperationPortfolioPerformanceContract = {
+  activeBorrowers: number;
+  borrowersDue: number;
+  borrowersPaid: number;
+  borrowersMissed: number;
+  payerRatePercent: number;
+  totalDue: number;
+  totalRepaid: number;
+  totalStillDue: number;
+  principalDisbursed: number;
+  principalRepaid: number;
+  principalOutstanding: number;
+  interestExpected: number;
+  interestCollected: number;
+  interestOutstanding: number;
 };
 
 export type DailyOperationReportContract = {

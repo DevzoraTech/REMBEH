@@ -32,6 +32,11 @@ import { PrismaService } from '../../database/prisma.service';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
 import { BillingService } from '../billing/billing.service';
 import { CashShortagesService } from '../cash-shortages/cash-shortages.service';
+import { computeCollectionSchedule } from '../collections/collection-schedule';
+import {
+  computeLoanPricing,
+  resolveBaseRepayable,
+} from '../loan-products/loan-pricing';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
 import { OpenBranchOperationDto } from './dto/open-branch-operation.dto';
 import {
@@ -2551,6 +2556,7 @@ export class OperationsService {
       salaryPayments,
       shortageRecoveriesAgg,
       shortageRecoveryPayments,
+      portfolioLoans,
     ] = await Promise.all([
       this.repository.sumFloatIssued({
         tenantId: operation.tenantId,
@@ -2667,6 +2673,12 @@ export class OperationsService {
       this.repository.listShortageRecoveriesForOperation({
         tenantId: operation.tenantId,
         operationId: operation.id,
+      }),
+
+      this.repository.listPortfolioLoansAsOf({
+        tenantId: operation.tenantId,
+        branchId: operation.branchId,
+        dayEnd,
       }),
     ]);
 
@@ -2848,6 +2860,13 @@ export class OperationsService {
 
     const repayments = this.buildRepaymentDetails(collectionsWithProduct);
 
+    const portfolioPerformance = this.buildPortfolioPerformance({
+      loans: portfolioLoans,
+      dayStart,
+      dayEnd,
+      operationDate: operation.operationDate,
+    });
+
     const processingFees = this.buildProcessingFeeDetails(
       loansIssuedToday,
       operation.operationDate,
@@ -2951,6 +2970,8 @@ export class OperationsService {
 
       collectionsReceived,
 
+      portfolioPerformance,
+
       notes: operation.notes,
 
       loansByProduct,
@@ -2995,6 +3016,175 @@ export class OperationsService {
     const computed = this.roundMoney(openingBalance + cashAddedToday);
 
     return computed > 0 || legacyAvailable === 0 ? computed : legacyAvailable;
+  }
+
+  private buildPortfolioPerformance(input: {
+    loans: Awaited<ReturnType<OperationsRepository['listPortfolioLoansAsOf']>>;
+    dayStart: Date;
+    dayEnd: Date;
+    operationDate: Date;
+  }) {
+    let principalDisbursed = 0;
+    let principalRepaid = 0;
+    let interestExpected = 0;
+    let interestCollected = 0;
+    let totalDue = 0;
+    let totalRepaid = 0;
+    let totalStillDue = 0;
+    const activeBorrowerIds = new Set<string>();
+    const dueBorrowerIds = new Set<string>();
+    const paidBorrowerIds = new Set<string>();
+
+    for (const loan of input.loans) {
+      const agreedPrincipal = this.roundMoney(
+        this.decimalToNumber(loan.application?.principalAmount) ||
+          this.decimalToNumber(loan.principal),
+      );
+      const disbursed = this.roundMoney(
+        loan.disbursements.reduce(
+          (sum, row) => sum + this.decimalToNumber(row.amount),
+          0,
+        ),
+      );
+      principalDisbursed += disbursed;
+
+      const principalPaid = this.roundMoney(
+        loan.repayments.reduce(
+          (sum, row) => sum + this.decimalToNumber(row.principalAllocated),
+          0,
+        ),
+      );
+      const interestPaid = this.roundMoney(
+        loan.repayments.reduce(
+          (sum, row) => sum + this.decimalToNumber(row.interestAllocated),
+          0,
+        ),
+      );
+      principalRepaid += Math.min(disbursed, principalPaid);
+
+      // Pending partial disbursements have no active repayment schedule yet.
+      const fullyDisbursed =
+        agreedPrincipal > 0 && disbursed + 0.005 >= agreedPrincipal;
+      if (!fullyDisbursed) continue;
+
+      const durationDays = Math.max(1, loan.application?.durationDays ?? 1);
+      const interestRatePercent =
+        this.decimalToNumber(loan.application?.interestRatePercent) || 0;
+      const processingFee =
+        this.decimalToNumber(loan.application?.processingFee) || 0;
+      const priced = computeLoanPricing({
+        principalAmount: agreedPrincipal,
+        interestRatePercent,
+        durationDays,
+        processingFee,
+      });
+      const recordedPaidThroughEnd = this.roundMoney(
+        loan.repayments.reduce(
+          (sum, row) => sum + this.decimalToNumber(row.amount),
+          0,
+        ),
+      );
+      const baseRepayable = resolveBaseRepayable({
+        openingBalance: this.decimalToNumber(loan.wallet?.openingBalance),
+        pricedTotal: priced.totalRepayable,
+        principal: agreedPrincipal,
+        paidAmount: recordedPaidThroughEnd,
+        // Never use the loan's current balance for a historical report. It may
+        // include repayments recorded after this report's business-day cutoff.
+        balance: Math.max(0, priced.totalRepayable - recordedPaidThroughEnd),
+        finesTotal: 0,
+      });
+      const expectedInterestForLoan = this.roundMoney(
+        Math.max(0, baseRepayable - agreedPrincipal),
+      );
+      interestExpected += expectedInterestForLoan;
+      interestCollected += Math.min(expectedInterestForLoan, interestPaid);
+
+      const contractualOutstanding = this.roundMoney(
+        Math.max(0, baseRepayable - recordedPaidThroughEnd),
+      );
+      if (contractualOutstanding > 0) {
+        activeBorrowerIds.add(loan.customerId);
+      }
+
+      const paidBeforeDay = this.roundMoney(
+        loan.repayments
+          .filter((row) => row.paidAt < input.dayStart)
+          .reduce((sum, row) => sum + this.decimalToNumber(row.amount), 0),
+      );
+      const paidDuringDay = this.roundMoney(
+        loan.repayments
+          .filter(
+            (row) => row.paidAt >= input.dayStart && row.paidAt <= input.dayEnd,
+          )
+          .reduce((sum, row) => sum + this.decimalToNumber(row.amount), 0),
+      );
+      const firstDisbursement = loan.disbursements[0]?.disbursedAt;
+      const schedule = computeCollectionSchedule({
+        principalAmount: agreedPrincipal,
+        interestRatePercent,
+        durationDays,
+        repaymentFrequency: loan.application?.repaymentFrequency ?? 'DAILY',
+        processingFee,
+        balance: contractualOutstanding,
+        recordedPaidAmount: recordedPaidThroughEnd,
+        totalRepayableOverride: baseRepayable,
+        startDate:
+          loan.paymentStartDate ??
+          loan.disbursedAt ??
+          firstDisbursement ??
+          loan.createdAt,
+        asOf: input.operationDate,
+      });
+      const dueAtStartOfDay = this.roundMoney(
+        Math.max(0, schedule.expectedCumulative - paidBeforeDay),
+      );
+      if (dueAtStartOfDay <= 0) continue;
+
+      const appliedToday = this.roundMoney(
+        Math.min(dueAtStartOfDay, paidDuringDay),
+      );
+      dueBorrowerIds.add(loan.customerId);
+      if (appliedToday > 0) paidBorrowerIds.add(loan.customerId);
+      totalDue += dueAtStartOfDay;
+      totalRepaid += appliedToday;
+      totalStillDue += Math.max(0, dueAtStartOfDay - appliedToday);
+    }
+
+    const roundedPrincipalDisbursed = this.roundMoney(principalDisbursed);
+    const roundedPrincipalRepaid = this.roundMoney(
+      Math.min(roundedPrincipalDisbursed, principalRepaid),
+    );
+    const roundedInterestExpected = this.roundMoney(interestExpected);
+    const roundedInterestCollected = this.roundMoney(
+      Math.min(roundedInterestExpected, interestCollected),
+    );
+    const borrowersDue = dueBorrowerIds.size;
+    const borrowersPaid = paidBorrowerIds.size;
+
+    return {
+      activeBorrowers: activeBorrowerIds.size,
+      borrowersDue,
+      borrowersPaid,
+      borrowersMissed: Math.max(0, borrowersDue - borrowersPaid),
+      payerRatePercent:
+        borrowersDue === 0
+          ? 0
+          : Math.round((borrowersPaid / borrowersDue) * 10_000) / 100,
+      totalDue: this.roundMoney(totalDue),
+      totalRepaid: this.roundMoney(totalRepaid),
+      totalStillDue: this.roundMoney(totalStillDue),
+      principalDisbursed: roundedPrincipalDisbursed,
+      principalRepaid: roundedPrincipalRepaid,
+      principalOutstanding: this.roundMoney(
+        Math.max(0, roundedPrincipalDisbursed - roundedPrincipalRepaid),
+      ),
+      interestExpected: roundedInterestExpected,
+      interestCollected: roundedInterestCollected,
+      interestOutstanding: this.roundMoney(
+        Math.max(0, roundedInterestExpected - roundedInterestCollected),
+      ),
+    };
   }
 
   /**
@@ -3319,7 +3509,7 @@ export class OperationsService {
     operation: DailyOperationContract,
   ): Prisma.InputJsonObject {
     return {
-      version: 4,
+      version: 5,
       reportType: 'daily_operations_close',
 
       operation: {
@@ -3357,6 +3547,8 @@ export class OperationsService {
         countedCash: operation.closingBalance,
         variance: operation.closingVariance,
       },
+
+      portfolioPerformance: operation.portfolioPerformance,
 
       openingCash: {
         previousClosingBalance: operation.openingBalance,

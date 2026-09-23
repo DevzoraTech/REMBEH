@@ -14,7 +14,7 @@ class DailyReportPdfBuilder {
   const DailyReportPdfBuilder();
 
   /// Bump when PDF chrome/layout changes so local caches regenerate.
-  static const layoutVersion = 'v3-org-header-owner-notes';
+  static const layoutVersion = 'v4-portfolio-performance';
 
   static const _brandMarkAsset = 'assets/rembeh-mark.png';
 
@@ -53,28 +53,32 @@ class DailyReportPdfBuilder {
           pw.SizedBox(height: 8),
           _cashMovement(report),
           pw.SizedBox(height: 16),
-          _sectionTitle('2. ACCOUNTABILITY'),
+          _sectionTitle('2. LOAN PORTFOLIO & REPAYMENT PERFORMANCE'),
+          pw.SizedBox(height: 6),
+          _portfolioPerformance(report),
+          pw.SizedBox(height: 16),
+          _sectionTitle('3. ACCOUNTABILITY'),
           pw.SizedBox(height: 6),
           _agentTable(report),
           pw.SizedBox(height: 16),
-          _sectionTitle('3. LOANS ISSUED TODAY'),
+          _sectionTitle('4. LOANS ISSUED TODAY'),
           pw.SizedBox(height: 6),
           _loansTable(report),
           pw.SizedBox(height: 16),
-          _sectionTitle('4. REPAYMENTS COLLECTED'),
+          _sectionTitle('5. REPAYMENTS COLLECTED'),
           pw.SizedBox(height: 6),
           _repaymentsTable(report),
           pw.SizedBox(height: 16),
-          _sectionTitle('5. PROCESSING FEES'),
+          _sectionTitle('6. PROCESSING FEES'),
           pw.SizedBox(height: 6),
           _feesTable(report),
           pw.SizedBox(height: 16),
-          _sectionTitle('6. EXPENSES'),
+          _sectionTitle('7. EXPENSES'),
           pw.SizedBox(height: 6),
           _expensesTable(report),
           if (report.variances.isNotEmpty) ...[
             pw.SizedBox(height: 16),
-            _sectionTitle('7. DISCREPANCIES'),
+            _sectionTitle('8. DISCREPANCIES'),
             pw.SizedBox(height: 6),
             _variancesTable(report),
           ],
@@ -82,8 +86,8 @@ class DailyReportPdfBuilder {
             pw.SizedBox(height: 16),
             _sectionTitle(
               report.variances.isNotEmpty
-                  ? '8. RECONCILIATION NOTES'
-                  : '7. RECONCILIATION NOTES',
+                  ? '9. RECONCILIATION NOTES'
+                  : '8. RECONCILIATION NOTES',
             ),
             pw.SizedBox(height: 6),
             _notesBlock(report),
@@ -244,10 +248,7 @@ class DailyReportPdfBuilder {
   pw.Widget _metaChip(String label, String value) {
     return pw.Column(
       children: [
-        pw.Text(
-          label,
-          style: const pw.TextStyle(color: _muted, fontSize: 7.5),
-        ),
+        pw.Text(label, style: const pw.TextStyle(color: _muted, fontSize: 7.5)),
         pw.SizedBox(height: 2),
         pw.Text(
           value,
@@ -267,10 +268,10 @@ class DailyReportPdfBuilder {
     final varianceColor = variance == null
         ? _navy
         : variance < 0
-            ? _red
-            : variance > 0
-                ? _emerald
-                : _navy;
+        ? _red
+        : variance > 0
+        ? _emerald
+        : _navy;
 
     return pw.Row(
       children: [
@@ -334,13 +335,13 @@ class DailyReportPdfBuilder {
 
   pw.Widget _cashMovement(DailyReportData report) {
     final cash = report.cashPosition;
-    final additionsTotal = cash.openingCash +
+    final additionsTotal =
+        cash.openingCash +
         cash.capitalReceived +
         cash.repaymentsCollected +
         cash.processingFees +
         cash.shortageRecoveries;
-    final cashoutsTotal =
-        cash.expenses + cash.salaries + cash.loansIssued;
+    final cashoutsTotal = cash.expenses + cash.salaries + cash.loansIssued;
 
     return pw.Row(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -435,8 +436,8 @@ class DailyReportPdfBuilder {
                       color: line.positive
                           ? _emerald
                           : line.negative
-                              ? _red
-                              : _navy,
+                          ? _red
+                          : _navy,
                       fontSize: 8.5,
                       fontWeight: pw.FontWeight.bold,
                     ),
@@ -446,10 +447,7 @@ class DailyReportPdfBuilder {
             ),
           pw.Container(
             color: fill,
-            padding: const pw.EdgeInsets.symmetric(
-              horizontal: 10,
-              vertical: 7,
-            ),
+            padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 7),
             child: pw.Row(
               children: [
                 pw.Expanded(
@@ -478,6 +476,121 @@ class DailyReportPdfBuilder {
     );
   }
 
+  pw.Widget _portfolioPerformance(DailyReportData report) {
+    final value = report.portfolioPerformance;
+    if (value == null) {
+      return _empty(
+        'Portfolio performance is unavailable for reports generated before this report format was introduced.',
+      );
+    }
+
+    pw.Widget block(String title, List<List<String>> rows, PdfColor fill) {
+      return pw.Expanded(
+        child: pw.Container(
+          padding: const pw.EdgeInsets.all(9),
+          decoration: pw.BoxDecoration(
+            color: fill,
+            border: pw.Border.all(color: _line, width: 0.7),
+            borderRadius: pw.BorderRadius.circular(6),
+          ),
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            children: [
+              pw.Text(
+                title,
+                style: pw.TextStyle(
+                  color: _emerald,
+                  fontSize: 8.5,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.SizedBox(height: 4),
+              for (final row in rows)
+                pw.Padding(
+                  padding: const pw.EdgeInsets.symmetric(vertical: 2.5),
+                  child: pw.Row(
+                    children: [
+                      pw.Expanded(
+                        child: pw.Text(
+                          row[0],
+                          style: const pw.TextStyle(
+                            color: _slate,
+                            fontSize: 7.5,
+                          ),
+                        ),
+                      ),
+                      pw.Text(
+                        row[1],
+                        style: pw.TextStyle(
+                          color: _navy,
+                          fontSize: 7.5,
+                          fontWeight: pw.FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return pw.Column(
+      children: [
+        pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            block("TODAY'S REPAYMENT STATUS", [
+              ['Total active borrowers', '${value.activeBorrowers}'],
+              ['Borrowers due today', '${value.borrowersDue}'],
+              ['Borrowers who paid today', '${value.borrowersPaid}'],
+              ['Borrowers who missed payment', '${value.borrowersMissed}'],
+              ['Payer rate', '${value.payerRatePercent.toStringAsFixed(1)}%'],
+              ['Total due as of today', 'UGX ${formatMoney(value.totalDue)}'],
+              ['Total repaid', 'UGX ${formatMoney(value.totalRepaid)}'],
+              ['Total still due', 'UGX ${formatMoney(value.totalStillDue)}'],
+            ], _greenFill),
+            pw.SizedBox(width: 10),
+            block('PORTFOLIO POSITION', [
+              [
+                'Principal disbursed',
+                'UGX ${formatMoney(value.principalDisbursed)}',
+              ],
+              ['Principal repaid', 'UGX ${formatMoney(value.principalRepaid)}'],
+              [
+                'Principal outstanding',
+                'UGX ${formatMoney(value.principalOutstanding)}',
+              ],
+              [
+                'Interest expected',
+                'UGX ${formatMoney(value.interestExpected)}',
+              ],
+              [
+                'Interest collected',
+                'UGX ${formatMoney(value.interestCollected)}',
+              ],
+              [
+                'Interest outstanding',
+                'UGX ${formatMoney(value.interestOutstanding)}',
+              ],
+            ], _cardFill),
+          ],
+        ),
+        pw.SizedBox(height: 6),
+        pw.Container(
+          width: double.infinity,
+          padding: const pw.EdgeInsets.all(7),
+          color: _headerFill,
+          child: pw.Text(
+            'Figures use non-voided transactions through the report business day. Due, paid, missed and payer-rate figures reflect borrower positions at that cutoff. Principal and interest figures are cumulative through the same cutoff.',
+            style: const pw.TextStyle(color: _muted, fontSize: 7),
+          ),
+        ),
+      ],
+    );
+  }
+
   pw.Widget _agentTable(DailyReportData report) {
     final rows = report.agentReturns;
     if (rows.isEmpty) {
@@ -503,9 +616,7 @@ class DailyReportPdfBuilder {
             formatMoney(row.amountDisbursed),
             formatMoney(row.amountCollected),
             formatMoney(row.expensesTotal),
-            row.amountReturned == null
-                ? '—'
-                : formatMoney(row.amountReturned!),
+            row.amountReturned == null ? '—' : formatMoney(row.amountReturned!),
             row.variance == null ? '—' : formatMoney(row.variance!),
           ],
       ],
@@ -515,9 +626,7 @@ class DailyReportPdfBuilder {
         formatMoney(rows.fold<num>(0, (t, r) => t + r.amountDisbursed)),
         formatMoney(rows.fold<num>(0, (t, r) => t + r.amountCollected)),
         formatMoney(rows.fold<num>(0, (t, r) => t + r.expensesTotal)),
-        formatMoney(
-          rows.fold<num>(0, (t, r) => t + (r.amountReturned ?? 0)),
-        ),
+        formatMoney(rows.fold<num>(0, (t, r) => t + (r.amountReturned ?? 0))),
         formatMoney(rows.fold<num>(0, (t, r) => t + (r.variance ?? 0))),
       ],
     );
@@ -550,14 +659,7 @@ class DailyReportPdfBuilder {
             formatMoney(row.principalAmount),
           ],
       ],
-      footer: [
-        'Total',
-        '',
-        '',
-        '',
-        '',
-        formatMoney(report.totalLoansIssued),
-      ],
+      footer: ['Total', '', '', '', '', formatMoney(report.totalLoansIssued)],
     );
   }
 
@@ -588,30 +690,20 @@ class DailyReportPdfBuilder {
             formatMoney(row.amount),
           ],
       ],
-      footer: [
-        'Total',
-        '',
-        '',
-        '',
-        '',
-        formatMoney(report.totalRepayments),
-      ],
+      footer: ['Total', '', '', '', '', formatMoney(report.totalRepayments)],
     );
   }
 
   pw.Widget _feesTable(DailyReportData report) {
     final rows = report.processingFees;
     if (rows.isEmpty) {
-      return _empty('No processing fees were recorded during this business day.');
+      return _empty(
+        'No processing fees were recorded during this business day.',
+      );
     }
 
     return _dataTable(
-      headers: const [
-        'Borrower',
-        'Officer',
-        'Time',
-        'Amount',
-      ],
+      headers: const ['Borrower', 'Officer', 'Time', 'Amount'],
       alignRight: const {3},
       rows: [
         for (final row in rows)
@@ -622,12 +714,7 @@ class DailyReportPdfBuilder {
             formatMoney(row.amount),
           ],
       ],
-      footer: [
-        'Total',
-        '',
-        '',
-        formatMoney(report.totalProcessingFees),
-      ],
+      footer: ['Total', '', '', formatMoney(report.totalProcessingFees)],
     );
   }
 
@@ -638,44 +725,25 @@ class DailyReportPdfBuilder {
     }
 
     return _dataTable(
-      headers: const [
-        'Time',
-        'Type',
-        'Description',
-        'Paid by',
-        'Amount',
-      ],
+      headers: const ['Time', 'Type', 'Description', 'Paid by', 'Amount'],
       alignRight: const {4},
       rows: [
         for (final row in rows)
           [
             _displayTime(row.incurredAt),
             _categoryLabel(row.category),
-            row.description?.trim().isNotEmpty == true
-                ? row.description!
-                : '—',
+            row.description?.trim().isNotEmpty == true ? row.description! : '—',
             reportPersonShortName(row.recordedByName),
             formatMoney(row.amount),
           ],
       ],
-      footer: [
-        'Total',
-        '',
-        '',
-        '',
-        formatMoney(report.totalExpenses),
-      ],
+      footer: ['Total', '', '', '', formatMoney(report.totalExpenses)],
     );
   }
 
   pw.Widget _variancesTable(DailyReportData report) {
     return _dataTable(
-      headers: const [
-        'Source',
-        'Person',
-        'Status',
-        'Variance',
-      ],
+      headers: const ['Source', 'Person', 'Status', 'Variance'],
       alignRight: const {3},
       rows: [
         for (final row in report.variances)
@@ -740,7 +808,11 @@ class DailyReportPdfBuilder {
           pw.SizedBox(height: 4),
           pw.Text(
             body,
-            style: const pw.TextStyle(color: _slate, fontSize: 9, lineSpacing: 2),
+            style: const pw.TextStyle(
+              color: _slate,
+              fontSize: 9,
+              lineSpacing: 2,
+            ),
           ),
         ],
       ),
@@ -781,8 +853,9 @@ class DailyReportPdfBuilder {
     List<String>? footer,
     Set<int> alignRight = const {},
   }) {
-    pw.Alignment align(int i) =>
-        alignRight.contains(i) ? pw.Alignment.centerRight : pw.Alignment.centerLeft;
+    pw.Alignment align(int i) => alignRight.contains(i)
+        ? pw.Alignment.centerRight
+        : pw.Alignment.centerLeft;
 
     pw.Widget cell(
       String text, {
@@ -818,8 +891,7 @@ class DailyReportPdfBuilder {
         right: pw.BorderSide(color: _line, width: 0.7),
       ),
       columnWidths: {
-        for (var i = 0; i < headers.length; i++)
-          i: const pw.FlexColumnWidth(1),
+        for (var i = 0; i < headers.length; i++) i: const pw.FlexColumnWidth(1),
       },
       children: [
         pw.TableRow(
@@ -832,8 +904,7 @@ class DailyReportPdfBuilder {
         for (final row in rows)
           pw.TableRow(
             children: [
-              for (var i = 0; i < row.length; i++)
-                cell(row[i], index: i),
+              for (var i = 0; i < row.length; i++) cell(row[i], index: i),
             ],
           ),
         if (footer != null)
@@ -905,8 +976,8 @@ String _displayTime(DateTime? value) {
   final hour = local.hour == 0
       ? 12
       : local.hour > 12
-          ? local.hour - 12
-          : local.hour;
+      ? local.hour - 12
+      : local.hour;
   final minute = local.minute.toString().padLeft(2, '0');
   return '$hour:$minute ${local.hour >= 12 ? 'PM' : 'AM'}';
 }
@@ -922,10 +993,15 @@ String _statusLabel(String raw) {
     case 'RETURNED':
       return 'Returned';
     default:
-      return raw.replaceAll('_', ' ').toLowerCase().split(' ').map((w) {
-        if (w.isEmpty) return w;
-        return '${w[0].toUpperCase()}${w.substring(1)}';
-      }).join(' ');
+      return raw
+          .replaceAll('_', ' ')
+          .toLowerCase()
+          .split(' ')
+          .map((w) {
+            if (w.isEmpty) return w;
+            return '${w[0].toUpperCase()}${w.substring(1)}';
+          })
+          .join(' ');
   }
 }
 

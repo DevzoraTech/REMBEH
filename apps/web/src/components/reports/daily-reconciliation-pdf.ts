@@ -228,7 +228,11 @@ function movementLine(
   tone: "plain" | "in" | "out",
 ) {
   const amount =
-    tone === "in" ? moneyIn(value) : tone === "out" ? moneyOut(value) : moneyPlain(value);
+    tone === "in"
+      ? moneyIn(value)
+      : tone === "out"
+        ? moneyOut(value)
+        : moneyPlain(value);
   return `<div class="move-line"><span>${escapeHtml(label)}</span><strong>${amount}</strong></div>`;
 }
 
@@ -281,12 +285,10 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
     (row) => row.amountReturned == null,
   ).length;
   const agentsBalanced = document.agentReturns.filter(
-    (row) =>
-      row.amountReturned != null && Math.round(row.variance ?? 0) === 0,
+    (row) => row.amountReturned != null && Math.round(row.variance ?? 0) === 0,
   ).length;
   const agentsWithVariance = document.agentReturns.filter(
-    (row) =>
-      row.amountReturned != null && Math.round(row.variance ?? 0) !== 0,
+    (row) => row.amountReturned != null && Math.round(row.variance ?? 0) !== 0,
   ).length;
   const agentTotal =
     agentsPending + agentsBalanced + agentsWithVariance ||
@@ -395,6 +397,80 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
     ),
   );
 
+  const portfolio = document.portfolioPerformance;
+  parts.push(
+    section(
+      "Loan Portfolio & Repayment Performance",
+      portfolio
+        ? `<div class="move-grid">
+            ${table(
+              ["Today's repayment status", "Value"],
+              [
+                [
+                  "Total active borrowers",
+                  formatNumber(portfolio.activeBorrowers),
+                ],
+                ["Borrowers due today", formatNumber(portfolio.borrowersDue)],
+                [
+                  "Borrowers who paid today",
+                  formatNumber(portfolio.borrowersPaid),
+                ],
+                [
+                  "Borrowers who missed payment",
+                  formatNumber(portfolio.borrowersMissed),
+                ],
+                ["Payer rate", `${portfolio.payerRatePercent.toFixed(1)}%`],
+                [
+                  "Total due as of today",
+                  `${escapeHtml(currency)} ${moneyPlain(portfolio.totalDue)}`,
+                ],
+                [
+                  "Total repaid",
+                  `${escapeHtml(currency)} ${moneyPlain(portfolio.totalRepaid)}`,
+                ],
+                [
+                  "Total still due",
+                  `${escapeHtml(currency)} ${moneyPlain(portfolio.totalStillDue)}`,
+                ],
+              ],
+              { alignRight: [1] },
+            )}
+            ${table(
+              ["Portfolio position", "Value"],
+              [
+                [
+                  "Principal disbursed",
+                  `${escapeHtml(currency)} ${moneyPlain(portfolio.principalDisbursed)}`,
+                ],
+                [
+                  "Principal repaid",
+                  `${escapeHtml(currency)} ${moneyPlain(portfolio.principalRepaid)}`,
+                ],
+                [
+                  "Principal outstanding",
+                  `${escapeHtml(currency)} ${moneyPlain(portfolio.principalOutstanding)}`,
+                ],
+                [
+                  "Interest expected",
+                  `${escapeHtml(currency)} ${moneyPlain(portfolio.interestExpected)}`,
+                ],
+                [
+                  "Interest collected",
+                  `${escapeHtml(currency)} ${moneyPlain(portfolio.interestCollected)}`,
+                ],
+                [
+                  "Interest outstanding",
+                  `${escapeHtml(currency)} ${moneyPlain(portfolio.interestOutstanding)}`,
+                ],
+              ],
+              { alignRight: [1] },
+            )}
+          </div>
+          <p class="note">Figures use non-voided transactions through the report business day. Due and payer-rate figures reflect borrower positions at that cutoff. Principal and interest figures are cumulative through the same cutoff.</p>`
+        : `<p class="note">Portfolio performance is unavailable for reports generated before this report format was introduced.</p>`,
+    ),
+  );
+
   if (showOpeningDetail) {
     parts.push(
       section(
@@ -428,7 +504,13 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
       section(
         "Capital top-ups",
         table(
-          ["#", "Source", "Receipt / Reference", "Date", `Amount (${currency})`],
+          [
+            "#",
+            "Source",
+            "Receipt / Reference",
+            "Date",
+            `Amount (${currency})`,
+          ],
           document.topUps.map((row, index) => [
             String(index + 1),
             escapeHtml(row.source),
@@ -657,13 +739,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
                 `<span class="good">Approved</span>`,
                 escapeHtml(document.ownerNotes || "—"),
               ]
-            : [
-                "—",
-                "—",
-                "—",
-                `<span class="warn">Pending</span>`,
-                "—",
-              ],
+            : ["—", "—", "—", `<span class="warn">Pending</span>`, "—"],
         ],
       ),
     ),
@@ -865,9 +941,8 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
 export async function exportDailyReconciliationPdf(
   document: DailyReportDocumentModel,
 ) {
-  const { dailyReportPdfFileName, downloadPdfBlob } = await import(
-    "./daily-report-pdf-document"
-  );
+  const { dailyReportPdfFileName, downloadPdfBlob } =
+    await import("./daily-report-pdf-document");
   const { getOrBuildDailyReportPdf } = await import("./daily-report-pdf-cache");
   const blob = await getOrBuildDailyReportPdf(document);
   downloadPdfBlob(blob, dailyReportPdfFileName(document));

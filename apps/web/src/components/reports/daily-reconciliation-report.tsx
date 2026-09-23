@@ -46,6 +46,22 @@ export type DailyReportDocumentModel = {
   expectedClosingBalance: number;
   countedCash: number | null;
   variance: number | null;
+  portfolioPerformance: {
+    activeBorrowers: number;
+    borrowersDue: number;
+    borrowersPaid: number;
+    borrowersMissed: number;
+    payerRatePercent: number;
+    totalDue: number;
+    totalRepaid: number;
+    totalStillDue: number;
+    principalDisbursed: number;
+    principalRepaid: number;
+    principalOutstanding: number;
+    interestExpected: number;
+    interestCollected: number;
+    interestOutstanding: number;
+  } | null;
   openingBalance: number;
   topUpsTotal: number;
   previousReportReference: {
@@ -569,6 +585,20 @@ function SummaryDocument({
               }
             />
           </div>
+        </Section>
+
+        <Section title="Loan Portfolio & Repayment Performance">
+          {document.portfolioPerformance ? (
+            <PortfolioPerformance
+              value={document.portfolioPerformance}
+              currency={currency}
+            />
+          ) : (
+            <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] text-slate-600">
+              Portfolio performance is unavailable for reports generated before
+              this report format was introduced.
+            </p>
+          )}
         </Section>
 
         <Section title="Cash Position Summary">
@@ -1473,6 +1503,76 @@ function ReviewHistoryTab({
   );
 }
 
+function PortfolioPerformance({
+  value,
+  currency,
+}: {
+  value: NonNullable<DailyReportDocumentModel["portfolioPerformance"]>;
+  currency: string;
+}) {
+  const money = (amount: number) => `${currency} ${formatMoneyAmount(amount)}`;
+  const rows = (items: Array<[string, string]>) => (
+    <div className="divide-y divide-slate-200">
+      {items.map(([label, amount]) => (
+        <div
+          key={label}
+          className="flex items-center justify-between gap-3 py-1.5 text-[12px]"
+        >
+          <span className="text-slate-600">{label}</span>
+          <strong className="text-right text-slate-900">{amount}</strong>
+        </div>
+      ))}
+    </div>
+  );
+
+  return (
+    <div className="space-y-2.5">
+      <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
+        <div className="rounded border border-emerald-200 bg-emerald-50/40 p-3">
+          <h4 className="mb-1 text-[12px] font-bold uppercase text-emerald-800">
+            Today&apos;s repayment status
+          </h4>
+          {rows([
+            ["Total active borrowers", formatNumber(value.activeBorrowers)],
+            ["Borrowers due today", formatNumber(value.borrowersDue)],
+            ["Borrowers who paid today", formatNumber(value.borrowersPaid)],
+            [
+              "Borrowers who missed payment",
+              formatNumber(value.borrowersMissed),
+            ],
+            ["Payer rate", `${value.payerRatePercent.toFixed(1)}%`],
+            ["Total due as of today", money(value.totalDue)],
+            ["Total repaid", money(value.totalRepaid)],
+            ["Total still due", money(value.totalStillDue)],
+          ])}
+        </div>
+        <div className="rounded border border-sky-200 bg-sky-50/40 p-3">
+          <h4 className="mb-1 text-[12px] font-bold uppercase text-sky-900">
+            Portfolio position
+          </h4>
+          <p className="mb-2 text-[11px] text-slate-500">
+            Cumulative through the report business day
+          </p>
+          {rows([
+            ["Principal disbursed", money(value.principalDisbursed)],
+            ["Principal repaid", money(value.principalRepaid)],
+            ["Principal outstanding", money(value.principalOutstanding)],
+            ["Interest expected", money(value.interestExpected)],
+            ["Interest collected", money(value.interestCollected)],
+            ["Interest outstanding", money(value.interestOutstanding)],
+          ])}
+        </div>
+      </div>
+      <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] leading-5 text-slate-600">
+        Figures use non-voided transactions through the report business day.
+        Due, paid, missed, and payer-rate figures reflect borrower positions at
+        that cutoff. Principal and interest figures are cumulative from
+        inception through the same cutoff.
+      </div>
+    </div>
+  );
+}
+
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-1.5">
@@ -2009,6 +2109,7 @@ type OperationLike = {
   collectionsCount: number;
   collectionsReceived: number;
   processingFeesTotal: number;
+  portfolioPerformance?: DailyReportDocumentModel["portfolioPerformance"];
   expensesTotal: number;
   expensesCount: number;
   salariesTotal?: number;
@@ -2128,6 +2229,7 @@ export function buildDailyReportDocumentFromOperation(
     expectedClosingBalance: expected,
     countedCash: counted,
     variance,
+    portfolioPerformance: operation.portfolioPerformance ?? null,
     openingBalance: operation.openingBalance,
     topUpsTotal,
     previousReportReference: operation.previousReportReference
@@ -2250,6 +2352,9 @@ export function buildDailyReportDocumentFromSnapshot(
   const processingFees = arrayValue(root.processingFees);
   const variances = arrayValue(root.variances);
   const previous = objectValue(root.previousReportReference);
+  const portfolio = objectValue(
+    root.portfolioPerformance ?? summary.portfolioPerformance,
+  );
 
   const mappedExpenses = expenses.map((row, index) => {
     const item = objectValue(row);
@@ -2449,6 +2554,25 @@ export function buildDailyReportDocumentFromSnapshot(
     expectedClosingBalance: expected,
     countedCash: counted,
     variance,
+    portfolioPerformance:
+      Object.keys(portfolio).length === 0
+        ? null
+        : {
+            activeBorrowers: numberValue(portfolio.activeBorrowers),
+            borrowersDue: numberValue(portfolio.borrowersDue),
+            borrowersPaid: numberValue(portfolio.borrowersPaid),
+            borrowersMissed: numberValue(portfolio.borrowersMissed),
+            payerRatePercent: numberValue(portfolio.payerRatePercent),
+            totalDue: numberValue(portfolio.totalDue),
+            totalRepaid: numberValue(portfolio.totalRepaid),
+            totalStillDue: numberValue(portfolio.totalStillDue),
+            principalDisbursed: numberValue(portfolio.principalDisbursed),
+            principalRepaid: numberValue(portfolio.principalRepaid),
+            principalOutstanding: numberValue(portfolio.principalOutstanding),
+            interestExpected: numberValue(portfolio.interestExpected),
+            interestCollected: numberValue(portfolio.interestCollected),
+            interestOutstanding: numberValue(portfolio.interestOutstanding),
+          },
     openingBalance,
     topUpsTotal,
     previousReportReference:

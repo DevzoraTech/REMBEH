@@ -14,7 +14,7 @@ export const REMBEH_BRAND_NAME = "REMBEH";
 /** Public Rembeh mark used on generated PDFs. */
 export const REMBEH_MARK_URL = "/assets/brand/rembeh-mark.png";
 /** Bump when PDF chrome changes so in-memory caches regenerate. */
-export const DAILY_REPORT_PDF_LAYOUT_VERSION = "v3-org-header-owner-notes";
+export const DAILY_REPORT_PDF_LAYOUT_VERSION = "v4-portfolio-performance";
 
 const EMERALD: [number, number, number] = [6, 91, 36];
 const NAVY: [number, number, number] = [20, 33, 61];
@@ -36,10 +36,7 @@ function money(value: number) {
 }
 
 function shortName(fullName: string) {
-  const parts = fullName
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "—";
   if (parts.length === 1) return parts[0]!.toUpperCase();
   const surname = parts[0]!.toUpperCase();
@@ -87,6 +84,7 @@ export function dailyReportPdfFingerprint(document: DailyReportDocumentModel) {
     document.operationDate,
     document.branchName,
     document.organizationName,
+    JSON.stringify(document.portfolioPerformance),
     document.ownerNotes ?? "",
     document.managerNotes ?? "",
   ].join("|");
@@ -169,23 +167,26 @@ export async function buildDailyReconciliationPdfBlob(
   sectionTitle("1. CASH POSITION SUMMARY");
   y = drawCashMovement(doc, document, margin, contentWidth, y);
 
-  sectionTitle("2. ACCOUNTABILITY");
+  sectionTitle("2. LOAN PORTFOLIO & REPAYMENT PERFORMANCE");
+  y = drawPortfolioPerformance(doc, autoTable, document, margin, y);
+
+  sectionTitle("3. ACCOUNTABILITY");
   y = drawAgentTable(doc, autoTable, document, margin, y);
 
-  sectionTitle("3. LOANS ISSUED TODAY");
+  sectionTitle("4. LOANS ISSUED TODAY");
   y = drawLoansTable(doc, autoTable, document, margin, y);
 
-  sectionTitle("4. REPAYMENTS COLLECTED");
+  sectionTitle("5. REPAYMENTS COLLECTED");
   y = drawRepaymentsTable(doc, autoTable, document, margin, y);
 
-  sectionTitle("5. PROCESSING FEES");
+  sectionTitle("6. PROCESSING FEES");
   y = drawFeesTable(doc, autoTable, document, margin, y);
 
-  sectionTitle("6. EXPENSES");
+  sectionTitle("7. EXPENSES");
   y = drawExpensesTable(doc, autoTable, document, margin, y);
 
   if (document.variances.length > 0) {
-    sectionTitle("7. DISCREPANCIES");
+    sectionTitle("8. DISCREPANCIES");
     y = drawVariancesTable(doc, autoTable, document, margin, y);
   }
 
@@ -195,11 +196,18 @@ export async function buildDailyReconciliationPdfBlob(
   if (managerNotes || ownerNotes) {
     sectionTitle(
       document.variances.length > 0
-        ? "8. RECONCILIATION NOTES"
-        : "7. RECONCILIATION NOTES",
+        ? "9. RECONCILIATION NOTES"
+        : "8. RECONCILIATION NOTES",
     );
     if (managerNotes) {
-      y = drawNoteCard(doc, margin, contentWidth, y, "Manager notes", managerNotes);
+      y = drawNoteCard(
+        doc,
+        margin,
+        contentWidth,
+        y,
+        "Manager notes",
+        managerNotes,
+      );
     }
     if (ownerNotes) {
       const ownerLabel = document.ownerApprovedByName?.trim()
@@ -301,9 +309,14 @@ function drawTitleBlock(
   doc.setTextColor(...EMERALD);
   doc.setFontSize(13);
   doc.setFont("helvetica", "bold");
-  doc.text((document.organizationName || REMBEH_BRAND_NAME).toUpperCase(), center, y, {
-    align: "center",
-  });
+  doc.text(
+    (document.organizationName || REMBEH_BRAND_NAME).toUpperCase(),
+    center,
+    y,
+    {
+      align: "center",
+    },
+  );
   y += 14;
 
   const locationLine = [
@@ -436,8 +449,7 @@ function drawMetricCards(
     },
     {
       label: "Variance",
-      value:
-        variance == null ? "—" : `${document.currency} ${money(variance)}`,
+      value: variance == null ? "—" : `${document.currency} ${money(variance)}`,
       color:
         variance == null
           ? NAVY
@@ -540,9 +552,14 @@ function drawCashMovement(
     doc.setFontSize(9);
     doc.setTextColor(...titleColor);
     doc.text("TOTAL", x + 10, startY + blockH - 9);
-    doc.text(`${document.currency} ${money(total)}`, x + colW - 10, startY + blockH - 9, {
-      align: "right",
-    });
+    doc.text(
+      `${document.currency} ${money(total)}`,
+      x + colW - 10,
+      startY + blockH - 9,
+      {
+        align: "right",
+      },
+    );
   };
 
   paintBlock(margin, "ADDITIONS", EMERALD, GREEN_FILL, leftLines, additions);
@@ -591,12 +608,7 @@ function baseTableOptions(
   };
 }
 
-function drawEmpty(
-  doc: JsPdfDoc,
-  margin: number,
-  y: number,
-  message: string,
-) {
+function drawEmpty(doc: JsPdfDoc, margin: number, y: number, message: string) {
   const pageWidth = doc.internal.pageSize.getWidth();
   const width = pageWidth - margin * 2;
   doc.setDrawColor(...LINE);
@@ -606,6 +618,95 @@ function drawEmpty(
   doc.setTextColor(...MUTED);
   doc.text(message, margin + width / 2, y + 17, { align: "center" });
   return y + 40;
+}
+
+function drawPortfolioPerformance(
+  doc: JsPdfDoc,
+  autoTable: (doc: unknown, opts: unknown) => void,
+  document: DailyReportDocumentModel,
+  margin: number,
+  startY: number,
+) {
+  const value = document.portfolioPerformance;
+  if (!value) {
+    return drawEmpty(
+      doc,
+      margin,
+      startY,
+      "Portfolio performance is unavailable for reports generated before this format.",
+    );
+  }
+  const cash = (amount: number) => `${document.currency} ${money(amount)}`;
+  autoTable(doc, {
+    ...baseTableOptions(margin, startY, { showFoot: "never" }),
+    head: [
+      ["TODAY'S REPAYMENT STATUS", "VALUE", "PORTFOLIO POSITION", "VALUE"],
+    ],
+    body: [
+      [
+        "Total active borrowers",
+        value.activeBorrowers,
+        "Principal disbursed",
+        cash(value.principalDisbursed),
+      ],
+      [
+        "Borrowers due today",
+        value.borrowersDue,
+        "Principal repaid",
+        cash(value.principalRepaid),
+      ],
+      [
+        "Borrowers who paid today",
+        value.borrowersPaid,
+        "Principal outstanding",
+        cash(value.principalOutstanding),
+      ],
+      [
+        "Borrowers who missed payment",
+        value.borrowersMissed,
+        "Interest expected",
+        cash(value.interestExpected),
+      ],
+      [
+        "Payer rate",
+        `${value.payerRatePercent.toFixed(1)}%`,
+        "Interest collected",
+        cash(value.interestCollected),
+      ],
+      [
+        "Total due as of today",
+        cash(value.totalDue),
+        "Interest outstanding",
+        cash(value.interestOutstanding),
+      ],
+      ["Total repaid", cash(value.totalRepaid), "", ""],
+      ["Total still due", cash(value.totalStillDue), "", ""],
+    ],
+    columnStyles: {
+      1: { halign: "right", fontStyle: "bold" },
+      3: { halign: "right", fontStyle: "bold" },
+    },
+  });
+  const tableEnd = doc.lastAutoTable?.finalY ?? startY + 150;
+  doc.setFillColor(...HEADER_FILL);
+  doc.setTextColor(...MUTED);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7);
+  const note =
+    "Figures use non-voided transactions through the report business day. Due and payer-rate figures reflect borrower positions at that cutoff; portfolio figures are cumulative through the same cutoff.";
+  const lines = doc.splitTextToSize(
+    note,
+    doc.internal.pageSize.getWidth() - margin * 2 - 16,
+  );
+  doc.rect(
+    margin,
+    tableEnd + 5,
+    doc.internal.pageSize.getWidth() - margin * 2,
+    24,
+    "F",
+  );
+  doc.text(lines, margin + 8, tableEnd + 16);
+  return tableEnd + 38;
 }
 
 function drawAgentTable(
@@ -648,20 +749,11 @@ function drawAgentTable(
     foot: [
       [
         "Total",
+        money(document.agentReturns.reduce((s, r) => s + r.amountGiven, 0)),
+        money(document.agentReturns.reduce((s, r) => s + r.amountDisbursed, 0)),
+        money(document.agentReturns.reduce((s, r) => s + r.amountCollected, 0)),
         money(
-          document.agentReturns.reduce((s, r) => s + r.amountGiven, 0),
-        ),
-        money(
-          document.agentReturns.reduce((s, r) => s + r.amountDisbursed, 0),
-        ),
-        money(
-          document.agentReturns.reduce((s, r) => s + r.amountCollected, 0),
-        ),
-        money(
-          document.agentReturns.reduce(
-            (s, r) => s + (r.expensesTotal ?? 0),
-            0,
-          ),
+          document.agentReturns.reduce((s, r) => s + (r.expensesTotal ?? 0), 0),
         ),
         money(
           document.agentReturns.reduce(
@@ -669,9 +761,7 @@ function drawAgentTable(
             0,
           ),
         ),
-        money(
-          document.agentReturns.reduce((s, r) => s + (r.variance ?? 0), 0),
-        ),
+        money(document.agentReturns.reduce((s, r) => s + (r.variance ?? 0), 0)),
       ],
     ],
     columnStyles: {
@@ -703,7 +793,9 @@ function drawLoansTable(
   }
   autoTable(doc, {
     ...baseTableOptions(margin, startY, { showFoot: "lastPage" }),
-    head: [["Borrower", "Product", "Duration", "Issued by", "Time", "Principal"]],
+    head: [
+      ["Borrower", "Product", "Duration", "Issued by", "Time", "Principal"],
+    ],
     body: document.loansIssued.map((row) => [
       row.borrowerName,
       row.product || "—",
@@ -712,16 +804,7 @@ function drawLoansTable(
       formatTime(row.issuedAt),
       money(row.principalAmount),
     ]),
-    foot: [
-      [
-        "Total",
-        "",
-        "",
-        "",
-        "",
-        money(document.loansIssuedPrincipal),
-      ],
-    ],
+    foot: [["Total", "", "", "", "", money(document.loansIssuedPrincipal)]],
     columnStyles: { 5: { halign: "right" } },
   });
   return (doc.lastAutoTable?.finalY ?? startY) + 14;

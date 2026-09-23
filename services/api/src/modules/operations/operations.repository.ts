@@ -2067,6 +2067,66 @@ export class OperationsRepository {
     });
   }
 
+  listPortfolioLoansAsOf(input: {
+    tenantId: string;
+    branchId: string;
+    dayEnd: Date;
+  }) {
+    return this.prisma.loan.findMany({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        disbursements: {
+          some: {
+            disbursedAt: { lte: input.dayEnd },
+          },
+        },
+      },
+      select: {
+        id: true,
+        customerId: true,
+        principal: true,
+        balance: true,
+        disbursedAt: true,
+        paymentStartDate: true,
+        createdAt: true,
+        application: {
+          select: {
+            principalAmount: true,
+            interestRatePercent: true,
+            durationDays: true,
+            processingFee: true,
+            repaymentFrequency: true,
+          },
+        },
+        wallet: {
+          select: {
+            openingBalance: true,
+          },
+        },
+        disbursements: {
+          where: { disbursedAt: { lte: input.dayEnd } },
+          select: { amount: true, disbursedAt: true },
+          orderBy: { disbursedAt: 'asc' },
+        },
+        repayments: {
+          where: {
+            voidedAt: null,
+            paidAt: { lte: input.dayEnd },
+          },
+          select: {
+            amount: true,
+            principalAllocated: true,
+            interestAllocated: true,
+            feesAllocated: true,
+            paidAt: true,
+          },
+          orderBy: { paidAt: 'asc' },
+        },
+      },
+    });
+  }
+
   sumCollectionsForAgent(input: {
     tenantId: string;
     branchId: string;

@@ -5,6 +5,7 @@ import 'daily_report_cash_position.dart';
 import 'daily_report_expense.dart';
 import 'daily_report_loan.dart';
 import 'daily_report_processing_fee.dart';
+import 'daily_report_portfolio_performance.dart';
 import 'daily_report_repayment.dart';
 import 'daily_report_variance.dart';
 
@@ -23,6 +24,7 @@ class DailyReportData {
     required this.agentReturns,
     required this.processingFees,
     required this.variances,
+    this.portfolioPerformance,
     this.branchAddress,
     this.branchPhone,
     this.branchEmail,
@@ -62,6 +64,8 @@ class DailyReportData {
   final List<DailyReportProcessingFee> processingFees;
 
   final List<DailyReportVariance> variances;
+
+  final DailyReportPortfolioPerformance? portfolioPerformance;
 
   final String? managerNotes;
 

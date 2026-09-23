@@ -4,6 +4,7 @@ import '../../domain/models/report/daily_report_data.dart';
 import '../../domain/models/report/daily_report_expense.dart';
 import '../../domain/models/report/daily_report_loan.dart';
 import '../../domain/models/report/daily_report_processing_fee.dart';
+import '../../domain/models/report/daily_report_portfolio_performance.dart';
 import '../../domain/models/report/daily_report_repayment.dart';
 import '../../domain/models/report/daily_report_variance.dart';
 
@@ -23,6 +24,9 @@ class DailyReportMapper {
     final summary = _map(snapshot['summary']);
     final openingCash = _map(snapshot['openingCash']);
     final cashPosition = _map(snapshot['cashPosition']);
+    final portfolio = _map(
+      snapshot['portfolioPerformance'] ?? summary['portfolioPerformance'],
+    );
 
     final reportNumber =
         _string(report['reportNumber']) ??
@@ -120,10 +124,7 @@ class DailyReportMapper {
           // Older snapshots only stored cashier expenses here.
           cashPosition['branchExpenses'],
         ]),
-        salaries: _firstNum([
-          cashPosition['salaries'],
-          summary['salaries'],
-        ]),
+        salaries: _firstNum([cashPosition['salaries'], summary['salaries']]),
         loansIssued: _firstNum([
           cashPosition['loansIssued'],
           summary['loansIssuedPrincipal'],
@@ -151,6 +152,7 @@ class DailyReportMapper {
         snapshot['processingFees'],
       ).map(_processingFee).toList(),
       variances: _list(snapshot['variances']).map(_varianceRow).toList(),
+      portfolioPerformance: _portfolioPerformance(portfolio),
     );
   }
 
@@ -221,6 +223,31 @@ class DailyReportMapper {
         operation['processingFees'],
       ).map(_processingFee).toList(),
       variances: _list(operation['variances']).map(_varianceRow).toList(),
+      portfolioPerformance: _portfolioPerformance(
+        _map(operation['portfolioPerformance']),
+      ),
+    );
+  }
+
+  static DailyReportPortfolioPerformance? _portfolioPerformance(
+    Map<String, dynamic> row,
+  ) {
+    if (row.isEmpty) return null;
+    return DailyReportPortfolioPerformance(
+      activeBorrowers: _int(row['activeBorrowers']) ?? 0,
+      borrowersDue: _int(row['borrowersDue']) ?? 0,
+      borrowersPaid: _int(row['borrowersPaid']) ?? 0,
+      borrowersMissed: _int(row['borrowersMissed']) ?? 0,
+      payerRatePercent: _num(row['payerRatePercent']),
+      totalDue: _num(row['totalDue']),
+      totalRepaid: _num(row['totalRepaid']),
+      totalStillDue: _num(row['totalStillDue']),
+      principalDisbursed: _num(row['principalDisbursed']),
+      principalRepaid: _num(row['principalRepaid']),
+      principalOutstanding: _num(row['principalOutstanding']),
+      interestExpected: _num(row['interestExpected']),
+      interestCollected: _num(row['interestCollected']),
+      interestOutstanding: _num(row['interestOutstanding']),
     );
   }
 
@@ -278,7 +305,8 @@ class DailyReportMapper {
       amount: _num(row['amount']),
       description: _string(row['description']),
       incurredAt: _date(row['incurredAt']),
-      recordedByName: _string(row['agentName']) ??
+      recordedByName:
+          _string(row['agentName']) ??
           _string(row['recordedByName']) ??
           'Officer',
       agentId: _string(row['agentId']),
