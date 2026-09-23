@@ -593,7 +593,7 @@ export class OperationsService {
       !Array.isArray(report.snapshot)
         ? (report.snapshot as Prisma.JsonObject)
         : {};
-    if (Number(snapshotRoot.version ?? 0) < 6) {
+    if (Number(snapshotRoot.version ?? 0) < 7) {
       const bounds = this.parseDayBounds(
         this.formatDateLabel(report.operationDate),
       );
@@ -3187,10 +3187,12 @@ export class OperationsService {
       );
       dueBorrowerIds.add(loan.customerId);
       if (appliedToday > 0) paidBorrowerIds.add(loan.customerId);
-      if (appliedToday <= 0 && schedule.overdueDays > 0) {
+      if (appliedToday <= 0) {
         const previous = missedByBorrower.get(loan.customerId);
         missedByBorrower.set(loan.customerId, {
-          days: Math.max(previous?.days ?? 0, schedule.overdueDays),
+          // A repayment due on the report day is one missed repayment when no
+          // payment was recorded. Older arrears retain their calendar age.
+          days: Math.max(previous?.days ?? 0, schedule.overdueDays, 1),
           amount: this.roundMoney((previous?.amount ?? 0) + dueAtStartOfDay),
         });
       }
@@ -3583,7 +3585,7 @@ export class OperationsService {
     operation: DailyOperationContract,
   ): Prisma.InputJsonObject {
     return {
-      version: 6,
+      version: 7,
       reportType: 'daily_operations_close',
 
       operation: {

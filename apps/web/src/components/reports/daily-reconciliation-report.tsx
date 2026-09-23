@@ -14,6 +14,8 @@ import {
   RotateCcw,
   Scale,
   Send,
+  TrendingUp,
+  Users,
   WalletCards,
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
@@ -1519,83 +1521,204 @@ function PortfolioPerformance({
   currency: string;
 }) {
   const money = (amount: number) => `${currency} ${formatMoneyAmount(amount)}`;
-  const rows = (items: Array<[string, string]>) => (
-    <div className="divide-y divide-slate-200">
-      {items.map(([label, amount]) => (
-        <div
-          key={label}
-          className="flex items-center justify-between gap-3 py-1.5 text-[12px]"
-        >
-          <span className="text-slate-600">{label}</span>
-          <strong className="text-right text-slate-900">{amount}</strong>
-        </div>
-      ))}
+  const agingTone = (index: number) =>
+    [
+      "bg-amber-400",
+      "bg-orange-400",
+      "bg-orange-500",
+      "bg-red-500",
+      "bg-red-700",
+    ][index] ?? "bg-red-700";
+  const maxAgingAmount = Math.max(
+    1,
+    ...value.missedRepaymentBuckets.map((bucket) => bucket.amount),
+  );
+
+  const positionGroup = (
+    title: string,
+    subtitle: string,
+    items: Array<[string, string, "default" | "success" | "warning"]>,
+  ) => (
+    <div className="min-w-0 px-4 py-3.5 first:border-b first:border-slate-200 lg:first:border-r lg:first:border-b-0">
+      <p className="text-[12px] font-bold text-[#0b1220]">{title}</p>
+      <p className="mt-0.5 text-[11px] text-slate-500">{subtitle}</p>
+      <dl className="mt-3 space-y-2.5">
+        {items.map(([label, amount, tone]) => (
+          <div key={label} className="flex items-center justify-between gap-4">
+            <dt className="text-[12px] text-slate-600">{label}</dt>
+            <dd
+              className={`shrink-0 text-[12px] font-bold tabular-nums ${
+                tone === "success"
+                  ? "text-[var(--forest-emerald)]"
+                  : tone === "warning"
+                    ? "text-amber-700"
+                    : "text-[#0b1220]"
+              }`}
+            >
+              {amount}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 
   return (
-    <div className="space-y-2.5">
-      <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-2">
-        <div className="rounded border border-emerald-200 bg-emerald-50/40 p-3">
-          <h4 className="mb-1 text-[12px] font-bold uppercase text-emerald-800">
-            Today&apos;s repayment status
-          </h4>
-          {rows([
-            ["Total active borrowers", formatNumber(value.activeBorrowers)],
-            ["Borrowers due today", formatNumber(value.borrowersDue)],
-            ["Borrowers who paid today", formatNumber(value.borrowersPaid)],
-            [
-              "Borrowers who missed payment",
-              formatNumber(value.borrowersMissed),
-            ],
-            ["Payer rate", `${value.payerRatePercent.toFixed(1)}%`],
-            [
-              "Borrowers with advance",
-              formatNumber(value.borrowersWithAdvance),
-            ],
-            ["Total amount of advance", money(value.totalAdvanceAmount)],
-            ["Total due as of today", money(value.totalDue)],
-            ["Total repaid", money(value.totalRepaid)],
-            ["Total still due", money(value.totalStillDue)],
-          ])}
-        </div>
-        <div className="rounded border border-rose-200 bg-rose-50/30 p-3">
-          <h4 className="mb-1 text-[12px] font-bold uppercase text-rose-800">
-            Missed repayment position as of today
-          </h4>
-          <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 border-b border-slate-200 pb-1 text-[11px] font-semibold text-slate-600">
-            <span>Range</span>
-            <span>Borrowers</span>
-            <span>Amount</span>
+    <div className="space-y-3">
+      <div className="overflow-hidden rounded-xl border border-[#d7e3de] bg-white">
+        <div className="flex items-center justify-between gap-4 border-b border-[#d7e3de] bg-[#f3f7f5] px-4 py-3">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-white text-[var(--forest-emerald)] shadow-sm ring-1 ring-[#d7e3de]">
+              <Users className="size-4" />
+            </span>
+            <div className="min-w-0">
+              <h4 className="text-[13px] font-bold text-[#0b1220]">
+                Today&apos;s repayment position
+              </h4>
+              <p className="text-[11px] text-slate-500">
+                Position at the close of this business day
+              </p>
+            </div>
           </div>
-          {value.missedRepaymentBuckets.map((bucket) => (
+          <div className="text-right">
+            <p className="text-[11px] font-medium text-slate-500">Payer rate</p>
+            <p className="text-lg font-black tabular-nums text-[var(--forest-emerald)]">
+              {value.payerRatePercent.toFixed(1)}%
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 border-b border-[#e6ebf0] sm:grid-cols-4">
+          {[
+            ["Active borrowers", value.activeBorrowers],
+            ["Due today", value.borrowersDue],
+            ["Paid today", value.borrowersPaid],
+            ["Missed payment", value.borrowersMissed],
+          ].map(([label, amount], index) => (
             <div
-              key={bucket.key}
-              className="grid grid-cols-[1fr_auto_auto] gap-x-4 border-b border-slate-100 py-1.5 text-[12px] last:border-0"
+              key={label}
+              className={`px-4 py-3 ${index % 2 ? "border-l" : ""} ${index > 1 ? "border-t sm:border-t-0" : ""} sm:border-l sm:first:border-l-0 border-[#e6ebf0]`}
             >
-              <span>{bucket.label}</span>
-              <strong>{formatNumber(bucket.borrowers)}</strong>
-              <strong>{money(bucket.amount)}</strong>
+              <p className="text-[11px] font-medium text-slate-500">{label}</p>
+              <p className="mt-0.5 text-lg font-bold tabular-nums text-[#0b1220]">
+                {formatNumber(Number(amount))}
+              </p>
             </div>
           ))}
         </div>
-        <div className="rounded border border-sky-200 bg-sky-50/40 p-3">
-          <h4 className="mb-1 text-[12px] font-bold uppercase text-sky-900">
-            Portfolio position
-          </h4>
-          <p className="mb-2 text-[11px] text-slate-500">
-            Cumulative through the report business day
-          </p>
-          {rows([
-            ["Principal disbursed", money(value.principalDisbursed)],
-            ["Principal repaid", money(value.principalRepaid)],
-            ["Principal outstanding", money(value.principalOutstanding)],
-            ["Interest expected", money(value.interestExpected)],
-            ["Interest collected", money(value.interestCollected)],
-            ["Interest outstanding", money(value.interestOutstanding)],
-          ])}
+
+        <div className="grid lg:grid-cols-2">
+          <div className="space-y-2 border-b border-[#e6ebf0] px-4 py-3 lg:border-r lg:border-b-0">
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-[12px] text-slate-600">
+                Due as of today
+              </span>
+              <strong className="text-[12px] tabular-nums text-[#0b1220]">
+                {money(value.totalDue)}
+              </strong>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-[12px] text-slate-600">Repaid today</span>
+              <strong className="text-[12px] tabular-nums text-[var(--forest-emerald)]">
+                {money(value.totalRepaid)}
+              </strong>
+            </div>
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-[12px] text-slate-600">Still due</span>
+              <strong className="text-[12px] tabular-nums text-red-600">
+                {money(value.totalStillDue)}
+              </strong>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-4 bg-emerald-50/40 px-4 py-3">
+            <div>
+              <p className="text-[12px] font-semibold text-emerald-900">
+                Payments in advance
+              </p>
+              <p className="mt-0.5 text-[11px] text-emerald-700">
+                {formatNumber(value.borrowersWithAdvance)} borrowers covered
+                ahead
+              </p>
+            </div>
+            <strong className="shrink-0 text-[13px] tabular-nums text-[var(--forest-emerald)]">
+              {money(value.totalAdvanceAmount)}
+            </strong>
+          </div>
         </div>
       </div>
+
+      <div className="grid gap-3 lg:grid-cols-[1.08fr_.92fr]">
+        <div className="overflow-hidden rounded-xl border border-[#ead9d7] bg-white">
+          <div className="border-b border-[#ead9d7] bg-[#fff7f6] px-4 py-3">
+            <h4 className="text-[13px] font-bold text-[#0b1220]">
+              Missed repayments
+            </h4>
+            <p className="mt-0.5 text-[11px] text-slate-500">
+              Uncovered scheduled repayments grouped by age
+            </p>
+          </div>
+          <div className="divide-y divide-[#edf1f5]">
+            {value.missedRepaymentBuckets.map((bucket, index) => {
+              const width = Math.max(
+                bucket.amount > 0 ? 7 : 0,
+                Math.round((bucket.amount / maxAgingAmount) * 100),
+              );
+              return (
+                <div key={bucket.key} className="px-4 py-2.5">
+                  <div className="grid grid-cols-[80px_minmax(0,1fr)_auto] items-center gap-3">
+                    <span className="text-[12px] font-bold text-[#0b1220]">
+                      {bucket.label}
+                    </span>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className={`h-full rounded-full ${agingTone(index)}`}
+                        style={{ width: `${width}%` }}
+                      />
+                    </div>
+                    <div className="min-w-[120px] text-right">
+                      <strong className="block text-[12px] tabular-nums text-[#0b1220]">
+                        {money(bucket.amount)}
+                      </strong>
+                      <span className="text-[10px] text-slate-500">
+                        {formatNumber(bucket.borrowers)} borrowers
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded-xl border border-[#dbe3ea] bg-white">
+          <div className="flex items-center gap-2.5 border-b border-[#dbe3ea] bg-[#f5f8fa] px-4 py-3">
+            <span className="grid size-8 place-items-center rounded-lg bg-white text-[#31566f] shadow-sm ring-1 ring-[#dbe3ea]">
+              <TrendingUp className="size-4" />
+            </span>
+            <div>
+              <h4 className="text-[13px] font-bold text-[#0b1220]">
+                Portfolio position
+              </h4>
+              <p className="text-[11px] text-slate-500">
+                Cumulative through this business day
+              </p>
+            </div>
+          </div>
+          <div className="grid lg:grid-cols-2">
+            {positionGroup("Principal", "Loan capital position", [
+              ["Disbursed", money(value.principalDisbursed), "default"],
+              ["Repaid", money(value.principalRepaid), "success"],
+              ["Outstanding", money(value.principalOutstanding), "warning"],
+            ])}
+            {positionGroup("Interest", "Income position", [
+              ["Expected", money(value.interestExpected), "default"],
+              ["Collected", money(value.interestCollected), "success"],
+              ["Outstanding", money(value.interestOutstanding), "warning"],
+            ])}
+          </div>
+        </div>
+      </div>
+
       <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] leading-5 text-slate-700">
         <p>
           1. Advance payments cover upcoming scheduled instalments before a

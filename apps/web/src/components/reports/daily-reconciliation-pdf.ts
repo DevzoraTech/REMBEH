@@ -475,7 +475,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
             )}
           </div>
           ${table(
-            ["Missed repayment range", "Borrowers", `Amount (${currency})`],
+            ["Missed repayments", "Borrowers", `Amount (${currency})`],
             portfolio.missedRepaymentBuckets.map((bucket) => [
               escapeHtml(bucket.label),
               formatNumber(bucket.borrowers),
@@ -917,12 +917,16 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
       text-transform: uppercase;
       text-align: left;
       padding: 8px 10px;
+      border-right: 1px solid #d9e0e7;
     }
+    th:last-child { border-right: 0; }
     td {
       padding: 8px 10px;
       border-top: 1px solid #edf1f5;
+      border-right: 1px solid #edf1f5;
       vertical-align: top;
     }
+    td:last-child { border-right: 0; }
     tfoot td {
       background: #f8faf9;
       font-weight: 700;

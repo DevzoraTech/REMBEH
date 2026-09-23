@@ -10,6 +10,13 @@ describe('daily report portfolio performance', () => {
         buildPortfolioPerformance: (input: unknown) => {
           activeBorrowers: number;
           borrowersDue: number;
+          borrowersMissed: number;
+          totalStillDue: number;
+          missedRepaymentBuckets: Array<{
+            key: string;
+            borrowers: number;
+            amount: number;
+          }>;
           principalDisbursed: number;
           principalOutstanding: number;
           interestExpected: number;
@@ -48,6 +55,19 @@ describe('daily report portfolio performance', () => {
 
     expect(result.activeBorrowers).toBe(1);
     expect(result.borrowersDue).toBe(1);
+    expect(result.borrowersMissed).toBe(1);
+    expect(result.totalStillDue).toBe(22_000);
+    expect(
+      result.missedRepaymentBuckets.reduce(
+        (sum, bucket) => sum + bucket.borrowers,
+        0,
+      ),
+    ).toBe(result.borrowersMissed);
+    expect(result.missedRepaymentBuckets[0]).toMatchObject({
+      key: 'one_day',
+      borrowers: 1,
+      amount: 22_000,
+    });
     expect(result.principalDisbursed).toBe(200_000);
     expect(result.principalOutstanding).toBe(200_000);
     expect(result.interestExpected).toBe(20_000);

@@ -14,7 +14,7 @@ class DailyReportPdfBuilder {
   const DailyReportPdfBuilder();
 
   /// Bump when PDF chrome/layout changes so local caches regenerate.
-  static const layoutVersion = 'v5-advances-aging-readable-type';
+  static const layoutVersion = 'v8-missed-repayments-label';
 
   static const _brandMarkAsset = 'assets/rembeh-mark.png';
 
@@ -476,6 +476,28 @@ class DailyReportPdfBuilder {
     );
   }
 
+  pw.Widget _portfolioCell(
+    String text, {
+    bool header = false,
+    bool strong = false,
+    bool alignRight = false,
+  }) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      child: pw.Text(
+        text,
+        textAlign: alignRight ? pw.TextAlign.right : pw.TextAlign.left,
+        style: pw.TextStyle(
+          color: header ? _emerald : (strong ? _navy : _slate),
+          fontSize: header ? 8.5 : 8,
+          fontWeight: header || strong
+              ? pw.FontWeight.bold
+              : pw.FontWeight.normal,
+        ),
+      ),
+    );
+  }
+
   pw.Widget _portfolioPerformance(DailyReportData report) {
     final value = report.portfolioPerformance;
     if (value == null) {
@@ -487,48 +509,34 @@ class DailyReportPdfBuilder {
     pw.Widget block(String title, List<List<String>> rows, PdfColor fill) {
       return pw.Expanded(
         child: pw.Container(
-          padding: const pw.EdgeInsets.all(9),
           decoration: pw.BoxDecoration(
             color: fill,
             border: pw.Border.all(color: _line, width: 0.7),
             borderRadius: pw.BorderRadius.circular(6),
           ),
-          child: pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+          child: pw.Table(
+            border: const pw.TableBorder(
+              horizontalInside: pw.BorderSide(color: _line, width: 0.5),
+              verticalInside: pw.BorderSide(color: _line, width: 0.5),
+            ),
+            columnWidths: const {
+              0: pw.FlexColumnWidth(1.65),
+              1: pw.FlexColumnWidth(1),
+            },
             children: [
-              pw.Text(
-                title,
-                style: pw.TextStyle(
-                  color: _emerald,
-                  fontSize: 8.5,
-                  fontWeight: pw.FontWeight.bold,
-                ),
+              pw.TableRow(
+                decoration: const pw.BoxDecoration(color: _headerFill),
+                children: [
+                  _portfolioCell(title, header: true),
+                  _portfolioCell('VALUE', header: true, alignRight: true),
+                ],
               ),
-              pw.SizedBox(height: 4),
               for (final row in rows)
-                pw.Padding(
-                  padding: const pw.EdgeInsets.symmetric(vertical: 2.5),
-                  child: pw.Row(
-                    children: [
-                      pw.Expanded(
-                        child: pw.Text(
-                          row[0],
-                          style: const pw.TextStyle(
-                            color: _slate,
-                            fontSize: 7.5,
-                          ),
-                        ),
-                      ),
-                      pw.Text(
-                        row[1],
-                        style: pw.TextStyle(
-                          color: _navy,
-                          fontSize: 7.5,
-                          fontWeight: pw.FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
+                pw.TableRow(
+                  children: [
+                    _portfolioCell(row[0]),
+                    _portfolioCell(row[1], strong: true, alignRight: true),
+                  ],
                 ),
             ],
           ),
@@ -584,16 +592,41 @@ class DailyReportPdfBuilder {
         ),
         if (value.missedRepaymentBuckets.isNotEmpty) ...[
           pw.SizedBox(height: 7),
-          _dataTable(
-            headers: const ['Missed repayment range', 'Borrowers', 'Amount'],
-            alignRight: const {1, 2},
-            rows: [
-              for (final bucket in value.missedRepaymentBuckets)
-                [
-                  bucket.label,
-                  '${bucket.borrowers}',
-                  'UGX ${formatMoney(bucket.amount)}',
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            children: [
+              pw.Container(
+                padding: const pw.EdgeInsets.symmetric(
+                  horizontal: 7,
+                  vertical: 5,
+                ),
+                color: _greenFill,
+                child: pw.Text(
+                  'MISSED REPAYMENTS',
+                  style: pw.TextStyle(
+                    color: _emerald,
+                    fontSize: 8.5,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+              _dataTable(
+                headers: const ['Range', 'Borrowers', 'Amount (UGX)'],
+                alignRight: const {1, 2},
+                columnWidths: const {
+                  0: pw.FlexColumnWidth(1.45),
+                  1: pw.FlexColumnWidth(0.8),
+                  2: pw.FlexColumnWidth(1.2),
+                },
+                rows: [
+                  for (final bucket in value.missedRepaymentBuckets)
+                    [
+                      bucket.label.replaceAll('–', '-'),
+                      '${bucket.borrowers}',
+                      'UGX ${formatMoney(bucket.amount)}',
+                    ],
                 ],
+              ),
             ],
           ),
         ],
@@ -872,6 +905,7 @@ class DailyReportPdfBuilder {
     required List<List<String>> rows,
     List<String>? footer,
     Set<int> alignRight = const {},
+    Map<int, pw.TableColumnWidth>? columnWidths,
   }) {
     pw.Alignment align(int i) => alignRight.contains(i)
         ? pw.Alignment.centerRight
@@ -905,14 +939,18 @@ class DailyReportPdfBuilder {
     return pw.Table(
       border: const pw.TableBorder(
         horizontalInside: pw.BorderSide(color: _line, width: 0.5),
+        verticalInside: pw.BorderSide(color: _line, width: 0.5),
         top: pw.BorderSide(color: _line, width: 0.7),
         bottom: pw.BorderSide(color: _line, width: 0.7),
         left: pw.BorderSide(color: _line, width: 0.7),
         right: pw.BorderSide(color: _line, width: 0.7),
       ),
-      columnWidths: {
-        for (var i = 0; i < headers.length; i++) i: const pw.FlexColumnWidth(1),
-      },
+      columnWidths:
+          columnWidths ??
+          {
+            for (var i = 0; i < headers.length; i++)
+              i: const pw.FlexColumnWidth(1),
+          },
       children: [
         pw.TableRow(
           decoration: const pw.BoxDecoration(color: _headerFill),

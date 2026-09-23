@@ -14,8 +14,7 @@ export const REMBEH_BRAND_NAME = "REMBEH";
 /** Public Rembeh mark used on generated PDFs. */
 export const REMBEH_MARK_URL = "/assets/brand/rembeh-mark.png";
 /** Bump when PDF chrome changes so in-memory caches regenerate. */
-export const DAILY_REPORT_PDF_LAYOUT_VERSION =
-  "v5-advances-aging-readable-type";
+export const DAILY_REPORT_PDF_LAYOUT_VERSION = "v8-missed-repayments-label";
 
 const EMERALD: [number, number, number] = [6, 91, 36];
 const NAVY: [number, number, number] = [20, 33, 61];
@@ -640,6 +639,7 @@ function drawPortfolioPerformance(
   const cash = (amount: number) => `${document.currency} ${money(amount)}`;
   autoTable(doc, {
     ...baseTableOptions(margin, startY, { showFoot: "never" }),
+    theme: "grid",
     head: [
       ["TODAY'S REPAYMENT STATUS", "VALUE", "PORTFOLIO POSITION", "VALUE"],
     ],
@@ -695,15 +695,19 @@ function drawPortfolioPerformance(
   if (value.missedRepaymentBuckets.length > 0) {
     autoTable(doc, {
       ...baseTableOptions(margin, tableEnd + 7, { showFoot: "never" }),
-      head: [["MISSED REPAYMENT RANGE", "BORROWERS", "AMOUNT"]],
+      theme: "grid",
+      head: [
+        ["MISSED REPAYMENTS", "BORROWERS", `AMOUNT (${document.currency})`],
+      ],
       body: value.missedRepaymentBuckets.map((bucket) => [
         bucket.label,
         bucket.borrowers,
         cash(bucket.amount),
       ]),
       columnStyles: {
-        1: { halign: "right", fontStyle: "bold" },
-        2: { halign: "right", fontStyle: "bold" },
+        0: { cellWidth: 190 },
+        1: { cellWidth: 105, halign: "right", fontStyle: "bold" },
+        2: { cellWidth: 190, halign: "right", fontStyle: "bold" },
       },
     });
     contentEnd = doc.lastAutoTable?.finalY ?? tableEnd + 90;
