@@ -842,7 +842,11 @@ export function LoansWorkspace({
 
       const overdueDays = resolveOverdueDays(loan, now);
       if (
-        !loanMatchesRepaymentPosition(overdueDays, advancedFilters.repayment)
+        !loanMatchesRepaymentPosition(
+          overdueDays,
+          advancedFilters.repayment,
+          loan.advanceAmount ?? 0,
+        )
       ) {
         return false;
       }

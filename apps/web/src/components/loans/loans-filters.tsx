@@ -14,7 +14,7 @@ import { createPortal } from "react-dom";
 export type DateIssuedPreset =
   "all" | "today" | "this_week" | "this_month" | "last_month" | "custom";
 
-export type RepaymentPosition = "all" | "2-3" | "4-7" | "8+";
+export type RepaymentPosition = "all" | "advance" | "2-3" | "4-7" | "8+";
 
 export type LoansAdvancedFilters = {
   officerKey: string | null;
@@ -54,6 +54,7 @@ const DATE_OPTIONS: Array<{ value: DateIssuedPreset; label: string }> = [
 
 const REPAYMENT_OPTIONS: Array<{ value: RepaymentPosition; label: string }> = [
   { value: "all", label: "All" },
+  { value: "advance", label: "Payment in advance" },
   { value: "2-3", label: "Overdue by 2–3 days" },
   { value: "4-7", label: "Overdue by 4–7 days" },
   { value: "8+", label: "Overdue by 8+ days" },
@@ -63,7 +64,12 @@ export function loansFiltersFromSearchParams(
   params: URLSearchParams,
 ): Partial<LoansAdvancedFilters> {
   const repayment = params.get("repayment");
-  if (repayment === "2-3" || repayment === "4-7" || repayment === "8+") {
+  if (
+    repayment === "advance" ||
+    repayment === "2-3" ||
+    repayment === "4-7" ||
+    repayment === "8+"
+  ) {
     return { repayment };
   }
   return {};
@@ -721,8 +727,10 @@ export function loanMatchesDateIssued(
 export function loanMatchesRepaymentPosition(
   overdueDays: number,
   repayment: RepaymentPosition,
+  advanceAmount = 0,
 ) {
   if (repayment === "all") return true;
+  if (repayment === "advance") return advanceAmount > 0;
   if (repayment === "2-3") return overdueDays >= 2 && overdueDays <= 3;
   if (repayment === "4-7") return overdueDays >= 4 && overdueDays <= 7;
   if (repayment === "8+") return overdueDays >= 8;

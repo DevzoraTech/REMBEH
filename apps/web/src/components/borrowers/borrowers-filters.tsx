@@ -18,7 +18,7 @@ import {
 
 export type VerificationFilter = "all" | "verified" | "pending" | "issue";
 export type BorrowerLoanStatusFilter =
-  "all" | "active" | "overdue" | "closed_only";
+  "all" | "active" | "overdue" | "advance" | "closed_only";
 
 export type BorrowersAdvancedFilters = {
   officerKey: string | null;
@@ -66,6 +66,7 @@ const LOAN_STATUS_OPTIONS: Array<{
   { value: "all", label: "All" },
   { value: "active", label: "Active loan" },
   { value: "overdue", label: "Overdue loan" },
+  { value: "advance", label: "Payment in advance" },
   { value: "closed_only", label: "Closed loans only" },
 ];
 

@@ -14,7 +14,7 @@ class DailyReportPdfBuilder {
   const DailyReportPdfBuilder();
 
   /// Bump when PDF chrome/layout changes so local caches regenerate.
-  static const layoutVersion = 'v4-portfolio-performance';
+  static const layoutVersion = 'v5-advances-aging-readable-type';
 
   static const _brandMarkAsset = 'assets/rembeh-mark.png';
 
@@ -547,6 +547,11 @@ class DailyReportPdfBuilder {
               ['Borrowers who paid today', '${value.borrowersPaid}'],
               ['Borrowers who missed payment', '${value.borrowersMissed}'],
               ['Payer rate', '${value.payerRatePercent.toStringAsFixed(1)}%'],
+              ['Borrowers with advance', '${value.borrowersWithAdvance}'],
+              [
+                'Total amount of advance',
+                'UGX ${formatMoney(value.totalAdvanceAmount)}',
+              ],
               ['Total due as of today', 'UGX ${formatMoney(value.totalDue)}'],
               ['Total repaid', 'UGX ${formatMoney(value.totalRepaid)}'],
               ['Total still due', 'UGX ${formatMoney(value.totalStillDue)}'],
@@ -577,14 +582,29 @@ class DailyReportPdfBuilder {
             ], _cardFill),
           ],
         ),
+        if (value.missedRepaymentBuckets.isNotEmpty) ...[
+          pw.SizedBox(height: 7),
+          _dataTable(
+            headers: const ['Missed repayment range', 'Borrowers', 'Amount'],
+            alignRight: const {1, 2},
+            rows: [
+              for (final bucket in value.missedRepaymentBuckets)
+                [
+                  bucket.label,
+                  '${bucket.borrowers}',
+                  'UGX ${formatMoney(bucket.amount)}',
+                ],
+            ],
+          ),
+        ],
         pw.SizedBox(height: 6),
         pw.Container(
           width: double.infinity,
           padding: const pw.EdgeInsets.all(7),
           color: _headerFill,
           child: pw.Text(
-            'Figures use non-voided transactions through the report business day. Due, paid, missed and payer-rate figures reflect borrower positions at that cutoff. Principal and interest figures are cumulative through the same cutoff.',
-            style: const pw.TextStyle(color: _muted, fontSize: 7),
+            '1. Advance payments cover upcoming scheduled instalments before a borrower is treated as overdue.\n2. Active, due, paid, unpaid, advance and payer-rate figures reflect positions at the close of the report business day.',
+            style: const pw.TextStyle(color: _muted, fontSize: 8.5),
           ),
         ),
       ],
@@ -872,7 +892,7 @@ class DailyReportPdfBuilder {
             maxLines: 2,
             style: pw.TextStyle(
               color: header ? _navy : _slate,
-              fontSize: header ? 7.5 : 8,
+              fontSize: header ? 8.5 : 9,
               fontWeight: header || strong
                   ? pw.FontWeight.bold
                   : pw.FontWeight.normal,

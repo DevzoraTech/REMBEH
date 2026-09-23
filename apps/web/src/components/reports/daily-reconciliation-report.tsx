@@ -55,6 +55,14 @@ export type DailyReportDocumentModel = {
     totalDue: number;
     totalRepaid: number;
     totalStillDue: number;
+    borrowersWithAdvance: number;
+    totalAdvanceAmount: number;
+    missedRepaymentBuckets: Array<{
+      key: string;
+      label: string;
+      borrowers: number;
+      amount: number;
+    }>;
     principalDisbursed: number;
     principalRepaid: number;
     principalOutstanding: number;
@@ -1541,10 +1549,35 @@ function PortfolioPerformance({
               formatNumber(value.borrowersMissed),
             ],
             ["Payer rate", `${value.payerRatePercent.toFixed(1)}%`],
+            [
+              "Borrowers with advance",
+              formatNumber(value.borrowersWithAdvance),
+            ],
+            ["Total amount of advance", money(value.totalAdvanceAmount)],
             ["Total due as of today", money(value.totalDue)],
             ["Total repaid", money(value.totalRepaid)],
             ["Total still due", money(value.totalStillDue)],
           ])}
+        </div>
+        <div className="rounded border border-rose-200 bg-rose-50/30 p-3">
+          <h4 className="mb-1 text-[12px] font-bold uppercase text-rose-800">
+            Missed repayment position as of today
+          </h4>
+          <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 border-b border-slate-200 pb-1 text-[11px] font-semibold text-slate-600">
+            <span>Range</span>
+            <span>Borrowers</span>
+            <span>Amount</span>
+          </div>
+          {value.missedRepaymentBuckets.map((bucket) => (
+            <div
+              key={bucket.key}
+              className="grid grid-cols-[1fr_auto_auto] gap-x-4 border-b border-slate-100 py-1.5 text-[12px] last:border-0"
+            >
+              <span>{bucket.label}</span>
+              <strong>{formatNumber(bucket.borrowers)}</strong>
+              <strong>{money(bucket.amount)}</strong>
+            </div>
+          ))}
         </div>
         <div className="rounded border border-sky-200 bg-sky-50/40 p-3">
           <h4 className="mb-1 text-[12px] font-bold uppercase text-sky-900">
@@ -1563,11 +1596,15 @@ function PortfolioPerformance({
           ])}
         </div>
       </div>
-      <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] leading-5 text-slate-600">
-        Figures use non-voided transactions through the report business day.
-        Due, paid, missed, and payer-rate figures reflect borrower positions at
-        that cutoff. Principal and interest figures are cumulative from
-        inception through the same cutoff.
+      <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-[12px] leading-5 text-slate-700">
+        <p>
+          1. Advance payments cover upcoming scheduled instalments before a
+          borrower is treated as overdue.
+        </p>
+        <p>
+          2. Active, due, paid, unpaid, advance and payer-rate figures reflect
+          positions at the close of the report business day.
+        </p>
       </div>
     </div>
   );
@@ -2566,6 +2603,19 @@ export function buildDailyReportDocumentFromSnapshot(
             totalDue: numberValue(portfolio.totalDue),
             totalRepaid: numberValue(portfolio.totalRepaid),
             totalStillDue: numberValue(portfolio.totalStillDue),
+            borrowersWithAdvance: numberValue(portfolio.borrowersWithAdvance),
+            totalAdvanceAmount: numberValue(portfolio.totalAdvanceAmount),
+            missedRepaymentBuckets: arrayValue(
+              portfolio.missedRepaymentBuckets,
+            ).map((row, index) => {
+              const item = objectValue(row);
+              return {
+                key: stringValue(item.key) || `bucket-${index}`,
+                label: stringValue(item.label) || "Overdue",
+                borrowers: numberValue(item.borrowers),
+                amount: numberValue(item.amount),
+              };
+            }),
             principalDisbursed: numberValue(portfolio.principalDisbursed),
             principalRepaid: numberValue(portfolio.principalRepaid),
             principalOutstanding: numberValue(portfolio.principalOutstanding),

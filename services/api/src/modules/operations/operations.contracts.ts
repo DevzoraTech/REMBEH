@@ -301,6 +301,14 @@ export type DailyOperationPortfolioPerformanceContract = {
   totalDue: number;
   totalRepaid: number;
   totalStillDue: number;
+  borrowersWithAdvance: number;
+  totalAdvanceAmount: number;
+  missedRepaymentBuckets: Array<{
+    key: string;
+    label: string;
+    borrowers: number;
+    amount: number;
+  }>;
   principalDisbursed: number;
   principalRepaid: number;
   principalOutstanding: number;

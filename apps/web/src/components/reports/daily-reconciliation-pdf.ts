@@ -421,6 +421,14 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
                 ],
                 ["Payer rate", `${portfolio.payerRatePercent.toFixed(1)}%`],
                 [
+                  "Borrowers with advance",
+                  formatNumber(portfolio.borrowersWithAdvance),
+                ],
+                [
+                  "Total amount of advance",
+                  `${escapeHtml(currency)} ${moneyPlain(portfolio.totalAdvanceAmount)}`,
+                ],
+                [
                   "Total due as of today",
                   `${escapeHtml(currency)} ${moneyPlain(portfolio.totalDue)}`,
                 ],
@@ -466,7 +474,16 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
               { alignRight: [1] },
             )}
           </div>
-          <p class="note">Figures use non-voided transactions through the report business day. Due and payer-rate figures reflect borrower positions at that cutoff. Principal and interest figures are cumulative through the same cutoff.</p>`
+          ${table(
+            ["Missed repayment range", "Borrowers", `Amount (${currency})`],
+            portfolio.missedRepaymentBuckets.map((bucket) => [
+              escapeHtml(bucket.label),
+              formatNumber(bucket.borrowers),
+              moneyPlain(bucket.amount),
+            ]),
+            { alignRight: [1, 2] },
+          )}
+          <p class="note">1. Advance payments cover upcoming scheduled instalments before a borrower is treated as overdue.<br/>2. Active, due, paid, unpaid, advance and payer-rate figures reflect positions at the close of the report business day.</p>`
         : `<p class="note">Portfolio performance is unavailable for reports generated before this report format was introduced.</p>`,
     ),
   );

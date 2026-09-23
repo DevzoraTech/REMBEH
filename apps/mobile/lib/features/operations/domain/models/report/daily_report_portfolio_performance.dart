@@ -8,6 +8,9 @@ class DailyReportPortfolioPerformance {
     required this.totalDue,
     required this.totalRepaid,
     required this.totalStillDue,
+    required this.borrowersWithAdvance,
+    required this.totalAdvanceAmount,
+    required this.missedRepaymentBuckets,
     required this.principalDisbursed,
     required this.principalRepaid,
     required this.principalOutstanding,
@@ -24,10 +27,27 @@ class DailyReportPortfolioPerformance {
   final num totalDue;
   final num totalRepaid;
   final num totalStillDue;
+  final int borrowersWithAdvance;
+  final num totalAdvanceAmount;
+  final List<DailyReportMissedRepaymentBucket> missedRepaymentBuckets;
   final num principalDisbursed;
   final num principalRepaid;
   final num principalOutstanding;
   final num interestExpected;
   final num interestCollected;
   final num interestOutstanding;
+}
+
+class DailyReportMissedRepaymentBucket {
+  const DailyReportMissedRepaymentBucket({
+    required this.key,
+    required this.label,
+    required this.borrowers,
+    required this.amount,
+  });
+
+  final String key;
+  final String label;
+  final int borrowers;
+  final num amount;
 }

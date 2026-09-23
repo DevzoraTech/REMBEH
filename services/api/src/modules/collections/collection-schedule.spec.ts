@@ -1,8 +1,4 @@
-import {
-  describe,
-  expect,
-  it,
-} from '@jest/globals';
+import { describe, expect, it } from '@jest/globals';
 
 import {
   allocateRepayment,
@@ -122,10 +118,7 @@ describe('collection-schedule', () => {
 
     expect(schedule.totalRepayable).toBe(103_000);
     expect(schedule.interestAmount).toBe(3_000);
-    expect(schedule.dailyInstalment).toBeCloseTo(
-      103_000 / 90,
-      2,
-    );
+    expect(schedule.dailyInstalment).toBeCloseTo(103_000 / 90, 2);
   });
 
   it('does not include processing fee in borrower debt', () => {
@@ -187,6 +180,7 @@ describe('collection-schedule', () => {
     expect(schedule.expectedToday).toBe(0);
     expect(schedule.carriedForward).toBe(0);
     expect(schedule.nextDueIsToday).toBe(false);
+    expect(schedule.overdueDays).toBe(0);
     expect(schedule.nextDueLabel).toBe('Due in 1 day');
   });
 
@@ -384,6 +378,7 @@ describe('collection-schedule', () => {
      */
     expect(schedule.expectedToday).toBe(0);
     expect(schedule.nextDueIsToday).toBe(false);
+    expect(schedule.overdueDays).toBe(0);
   });
 
   it('supports lump-sum repayment and only makes debt due at maturity', () => {
@@ -442,6 +437,8 @@ describe('collection-schedule', () => {
 
     expect(schedule.expectedToday).toBe(0);
     expect(schedule.nextDueIsToday).toBe(false);
+    expect(schedule.advanceAmount).toBe(200_000);
+    expect(schedule.overdueDays).toBe(0);
 
     /*
      * Three instalments have already been covered.
@@ -452,9 +449,7 @@ describe('collection-schedule', () => {
      *
      * next due = 30 Aug.
      */
-    expect(schedule.nextDueLabel).toBe(
-      'Due in 3 days',
-    );
+    expect(schedule.nextDueLabel).toBe('Due in 3 days');
   });
 
   it('treats a partial same-day payment as covering that day’s due for tracking', () => {

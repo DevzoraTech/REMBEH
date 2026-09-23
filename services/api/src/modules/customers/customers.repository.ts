@@ -1,5 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { BorrowerListType, CustomerVoidDisposition, Prisma } from '@prisma/client';
+import {
+  BorrowerListType,
+  CustomerVoidDisposition,
+  Prisma,
+} from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import {
   CUSTOMER_EVENTS,
@@ -70,6 +74,25 @@ const customerListInclude = {
       status: true,
       balance: true,
       isFined: true,
+      principal: true,
+      paymentStartDate: true,
+      disbursedAt: true,
+      createdAt: true,
+      wallet: { select: { openingBalance: true, finesTotal: true } },
+      application: {
+        select: {
+          principalAmount: true,
+          interestRatePercent: true,
+          processingFee: true,
+          durationDays: true,
+          repaymentFrequency: true,
+          paymentStartDate: true,
+        },
+      },
+      repayments: {
+        where: { voidedAt: null },
+        select: { amount: true },
+      },
     },
   },
   _count: { select: { loans: true } },

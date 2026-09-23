@@ -13,6 +13,7 @@ import {
   normalizeInternationalPhoneNumber,
 } from '../../common/security/identity-normalization';
 import { BRANCH_PERMISSIONS } from '../branches/branches.permissions';
+import { computeCollectionSchedule } from '../collections/collection-schedule';
 import { resolveListBranchId } from '../../common/auth/branch-scope';
 import {
   computeLoanPricing,
@@ -89,7 +90,7 @@ export class CustomersService {
             riskCustomerIds.has(customer.id) ||
             Boolean(
               customer.nationalId &&
-                riskNationalIds.has(customer.nationalId.trim().toUpperCase()),
+              riskNationalIds.has(customer.nationalId.trim().toUpperCase()),
             ),
         }),
       ),
@@ -262,6 +263,7 @@ export class CustomersService {
   ): CustomerApiContract {
     const latestApplication = this.latestApplication(customer);
     const registeredBy = this.registeredBy(customer);
+    const advanceAmount = this.advancePosition(customer).amount;
     return {
       id: customer.id,
       branchId: customer.branchId ?? '',
@@ -277,6 +279,8 @@ export class CustomersService {
       activeLoanCount: this.activeLoanCount(customer),
       activeLoanId: this.activeLoanId(customer),
       hasOverdueLoan: this.hasOverdueLoan(customer),
+      hasAdvancePayment: advanceAmount > 0,
+      advanceAmount,
       registeredByName: registeredBy.name,
       registeredByPublicId: registeredBy.publicId,
       verifiedAt: customer.verifiedAt?.toISOString() ?? null,
@@ -373,12 +377,13 @@ export class CustomersService {
 
         const principal = this.decimalToNumber(loan.principal) ?? 0;
         const balance = this.decimalToNumber(loan.balance) ?? 0;
-        const openingBalance = this.decimalToNumber(loan.wallet?.openingBalance);
+        const openingBalance = this.decimalToNumber(
+          loan.wallet?.openingBalance,
+        );
         const finesTotal = this.decimalToNumber(loan.finesTotal) ?? 0;
         const rate =
           this.decimalToNumber(loan.application?.interestRatePercent) ?? 0;
-        const fee =
-          this.decimalToNumber(loan.application?.processingFee) ?? 0;
+        const fee = this.decimalToNumber(loan.application?.processingFee) ?? 0;
         const days = loan.application?.durationDays ?? 1;
         const priced = computeLoanPricing({
           principalAmount: principal,
@@ -526,7 +531,10 @@ export class CustomersService {
   private latestApplication(
     customer: Customer | CustomerListRecord | CustomerDetailRecord,
   ) {
-    if (!('loanApplications' in customer) || !customer.loanApplications.length) {
+    if (
+      !('loanApplications' in customer) ||
+      !customer.loanApplications.length
+    ) {
       return null;
     }
     return [...customer.loanApplications].sort(
@@ -644,11 +652,88 @@ export class CustomersService {
     if (!('loans' in customer) || !Array.isArray(customer.loans)) {
       return false;
     }
-    return customer.loans.some(
-      (loan) =>
+    return customer.loans.some((loan) => {
+      const position = this.loanSchedulePosition(loan);
+      if (position) return position.overdueDays > 0;
+      return (
         String(loan.status) === 'IN_ARREARS' ||
-        ('isFined' in loan && Boolean(loan.isFined)),
+        ('isFined' in loan && Boolean(loan.isFined))
+      );
+    });
+  }
+
+  private advancePosition(
+    customer: Customer | CustomerListRecord | CustomerDetailRecord,
+  ) {
+    if (!('loans' in customer) || !Array.isArray(customer.loans)) {
+      return { amount: 0 };
+    }
+    return {
+      amount: customer.loans.reduce((sum, loan) => {
+        return sum + (this.loanSchedulePosition(loan)?.advanceAmount ?? 0);
+      }, 0),
+    };
+  }
+
+  private loanSchedulePosition(loan: {
+    principal: Prisma.Decimal;
+    balance: Prisma.Decimal;
+    paymentStartDate: Date | null;
+    disbursedAt: Date | null;
+    createdAt: Date;
+    wallet: {
+      openingBalance: Prisma.Decimal;
+      finesTotal: Prisma.Decimal;
+    } | null;
+    repayments: Array<{ amount: Prisma.Decimal }>;
+    application: {
+      principalAmount?: Prisma.Decimal | null;
+      interestRatePercent?: Prisma.Decimal | null;
+      durationDays?: number | null;
+      processingFee?: Prisma.Decimal | null;
+      repaymentFrequency?: string | null;
+      paymentStartDate?: Date | null;
+    } | null;
+  }) {
+    if (!('application' in loan) || !loan.application) return null;
+    const principal = Number(
+      loan.application.principalAmount ?? loan.principal,
     );
+    const rate = Number(loan.application.interestRatePercent ?? 0);
+    const durationDays = Math.max(1, loan.application.durationDays ?? 1);
+    const pricing = computeLoanPricing({
+      principalAmount: principal,
+      interestRatePercent: rate,
+      durationDays,
+      processingFee: Number(loan.application.processingFee ?? 0),
+    });
+    const paid = loan.repayments.reduce(
+      (sum, repayment) => sum + Number(repayment.amount),
+      0,
+    );
+    const baseRepayable = resolveBaseRepayable({
+      openingBalance: Number(loan.wallet?.openingBalance ?? 0) || null,
+      pricedTotal: pricing.totalRepayable,
+      principal,
+      paidAmount: paid,
+      balance: Number(loan.balance),
+      finesTotal: Number(loan.wallet?.finesTotal ?? 0),
+    });
+    return computeCollectionSchedule({
+      principalAmount: principal,
+      interestRatePercent: rate,
+      durationDays,
+      repaymentFrequency: loan.application.repaymentFrequency,
+      processingFee: Number(loan.application.processingFee ?? 0),
+      balance: Number(loan.balance),
+      recordedPaidAmount: paid,
+      totalRepayableOverride: baseRepayable,
+      startDate:
+        loan.paymentStartDate ??
+        loan.application.paymentStartDate ??
+        loan.disbursedAt ??
+        loan.createdAt,
+    });
   }
 }
 

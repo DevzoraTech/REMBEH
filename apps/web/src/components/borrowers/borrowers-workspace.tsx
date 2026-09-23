@@ -131,9 +131,8 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
   const showBranchColumn = !isManager && !selectedBranchId;
   const [borrowers, setBorrowers] = useState<OwnerBorrower[]>([]);
   const [search, setSearch] = useState("");
-  const [advancedFilters, setAdvancedFilters] = useState<BorrowersAdvancedFilters>(
-    EMPTY_BORROWERS_FILTERS,
-  );
+  const [advancedFilters, setAdvancedFilters] =
+    useState<BorrowersAdvancedFilters>(EMPTY_BORROWERS_FILTERS);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [page, setPage] = useState(1);
   const [selectedBorrower, setSelectedBorrower] =
@@ -146,28 +145,33 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [showVoided, setShowVoided] = useState(false);
 
-  const loadBorrowers = useCallback(async (opts?: { silent?: boolean }) => {
-    if (!state.session) return;
-    if (!opts?.silent) setLoading(true);
-    setError(null);
-    try {
-      const payload = await ownerFetch<{ customers?: OwnerBorrower[] }>(
-        state.session,
-        "/customers",
-        { branchId: isManager ? (state.branch?.id ?? null) : selectedBranchId },
-      );
-      const next = payload.customers ?? [];
-      setBorrowers(
-        isManager && state.branch?.id
-          ? next.filter((borrower) => borrower.branchId === state.branch?.id)
-          : next,
-      );
-    } catch {
-      setError("Borrowers could not be loaded right now. Please try again.");
-    } finally {
-      setLoading(false);
-    }
-  }, [isManager, selectedBranchId, state.branch?.id, state.session]);
+  const loadBorrowers = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!state.session) return;
+      if (!opts?.silent) setLoading(true);
+      setError(null);
+      try {
+        const payload = await ownerFetch<{ customers?: OwnerBorrower[] }>(
+          state.session,
+          "/customers",
+          {
+            branchId: isManager ? (state.branch?.id ?? null) : selectedBranchId,
+          },
+        );
+        const next = payload.customers ?? [];
+        setBorrowers(
+          isManager && state.branch?.id
+            ? next.filter((borrower) => borrower.branchId === state.branch?.id)
+            : next,
+        );
+      } catch {
+        setError("Borrowers could not be loaded right now. Please try again.");
+      } finally {
+        setLoading(false);
+      }
+    },
+    [isManager, selectedBranchId, state.branch?.id, state.session],
+  );
 
   useEffect(() => {
     const boot = window.setTimeout(() => {
@@ -218,6 +222,8 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
         advancedFilters.loanStatus === "all" ||
         (advancedFilters.loanStatus === "active" && activeCount > 0) ||
         (advancedFilters.loanStatus === "overdue" && hasOverdue) ||
+        (advancedFilters.loanStatus === "advance" &&
+          Boolean(borrower.hasAdvancePayment)) ||
         (advancedFilters.loanStatus === "closed_only" &&
           borrower.loanCount > 0 &&
           activeCount === 0);
@@ -266,7 +272,14 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
         matchesVoided
       );
     });
-  }, [advancedFilters, borrowers, isManager, matchesBranch, search, showVoided]);
+  }, [
+    advancedFilters,
+    borrowers,
+    isManager,
+    matchesBranch,
+    search,
+    showVoided,
+  ]);
 
   const summary = useMemo(
     () =>
@@ -375,7 +388,9 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
             title="Total Borrowers"
             value={formatNumber(summary.total)}
             context={
-              isManager ? "Registered at this branch" : "Registered across branches"
+              isManager
+                ? "Registered at this branch"
+                : "Registered across branches"
             }
             rows={[
               {
@@ -451,7 +466,7 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
                     filtered,
                     {
                       branch: isManager
-                        ? state.branch?.name ?? "Your branch"
+                        ? (state.branch?.name ?? "Your branch")
                         : selectedBranchName,
                       verification: advancedFilters.verification,
                       loanStatus: advancedFilters.loanStatus,
@@ -524,7 +539,8 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
                                       : "text-amber-800"
                                   }`}
                                 >
-                                  {borrower.voidDisposition === "BLACKLISTED" ? (
+                                  {borrower.voidDisposition ===
+                                  "BLACKLISTED" ? (
                                     <Ban className="size-3" />
                                   ) : (
                                     <ShieldAlert className="size-3" />

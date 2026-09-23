@@ -381,6 +381,7 @@ export class LoansService {
         processingFee,
         installmentAmount: 0,
         overdueDays: 0,
+        advanceAmount: 0,
         nextDueLabel: 'Pending disbursement',
         nextDueIsToday: false,
         paidTodayAmount: 0,
@@ -413,9 +414,7 @@ export class LoansService {
       nextDueIsToday: schedule.nextDueIsToday,
       nextDueLabel: schedule.nextDueLabel,
     });
-    const overdueDays = nextDueDate
-      ? this.calendarDaysBetween(new Date(nextDueDate), new Date())
-      : 0;
+    const overdueDays = schedule.overdueDays;
 
     const now = new Date();
     const paidTodayAmount = this.roundMoney(
@@ -480,6 +479,7 @@ export class LoansService {
       processingFee,
       installmentAmount: schedule.dailyInstalment,
       overdueDays,
+      advanceAmount: schedule.advanceAmount,
       nextDueLabel: loan.customer.voidedAt
         ? 'Set aside'
         : balance <= 0

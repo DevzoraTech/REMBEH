@@ -85,15 +85,12 @@ export type OwnerLoan = {
   processingFee?: number;
   installmentAmount: number;
   overdueDays?: number;
+  advanceAmount?: number;
   nextDueLabel?: string;
   nextDueIsToday?: boolean;
   paidTodayAmount?: number;
   dueDayCoverage?:
-    | "due_paid"
-    | "due_unpaid"
-    | "overdue_paid"
-    | "overdue_unpaid"
-    | "none";
+    "due_paid" | "due_unpaid" | "overdue_paid" | "overdue_unpaid" | "none";
   nextDueDate?: string | null;
   currency: string;
   officerName: string | null;
@@ -161,6 +158,8 @@ export type OwnerBorrower = {
   activeLoanCount?: number;
   activeLoanId?: string | null;
   hasOverdueLoan?: boolean;
+  hasAdvancePayment?: boolean;
+  advanceAmount?: number;
   registeredByName?: string | null;
   registeredByPublicId?: string | null;
   verifiedAt: string | null;

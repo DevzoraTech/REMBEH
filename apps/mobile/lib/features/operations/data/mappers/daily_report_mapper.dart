@@ -242,6 +242,18 @@ class DailyReportMapper {
       totalDue: _num(row['totalDue']),
       totalRepaid: _num(row['totalRepaid']),
       totalStillDue: _num(row['totalStillDue']),
+      borrowersWithAdvance: _int(row['borrowersWithAdvance']) ?? 0,
+      totalAdvanceAmount: _num(row['totalAdvanceAmount']),
+      missedRepaymentBuckets: _list(row['missedRepaymentBuckets'])
+          .map(
+            (item) => DailyReportMissedRepaymentBucket(
+              key: _string(item['key']) ?? 'overdue',
+              label: _string(item['label']) ?? 'Overdue',
+              borrowers: _int(item['borrowers']) ?? 0,
+              amount: _num(item['amount']),
+            ),
+          )
+          .toList(),
       principalDisbursed: _num(row['principalDisbursed']),
       principalRepaid: _num(row['principalRepaid']),
       principalOutstanding: _num(row['principalOutstanding']),

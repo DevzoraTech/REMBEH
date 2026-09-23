@@ -117,6 +117,12 @@ export type CollectionSchedule = {
 
   carriedForward: number;
 
+  /** Amount paid beyond obligations due through the selected day. */
+  advanceAmount: number;
+
+  /** Calendar days since the oldest uncovered scheduled repayment. */
+  overdueDays: number;
+
   nextDueLabel: string;
 
   nextDueIsToday: boolean;
@@ -199,11 +205,7 @@ export function isSameCalendarDay(left: Date, right: Date): boolean {
  * overdue borrowers who pay anything are tracked separately.
  */
 export type DueDayCoverage =
-  | 'due_paid'
-  | 'due_unpaid'
-  | 'overdue_paid'
-  | 'overdue_unpaid'
-  | 'none';
+  'due_paid' | 'due_unpaid' | 'overdue_paid' | 'overdue_unpaid' | 'none';
 
 export function classifyDueDayCoverage(input: {
   morningExpectedToday: number;
@@ -514,6 +516,20 @@ export function computeCollectionSchedule(
       ? 0
       : roundMoney(Math.max(0, expectedToday - dailyInstalment));
 
+  const advanceAmount = roundMoney(
+    Math.max(0, Math.min(outstanding, paidAmount - expectedCumulative)),
+  );
+
+  const oldestUncoveredIndex = Math.min(
+    Math.max(0, coveredOccurrences),
+    scheduledDates.length - 1,
+  );
+  const oldestUncoveredDate = scheduledDates[oldestUncoveredIndex];
+  const overdueDays =
+    expectedToday > 0 && oldestUncoveredDate
+      ? Math.max(0, calendarDayDifference(oldestUncoveredDate, asOf))
+      : 0;
+
   // ==========================================================================
   // FIND NEXT CONTRACTUAL DUE DATE
   // ==========================================================================
@@ -636,6 +652,10 @@ export function computeCollectionSchedule(
     expectedToday,
 
     carriedForward,
+
+    advanceAmount,
+
+    overdueDays,
 
     nextDueLabel,
 

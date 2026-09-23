@@ -587,9 +587,36 @@ export class OperationsService {
       }
     }
 
-    return {
-      report: this.toOwnerReportListItem(report),
-    };
+    const snapshotRoot =
+      report.snapshot &&
+      typeof report.snapshot === 'object' &&
+      !Array.isArray(report.snapshot)
+        ? (report.snapshot as Prisma.JsonObject)
+        : {};
+    if (Number(snapshotRoot.version ?? 0) < 6) {
+      const bounds = this.parseDayBounds(
+        this.formatDateLabel(report.operationDate),
+      );
+      const contract = await this.toContract(
+        report.operation,
+        bounds.dayStart,
+        bounds.dayEnd,
+      );
+      const refreshedSnapshot = this.buildReportSnapshot(contract);
+      await this.repository.updateReportSnapshot({
+        tenantId: user.tenantId,
+        reportId: report.id,
+        snapshot: refreshedSnapshot,
+      });
+      return {
+        report: this.toOwnerReportListItem({
+          ...report,
+          snapshot: refreshedSnapshot as Prisma.JsonValue,
+        }),
+      };
+    }
+
+    return { report: this.toOwnerReportListItem(report) };
   }
 
   private toOwnerReportListItem(report: {
@@ -3034,6 +3061,11 @@ export class OperationsService {
     const activeBorrowerIds = new Set<string>();
     const dueBorrowerIds = new Set<string>();
     const paidBorrowerIds = new Set<string>();
+    const advancesByBorrower = new Map<string, number>();
+    const missedByBorrower = new Map<
+      string,
+      { days: number; amount: number }
+    >();
 
     for (const loan of input.loans) {
       const agreedPrincipal = this.roundMoney(
@@ -3136,6 +3168,15 @@ export class OperationsService {
           loan.createdAt,
         asOf: input.operationDate,
       });
+      if (schedule.advanceAmount > 0) {
+        advancesByBorrower.set(
+          loan.customerId,
+          this.roundMoney(
+            (advancesByBorrower.get(loan.customerId) ?? 0) +
+              schedule.advanceAmount,
+          ),
+        );
+      }
       const dueAtStartOfDay = this.roundMoney(
         Math.max(0, schedule.expectedCumulative - paidBeforeDay),
       );
@@ -3146,6 +3187,13 @@ export class OperationsService {
       );
       dueBorrowerIds.add(loan.customerId);
       if (appliedToday > 0) paidBorrowerIds.add(loan.customerId);
+      if (appliedToday <= 0 && schedule.overdueDays > 0) {
+        const previous = missedByBorrower.get(loan.customerId);
+        missedByBorrower.set(loan.customerId, {
+          days: Math.max(previous?.days ?? 0, schedule.overdueDays),
+          amount: this.roundMoney((previous?.amount ?? 0) + dueAtStartOfDay),
+        });
+      }
       totalDue += dueAtStartOfDay;
       totalRepaid += appliedToday;
       totalStillDue += Math.max(0, dueAtStartOfDay - appliedToday);
@@ -3161,6 +3209,24 @@ export class OperationsService {
     );
     const borrowersDue = dueBorrowerIds.size;
     const borrowersPaid = paidBorrowerIds.size;
+    const bucketDefinitions = [
+      { key: 'one_day', label: '1 day', min: 1, max: 1 },
+      { key: 'two_three_days', label: '2–3 days', min: 2, max: 3 },
+      { key: 'four_seven_days', label: '4–7 days', min: 4, max: 7 },
+      { key: 'eight_fifty_nine_days', label: '8–59 days', min: 8, max: 59 },
+      { key: 'sixty_plus_days', label: '60+ days', min: 60, max: Infinity },
+    ];
+    const missedRepaymentBuckets = bucketDefinitions.map((definition) => {
+      const rows = [...missedByBorrower.values()].filter(
+        (row) => row.days >= definition.min && row.days <= definition.max,
+      );
+      return {
+        key: definition.key,
+        label: definition.label,
+        borrowers: rows.length,
+        amount: this.roundMoney(rows.reduce((sum, row) => sum + row.amount, 0)),
+      };
+    });
 
     return {
       activeBorrowers: activeBorrowerIds.size,
@@ -3174,6 +3240,14 @@ export class OperationsService {
       totalDue: this.roundMoney(totalDue),
       totalRepaid: this.roundMoney(totalRepaid),
       totalStillDue: this.roundMoney(totalStillDue),
+      borrowersWithAdvance: advancesByBorrower.size,
+      totalAdvanceAmount: this.roundMoney(
+        [...advancesByBorrower.values()].reduce(
+          (sum, amount) => sum + amount,
+          0,
+        ),
+      ),
+      missedRepaymentBuckets,
       principalDisbursed: roundedPrincipalDisbursed,
       principalRepaid: roundedPrincipalRepaid,
       principalOutstanding: this.roundMoney(
@@ -3509,7 +3583,7 @@ export class OperationsService {
     operation: DailyOperationContract,
   ): Prisma.InputJsonObject {
     return {
-      version: 5,
+      version: 6,
       reportType: 'daily_operations_close',
 
       operation: {

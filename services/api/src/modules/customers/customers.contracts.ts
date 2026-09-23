@@ -16,6 +16,10 @@ export type CustomerApiContract = {
   activeLoanId: string | null;
   /** True when any loan is in arrears or has overdue fines. */
   hasOverdueLoan: boolean;
+  /** True when payments cover obligations beyond today. */
+  hasAdvancePayment: boolean;
+  /** Total amount paid toward future scheduled obligations. */
+  advanceAmount: number;
   registeredByName: string | null;
   registeredByPublicId: string | null;
   verifiedAt: string | null;

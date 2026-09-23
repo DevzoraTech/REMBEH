@@ -14,7 +14,8 @@ export const REMBEH_BRAND_NAME = "REMBEH";
 /** Public Rembeh mark used on generated PDFs. */
 export const REMBEH_MARK_URL = "/assets/brand/rembeh-mark.png";
 /** Bump when PDF chrome changes so in-memory caches regenerate. */
-export const DAILY_REPORT_PDF_LAYOUT_VERSION = "v4-portfolio-performance";
+export const DAILY_REPORT_PDF_LAYOUT_VERSION =
+  "v5-advances-aging-readable-type";
 
 const EMERALD: [number, number, number] = [6, 91, 36];
 const NAVY: [number, number, number] = [20, 33, 61];
@@ -585,7 +586,7 @@ function baseTableOptions(
     showFoot: options?.showFoot ?? "everyPage",
     styles: {
       font: "helvetica",
-      fontSize: 8,
+      fontSize: 9,
       textColor: SLATE,
       lineColor: LINE,
       lineWidth: 0.5,
@@ -596,13 +597,13 @@ function baseTableOptions(
       fillColor: HEADER_FILL,
       textColor: NAVY,
       fontStyle: "bold",
-      fontSize: 7.5,
+      fontSize: 8.5,
     },
     footStyles: {
       fillColor: GREEN_FILL,
       textColor: NAVY,
       fontStyle: "bold",
-      fontSize: 8,
+      fontSize: 9,
     },
     alternateRowStyles: { fillColor: [255, 255, 255] },
   };
@@ -674,11 +675,13 @@ function drawPortfolioPerformance(
         cash(value.interestCollected),
       ],
       [
-        "Total due as of today",
-        cash(value.totalDue),
+        "Borrowers with advance",
+        value.borrowersWithAdvance,
         "Interest outstanding",
         cash(value.interestOutstanding),
       ],
+      ["Total amount of advance", cash(value.totalAdvanceAmount), "", ""],
+      ["Total due as of today", cash(value.totalDue), "", ""],
       ["Total repaid", cash(value.totalRepaid), "", ""],
       ["Total still due", cash(value.totalStillDue), "", ""],
     ],
@@ -688,25 +691,42 @@ function drawPortfolioPerformance(
     },
   });
   const tableEnd = doc.lastAutoTable?.finalY ?? startY + 150;
+  let contentEnd = tableEnd;
+  if (value.missedRepaymentBuckets.length > 0) {
+    autoTable(doc, {
+      ...baseTableOptions(margin, tableEnd + 7, { showFoot: "never" }),
+      head: [["MISSED REPAYMENT RANGE", "BORROWERS", "AMOUNT"]],
+      body: value.missedRepaymentBuckets.map((bucket) => [
+        bucket.label,
+        bucket.borrowers,
+        cash(bucket.amount),
+      ]),
+      columnStyles: {
+        1: { halign: "right", fontStyle: "bold" },
+        2: { halign: "right", fontStyle: "bold" },
+      },
+    });
+    contentEnd = doc.lastAutoTable?.finalY ?? tableEnd + 90;
+  }
   doc.setFillColor(...HEADER_FILL);
   doc.setTextColor(...MUTED);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(7);
+  doc.setFontSize(8.5);
   const note =
-    "Figures use non-voided transactions through the report business day. Due and payer-rate figures reflect borrower positions at that cutoff; portfolio figures are cumulative through the same cutoff.";
+    "1. Advance payments cover upcoming scheduled instalments before a borrower is treated as overdue.  2. Active, due, paid, unpaid, advance and payer-rate figures reflect positions at the close of the report business day.";
   const lines = doc.splitTextToSize(
     note,
     doc.internal.pageSize.getWidth() - margin * 2 - 16,
   );
   doc.rect(
     margin,
-    tableEnd + 5,
+    contentEnd + 5,
     doc.internal.pageSize.getWidth() - margin * 2,
-    24,
+    30,
     "F",
   );
-  doc.text(lines, margin + 8, tableEnd + 16);
-  return tableEnd + 38;
+  doc.text(lines, margin + 8, contentEnd + 16);
+  return contentEnd + 44;
 }
 
 function drawAgentTable(

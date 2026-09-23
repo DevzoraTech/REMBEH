@@ -683,6 +683,17 @@ export class OperationsRepository {
     });
   }
 
+  updateReportSnapshot(input: {
+    tenantId: string;
+    reportId: string;
+    snapshot: Prisma.InputJsonValue;
+  }) {
+    return this.prisma.branchOperationReport.update({
+      where: { id: input.reportId, tenantId: input.tenantId },
+      data: { snapshot: input.snapshot },
+    });
+  }
+
   listOwnerReports(input: {
     tenantId: string;
     branchId?: string | null;

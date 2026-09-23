@@ -1,16 +1,10 @@
 export type LoanRepaymentFrequencyContract =
-  | 'DAILY'
-  | 'WEEKLY'
-  | 'BIWEEKLY'
-  | 'MONTHLY'
-  | 'LUMP_SUM';
+  'DAILY' | 'WEEKLY' | 'BIWEEKLY' | 'MONTHLY' | 'LUMP_SUM';
 
 export type LoanListItemContract = {
   id: string;
 
-  applicationId:
-    | string
-    | null;
+  applicationId: string | null;
 
   customerId: string;
 
@@ -18,13 +12,9 @@ export type LoanListItemContract = {
 
   phone: string;
 
-  nationalId:
-    | string
-    | null;
+  nationalId: string | null;
 
-  loanTypeName:
-    | string
-    | null;
+  loanTypeName: string | null;
 
   status: string;
 
@@ -71,9 +61,7 @@ export type LoanListItemContract = {
    * - processing fee
    * - subsequently applied fines
    */
-  openingBalance:
-    | number
-    | null;
+  openingBalance: number | null;
 
   /**
    * Sum of applied overdue fines.
@@ -130,6 +118,7 @@ export type LoanListItemContract = {
    * Zero means the borrower is not currently in arrears.
    */
   overdueDays: number;
+  advanceAmount: number;
 
   /**
    * Human-readable schedule state.
@@ -158,30 +147,20 @@ export type LoanListItemContract = {
    * Does not change outstanding or instalment coverage.
    */
   dueDayCoverage:
-    | 'due_paid'
-    | 'due_unpaid'
-    | 'overdue_paid'
-    | 'overdue_unpaid'
-    | 'none';
+    'due_paid' | 'due_unpaid' | 'overdue_paid' | 'overdue_unpaid' | 'none';
 
   /**
    * Next contractual repayment date in ISO format.
    *
    * Null when the loan has been paid/closed.
    */
-  nextDueDate:
-    | string
-    | null;
+  nextDueDate: string | null;
 
   currency: string;
 
-  officerName:
-    | string
-    | null;
+  officerName: string | null;
 
-  officerPublicId:
-    | string
-    | null;
+  officerPublicId: string | null;
 
   branchId: string;
 
@@ -194,23 +173,18 @@ export type LoanListItemContract = {
    * This is generated from the product's payment-start policy:
    * SAME_DAY, NEXT_DAY or AFTER_N_DAYS.
    */
-  paymentStartDate:
-    | string
-    | null;
+  paymentStartDate: string | null;
 
   /**
    * Contractual term represented in calendar days.
    */
-  durationDays:
-    | number
-    | null;
+  durationDays: number | null;
 
   /**
    * Contractual repayment frequency captured from the
    * loan product template at application time.
    */
-  repaymentFrequency:
-    LoanRepaymentFrequencyContract;
+  repaymentFrequency: LoanRepaymentFrequencyContract;
 
   /**
    * Final contractual repayment date.
@@ -218,46 +192,29 @@ export type LoanListItemContract = {
    * The central collection schedule engine is the source of truth
    * for this value.
    */
-  dueDate:
-    | string
-    | null;
+  dueDate: string | null;
 
   createdAt: string;
 
-  disbursedAt:
-    | string
-    | null;
+  disbursedAt: string | null;
 
   updatedAt: string;
 
   reminder: {
-    status:
-      | 'sent'
-      | 'not_sent'
-      | 'queued'
-      | 'sending'
-      | 'failed';
+    status: 'sent' | 'not_sent' | 'queued' | 'sending' | 'failed';
 
-    lastSentAt:
-      | string
-      | null;
+    lastSentAt: string | null;
 
-    lastFailureReason:
-      | string
-      | null;
+    lastFailureReason: string | null;
 
-    canResend:
-      boolean;
+    canResend: boolean;
 
-    activeBatchId:
-      | string
-      | null;
+    activeBatchId: string | null;
   };
 };
 
 export type LoanListResponseContract = {
-  loans:
-    LoanListItemContract[];
+  loans: LoanListItemContract[];
 };
 
 export type LoanDisbursementContract = {
