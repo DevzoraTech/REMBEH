@@ -1174,67 +1174,6 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
   ]);
 
   useEffect(() => {
-    if (
-      !ready ||
-      paymentPanelOpen ||
-      paymentResultOverlay ||
-      submittedManualPayment
-    ) {
-      return;
-    }
-
-    const pending = [...planPayments, ...smsPayments]
-      .filter(
-        (row) =>
-          ((row.kind ?? "subscription") === "sms" ||
-            isManualSubscriptionPayment(row)) &&
-          row.status === "Pending" &&
-          row.canCancel === true,
-      )
-      .sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-      )[0];
-    if (!pending || autoShownPendingPaymentIdRef.current === pending.id) return;
-
-    autoShownPendingPaymentIdRef.current = pending.id;
-    if ((pending.kind ?? "subscription") === "sms") {
-      setManualPaymentKind("sms");
-      setManualSmsBundle(
-        smsBundles.find((bundle) => bundle.id === pending.bundleId) ?? null,
-      );
-      setActiveTab("sms");
-    } else {
-      setManualPaymentKind("subscription");
-      setManualSmsBundle(null);
-      setSelectedPlanCode(pending.planCode ?? selectedPlanCode ?? "PRO_3M");
-      setActiveTab("plan");
-    }
-    setFocusedBranchId(pending.branchId);
-    setSelectedPaymentMethod(manualPaymentMethodForRow(pending).id);
-    setTransactionId("");
-    setConfirmTransactionId("");
-    setSubmittedManualPayment(
-      submissionFromPendingPayment(
-        pending,
-        planOptionsForBranch(pending.branchId),
-        selectedPlan,
-      ),
-    );
-    setPaymentPanelOpen(true);
-  }, [
-    paymentPanelOpen,
-    paymentResultOverlay,
-    planOptions,
-    planPayments,
-    ready,
-    selectedPlan,
-    selectedPlanCode,
-    smsBundles,
-    smsPayments,
-    submittedManualPayment,
-  ]);
-
-  useEffect(() => {
     if (!submittedManualPayment || !session) return;
     const timer = window.setInterval(() => {
       void loadPayments();
@@ -1421,47 +1360,6 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     resultParam,
     resultPaymentId,
     selectedPlan,
-  ]);
-
-  useEffect(() => {
-    if (
-      !retryPaymentId ||
-      !ready ||
-      paymentPanelOpen ||
-      paymentResultOverlay ||
-      !summary
-    ) {
-      return;
-    }
-    const row = planPayments.find((payment) => payment.id === retryPaymentId);
-    if (!row || row.status !== "Failed") return;
-    const branch = summary.branches.find(
-      (item) => item.branchId === row.branchId,
-    );
-    if (!branch) return;
-
-    setSelectedPlanCode(row.planCode ?? selectedPlanCode ?? "PRO_3M");
-    setFocusedBranchId(row.branchId);
-    setActiveTab("plan");
-    setPaymentPanelOpen(true);
-    setSelectedPaymentMethod(manualPaymentMethodForRow(row).id);
-    setSubmittedManualPayment(null);
-    setTransactionId("");
-    setConfirmTransactionId("");
-    setError(null);
-
-    const url = new URL(window.location.href);
-    url.searchParams.delete("retryPayment");
-    url.searchParams.set("tab", "plan");
-    window.history.replaceState({}, "", url.toString());
-  }, [
-    paymentPanelOpen,
-    paymentResultOverlay,
-    planPayments,
-    ready,
-    retryPaymentId,
-    selectedPlanCode,
-    summary,
   ]);
 
   function switchTab(tab: "plan" | "sms") {
@@ -2723,44 +2621,6 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
           </div>
         </section>
       </div>
-      {paymentPanelOpen ? (
-        <PaymentOverlay wide onClose={closePaymentOverlay}>
-          {submittedManualPayment ? (
-            <ManualPaymentSubmittedPanel
-              submission={submittedManualPayment}
-              onDone={closePaymentOverlay}
-            />
-          ) : (
-            <ManualMerchantPaymentPanel
-              plan={manualPaymentPlan}
-              branchName={branchName}
-              methods={manualPaymentMethods}
-              selectedMethod={selectedPaymentMethod}
-              transactionId={transactionId}
-              confirmTransactionId={confirmTransactionId}
-              submitting={submittingManualPayment}
-              pendingPayment={activePendingManualPayment}
-              cancellingPending={
-                activePendingManualPayment
-                  ? cancellingPaymentId === activePendingManualPayment.id
-                  : false
-              }
-              onClose={closePaymentOverlay}
-              onCancelPending={(paymentId) =>
-                void cancelPendingPayment(paymentId)
-              }
-              onSelectMethod={(method) => {
-                setSelectedPaymentMethod(method);
-                setSubmittedManualPayment(null);
-                setError(null);
-              }}
-              onTransactionIdChange={setTransactionId}
-              onConfirmTransactionIdChange={setConfirmTransactionId}
-              onSubmit={() => void submitManualPayment()}
-            />
-          )}
-        </PaymentOverlay>
-      ) : null}
       {paymentResultOverlay ? (
         <SubscriptionPaymentResultOverlay
           result={paymentResultOverlay}

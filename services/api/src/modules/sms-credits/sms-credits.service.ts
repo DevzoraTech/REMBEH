@@ -250,8 +250,13 @@ export class SmsCreditsService {
 
     if (existingPending) {
       const raw = existingPending.rawPayload as
-        { payment_link?: string } | null | undefined;
-      if (raw?.payment_link) {
+        { payment_link?: string; provider_environment?: string }
+        | null
+        | undefined;
+      if (
+        raw?.payment_link &&
+        raw.provider_environment === this.flutterwave.checkoutEnvironment()
+      ) {
         return {
           redirectUrl: raw.payment_link,
           purchaseId: existingPending.id,
@@ -265,6 +270,16 @@ export class SmsCreditsService {
           status: existingPending.status,
         };
       }
+      await this.prisma.smsPurchase.update({
+        where: { id: existingPending.id },
+        data: {
+          status: SmsPurchaseStatus.PAYMENT_FAILED,
+          rawPayload: {
+            ...(raw ?? {}),
+            failure_reason: 'Checkout session expired. Start a new payment.',
+          },
+        },
+      });
     }
 
     const wallet = await this.ensureWallet(user.tenantId, branch.id);
@@ -359,6 +374,7 @@ export class SmsCreditsService {
       data: {
         rawPayload: {
           provider: 'FLUTTERWAVE',
+          provider_environment: this.flutterwave.checkoutEnvironment(),
           payment_method: 'Flutterwave checkout',
           payment_link: order.paymentLink,
         },

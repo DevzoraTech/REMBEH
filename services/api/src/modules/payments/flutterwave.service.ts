@@ -57,13 +57,17 @@ export class FlutterwaveService {
     );
   }
 
+  checkoutEnvironment(): 'test' | 'live' {
+    return this.secretKey()?.includes('_TEST') ? 'test' : 'live';
+  }
+
   /** Safe for clients — never includes secret key or secret hash. */
   getPublicConfig() {
     return {
       enabled: this.isEnabled(),
       publicKey: this.isEnabled() ? this.publicKey() : null,
       currency: this.configService.get<string>('FLW_DEFAULT_CURRENCY')?.trim() || 'UGX',
-      mode: this.secretKey()?.includes('_TEST') ? 'test' : 'live',
+      mode: this.checkoutEnvironment(),
     };
   }
 

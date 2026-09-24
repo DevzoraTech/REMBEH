@@ -970,12 +970,35 @@ export class BillingService implements OnModuleInit {
       ? this.payloadObject(existingPending.rawPayload)
       : null;
     const existingLink = existingPayload?.payment_link;
-    if (existingPending && typeof existingLink === 'string' && existingLink) {
+    const checkoutEnvironment = this.flutterwave.checkoutEnvironment();
+    const existingEnvironment = existingPayload?.provider_environment;
+    const existingIsFresh = existingPending
+      ? Date.now() - existingPending.createdAt.getTime() < 30 * 60 * 1000
+      : false;
+    if (
+      existingPending &&
+      typeof existingLink === 'string' &&
+      existingLink &&
+      existingIsFresh &&
+      existingEnvironment === checkoutEnvironment
+    ) {
       return {
         redirectUrl: existingLink,
         merchantReference: existingPending.merchantReference,
         orderTrackingId: existingPending.orderTrackingId,
       };
+    }
+    if (existingPending) {
+      await this.prisma.subscriptionPayment.update({
+        where: { id: existingPending.id },
+        data: {
+          status: SubscriptionPaymentStatus.FAILED,
+          rawPayload: {
+            ...(existingPayload ?? {}),
+            failure_reason: 'Checkout session expired. Start a new payment.',
+          },
+        },
+      });
     }
 
     const payment = await this.prisma.subscriptionPayment.create({
@@ -1039,6 +1062,7 @@ export class BillingService implements OnModuleInit {
       data: {
         rawPayload: {
           provider: 'FLUTTERWAVE',
+          provider_environment: checkoutEnvironment,
           payment_method: 'Flutterwave checkout',
           payment_link: order.paymentLink,
         },

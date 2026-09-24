@@ -6,9 +6,7 @@ import '../../services/session_store.dart';
 import '../../theme.dart';
 import '../../utils/friendly_errors.dart';
 import '../../utils/money.dart';
-import 'complete_manual_payment_screen.dart';
 import 'flutterwave_checkout_screen.dart';
-import 'payment_waiting_screen.dart';
 
 enum SubscriptionTab { plan, sms }
 
@@ -189,6 +187,25 @@ String formatUgx(num amount, [String currency = 'UGX']) {
   return '$currency ${formatCompactMoney(amount)}';
 }
 
+String _formatBillingShortDate(DateTime value) {
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+  final local = value.toLocal();
+  return '${local.day} ${months[local.month - 1]} ${local.year}';
+}
+
 class SubscriptionScreen extends StatefulWidget {
   const SubscriptionScreen({
     super.key,
@@ -222,8 +239,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   List<SmsBundleOption> _bundles = const [];
   List<BillingPaymentRow> _smsPayments = const [];
   List<BillingPaymentRow> _planPayments = const [];
-  BillingPaymentRow? _pendingSmsPayment;
-  BillingPaymentRow? _pendingPlanPayment;
   String? _selectedBundleId;
   String? _selectedPlanCode;
 
@@ -297,32 +312,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       final smsPayments = allPayments.where((p) => p.isSms).toList();
       final planPayments = allPayments.where((p) => !p.isSms).toList();
 
-      BillingPaymentRow? pendingSms;
-      for (final payment in smsPayments) {
-        if (!payment.isPending) continue;
-        if (branchId != null &&
-            payment.branchId != null &&
-            payment.branchId!.isNotEmpty &&
-            payment.branchId != branchId) {
-          continue;
-        }
-        pendingSms = payment;
-        break;
-      }
-
-      BillingPaymentRow? pendingPlan;
-      for (final payment in planPayments) {
-        if (!payment.isPending) continue;
-        if (branchId != null &&
-            payment.branchId != null &&
-            payment.branchId!.isNotEmpty &&
-            payment.branchId != branchId) {
-          continue;
-        }
-        pendingPlan = payment;
-        break;
-      }
-
       String? selectedPlan = _selectedPlanCode;
       if (selectedPlan == null || !plans.any((p) => p.code == selectedPlan)) {
         BillingPlanOption? preferred;
@@ -343,8 +332,6 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         _bundles = bundles;
         _smsPayments = smsPayments;
         _planPayments = planPayments;
-        _pendingSmsPayment = pendingSms;
-        _pendingPlanPayment = pendingPlan;
         _selectedBundleId = bundles.isNotEmpty ? bundles.first.id : null;
         _selectedPlanCode = selectedPlan;
         _loading = false;
@@ -557,104 +544,48 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                     color: forestEmerald,
                     onRefresh: _load,
                     child: _tab == SubscriptionTab.sms
-                        ? (_pendingSmsPayment != null
-                              ? PaymentSubmittedScreen(
-                                  session: widget.session,
-                                  paymentId: _pendingSmsPayment!.id,
-                                  kind: ManualPaymentKind.sms,
-                                  amount: _pendingSmsPayment!.amount,
-                                  currency: _pendingSmsPayment!.currency,
-                                  paymentMethodTitle:
-                                      _pendingSmsPayment!.paymentMethod ??
-                                      'Mobile Money',
-                                  transactionId:
-                                      _pendingSmsPayment!.transactionId ??
-                                      _pendingSmsPayment!.transaction,
-                                  submittedAt: _pendingSmsPayment!.date,
-                                  bundleName: _pendingSmsPayment!.transaction,
-                                  smsUnits: _pendingSmsPayment!.credits ?? 0,
-                                  embedded: true,
-                                  onResolved: () {
-                                    // ignore: discarded_futures
-                                    _load();
-                                  },
-                                )
-                              : _SmsTab(
-                                  credits: _smsStore.credits ?? 0,
-                                  smsAccessAllowed: _smsStore.smsAccessAllowed,
-                                  bundles: _bundles,
-                                  selectedBundleId: _selectedBundleId,
-                                  payments: _smsPayments,
-                                  onSelectBundle: (bundle) {
-                                    setState(
-                                      () => _selectedBundleId = bundle.id,
-                                    );
-                                    // ignore: discarded_futures
-                                    _openBundlePayment(bundle);
-                                  },
-                                  onViewAllPayments: () {
-                                    Navigator.of(context).push<void>(
-                                      MaterialPageRoute(
-                                        builder: (_) => _PaymentsListScreen(
-                                          title: 'SMS payments',
-                                          payments: _smsPayments,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ))
-                        : (_pendingPlanPayment != null
-                              ? PaymentSubmittedScreen(
-                                  session: widget.session,
-                                  paymentId: _pendingPlanPayment!.id,
-                                  kind: ManualPaymentKind.subscription,
-                                  amount: _pendingPlanPayment!.amount,
-                                  currency: _pendingPlanPayment!.currency,
-                                  paymentMethodTitle:
-                                      _pendingPlanPayment!.paymentMethod ??
-                                      'Mobile Money',
-                                  transactionId:
-                                      _pendingPlanPayment!.transactionId ??
-                                      _pendingPlanPayment!.transaction,
-                                  submittedAt: _pendingPlanPayment!.date,
-                                  planName: 'Pro',
-                                  billingPeriodLabel:
-                                      _pendingPlanPayment!.periodLabel ??
-                                      (_pendingPlanPayment!
-                                                  .planDurationMonths !=
-                                              null
-                                          ? (_pendingPlanPayment!
-                                                        .planDurationMonths ==
-                                                    1
-                                                ? 'Monthly'
-                                                : '${_pendingPlanPayment!.planDurationMonths} months')
-                                          : '—'),
-                                  embedded: true,
-                                  onResolved: () {
-                                    // ignore: discarded_futures
-                                    _load();
-                                  },
-                                )
-                              : _PlanTab(
-                                  billing: _branchBilling,
-                                  plans: _plans,
-                                  selectedPlanCode: _selectedPlanCode,
-                                  payments: _planPayments,
-                                  onSelectPlan: (plan) {
-                                    // ignore: discarded_futures
-                                    _openPlanPayment(plan);
-                                  },
-                                  onViewAllPayments: () {
-                                    Navigator.of(context).push<void>(
-                                      MaterialPageRoute(
-                                        builder: (_) => _PaymentsListScreen(
-                                          title: 'Subscription payments',
-                                          payments: _planPayments,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                )),
+                        ? _SmsTab(
+                            credits: _smsStore.credits ?? 0,
+                            smsAccessAllowed: _smsStore.smsAccessAllowed,
+                            bundles: _bundles,
+                            selectedBundleId: _selectedBundleId,
+                            payments: _smsPayments,
+                            onSelectBundle: (bundle) {
+                              setState(() => _selectedBundleId = bundle.id);
+                              // ignore: discarded_futures
+                              _openBundlePayment(bundle);
+                            },
+                            onViewAllPayments: () {
+                              Navigator.of(context).push<void>(
+                                MaterialPageRoute(
+                                  builder: (_) => _PaymentsListScreen(
+                                    title: 'SMS payments',
+                                    payments: _smsPayments,
+                                  ),
+                                ),
+                              );
+                            },
+                          )
+                        : _PlanTab(
+                            billing: _branchBilling,
+                            plans: _plans,
+                            selectedPlanCode: _selectedPlanCode,
+                            payments: _planPayments,
+                            onSelectPlan: (plan) {
+                              // ignore: discarded_futures
+                              _openPlanPayment(plan);
+                            },
+                            onViewAllPayments: () {
+                              Navigator.of(context).push<void>(
+                                MaterialPageRoute(
+                                  builder: (_) => _PaymentsListScreen(
+                                    title: 'Subscription payments',
+                                    payments: _planPayments,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                   ),
           ),
         ],
@@ -1108,7 +1039,7 @@ class _PlanTab extends StatelessWidget {
   }
 
   String _formatDate(DateTime value) {
-    return formatBillingShortDate(value);
+    return _formatBillingShortDate(value);
   }
 }
 
