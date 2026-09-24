@@ -174,6 +174,12 @@ class DownloadService {
         for (final loanId in snapshot.deletedIds!.loans) {
           batch.delete('loans', where: 'id = ?', whereArgs: [loanId]);
         }
+        for (final productId in snapshot.deletedIds!.loanProducts) {
+          batch.delete('loan_products', where: 'id = ?', whereArgs: [productId]);
+        }
+        for (final agentId in snapshot.deletedIds!.agents) {
+          batch.delete('agents', where: 'id = ?', whereArgs: [agentId]);
+        }
       }
 
       await batch.commit(noResult: true);
@@ -339,13 +345,22 @@ int _dateMillis(Object? value) {
 class DeletedIds {
   final List<String> customers;
   final List<String> loans;
+  final List<String> loanProducts;
+  final List<String> agents;
 
-  DeletedIds({required this.customers, required this.loans});
+  DeletedIds({
+    required this.customers,
+    required this.loans,
+    required this.loanProducts,
+    required this.agents,
+  });
 
   factory DeletedIds.fromJson(Map<String, dynamic> json) {
     return DeletedIds(
       customers: (json['customers'] as List? ?? const []).cast<String>(),
       loans: (json['loans'] as List? ?? const []).cast<String>(),
+      loanProducts: (json['loanProducts'] as List? ?? const []).cast<String>(),
+      agents: (json['agents'] as List? ?? const []).cast<String>(),
     );
   }
 }

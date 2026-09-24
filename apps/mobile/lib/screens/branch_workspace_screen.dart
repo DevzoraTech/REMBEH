@@ -2525,50 +2525,6 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     );
   }
 
-  Future<void> _showBankingSheet() async {
-    final blockedMessage = _operationMutationBlockedMessage;
-    if (blockedMessage != null) {
-      _setError(blockedMessage);
-      return;
-    }
-
-    final amount = TextEditingController();
-    final reference = TextEditingController();
-    final notes = TextEditingController();
-
-    await _showFormSheet(
-      title: 'Record banking',
-      actionLabel: 'Save banking',
-      builder: (_) => [
-        const Text(
-          'Record cash deposited into the bank. This is tracked separately and is not an expense.',
-          style: TextStyle(color: slateText, fontSize: 12, height: 1.35),
-        ),
-        const SizedBox(height: 12),
-        _AmountField(controller: amount, label: 'Amount banked'),
-        const SizedBox(height: 10),
-        _TextField(controller: reference, label: 'Bank reference (optional)'),
-        const SizedBox(height: 10),
-        _TextField(controller: notes, label: 'Notes (optional)', maxLines: 3),
-      ],
-      onSubmit: () async {
-        final value = _parseAmount(amount.text);
-        if (value == null || value <= 0) {
-          throw ApiException('Enter the amount banked.');
-        }
-        await _api.recordBranchBanking(
-          session: widget.session,
-          branchId: widget.session.branchId,
-          date: _date,
-          amount: value,
-          reference: reference.text,
-          notes: notes.text,
-        );
-        _setNotice('Banking recorded.');
-      },
-    );
-  }
-
   Future<void> _openBanking() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(

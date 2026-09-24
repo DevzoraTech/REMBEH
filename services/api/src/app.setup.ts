@@ -1,6 +1,8 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
+import compression from 'compression';
 import helmet from 'helmet';
 import { PrismaExceptionFilter } from './common/database/prisma-exception.filter';
+import { apiPerformanceMiddleware } from './common/http/api-performance.middleware';
 
 const DEFAULT_CORS_ORIGINS = [
   'http://localhost:3000',
@@ -53,6 +55,9 @@ function resolveCorsOrigin():
 }
 
 export function configureApp(app: INestApplication) {
+  app.use(compression({ threshold: 1_024 }));
+  app.use(apiPerformanceMiddleware);
+
   app.use(
     helmet({
       crossOriginResourcePolicy: {

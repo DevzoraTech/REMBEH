@@ -150,7 +150,11 @@ export class SyncService implements OnModuleInit {
       throw new BadRequestException('Branch ID is required for sync');
     }
 
+    const snapshotStartedAt = new Date();
     const lastSyncDate = lastSyncAt ? new Date(lastSyncAt) : undefined;
+    if (lastSyncDate && Number.isNaN(lastSyncDate.getTime())) {
+      throw new BadRequestException('lastSyncAt must be a valid ISO date');
+    }
     const isIncremental = !!lastSyncDate;
     const branchWhere = branchId ? { branchId } : {};
     const branchInfoWhere = branchId ? { id: branchId } : {};
@@ -401,8 +405,10 @@ export class SyncService implements OnModuleInit {
     });
 
     const snapshot = {
-      version: new Date().toISOString(),
-      timestamp: new Date().toISOString(),
+      version: snapshotStartedAt.toISOString(),
+      // Advancing the cursor to the start of this read prevents an update that
+      // commits while the snapshot is being built from falling between syncs.
+      timestamp: snapshotStartedAt.toISOString(),
       isIncremental,
       data: {
         customers,
@@ -429,19 +435,66 @@ export class SyncService implements OnModuleInit {
   }
 
   /**
-   * Get IDs of records deleted since last sync
-   * This requires a soft-delete tracking table (future enhancement)
+   * Return records that changed since the cursor but no longer belong in the
+   * offline working set. These are tombstones from the mobile client's point
+   * of view even when the server row still exists (for example a closed loan).
    */
   private async getDeletedRecordsSince(
     tenantId: string,
     branchId: string | null,
     since: Date,
   ) {
-    // TODO: Implement soft delete tracking
-    // For now, return empty object
+    const branchWhere = branchId ? { branchId } : {};
+    const [customers, loans, loanProducts, agents] = await Promise.all([
+      this.prisma.customer.findMany({
+        where: {
+          tenantId,
+          ...branchWhere,
+          voidedAt: { not: null },
+          updatedAt: { gte: since },
+        },
+        select: { id: true },
+      }),
+      this.prisma.loan.findMany({
+        where: {
+          tenantId,
+          ...branchWhere,
+          status: {
+            notIn: [
+              'CURRENT',
+              'IN_ARREARS',
+              'DISBURSED',
+              'PARTIALLY_DISBURSED',
+            ],
+          },
+          updatedAt: { gte: since },
+        },
+        select: { id: true },
+      }),
+      this.prisma.loanProductTemplate.findMany({
+        where: {
+          tenantId,
+          isActive: false,
+          updatedAt: { gte: since },
+        },
+        select: { id: true },
+      }),
+      this.prisma.user.findMany({
+        where: {
+          tenantId,
+          ...(branchId ? { branchId } : { branchId: { not: null } }),
+          status: { not: 'ACTIVE' },
+          updatedAt: { gte: since },
+        },
+        select: { id: true },
+      }),
+    ]);
+
     return {
-      customers: [],
-      loans: [],
+      customers: customers.map(({ id }) => id),
+      loans: loans.map(({ id }) => id),
+      loanProducts: loanProducts.map(({ id }) => id),
+      agents: agents.map(({ id }) => id),
     };
   }
 

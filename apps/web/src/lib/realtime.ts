@@ -72,11 +72,50 @@ function socketBaseUrl() {
   return apiBaseUrl.replace(/\/api\/v1\/?$/, "");
 }
 
+type SharedSocket = {
+  socket: Socket;
+  references: number;
+  disconnect: () => Socket;
+};
+
+const sharedSockets = new Map<string, SharedSocket>();
+
 export function connectRealtime(accessToken: string): Socket {
+  const existing = sharedSockets.get(accessToken);
+  if (existing) {
+    existing.references += 1;
+    return existing.socket;
+  }
+
   const socket = io(`${socketBaseUrl()}/realtime`, {
     transports: ["websocket"],
     auth: { token: accessToken },
+    reconnectionDelay: 1_000,
+    reconnectionDelayMax: 15_000,
+    randomizationFactor: 0.5,
   });
+
+  const nativeDisconnect = socket.disconnect.bind(socket);
+  const shared: SharedSocket = {
+    socket,
+    references: 1,
+    disconnect: nativeDisconnect,
+  };
+  sharedSockets.set(accessToken, shared);
+
+  // Existing callers own one reference and call disconnect during cleanup.
+  // Preserve that API while keeping the underlying transport alive until the
+  // final consumer has released it.
+  socket.disconnect = (() => {
+    const current = sharedSockets.get(accessToken);
+    if (!current) return socket;
+    current.references = Math.max(0, current.references - 1);
+    if (current.references === 0) {
+      sharedSockets.delete(accessToken);
+      return current.disconnect();
+    }
+    return socket;
+  }) as Socket["disconnect"];
 
   return socket;
 }

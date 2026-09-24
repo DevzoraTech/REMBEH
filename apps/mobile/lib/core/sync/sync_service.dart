@@ -71,8 +71,8 @@ class SyncService {
   /// Stream of sync status updates
   Stream<SyncStatus> get statusStream => _statusController.stream;
 
-  /// Whether sync is currently running
-  bool _isSyncing = false;
+  Future<SyncResult>? _activeSync;
+  Timer? _connectivityDebounce;
 
   /// Auto-sync subscription
   StreamSubscription? _connectivitySubscription;
@@ -93,8 +93,11 @@ class SyncService {
     _connectivitySubscription = _connectivity.onConnectivityChanged.listen((
       isOnline,
     ) async {
-      if (isOnline && !_isSyncing) {
-        await performFullSync(isAutoSync: true);
+      _connectivityDebounce?.cancel();
+      if (isOnline) {
+        _connectivityDebounce = Timer(const Duration(seconds: 2), () {
+          unawaited(performFullSync(isAutoSync: true));
+        });
       } else if (!isOnline) {
         final pending = await _operationsRepo.getPendingCount();
         _statusController.add(SyncStatus.offline(pendingOperations: pending));
@@ -103,10 +106,29 @@ class SyncService {
   }
 
   /// Perform full sync: upload pending → download snapshot
-  Future<SyncResult> performFullSync({bool isAutoSync = false}) async {
-    if (_isSyncing) {
-      return SyncResult(success: false, error: 'Sync already in progress');
-    }
+  Future<SyncResult> performFullSync({
+    bool isAutoSync = false,
+    bool forceFullDownload = false,
+  }) {
+    final active = _activeSync;
+    if (active != null) return active;
+
+    final future = _performSync(
+      isAutoSync: isAutoSync,
+      forceFullDownload: forceFullDownload,
+    );
+    _activeSync = future;
+    return future.whenComplete(() {
+      if (identical(_activeSync, future)) {
+        _activeSync = null;
+      }
+    });
+  }
+
+  Future<SyncResult> _performSync({
+    required bool isAutoSync,
+    required bool forceFullDownload,
+  }) async {
 
     // Check connectivity
     final isOnline = await _connectivity.checkConnectivity();
@@ -115,8 +137,6 @@ class SyncService {
       _statusController.add(SyncStatus.offline(pendingOperations: pending));
       return SyncResult(success: false, error: 'No internet connection');
     }
-
-    _isSyncing = true;
 
     try {
       // Step 1: Upload pending operations
@@ -134,10 +154,12 @@ class SyncService {
       _statusController.add(
         SyncStatus.syncing('Downloading latest data...', progress: 0.5),
       );
-      // Always request a complete snapshot on reconnect/manual sync. The local
-      // import swaps synced rows inside one SQLite transaction, so stale data is
-      // not dropped unless the full server copy has already been received.
-      final downloadResult = await _downloadService.downloadSnapshot();
+      final lastSyncAt = forceFullDownload
+          ? null
+          : await _db.getLastSyncTimestamp();
+      final downloadResult = await _downloadService.downloadSnapshot(
+        lastSyncAt: lastSyncAt,
+      );
       if (!downloadResult.success) {
         throw SyncException(
           downloadResult.error ?? 'Could not download latest data.',
@@ -170,8 +192,6 @@ class SyncService {
       final message = cleanSyncException(e);
       _statusController.add(SyncStatus.error(message));
       return SyncResult(success: false, error: message);
-    } finally {
-      _isSyncing = false;
     }
   }
 
@@ -189,14 +209,19 @@ class SyncService {
   }
 
   /// Download only (without uploading changes first)
-  Future<SnapshotResult> downloadOnly() async {
+  Future<SnapshotResult> downloadOnly({bool forceFullDownload = false}) async {
     if (!_connectivity.isOnline) {
       return SnapshotResult(success: false, error: 'No internet connection');
     }
 
     _statusController.add(SyncStatus.syncing('Downloading latest data...'));
 
-    final result = await _downloadService.downloadSnapshot();
+    final lastSyncAt = forceFullDownload
+        ? null
+        : await _db.getLastSyncTimestamp();
+    final result = await _downloadService.downloadSnapshot(
+      lastSyncAt: lastSyncAt,
+    );
 
     await _emitCurrentStatus();
     return result;
@@ -223,6 +248,7 @@ class SyncService {
 
   /// Dispose resources
   void dispose() {
+    _connectivityDebounce?.cancel();
     _connectivitySubscription?.cancel();
     _statusController.close();
   }

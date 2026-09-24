@@ -24,7 +24,7 @@ export class PrismaService
     const connectionString = stripEnvQuotes(
       configService.getOrThrow<string>('DATABASE_URL'),
     );
-    const poolConfig = buildPoolConfig(connectionString);
+    const poolConfig = buildPoolConfig(connectionString, configService);
     const adapter = new PrismaPg(new Pool(poolConfig));
 
     super({
@@ -112,7 +112,10 @@ function isLocalHostname(host: string | undefined): boolean {
   );
 }
 
-function buildPoolConfig(connectionString: string): PoolConfig {
+function buildPoolConfig(
+  connectionString: string,
+  configService: ConfigService,
+): PoolConfig {
   const url = new URL(connectionString);
   const host = url.hostname;
   const sslmode = url.searchParams.get('sslmode');
@@ -128,6 +131,20 @@ function buildPoolConfig(connectionString: string): PoolConfig {
     user: decodeURIComponent(url.username),
     password: decodeURIComponent(url.password),
     database: decodeURIComponent(url.pathname.replace(/^\//, '')),
+    application_name: 'rembeh-api',
+    max: positiveInteger(configService.get<string>('DB_POOL_MAX'), 12),
+    idleTimeoutMillis: positiveInteger(
+      configService.get<string>('DB_IDLE_TIMEOUT_MS'),
+      30_000,
+    ),
+    connectionTimeoutMillis: positiveInteger(
+      configService.get<string>('DB_CONNECTION_TIMEOUT_MS'),
+      10_000,
+    ),
+    statement_timeout: positiveInteger(
+      configService.get<string>('DB_STATEMENT_TIMEOUT_MS'),
+      30_000,
+    ),
     ssl: undefined,
   };
 
@@ -149,6 +166,11 @@ function buildPoolConfig(connectionString: string): PoolConfig {
   };
 
   return config;
+}
+
+function positiveInteger(raw: string | undefined, fallback: number): number {
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
 }
 
 function resolveSslRootCertPath(sslrootcert: string | null): string {

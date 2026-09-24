@@ -7,6 +7,7 @@ export const LIVE_QUERY_REVALIDATE_EVENT = "rembeh-live-query-revalidate";
 
 const FRESH_MS = 20_000;
 const STALE_MS = 90_000;
+const MAX_ENTRIES = 250;
 
 type CacheEntry = {
   data: unknown;
@@ -37,6 +38,7 @@ export function peekLiveQuery<T>(key: string): T | undefined {
 
 export function writeLiveQuery<T>(key: string, data: T) {
   store.set(key, { data, at: Date.now() });
+  trimCache();
 }
 
 export function clearLiveQueryCache(options?: { notify?: boolean }) {
@@ -85,6 +87,7 @@ export async function liveQuery<T>(
     try {
       const data = await loader();
       store.set(key, { data, at: Date.now() });
+      trimCache();
       return data;
     } catch (error) {
       if (cached && ageOf(cached) < STALE_MS) {
@@ -98,4 +101,12 @@ export async function liveQuery<T>(
 
   inflight.set(key, request);
   return request;
+}
+
+function trimCache() {
+  if (store.size <= MAX_ENTRIES) return;
+  const oldest = [...store.entries()]
+    .sort((a, b) => a[1].at - b[1].at)
+    .slice(0, store.size - MAX_ENTRIES);
+  for (const [key] of oldest) store.delete(key);
 }

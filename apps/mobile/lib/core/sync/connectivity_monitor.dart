@@ -13,15 +13,18 @@ class ConnectivityMonitor {
   late final Stream<bool> onConnectivityChanged =
       _connectivity.onConnectivityChanged.map(
     (result) => !result.contains(ConnectivityResult.none),
-  );
+  ).distinct();
 
   bool _isConnected = false;
+  bool _initialized = false;
 
   /// Whether the device is currently connected to a network
   bool get isOnline => _isConnected;
 
   /// Initialize connectivity monitoring
   Future<void> initialize() async {
+    if (_initialized) return;
+    _initialized = true;
     final result = await _connectivity.checkConnectivity();
     _isConnected = !result.contains(ConnectivityResult.none);
 

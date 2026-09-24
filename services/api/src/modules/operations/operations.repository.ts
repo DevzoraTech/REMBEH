@@ -1754,10 +1754,12 @@ export class OperationsRepository {
       where: {
         tenantId: input.tenantId,
         branchId: input.branchId,
-        bankedAt:
-          input.from || input.to
-            ? { gte: input.from, lte: input.to }
-            : undefined,
+        operation: {
+          operationDate:
+            input.from || input.to
+              ? { gte: input.from, lte: input.to }
+              : undefined,
+        },
       },
       include: {
         recordedBy: { select: { id: true, displayName: true } },
