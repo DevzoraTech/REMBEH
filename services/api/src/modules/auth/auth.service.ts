@@ -1018,13 +1018,30 @@ export class AuthService {
       include: {
         tenant: true,
         branch: true,
-        roles: { include: { role: true } },
+        roles: {
+          include: {
+            role: {
+              include: {
+                permissions: { include: { permission: true } },
+              },
+            },
+          },
+        },
       },
     });
     if (!user) {
       throw new NotFoundException('User not found.');
     }
     const profilePhotoStorageKey = user.profilePhotoStorageKey ?? null;
+    const permissions = [
+      ...new Set(
+        user.roles.flatMap((userRole) =>
+          userRole.role.permissions.map(
+            (rolePermission) => rolePermission.permission.key,
+          ),
+        ),
+      ),
+    ];
     return {
       user: {
         id: user.id,
@@ -1052,6 +1069,7 @@ export class AuthService {
         currency: user.tenant.currency,
         country: user.tenant.country,
       },
+      permissions,
     };
   }
 

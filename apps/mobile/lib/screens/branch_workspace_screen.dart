@@ -140,6 +140,8 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       onAccountBlocked: _handleAccountBlocked,
       onResumed: () async {
         if (!mounted) return;
+        await _refreshWorkspacePermissions();
+        if (!mounted) return;
         await promptAppUpdateIfNeeded(context);
         unawaited(_loadMarketingCampaign());
       },
@@ -157,6 +159,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     _network.addListener(_onNetworkChanged);
 
     unawaited(_network.start());
+    unawaited(_refreshWorkspacePermissions());
     unawaited(_initialiseOfflineSync());
     unawaited(_startLiveStores());
     unawaited(_load());
@@ -182,6 +185,23 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
   void _onNetworkChanged() {
     if (_network.isOnline) {
       unawaited(_refreshFreshDataInBackground());
+    }
+  }
+
+  Future<void> _refreshWorkspacePermissions() async {
+    if (!await _network.checkNow()) return;
+    try {
+      final refreshed = await _api.refreshCurrentProfile(widget.session);
+      if (!mounted) return;
+      final current = widget.session.permissions;
+      if (_sameStringSet(current, refreshed.permissions)) return;
+      setState(() {
+        current
+          ..clear()
+          ..addAll(refreshed.permissions);
+      });
+    } catch (_) {
+      // Permission refresh must not block cached/offline workspace access.
     }
   }
 
@@ -3980,6 +4000,12 @@ String _moneyOrDash(Object? value) {
 
 bool _isSameDay(DateTime a, DateTime b) {
   return a.year == b.year && a.month == b.month && a.day == b.day;
+}
+
+bool _sameStringSet(List<String> left, List<String> right) {
+  if (left.length != right.length) return false;
+  final values = left.toSet();
+  return values.length == right.length && values.containsAll(right);
 }
 
 num _firstAvailableMoney(Map<String, dynamic> data, List<String> keys) {

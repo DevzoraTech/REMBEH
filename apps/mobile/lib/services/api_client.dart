@@ -181,6 +181,36 @@ class ApiClient {
     return updated;
   }
 
+  /// Refresh profile-derived authorization without requiring logout or token
+  /// rotation. The API evaluates permissions live, so the UI should do the
+  /// same when roles are changed while a device remains signed in.
+  Future<RembehSession> refreshCurrentProfile(RembehSession current) async {
+    final body = await _getJson(session: current, path: '/auth/me');
+    final permissionPayload = body['permissions'] as List<dynamic>?;
+    final permissions = (permissionPayload ?? current.permissions)
+        .map((item) => item.toString())
+        .toList(growable: false);
+    final user = body['user'] as Map<String, dynamic>? ?? const {};
+    final branch = body['branch'] as Map<String, dynamic>?;
+    final workspace = body['workspace'] as Map<String, dynamic>? ?? const {};
+    final updated = current.copyWith(
+      permissions: permissions,
+      userName: user['name'] as String?,
+      userEmail: user['email'] as String?,
+      roleName: user['roleName'] as String?,
+      workspaceName: workspace['name'] as String?,
+      branchId: branch?['id'] as String? ?? user['branchId'] as String?,
+      branchName: branch?['name'] as String?,
+      branchAddress: branch?['address'] as String?,
+      publicId: user['publicId'] as String?,
+      hasProfilePhoto: user['hasProfilePhoto'] as bool?,
+      profilePhotoUrl: user['profilePhotoUrl'] as String?,
+      profilePhotoStorageKey: user['profilePhotoStorageKey'] as String?,
+    );
+    await _sessionStore.save(updated);
+    return updated;
+  }
+
   Future<List<Map<String, dynamic>>> listCustomers(
     RembehSession session,
   ) async {
