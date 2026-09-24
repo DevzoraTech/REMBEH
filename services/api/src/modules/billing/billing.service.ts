@@ -2093,19 +2093,23 @@ export class BillingService implements OnModuleInit {
     const webAppUrl = resolveWebAppBaseUrl(this.configService);
     const txRef = input.txRef?.trim() || '';
     const transactionId = input.transactionId?.trim() || '';
-    let result: 'success' | 'failed' | 'pending' = 'pending';
+    let result: 'success' | 'failed' | 'cancelled' | 'pending' = 'pending';
+    const callbackStatus = input.status?.trim().toLowerCase() || '';
 
     try {
-      if (input.status?.toLowerCase() === 'successful' && transactionId) {
+      if (callbackStatus === 'successful' && transactionId) {
         const verified = await this.flutterwave.verifyTransaction(transactionId);
         await this.applyFlutterwaveBillingPayment(verified);
         result = 'success';
       } else if (txRef) {
+        const cancelled = callbackStatus === 'cancelled';
         await this.markFlutterwavePaymentFailed(
           txRef,
-          `Flutterwave checkout ${input.status || 'did not complete'}.`,
+          cancelled
+            ? 'Payment was cancelled before completion.'
+            : `Flutterwave checkout ${input.status || 'did not complete'}.`,
         );
-        result = 'failed';
+        result = cancelled ? 'cancelled' : 'failed';
       }
     } catch (error) {
       this.logger.error(

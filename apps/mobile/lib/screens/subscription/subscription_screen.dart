@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../features/sms/data/sms_credits_store.dart';
 import '../../services/api_client.dart';
@@ -8,6 +7,7 @@ import '../../theme.dart';
 import '../../utils/friendly_errors.dart';
 import '../../utils/money.dart';
 import 'complete_manual_payment_screen.dart';
+import 'flutterwave_checkout_screen.dart';
 import 'payment_waiting_screen.dart';
 
 enum SubscriptionTab { plan, sms }
@@ -273,9 +273,10 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       final bundles = rawBundles is List
           ? rawBundles
                 .whereType<Map>()
-                .map((row) => SmsBundleOption.fromJson(
-                      Map<String, dynamic>.from(row),
-                    ))
+                .map(
+                  (row) =>
+                      SmsBundleOption.fromJson(Map<String, dynamic>.from(row)),
+                )
                 .where((b) => b.id.isNotEmpty)
                 .toList()
           : <SmsBundleOption>[];
@@ -284,9 +285,11 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       final allPayments = rawPayments is List
           ? rawPayments
                 .whereType<Map>()
-                .map((row) => BillingPaymentRow.fromJson(
-                      Map<String, dynamic>.from(row),
-                    ))
+                .map(
+                  (row) => BillingPaymentRow.fromJson(
+                    Map<String, dynamic>.from(row),
+                  ),
+                )
                 .where((p) => p.id.isNotEmpty)
                 .toList()
           : <BillingPaymentRow>[];
@@ -380,7 +383,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
     final single = summary['plan'];
     if (single is Map) {
-      final plan = BillingPlanOption.fromJson(Map<String, dynamic>.from(single));
+      final plan = BillingPlanOption.fromJson(
+        Map<String, dynamic>.from(single),
+      );
       if (plan.code.isNotEmpty) return [plan];
     }
     return const [];
@@ -389,7 +394,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   List<BillingPlanOption> _parsePlans(List<dynamic> raw) {
     return raw
         .whereType<Map>()
-        .map((row) => BillingPlanOption.fromJson(Map<String, dynamic>.from(row)))
+        .map(
+          (row) => BillingPlanOption.fromJson(Map<String, dynamic>.from(row)),
+        )
         .where((p) => p.code.isNotEmpty)
         .toList()
       ..sort((a, b) => a.durationMonths.compareTo(b.durationMonths));
@@ -440,9 +447,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       await _launchCheckout(checkout);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyErrorMessage(error))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
     }
   }
 
@@ -470,9 +477,9 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       await _launchCheckout(checkout);
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(friendlyErrorMessage(error))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(friendlyErrorMessage(error))));
     }
   }
 
@@ -482,16 +489,28 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     if (uri == null || !uri.hasScheme) {
       throw const FormatException('Payment checkout is unavailable.');
     }
-    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!opened) throw const FormatException('Could not open payment checkout.');
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Complete payment in Flutterwave, then return here and refresh.',
-        ),
+    final result = await Navigator.of(context).push<FlutterwaveCheckoutResult>(
+      MaterialPageRoute(
+        builder: (_) => FlutterwaveCheckoutScreen(checkoutUrl: uri),
       ),
     );
+    if (!mounted) return;
+    await _load();
+    if (!mounted) return;
+    final message = switch (result) {
+      FlutterwaveCheckoutResult.successful =>
+        'Payment received and verified successfully.',
+      FlutterwaveCheckoutResult.failed =>
+        'Payment was not completed. No charge was confirmed.',
+      FlutterwaveCheckoutResult.cancelled =>
+        'Payment cancelled. No charge was made.',
+      FlutterwaveCheckoutResult.pending =>
+        'Payment is being confirmed. Your status will update automatically.',
+      null => 'Payment closed. No charge was confirmed.',
+    };
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -539,102 +558,103 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                     onRefresh: _load,
                     child: _tab == SubscriptionTab.sms
                         ? (_pendingSmsPayment != null
-                            ? PaymentSubmittedScreen(
-                                session: widget.session,
-                                paymentId: _pendingSmsPayment!.id,
-                                kind: ManualPaymentKind.sms,
-                                amount: _pendingSmsPayment!.amount,
-                                currency: _pendingSmsPayment!.currency,
-                                paymentMethodTitle:
-                                    _pendingSmsPayment!.paymentMethod ??
-                                    'Mobile Money',
-                                transactionId:
-                                    _pendingSmsPayment!.transactionId ??
-                                    _pendingSmsPayment!.transaction,
-                                submittedAt: _pendingSmsPayment!.date,
-                                bundleName: _pendingSmsPayment!.transaction,
-                                smsUnits: _pendingSmsPayment!.credits ?? 0,
-                                embedded: true,
-                                onResolved: () {
-                                  // ignore: discarded_futures
-                                  _load();
-                                },
-                              )
-                            : _SmsTab(
-                                credits: _smsStore.credits ?? 0,
-                                smsAccessAllowed: _smsStore.smsAccessAllowed,
-                                bundles: _bundles,
-                                selectedBundleId: _selectedBundleId,
-                                payments: _smsPayments,
-                                onSelectBundle: (bundle) {
-                                  setState(
-                                    () => _selectedBundleId = bundle.id,
-                                  );
-                                  // ignore: discarded_futures
-                                  _openBundlePayment(bundle);
-                                },
-                                onViewAllPayments: () {
-                                  Navigator.of(context).push<void>(
-                                    MaterialPageRoute(
-                                      builder: (_) => _PaymentsListScreen(
-                                        title: 'SMS payments',
-                                        payments: _smsPayments,
+                              ? PaymentSubmittedScreen(
+                                  session: widget.session,
+                                  paymentId: _pendingSmsPayment!.id,
+                                  kind: ManualPaymentKind.sms,
+                                  amount: _pendingSmsPayment!.amount,
+                                  currency: _pendingSmsPayment!.currency,
+                                  paymentMethodTitle:
+                                      _pendingSmsPayment!.paymentMethod ??
+                                      'Mobile Money',
+                                  transactionId:
+                                      _pendingSmsPayment!.transactionId ??
+                                      _pendingSmsPayment!.transaction,
+                                  submittedAt: _pendingSmsPayment!.date,
+                                  bundleName: _pendingSmsPayment!.transaction,
+                                  smsUnits: _pendingSmsPayment!.credits ?? 0,
+                                  embedded: true,
+                                  onResolved: () {
+                                    // ignore: discarded_futures
+                                    _load();
+                                  },
+                                )
+                              : _SmsTab(
+                                  credits: _smsStore.credits ?? 0,
+                                  smsAccessAllowed: _smsStore.smsAccessAllowed,
+                                  bundles: _bundles,
+                                  selectedBundleId: _selectedBundleId,
+                                  payments: _smsPayments,
+                                  onSelectBundle: (bundle) {
+                                    setState(
+                                      () => _selectedBundleId = bundle.id,
+                                    );
+                                    // ignore: discarded_futures
+                                    _openBundlePayment(bundle);
+                                  },
+                                  onViewAllPayments: () {
+                                    Navigator.of(context).push<void>(
+                                      MaterialPageRoute(
+                                        builder: (_) => _PaymentsListScreen(
+                                          title: 'SMS payments',
+                                          payments: _smsPayments,
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                },
-                              ))
+                                    );
+                                  },
+                                ))
                         : (_pendingPlanPayment != null
-                            ? PaymentSubmittedScreen(
-                                session: widget.session,
-                                paymentId: _pendingPlanPayment!.id,
-                                kind: ManualPaymentKind.subscription,
-                                amount: _pendingPlanPayment!.amount,
-                                currency: _pendingPlanPayment!.currency,
-                                paymentMethodTitle:
-                                    _pendingPlanPayment!.paymentMethod ??
-                                    'Mobile Money',
-                                transactionId:
-                                    _pendingPlanPayment!.transactionId ??
-                                    _pendingPlanPayment!.transaction,
-                                submittedAt: _pendingPlanPayment!.date,
-                                planName: 'Pro',
-                                billingPeriodLabel:
-                                    _pendingPlanPayment!.periodLabel ??
-                                    (_pendingPlanPayment!.planDurationMonths !=
-                                            null
-                                        ? (_pendingPlanPayment!
-                                                    .planDurationMonths ==
-                                                1
-                                            ? 'Monthly'
-                                            : '${_pendingPlanPayment!.planDurationMonths} months')
-                                        : '—'),
-                                embedded: true,
-                                onResolved: () {
-                                  // ignore: discarded_futures
-                                  _load();
-                                },
-                              )
-                            : _PlanTab(
-                                billing: _branchBilling,
-                                plans: _plans,
-                                selectedPlanCode: _selectedPlanCode,
-                                payments: _planPayments,
-                                onSelectPlan: (plan) {
-                                  // ignore: discarded_futures
-                                  _openPlanPayment(plan);
-                                },
-                                onViewAllPayments: () {
-                                  Navigator.of(context).push<void>(
-                                    MaterialPageRoute(
-                                      builder: (_) => _PaymentsListScreen(
-                                        title: 'Subscription payments',
-                                        payments: _planPayments,
+                              ? PaymentSubmittedScreen(
+                                  session: widget.session,
+                                  paymentId: _pendingPlanPayment!.id,
+                                  kind: ManualPaymentKind.subscription,
+                                  amount: _pendingPlanPayment!.amount,
+                                  currency: _pendingPlanPayment!.currency,
+                                  paymentMethodTitle:
+                                      _pendingPlanPayment!.paymentMethod ??
+                                      'Mobile Money',
+                                  transactionId:
+                                      _pendingPlanPayment!.transactionId ??
+                                      _pendingPlanPayment!.transaction,
+                                  submittedAt: _pendingPlanPayment!.date,
+                                  planName: 'Pro',
+                                  billingPeriodLabel:
+                                      _pendingPlanPayment!.periodLabel ??
+                                      (_pendingPlanPayment!
+                                                  .planDurationMonths !=
+                                              null
+                                          ? (_pendingPlanPayment!
+                                                        .planDurationMonths ==
+                                                    1
+                                                ? 'Monthly'
+                                                : '${_pendingPlanPayment!.planDurationMonths} months')
+                                          : '—'),
+                                  embedded: true,
+                                  onResolved: () {
+                                    // ignore: discarded_futures
+                                    _load();
+                                  },
+                                )
+                              : _PlanTab(
+                                  billing: _branchBilling,
+                                  plans: _plans,
+                                  selectedPlanCode: _selectedPlanCode,
+                                  payments: _planPayments,
+                                  onSelectPlan: (plan) {
+                                    // ignore: discarded_futures
+                                    _openPlanPayment(plan);
+                                  },
+                                  onViewAllPayments: () {
+                                    Navigator.of(context).push<void>(
+                                      MaterialPageRoute(
+                                        builder: (_) => _PaymentsListScreen(
+                                          title: 'Subscription payments',
+                                          payments: _planPayments,
+                                        ),
                                       ),
-                                    ),
-                                  );
-                                },
-                              )),
+                                    );
+                                  },
+                                )),
                   ),
           ),
         ],
@@ -737,8 +757,9 @@ class _PlanTab extends StatelessWidget {
     final status = '${billing?['status'] ?? 'Unknown'}';
     final locked = billing?['locked'] == true;
     final message = (billing?['message'] as String?)?.trim();
-    final periodEnd =
-        DateTime.tryParse('${billing?['currentPeriodEnd'] ?? ''}');
+    final periodEnd = DateTime.tryParse(
+      '${billing?['currentPeriodEnd'] ?? ''}',
+    );
     final daysLeft = billing?['daysUntilPeriodEnd'] is num
         ? (billing!['daysUntilPeriodEnd'] as num).floor()
         : int.tryParse('${billing?['daysUntilPeriodEnd'] ?? ''}');
@@ -805,8 +826,8 @@ class _PlanTab extends StatelessWidget {
                       isTrial
                           ? 'Free trial'
                           : isActive
-                              ? 'Current plan'
-                              : status.replaceAll('_', ' '),
+                          ? 'Current plan'
+                          : status.replaceAll('_', ' '),
                       style: const TextStyle(
                         color: slateText,
                         fontWeight: FontWeight.w500,
@@ -828,7 +849,10 @@ class _PlanTab extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: locked
                       ? const Color(0xFFFFE4E6)
@@ -838,9 +862,7 @@ class _PlanTab extends StatelessWidget {
                 child: Text(
                   badgeLabel,
                   style: TextStyle(
-                    color: locked
-                        ? const Color(0xFFB42318)
-                        : forestEmerald,
+                    color: locked ? const Color(0xFFB42318) : forestEmerald,
                     fontWeight: FontWeight.w700,
                     fontSize: 11.5,
                   ),
@@ -898,10 +920,7 @@ class _PlanTab extends StatelessWidget {
             ),
             child: const Text(
               'No billing periods are available right now.',
-              style: TextStyle(
-                color: slateText,
-                fontWeight: FontWeight.w500,
-              ),
+              style: TextStyle(color: slateText, fontWeight: FontWeight.w500),
             ),
           )
         else
@@ -910,8 +929,8 @@ class _PlanTab extends StatelessWidget {
             final badgeText = plan.isBestValue
                 ? 'Best value'
                 : plan.isMostPopular
-                    ? 'Most popular'
-                    : null;
+                ? 'Most popular'
+                : null;
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Material(
@@ -1074,10 +1093,7 @@ class _PlanTab extends StatelessWidget {
             ),
             child: const Text(
               'No subscription payments yet.',
-              style: TextStyle(
-                color: slateText,
-                fontWeight: FontWeight.w500,
-              ),
+              style: TextStyle(color: slateText, fontWeight: FontWeight.w500),
             ),
           )
         else
@@ -1214,10 +1230,7 @@ class _SmsTab extends StatelessWidget {
             ),
             child: const Text(
               'No SMS bundles are available right now.',
-              style: TextStyle(
-                color: slateText,
-                fontWeight: FontWeight.w500,
-              ),
+              style: TextStyle(color: slateText, fontWeight: FontWeight.w500),
             ),
           )
         else
@@ -1228,83 +1241,83 @@ class _SmsTab extends StatelessWidget {
               child: Opacity(
                 opacity: smsAccessAllowed ? 1 : 0.55,
                 child: Material(
-                color: Colors.white,
-                borderRadius: rembehBorderRadius(rembehRadiusLg),
-                child: InkWell(
-                  onTap: smsAccessAllowed
-                      ? () => onSelectBundle(bundle)
-                      : null,
+                  color: Colors.white,
                   borderRadius: rembehBorderRadius(rembehRadiusLg),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      borderRadius: rembehBorderRadius(rembehRadiusLg),
-                      border: Border.all(
-                        color: selected ? forestEmerald : line,
-                        width: selected ? 1.6 : 1,
+                  child: InkWell(
+                    onTap: smsAccessAllowed
+                        ? () => onSelectBundle(bundle)
+                        : null,
+                    borderRadius: rembehBorderRadius(rembehRadiusLg),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        borderRadius: rembehBorderRadius(rembehRadiusLg),
+                        border: Border.all(
+                          color: selected ? forestEmerald : line,
+                          width: selected ? 1.6 : 1,
+                        ),
                       ),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          selected
-                              ? Icons.radio_button_checked
-                              : Icons.radio_button_off,
-                          color: selected ? forestEmerald : slateText,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 10),
-                        Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: sage,
-                            borderRadius: rembehBorderRadius(rembehRadiusMd),
+                      child: Row(
+                        children: [
+                          Icon(
+                            selected
+                                ? Icons.radio_button_checked
+                                : Icons.radio_button_off,
+                            color: selected ? forestEmerald : slateText,
+                            size: 20,
                           ),
-                          child: const Icon(
-                            Icons.chat_bubble_outline_rounded,
-                            color: forestEmerald,
-                            size: 18,
+                          const SizedBox(width: 10),
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: sage,
+                              borderRadius: rembehBorderRadius(rembehRadiusMd),
+                            ),
+                            child: const Icon(
+                              Icons.chat_bubble_outline_rounded,
+                              color: forestEmerald,
+                              size: 18,
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                '${formatCompactMoney(bundle.smsUnits)} SMS',
-                                style: const TextStyle(
-                                  color: midnightNavy,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 14,
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${formatCompactMoney(bundle.smsUnits)} SMS',
+                                  style: const TextStyle(
+                                    color: midnightNavy,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 14,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                bundle.name,
-                                style: const TextStyle(
-                                  color: slateText,
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: 12,
+                                const SizedBox(height: 2),
+                                Text(
+                                  bundle.name,
+                                  style: const TextStyle(
+                                    color: slateText,
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 12,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
-                        Text(
-                          formatUgx(bundle.priceUgx, bundle.currency),
-                          style: const TextStyle(
-                            color: forestEmerald,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 13.5,
+                          Text(
+                            formatUgx(bundle.priceUgx, bundle.currency),
+                            style: const TextStyle(
+                              color: forestEmerald,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13.5,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
-              ),
               ),
             );
           }),
@@ -1346,10 +1359,7 @@ class _SmsTab extends StatelessWidget {
             ),
             child: const Text(
               'No SMS payments yet.',
-              style: TextStyle(
-                color: slateText,
-                fontWeight: FontWeight.w500,
-              ),
+              style: TextStyle(color: slateText, fontWeight: FontWeight.w500),
             ),
           )
         else
@@ -1509,10 +1519,7 @@ class _PaymentTile extends StatelessWidget {
 }
 
 class _PaymentsListScreen extends StatelessWidget {
-  const _PaymentsListScreen({
-    required this.title,
-    required this.payments,
-  });
+  const _PaymentsListScreen({required this.title, required this.payments});
 
   final String title;
   final List<BillingPaymentRow> payments;

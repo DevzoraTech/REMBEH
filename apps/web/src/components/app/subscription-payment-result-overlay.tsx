@@ -383,6 +383,7 @@ function PaymentFailedPanel({
 }) {
   const { payment, plan } = result;
   const transactionId = payment.transactionId || payment.receipt || "-";
+  const wasCancelled = /cancel/i.test(payment.failureReason ?? "");
 
   return (
     <section className="relative rounded-2xl bg-white px-8 py-9 shadow-[0_26px_90px_rgba(15,23,42,0.32)]">
@@ -403,11 +404,12 @@ function PaymentFailedPanel({
           <span className="absolute bottom-5 right-1 size-1.5 rounded-full bg-[#fac6d1]" />
         </div>
         <h2 className="mt-6 text-[1.85rem] font-bold tracking-normal text-[#070b18]">
-          Payment could not be verified
+          {wasCancelled ? "Payment cancelled" : "Payment could not be verified"}
         </h2>
         <p className="mx-auto mt-4 max-w-[25rem] text-base leading-7 text-slate-600">
-          We were unable to verify the payment submitted for your{" "}
-          {paymentPeriodLabel(plan)}.
+          {wasCancelled
+            ? `The checkout for your ${paymentPeriodLabel(plan)} was closed before payment. No charge was confirmed.`
+            : `We were unable to verify the payment submitted for your ${paymentPeriodLabel(plan)}.`}
         </p>
       </div>
 
@@ -437,8 +439,9 @@ function PaymentFailedPanel({
             <AlertCircle className="size-5" />
           </span>
           <p className="text-base leading-7 text-[#070b18]">
-            Check the transaction details and submit the correct transaction ID.
-            If you believe this payment was made successfully, contact support.
+            {wasCancelled
+              ? "You can safely try again whenever you are ready to complete the payment."
+              : "Check the transaction details and try again. If you believe this payment was completed successfully, contact support."}
           </p>
         </div>
       </div>
