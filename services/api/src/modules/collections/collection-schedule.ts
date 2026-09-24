@@ -516,8 +516,19 @@ export function computeCollectionSchedule(
       ? 0
       : roundMoney(Math.max(0, expectedToday - dailyInstalment));
 
+  const fullyFutureAdvance = Math.max(0, paidAmount - expectedCumulative);
+  const partialInstalmentCredit =
+    expectedToday > 0 && dailyInstalment > 0
+      ? Math.max(0, paidAmount - coveredOccurrences * dailyInstalment)
+      : 0;
   const advanceAmount = roundMoney(
-    Math.max(0, Math.min(outstanding, paidAmount - expectedCumulative)),
+    Math.max(
+      0,
+      Math.min(
+        outstanding,
+        Math.max(fullyFutureAdvance, partialInstalmentCredit),
+      ),
+    ),
   );
 
   const oldestUncoveredIndex = Math.min(

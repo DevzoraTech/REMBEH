@@ -457,6 +457,24 @@ class _ClientList extends StatelessWidget {
                               fontSize: 13,
                             ),
                           ),
+                          if (clients[i].advanceAmount > 0) ...[
+                            const SizedBox(height: 5),
+                            const Text(
+                              'Advance',
+                              style: TextStyle(
+                                color: slateText,
+                                fontSize: 10,
+                              ),
+                            ),
+                            Text(
+                              'UGX ${formatMoney(clients[i].advanceAmount)}',
+                              style: const TextStyle(
+                                color: forestEmerald,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(width: 6),

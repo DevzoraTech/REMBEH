@@ -495,16 +495,19 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
               />
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] table-fixed text-left text-xs">
+                <table className="w-full min-w-[860px] table-fixed text-left text-xs">
                   <thead className="border-b border-[#dfe5eb] bg-[#e8edf2] text-[10px] font-semibold text-slate-600">
                     <tr>
-                      <th className="w-[26%] px-3 py-2.5">Borrower</th>
-                      <th className="w-[18%] px-3 py-2.5">Contact</th>
+                      <th className="w-[22%] px-3 py-2.5">Borrower</th>
+                      <th className="w-[16%] px-3 py-2.5">Contact</th>
                       <th className="w-[12%] px-3 py-2.5">National ID</th>
                       {!showBranchColumn ? null : (
                         <th className="w-[12%] px-3 py-2.5">Branch</th>
                       )}
                       <th className="w-[8%] px-3 py-2.5">Loans</th>
+                      <th className="w-[12%] px-3 py-2.5 text-right">
+                        Advance
+                      </th>
                       <th className="w-[12%] px-3 py-2.5">Verification</th>
                       <th className="w-[12%] px-3 py-2.5">Joined</th>
                       <th className="w-[8%] px-3 py-2.5 text-right">Actions</th>
@@ -581,6 +584,15 @@ export function BorrowersWorkspace({ mode }: { mode: BorrowersMode }) {
                         )}
                         <td className="px-3 py-3 text-[11px] font-medium tabular-nums text-[#0b1220]">
                           {formatNumber(borrower.loanCount)}
+                        </td>
+                        <td className="px-3 py-3 text-right text-[11px] font-semibold tabular-nums">
+                          {(borrower.advanceAmount ?? 0) > 0 ? (
+                            <span className="text-[#07885f]">
+                              UGX {formatNumber(borrower.advanceAmount ?? 0)}
+                            </span>
+                          ) : (
+                            <span className="font-medium text-slate-400">—</span>
+                          )}
                         </td>
                         <td className="px-3 py-3">
                           <BorrowerStatus
@@ -961,9 +973,9 @@ async function exportBorrowers(
     const worksheet = workbook.addWorksheet("Borrowers");
 
     worksheet.addRow(["REMBEH Borrower Register"]);
-    worksheet.mergeCells(1, 1, 1, 9);
+    worksheet.mergeCells(1, 1, 1, 10);
     worksheet.addRow([`Generated: ${new Date().toLocaleString("en-UG")}`]);
-    worksheet.mergeCells(2, 1, 2, 9);
+    worksheet.mergeCells(2, 1, 2, 10);
     worksheet.addRow([
       "Filters",
       filters.search.trim() || "All searches",
@@ -989,6 +1001,7 @@ async function exportBorrowers(
       "Security",
       "Branch",
       "Loans",
+      "Advance (UGX)",
       "Verification",
       "Joined",
     ]);
@@ -1002,6 +1015,7 @@ async function exportBorrowers(
         borrower.collateralType ? titleCase(borrower.collateralType) : "",
         borrower.branchName ?? "",
         borrower.loanCount,
+        borrower.advanceAmount ?? 0,
         borrower.verificationStatus === "ISSUE"
           ? "Verification issue"
           : borrower.verifiedAt || borrower.verificationStatus === "VERIFIED"
@@ -1019,11 +1033,12 @@ async function exportBorrowers(
       { width: 24 },
       { width: 22 },
       { width: 10 },
+      { width: 18 },
       { width: 14 },
       { width: 16 },
     ];
     worksheet.views = [{ state: "frozen", ySplit: 5 }];
-    worksheet.autoFilter = "A5:I5";
+    worksheet.autoFilter = "A5:J5";
     worksheet.getRow(1).height = 26;
     worksheet.getRow(1).font = {
       bold: true,
