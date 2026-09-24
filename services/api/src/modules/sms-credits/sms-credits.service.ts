@@ -32,6 +32,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { OperatorAlertService } from '../notifications/operator-alert.service';
 import { SmsService } from '../notifications/sms.service';
 import type { SmsProviderRequestLogPayload } from '../notifications/sms.service';
+import { FlutterwaveService } from '../payments/flutterwave.service';
 import {
   PRO_PLAN_WELCOME_SMS_CREDITS,
   SMS_PURCHASE_DUPLICATE_WINDOW_MS,
@@ -64,6 +65,7 @@ export class SmsCreditsService {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly pesapal: PesapalClient,
+    private readonly flutterwave: FlutterwaveService,
     private readonly smsService: SmsService,
     private readonly notificationsService: NotificationsService,
     private readonly operatorAlerts: OperatorAlertService,
@@ -203,7 +205,7 @@ export class SmsCreditsService {
       throw new BadRequestException('Choose an SMS bundle to continue.');
     }
 
-    if (!this.pesapal.isConfigured()) {
+    if (!this.flutterwave.isEnabled()) {
       throw new ServiceUnavailableException(
         'Payments are unavailable right now. Please try again later.',
       );
@@ -242,20 +244,19 @@ export class SmsCreditsService {
         },
         expiresAt: { gt: now },
         createdAt: { gte: duplicateSince },
-        pesapalOrderTrackingId: { not: null },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    if (existingPending?.pesapalOrderTrackingId) {
+    if (existingPending) {
       const raw = existingPending.rawPayload as
-        { redirect_url?: string } | null | undefined;
-      if (raw?.redirect_url) {
+        { payment_link?: string } | null | undefined;
+      if (raw?.payment_link) {
         return {
-          redirectUrl: raw.redirect_url,
+          redirectUrl: raw.payment_link,
           purchaseId: existingPending.id,
           merchantReference: existingPending.merchantReference,
-          orderTrackingId: existingPending.pesapalOrderTrackingId,
+          orderTrackingId: null,
           bundleId: bundle.id,
           bundleName: existingPending.bundleNameSnapshot,
           amountUgx: existingPending.amountExpected,
@@ -273,11 +274,17 @@ export class SmsCreditsService {
     });
 
     const merchantReference = `sms_${branch.id.slice(0, 8)}_${randomUUID().replaceAll('-', '').slice(0, 12)}`;
+    const apiBaseUrl = this.configService
+      .get<string>('API_PUBLIC_URL')
+      ?.trim()
+      .replace(/\/$/, '');
     const apiCallback =
-      this.configService.get<string>('PESAPAL_CALLBACK_URL')?.trim() ||
-      `${this.configService.get<string>('API_PUBLIC_URL')?.trim() || ''}/api/v1/billing/pesapal/callback`;
+      this.configService.get<string>('FLW_REDIRECT_URL')?.trim() ||
+      (apiBaseUrl
+        ? `${apiBaseUrl}/api/v1/billing/flutterwave/callback`
+        : '');
 
-    if (!apiCallback) {
+    if (!/^https:\/\//i.test(apiCallback)) {
       throw new ServiceUnavailableException(
         'Payments are unavailable right now. Please try again later.',
       );
@@ -309,25 +316,27 @@ export class SmsCreditsService {
     ).split(/\s+/);
     const webAppUrl = resolveWebAppBaseUrl(this.configService);
 
-    let order;
+    let order: { paymentLink: string };
     try {
-      order = await this.pesapal.submitOrder({
-        id: merchantReference,
+      order = await this.flutterwave.createHostedCheckout({
+        txRef: merchantReference,
         currency: 'UGX',
         amount: bundle.priceUgx,
         description: `REMBEH SMS — ${bundle.name} (${branch.name})`.slice(
           0,
           100,
         ),
-        callbackUrl: apiCallback,
-        cancellationUrl: `${webAppUrl}/subscription?tab=sms`,
-        branchName: branch.name,
-        billingAddress: {
-          email_address: payer?.email || user.email,
-          phone_number: payer?.phone,
-          country_code: 'UG',
-          first_name: nameParts[0] || 'REMBEH',
-          last_name: nameParts.slice(1).join(' ') || 'User',
+        redirectUrl: apiCallback,
+        customerEmail: payer?.email || user.email,
+        customerPhone: payer?.phone,
+        customerName: nameParts.join(' '),
+        title: 'REMBEH SMS Credits',
+        metadata: {
+          kind: 'sms',
+          tenantId: user.tenantId,
+          branchId: branch.id,
+          purchaseId: purchase.id,
+          returnUrl: `${webAppUrl}/subscription?tab=sms`,
         },
       });
     } catch (error) {
@@ -345,21 +354,14 @@ export class SmsCreditsService {
       );
     }
 
-    if (!order.redirect_url) {
-      await this.prisma.smsPurchase.update({
-        where: { id: purchase.id },
-        data: { status: SmsPurchaseStatus.PAYMENT_FAILED },
-      });
-      throw new ServiceUnavailableException(
-        'Payments are unavailable right now. Please try again later.',
-      );
-    }
-
     const updated = await this.prisma.smsPurchase.update({
       where: { id: purchase.id },
       data: {
-        pesapalOrderTrackingId: order.order_tracking_id ?? null,
-        rawPayload: order as Prisma.InputJsonValue,
+        rawPayload: {
+          provider: 'FLUTTERWAVE',
+          payment_method: 'Flutterwave checkout',
+          payment_link: order.paymentLink,
+        },
         status: SmsPurchaseStatus.AWAITING_PAYMENT,
       },
     });
@@ -377,7 +379,7 @@ export class SmsCreditsService {
         amountUgx: bundle.priceUgx,
         smsUnits: bundle.smsUnits,
         reference: merchantReference,
-        paymentMethod: 'Pesapal',
+        paymentMethod: 'Flutterwave',
       })
       .catch((error) => {
         this.logger.warn(
@@ -388,10 +390,10 @@ export class SmsCreditsService {
       });
 
     return {
-      redirectUrl: order.redirect_url,
+      redirectUrl: order.paymentLink,
       purchaseId: updated.id,
       merchantReference,
-      orderTrackingId: order.order_tracking_id ?? null,
+      orderTrackingId: null,
       bundleId: bundle.id,
       bundleName: bundle.name,
       amountUgx: bundle.priceUgx,

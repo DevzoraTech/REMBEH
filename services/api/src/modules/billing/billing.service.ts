@@ -56,6 +56,10 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { OperatorAlertService } from '../notifications/operator-alert.service';
 import { SmsService } from '../notifications/sms.service';
 import { FcmPushService } from '../notifications/fcm-push.service';
+import {
+  FlutterwaveService,
+  type FlutterwaveVerifyData,
+} from '../payments/flutterwave.service';
 import { SmsCreditsService } from '../sms-credits/sms-credits.service';
 import { REALTIME_EVENTS } from '../realtime/realtime.events';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
@@ -181,6 +185,7 @@ export class BillingService implements OnModuleInit {
     private readonly prisma: PrismaService,
     private readonly pesapal: PesapalClient,
     private readonly configService: ConfigService,
+    private readonly flutterwave: FlutterwaveService,
     private readonly notificationsService: NotificationsService,
     private readonly smsService: SmsService,
     private readonly operatorAlerts: OperatorAlertService,
@@ -899,7 +904,7 @@ export class BillingService implements OnModuleInit {
       throw new ForbiddenException('You can only pay for your own branch.');
     }
 
-    if (!this.pesapal.isConfigured()) {
+    if (!this.flutterwave.isEnabled()) {
       throw new ServiceUnavailableException(
         'Payments are unavailable right now. Please try again later.',
       );
@@ -930,11 +935,17 @@ export class BillingService implements OnModuleInit {
     });
 
     const merchantReference = `sub_${branch.id.slice(0, 8)}_${randomUUID().replaceAll('-', '').slice(0, 12)}`;
+    const apiBaseUrl = this.configService
+      .get<string>('API_PUBLIC_URL')
+      ?.trim()
+      .replace(/\/$/, '');
     const apiCallback =
-      this.configService.get<string>('PESAPAL_CALLBACK_URL')?.trim() ||
-      `${this.configService.get<string>('API_PUBLIC_URL')?.trim() || ''}/api/v1/billing/pesapal/callback`;
+      this.configService.get<string>('FLW_REDIRECT_URL')?.trim() ||
+      (apiBaseUrl
+        ? `${apiBaseUrl}/api/v1/billing/flutterwave/callback`
+        : '');
 
-    if (!apiCallback) {
+    if (!/^https:\/\//i.test(apiCallback)) {
       throw new ServiceUnavailableException(
         'Payments are unavailable right now. Please try again later.',
       );
@@ -945,6 +956,27 @@ export class BillingService implements OnModuleInit {
       branch.id,
       plan,
     );
+
+    const existingPending = await this.prisma.subscriptionPayment.findFirst({
+      where: {
+        tenantId: user.tenantId,
+        branchId: branch.id,
+        planId: plan.id,
+        status: SubscriptionPaymentStatus.PENDING,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    const existingPayload = existingPending
+      ? this.payloadObject(existingPending.rawPayload)
+      : null;
+    const existingLink = existingPayload?.payment_link;
+    if (existingPending && typeof existingLink === 'string' && existingLink) {
+      return {
+        redirectUrl: existingLink,
+        merchantReference: existingPending.merchantReference,
+        orderTrackingId: existingPending.orderTrackingId,
+      };
+    }
 
     const payment = await this.prisma.subscriptionPayment.create({
       data: {
@@ -966,25 +998,27 @@ export class BillingService implements OnModuleInit {
 
     const webAppUrl = resolveWebAppBaseUrl(this.configService);
 
-    let order;
+    let order: { paymentLink: string };
     try {
-      order = await this.pesapal.submitOrder({
-        id: merchantReference,
+      order = await this.flutterwave.createHostedCheckout({
+        txRef: merchantReference,
         currency: effectivePrice.currency,
         amount: Number(effectivePrice.amount),
         description: `REMBEH Pro ${definition.label} — ${branch.name}`.slice(
           0,
           100,
         ),
-        callbackUrl: apiCallback,
-        cancellationUrl: `${webAppUrl}/subscription`,
-        branchName: branch.name,
-        billingAddress: {
-          email_address: payer?.email || user.email,
-          phone_number: payer?.phone,
-          country_code: 'UG',
-          first_name: nameParts[0] || 'REMBEH',
-          last_name: nameParts.slice(1).join(' ') || 'User',
+        redirectUrl: apiCallback,
+        customerEmail: payer?.email || user.email,
+        customerPhone: payer?.phone,
+        customerName: nameParts.join(' '),
+        title: 'REMBEH Subscription',
+        metadata: {
+          kind: 'subscription',
+          tenantId: user.tenantId,
+          branchId: branch.id,
+          paymentId: payment.id,
+          returnUrl: `${webAppUrl}/subscription`,
         },
       });
     } catch (error) {
@@ -1000,21 +1034,14 @@ export class BillingService implements OnModuleInit {
       throw this.toCheckoutHttpException(message);
     }
 
-    if (!order.redirect_url) {
-      await this.prisma.subscriptionPayment.update({
-        where: { id: payment.id },
-        data: { status: SubscriptionPaymentStatus.FAILED },
-      });
-      throw new ServiceUnavailableException(
-        'Payments are unavailable right now. Please try again later.',
-      );
-    }
-
     await this.prisma.subscriptionPayment.update({
       where: { id: payment.id },
       data: {
-        orderTrackingId: order.order_tracking_id ?? null,
-        rawPayload: order,
+        rawPayload: {
+          provider: 'FLUTTERWAVE',
+          payment_method: 'Flutterwave checkout',
+          payment_link: order.paymentLink,
+        },
       },
     });
 
@@ -1029,13 +1056,13 @@ export class BillingService implements OnModuleInit {
       branchName: branch.name,
       amountUgx: Number(effectivePrice.amount),
       reference: merchantReference,
-      paymentMethod: 'Pesapal',
+      paymentMethod: 'Flutterwave',
     });
 
     return {
-      redirectUrl: order.redirect_url,
+      redirectUrl: order.paymentLink,
       merchantReference,
-      orderTrackingId: order.order_tracking_id ?? null,
+      orderTrackingId: null,
     };
   }
 
@@ -2055,6 +2082,183 @@ export class BillingService implements OnModuleInit {
           daysRemaining: 0,
         });
       }
+    }
+  }
+
+  async handleFlutterwaveCallback(input: {
+    status?: string;
+    txRef?: string;
+    transactionId?: string;
+  }) {
+    const webAppUrl = resolveWebAppBaseUrl(this.configService);
+    const txRef = input.txRef?.trim() || '';
+    const transactionId = input.transactionId?.trim() || '';
+    let result: 'success' | 'failed' | 'pending' = 'pending';
+
+    try {
+      if (input.status?.toLowerCase() === 'successful' && transactionId) {
+        const verified = await this.flutterwave.verifyTransaction(transactionId);
+        await this.applyFlutterwaveBillingPayment(verified);
+        result = 'success';
+      } else if (txRef) {
+        await this.markFlutterwavePaymentFailed(
+          txRef,
+          `Flutterwave checkout ${input.status || 'did not complete'}.`,
+        );
+        result = 'failed';
+      }
+    } catch (error) {
+      this.logger.error(
+        `Flutterwave callback failed for ${txRef || transactionId}: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+      result = 'pending';
+    }
+
+    const tab = txRef.startsWith('sms_') ? 'sms' : 'plan';
+    return `${webAppUrl}/subscription?tab=${tab}&paymentResult=${result}`;
+  }
+
+  async handleFlutterwaveWebhook(
+    verificationHash: string | undefined,
+    body: unknown,
+  ) {
+    this.flutterwave.assertValidWebhookHash(verificationHash);
+    const payload = body as { data?: FlutterwaveVerifyData };
+    const transactionId = payload.data?.id;
+    if (transactionId == null) return { accepted: false };
+
+    const verified = await this.flutterwave.verifyTransaction(
+      String(transactionId),
+    );
+    await this.applyFlutterwaveBillingPayment(verified);
+    return { accepted: true };
+  }
+
+  private async applyFlutterwaveBillingPayment(data: FlutterwaveVerifyData) {
+    const txRef = String(data.tx_ref ?? '').trim();
+    const transactionId = String(data.id ?? '').trim();
+    if (!txRef || !transactionId) {
+      throw new BadRequestException(
+        'Flutterwave verification returned an incomplete transaction.',
+      );
+    }
+
+    const remoteStatus = String(data.status ?? '').toLowerCase();
+    if (remoteStatus !== 'successful') {
+      await this.markFlutterwavePaymentFailed(
+        txRef,
+        `Flutterwave status: ${remoteStatus || 'unknown'}.`,
+      );
+      return;
+    }
+
+    const amount = Number(data.amount ?? data.charged_amount);
+    const currency = String(data.currency ?? '').toUpperCase();
+    const subscription = await this.prisma.subscriptionPayment.findUnique({
+      where: { merchantReference: txRef },
+      include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
+    });
+    if (subscription) {
+      this.assertFlutterwaveAmount(
+        amount,
+        currency,
+        Number(subscription.amount),
+        subscription.currency,
+      );
+      if (subscription.status === SubscriptionPaymentStatus.COMPLETED) return;
+      const updated = await this.prisma.subscriptionPayment.update({
+        where: { id: subscription.id },
+        data: {
+          orderTrackingId: transactionId,
+          rawPayload: data as Prisma.InputJsonValue,
+        },
+        include: SUBSCRIPTION_PAYMENT_ROW_INCLUDE,
+      });
+      await this.completeManualMerchantPayment(updated, {
+        replyEmailId: `flutterwave:${transactionId}`,
+        replyFromEmail: 'Flutterwave verified checkout',
+        merchantTransactionId: transactionId,
+      });
+      return;
+    }
+
+    const purchase = await this.prisma.smsPurchase.findUnique({
+      where: { merchantReference: txRef },
+      include: { branch: { select: { name: true } } },
+    });
+    if (!purchase) {
+      throw new NotFoundException('Flutterwave payment reference was not found.');
+    }
+    this.assertFlutterwaveAmount(
+      amount,
+      currency,
+      purchase.amountExpected,
+      purchase.currency,
+    );
+    if (purchase.status === SmsPurchaseStatus.CREDITED) return;
+    const updatedPurchase = await this.prisma.smsPurchase.update({
+      where: { id: purchase.id },
+      data: {
+        externalTransactionId: transactionId,
+        rawPayload: data as Prisma.InputJsonValue,
+        status: SmsPurchaseStatus.PAYMENT_CONFIRMED,
+      },
+      include: { branch: { select: { name: true } } },
+    });
+    await this.completeManualSmsMerchantPayment(updatedPurchase, {
+      replyEmailId: `flutterwave:${transactionId}`,
+      replyFromEmail: 'Flutterwave verified checkout',
+      merchantTransactionId: transactionId,
+    });
+  }
+
+  private assertFlutterwaveAmount(
+    actualAmount: number,
+    actualCurrency: string,
+    expectedAmount: number,
+    expectedCurrency: string,
+  ) {
+    if (
+      !Number.isFinite(actualAmount) ||
+      actualAmount < expectedAmount ||
+      actualCurrency !== expectedCurrency.toUpperCase()
+    ) {
+      throw new BadRequestException(
+        'Flutterwave payment amount or currency did not match the purchase.',
+      );
+    }
+  }
+
+  private async markFlutterwavePaymentFailed(txRef: string, reason: string) {
+    const subscription = await this.prisma.subscriptionPayment.findUnique({
+      where: { merchantReference: txRef },
+    });
+    if (
+      subscription &&
+      subscription.status !== SubscriptionPaymentStatus.COMPLETED
+    ) {
+      await this.prisma.subscriptionPayment.update({
+        where: { id: subscription.id },
+        data: {
+          status: SubscriptionPaymentStatus.FAILED,
+          rawPayload: { provider: 'FLUTTERWAVE', failure_reason: reason },
+        },
+      });
+      return;
+    }
+    const purchase = await this.prisma.smsPurchase.findUnique({
+      where: { merchantReference: txRef },
+    });
+    if (purchase && purchase.status !== SmsPurchaseStatus.CREDITED) {
+      await this.prisma.smsPurchase.update({
+        where: { id: purchase.id },
+        data: {
+          status: SmsPurchaseStatus.PAYMENT_FAILED,
+          rawPayload: { provider: 'FLUTTERWAVE', failure_reason: reason },
+        },
+      });
     }
   }
 

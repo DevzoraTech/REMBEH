@@ -3,6 +3,7 @@ import { AuthContextModule } from '../../common/auth/auth-context.module';
 import { DatabaseModule } from '../../database/database.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { SmsCreditsModule } from '../sms-credits/sms-credits.module';
+import { PaymentsModule } from '../payments/payments.module';
 import { BillingController } from './billing.controller';
 import { BillingService } from './billing.service';
 import { MerchantPaymentConfigService } from './merchant-payment-config.service';
@@ -13,6 +14,7 @@ import { PesapalClient } from './pesapal.client';
     AuthContextModule,
     DatabaseModule,
     NotificationsModule,
+    PaymentsModule,
     forwardRef(() => SmsCreditsModule),
   ],
   controllers: [BillingController],

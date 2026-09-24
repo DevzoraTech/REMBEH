@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../features/sms/data/sms_credits_store.dart';
 import '../../services/api_client.dart';
@@ -430,21 +431,19 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
     setState(() => _selectedBundleId = bundle.id);
 
-    final paid = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => CompleteManualPaymentScreen.sms(
-          session: widget.session,
-          branchId: branchId,
-          bundle: bundle,
-        ),
-      ),
-    );
-
-    if (!mounted) return;
-    if (paid == true) {
-      setState(() => _tab = SubscriptionTab.sms);
+    try {
+      final checkout = await _api.startSmsCheckout(
+        session: widget.session,
+        branchId: branchId,
+        bundleId: bundle.id,
+      );
+      await _launchCheckout(checkout);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyErrorMessage(error))),
+      );
     }
-    await _load();
   }
 
   Future<void> _openPlanPayment(BillingPlanOption plan) async {
@@ -462,21 +461,37 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
     setState(() => _selectedPlanCode = plan.code);
 
-    final paid = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
-        builder: (_) => CompleteManualPaymentScreen.subscription(
-          session: widget.session,
-          branchId: branchId,
-          plan: plan,
+    try {
+      final checkout = await _api.startSubscriptionCheckout(
+        session: widget.session,
+        branchId: branchId,
+        planCode: plan.code,
+      );
+      await _launchCheckout(checkout);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(friendlyErrorMessage(error))),
+      );
+    }
+  }
+
+  Future<void> _launchCheckout(Map<String, dynamic> checkout) async {
+    final rawUrl = '${checkout['redirectUrl'] ?? ''}'.trim();
+    final uri = Uri.tryParse(rawUrl);
+    if (uri == null || !uri.hasScheme) {
+      throw const FormatException('Payment checkout is unavailable.');
+    }
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened) throw const FormatException('Could not open payment checkout.');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Complete payment in Flutterwave, then return here and refresh.',
         ),
       ),
     );
-
-    if (!mounted) return;
-    if (paid == true) {
-      setState(() => _tab = SubscriptionTab.plan);
-    }
-    await _load();
   }
 
   @override

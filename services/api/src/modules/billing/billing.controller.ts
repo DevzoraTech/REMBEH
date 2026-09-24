@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
@@ -144,6 +145,33 @@ export class BillingController {
     const redirectTo = await this.billingService.handlePesapalCallback({
       OrderTrackingId,
       OrderMerchantReference,
+    });
+    return res.redirect(redirectTo);
+  }
+
+  @Post('flutterwave/webhook')
+  @HttpCode(200)
+  handleFlutterwaveWebhook(
+    @Headers('verif-hash') verificationHash: string | undefined,
+    @Body() body: unknown,
+  ) {
+    return this.billingService.handleFlutterwaveWebhook(
+      verificationHash,
+      body,
+    );
+  }
+
+  @Get('flutterwave/callback')
+  async flutterwaveCallback(
+    @Res() res: Response,
+    @Query('status') status?: string,
+    @Query('tx_ref') txRef?: string,
+    @Query('transaction_id') transactionId?: string,
+  ) {
+    const redirectTo = await this.billingService.handleFlutterwaveCallback({
+      status,
+      txRef,
+      transactionId,
     });
     return res.redirect(redirectTo);
   }

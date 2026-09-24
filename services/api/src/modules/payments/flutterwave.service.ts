@@ -26,7 +26,7 @@ type FlutterwavePaymentData = {
   link?: string;
 };
 
-type FlutterwaveVerifyData = {
+export type FlutterwaveVerifyData = {
   id?: number | string;
   tx_ref?: string;
   flw_ref?: string;
@@ -65,6 +65,64 @@ export class FlutterwaveService {
       currency: this.configService.get<string>('FLW_DEFAULT_CURRENCY')?.trim() || 'UGX',
       mode: this.secretKey()?.includes('_TEST') ? 'test' : 'live',
     };
+  }
+
+  async createHostedCheckout(input: {
+    txRef: string;
+    amount: number;
+    currency: string;
+    redirectUrl: string;
+    customerEmail: string;
+    customerPhone?: string | null;
+    customerName?: string | null;
+    title: string;
+    description: string;
+    metadata?: Record<string, string | number | boolean | null | undefined>;
+  }) {
+    this.assertReady();
+    const response = await this.flwRequest<FlutterwavePaymentData>(
+      'POST',
+      '/payments',
+      {
+        tx_ref: input.txRef,
+        amount: input.amount,
+        currency: input.currency,
+        redirect_url: input.redirectUrl,
+        // Flutterwave currently supports card and Uganda mobile money for UGX.
+        payment_options: 'card,mobilemoneyuganda',
+        customer: {
+          email: input.customerEmail,
+          name: input.customerName || undefined,
+          phonenumber: input.customerPhone || undefined,
+        },
+        customizations: {
+          title: input.title,
+          description: input.description,
+        },
+        meta: input.metadata ?? {},
+        configurations: {
+          session_duration: 30,
+          max_retry_attempt: 5,
+        },
+      },
+    );
+    const paymentLink = response.data?.link;
+    if (response.status !== 'success' || !paymentLink) {
+      throw new BadRequestException(
+        response.message || 'Could not initialize Flutterwave payment.',
+      );
+    }
+    return { paymentLink };
+  }
+
+  async verifyTransaction(transactionId: string) {
+    this.assertReady();
+    return this.fetchVerifiedTransaction(transactionId);
+  }
+
+  assertValidWebhookHash(value: string | undefined) {
+    this.assertReady();
+    this.assertWebhookHash(value);
   }
 
   async initializePayment(

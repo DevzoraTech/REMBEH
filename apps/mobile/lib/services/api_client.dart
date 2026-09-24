@@ -1046,6 +1046,30 @@ class ApiClient {
     return _getJson(session: session, path: '/billing/payments');
   }
 
+  Future<Map<String, dynamic>> startSubscriptionCheckout({
+    required RembehSession session,
+    required String branchId,
+    required String planCode,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/billing/branches/$branchId/checkout',
+      body: {'planCode': planCode},
+    );
+  }
+
+  Future<Map<String, dynamic>> startSmsCheckout({
+    required RembehSession session,
+    required String branchId,
+    required String bundleId,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/sms-credits/purchases',
+      body: {'branchId': branchId, 'bundleId': bundleId},
+    );
+  }
+
   Future<Map<String, dynamic>> getManualPaymentMethods({
     required RembehSession session,
     String kind = 'sms',

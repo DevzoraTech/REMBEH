@@ -1487,32 +1487,7 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     }
 
     setError(null);
-    const pending = pendingManualSmsPaymentFor(
-      bundle.id,
-      targetBranch.branchId,
-    );
-    if (pending) {
-      setManualPaymentKind("sms");
-      setManualSmsBundle(bundle);
-      setFocusedBranchId(targetBranch.branchId);
-      setActiveTab("sms");
-      setConfirmBundle(null);
-      setSelectedPaymentMethod(manualPaymentMethodForRow(pending).id);
-      setTransactionId("");
-      setConfirmTransactionId("");
-      setSubmittedManualPayment(
-        submissionFromPendingPayment(
-          pending,
-          planOptionsForBranch(pending.branchId),
-          selectedPlan,
-        ),
-      );
-      setPaymentResultOverlay(null);
-      setPaymentPanelOpen(true);
-      return;
-    }
-
-    openManualSmsPayment(bundle, targetBranch.branchId);
+    void openManualSmsPayment(bundle, targetBranch.branchId);
   }
 
   function resolveSubscriptionBranch(branchId?: string) {
@@ -1579,7 +1554,7 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
     );
   }
 
-  function openManualPayment(planCode?: string, branchId?: string) {
+  async function openManualPayment(planCode?: string, branchId?: string) {
     const targetBranch = resolveSubscriptionBranch(branchId);
     if (!targetBranch) {
       setError("Choose a branch before starting payment.");
@@ -1590,41 +1565,88 @@ function SubscriptionWorkspaceContent({ mode }: { mode: "owner" | "manager" }) {
       return;
     }
 
-    setSelectedPlanCode(planCode || selectedPlanCode || "PRO_3M");
-    setManualPaymentKind("subscription");
-    setManualSmsBundle(null);
+    const nextPlanCode = planCode || selectedPlanCode || "PRO_3M";
+    setSelectedPlanCode(nextPlanCode);
     setFocusedBranchId(targetBranch.branchId);
     setActiveTab("plan");
-    setPaymentPanelOpen(true);
-    setSelectedPaymentMethod(null);
-    setTransactionId("");
-    setConfirmTransactionId("");
-    setSubmittedManualPayment(null);
-    setPaymentResultOverlay(null);
     setError(null);
-    void loadManualPaymentMethods("subscription");
+    if (!session) return;
+    try {
+      const response = await fetch(
+        `${apiBaseUrl}/billing/branches/${targetBranch.branchId}/checkout`,
+        {
+          method: "POST",
+          headers: {
+            ...authHeaders(session),
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ planCode: nextPlanCode }),
+        },
+      );
+      const payload = await readApiJson<{
+        redirectUrl?: string;
+        message?: string | string[];
+      }>(response);
+      if (!response.ok || !payload.redirectUrl) {
+        throw new Error(
+          payload.message
+            ? formatApiError(payload.message)
+            : "Could not start payment.",
+        );
+      }
+      window.location.assign(payload.redirectUrl);
+    } catch (checkoutError) {
+      setError(
+        checkoutError instanceof Error
+          ? checkoutError.message
+          : "Could not start payment.",
+      );
+    }
   }
 
-  function openManualSmsPayment(bundle: SmsBundle, branchId?: string) {
+  async function openManualSmsPayment(bundle: SmsBundle, branchId?: string) {
     const targetBranch = resolveSubscriptionBranch(branchId);
     if (!targetBranch) {
       setError("Choose a branch before starting payment.");
       return;
     }
 
-    setManualPaymentKind("sms");
-    setManualSmsBundle(bundle);
     setFocusedBranchId(targetBranch.branchId);
     setActiveTab("sms");
     setConfirmBundle(null);
-    setPaymentPanelOpen(true);
-    setSelectedPaymentMethod(null);
-    setTransactionId("");
-    setConfirmTransactionId("");
-    setSubmittedManualPayment(null);
-    setPaymentResultOverlay(null);
     setError(null);
-    void loadManualPaymentMethods("sms");
+    if (!session) return;
+    try {
+      const response = await fetch(`${apiBaseUrl}/sms-credits/purchases`, {
+        method: "POST",
+        headers: {
+          ...authHeaders(session),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          bundleId: bundle.id,
+          branchId: targetBranch.branchId,
+        }),
+      });
+      const payload = await readApiJson<{
+        redirectUrl?: string;
+        message?: string | string[];
+      }>(response);
+      if (!response.ok || !payload.redirectUrl) {
+        throw new Error(
+          payload.message
+            ? formatApiError(payload.message)
+            : "Could not start payment.",
+        );
+      }
+      window.location.assign(payload.redirectUrl);
+    } catch (checkoutError) {
+      setError(
+        checkoutError instanceof Error
+          ? checkoutError.message
+          : "Could not start payment.",
+      );
+    }
   }
 
   async function loadManualPaymentMethods(kind: "subscription" | "sms") {
