@@ -2121,10 +2121,19 @@ export class BillingService implements OnModuleInit {
     const callbackStatus = input.status?.trim().toLowerCase() || '';
 
     try {
-      if (callbackStatus === 'successful' && transactionId) {
+      if (transactionId) {
         const verified = await this.flutterwave.verifyTransaction(transactionId);
-        await this.applyFlutterwaveBillingPayment(verified);
-        result = 'success';
+        if (String(verified.status ?? '').toLowerCase() === 'successful') {
+          await this.applyFlutterwaveBillingPayment(verified);
+          result = 'success';
+        } else if (txRef || verified.tx_ref) {
+          await this.markFlutterwavePaymentFailed(
+            txRef || String(verified.tx_ref),
+            this.flutterwaveFailureReason(verified),
+            verified,
+          );
+          result = callbackStatus === 'cancelled' ? 'cancelled' : 'failed';
+        }
       } else if (txRef) {
         const cancelled = callbackStatus === 'cancelled';
         await this.markFlutterwavePaymentFailed(
@@ -2259,7 +2268,29 @@ export class BillingService implements OnModuleInit {
     }
   }
 
-  private async markFlutterwavePaymentFailed(txRef: string, reason: string) {
+  private async markFlutterwavePaymentFailed(
+    txRef: string,
+    reason: string,
+    providerPayload?: FlutterwaveVerifyData,
+  ) {
+    return this.storeFlutterwavePaymentFailure(
+      txRef,
+      reason,
+      providerPayload,
+    );
+  }
+
+  private async storeFlutterwavePaymentFailure(
+    txRef: string,
+    reason: string,
+    providerPayload?: FlutterwaveVerifyData,
+  ) {
+    const failurePayload = {
+      ...(providerPayload ?? {}),
+      provider: 'FLUTTERWAVE',
+      failure_reason: reason,
+      provider_failure_code: providerPayload?.processor_response ?? null,
+    } as Prisma.InputJsonValue;
     const subscription = await this.prisma.subscriptionPayment.findUnique({
       where: { merchantReference: txRef },
     });
@@ -2271,7 +2302,9 @@ export class BillingService implements OnModuleInit {
         where: { id: subscription.id },
         data: {
           status: SubscriptionPaymentStatus.FAILED,
-          rawPayload: { provider: 'FLUTTERWAVE', failure_reason: reason },
+          orderTrackingId:
+            providerPayload?.id == null ? undefined : String(providerPayload.id),
+          rawPayload: failurePayload,
         },
       });
       return;
@@ -2284,10 +2317,31 @@ export class BillingService implements OnModuleInit {
         where: { id: purchase.id },
         data: {
           status: SmsPurchaseStatus.PAYMENT_FAILED,
-          rawPayload: { provider: 'FLUTTERWAVE', failure_reason: reason },
+          externalTransactionId:
+            providerPayload?.id == null ? undefined : String(providerPayload.id),
+          rawPayload: failurePayload,
         },
       });
     }
+  }
+
+  private flutterwaveFailureReason(data: FlutterwaveVerifyData) {
+    const response = String(data.processor_response ?? '').toUpperCase();
+    if (response === 'LOW_BALANCE_OR_PAYEE_LIMIT_REACHED_OR_NOT_ALLOWED') {
+      return 'The mobile-money provider declined this payment. Check the wallet balance and transaction limits, then try again or use a card.';
+    }
+    if (response.includes('INSUFFICIENT') || response.includes('LOW_BALANCE')) {
+      return 'The payment account does not have enough available funds.';
+    }
+    if (response.includes('LIMIT')) {
+      return 'The payment account has reached a transaction limit.';
+    }
+    if (response.includes('CANCEL')) {
+      return 'The payment was cancelled before completion.';
+    }
+    return response
+      ? `The payment provider declined this transaction (${response.replaceAll('_', ' ').toLowerCase()}).`
+      : 'The payment provider did not complete this transaction.';
   }
 
   private async finalizePesapalPayment(orderTrackingId: string) {

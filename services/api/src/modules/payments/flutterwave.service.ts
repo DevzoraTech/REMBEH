@@ -34,6 +34,8 @@ export type FlutterwaveVerifyData = {
   currency?: string;
   status?: string;
   charged_amount?: number;
+  payment_type?: string;
+  processor_response?: string;
   customer?: {
     email?: string;
     name?: string;
@@ -93,7 +95,7 @@ export class FlutterwaveService {
         currency: input.currency,
         redirect_url: input.redirectUrl,
         // Flutterwave currently supports card and Uganda mobile money for UGX.
-        payment_options: 'card,mobilemoneyuganda',
+        payment_options: 'card, mobilemoneyuganda',
         customer: {
           email: input.customerEmail,
           name: input.customerName || undefined,
@@ -182,7 +184,8 @@ export class FlutterwaveService {
       amount,
       currency,
       redirect_url: redirectUrl,
-      payment_options: dto.paymentOptions?.trim() || 'card,mobilemoneyuganda,ussd',
+      payment_options:
+        dto.paymentOptions?.trim() || 'card, mobilemoneyuganda',
       customer: {
         email: dto.customerEmail?.trim() || `payments+${user.tenantId.slice(0, 8)}@rembeh.local`,
         name: dto.customerName?.trim() || undefined,
