@@ -67,6 +67,27 @@ export type DailyOperationTopUpContract = {
   recordedByName: string;
 };
 
+export type DailyOperationBankingContract = {
+  id: string;
+  amount: number;
+  reference: string | null;
+  notes: string | null;
+  bankedAt: string;
+  recordedByName: string;
+  receiptUrl: string | null;
+  receiptMimeType: string | null;
+  receiptFileName: string | null;
+};
+
+export type OperationBankingHistoryResponseContract = {
+  records: Array<
+    DailyOperationBankingContract & {
+      operationDate: string;
+      branchId: string;
+    }
+  >;
+};
+
 export type DailyOperationAgentReturnStatusContract =
   'PENDING' | 'RETURNED' | 'SHORT' | 'OVER';
 
@@ -231,6 +252,10 @@ export type DailyOperationContract = {
   topUpsCount: number;
   topUpsTotal: number;
   topUps: DailyOperationTopUpContract[];
+
+  bankingsCount: number;
+  bankingsTotal: number;
+  bankings: DailyOperationBankingContract[];
 
   expensesCount: number;
   expensesTotal: number;
@@ -427,6 +452,7 @@ export type OwnerOperationReportListItemContract = {
   collectionsReceived: number;
   processingFeesTotal: number;
   expensesTotal: number;
+  bankingsTotal: number;
 
   cashReturnedByAgents: number;
 

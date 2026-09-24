@@ -29,6 +29,7 @@ class OperationsTab extends StatelessWidget {
     required this.onOpenDay,
     required this.onReceiveCapital,
     required this.onRecordExpense,
+    required this.onRecordBanking,
     required this.onAllocateFloat,
     required this.onCloseDay,
     required this.onViewActivity,
@@ -68,6 +69,7 @@ class OperationsTab extends StatelessWidget {
   final VoidCallback onOpenDay;
   final VoidCallback onReceiveCapital;
   final VoidCallback onRecordExpense;
+  final VoidCallback onRecordBanking;
   final VoidCallback onAllocateFloat;
   final VoidCallback onCloseDay;
   final VoidCallback onViewActivity;
@@ -151,6 +153,11 @@ class OperationsTab extends StatelessWidget {
         canRecordCashMovements &&
         session.hasPermission('operation.expense.create');
 
+    final canRecordBanking =
+        dayOpen &&
+        canRecordCashMovements &&
+        session.hasPermission('operation.banking.create');
+
     final canReconcile = dayActive && session.hasPermission('operation.close');
 
     /*
@@ -228,10 +235,12 @@ class OperationsTab extends StatelessWidget {
             canReceiveCapital: canReceiveCapital,
             canAllocateFloat: canAllocateFloat,
             canRecordExpense: canRecordExpense,
+            canRecordBanking: canRecordBanking,
             canOpenShortages: dayOpen && canRecordCashMovements,
             onReceiveCapital: onReceiveCapital,
             onAllocateFloat: onAllocateFloat,
             onRecordExpense: onRecordExpense,
+            onRecordBanking: onRecordBanking,
             onOpenShortages: onRecordShortagePaid,
           ),
 

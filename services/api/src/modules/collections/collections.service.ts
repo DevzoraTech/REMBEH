@@ -292,7 +292,7 @@ export class CollectionsService {
       rows.map((row) => row.id),
     );
 
-        const repayments = await Promise.all(
+    const repayments = await Promise.all(
       rows.map(async (row) => {
         const loan = row.loan;
         const app = loan.application;
@@ -307,8 +307,7 @@ export class CollectionsService {
 
         const durationDays = app?.durationDays ?? 0;
 
-        const processingFee =
-          this.decimalToNumber(app?.processingFee) ?? 0;
+        const processingFee = this.decimalToNumber(app?.processingFee) ?? 0;
 
         const computedPricing = computeLoanPricing({
           principalAmount,
@@ -325,8 +324,7 @@ export class CollectionsService {
           loan.wallet?.openingBalance,
         );
 
-        const baseRepayable =
-          openingBalance ?? computedPricing.totalRepayable;
+        const baseRepayable = openingBalance ?? computedPricing.totalRepayable;
 
         const balance = this.decimalToNumber(loan.balance) ?? 0;
 
@@ -401,9 +399,7 @@ export class CollectionsService {
           branchId: loan.branchId,
           branchName: loan.branch?.name ?? null,
 
-          sms:
-            smsByRepayment.get(row.id) ??
-            this.emptyRepaymentSmsStatus(),
+          sms: smsByRepayment.get(row.id) ?? this.emptyRepaymentSmsStatus(),
 
           voidedAt: null,
           voidedByUserId: null,
@@ -417,8 +413,6 @@ export class CollectionsService {
         repayments: repayments.filter((item) => item.dueToday),
       };
     }
-
-  
 
     return {
       repayments,
@@ -4853,6 +4847,8 @@ export class CollectionsService {
       expectedToday,
 
       carriedForward: schedule.carriedForward,
+
+      advanceAmount: schedule.advanceAmount,
 
       dailyInstalment: schedule.dailyInstalment,
 

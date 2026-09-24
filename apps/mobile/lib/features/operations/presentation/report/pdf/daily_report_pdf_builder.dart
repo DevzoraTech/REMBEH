@@ -341,47 +341,71 @@ class DailyReportPdfBuilder {
         cash.repaymentsCollected +
         cash.processingFees +
         cash.shortageRecoveries;
-    final cashoutsTotal = cash.expenses + cash.salaries + cash.loansIssued;
+    final cashoutsTotal =
+        cash.expenses + cash.salaries + cash.bankings + cash.loansIssued;
 
-    return pw.Row(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
       children: [
-        pw.Expanded(
-          child: _movementBlock(
-            title: 'ADDITIONS',
-            titleColor: _emerald,
-            fill: _greenFill,
-            lines: [
-              _MoveLine('Opening Balance', cash.openingCash, plain: true),
-              _MoveLine('Capital received', cash.capitalReceived, plain: true),
-              _MoveLine('Cash in', cash.repaymentsCollected, positive: true),
-              _MoveLine('Processing fees', cash.processingFees, positive: true),
-              _MoveLine(
-                'Shortage cleared',
-                cash.shortageRecoveries,
-                positive: true,
+        pw.Row(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Expanded(
+              child: _movementBlock(
+                title: 'ADDITIONS',
+                titleColor: _emerald,
+                fill: _greenFill,
+                lines: [
+                  _MoveLine('Opening Balance', cash.openingCash, plain: true),
+                  _MoveLine(
+                    'Capital received',
+                    cash.capitalReceived,
+                    plain: true,
+                  ),
+                  _MoveLine(
+                    'Cash in',
+                    cash.repaymentsCollected,
+                    positive: true,
+                  ),
+                  _MoveLine(
+                    'Processing fees',
+                    cash.processingFees,
+                    positive: true,
+                  ),
+                  _MoveLine(
+                    'Shortage cleared',
+                    cash.shortageRecoveries,
+                    positive: true,
+                  ),
+                ],
+                totalLabel: 'TOTAL',
+                totalValue: additionsTotal,
+                totalColor: _emerald,
               ),
-            ],
-            totalLabel: 'TOTAL',
-            totalValue: additionsTotal,
-            totalColor: _emerald,
-          ),
+            ),
+            pw.SizedBox(width: 10),
+            pw.Expanded(
+              child: _movementBlock(
+                title: 'CASHOUTS',
+                titleColor: _red,
+                fill: _redFill,
+                lines: [
+                  _MoveLine('Total Expenses', cash.expenses, negative: true),
+                  _MoveLine('Salary', cash.salaries, negative: true),
+                  _MoveLine('Banking', cash.bankings, negative: true),
+                  _MoveLine('Loans issued', cash.loansIssued, negative: true),
+                ],
+                totalLabel: 'TOTAL',
+                totalValue: cashoutsTotal,
+                totalColor: _red,
+              ),
+            ),
+          ],
         ),
-        pw.SizedBox(width: 10),
-        pw.Expanded(
-          child: _movementBlock(
-            title: 'CASHOUTS',
-            titleColor: _red,
-            fill: _redFill,
-            lines: [
-              _MoveLine('Total Expenses', cash.expenses, negative: true),
-              _MoveLine('Salary', cash.salaries, negative: true),
-              _MoveLine('Loans issued', cash.loansIssued, negative: true),
-            ],
-            totalLabel: 'TOTAL',
-            totalValue: cashoutsTotal,
-            totalColor: _red,
-          ),
+        pw.SizedBox(height: 4),
+        pw.Text(
+          'Banking is recorded separately from the Operations page and is not treated as an expense.',
+          style: const pw.TextStyle(color: _muted, fontSize: 8.5),
         ),
       ],
     );
@@ -476,28 +500,6 @@ class DailyReportPdfBuilder {
     );
   }
 
-  pw.Widget _portfolioCell(
-    String text, {
-    bool header = false,
-    bool strong = false,
-    bool alignRight = false,
-  }) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      child: pw.Text(
-        text,
-        textAlign: alignRight ? pw.TextAlign.right : pw.TextAlign.left,
-        style: pw.TextStyle(
-          color: header ? _emerald : (strong ? _navy : _slate),
-          fontSize: header ? 8.5 : 8,
-          fontWeight: header || strong
-              ? pw.FontWeight.bold
-              : pw.FontWeight.normal,
-        ),
-      ),
-    );
-  }
-
   pw.Widget _portfolioPerformance(DailyReportData report) {
     final value = report.portfolioPerformance;
     if (value == null) {
@@ -506,92 +508,58 @@ class DailyReportPdfBuilder {
       );
     }
 
-    pw.Widget block(String title, List<List<String>> rows, PdfColor fill) {
-      return pw.Expanded(
-        child: pw.Container(
-          decoration: pw.BoxDecoration(
-            color: fill,
-            border: pw.Border.all(color: _line, width: 0.7),
-            borderRadius: pw.BorderRadius.circular(6),
-          ),
-          child: pw.Table(
-            border: const pw.TableBorder(
-              horizontalInside: pw.BorderSide(color: _line, width: 0.5),
-              verticalInside: pw.BorderSide(color: _line, width: 0.5),
-            ),
-            columnWidths: const {
-              0: pw.FlexColumnWidth(1.65),
-              1: pw.FlexColumnWidth(1),
-            },
-            children: [
-              pw.TableRow(
-                decoration: const pw.BoxDecoration(color: _headerFill),
-                children: [
-                  _portfolioCell(title, header: true),
-                  _portfolioCell('VALUE', header: true, alignRight: true),
-                ],
-              ),
-              for (final row in rows)
-                pw.TableRow(
-                  children: [
-                    _portfolioCell(row[0]),
-                    _portfolioCell(row[1], strong: true, alignRight: true),
-                  ],
-                ),
-            ],
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+      children: [
+        pw.Text(
+          "TODAY'S REPAYMENT STATUS",
+          style: pw.TextStyle(
+            color: _emerald,
+            fontSize: 9.5,
+            fontWeight: pw.FontWeight.bold,
           ),
         ),
-      );
-    }
-
-    return pw.Column(
-      children: [
-        pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            block("TODAY'S REPAYMENT STATUS", [
-              ['Total active borrowers', '${value.activeBorrowers}'],
-              ['Borrowers due today', '${value.borrowersDue}'],
-              ['Borrowers who paid today', '${value.borrowersPaid}'],
-              ['Borrowers who missed payment', '${value.borrowersMissed}'],
-              ['Payer rate', '${value.payerRatePercent.toStringAsFixed(1)}%'],
-              ['Borrowers with advance', '${value.borrowersWithAdvance}'],
-              [
-                'Total amount of advance',
-                'UGX ${formatMoney(value.totalAdvanceAmount)}',
-              ],
-              ['Total due as of today', 'UGX ${formatMoney(value.totalDue)}'],
-              ['Total repaid', 'UGX ${formatMoney(value.totalRepaid)}'],
-              ['Total still due', 'UGX ${formatMoney(value.totalStillDue)}'],
-            ], _greenFill),
-            pw.SizedBox(width: 10),
-            block('PORTFOLIO POSITION', [
-              [
-                'Principal disbursed',
-                'UGX ${formatMoney(value.principalDisbursed)}',
-              ],
-              ['Principal repaid', 'UGX ${formatMoney(value.principalRepaid)}'],
-              [
-                'Principal outstanding',
-                'UGX ${formatMoney(value.principalOutstanding)}',
-              ],
-              [
-                'Interest expected',
-                'UGX ${formatMoney(value.interestExpected)}',
-              ],
-              [
-                'Interest collected',
-                'UGX ${formatMoney(value.interestCollected)}',
-              ],
-              [
-                'Interest outstanding',
-                'UGX ${formatMoney(value.interestOutstanding)}',
-              ],
-            ], _cardFill),
+        pw.SizedBox(height: 3),
+        _dataTable(
+          headers: const ['Metric', 'Borrowers', 'Amount'],
+          alignRight: const {1, 2},
+          columnWidths: const {
+            0: pw.FlexColumnWidth(1.8),
+            1: pw.FlexColumnWidth(0.75),
+            2: pw.FlexColumnWidth(1.2),
+          },
+          rows: [
+            ['Total active borrowers', '${value.activeBorrowers}', 'N/A'],
+            [
+              'Borrowers due today',
+              '${value.borrowersDue}',
+              'UGX ${formatMoney(value.totalDue)}',
+            ],
+            [
+              'Paid',
+              '${value.borrowersPaid}',
+              'UGX ${formatMoney(value.totalRepaid)}',
+            ],
+            [
+              'Unpaid',
+              '${value.borrowersMissed}',
+              'UGX ${formatMoney(value.totalStillDue)}',
+            ],
+            [
+              'Borrowers with advance',
+              '${value.borrowersWithAdvance}',
+              'UGX ${formatMoney(value.totalAdvanceAmount)}',
+            ],
           ],
+          footer: [
+            'Payer rate',
+            '',
+            '${value.payerRatePercent.toStringAsFixed(1)}%',
+          ],
+          footerFill: _headerFill,
         ),
         if (value.missedRepaymentBuckets.isNotEmpty) ...[
-          pw.SizedBox(height: 7),
+          pw.SizedBox(height: 8),
           pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.stretch,
             children: [
@@ -630,6 +598,51 @@ class DailyReportPdfBuilder {
             ],
           ),
         ],
+        pw.SizedBox(height: 8),
+        pw.Text(
+          'PORTFOLIO POSITION',
+          style: pw.TextStyle(
+            color: _emerald,
+            fontSize: 9.5,
+            fontWeight: pw.FontWeight.bold,
+          ),
+        ),
+        pw.SizedBox(height: 3),
+        _dataTable(
+          headers: const [
+            'Principal (All time)',
+            'Amount',
+            'Interest (All time)',
+            'Amount',
+          ],
+          alignRight: const {1, 3},
+          columnWidths: const {
+            0: pw.FlexColumnWidth(1.25),
+            1: pw.FlexColumnWidth(1),
+            2: pw.FlexColumnWidth(1.25),
+            3: pw.FlexColumnWidth(1),
+          },
+          rows: [
+            [
+              'Principal disbursed',
+              'UGX ${formatMoney(value.principalDisbursed)}',
+              'Interest expected',
+              'UGX ${formatMoney(value.interestExpected)}',
+            ],
+            [
+              'Principal repaid',
+              'UGX ${formatMoney(value.principalRepaid)}',
+              'Interest collected',
+              'UGX ${formatMoney(value.interestCollected)}',
+            ],
+            [
+              'Principal outstanding',
+              'UGX ${formatMoney(value.principalOutstanding)}',
+              'Interest outstanding',
+              'UGX ${formatMoney(value.interestOutstanding)}',
+            ],
+          ],
+        ),
         pw.SizedBox(height: 6),
         pw.Container(
           width: double.infinity,
@@ -906,6 +919,7 @@ class DailyReportPdfBuilder {
     List<String>? footer,
     Set<int> alignRight = const {},
     Map<int, pw.TableColumnWidth>? columnWidths,
+    PdfColor footerFill = _greenFill,
   }) {
     pw.Alignment align(int i) => alignRight.contains(i)
         ? pw.Alignment.centerRight
@@ -967,7 +981,7 @@ class DailyReportPdfBuilder {
           ),
         if (footer != null)
           pw.TableRow(
-            decoration: const pw.BoxDecoration(color: _greenFill),
+            decoration: pw.BoxDecoration(color: footerFill),
             children: [
               for (var i = 0; i < footer.length; i++)
                 cell(footer[i], index: i, strong: true),

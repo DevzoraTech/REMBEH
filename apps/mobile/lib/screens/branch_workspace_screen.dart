@@ -13,6 +13,7 @@ import '../features/operations/domain/models/operation_activity.dart';
 import '../features/operations/domain/models/operation_dashboard_data.dart';
 import '../features/operations/domain/utils/operation_formatters.dart';
 import '../features/operations/presentation/screens/agent_positions_screen.dart';
+import '../features/operations/presentation/screens/banking_screen.dart';
 import '../features/operations/presentation/screens/day_reconciliation_screen.dart';
 import '../features/operations/presentation/screens/expenses_screen.dart';
 import '../features/operations/presentation/screens/operations_tab.dart';
@@ -559,7 +560,9 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     if (payloadDate != null && payloadDate != _date) {
       return;
     }
-    unawaited(_load(date: _date, showLoading: false, allowCacheFallback: false));
+    unawaited(
+      _load(date: _date, showLoading: false, allowCacheFallback: false),
+    );
   }
 
   Future<void> _loadManagementData() async {
@@ -870,8 +873,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       case 'corrections':
         Navigator.of(context).push<void>(
           MaterialPageRoute(
-            builder: (_) =>
-                RepaymentCorrectionsScreen(session: widget.session),
+            builder: (_) => RepaymentCorrectionsScreen(session: widget.session),
           ),
         );
         break;
@@ -889,10 +891,8 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
     Navigator.of(context).push<void>(
       MaterialPageRoute(
         settings: const RouteSettings(name: SubscriptionScreen.routeName),
-        builder: (_) => SubscriptionScreen(
-          session: widget.session,
-          initialTab: initialTab,
-        ),
+        builder: (_) =>
+            SubscriptionScreen(session: widget.session, initialTab: initialTab),
       ),
     );
   }
@@ -1326,9 +1326,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       var rows = List<Map<String, dynamic>>.from(_shortages);
       if (rows.isEmpty) {
         final cached = await _readManagementCache();
-        rows = List<Map<String, dynamic>>.from(
-          cached.shortages ?? const [],
-        );
+        rows = List<Map<String, dynamic>>.from(cached.shortages ?? const []);
         if (rows.isNotEmpty && mounted) {
           setState(() => _shortages = rows);
         }
@@ -1512,7 +1510,9 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       );
     }
 
-    final reportsToSend = _reports.where(_reportNeedsManagerSubmission).toList();
+    final reportsToSend = _reports
+        .where(_reportNeedsManagerSubmission)
+        .toList();
     final returnedReports = reportsToSend
         .where((report) => _string(report['status']) == 'RETURNED_TO_MANAGER')
         .toList();
@@ -1884,6 +1884,11 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         'salaries',
       ]),
 
+      bankings: _firstAvailableMoney(operation, const [
+        'bankingsTotal',
+        'bankingTotal',
+      ]),
+
       floatWithAgents: floatWithAgents,
 
       expectedClosingCash: _firstAvailableMoney(operation, const [
@@ -2050,24 +2055,26 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
 
   /// Field officers who can still receive float (first issue or top-up).
   List<Map<String, dynamic>> get _floatEligibleFieldOfficers {
-    return _fieldOfficerAgents.where((agent) {
-      final id = _string(agent['id']);
-      if (id == null) {
-        return false;
-      }
+    return _fieldOfficerAgents
+        .where((agent) {
+          final id = _string(agent['id']);
+          if (id == null) {
+            return false;
+          }
 
-      final position = _positionForAgent(id);
-      if (position == null) {
-        return true;
-      }
+          final position = _positionForAgent(id);
+          if (position == null) {
+            return true;
+          }
 
-      final floatId = _string(position['floatId']);
-      if (floatId == null || floatId.isEmpty) {
-        return true;
-      }
+          final floatId = _string(position['floatId']);
+          if (floatId == null || floatId.isEmpty) {
+            return true;
+          }
 
-      return position['amountReturned'] == null;
-    }).toList(growable: false);
+          return position['amountReturned'] == null;
+        })
+        .toList(growable: false);
   }
 
   Map<String, dynamic> _agentMapForPosition(AgentFloatPosition position) {
@@ -2166,10 +2173,14 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           occurredAt: occurredAt,
           item: OperationActivity(
             title: 'Expense recorded',
-            description: [
-              _string(expense['description']) ?? 'Expense',
-              _string(expense['recordedByName']),
-            ].whereType<String>().where((part) => part.trim().isNotEmpty).join(' · '),
+            description:
+                [
+                      _string(expense['description']) ?? 'Expense',
+                      _string(expense['recordedByName']),
+                    ]
+                    .whereType<String>()
+                    .where((part) => part.trim().isNotEmpty)
+                    .join(' · '),
             time: operationTime(occurredAt),
             amount: _num(expense['amount']),
             isIncome: false,
@@ -2512,6 +2523,63 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         _setNotice('Capital received.');
       },
     );
+  }
+
+  Future<void> _showBankingSheet() async {
+    final blockedMessage = _operationMutationBlockedMessage;
+    if (blockedMessage != null) {
+      _setError(blockedMessage);
+      return;
+    }
+
+    final amount = TextEditingController();
+    final reference = TextEditingController();
+    final notes = TextEditingController();
+
+    await _showFormSheet(
+      title: 'Record banking',
+      actionLabel: 'Save banking',
+      builder: (_) => [
+        const Text(
+          'Record cash deposited into the bank. This is tracked separately and is not an expense.',
+          style: TextStyle(color: slateText, fontSize: 12, height: 1.35),
+        ),
+        const SizedBox(height: 12),
+        _AmountField(controller: amount, label: 'Amount banked'),
+        const SizedBox(height: 10),
+        _TextField(controller: reference, label: 'Bank reference (optional)'),
+        const SizedBox(height: 10),
+        _TextField(controller: notes, label: 'Notes (optional)', maxLines: 3),
+      ],
+      onSubmit: () async {
+        final value = _parseAmount(amount.text);
+        if (value == null || value <= 0) {
+          throw ApiException('Enter the amount banked.');
+        }
+        await _api.recordBranchBanking(
+          session: widget.session,
+          branchId: widget.session.branchId,
+          date: _date,
+          amount: value,
+          reference: reference.text,
+          notes: notes.text,
+        );
+        _setNotice('Banking recorded.');
+      },
+    );
+  }
+
+  Future<void> _openBanking() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => BankingScreen(
+          session: widget.session,
+          api: _api,
+          initialDate: _date,
+        ),
+      ),
+    );
+    if (mounted) await _load();
   }
 
   // ignore: unused_element
@@ -3047,6 +3115,10 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
         unawaited(_openExpenses());
       },
 
+      onRecordBanking: () {
+        unawaited(_openBanking());
+      },
+
       onRecordShortagePaid: () {
         unawaited(_openShortagesList());
       },
@@ -3079,8 +3151,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       returnedReportMessage: () {
         final returned = _reports
             .where(
-              (report) =>
-                  _string(report['status']) == 'RETURNED_TO_MANAGER',
+              (report) => _string(report['status']) == 'RETURNED_TO_MANAGER',
             )
             .toList();
         if (returned.isEmpty) return null;
@@ -3111,8 +3182,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
       onOpenReturnedReport: () {
         final returned = _reports
             .where(
-              (report) =>
-                  _string(report['status']) == 'RETURNED_TO_MANAGER',
+              (report) => _string(report['status']) == 'RETURNED_TO_MANAGER',
             )
             .toList();
         if (returned.isEmpty) {
@@ -3210,8 +3280,7 @@ class _BranchWorkspaceScreenState extends State<BranchWorkspaceScreen> {
           ? () {
               Navigator.of(context).push<void>(
                 MaterialPageRoute(
-                  builder: (_) =>
-                      VoidedClientsScreen(session: widget.session),
+                  builder: (_) => VoidedClientsScreen(session: widget.session),
                 ),
               );
             }

@@ -158,6 +158,8 @@ export type ClientLoanDetailContract = {
   lastPaymentByPhotoUrl: string | null;
   expectedToday: number;
   carriedForward: number;
+  /** Remaining payment credit available to cover future full instalments. */
+  advanceAmount: number;
   dailyInstalment: number;
   loanPeriodDays: number;
   daysLeft: number;

@@ -419,9 +419,9 @@ class ApiClient {
       if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
       if (status != null && status.isNotEmpty) 'status': status,
     };
-    final uri = Uri.parse('$rembehApiBaseUrl/operations/reports').replace(
-      queryParameters: query.isEmpty ? null : query,
-    );
+    final uri = Uri.parse(
+      '$rembehApiBaseUrl/operations/reports',
+    ).replace(queryParameters: query.isEmpty ? null : query);
     final response = await http.get(uri, headers: _authHeaders(session));
     final body = _decode(response);
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -1147,6 +1147,100 @@ class ApiClient {
     );
   }
 
+  Future<Map<String, dynamic>> recordBranchBanking({
+    required RembehSession session,
+    String? branchId,
+    required String date,
+    required num amount,
+    String? reference,
+    String? notes,
+    String? receiptStorageKey,
+    String? receiptMimeType,
+    String? receiptFileName,
+  }) {
+    return _postJson(
+      session: session,
+      path: '/operations/bankings',
+      body: {
+        if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
+        'date': date,
+        'amount': amount,
+        if (reference != null && reference.trim().isNotEmpty)
+          'reference': reference.trim(),
+        if (notes != null && notes.trim().isNotEmpty) 'notes': notes.trim(),
+        if (receiptStorageKey != null && receiptStorageKey.isNotEmpty)
+          'receiptStorageKey': receiptStorageKey,
+        if (receiptMimeType != null && receiptMimeType.isNotEmpty)
+          'receiptMimeType': receiptMimeType,
+        if (receiptFileName != null && receiptFileName.isNotEmpty)
+          'receiptFileName': receiptFileName,
+      },
+    );
+  }
+
+  Future<List<Map<String, dynamic>>> listBranchBankings({
+    required RembehSession session,
+    String? branchId,
+    String? from,
+    String? to,
+  }) async {
+    final uri = Uri.parse('$rembehApiBaseUrl/operations/bankings').replace(
+      queryParameters: {
+        if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
+        if (from != null) 'from': from,
+        if (to != null) 'to': to,
+      },
+    );
+    final response = await http.get(uri, headers: _authHeaders(session));
+    final body = _decode(response);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
+    }
+    final records = body['records'];
+    return records is List
+        ? records
+              .whereType<Map>()
+              .map((row) => row.cast<String, dynamic>())
+              .toList()
+        : const [];
+  }
+
+  Future<Map<String, String>> uploadBankingReceipt({
+    required RembehSession session,
+    String? branchId,
+    required Uint8List bytes,
+    required String mimeType,
+    required String fileName,
+  }) async {
+    final presign = await _postJson(
+      session: session,
+      path: '/operations/bankings/receipt/presign',
+      body: {
+        if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
+        'mimeType': mimeType,
+        'fileName': fileName,
+      },
+    );
+    final uploadUrl = presign['uploadUrl'] as String?;
+    final storageKey = presign['storageKey'] as String?;
+    if (uploadUrl == null || storageKey == null) {
+      throw ApiException('Could not prepare the banking receipt upload.');
+    }
+    final upload = await http.put(
+      Uri.parse(uploadUrl),
+      headers: {'Content-Type': mimeType},
+      body: bytes,
+    );
+    if (upload.statusCode < 200 || upload.statusCode >= 300) {
+      throw ApiException('Could not upload the banking receipt.');
+    }
+    return {
+      'storageKey': storageKey,
+      'mimeType': mimeType,
+      'fileName': fileName,
+    };
+  }
+
   Future<Map<String, dynamic>> updateBranchExpense({
     required RembehSession session,
     required String expenseId,
@@ -1158,10 +1252,7 @@ class ApiClient {
 
     final response = await http.patch(
       uri,
-      headers: {
-        ..._authHeaders(session),
-        'Content-Type': 'application/json',
-      },
+      headers: {..._authHeaders(session), 'Content-Type': 'application/json'},
       body: jsonEncode({
         if (amount != null) 'amount': amount,
         if (description != null && description.trim().isNotEmpty)
@@ -1173,9 +1264,7 @@ class ApiClient {
     final body = _decode(response);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ApiException(
-        _failureMessage(body, response.statusCode, uri),
-      );
+      throw ApiException(_failureMessage(body, response.statusCode, uri));
     }
 
     return body;
@@ -1190,8 +1279,7 @@ class ApiClient {
       session: session,
       path: '/operations/expenses/$expenseId/void',
       body: {
-        if (reason != null && reason.trim().isNotEmpty)
-          'reason': reason.trim(),
+        if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
       },
     );
   }
@@ -1208,8 +1296,7 @@ class ApiClient {
       session: session,
       path: '/operations/expenses',
       body: {
-        if (branchId != null && branchId.isNotEmpty)
-          'branchId': branchId,
+        if (branchId != null && branchId.isNotEmpty) 'branchId': branchId,
         'date': date,
         'amount': amount,
         'description': description.trim(),

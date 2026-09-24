@@ -90,6 +90,7 @@ class ClientDetail {
     required this.lastPaymentBy,
     required this.expectedToday,
     required this.carriedForward,
+    this.advanceAmount = 0,
     required this.dailyInstalment,
     required this.loanPeriodDays,
     required this.daysLeft,
@@ -132,6 +133,7 @@ class ClientDetail {
   final String? lastPaymentBy;
   final int expectedToday;
   final int carriedForward;
+  final int advanceAmount;
   final int dailyInstalment;
   final int loanPeriodDays;
   final int daysLeft;
@@ -203,6 +205,7 @@ class ClientDetail {
       lastPaymentBy: json['lastPaymentBy'] as String?,
       expectedToday: ((json['expectedToday'] as num?) ?? 0).round(),
       carriedForward: ((json['carriedForward'] as num?) ?? 0).round(),
+      advanceAmount: ((json['advanceAmount'] as num?) ?? 0).round(),
       dailyInstalment: ((json['dailyInstalment'] as num?) ?? 0).round(),
       loanPeriodDays: ((json['loanPeriodDays'] as num?) ?? 0).round(),
       daysLeft: ((json['daysLeft'] as num?) ?? 0).round(),
@@ -253,7 +256,8 @@ class ClientDetail {
                   ),
                   approvedCorrectionReason:
                       row['approvedCorrectionReason'] as String?,
-                  approvedRequestedAmount: row['approvedRequestedAmount'] == null
+                  approvedRequestedAmount:
+                      row['approvedRequestedAmount'] == null
                       ? null
                       : ((row['approvedRequestedAmount'] as num?) ?? 0).round(),
                   approvedRequestedMethod:

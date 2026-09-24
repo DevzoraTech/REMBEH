@@ -125,6 +125,7 @@ class DailyReportMapper {
           cashPosition['branchExpenses'],
         ]),
         salaries: _firstNum([cashPosition['salaries'], summary['salaries']]),
+        bankings: _firstNum([cashPosition['bankings'], summary['bankings']]),
         loansIssued: _firstNum([
           cashPosition['loansIssued'],
           summary['loansIssuedPrincipal'],
@@ -197,6 +198,7 @@ class DailyReportMapper {
           operation['branchCashExpensesTotal'],
         ]),
         salaries: _num(operation['salariesTotal']),
+        bankings: _num(operation['bankingsTotal']),
         loansIssued: _firstNum([
           operation['loansIssuedPrincipal'],
           operation['loansDisbursed'],

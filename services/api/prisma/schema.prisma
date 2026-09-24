@@ -478,6 +478,7 @@ model Tenant {
   branchDailyOperations   BranchDailyOperation[]
   branchOperationExpenses BranchOperationExpense[]
   branchOperationTopUps   BranchOperationTopUp[]
+  branchOperationBankings BranchOperationBanking[]
   branchOperationReports  BranchOperationReport[]
 
   operationReconciliations BranchOperationReconciliation[]
@@ -545,6 +546,7 @@ model Branch {
   dailyOperations          BranchDailyOperation[]
   operationExpenses        BranchOperationExpense[]
   operationTopUps          BranchOperationTopUp[]
+  operationBankings        BranchOperationBanking[]
   operationReports         BranchOperationReport[]
   operationReconciliations BranchOperationReconciliation[]
 
@@ -790,6 +792,7 @@ model User {
   operationExpensesApproved     BranchOperationExpense[] @relation("BranchOperationExpenseApprovedBy")
   operationExpensesAsAgent      BranchOperationExpense[] @relation("BranchOperationExpenseAgent")
   operationTopUpsRecorded       BranchOperationTopUp[]   @relation("BranchOperationTopUpRecordedBy")
+  operationBankingsRecorded     BranchOperationBanking[] @relation("BranchOperationBankingRecordedBy")
   operationReportsReviewed      BranchOperationReport[]  @relation("BranchOperationReportReviewedBy")
   operationReportsApproved      BranchOperationReport[]  @relation("BranchOperationReportApprovedBy")
   operationReportsReturned      BranchOperationReport[]  @relation("BranchOperationReportReturnedBy")
@@ -957,6 +960,7 @@ model BranchDailyOperation {
   closedBy User?  @relation("BranchDailyOperationClosedBy", fields: [closedByUserId], references: [id])
 
   expenses         BranchOperationExpense[]
+  bankings         BranchOperationBanking[]
   salaryPayments   SalaryPayment[]
   shortagePayments CashShortagePayment[]
   topUps           BranchOperationTopUp[]
@@ -1024,6 +1028,35 @@ model BranchOperationTopUp {
   @@index([tenantId, branchId, addedAt])
   @@index([tenantId, operationId])
   @@map("branch_operation_topups")
+}
+
+/// Cash removed from the branch till and deposited into a bank.
+///
+/// Banking is a cash movement, not a business expense. Keeping it in a
+/// dedicated immutable ledger prevents it from inflating expense reporting.
+model BranchOperationBanking {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @map("tenant_id") @db.Uuid
+  branchId         String   @map("branch_id") @db.Uuid
+  operationId      String   @map("operation_id") @db.Uuid
+  amount           Decimal  @db.Decimal(18, 2)
+  reference        String?
+  notes            String?
+  receiptStorageKey String?  @map("receipt_storage_key")
+  receiptMimeType   String?  @map("receipt_mime_type")
+  receiptFileName   String?  @map("receipt_file_name")
+  bankedAt         DateTime @default(now()) @map("banked_at")
+  recordedByUserId String   @map("recorded_by_user_id") @db.Uuid
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  tenant     Tenant               @relation(fields: [tenantId], references: [id])
+  branch     Branch               @relation(fields: [branchId], references: [id])
+  operation  BranchDailyOperation @relation(fields: [operationId], references: [id], onDelete: Cascade)
+  recordedBy User                 @relation("BranchOperationBankingRecordedBy", fields: [recordedByUserId], references: [id])
+
+  @@index([tenantId, branchId, bankedAt])
+  @@index([tenantId, operationId])
+  @@map("branch_operation_bankings")
 }
 
 model BranchOperationReport {

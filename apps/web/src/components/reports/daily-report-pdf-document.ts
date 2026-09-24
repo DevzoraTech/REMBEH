@@ -499,7 +499,10 @@ function drawCashMovement(
     shortage;
   const salaries = document.salariesTotal ?? 0;
   const cashouts =
-    document.expensesTotal + salaries + document.loansIssuedPrincipal;
+    document.expensesTotal +
+    salaries +
+    document.bankingsTotal +
+    document.loansIssuedPrincipal;
 
   const leftLines: Array<[string, number, "plain" | "in" | "out"]> = [
     ["Opening Balance", document.openingBalance, "plain"],
@@ -511,6 +514,7 @@ function drawCashMovement(
   const rightLines: Array<[string, number, "plain" | "in" | "out"]> = [
     ["Total Expenses", document.expensesTotal, "out"],
     ["Salary", salaries, "out"],
+    ["Banking", document.bankingsTotal, "out"],
     ["Loans issued", document.loansIssuedPrincipal, "out"],
   ];
 
@@ -571,7 +575,16 @@ function drawCashMovement(
     rightLines,
     cashouts,
   );
-  return startY + blockH + 16;
+  const noteY = startY + blockH + 12;
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(7.5);
+  doc.setTextColor(...MUTED);
+  doc.text(
+    "Banking is recorded separately from Operations and is not treated as an expense.",
+    margin,
+    noteY,
+  );
+  return noteY + 14;
 }
 
 function baseTableOptions(
@@ -640,54 +653,22 @@ function drawPortfolioPerformance(
   autoTable(doc, {
     ...baseTableOptions(margin, startY, { showFoot: "never" }),
     theme: "grid",
-    head: [
-      ["TODAY'S REPAYMENT STATUS", "VALUE", "PORTFOLIO POSITION", "VALUE"],
-    ],
+    head: [["TODAY'S REPAYMENT STATUS", "BORROWERS", "AMOUNT"]],
     body: [
-      [
-        "Total active borrowers",
-        value.activeBorrowers,
-        "Principal disbursed",
-        cash(value.principalDisbursed),
-      ],
-      [
-        "Borrowers due today",
-        value.borrowersDue,
-        "Principal repaid",
-        cash(value.principalRepaid),
-      ],
-      [
-        "Borrowers who paid today",
-        value.borrowersPaid,
-        "Principal outstanding",
-        cash(value.principalOutstanding),
-      ],
-      [
-        "Borrowers who missed payment",
-        value.borrowersMissed,
-        "Interest expected",
-        cash(value.interestExpected),
-      ],
-      [
-        "Payer rate",
-        `${value.payerRatePercent.toFixed(1)}%`,
-        "Interest collected",
-        cash(value.interestCollected),
-      ],
+      ["Total active borrowers", value.activeBorrowers, "N/A"],
+      ["Borrowers due today", value.borrowersDue, cash(value.totalDue)],
+      ["Paid", value.borrowersPaid, cash(value.totalRepaid)],
+      ["Unpaid", value.borrowersMissed, cash(value.totalStillDue)],
       [
         "Borrowers with advance",
         value.borrowersWithAdvance,
-        "Interest outstanding",
-        cash(value.interestOutstanding),
+        cash(value.totalAdvanceAmount),
       ],
-      ["Total amount of advance", cash(value.totalAdvanceAmount), "", ""],
-      ["Total due as of today", cash(value.totalDue), "", ""],
-      ["Total repaid", cash(value.totalRepaid), "", ""],
-      ["Total still due", cash(value.totalStillDue), "", ""],
+      ["Payer rate", "", `${value.payerRatePercent.toFixed(1)}%`],
     ],
     columnStyles: {
       1: { halign: "right", fontStyle: "bold" },
-      3: { halign: "right", fontStyle: "bold" },
+      2: { halign: "right", fontStyle: "bold" },
     },
   });
   const tableEnd = doc.lastAutoTable?.finalY ?? startY + 150;
@@ -712,6 +693,36 @@ function drawPortfolioPerformance(
     });
     contentEnd = doc.lastAutoTable?.finalY ?? tableEnd + 90;
   }
+  autoTable(doc, {
+    ...baseTableOptions(margin, contentEnd + 7, { showFoot: "never" }),
+    theme: "grid",
+    head: [["PRINCIPAL (ALL TIME)", "AMOUNT", "INTEREST (ALL TIME)", "AMOUNT"]],
+    body: [
+      [
+        "Principal disbursed",
+        cash(value.principalDisbursed),
+        "Interest expected",
+        cash(value.interestExpected),
+      ],
+      [
+        "Principal repaid",
+        cash(value.principalRepaid),
+        "Interest collected",
+        cash(value.interestCollected),
+      ],
+      [
+        "Principal outstanding",
+        cash(value.principalOutstanding),
+        "Interest outstanding",
+        cash(value.interestOutstanding),
+      ],
+    ],
+    columnStyles: {
+      1: { halign: "right", fontStyle: "bold" },
+      3: { halign: "right", fontStyle: "bold" },
+    },
+  });
+  contentEnd = doc.lastAutoTable?.finalY ?? contentEnd + 70;
   doc.setFillColor(...HEADER_FILL);
   doc.setTextColor(...MUTED);
   doc.setFont("helvetica", "normal");

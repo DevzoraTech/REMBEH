@@ -249,6 +249,7 @@ function movementSummaryHtml(
   const totalCashouts =
     document.expensesTotal +
     (document.salariesTotal ?? 0) +
+    document.bankingsTotal +
     document.loansIssuedPrincipal;
 
   return `
@@ -266,6 +267,7 @@ function movementSummaryHtml(
         <p class="move-title">CASHOUTS</p>
         ${movementLine("Total Expenses", document.expensesTotal, "out")}
         ${movementLine("Salary", document.salariesTotal ?? 0, "out")}
+        ${movementLine("Banking", document.bankingsTotal, "out")}
         ${movementLine("Loans issued", document.loansIssuedPrincipal, "out")}
         <div class="move-total out"><span>Total Cashouts</span><strong>${escapeHtml(currency)} ${moneyPlain(totalCashouts)}</strong></div>
       </div>
@@ -393,7 +395,7 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
   parts.push(
     section(
       "Cash Position Summary",
-      `${movementSummaryHtml(document, currency, topUpsTotal)}<p class="note">Total Expenses includes cashier and field-officer expenses for the day. Unused float is balanced on field-officer handover and is not listed here.</p>`,
+      `${movementSummaryHtml(document, currency, topUpsTotal)}<p class="note">Banking is recorded separately from the Operations page and is not treated as an expense. Total Expenses includes cashier and field-officer expenses for the day.</p>`,
     ),
   );
 
@@ -402,78 +404,38 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
     section(
       "Loan Portfolio & Repayment Performance",
       portfolio
-        ? `<div class="move-grid">
-            ${table(
-              ["Today's repayment status", "Value"],
+        ? `${table(
+            ["Today's repayment status", "Borrowers", "Amount"],
+            [
               [
-                [
-                  "Total active borrowers",
-                  formatNumber(portfolio.activeBorrowers),
-                ],
-                ["Borrowers due today", formatNumber(portfolio.borrowersDue)],
-                [
-                  "Borrowers who paid today",
-                  formatNumber(portfolio.borrowersPaid),
-                ],
-                [
-                  "Borrowers who missed payment",
-                  formatNumber(portfolio.borrowersMissed),
-                ],
-                ["Payer rate", `${portfolio.payerRatePercent.toFixed(1)}%`],
-                [
-                  "Borrowers with advance",
-                  formatNumber(portfolio.borrowersWithAdvance),
-                ],
-                [
-                  "Total amount of advance",
-                  `${escapeHtml(currency)} ${moneyPlain(portfolio.totalAdvanceAmount)}`,
-                ],
-                [
-                  "Total due as of today",
-                  `${escapeHtml(currency)} ${moneyPlain(portfolio.totalDue)}`,
-                ],
-                [
-                  "Total repaid",
-                  `${escapeHtml(currency)} ${moneyPlain(portfolio.totalRepaid)}`,
-                ],
-                [
-                  "Total still due",
-                  `${escapeHtml(currency)} ${moneyPlain(portfolio.totalStillDue)}`,
-                ],
+                "Total active borrowers",
+                formatNumber(portfolio.activeBorrowers),
+                "N/A",
               ],
-              { alignRight: [1] },
-            )}
-            ${table(
-              ["Portfolio position", "Value"],
               [
-                [
-                  "Principal disbursed",
-                  `${escapeHtml(currency)} ${moneyPlain(portfolio.principalDisbursed)}`,
-                ],
-                [
-                  "Principal repaid",
-                  `${escapeHtml(currency)} ${moneyPlain(portfolio.principalRepaid)}`,
-                ],
-                [
-                  "Principal outstanding",
-                  `${escapeHtml(currency)} ${moneyPlain(portfolio.principalOutstanding)}`,
-                ],
-                [
-                  "Interest expected",
-                  `${escapeHtml(currency)} ${moneyPlain(portfolio.interestExpected)}`,
-                ],
-                [
-                  "Interest collected",
-                  `${escapeHtml(currency)} ${moneyPlain(portfolio.interestCollected)}`,
-                ],
-                [
-                  "Interest outstanding",
-                  `${escapeHtml(currency)} ${moneyPlain(portfolio.interestOutstanding)}`,
-                ],
+                "Borrowers due today",
+                formatNumber(portfolio.borrowersDue),
+                `${escapeHtml(currency)} ${moneyPlain(portfolio.totalDue)}`,
               ],
-              { alignRight: [1] },
-            )}
-          </div>
+              [
+                "Paid",
+                formatNumber(portfolio.borrowersPaid),
+                `${escapeHtml(currency)} ${moneyPlain(portfolio.totalRepaid)}`,
+              ],
+              [
+                "Unpaid",
+                formatNumber(portfolio.borrowersMissed),
+                `${escapeHtml(currency)} ${moneyPlain(portfolio.totalStillDue)}`,
+              ],
+              [
+                "Borrowers with advance",
+                formatNumber(portfolio.borrowersWithAdvance),
+                `${escapeHtml(currency)} ${moneyPlain(portfolio.totalAdvanceAmount)}`,
+              ],
+              ["Payer rate", "", `${portfolio.payerRatePercent.toFixed(1)}%`],
+            ],
+            { alignRight: [1, 2] },
+          )}
           ${table(
             ["Missed repayments", "Borrowers", `Amount (${currency})`],
             portfolio.missedRepaymentBuckets.map((bucket) => [
@@ -482,6 +444,30 @@ function buildDailyReconciliationPdfHtml(document: DailyReportDocumentModel) {
               moneyPlain(bucket.amount),
             ]),
             { alignRight: [1, 2] },
+          )}
+          ${table(
+            ["Principal (All time)", "Amount", "Interest (All time)", "Amount"],
+            [
+              [
+                "Principal disbursed",
+                `${escapeHtml(currency)} ${moneyPlain(portfolio.principalDisbursed)}`,
+                "Interest expected",
+                `${escapeHtml(currency)} ${moneyPlain(portfolio.interestExpected)}`,
+              ],
+              [
+                "Principal repaid",
+                `${escapeHtml(currency)} ${moneyPlain(portfolio.principalRepaid)}`,
+                "Interest collected",
+                `${escapeHtml(currency)} ${moneyPlain(portfolio.interestCollected)}`,
+              ],
+              [
+                "Principal outstanding",
+                `${escapeHtml(currency)} ${moneyPlain(portfolio.principalOutstanding)}`,
+                "Interest outstanding",
+                `${escapeHtml(currency)} ${moneyPlain(portfolio.interestOutstanding)}`,
+              ],
+            ],
+            { alignRight: [1, 3] },
           )}
           <p class="note">1. Advance payments cover upcoming scheduled instalments before a borrower is treated as overdue.<br/>2. Active, due, paid, unpaid, advance and payer-rate figures reflect positions at the close of the report business day.</p>`
         : `<p class="note">Portfolio performance is unavailable for reports generated before this report format was introduced.</p>`,

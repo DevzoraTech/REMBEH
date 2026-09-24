@@ -169,6 +169,7 @@ export type DailyReportDocumentModel = {
   collectionsReceived: number;
   processingFeesTotal: number;
   expensesTotal: number;
+  bankingsTotal: number;
   expensesCount: number;
   salariesTotal?: number;
   salariesCount?: number;
@@ -660,6 +661,11 @@ function SummaryDocument({
                   signed: "minus",
                 },
                 {
+                  label: "Banking",
+                  amount: document.bankingsTotal,
+                  signed: "minus",
+                },
+                {
                   label: "Loans issued",
                   amount: document.loansIssuedPrincipal,
                   signed: "minus",
@@ -669,16 +675,16 @@ function SummaryDocument({
               totalAmount={
                 document.expensesTotal +
                 (document.salariesTotal ?? 0) +
+                document.bankingsTotal +
                 document.loansIssuedPrincipal
               }
               currency={currency}
             />
           </div>
           <p className="mt-1.5 text-[12px] italic text-slate-500">
-            Total Expenses includes cashier and field-officer expenses for the
-            day. The Accountability table attributes each expense to the staff
-            member who paid it. Unused float is balanced on handover and is not
-            listed here.
+            Banking is recorded separately from the Operations page and is not
+            treated as an expense. Total Expenses includes cashier and
+            field-officer expenses for the day.
           </p>
         </Section>
 
@@ -1588,62 +1594,45 @@ function PortfolioPerformance({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 border-b border-[#e6ebf0] sm:grid-cols-4">
-          {[
-            ["Active borrowers", value.activeBorrowers],
-            ["Due today", value.borrowersDue],
-            ["Paid today", value.borrowersPaid],
-            ["Missed payment", value.borrowersMissed],
-          ].map(([label, amount], index) => (
-            <div
-              key={label}
-              className={`px-4 py-3 ${index % 2 ? "border-l" : ""} ${index > 1 ? "border-t sm:border-t-0" : ""} sm:border-l sm:first:border-l-0 border-[#e6ebf0]`}
-            >
-              <p className="text-[11px] font-medium text-slate-500">{label}</p>
-              <p className="mt-0.5 text-lg font-bold tabular-nums text-[#0b1220]">
-                {formatNumber(Number(amount))}
-              </p>
-            </div>
-          ))}
-        </div>
-
-        <div className="grid lg:grid-cols-2">
-          <div className="space-y-2 border-b border-[#e6ebf0] px-4 py-3 lg:border-r lg:border-b-0">
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-[12px] text-slate-600">
-                Due as of today
-              </span>
-              <strong className="text-[12px] tabular-nums text-[#0b1220]">
-                {money(value.totalDue)}
-              </strong>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-[12px] text-slate-600">Repaid today</span>
-              <strong className="text-[12px] tabular-nums text-[var(--forest-emerald)]">
-                {money(value.totalRepaid)}
-              </strong>
-            </div>
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-[12px] text-slate-600">Still due</span>
-              <strong className="text-[12px] tabular-nums text-red-600">
-                {money(value.totalStillDue)}
-              </strong>
-            </div>
-          </div>
-          <div className="flex items-center justify-between gap-4 bg-emerald-50/40 px-4 py-3">
-            <div>
-              <p className="text-[12px] font-semibold text-emerald-900">
-                Payments in advance
-              </p>
-              <p className="mt-0.5 text-[11px] text-emerald-700">
-                {formatNumber(value.borrowersWithAdvance)} borrowers covered
-                ahead
-              </p>
-            </div>
-            <strong className="shrink-0 text-[13px] tabular-nums text-[var(--forest-emerald)]">
-              {money(value.totalAdvanceAmount)}
-            </strong>
-          </div>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-left text-[12px]">
+            <thead className="bg-slate-50 text-[11px] font-bold uppercase text-slate-500">
+              <tr>
+                <th className="px-4 py-2.5">Metric</th>
+                <th className="px-4 py-2.5 text-right">Borrowers</th>
+                <th className="px-4 py-2.5 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#e6ebf0]">
+              {[
+                ["Total active borrowers", value.activeBorrowers, "N/A"],
+                [
+                  "Borrowers due today",
+                  value.borrowersDue,
+                  money(value.totalDue),
+                ],
+                ["Paid", value.borrowersPaid, money(value.totalRepaid)],
+                ["Unpaid", value.borrowersMissed, money(value.totalStillDue)],
+                [
+                  "Borrowers with advance",
+                  value.borrowersWithAdvance,
+                  money(value.totalAdvanceAmount),
+                ],
+              ].map(([label, borrowers, amount]) => (
+                <tr key={String(label)}>
+                  <td className="px-4 py-2.5 font-medium text-slate-700">
+                    {label}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-bold tabular-nums text-[#0b1220]">
+                    {formatNumber(Number(borrowers))}
+                  </td>
+                  <td className="px-4 py-2.5 text-right font-bold tabular-nums text-[#0b1220]">
+                    {amount}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -2271,6 +2260,7 @@ type OperationLike = {
   processingFeesTotal: number;
   portfolioPerformance?: DailyReportDocumentModel["portfolioPerformance"];
   expensesTotal: number;
+  bankingsTotal?: number;
   expensesCount: number;
   salariesTotal?: number;
   salariesCount?: number;
@@ -2437,6 +2427,7 @@ export function buildDailyReportDocumentFromOperation(
     collectionsReceived: operation.collectionsReceived,
     processingFeesTotal: operation.processingFeesTotal,
     expensesTotal: operation.expensesTotal,
+    bankingsTotal: operation.bankingsTotal ?? 0,
     expensesCount: operation.expensesCount,
     salariesTotal: operation.salariesTotal ?? 0,
     salariesCount: operation.salariesCount ?? 0,
@@ -2857,6 +2848,7 @@ export function buildDailyReportDocumentFromSnapshot(
     collectionsReceived: report.collectionsReceived,
     processingFeesTotal: report.processingFeesTotal,
     expensesTotal: report.expensesTotal,
+    bankingsTotal: numberValue(summary.bankings),
     expensesCount: activeExpenses.length,
     salariesTotal: numberValue(summary.salaries),
     salariesCount: numberValue(summary.salariesCount),

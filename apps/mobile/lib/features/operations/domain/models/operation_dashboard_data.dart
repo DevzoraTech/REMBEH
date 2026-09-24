@@ -10,6 +10,7 @@ class OperationDashboardData {
     required this.loansDisbursed,
     required this.expenses,
     required this.salaries,
+    this.bankings = 0,
     required this.floatWithAgents,
     required this.expectedClosingCash,
     this.openedBy,
@@ -27,6 +28,7 @@ class OperationDashboardData {
   final num loansDisbursed;
   final num expenses;
   final num salaries;
+  final num bankings;
   final num floatWithAgents;
   final num expectedClosingCash;
 

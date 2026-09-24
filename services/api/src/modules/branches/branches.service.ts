@@ -87,6 +87,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'operation.read',
     'operation.open',
     'operation.cash.topup',
+    'operation.banking.create',
     'operation.float.manage',
     'operation.float.return',
     'operation.expense.create',
@@ -166,6 +167,7 @@ const STAFF_ROLE_PERMISSIONS: Record<string, string[]> = {
     'operation.read',
     'operation.open',
     'operation.cash.topup',
+    'operation.banking.create',
     'operation.float.manage',
     'operation.float.return',
     'operation.expense.create',
@@ -481,11 +483,7 @@ export class BranchesService {
       latestChallenge?.createdAt ??
       null;
 
-    if (
-      latestChallenge &&
-      latestChallenge.resendCount > 0 &&
-      lastIssuedAt
-    ) {
+    if (latestChallenge && latestChallenge.resendCount > 0 && lastIssuedAt) {
       const waitMs =
         lastIssuedAt.getTime() +
         STAFF_INVITATION_RESEND_COOLDOWN_MS -
@@ -589,9 +587,7 @@ export class BranchesService {
     }
 
     if (!staff.branchId || !staff.branch) {
-      throw new BadRequestException(
-        'This person is not assigned to a branch.',
-      );
+      throw new BadRequestException('This person is not assigned to a branch.');
     }
 
     if (staff.branchId === dto.targetBranchId) {

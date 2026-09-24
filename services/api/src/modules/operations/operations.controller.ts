@@ -21,6 +21,10 @@ import {
   RecordOwnAgentReturnDto,
 } from './dto/record-agent-return.dto';
 import { RecordOperationExpenseDto } from './dto/record-operation-expense.dto';
+import {
+  PresignOperationBankingReceiptDto,
+  RecordOperationBankingDto,
+} from './dto/record-operation-banking.dto';
 import { RecordOperationTopUpDto } from './dto/record-operation-top-up.dto';
 import { ReviewOperationReportDto } from './dto/review-operation-report.dto';
 import { UpdateOperationExpenseDto } from './dto/update-operation-expense.dto';
@@ -107,6 +111,39 @@ export class OperationsController {
     @Body() dto: VoidOperationExpenseDto,
   ) {
     return this.operationsService.voidExpense(user, expenseId, dto);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Banking
+  // ---------------------------------------------------------------------------
+
+  @Get('bankings')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.read)
+  listBankings(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('branchId') branchId?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.operationsService.listBankings(user, { branchId, from, to });
+  }
+
+  @Post('bankings/receipt/presign')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.bankingCreate)
+  presignBankingReceipt(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: PresignOperationBankingReceiptDto,
+  ) {
+    return this.operationsService.presignBankingReceipt(user, dto);
+  }
+
+  @Post('bankings')
+  @RequirePermissions(OPERATIONS_PERMISSIONS.bankingCreate)
+  recordBanking(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: RecordOperationBankingDto,
+  ) {
+    return this.operationsService.recordBanking(user, dto);
   }
 
   // ---------------------------------------------------------------------------

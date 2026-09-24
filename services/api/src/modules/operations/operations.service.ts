@@ -38,12 +38,17 @@ import {
   resolveBaseRepayable,
 } from '../loan-products/loan-pricing';
 import { RealtimeGateway } from '../realtime/realtime.gateway';
+import { ObjectStorageService } from '../storage/object-storage.service';
 import { OpenBranchOperationDto } from './dto/open-branch-operation.dto';
 import {
   RecordAgentReturnDto,
   RecordOwnAgentReturnDto,
 } from './dto/record-agent-return.dto';
 import { RecordOperationExpenseDto } from './dto/record-operation-expense.dto';
+import {
+  PresignOperationBankingReceiptDto,
+  RecordOperationBankingDto,
+} from './dto/record-operation-banking.dto';
 import { RecordOperationTopUpDto } from './dto/record-operation-top-up.dto';
 import { ReviewOperationReportDto } from './dto/review-operation-report.dto';
 import {
@@ -105,7 +110,70 @@ export class OperationsService {
     private readonly billingService: BillingService,
     private readonly prisma: PrismaService,
     private readonly cashShortagesService: CashShortagesService,
+    private readonly objectStorage: ObjectStorageService,
   ) {}
+
+  async presignBankingReceipt(
+    user: AuthenticatedUser,
+    dto: PresignOperationBankingReceiptDto,
+  ) {
+    this.assertTenant(user);
+    const branch = await this.resolveBranch(user, dto.branchId);
+    if (!branch) throw new NotFoundException('Branch was not found.');
+    const extension = dto.fileName.split('.').pop()?.toLowerCase() || 'bin';
+    const storageKey = this.objectStorage.buildObjectKey({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      applicationId: 'banking',
+      mediaType: 'banking-receipt',
+      extension,
+    });
+    return this.objectStorage.presignPut({
+      storageKey,
+      mimeType: dto.mimeType,
+    });
+  }
+
+  async listBankings(
+    user: AuthenticatedUser,
+    options: { branchId?: string; from?: string; to?: string },
+  ) {
+    this.assertCanRead(user);
+    const branch = await this.resolveBranch(user, options.branchId);
+    if (!branch) throw new NotFoundException('Branch was not found.');
+    const rows = await this.repository.listBankings({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      from: options.from
+        ? new Date(`${options.from}T00:00:00+03:00`)
+        : undefined,
+      to: options.to ? new Date(`${options.to}T23:59:59.999+03:00`) : undefined,
+    });
+    return {
+      records: await Promise.all(
+        rows.map(async (row) => ({
+          id: row.id,
+          branchId: row.branchId,
+          operationDate: this.formatDateLabel(row.operation.operationDate),
+          amount: this.decimalToNumber(row.amount),
+          reference: row.reference,
+          notes: row.notes,
+          bankedAt: row.bankedAt.toISOString(),
+          recordedByName: row.recordedBy.displayName,
+          receiptUrl: row.receiptStorageKey
+            ? (
+                await this.objectStorage.presignGet({
+                  storageKey: row.receiptStorageKey,
+                  expiresInSeconds: 3600,
+                })
+              ).downloadUrl
+            : null,
+          receiptMimeType: row.receiptMimeType,
+          receiptFileName: row.receiptFileName,
+        })),
+      ),
+    };
+  }
 
   async getToday(
     user: AuthenticatedUser,
@@ -593,7 +661,7 @@ export class OperationsService {
       !Array.isArray(report.snapshot)
         ? (report.snapshot as Prisma.JsonObject)
         : {};
-    if (Number(snapshotRoot.version ?? 0) < 7) {
+    if (Number(snapshotRoot.version ?? 0) < 8) {
       const bounds = this.parseDayBounds(
         this.formatDateLabel(report.operationDate),
       );
@@ -672,6 +740,7 @@ export class OperationsService {
       collectionsReceived: snapshot.collectionsReceived,
       processingFeesTotal: snapshot.processingFees,
       expensesTotal: snapshot.expenses,
+      bankingsTotal: snapshot.bankings,
       cashReturnedByAgents: snapshot.cashReturnedByAgents,
       snapshot: report.snapshot,
     };
@@ -847,6 +916,11 @@ export class OperationsService {
   ): Promise<
     DailyOperationResponseContract | AgentDailyOperationResponseContract
   > {
+    if (/^bank(?:ing|ed| deposit)?$/i.test(dto.description.trim())) {
+      throw new BadRequestException(
+        'Record bank deposits with the Banking action. Banking is not an expense.',
+      );
+    }
     const paidFrom = this.resolveExpensePaidFrom(user, dto.paidFrom);
 
     if (paidFrom === BranchOperationExpensePaidFrom.AGENT_FLOAT) {
@@ -997,6 +1071,87 @@ export class OperationsService {
       branchId: branch.id,
       date: bounds.dateLabel,
     });
+  }
+
+  async recordBanking(
+    user: AuthenticatedUser,
+    dto: RecordOperationBankingDto,
+  ): Promise<DailyOperationResponseContract> {
+    this.assertTenant(user);
+    this.assertCanOperateBranch(user);
+    if (!user.permissions.includes(OPERATIONS_PERMISSIONS.bankingCreate)) {
+      throw new ForbiddenException('Missing permission to record banking.');
+    }
+
+    const branch = await this.resolveBranch(user, dto.branchId);
+    if (!branch) throw new NotFoundException('Branch was not found.');
+
+    await this.billingService.assertBranchSubscriptionActive(
+      user.tenantId,
+      branch.id,
+    );
+
+    const bounds = this.parseDayBounds(dto.date);
+    const operation = await this.repository.findOperationForDay({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateOnly,
+    });
+
+    if (!operation || operation.status !== BranchOperationStatus.OPEN) {
+      throw new BadRequestException(
+        'Open the branch before recording banking.',
+      );
+    }
+
+    if (
+      dto.receiptStorageKey &&
+      !dto.receiptStorageKey.includes(
+        `/branches/${branch.id}/media/banking-receipt/banking/`,
+      )
+    ) {
+      throw new BadRequestException(
+        'The banking receipt does not belong to this branch.',
+      );
+    }
+
+    const available = await this.remainingDayCashForBranchExpense(
+      operation,
+      bounds,
+    );
+    if (dto.amount > available) {
+      throw new BadRequestException(
+        `Banking exceeds remaining branch cash. Available: ${available}.`,
+      );
+    }
+
+    const banking = await this.repository.recordBanking({
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationId: operation.id,
+      amount: new Prisma.Decimal(dto.amount),
+      reference: dto.reference?.trim() || null,
+      notes: dto.notes?.trim() || null,
+      receiptStorageKey: dto.receiptStorageKey?.trim() || null,
+      receiptMimeType: dto.receiptMimeType?.trim() || null,
+      receiptFileName: dto.receiptFileName?.trim() || null,
+      bankedAt: new Date(),
+      recordedByUserId: user.userId,
+      operationDate: operation.operationDate,
+      status: operation.status,
+    });
+
+    this.broadcastOperationEvent(OPERATIONS_EVENTS.bankingRecorded, {
+      operationId: operation.id,
+      tenantId: user.tenantId,
+      branchId: branch.id,
+      operationDate: bounds.dateLabel,
+      status: operation.status,
+      bankingId: banking.id,
+      amount: this.decimalToNumber(banking.amount),
+    });
+
+    return this.getToday(user, { branchId: branch.id, date: bounds.dateLabel });
   }
 
   async recordAgentReturn(
@@ -1564,6 +1719,14 @@ export class OperationsService {
   ): Promise<
     DailyOperationResponseContract | AgentDailyOperationResponseContract
   > {
+    if (
+      dto.description != null &&
+      /^bank(?:ing|ed| deposit)?$/i.test(dto.description.trim())
+    ) {
+      throw new BadRequestException(
+        'Record bank deposits with the Banking action. Banking is not an expense.',
+      );
+    }
     const branch = await this.resolveBranch(user, undefined);
 
     if (!branch) {
@@ -2573,6 +2736,8 @@ export class OperationsService {
       agentFloatExpensesAgg,
       expenses,
       topUps,
+      bankingsAgg,
+      bankings,
       agentFloats,
       activeUsers,
       loansIssuedToday,
@@ -2635,6 +2800,16 @@ export class OperationsService {
       }),
 
       this.repository.listTopUpsForOperation({
+        tenantId: operation.tenantId,
+        operationId: operation.id,
+      }),
+
+      this.repository.sumBankingsForOperation({
+        tenantId: operation.tenantId,
+        operationId: operation.id,
+      }),
+
+      this.repository.listBankingsForOperation({
         tenantId: operation.tenantId,
         operationId: operation.id,
       }),
@@ -2778,6 +2953,7 @@ export class OperationsService {
     );
 
     const salariesTotal = this.decimalToNumber(salariesAgg._sum.amount);
+    const bankingsTotal = this.decimalToNumber(bankingsAgg._sum.amount);
     const salaries = salaryPayments.map((payment) =>
       this.toSalaryContract(payment),
     );
@@ -2846,6 +3022,7 @@ export class OperationsService {
       expensesTotal,
       salariesTotal,
       shortageRecoveriesTotal,
+      bankingsTotal,
     });
 
     const closingBalance =
@@ -2956,6 +3133,20 @@ export class OperationsService {
         description: topUp.description,
         addedAt: topUp.addedAt.toISOString(),
         recordedByName: topUp.recordedBy.displayName,
+      })),
+
+      bankingsCount: bankingsAgg._count._all,
+      bankingsTotal,
+      bankings: bankings.map((banking) => ({
+        id: banking.id,
+        amount: this.decimalToNumber(banking.amount),
+        reference: banking.reference,
+        notes: banking.notes,
+        bankedAt: banking.bankedAt.toISOString(),
+        recordedByName: banking.recordedBy.displayName,
+        receiptUrl: null,
+        receiptMimeType: banking.receiptMimeType,
+        receiptFileName: banking.receiptFileName,
       })),
 
       expensesCount: expensesAgg._count._all,
@@ -3080,24 +3271,19 @@ export class OperationsService {
       );
       principalDisbursed += disbursed;
 
-      const principalPaid = this.roundMoney(
+      const recordedPaidThroughEnd = this.roundMoney(
         loan.repayments.reduce(
-          (sum, row) => sum + this.decimalToNumber(row.principalAllocated),
+          (sum, row) => sum + this.decimalToNumber(row.amount),
           0,
         ),
       );
-      const interestPaid = this.roundMoney(
-        loan.repayments.reduce(
-          (sum, row) => sum + this.decimalToNumber(row.interestAllocated),
-          0,
-        ),
-      );
-      principalRepaid += Math.min(disbursed, principalPaid);
-
       // Pending partial disbursements have no active repayment schedule yet.
       const fullyDisbursed =
         agreedPrincipal > 0 && disbursed + 0.005 >= agreedPrincipal;
-      if (!fullyDisbursed) continue;
+      if (!fullyDisbursed) {
+        principalRepaid += Math.min(disbursed, recordedPaidThroughEnd);
+        continue;
+      }
 
       const durationDays = Math.max(1, loan.application?.durationDays ?? 1);
       const interestRatePercent =
@@ -3110,12 +3296,6 @@ export class OperationsService {
         durationDays,
         processingFee,
       });
-      const recordedPaidThroughEnd = this.roundMoney(
-        loan.repayments.reduce(
-          (sum, row) => sum + this.decimalToNumber(row.amount),
-          0,
-        ),
-      );
       const baseRepayable = resolveBaseRepayable({
         openingBalance: this.decimalToNumber(loan.wallet?.openingBalance),
         pricedTotal: priced.totalRepayable,
@@ -3129,12 +3309,28 @@ export class OperationsService {
       const expectedInterestForLoan = this.roundMoney(
         Math.max(0, baseRepayable - agreedPrincipal),
       );
-      interestExpected += expectedInterestForLoan;
-      interestCollected += Math.min(expectedInterestForLoan, interestPaid);
-
       const contractualOutstanding = this.roundMoney(
         Math.max(0, baseRepayable - recordedPaidThroughEnd),
       );
+      const isLegacyImport =
+        loan.application?.localId?.toLowerCase().includes('legacy') ?? false;
+      // Legacy opening balances are the balance at migration, not the
+      // original repayable amount. Their pre-migration repayment allocation
+      // does not exist in Rembeh, so derive principal position from the
+      // authoritative wallet balance instead of leaving phantom principal on
+      // loans that have subsequently closed.
+      const principalOutstandingForLoan = isLegacyImport
+        ? Math.min(disbursed, contractualOutstanding)
+        : Math.max(0, disbursed - recordedPaidThroughEnd);
+      const principalPaid = this.roundMoney(
+        Math.max(0, disbursed - principalOutstandingForLoan),
+      );
+      const interestPaid = this.roundMoney(
+        Math.max(0, recordedPaidThroughEnd - principalPaid),
+      );
+      principalRepaid += principalPaid;
+      interestExpected += expectedInterestForLoan;
+      interestCollected += Math.min(expectedInterestForLoan, interestPaid);
       if (contractualOutstanding > 0) {
         activeBorrowerIds.add(loan.customerId);
       }
@@ -3278,6 +3474,7 @@ export class OperationsService {
     expensesTotal: number;
     salariesTotal: number;
     shortageRecoveriesTotal?: number;
+    bankingsTotal?: number;
   }) {
     return this.roundMoney(
       input.cashAvailableAtOpening -
@@ -3286,7 +3483,8 @@ export class OperationsService {
         input.collectionsReceived +
         (input.shortageRecoveriesTotal ?? 0) -
         input.expensesTotal -
-        input.salariesTotal,
+        input.salariesTotal -
+        (input.bankingsTotal ?? 0),
     );
   }
 
@@ -3308,6 +3506,7 @@ export class OperationsService {
       expensesAgg,
       salariesAgg,
       shortageRecoveriesAgg,
+      bankingsAgg,
     ] = await Promise.all([
       this.repository.sumLoansIssued({
         tenantId: operation.tenantId,
@@ -3339,6 +3538,10 @@ export class OperationsService {
         tenantId: operation.tenantId,
         operationId: operation.id,
       }),
+      this.repository.sumBankingsForOperation({
+        tenantId: operation.tenantId,
+        operationId: operation.id,
+      }),
     ]);
 
     return this.remainingDayCashForOutflows({
@@ -3353,6 +3556,7 @@ export class OperationsService {
       shortageRecoveriesTotal: this.decimalToNumber(
         shortageRecoveriesAgg._sum.amount,
       ),
+      bankingsTotal: this.decimalToNumber(bankingsAgg._sum.amount),
     });
   }
 
@@ -3585,7 +3789,7 @@ export class OperationsService {
     operation: DailyOperationContract,
   ): Prisma.InputJsonObject {
     return {
-      version: 7,
+      version: 8,
       reportType: 'daily_operations_close',
 
       operation: {
@@ -3607,6 +3811,7 @@ export class OperationsService {
         floatDistributed: operation.floatIssued,
         floatLeft: operation.floatRemaining,
         expenses: operation.expensesTotal,
+        bankings: operation.bankingsTotal,
         branchCashExpenses: operation.branchCashExpensesTotal,
         agentFloatExpenses: operation.agentFloatExpensesTotal,
         salaries: operation.salariesTotal,
@@ -3636,6 +3841,7 @@ export class OperationsService {
       cashPosition: {
         floatDistributed: operation.floatIssued,
         expenses: operation.expensesTotal,
+        bankings: operation.bankingsTotal,
         branchExpenses: operation.branchCashExpensesTotal,
         agentFloatExpenses: operation.agentFloatExpensesTotal,
         salaries: operation.salariesTotal,
@@ -3654,6 +3860,8 @@ export class OperationsService {
       topUps: operation.topUps,
 
       expenses: operation.expenses,
+
+      bankings: operation.bankings,
 
       salaries: operation.salaries,
 
@@ -4222,6 +4430,8 @@ export class OperationsService {
       processingFees: this.snapshotNumber(summary, 'processingFees'),
 
       expenses: this.snapshotNumber(summary, 'expenses'),
+
+      bankings: this.snapshotNumber(summary, 'bankings'),
 
       cashReturnedByAgents: this.snapshotNumber(
         summary,
@@ -5119,63 +5329,86 @@ export class OperationsService {
       return false;
     }
 
-    const [topUps, expenses, agentFloats, loans, collections, report] =
-      await Promise.all([
-        this.prisma.branchOperationTopUp.count({
-          where: {
-            tenantId: operation.tenantId,
-            operationId: operation.id,
-          },
-        }),
+    const [
+      topUps,
+      expenses,
+      bankings,
+      agentFloats,
+      loans,
+      collections,
+      report,
+    ] = await Promise.all([
+      this.prisma.branchOperationTopUp.count({
+        where: {
+          tenantId: operation.tenantId,
+          operationId: operation.id,
+        },
+      }),
 
-        this.prisma.branchOperationExpense.count({
-          where: {
-            tenantId: operation.tenantId,
-            operationId: operation.id,
-          },
-        }),
+      this.prisma.branchOperationExpense.count({
+        where: {
+          tenantId: operation.tenantId,
+          operationId: operation.id,
+        },
+      }),
 
-        this.prisma.agentDailyFloat.count({
-          where: {
-            tenantId: operation.tenantId,
-            branchId: operation.branchId,
-            floatDate: operation.operationDate,
-          },
-        }),
+      this.prisma.branchOperationBanking.count({
+        where: {
+          tenantId: operation.tenantId,
+          operationId: operation.id,
+        },
+      }),
 
-        this.prisma.loanApplication.count({
-          where: {
-            tenantId: operation.tenantId,
-            branchId: operation.branchId,
-            status: LoanApplicationStatus.SUBMITTED,
-            submittedAt: {
-              gte: bounds.dayStart,
-              lte: bounds.dayEnd,
-            },
-          },
-        }),
+      this.prisma.agentDailyFloat.count({
+        where: {
+          tenantId: operation.tenantId,
+          branchId: operation.branchId,
+          floatDate: operation.operationDate,
+        },
+      }),
 
-        this.prisma.repayment.count({
-          where: {
-            tenantId: operation.tenantId,
-            branchId: operation.branchId,
-            voidedAt: null,
-            paidAt: {
-              gte: bounds.dayStart,
-              lte: bounds.dayEnd,
-            },
+      this.prisma.loanApplication.count({
+        where: {
+          tenantId: operation.tenantId,
+          branchId: operation.branchId,
+          status: LoanApplicationStatus.SUBMITTED,
+          submittedAt: {
+            gte: bounds.dayStart,
+            lte: bounds.dayEnd,
           },
-        }),
+        },
+      }),
 
-        this.prisma.branchOperationReport.count({
-          where: {
-            tenantId: operation.tenantId,
-            operationId: operation.id,
+      this.prisma.repayment.count({
+        where: {
+          tenantId: operation.tenantId,
+          branchId: operation.branchId,
+          voidedAt: null,
+          paidAt: {
+            gte: bounds.dayStart,
+            lte: bounds.dayEnd,
           },
-        }),
-      ]);
+        },
+      }),
 
-    return topUps + expenses + agentFloats + loans + collections + report === 0;
+      this.prisma.branchOperationReport.count({
+        where: {
+          tenantId: operation.tenantId,
+          operationId: operation.id,
+        },
+      }),
+    ]);
+
+    return (
+      topUps +
+        expenses +
+        bankings +
+        agentFloats +
+        loans +
+        collections +
+        report ===
+      0
+    );
   }
 
   private async retireEmptyUnclosedOperationsBefore(input: {
@@ -5244,63 +5477,86 @@ export class OperationsService {
       this.formatDateLabel(operation.operationDate),
     );
 
-    const [topUps, expenses, agentFloats, loans, collections, report] =
-      await Promise.all([
-        this.prisma.branchOperationTopUp.count({
-          where: {
-            tenantId: operation.tenantId,
-            operationId: operation.id,
-          },
-        }),
+    const [
+      topUps,
+      expenses,
+      bankings,
+      agentFloats,
+      loans,
+      collections,
+      report,
+    ] = await Promise.all([
+      this.prisma.branchOperationTopUp.count({
+        where: {
+          tenantId: operation.tenantId,
+          operationId: operation.id,
+        },
+      }),
 
-        this.prisma.branchOperationExpense.count({
-          where: {
-            tenantId: operation.tenantId,
-            operationId: operation.id,
-          },
-        }),
+      this.prisma.branchOperationExpense.count({
+        where: {
+          tenantId: operation.tenantId,
+          operationId: operation.id,
+        },
+      }),
 
-        this.prisma.agentDailyFloat.count({
-          where: {
-            tenantId: operation.tenantId,
-            branchId: operation.branchId,
-            floatDate: operation.operationDate,
-          },
-        }),
+      this.prisma.branchOperationBanking.count({
+        where: {
+          tenantId: operation.tenantId,
+          operationId: operation.id,
+        },
+      }),
 
-        this.prisma.loanApplication.count({
-          where: {
-            tenantId: operation.tenantId,
-            branchId: operation.branchId,
-            status: LoanApplicationStatus.SUBMITTED,
-            submittedAt: {
-              gte: bounds.dayStart,
-              lte: bounds.dayEnd,
-            },
-          },
-        }),
+      this.prisma.agentDailyFloat.count({
+        where: {
+          tenantId: operation.tenantId,
+          branchId: operation.branchId,
+          floatDate: operation.operationDate,
+        },
+      }),
 
-        this.prisma.repayment.count({
-          where: {
-            tenantId: operation.tenantId,
-            branchId: operation.branchId,
-            voidedAt: null,
-            paidAt: {
-              gte: bounds.dayStart,
-              lte: bounds.dayEnd,
-            },
+      this.prisma.loanApplication.count({
+        where: {
+          tenantId: operation.tenantId,
+          branchId: operation.branchId,
+          status: LoanApplicationStatus.SUBMITTED,
+          submittedAt: {
+            gte: bounds.dayStart,
+            lte: bounds.dayEnd,
           },
-        }),
+        },
+      }),
 
-        this.prisma.branchOperationReport.count({
-          where: {
-            tenantId: operation.tenantId,
-            operationId: operation.id,
+      this.prisma.repayment.count({
+        where: {
+          tenantId: operation.tenantId,
+          branchId: operation.branchId,
+          voidedAt: null,
+          paidAt: {
+            gte: bounds.dayStart,
+            lte: bounds.dayEnd,
           },
-        }),
-      ]);
+        },
+      }),
 
-    return topUps + expenses + agentFloats + loans + collections + report === 0;
+      this.prisma.branchOperationReport.count({
+        where: {
+          tenantId: operation.tenantId,
+          operationId: operation.id,
+        },
+      }),
+    ]);
+
+    return (
+      topUps +
+        expenses +
+        bankings +
+        agentFloats +
+        loans +
+        collections +
+        report ===
+      0
+    );
   }
 
   /**

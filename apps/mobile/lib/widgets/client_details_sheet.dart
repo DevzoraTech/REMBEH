@@ -343,6 +343,48 @@ class ClientDetailsSheet extends StatelessWidget {
                     ),
                   ],
                 ),
+                if (detail.advanceAmount > 0) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F8F3),
+                      border: Border.all(color: const Color(0xFFD8EADF)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.savings_outlined,
+                          color: forestEmerald,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 9),
+                        const Expanded(
+                          child: Text(
+                            'Advance available',
+                            style: TextStyle(
+                              color: midnightNavy,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          formatMoney(detail.advanceAmount),
+                          style: const TextStyle(
+                            color: forestEmerald,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,

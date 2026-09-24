@@ -36,6 +36,8 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
   late final ApiClient _api = ApiClient(_store);
 
   final TextEditingController _notesController = TextEditingController();
+  bool _notesDirty = false;
+  bool _syncingNotesFromServer = false;
 
   Map<String, dynamic>? _data;
 
@@ -201,10 +203,21 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
   }
 
   @override
-  void initState() {
-    super.initState();
-    unawaited(_initialise());
+void initState() {
+  super.initState();
+
+  _notesController.addListener(_onNotesChanged);
+
+  unawaited(_initialise());
+}
+
+void _onNotesChanged() {
+  if (_syncingNotesFromServer) {
+    return;
   }
+
+  _notesDirty = true;
+}
 
   @override
   void dispose() {
@@ -250,14 +263,22 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
 
       final savedNotes = _string(reconciliation?['notes']) ?? '';
 
-      setState(() {
-        _data = nextData;
-        _loading = false;
+setState(() {
+  _data = nextData;
+  _loading = false;
+});
 
-        if (_notesController.text != savedNotes) {
-          _notesController.text = savedNotes;
-        }
-      });
+/*
+ * Server refreshes must not destroy a reconciliation note that
+ * the manager is currently drafting.
+ */
+if (!_notesDirty && _notesController.text != savedNotes) {
+  _syncingNotesFromServer = true;
+
+  _notesController.text = savedNotes;
+
+  _syncingNotesFromServer = false;
+}
     } catch (error) {
       if (!mounted) return;
 
@@ -436,13 +457,18 @@ class _DayReconciliationScreenState extends State<DayReconciliationScreen> {
 
       final savedNotes = reconciliation?['notes']?.toString() ?? '';
 
-      if (_notesController.text != savedNotes) {
-        _notesController.text = savedNotes;
-      }
+if (!mounted) return;
 
-      if (!mounted) return;
+_syncingNotesFromServer = true;
 
-      _close();
+if (_notesController.text != savedNotes) {
+  _notesController.text = savedNotes;
+}
+
+_syncingNotesFromServer = false;
+_notesDirty = false;
+
+_close();
     } catch (error) {
       if (!mounted) return;
 

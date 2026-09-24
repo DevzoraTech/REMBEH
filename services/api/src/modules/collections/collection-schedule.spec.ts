@@ -452,6 +452,28 @@ describe('collection-schedule', () => {
     expect(schedule.nextDueLabel).toBe('Due in 3 days');
   });
 
+  it('does not treat an advance remainder as covering another day', () => {
+    const start = new Date(2026, 8, 1);
+    const schedule = computeCollectionSchedule({
+      principalAmount: 120_000,
+      interestRatePercent: 0,
+      durationDays: 10,
+      repaymentFrequency: 'DAILY',
+      processingFee: 0,
+      balance: 94_000,
+      recordedPaidAmount: 26_000,
+      startDate: start,
+      asOf: new Date(2026, 8, 3),
+    });
+
+    // Two full days (24,000) are covered; the remaining 2,000 cannot cover
+    // the 12,000 instalment due on day three.
+    expect(schedule.dailyInstalment).toBe(12_000);
+    expect(schedule.advanceAmount).toBe(0);
+    expect(schedule.nextDueIsToday).toBe(true);
+    expect(schedule.expectedToday).toBe(10_000);
+  });
+
   it('treats a partial same-day payment as covering that day’s due for tracking', () => {
     const start = new Date(2026, 7, 27);
     const morning = computeCollectionSchedule({

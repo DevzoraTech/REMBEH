@@ -90,6 +90,7 @@ class ClientLoanDetail {
     required this.lastPaymentBy,
     required this.expectedToday,
     required this.carriedForward,
+    this.advanceAmount = 0,
     required this.dailyInstalment,
     required this.loanPeriodDays,
     required this.daysLeft,
@@ -130,6 +131,7 @@ class ClientLoanDetail {
   final String? lastPaymentBy;
   final int expectedToday;
   final int carriedForward;
+  final int advanceAmount;
   final int dailyInstalment;
   final int loanPeriodDays;
   final int daysLeft;

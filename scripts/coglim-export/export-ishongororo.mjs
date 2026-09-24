@@ -696,7 +696,11 @@ async function writeOutputs(payload) {
 
 async function main() {
   await fs.mkdir(OUT_DIR, { recursive: true });
-  const browser = await chromium.launch({ headless: HEADLESS });
+  const launchOpts = { headless: HEADLESS };
+  if (process.env.PLAYWRIGHT_CHANNEL) {
+    launchOpts.channel = process.env.PLAYWRIGHT_CHANNEL;
+  }
+  const browser = await chromium.launch(launchOpts);
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 },
     ignoreHTTPSErrors: true,

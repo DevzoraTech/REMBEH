@@ -90,6 +90,7 @@ class RembehSession {
               permission == 'operation.read' ||
               permission == 'operation.open' ||
               permission == 'operation.cash.topup' ||
+              permission == 'operation.banking.create' ||
               permission == 'operation.float.manage' ||
               permission == 'operation.float.return' ||
               permission == 'operation.expense.create' ||

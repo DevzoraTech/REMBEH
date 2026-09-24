@@ -487,6 +487,84 @@ export class OperationsRepository {
     });
   }
 
+  recordBanking(input: {
+    tenantId: string;
+    branchId: string;
+    operationId: string;
+    amount: Prisma.Decimal;
+    reference: string | null;
+    notes: string | null;
+    receiptStorageKey: string | null;
+    receiptMimeType: string | null;
+    receiptFileName: string | null;
+    bankedAt: Date;
+    recordedByUserId: string;
+    operationDate: Date;
+    status: BranchOperationStatus;
+  }) {
+    return this.prisma.$transaction(async (tx) => {
+      const banking = await tx.branchOperationBanking.create({
+        data: {
+          tenantId: input.tenantId,
+          branchId: input.branchId,
+          operationId: input.operationId,
+          amount: input.amount,
+          reference: input.reference,
+          notes: input.notes,
+          receiptStorageKey: input.receiptStorageKey,
+          receiptMimeType: input.receiptMimeType,
+          receiptFileName: input.receiptFileName,
+          bankedAt: input.bankedAt,
+          recordedByUserId: input.recordedByUserId,
+        },
+        include: {
+          recordedBy: { select: { id: true, displayName: true } },
+        },
+      });
+
+      await tx.outboxEvent.create({
+        data: {
+          tenantId: input.tenantId,
+          topic: OPERATIONS_EVENTS.bankingRecorded,
+          aggregateType: 'branch_operation_banking',
+          aggregateId: banking.id,
+          payload: {
+            bankingId: banking.id,
+            operationId: input.operationId,
+            tenantId: input.tenantId,
+            branchId: input.branchId,
+            operationDate: this.formatDateLabel(input.operationDate),
+            amount: input.amount.toString(),
+            status: input.status,
+          },
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          tenantId: input.tenantId,
+          actorUserId: input.recordedByUserId,
+          action: OPERATIONS_PERMISSIONS.bankingCreate,
+          entityType: 'branch_operation_banking',
+          entityId: banking.id,
+          newValue: {
+            operationId: input.operationId,
+            branchId: input.branchId,
+            operationDate: this.formatDateLabel(input.operationDate),
+            amount: input.amount.toString(),
+            reference: input.reference,
+            notes: input.notes,
+            receiptStorageKey: input.receiptStorageKey,
+            receiptMimeType: input.receiptMimeType,
+            receiptFileName: input.receiptFileName,
+          },
+        },
+      });
+
+      return banking;
+    });
+  }
+
   recordAgentReturn(input: {
     tenantId: string;
     branchId: string;
@@ -1653,6 +1731,54 @@ export class OperationsRepository {
     });
   }
 
+  listBankingsForOperation(input: { tenantId: string; operationId: string }) {
+    return this.prisma.branchOperationBanking.findMany({
+      where: {
+        tenantId: input.tenantId,
+        operationId: input.operationId,
+      },
+      include: {
+        recordedBy: { select: { id: true, displayName: true } },
+      },
+      orderBy: { bankedAt: 'desc' },
+    });
+  }
+
+  listBankings(input: {
+    tenantId: string;
+    branchId: string;
+    from?: Date;
+    to?: Date;
+  }) {
+    return this.prisma.branchOperationBanking.findMany({
+      where: {
+        tenantId: input.tenantId,
+        branchId: input.branchId,
+        bankedAt:
+          input.from || input.to
+            ? { gte: input.from, lte: input.to }
+            : undefined,
+      },
+      include: {
+        recordedBy: { select: { id: true, displayName: true } },
+        operation: { select: { operationDate: true } },
+      },
+      orderBy: { bankedAt: 'desc' },
+      take: 500,
+    });
+  }
+
+  sumBankingsForOperation(input: { tenantId: string; operationId: string }) {
+    return this.prisma.branchOperationBanking.aggregate({
+      where: {
+        tenantId: input.tenantId,
+        operationId: input.operationId,
+      },
+      _sum: { amount: true },
+      _count: { _all: true },
+    });
+  }
+
   sumLoansIssued(input: {
     tenantId: string;
     branchId: string;
@@ -2108,6 +2234,7 @@ export class OperationsRepository {
             durationDays: true,
             processingFee: true,
             repaymentFrequency: true,
+            localId: true,
           },
         },
         wallet: {

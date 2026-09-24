@@ -11,6 +11,7 @@ class DailyReportCashPosition {
     this.recoveryLines = const [],
     required this.expenses,
     required this.salaries,
+    this.bankings = 0,
     this.loansIssued = 0,
     required this.floatIssued,
     required this.floatReturned,
@@ -31,6 +32,7 @@ class DailyReportCashPosition {
   /// All day expenses (cashier + field officers).
   final num expenses;
   final num salaries;
+  final num bankings;
   final num loansIssued;
 
   final num floatIssued;

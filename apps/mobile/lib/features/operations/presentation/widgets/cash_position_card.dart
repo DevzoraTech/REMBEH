@@ -7,10 +7,7 @@ import 'ops_icon.dart';
 import 'ops_surface.dart';
 
 class CashPositionCard extends StatelessWidget {
-  const CashPositionCard({
-    super.key,
-    required this.operation,
-  });
+  const CashPositionCard({super.key, required this.operation});
 
   final OperationDashboardData operation;
 
@@ -24,7 +21,10 @@ class CashPositionCard extends StatelessWidget {
         operation.processingFees +
         shortageCleared;
     final cashoutsTotal =
-        operation.expenses + operation.salaries + operation.loansDisbursed;
+        operation.expenses +
+        operation.salaries +
+        operation.bankings +
+        operation.loansDisbursed;
 
     return OpsSurface(
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
@@ -79,7 +79,10 @@ class CashPositionCard extends StatelessWidget {
             totalLabel: 'TOTAL',
             totalAmount: additionsTotal,
             children: [
-              _CashLine(label: 'Opening Balance', amount: operation.openingCash),
+              _CashLine(
+                label: 'Opening Balance',
+                amount: operation.openingCash,
+              ),
               _CashLine(
                 label: 'Capital received',
                 amount: operation.capitalReceived,
@@ -119,6 +122,11 @@ class CashPositionCard extends StatelessWidget {
               _CashLine(
                 label: 'Salary',
                 amount: operation.salaries,
+                negative: true,
+              ),
+              _CashLine(
+                label: 'Banked',
+                amount: operation.bankings,
                 negative: true,
               ),
               _CashLine(
